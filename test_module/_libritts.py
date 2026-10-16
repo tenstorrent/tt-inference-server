@@ -44,4 +44,59 @@ def disable_audio_decode(dataset):
     return dataset
 
 
-__all__ = ["LIBRITTS_SPLIT_ALIASES", "resolve_split", "disable_audio_decode"]
+def wav_seconds(wav_bytes: bytes) -> float:
+    """Duration of a WAV file given as bytes (needs ``soundfile``)."""
+    import io
+
+    import soundfile as sf
+
+    return sf.info(io.BytesIO(wav_bytes)).duration
+
+
+def iter_speaker_clips(
+    split: str,
+    count: int,
+    *,
+    min_seconds: float = None,
+    max_seconds: float = None,
+):
+    """Yield ``(speaker_id, wav_bytes, text)`` for ``count`` distinct speakers."""
+    from datasets import load_dataset
+
+    dataset = load_dataset(
+        "blabble-io/libritts_r", "clean", split=resolve_split(split), streaming=True
+    )
+    dataset = disable_audio_decode(dataset)
+
+    seen = set()
+    for sample in dataset:
+        speaker = str(sample.get("speaker_id"))
+        if speaker in seen:
+            continue
+        audio = sample.get("audio") or {}
+        wav_bytes = audio.get("bytes")
+        if not wav_bytes:
+            continue
+        if min_seconds is not None or max_seconds is not None:
+            seconds = wav_seconds(wav_bytes)
+            if (min_seconds is not None and seconds < min_seconds) or (
+                max_seconds is not None and seconds > max_seconds
+            ):
+                continue
+        seen.add(speaker)
+        yield (
+            speaker,
+            wav_bytes,
+            sample.get("text_normalized") or sample.get("text_original", ""),
+        )
+        if len(seen) >= count:
+            return
+
+
+__all__ = [
+    "LIBRITTS_SPLIT_ALIASES",
+    "resolve_split",
+    "disable_audio_decode",
+    "iter_speaker_clips",
+    "wav_seconds",
+]

@@ -315,6 +315,12 @@ speecht5_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
 )
+qwen3_tts_impl = ImplSpec(
+    impl_id="qwen3_tts",
+    impl_name="qwen3-tts",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/audio/qwen3_tts",
+)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -456,6 +462,16 @@ blaze_impl = ImplSpec(
     code_path="tt-media-server/cpp_server",
 )
 
+# IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
+# models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
+# the tt-model-bringup pipeline.
+k2_horizon_7b_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_7b_qb2",
+    impl_name="k2-horizon-7b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/k2_horizon_7b_qb2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -464,6 +480,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
@@ -471,6 +488,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
+    "qwen3_tts": qwen3_tts_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
@@ -536,6 +554,14 @@ class DeviceModelSpec:
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
+    # When set, the docker server runs this entry in a private IPC namespace with a /dev/shm of
+    # this size (docker --ipc private --shm-size) instead of sharing the host's (--ipc host). Use it
+    # where the host prunes /dev/shm under running jobs: vLLM's engine<->worker ring buffers and
+    # multiprocessing semaphores live there, and a multi-engine (data-parallel) server attaches to
+    # them only after model load.
+    # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
+    # auto-generated Helm chart values)
+    docker_shm_size: Optional[str] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.

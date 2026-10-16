@@ -122,15 +122,15 @@ async def get_fine_tuning_job_metadata(
 
 
 @router.delete("/jobs/{job_id}", status_code=204)
-def delete_fine_tuning_job(
+async def delete_fine_tuning_job(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
     org_id: str = Depends(get_org_id),
 ):
-    """Permanently delete a terminal fine-tuning job and its results."""
+    """Permanently delete a fine-tuning job and its results."""
     try:
-        deleted = service.delete_job(job_id, org_id=org_id)
+        deleted = await service.delete_job(job_id, org_id=org_id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     if not deleted:

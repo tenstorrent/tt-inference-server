@@ -62,6 +62,8 @@ templates:
         MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) to use (4,8) mesh grid
         TT_MM_THROTTLE_PERF: 2
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # override the default inferred by max_concurrency
       override_tt_config:
@@ -136,6 +138,9 @@ templates:
       env_vars:
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
       override_tt_config:
         trace_region_size: 58000000
         sample_on_device_mode: decode_only
@@ -515,6 +520,8 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         max_num_seqs: 32
         # Async overlaps host scheduling with device decode on the batched baseline fallback.
         async_scheduling: true
@@ -565,6 +572,8 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32
         # DP>1: vLLM's custom_class check rejects async_scheduling + speculative_config;
@@ -625,6 +634,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -679,6 +690,8 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -735,6 +748,8 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -810,6 +825,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -854,6 +871,8 @@ templates:
         trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # No async_scheduling on Wormhole — see the T3K entry above.
@@ -959,6 +978,8 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -1039,6 +1060,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -1086,6 +1109,8 @@ templates:
         trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # No async_scheduling on Wormhole — see the T3K entry above.
@@ -1213,6 +1238,8 @@ templates:
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -1268,6 +1295,8 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -1689,6 +1718,71 @@ templates:
     Qwen/Qwen3.8-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
+# the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
+# TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the
+# k2_horizon reasoning and tool-call parsers ship with upstream vLLM >= 0.30
+# (vllm-tt-plugin #171 backports them for the 0.26 pin).
+- weights:
+    - IFM/K2-Horizon-7B
+  impl: k2_horizon_7b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      # Full advertised context; validated for correctness through 524288 in the
+      # bring-up (context_contract.json).
+      max_context: 524288
+      # KV pool of the bring-up server: 16416 pages x 32 tokens.
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        OMP_NUM_THREADS: "8"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 200000000
+        fabric_config: FABRIC_1D_RING
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        async-scheduling: true
+        trust-remote-code: true
+        hf-overrides: '{"architectures":["TTK2HorizonForCausalLM"]}'
+        # vLLM >= 0.30 auto-detects this chat template as the 'openai' (list-of-parts)
+        # content format, because the template passes message.content through a macro
+        # that iterates it. The template itself only handles string content: a system
+        # message with list content raises, a user message renders empty. 0.26 detected
+        # 'string', which the stamp ran on; tt-shield run 38243438749 (0.30) scored 0 on
+        # every chat-API eval. Pin the format lm-eval and the agentic harnesses rely on.
+        chat-template-content-format: string
+        # Validated checkpoint (bring-up, CI 36648438691/36834542524). The hub's main moved
+        # to a new checkpoint on 2026-10-01; the downloader and vLLM both honor this pin.
+        revision: 036114ce8d46c32b24c15423211069abb9c5d25e
+        tokenizer_revision: 036114ce8d46c32b24c15423211069abb9c5d25e
+        reasoning-parser: k2_horizon
+        # Agentic evals send tools with tool_choice=auto. k2_horizon ships with
+        # upstream vLLM >= 0.30 (vllm-tt-plugin #171 backports it for the 0.26 pin).
+        enable-auto-tool-choice: true
+        tool-call-parser: k2_horizon
+        # Normalizes assistant history (few-shot as multi-turn) for the K2 template.
+        middleware: models.demos.k2_horizon_7b_qb2.tests.benchmark_chat_middleware.K2BenchmarkChatMiddleware
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    IFM/K2-Horizon-7B:
+      reasoning_parser_name: k2_horizon
+      tool_call_parser_name: k2_horizon
 
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3.6-27B
@@ -2200,6 +2294,8 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
       override_tt_config:
         dispatch_core_axis: col
@@ -2213,6 +2309,8 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
       override_tt_config:
         dispatch_core_axis: col
@@ -2456,34 +2554,61 @@ templates:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
 
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : meta-llama/Llama-3.2-1B-Instruct
+# package manifest sha256 : de0c91809a1d24c1cba4c96062a75b34caad55b0069deb853e56573d01284744
+# overlay sha256          : 95f1d80f321166079d49c88a225bf80d0589baa92cc992098aa99dfa770f8e3b
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
 - weights:
-    - meta-llama/Llama-3.2-1B-Instruct
+  - meta-llama/Llama-3.2-1B-Instruct
   impl: quetzal
   inference_engine: VLLM
+  has_builtin_warmup: true
   device_model_specs:
-    - device: P300X2
-      max_concurrency: 32
-      max_context: 131072
-      default_impl: false
-      env_vars:
-        MESH_DEVICE: P150x4
-        QUETZAL_VLLM: "1"
-        QUETZAL_BUNDLE_MANIFEST_SHA256: 1118a183960df63b02cc4ecef591c4319dd0f5682dc2ef6ac5eaeb823cc9a1f8
-        QUETZAL_KV_BLOCK_SIZE: '64'
-        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
-        VLLM_PLUGINS: quetzal_model_registry,tt
-      vllm_args:
-        revision: 9213176726f574b556790deb65791e0c5aa438b6
-        tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
-        enable_auto_tool_choice: true
-        tool_call_parser: llama3_json
-      override_tt_config:
-        sample_on_device_mode: all
-        l1_small_size: 16384      # Quetzal-generated runtime device contract
-        trace_region_size: 90000000  # provisional inherited reservation; measurement pending
-        kv_cache_usable_tokens: 131072
-      max_tokens_all_users_override: 131072
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: de0c91809a1d24c1cba4c96062a75b34caad55b0069deb853e56573d01284744
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 9213176726f574b556790deb65791e0c5aa438b6
+      tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+      dtype: bfloat16
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: llama3_json
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_penalties
+      reason: 'test_penalties[repetition_penalty-1.5-natural_repetition] (strict unique-word-ratio increase)
+        failed once on Shield run 37153018550 (0.657 vs baseline 0.682), but the penalty was applied:
+        the penalized text is reworded throughout (''Bananas are yellow fruits that grow on big plants
+        called banana trees ...'') and runs long with an appended aside, which lowers a whitespace unique-word
+        ratio. Over 8 seeds of the same request (temperature 0.1, max_tokens 1024) on a fresh server,
+        repetition_penalty=1.5 raises the mean ratio on device 0.670 -> 0.966 and under vLLM''s host sampler
+        (logprobs forces it) 0.690 -> 0.978, and the rule fails 0/8 seeds on both, including seed 1234.
+        Measured 2026-10-04 on QB2 (tt-quietbox), image qz-current-main-3f42cb95, package manifest de0c9180;
+        every other spec case passed on Shield.'
+    max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:313787ed25a05be5654405d02a8136baba0a464283f03761dcc480b1a5410fef
 
 - weights:
     - meta-llama/Llama-3.2-1B
@@ -2650,6 +2775,8 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2680,6 +2807,8 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 8
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2708,6 +2837,9 @@ templates:
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
+      vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 155000000
@@ -2733,6 +2865,9 @@ templates:
       default_impl: true
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+      vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 56000000
@@ -2771,6 +2906,8 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
       override_tt_config:
         trace_region_size: 50000000
@@ -2863,6 +3000,8 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -2887,6 +3026,8 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -2947,6 +3088,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -3570,8 +3713,8 @@ templates:
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3-4B
-# package manifest sha256 : eaf5a453193c2475ed3e5d17c339c8f5b209d192296c6a3496696c7edf6f09e8
-# overlay sha256          : 6286ffbe49b8e71d4a97fe592965c5cdd2538e1a6ea94d2caf3eef46f20bf806
+# package manifest sha256 : f9e000a505398c9a19934e256531cdc57ebd66bc20196b9f6ec6d2f45939d307
+# overlay sha256          : 85c4da6ca18e129dfe52df0ae1d8b8469d8c9e420d20ceda7ce2198406532945
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 40960 decode
 #
@@ -3590,7 +3733,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: eaf5a453193c2475ed3e5d17c339c8f5b209d192296c6a3496696c7edf6f09e8
+      QUETZAL_BUNDLE_MANIFEST_SHA256: f9e000a505398c9a19934e256531cdc57ebd66bc20196b9f6ec6d2f45939d307
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -3609,7 +3752,7 @@ templates:
       sample_on_device_mode: all
       trace_region_size: 134217728
       l1_small_size: 16384
-      kv_cache_usable_tokens: 40960
+      kv_cache_usable_tokens: 262144
     known_issues:
     - workflow_type: SPEC_TESTS
       task_name: test_penalties
@@ -3619,12 +3762,13 @@ templates:
         1.2*5, presence 1.2 once). Presence does change Qwen3-4B output on repeat_trap and semantic_repetition,
         so the device presence mask updates. Same exemption TTIS states for Llama-3.3-70B (#3888). Measured
         2026-10-02 on QB2, image qz-current-main-3f42cb95; 21/22 spec cases pass.'
-    max_tokens_all_users_override: 40960
+    max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3-14B
-# package manifest sha256 : 7d0549004b33ad4116ac3f6784c249aaeb5504eb28018cab31b6a3d26e6f28dd
-# overlay sha256          : 7ca232b415296d2019ddc8dda61d6172afcb709a88c2edd4be952b8b6a6facc3
+# package manifest sha256 : a2fbb44f8ebf39a0b5547136b44ba270d6a7879f3dca55208124dbe976abaa2d
+# overlay sha256          : 382be53d781daa68d2fdce7b245761650d4da370759c85839744d653e661471e
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 40960 decode
 #
@@ -3643,7 +3787,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: 7d0549004b33ad4116ac3f6784c249aaeb5504eb28018cab31b6a3d26e6f28dd
+      QUETZAL_BUNDLE_MANIFEST_SHA256: a2fbb44f8ebf39a0b5547136b44ba270d6a7879f3dca55208124dbe976abaa2d
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -3658,9 +3802,10 @@ templates:
       sample_on_device_mode: all
       trace_region_size: 134217728
       l1_small_size: 16384
-      kv_cache_usable_tokens: 40960
-    max_tokens_all_users_override: 40960
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3-8B
 # package manifest sha256 : c4f8cb4d130ec048fa148ed31ca51c055bf91d6b1c78eeeb754f5b3774c754b9
@@ -3757,7 +3902,7 @@ templates:
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen2.5-Coder-7B-Instruct
 # package manifest sha256 : bd83cfdae7beea6522102aaf98f2b74eaaaed7f8392614367bfd318f5707da0e
-# overlay sha256          : 67f1a77efca5414b438b9904a26cf49fe9417a5820cb1b3a02c766f4482809c0
+# overlay sha256          : 014c993c05f63a5f752b743252e4540469944fb0e07d386a55c9728555e8542b
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 32768 decode
 #
@@ -3794,6 +3939,7 @@ templates:
       kv_cache_usable_tokens: 32768
     max_tokens_all_users_override: 32768
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:313787ed25a05be5654405d02a8136baba0a464283f03761dcc480b1a5410fef
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : TinyLlama/TinyLlama_v1.1
 # package manifest sha256 : fed9e30478fc666f04b84a3ede6cb0302fd77a9e2869987865820f810a45a0ff
@@ -4301,8 +4447,8 @@ templates:
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3-1.7B
-# package manifest sha256 : f338ed1a7dbbbc79ed7b2d5289d9e106e0869655641a8db2bc37dfb786eacc92
-# overlay sha256          : 3342121cc35f29813e711bb7c7f6c3752cc89207335ea1cdbde63d898ab1c571
+# package manifest sha256 : fa5fadd72f3484fcb26be87450630580dd19fd58dd94490f4bf6358252305cfe
+# overlay sha256          : c8156e6596d03ef340b11979601484719d5dba132b37988b963e9934b6c3c59e
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 40960 decode
 #
@@ -4321,7 +4467,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: f338ed1a7dbbbc79ed7b2d5289d9e106e0869655641a8db2bc37dfb786eacc92
+      QUETZAL_BUNDLE_MANIFEST_SHA256: fa5fadd72f3484fcb26be87450630580dd19fd58dd94490f4bf6358252305cfe
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -4332,13 +4478,29 @@ templates:
       tokenizer_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
       dtype: bfloat16
       block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: hermes
+      reasoning_parser: qwen3
+      default_chat_template_kwargs: '{"enable_thinking": false}'
     override_tt_config:
       sample_on_device_mode: all
       trace_region_size: 134217728
       l1_small_size: 16384
-      kv_cache_usable_tokens: 40960
-    max_tokens_all_users_override: 40960
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
+  # Parser table entry for this checkpoint, as the Qwen/Qwen3-0.6B, -4B and -8B
+  # tt_transformers rows above carry theirs. Qwen3-1.7B ships the same chat
+  # template as those checkpoints (tokenizer_config.json chat_template sha256
+  # a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8 at
+  # 70d244cc for 1.7B, c1899de2 for 0.6B and 1cfa9a72 for 4B), and its model
+  # card gives the same serving instructions as Qwen3-0.6B (a qwen3 reasoning
+  # parser; hermes-format <tool_call> blocks).
+  metadata:
+    Qwen/Qwen3-1.7B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : deepcogito/cogito-v1-preview-llama-3B
 # package manifest sha256 : 58a82104ab4fbd9c47ffaa4e017966c04649cfe1691c2b8ba4e4883375669b83
@@ -4382,8 +4544,8 @@ templates:
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : arcee-ai/Arcee-Spark
-# package manifest sha256 : a8395e99101b56a088949385f853c0e21ce4b7c13bfca88b1a999763d8de5d57
-# overlay sha256          : e68713b49b5df1d7fc4bc856c0ef7b16c881fa5a71b555a607e906c031c7f418
+# package manifest sha256 : a3f68a496f06b15859195536482138add4e73e59408d9f817af9a2a41aeca05f
+# overlay sha256          : 473dfbb6be663f57c91a916e5272bcec53191f7449094041d06de8e3f2bd59fd
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 32768 decode
 #
@@ -4402,7 +4564,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: a8395e99101b56a088949385f853c0e21ce4b7c13bfca88b1a999763d8de5d57
+      QUETZAL_BUNDLE_MANIFEST_SHA256: a3f68a496f06b15859195536482138add4e73e59408d9f817af9a2a41aeca05f
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -4417,10 +4579,10 @@ templates:
       sample_on_device_mode: all
       trace_region_size: 134217728
       l1_small_size: 16384
-      kv_cache_usable_tokens: 32768
-    max_tokens_all_users_override: 32768
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
-  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:40c92b7d84030a015b53a27d7a347103eae0061351f35d1bc8560bfeb4f5b3a8
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:bb489665113315db7417923875052f012a369fba4dc8f3f4f973c65f9ba0cba6
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : meta-llama/Llama-3.2-3B
 # package manifest sha256 : 01ff0e6961ab5f7a2646b88fd0e38310da2dec07f29b8cf8bdeb5537b022c68b
@@ -4507,8 +4669,8 @@ templates:
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen2.5-7B-Instruct
-# package manifest sha256 : b9a5cce1012e66a77775723b64f7f1e2f385171c78a83fb2fcfc5d9914d84829
-# overlay sha256          : a138ad68066e13bfb7b76622f38030675b37e2f07fd2339d885694ab416147e8
+# package manifest sha256 : 1679f373bf5a82b06c3a5393bf880f0d355760370eeb5403935e891fc7f70099
+# overlay sha256          : f31bd4469cb8b5645d4ad73459a2b653f38abf1eee072875ef8591c92af365d0
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 32768 decode
 #
@@ -4527,7 +4689,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: b9a5cce1012e66a77775723b64f7f1e2f385171c78a83fb2fcfc5d9914d84829
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 1679f373bf5a82b06c3a5393bf880f0d355760370eeb5403935e891fc7f70099
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -4547,11 +4709,11 @@ templates:
       kv_cache_usable_tokens: 32768
     max_tokens_all_users_override: 32768
   status: EXPERIMENTAL
-  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen2.5-7B-Instruct-1M
-# package manifest sha256 : b8f355db185ee7f453474efd0b0429e08be30b40f7351262f896f1e84f7596ce
-# overlay sha256          : 435c89d8bb3be889da2ba6d0e88a02149f65ad59bc608bc51704c41f29a85727
+# package manifest sha256 : e3c4cb4856b2cd7d80b0e59df9c2aaca91b6d96d2ac49c2dee4f3786dbd8f54b
+# overlay sha256          : 5b7f1ae9fb3bfcc3bed53c8eb77f6a2066482e115300652ab9d45977db9bbf78
 # effective qualification : investigating (resolution: agreement)
 # artifact span           : 4096 prefill / 131072 decode
 #
@@ -4570,7 +4732,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: b8f355db185ee7f453474efd0b0429e08be30b40f7351262f896f1e84f7596ce
+      QUETZAL_BUNDLE_MANIFEST_SHA256: e3c4cb4856b2cd7d80b0e59df9c2aaca91b6d96d2ac49c2dee4f3786dbd8f54b
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QUETZAL_KV_BLOCK_SIZE: '64'
@@ -4588,7 +4750,7 @@ templates:
       kv_cache_usable_tokens: 131072
     max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
-  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:a557ba973ce65dc6687735b09411a6cc714239a32c6b63e122b9d1cb211cec77
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : tiiuae/Falcon3-1B-Instruct
 # package manifest sha256 : 57d584f7e53ae24ecb5322dd1f434129fae386ca36241e6e1ad89cd5d51d614f
@@ -5067,6 +5229,608 @@ templates:
     max_tokens_all_users_override: 32768
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:313787ed25a05be5654405d02a8136baba0a464283f03761dcc480b1a5410fef
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : 01-ai/Yi-1.5-9B-Chat
+# package manifest sha256 : 7d8a03a6177a2351c07e5a2f608909f29f0c160d2d25395f4c37f231ed0195f1
+# overlay sha256          : 68180572b7661ae6d0abafad082abe1c4c0301aad2fd949c8466d9ae5e3ca5fe
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 2048 prefill / 4096 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - 01-ai/Yi-1.5-9B-Chat
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 4096
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 7d8a03a6177a2351c07e5a2f608909f29f0c160d2d25395f4c37f231ed0195f1
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 1a0fc698cf883c4f5c325f026ca79f0ebd9955a5
+      tokenizer_revision: 1a0fc698cf883c4f5c325f026ca79f0ebd9955a5
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : NousResearch/Hermes-3-Llama-3.2-3B
+# package manifest sha256 : 2ee576174643b2c925cb887b60bc1d63d4cf767f98a0a9adda6fa1ade88fdc18
+# overlay sha256          : bf6bf2b85db2f54a32d9fe671599c0fcfdd81d0c8085db2e8b7fe90289de6aba
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - NousResearch/Hermes-3-Llama-3.2-3B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 2ee576174643b2c925cb887b60bc1d63d4cf767f98a0a9adda6fa1ade88fdc18
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab
+      tokenizer_revision: 7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : meta-llama/Llama-3.1-8B
+# package manifest sha256 : cb2b94e971b14e5893c264c84038102601c9f0b883c0c8554d129e3ea5d2aa13
+# overlay sha256          : 827981dc4fe4992b6999fad7207ad03b5c35e6eda3bc23789610b094a479b031
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - meta-llama/Llama-3.1-8B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: cb2b94e971b14e5893c264c84038102601c9f0b883c0c8554d129e3ea5d2aa13
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: d04e592bb4f6aa9cfee91e2e20afa771667e1d4b
+      tokenizer_revision: d04e592bb4f6aa9cfee91e2e20afa771667e1d4b
+      dtype: bfloat16
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: llama3_json
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:10751acd0149d1ba98f740063e2d86c094a73f239feddfa3727ea05210acc4cd
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-Coder-32B
+# package manifest sha256 : 5d496449cddcc117d041017141784ff375e4b7d3155752f704588602f4c8c89f
+# overlay sha256          : 198a8e27c6c6d3f8ce42598e93db80038d147a97599475c0fab6a7bacceb70e3
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-Coder-32B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 5d496449cddcc117d041017141784ff375e4b7d3155752f704588602f4c8c89f
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 2e12b5f7bc878d424d222e224ed40aee564ec45f
+      tokenizer_revision: 2e12b5f7bc878d424d222e224ed40aee564ec45f
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 149952
+    max_tokens_all_users_override: 149952
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : 01-ai/Yi-1.5-9B
+# package manifest sha256 : 2c68cff531bbd2ae428816f1cf84515c72e9ade5721116163bf75dd0d981c197
+# overlay sha256          : 3289ebcbbdcd76bb1a343753c16496d697bf62e1eabe0ea1969772997d4811a5
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 2048 prefill / 4096 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - 01-ai/Yi-1.5-9B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 4096
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 2c68cff531bbd2ae428816f1cf84515c72e9ade5721116163bf75dd0d981c197
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 80d5471b1eae28beae33e06eadbd4b48e74d4ce1
+      tokenizer_revision: 80d5471b1eae28beae33e06eadbd4b48e74d4ce1
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-Coder-14B
+# package manifest sha256 : 721b1566620d344b93924021c9c4f2d69996416dfffb14c0c4c52ce1be589a4f
+# overlay sha256          : 0e77654e46870b8b53332d49650071d2946c237b5b04d47978d412793c05b529
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-Coder-14B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 721b1566620d344b93924021c9c4f2d69996416dfffb14c0c4c52ce1be589a4f
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: f2ad5164aade432d6d56c24bb71589184d5d613d
+      tokenizer_revision: f2ad5164aade432d6d56c24bb71589184d5d613d
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-32B
+# package manifest sha256 : a6e535529d574d358d949f76c940cee359a2b254fce9dfc3299e661d7288bfc2
+# overlay sha256          : 11d7fc5b959e77ff48887f97a518018636e2566111de6d6b2d1d90d492b11dfc
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-32B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: a6e535529d574d358d949f76c940cee359a2b254fce9dfc3299e661d7288bfc2
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 1818d35814b8319459f4bd55ed1ac8709630f003
+      tokenizer_revision: 1818d35814b8319459f4bd55ed1ac8709630f003
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 149952
+    max_tokens_all_users_override: 149952
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : mistralai/Mistral-7B-Instruct-v0.3
+# package manifest sha256 : d4a1c9324a2d0d2f8e347344d3348d0d0bb1356205c67eddd3e800847fd524dd
+# overlay sha256          : 149a399ce28f25ce89faeab03b670cabb911f29304e57ab44292c9d9859924f2
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - mistralai/Mistral-7B-Instruct-v0.3
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: d4a1c9324a2d0d2f8e347344d3348d0d0bb1356205c67eddd3e800847fd524dd
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+      tokenizer_revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-Coder-14B-Instruct
+# package manifest sha256 : 5dd2c890b373ab77cf069f70a15535902994c0090483b99416eb1f808a9a2cf2
+# overlay sha256          : 6d4f5c5b452f395f9149f7df3f2d8e76efe5a8eeaeaae291d6d04fb1cd0f324d
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-Coder-14B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 5dd2c890b373ab77cf069f70a15535902994c0090483b99416eb1f808a9a2cf2
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: aedcc2d42b622764e023cf882b6652e646b95671
+      tokenizer_revision: aedcc2d42b622764e023cf882b6652e646b95671
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : 01-ai/Yi-1.5-34B-Chat
+# package manifest sha256 : ece1eab1b4f98f1979402f5ceda9c3eb20d9b2f60c3f7ee8607ece1e97c6da94
+# overlay sha256          : 7ff91929a0075e2a60e943335eb61d4a8b660b799e97e6d3f070975ac1a82bee
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 2048 prefill / 4096 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - 01-ai/Yi-1.5-34B-Chat
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 4096
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: ece1eab1b4f98f1979402f5ceda9c3eb20d9b2f60c3f7ee8607ece1e97c6da94
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: fa4ffba162f20948bf77c2a30eca952bf0812b7f
+      tokenizer_revision: fa4ffba162f20948bf77c2a30eca952bf0812b7f
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
+
+# GPU reference entries for the three Quetzal P300X2 rows above
+# (scripts/gpu_reference_colab/, docs/gpu_workflows.md). They are separate
+# templates, not extra devices inside the generated rows: the Quetzal handover
+# tool's --replace-row rewrites a generated block from its header through
+# `  status: EXPERIMENTAL`, and would silently drop a device added in there.
+# impl is quetzal so the GPU leaf shares the Quetzal row's impl and model_id
+# family (id_quetzal_<model>_gpu); it is the only (repo, GPU, VLLM) leaf for
+# each model, so `run.py --dev-mode --tt-device gpu --model <repo>` resolves it
+# without --impl. Each GPU spec pins the same HF revision as its Quetzal row,
+# and mirrors the row's limits so lm-eval truncates the same way:
+#   max_context     = min(Quetzal row max_context, config.json max_position_embeddings)
+#   max_concurrency = Quetzal row max_concurrency (lm-eval num_concurrent)
+- weights:
+  - upstage/SOLAR-10.7B-Instruct-v1.0
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 4096  # min(row 4096, native max_position_embeddings 4096)
+    default_impl: true
+    vllm_args:
+      revision: 090d405e6fe7b4c7b0b999a67f5c6dee0514a7ad  # same as the Quetzal row
+      tokenizer_revision: 090d405e6fe7b4c7b0b999a67f5c6dee0514a7ad
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-1B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 131072  # min(row 131072, native max_position_embeddings 131072)
+    default_impl: true
+    vllm_args:
+      revision: 4e20de362430cd3b72f300e6b0f18e50e7166e08  # same as the Quetzal row
+      tokenizer_revision: 4e20de362430cd3b72f300e6b0f18e50e7166e08
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen1.5-0.5B-Chat
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 32768  # min(row 32768, native max_position_embeddings 32768)
+    default_impl: true
+    vllm_args:
+      revision: 4d14e384a4b037942bb3f3016665157c8bcb70ea  # same as the Quetzal row
+      tokenizer_revision: 4d14e384a4b037942bb3f3016665157c8bcb70ea
+  status: EXPERIMENTAL
+
+# GPU reference entries for Quetzal candidates with no P300X2 row yet (deferred from
+# the wave18 list for lack of a like-for-like reference). Same impl/model_id scheme as
+# above. With no TT row to mirror, max_context = the model's native
+# max_position_embeddings (the convention the Quetzal rows follow), max_concurrency =
+# 32 (every Quetzal row), and the HF revision is pinned to the Hub main sha at the time
+# of measurement. A later P300X2 row must use the same revision and context for the
+# reference to stay like-for-like.
+- weights:
+  - Qwen/Qwen3-4B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+      tokenizer_revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+  status: EXPERIMENTAL
+- weights:
+  - open-thoughts/OpenThinker-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 4ba9dee9b7e6e4796c6bccf6e15c2f5b60843e1e
+      tokenizer_revision: 4ba9dee9b7e6e4796c6bccf6e15c2f5b60843e1e
+  status: EXPERIMENTAL
+- weights:
+  - mistralai/Mistral-7B-Instruct-v0.3
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+      tokenizer_revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+  status: EXPERIMENTAL
+- weights:
+  - NousResearch/Hermes-3-Llama-3.1-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+      tokenizer_revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+  status: EXPERIMENTAL
+- weights:
+  - nvidia/Llama-3.1-Nemotron-Nano-8B-v1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 54641c1611fcff44fa4865626462445e0a153fc7
+      tokenizer_revision: 54641c1611fcff44fa4865626462445e0a153fc7
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-8B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+      tokenizer_revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-14B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 0b0bd3732e2c374d483664439ea334928b65f304
+      tokenizer_revision: 0b0bd3732e2c374d483664439ea334928b65f304
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-qwen-14B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: b5a6c9ab8fc8e5bc786ae88f66af479096367566
+      tokenizer_revision: b5a6c9ab8fc8e5bc786ae88f66af479096367566
+  status: EXPERIMENTAL
+- weights:
+  - mistralai/Mistral-Small-24B-Instruct-2501
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 9527884be6e5616bdd54de542f9ae13384489724
+      tokenizer_revision: 9527884be6e5616bdd54de542f9ae13384489724
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-qwen-32B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 118e6e43c46a51667f544dae9cbe4027f59eb697
+      tokenizer_revision: 118e6e43c46a51667f544dae9cbe4027f59eb697
+  status: EXPERIMENTAL
 
 
 
@@ -5084,6 +5848,8 @@ templates:
       env_vars:
         MESH_DEVICE: P300x2
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         block_size: 128
         data_parallel_size: 1
         revision: 0e9e39f249a16976918f6564b8830bc894c89659
@@ -5117,3 +5883,1218 @@ templates:
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+
+# BEGIN gpu-ref sweep: derived GPU specs. Generated by
+# scripts/gpu_reference_colab/gpuref.py sweep plan --write-specs from each
+# model's TT row (Quetzal row first): max_context = min(row, native
+# max_position_embeddings), same max_concurrency and HF revision. Do not hand-edit.
+- weights:
+  - 01-ai/Yi-1.5-6B-Chat
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: 771924d1c83d67527d665913415d7086f11ea9c0
+      tokenizer_revision: 771924d1c83d67527d665913415d7086f11ea9c0
+  status: EXPERIMENTAL
+- weights:
+  - HuggingFaceTB/SmolLM2-1.7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 8192  # quetzal P300X2 row max_context 8192, native 8192
+    default_impl: true
+    vllm_args:
+      revision: 31b70e2e869a7173562077fd711b654946d38674
+      tokenizer_revision: 31b70e2e869a7173562077fd711b654946d38674
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 453ed1575b739b5b03ce3758b23befdb0967f40e
+      tokenizer_revision: 453ed1575b739b5b03ce3758b23befdb0967f40e
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-14B-Instruct-1M
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 1010000
+    default_impl: true
+    vllm_args:
+      revision: 620fad32de7bdd2293b3d99b39eba2fe63e97438
+      tokenizer_revision: 620fad32de7bdd2293b3d99b39eba2fe63e97438
+      # standard attention, as the TT (HF graph) side runs it
+      hf_overrides: {"dual_chunk_attention_config": null}
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: a09a35458c702b33eeacc393d103063234e8bc28
+      tokenizer_revision: a09a35458c702b33eeacc393d103063234e8bc28
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-7B-Instruct-1M
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 1010000
+    default_impl: true
+    vllm_args:
+      revision: e28526f7bb80e2a9c8af03b831a9af3812f18fba
+      tokenizer_revision: e28526f7bb80e2a9c8af03b831a9af3812f18fba
+      # standard attention, as the TT (HF graph) side runs it
+      hf_overrides: {"dual_chunk_attention_config": null}
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-Coder-32B-Instruct
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # tt_transformers T3K row max_context 131072, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 381fc969f78efac66bc87ff7ddeadb7e73c218a7
+      tokenizer_revision: 381fc969f78efac66bc87ff7ddeadb7e73c218a7
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-Coder-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 0396a76181e127dfc13e5c5ec48a8cee09938b02
+      tokenizer_revision: 0396a76181e127dfc13e5c5ec48a8cee09938b02
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-Coder-7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: c03e6d358207e414f1eca0bb1891e29f1db0e242
+      tokenizer_revision: c03e6d358207e414f1eca0bb1891e29f1db0e242
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-Math-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: b101308fe89651ea5ce025f25317fea6fc07e96e
+      tokenizer_revision: b101308fe89651ea5ce025f25317fea6fc07e96e
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-0.6B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 40960  # quetzal P300X2 row max_context 40960, native 40960
+    default_impl: true
+    vllm_args:
+      revision: c1899de289a04d12100db370d81485cdf75e47ca
+      tokenizer_revision: c1899de289a04d12100db370d81485cdf75e47ca
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-1.7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 40960  # quetzal P300X2 row max_context 40960, native 40960
+    default_impl: true
+    vllm_args:
+      revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+      tokenizer_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-14B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 40960  # quetzal P300X2 row max_context 40960, native 40960
+    default_impl: true
+    vllm_args:
+      revision: 40c069824f4251a91eefaf281ebe4c544efd3e18
+      tokenizer_revision: 40c069824f4251a91eefaf281ebe4c544efd3e18
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-4B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 40960  # quetzal P300X2 row max_context 40960, native 40960
+    default_impl: true
+    vllm_args:
+      revision: 1cfa9a7208912126459214e8b04321603b3df60c
+      tokenizer_revision: 1cfa9a7208912126459214e8b04321603b3df60c
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-4B-Instruct-2507
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 262144
+    default_impl: true
+    vllm_args:
+      revision: cdbee75f17c01a7cc42f958dc650907174af0554
+      tokenizer_revision: cdbee75f17c01a7cc42f958dc650907174af0554
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 40960  # quetzal P300X2 row max_context 40960, native 40960
+    default_impl: true
+    vllm_args:
+      revision: b968826d9c46dd6066d109eabc6255188de91218
+      tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3.8-27B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 262144  # quetzal P300X2 row max_context 262144, native None
+    default_impl: true
+    vllm_args:
+      revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+      tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+  status: EXPERIMENTAL
+- weights:
+  - TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: fe8a4ea1ffedaf415f4da2f062534de366a451e6
+      tokenizer_revision: fe8a4ea1ffedaf415f4da2f062534de366a451e6
+  status: EXPERIMENTAL
+- weights:
+  - TinyLlama/TinyLlama_v1.1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: ff3c701f2424c7625fdefb9dd470f45ef18b02d6
+      tokenizer_revision: ff3c701f2424c7625fdefb9dd470f45ef18b02d6
+  status: EXPERIMENTAL
+- weights:
+  - arcee-ai/AFM-4.5B
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 65536  # tt_transformers N300 row max_context 65536, native 65536
+    default_impl: true
+    vllm_args:
+      revision: e84d19711eca5817c1608cb344d931bf05c966dd
+      tokenizer_revision: e84d19711eca5817c1608cb344d931bf05c966dd
+  status: EXPERIMENTAL
+- weights:
+  - arcee-ai/Arcee-Spark
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 69bafc5fc790f3d663094fdc9220a4b7ca0ba654
+      tokenizer_revision: 69bafc5fc790f3d663094fdc9220a4b7ca0ba654
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-llama-3B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 5a0ad6f39500e9af65e727f15d5554352933ed65
+      tokenizer_revision: 5a0ad6f39500e9af65e727f15d5554352933ed65
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-llama-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 64c42369b3f322fbffb277bfff146551dd2823cc
+      tokenizer_revision: 64c42369b3f322fbffb277bfff146551dd2823cc
+  status: EXPERIMENTAL
+- weights:
+  - deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 6a6f4aa4197940add57724a7707d069478df56b1
+      tokenizer_revision: 6a6f4aa4197940add57724a7707d069478df56b1
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-1B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 9213176726f574b556790deb65791e0c5aa438b6
+      tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-3B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 13afe5124825b4f3751f836b40dafda64c1ed062
+      tokenizer_revision: 13afe5124825b4f3751f836b40dafda64c1ed062
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-3B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 0cb88a4f764b7a12671c53f0838cd831a0843b95
+      tokenizer_revision: 0cb88a4f764b7a12671c53f0838cd831a0843b95
+  status: EXPERIMENTAL
+- weights:
+  - microsoft/phi-1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: d4c0adcb065e84e00ca814e35cba3012ea9841ab
+      tokenizer_revision: d4c0adcb065e84e00ca814e35cba3012ea9841ab
+  status: EXPERIMENTAL
+- weights:
+  - microsoft/phi-1_5
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+      tokenizer_revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+  status: EXPERIMENTAL
+- weights:
+  - stabilityai/stablelm-2-1_6b
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: f499ead74c53749bd93cebc6ce8bc0d7bdf1eaef
+      tokenizer_revision: f499ead74c53749bd93cebc6ce8bc0d7bdf1eaef
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-10B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 34bb99a889fe0426412da3dd2b46e6f64c8fd003
+      tokenizer_revision: 34bb99a889fe0426412da3dd2b46e6f64c8fd003
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-10B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 8799bc6aec0152757221dc6b272d824642db6202
+      tokenizer_revision: 8799bc6aec0152757221dc6b272d824642db6202
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-1B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: cb37ef3559b157b5c9d9226296ba01a5162da1f7
+      tokenizer_revision: cb37ef3559b157b5c9d9226296ba01a5162da1f7
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-1B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 8192  # quetzal P300X2 row max_context 8192, native 8192
+    default_impl: true
+    vllm_args:
+      revision: 28ba2251970a01dd1edc7ba7dad2eb71216ccfdf
+      tokenizer_revision: 28ba2251970a01dd1edc7ba7dad2eb71216ccfdf
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-3B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 092c29e3114ff551bd06b93b85424cdb525d227c
+      tokenizer_revision: 092c29e3114ff551bd06b93b85424cdb525d227c
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-3B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 411bb94318f94f7a5735b77109f456b1e74b42a1
+      tokenizer_revision: 411bb94318f94f7a5735b77109f456b1e74b42a1
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-7B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: bf3d7ed586cb22a921520e2d681a9d3d7642cde8
+      tokenizer_revision: bf3d7ed586cb22a921520e2d681a9d3d7642cde8
+  status: EXPERIMENTAL
+# END gpu-ref sweep: derived GPU specs
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-7B
+# package manifest sha256 : 06a5e1c782632157cba045a73af7290e1a7bc32b3359f1e4be4cde216623ae53
+# overlay sha256          : 6a086404fb9424d1960c39a23b0337ee4249c329ac031c9fee34e4b72f1fae49
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-7B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 06a5e1c782632157cba045a73af7290e1a7bc32b3359f1e4be4cde216623ae53
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: d149729398750b98c0af14eb82c78cfe92750796
+      tokenizer_revision: d149729398750b98c0af14eb82c78cfe92750796
+      dtype: bfloat16
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: hermes
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : meta-models/Muse-Glimmer-30B
+# package manifest sha256 : bf5c00a5c3caad2eaf433ed99f9a0a8e34e891926561473a4431871dc3723006
+# overlay sha256          : 1eff243cb03f0d142fb97bcbbf03ea35fb51e161ac3fbb2696024d3ca7add79f
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - meta-models/Muse-Glimmer-30B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: bf5c00a5c3caad2eaf433ed99f9a0a8e34e891926561473a4431871dc3723006
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68
+      tokenizer_revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_penalties[repetition_penalty-1.5-repeat_trap-messages0]
+      reason: The checkpoint's chat template is a channel protocol (reasoning on '<|start|>assistant to=self<|message|>',
+        answer on 'to=user'); upstream declares no reasoning parser for it and none is configured, so
+        message.content carries the model's reasoning preamble (' to=selfWrite a very repetitive story.
+        We need to write a very repetitive story. Probably comply...') ahead of the story. The GPU reference
+        run (H100, vLLM 0.28.0, no --reasoning-parser) produces the same content format, so the row matches
+        it like-for-like. The test's whitespace word counts therefore include that preamble. At the test's
+        seed 1234 the penalty is applied (unique-word ratio 0.241 -> 0.322, text shorter 985 -> 645 tokens)
+        but the top word count moves 56 -> 63, failing the 'top count does not grow' assertion; over seeds
+        1..8 that assertion holds 8/8 and the unique-ratio assertion holds 9/9 (mean top count over 9
+        seeds 92.8 -> 57.2, mean unique ratio 0.213 -> 0.416), all outputs coherent and finish=stop. Measured
+        2026-10-11 on QB2 with image sha256:72f111b4, package manifest bf5c00a5, TTIS b45fed11; every
+        other spec case passes.
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:72f111b48721c97aafa48b055ed8fbdd6ed143f7dcaf06e571c106aeca7ee0e7
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : arcee-ai/Llama-3.1-SuperNova-Lite
+# package manifest sha256 : 36ef72e4fdbd20b0abff584aa12ae7c66f9e4fc7e8cc24d935cf2c09aade9651
+# overlay sha256          : c465c0353990fcd5c6f55812746141aa5415906fd5f3b11cf8cbae19e583b3d7
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - arcee-ai/Llama-3.1-SuperNova-Lite
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 36ef72e4fdbd20b0abff584aa12ae7c66f9e4fc7e8cc24d935cf2c09aade9651
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 2469efed9632c061cb4082755ead1109cd2a90cd
+      tokenizer_revision: 2469efed9632c061cb4082755ead1109cd2a90cd
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen3-32B
+# package manifest sha256 : 92a0b44c9a24854c6e7846447ec685a95f21773cd359a7975deaaaea181f8ae8
+# overlay sha256          : a92b3bc11aaab50192ee95cf0937689e1e13bbca696d83b5d8a533f4eba69abf
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 40960 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen3-32B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 40960
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 92a0b44c9a24854c6e7846447ec685a95f21773cd359a7975deaaaea181f8ae8
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 9216db5781bf21249d130ec9da846c4624c16137
+      tokenizer_revision: 9216db5781bf21249d130ec9da846c4624c16137
+      dtype: bfloat16
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: hermes
+      reasoning_parser: qwen3
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 149952
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_non_uniform_seeding
+      reason: 'The test sends 32 concurrent 50-token requests through api_client''s default 30 s read
+        timeout (test_fixtures/conftest.py:136). On Qwen3-32B at 4-chip decode that budget is a latency
+        bound, not a seeding check: with the stock 30 s timeout the case fails ''Read timed out. (read
+        timeout=30)'' and 21/22 spec cases pass; the same package and TTIS ref with only that request''s
+        timeout raised to 600 s passes the case and Acceptance is PASS (0 blockers), so per-request seeding
+        is honoured. Measured 2026-10-05 on QB2 (exabox p01t01), image vllm-tt-metal-src-dev@sha256:40c92b7d,
+        package manifest e4d9e948.'
+    max_tokens_all_users_override: 149952
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen2.5-Math-7B-Instruct
+# package manifest sha256 : ebd879826e3c5d3ce71283b57338e89665577ca6972b60258ba9342135d47898
+# overlay sha256          : 80cfa3189f577982b805d5b23f4176c5ebb26d2ab21cd28d6289e7013a93071b
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 2048 prefill / 4096 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen2.5-Math-7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 4096
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: ebd879826e3c5d3ce71283b57338e89665577ca6972b60258ba9342135d47898
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+      tokenizer_revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_penalties[presence_penalty-1.2-repeat_trap-messages0]
+      reason: 'presence_penalty=1.2 on this checkpoint makes the ''Write a very repetitive story'' completion
+        much LONGER, and a longer whitespace-split text has a lower unique-word ratio, so the test''s
+        ''penalty must not reduce diversity below 90% of base'' rule fails. That is the checkpoint''s
+        own behaviour, not a device sampler fault: on the same package and server, vLLM''s host sampler
+        (forced with logprobs) shows the same direction and a larger effect over 9 seeds (unique ratio
+        0.556 -> 0.374, mean length 195 -> 454 words), while the device sampler gives 0.551 -> 0.443 at
+        ~1.7x length; the penalty changes the text on 9/9 seeds, every completion is coherent and finish=stop.
+        Measured 2026-10-12 on QB2 with image sha256:44dc0aef, package manifest ebd87982, TTIS c3525826;
+        every other spec case passes (spec 2026-10-10 8/9 penalties).'
+    max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:44dc0aefa0ca09d4002bd375ba5edac362b15cfa754746d3d2bc390834ce6b31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : tiiuae/Falcon3-7B-Instruct
+# package manifest sha256 : 6e407c0cae999dbcfb491dd30b4eccece4a026047902a93b39d0922513a17b7d
+# overlay sha256          : 982cedee8c4ddf87f53132531099792772996edc795986b41d4f158df570cfca
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - tiiuae/Falcon3-7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 6e407c0cae999dbcfb491dd30b4eccece4a026047902a93b39d0922513a17b7d
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 1e57a0ecd176c7c139f289c60a74e57f887c3dfb
+      tokenizer_revision: 1e57a0ecd176c7c139f289c60a74e57f887c3dfb
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : mistralai/Mistral-Small-3.1-24B-Instruct-2503
+# package manifest sha256 : 6420aa6978cdf4432c35f51f81d5a5e4cc45a7e1ff57eef64e981f7f2377d993
+# overlay sha256          : ce4019a7138c54295a4f33f68cfa0d5b65d3b5581dcb939387e4dcf2ce66d4ba
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - mistralai/Mistral-Small-3.1-24B-Instruct-2503
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 6420aa6978cdf4432c35f51f81d5a5e4cc45a7e1ff57eef64e981f7f2377d993
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 68faf511d618ef198fef186659617cfd2eb8e33a
+      tokenizer_revision: 68faf511d618ef198fef186659617cfd2eb8e33a
+      dtype: bfloat16
+      block_size: 64
+      config_format: hf
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : NousResearch/Hermes-3-Llama-3.1-8B
+# package manifest sha256 : e4742efdc425c4ad2af91dc97bbca5dd902bf1f036d41d844253ed8b9ed6a0d2
+# overlay sha256          : 92fbc6c79c43949dc6be367a5a8dfc12e0744dea49a6a5837563d1f8000f679d
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - NousResearch/Hermes-3-Llama-3.1-8B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: e4742efdc425c4ad2af91dc97bbca5dd902bf1f036d41d844253ed8b9ed6a0d2
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+      tokenizer_revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : allenai/Llama-3.1-Tulu-3-8B
+# package manifest sha256 : 06b9b999bb4646b983e46ae63f127b090af79adc8b25d5d9b72b27d649cba46f
+# overlay sha256          : e7fd38608e6ce48f1b51ccf3798b7910b0b488cba4927ed6faf95483ec4fe06f
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - allenai/Llama-3.1-Tulu-3-8B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 06b9b999bb4646b983e46ae63f127b090af79adc8b25d5d9b72b27d649cba46f
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 666943798adbde0b1aff34626007e26986a3c107
+      tokenizer_revision: 666943798adbde0b1aff34626007e26986a3c107
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:b9863563a4990942ea31158a59999beee9c56520b42c04181f01aebbe58b01df
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen3-8B-Base
+# package manifest sha256 : cbb3e52071b33e14ba8922a44491b7d1e3e48ad2ed271a93794294319b1ea788
+# overlay sha256          : d293eb010e45eb0c67045919500b7e070c8bec358cab116f9f72f3f4e8bef073
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen3-8B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: cbb3e52071b33e14ba8922a44491b7d1e3e48ad2ed271a93794294319b1ea788
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+      tokenizer_revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:b9863563a4990942ea31158a59999beee9c56520b42c04181f01aebbe58b01df
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen3-4B-Base
+# package manifest sha256 : 3bfafb7e57699665e719147829b46133ef607468a0eb99837df7de0823369fdc
+# overlay sha256          : 42289f6d10dc18a0f9133b732bb966f9fa8e51473b7486551c9b7917ac69855a
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen3-4B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 3bfafb7e57699665e719147829b46133ef607468a0eb99837df7de0823369fdc
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+      tokenizer_revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:b9863563a4990942ea31158a59999beee9c56520b42c04181f01aebbe58b01df
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : mistralai/Mistral-Nemo-Instruct-2407
+# package manifest sha256 : a5e1a4c4a4598e6a846d27408ce751f3ad17863ff3a6397cfbb7a5d7d83a07af
+# overlay sha256          : de5c03e0242bb73425fc19110898dee6776c4fc18dfe340e813a6d17875a16ff
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - mistralai/Mistral-Nemo-Instruct-2407
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: a5e1a4c4a4598e6a846d27408ce751f3ad17863ff3a6397cfbb7a5d7d83a07af
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 04d8a90549d23fc6bd7f642064003592df51e9b3
+      tokenizer_revision: 04d8a90549d23fc6bd7f642064003592df51e9b3
+      dtype: bfloat16
+      block_size: 64
+      config_format: hf
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_coherence_verbatim_echo
+      reason: 'Asked to repeat ''The quick brown fox jumps over the lazy dog.'' exactly, the checkpoint
+        returns the sentence without the final period and ends the turn: ''The quick brown fox jumps over
+        the lazy dog'', finish_reason=stop at 10 tokens, the last token id 2 = EOS directly after ''dog''.
+        The test requires the period-terminated substring. This is the checkpoint''s own output, not a
+        device fault: at temperature 0 the device sampler and vLLM''s host sampler (forced with logprobs)
+        return the identical text, finish_reason and token count on 6/6 runs. Measured 2026-10-13 on QB2
+        with image sha256:7084d139, package manifest a5e1a4c4, TTIS 6345af7b; every other spec case passes.'
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+# package manifest sha256 : 11c78ae6a1370a77d3cad8a15c7dd9acc448fae8b213994e7f126d18988d40bd
+# overlay sha256          : 9bb1cac9d907e842841e8950982bc2fc4344297f052d5afa4fba5b5c6443cc20
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 131072 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 11c78ae6a1370a77d3cad8a15c7dd9acc448fae8b213994e7f126d18988d40bd
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 1df8507178afcc1bef68cd8c393f61a886323761
+      tokenizer_revision: 1df8507178afcc1bef68cd8c393f61a886323761
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_penalties[presence_penalty-1.2-natural_repetition-messages1]
+      reason: 'At seed 1234 the penalized reply (''Write a paragraph about bananas using simple language.'',
+        temperature 0.1) is longer than the baseline (the checkpoint writes its reasoning into content),
+        so its unique-word ratio falls 0.536 -> 0.459 and the test''s diversity assertion fails. This
+        is seed variance of the checkpoint under presence_penalty, not a device-sampler fault, judged
+        by a rule fixed before the data (2026-10-13T04:20:00Z): on 32 fresh seeds (101..132) the device
+        sampler fails the assertion on 3/32 and vLLM''s host sampler (forced with logprobs) on 7/32, not
+        significantly different (|diff| 0.125 <= pooled two-proportion 95% bound 0.178); the mean penalized-minus-base
+        unique-ratio change is +0.0129 (sd 0.0607) on device vs +0.0082 (sd 0.0679) on host, within 2
+        combined standard errors (0.0047 <= 0.0322); all 128 outputs are coherent (non-empty, finish stop/length,
+        on topic, no 8-gram repeated 3x in a row). Measured 2026-10-13 on QB2 with image sha256:7084d139,
+        package 6d01c3de, TTIS b993e299; every other spec case passes.'
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:7084d139989dc2ac2354e188467935e3a5e541abbb262fc8a46e3481a242ce31
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/Qwen3-14B-Base
+# package manifest sha256 : d50afab94b1512376447d876463c368a59b725a6d8dd051a33e3701590a6eaf1
+# overlay sha256          : 2db59b139061b78dcff11361c9cc4997182d3e646671cfdff7e49d24b6a4470b
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 32768 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/Qwen3-14B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 32768
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: d50afab94b1512376447d876463c368a59b725a6d8dd051a33e3701590a6eaf1
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 0b0bd3732e2c374d483664439ea334928b65f304
+      tokenizer_revision: 0b0bd3732e2c374d483664439ea334928b65f304
+      dtype: bfloat16
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 262144
+    max_tokens_all_users_override: 262144
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:b9863563a4990942ea31158a59999beee9c56520b42c04181f01aebbe58b01df
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : Qwen/QwQ-32B
+# package manifest sha256 : 0d5ccfb8f2510ec626fcda4522b8bda2b9ef363bd7c429e6d669c75a02539824
+# overlay sha256          : 4044e2817a1e86f454800c788875c14bc173e37e4d8588322ccbea61714c4ca4
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 4096 prefill / 40960 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - Qwen/QwQ-32B
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 40960
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 0d5ccfb8f2510ec626fcda4522b8bda2b9ef363bd7c429e6d669c75a02539824
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QUETZAL_KV_BLOCK_SIZE: '64'
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 976055f8c83f394f35dbd3ab09a285a984907bd0
+      tokenizer_revision: 976055f8c83f394f35dbd3ab09a285a984907bd0
+      dtype: bfloat16
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: hermes
+      reasoning_parser: deepseek_r1
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 149952
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_coherence_verbatim_echo
+      reason: QwQ-32B is a reasoning model served with the deepseek_r1 reasoning parser (upstream's parser
+        for this checkpoint). With the test's 32-token budget at temperature 0 it spends the whole budget
+        inside the reasoning channel, so message.content is None (finish_reason=length) while reasoning_content
+        is a coherent restatement of the instruction ('Okay, the user wants me to repeat the exact sentence
+        they provided...'). Measured 8/8 identical on device, 2026-10-12 on QB2 with image sha256:ea7a4346,
+        package manifest 0d5ccfb8, TTIS 9afaa3f2. Same reasoning-channel budget class as gpt-oss-120b
+        (#200).
+    - workflow_type: SPEC_TESTS
+      task_name: test_stop[stop_seq0]
+      reason: With the reasoning parser enabled, the requested stop string 'Stop' fires inside the reasoning
+        channel when the model quotes the prompt's 'StopIt' ('Okay, the user wants me to count to 5 and
+        then say ...'), so finish_reason=stop at 16 tokens and message.content is None. The stop parameter
+        is honoured; there is no final content to check. Measured 8/8 identical on device, 2026-10-12
+        on QB2 with image sha256:ea7a4346, package manifest 0d5ccfb8, TTIS 9afaa3f2; the alternate stop
+        case passes.
+    - workflow_type: SPEC_TESTS
+      task_name: test_non_uniform_seeding
+      reason: 'The test sends 32 concurrent 50-token requests and checks seeding on message.content. QwQ-32B
+        spends all 50 tokens in the reasoning channel (32/32 finish_reason=length at completion_tokens
+        == 50, content None), and the 32-way concurrent decode takes ~45 s per request, past the test''s
+        30 s read timeout. With the timeout raised to 600 s the case still fails only on content None
+        (test line 189). The seeding property the test checks holds on reasoning_content: seed-0 requests
+        give 1 distinct output (test requires == 1) and seeded requests give 16/16 distinct (test requires
+        >= max(2, int(16*0.6)) = 9); all 32 reasoning texts are coherent. Measured 2026-10-12 on QB2 with
+        image sha256:ea7a4346, package manifest 0d5ccfb8, TTIS 9afaa3f2. Reasoning-channel budget class
+        as gpt-oss-120b (#200).'
+    - workflow_type: SPEC_TESTS
+      task_name: test_penalties[repetition_penalty-1.5-semantic_repetition-messages2]
+      reason: 'At repetition_penalty=1.5 the checkpoint occasionally degenerates into a 1024-token run-on
+        word list inside the reasoning channel (finish_reason=length, message.content None), which crashes
+        the test''s .lower(). This is model behaviour, not a device sampler fault: over 9 seeds the device
+        sampler and vLLM''s host sampler (forced with logprobs) show the same direction (unique-word ratio
+        device 0.595 -> 0.868, host 0.637 -> 0.868) and the same 1/9 degenerate rate (device seed 1234,
+        host seed 8). Measured 2026-10-12 on QB2 with image sha256:ea7a4346, package manifest 0d5ccfb8,
+        TTIS 9afaa3f2; every other penalties case passes.'
+    max_tokens_all_users_override: 149952
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378

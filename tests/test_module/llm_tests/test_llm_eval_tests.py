@@ -127,6 +127,103 @@ def _command_model_kwargs(command):
 # --- eval command and model-specific request contracts -----------------------
 
 
+def test_fewshot_as_multiturn_none_keeps_the_command_line_unchanged():
+    """An unset fewshot_as_multiturn passes no flag, so every existing config
+    builds exactly the command it built before the field existed."""
+    from dataclasses import replace
+
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5)
+    assert task.fewshot_as_multiturn is None
+    baseline = [str(part) for part in _build_eval_test_command(task)]
+    assert "--fewshot_as_multiturn" not in baseline
+    assert "--apply_chat_template" in baseline
+    explicit_none = replace(task, fewshot_as_multiturn=None)
+    assert [str(part) for part in _build_eval_test_command(explicit_none)] == baseline
+
+
+@pytest.mark.parametrize("value, flag", [(False, "false"), (True, "true")])
+def test_fewshot_as_multiturn_is_passed_when_set(value, flag):
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5, fewshot_as_multiturn=value)
+    command = [str(part) for part in _build_eval_test_command(task)]
+    assert command[command.index("--fewshot_as_multiturn") + 1] == flag
+    baseline = [
+        str(part)
+        for part in _build_eval_test_command(
+            EvalTask(task_name="mmlu_pro", num_fewshot=5)
+        )
+    ]
+    assert [p for p in command if p not in ("--fewshot_as_multiturn", flag)] == baseline
+
+
+def test_client_concurrency_override_replaces_num_concurrent_and_clamp(monkeypatch):
+    """TT_EVAL_CLIENT_CONCURRENCY (bring-your-own-server GPU runs) sets
+    num_concurrent past the device_model_spec clamp; unset changes nothing."""
+
+    def num_concurrent():
+        command = [
+            str(p) for p in _build_eval_test_command(EvalTask(task_name="mmlu_pro"))
+        ]
+        args = dict(
+            i.split("=", 1)
+            for i in command[command.index("--model_args") + 1].split(",")
+        )
+        return args["num_concurrent"]
+
+    monkeypatch.delenv("TT_EVAL_CLIENT_CONCURRENCY", raising=False)
+    assert num_concurrent() == "1"  # clamped to max_concurrency=1
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "")
+    assert num_concurrent() == "1"
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "256")
+    assert num_concurrent() == "256"
+
+
+def test_mistral_7b_mmlu_pro_runs_single_turn():
+    """Mistral's template rejects consecutive user turns, which mmlu_pro's
+    multiturn few-shot layout produces (its examples carry the answer in the
+    user turn); only that task opts out."""
+    tasks = {
+        t.task_name: t
+        for t in _eval_config_map["mistralai/Mistral-7B-Instruct-v0.3"].tasks
+    }
+    assert tasks["mmlu_pro"].fewshot_as_multiturn is False
+    assert tasks["ifeval"].fewshot_as_multiturn is None
+    others = [
+        (repo, t.task_name)
+        for repo, cfg in _eval_config_map.items()
+        for t in cfg.tasks
+        if getattr(t, "fewshot_as_multiturn", None) is not None
+        and repo != "mistralai/Mistral-7B-Instruct-v0.3"
+    ]
+    assert others == []
+
+
+@pytest.mark.parametrize("task_name", ["r1_aime24", "r1_math500", "r1_gpqa_diamond"])
+def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
+    """Every QwQ-32B r1 task sends the same per-request timeout, and it covers
+    a max_gen_toks=32768 generation at the measured P300X2 rate.
+
+    r1_gpqa_diamond used to carry no timeout, so it fell back to lm-eval's
+    1800 s default while its siblings sent 3600 s; Shield run 38323771398 lost
+    22/198 gpqa requests to client timeouts. A timeout below a full-length
+    generation cuts the response, which a like-for-like run must never do.
+    """
+    from reference_config.evals import eval_config
+
+    task = next(
+        t for t in _eval_config_map["Qwen/QwQ-32B"].tasks if t.task_name == task_name
+    )
+    command = _build_eval_test_command(
+        task, hf_model_repo="Qwen/QwQ-32B", model_id="QwQ-32B", max_context=40960
+    )
+    model_kwargs = _command_model_kwargs(command)
+    assert "timeout" in model_kwargs, f"{task_name} falls back to lm-eval's 1800 s"
+    timeout = int(model_kwargs["timeout"])
+    assert timeout == getattr(eval_config, "QWQ_R1_REQUEST_TIMEOUT_S", None)
+    # 32768 tokens at the p10 per-request rate (6.2 tok/s) is 5285 s; the
+    # constant doubles that for scheduler queueing under KV oversubscription.
+    assert timeout >= 2 * 32768 / 6.2
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
@@ -521,6 +618,64 @@ class TestResultLoading:
         assert read.call_count == 2
         assert results == {"gpqa": {"acc,none": 0.9}}
         assert counts == ({"gpqa": new_count} if new_count is not None else {})
+
+    def test_mmlu_pro_group_count_feeds_the_noise_rule(self, tmp_path):
+        """lm-eval writes n-samples for mmlu_pro's 14 leaf subjects only. Its
+        group exact_match is the size-weighted mean of the leaves (one binomial
+        over every question), so the group's n is the leaf sum, which
+        _entry_sample_counts derives through group_subtasks and the noise rule
+        then uses for the single-key mmlu_pro score."""
+        subjects = {  # the real MMLU-Pro test split sizes (12,032 questions)
+            "biology": 717, "business": 789, "chemistry": 1132,
+            "computer_science": 410, "economics": 844, "engineering": 969,
+            "health": 818, "history": 381, "law": 1101, "math": 1351,
+            "other": 924, "philosophy": 499, "physics": 1299, "psychology": 798,
+        }  # fmt: skip
+        leaves = {f"mmlu_pro_{name}": n for name, n in subjects.items()}
+        correct = {leaf: n // 9 for leaf, n in leaves.items()}
+        group = sum(correct.values()) / sum(leaves.values())
+        results = {
+            "mmlu_pro": {"exact_match,custom-extract": group, "alias": "mmlu_pro"}
+        }
+        results.update(
+            {
+                leaf: {"exact_match,custom-extract": correct[leaf] / n}
+                for leaf, n in leaves.items()
+            }
+        )
+        path = tmp_path / "results_mmlu_pro.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "results": results,
+                    "configs": {
+                        leaf: {"task": leaf, "dataset_path": "TIGER-Lab/MMLU-Pro"}
+                        for leaf in leaves
+                    },
+                    "group_subtasks": {"mmlu_pro": list(leaves)},
+                    "n-samples": {
+                        leaf: {"original": n, "effective": n}
+                        for leaf, n in leaves.items()
+                    },
+                }
+            )
+        )
+
+        _, counts = mod.load_eval_results([str(path)])
+
+        assert counts["mmlu_pro"] == 12032
+        # Size-weighted: the group score is pooled correct / pooled n.
+        assert group == pytest.approx(
+            sum(
+                results[leaf]["exact_match,custom-extract"] * n
+                for leaf, n in leaves.items()
+            )
+            / 12032
+        )
+        assert (
+            mod.binomial_noise_n(["exact_match,custom-extract"], "mmlu_pro", counts)
+            == 12032.0
+        )
 
 
 # --- orchestration -----------------------------------------------------------
@@ -1161,3 +1316,35 @@ class TestEvalRequestOverrides:
         with caplog.at_level("WARNING"):
             build_eval_command(task, model_spec, "P300x2", "/tmp/evals", 8000)
         assert "set thinking_kwarg to match" in caplog.text
+
+
+def test_noise_rule_lives_in_a_dependency_free_module():
+    """llm_eval_tests re-exports the rule from workflow_module.eval_noise, which
+    tools outside the eval venvs (scripts/gpu_reference_colab) import without
+    third-party packages."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from test_module.llm_tests import llm_eval_tests as mod
+    from workflow_module import eval_noise
+
+    for name in (
+        "binomial_noise_n",
+        "noise_aware_check",
+        "NOISE_Z",
+        "BINOMIAL_METRICS",
+    ):
+        assert getattr(mod, name) is getattr(eval_noise, name)
+    repo = Path(__file__).resolve().parents[3]
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import workflow_module.eval_noise as m; "
+        "third = {'requests', 'pydantic', 'yaml', 'jinja2', 'numpy'} & set(sys.modules); "
+        "assert not third, third; print(m.NOISE_Z)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(repo)], capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "1.96"

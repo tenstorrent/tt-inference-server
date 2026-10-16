@@ -5,15 +5,17 @@
 
 from __future__ import annotations
 
+import array
 import asyncio
+import base64
+import json
 import logging
 import math
+import struct
 import sys
 import time
 from pathlib import Path
 from typing import Optional
-
-import aiohttp
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -29,13 +31,21 @@ from .._test_common import (
     block_id,
     run_tiered_check,
 )
-from ..context import MediaContext, require_health
+from ..context import TEST_PAYLOADS_PATH, MediaContext, require_health
+from ..eval_tests.tts_client import (
+    MediaServerTTSClient,
+    TTSClient,
+    VoiceClip,
+    make_tts_client,
+)
 from ..test_status import TtsTestStatus
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
+# Reference clip for deployments that can only clone (Qwen3-TTS Base).
+VOICE_CLIP_PAYLOAD = "image_client_audio_payload"
 
 
 def _tts_num_calls(ctx: MediaContext, is_eval: bool = False) -> int:
@@ -65,68 +75,69 @@ def _tts_test_text(ctx: MediaContext) -> str:
     return DEFAULT_TTS_TEXT
 
 
+def _tts_client_targets(ctx: MediaContext) -> dict:
+    """Client settings (``tts_api`` etc.) from the model's eval tasks, else {}."""
+    for task in getattr(ctx.all_params, "tasks", None) or []:
+        kwargs = getattr(task, "model_kwargs", None) or {}
+        if "tts_api" in kwargs:
+            return dict(kwargs)
+    return {}
+
+
+def _benchmark_voice_clip() -> VoiceClip:
+    """The audio benchmark's LibriSpeech clip (5.3 s), peak-normalized PCM16 WAV."""
+    with open(_PROJECT_ROOT / TEST_PAYLOADS_PATH / VOICE_CLIP_PAYLOAD) as f:
+        wav = base64.b64decode(json.load(f)["file"])
+    chunks, pos = {}, 12
+    while pos + 8 <= len(wav):
+        (size,) = struct.unpack("<I", wav[pos + 4 : pos + 8])
+        chunks[wav[pos : pos + 4]] = wav[pos + 8 : pos + 8 + size]
+        pos += 8 + size + (size & 1)
+    audio_format, channels, sample_rate, _, _, bits = struct.unpack(
+        "<HHIIHH", chunks[b"fmt "][:16]
+    )
+    if (audio_format, channels, bits) != (3, 1, 32):
+        raise ValueError(f"{VOICE_CLIP_PAYLOAD} is not mono float32")
+    samples = array.array("f", chunks[b"data"])
+    gain = 0.9 * 32767 / max(max(abs(x) for x in samples), 1e-9)
+    pcm = array.array("h", (round(x * gain) for x in samples))
+    if sys.byteorder == "big":
+        pcm.byteswap()
+    data = pcm.tobytes()
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + len(data),
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        1,
+        sample_rate,
+        sample_rate * 2,
+        2,
+        16,
+        b"data",
+        len(data),
+    )
+    return VoiceClip(header + data)
+
+
 async def _generate_speech(
     ctx: MediaContext,
+    client: TTSClient,
+    text: str,
+    voice: Optional[VoiceClip] = None,
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("🔊 Calling TTS /v1/audio/speech endpoint")
-    text = _tts_test_text(ctx)
-
-    headers = {
-        "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
-        "Content-Type": "application/json",
-    }
-    payload = {"text": text, "response_format": "json"}
-
     url = f"{ctx.base_url}/v1/audio/speech"
-    start_time = time.monotonic()
-    ttft_ms: Optional[float] = None
-    audio_duration: Optional[float] = None
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=120),
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(
-                        f"TTS request failed with status {response.status}: {error_text}"
-                    )
-                    return False, 0.0, None, None, None
-
-                content_type = response.headers.get("Content-Type", "").lower()
-                logger.debug(f"Response Content-Type: {content_type}")
-                if "audio" in content_type or "wav" in content_type:
-                    logger.error(
-                        f"Received audio/wav response instead of JSON. "
-                        f"Make sure response_format='json' is set in request. "
-                        f"Content-Type: {content_type}. Request payload was: {payload}"
-                    )
-                    return False, 0.0, None, None, None
-
-                response_start = time.monotonic()
-                response_data = await response.json()
-
-                ttft_ms = (response_start - start_time) * 1000
-
-                audio_duration = response_data.get("duration")
-                if audio_duration is None:
-                    logger.warning("Duration not found in response data")
-                else:
-                    logger.info(f"Audio duration: {audio_duration}s")
-
-                audio_base64 = response_data.get("audio")
-                if not audio_base64:
-                    logger.error("Audio data not found in response")
-                    return False, 0.0, None, None, None
-
-                logger.info(f"Received audio data (base64 length: {len(audio_base64)})")
-
-        total_duration = time.monotonic() - start_time
+        result = await client.timed_synthesize(url, text, voice=voice, timeout_s=120)
+        if not result.ok:
+            return False, 0.0, None, None, None
+        total_duration = result.elapsed_s
+        ttft_ms = result.ttft_ms
+        audio_duration = result.audio_seconds
 
         rtr = None
         if audio_duration is not None and total_duration > 0:
@@ -154,12 +165,19 @@ async def _generate_speech(
 def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]:
     logger.info(f"Running TTS benchmark with {num_calls} calls.")
     status_list: list[TtsTestStatus] = []
-    test_text = _tts_test_text(ctx)
+    client = make_tts_client(_tts_client_targets(ctx))
+    # A Qwen3 deployment's eval tasks are not texts, so it reads the default sentence.
+    if isinstance(client, MediaServerTTSClient):
+        test_text = _tts_test_text(ctx)
+    else:
+        test_text = DEFAULT_TTS_TEXT
+    voice = None if client.has_default_voice else _benchmark_voice_clip()
+    logger.info(f"TTS client: {client.describe()}, cloned={voice is not None}")
 
     for i in range(num_calls):
         logger.info(f"Generating speech {i + 1}/{num_calls}...")
         status, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(
-            _generate_speech(ctx)
+            _generate_speech(ctx, client, test_text, voice)
         )
         logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
         status_list.append(

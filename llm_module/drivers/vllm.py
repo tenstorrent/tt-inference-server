@@ -12,9 +12,11 @@ sweep output dir.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
+import secrets
 import shutil
 import uuid
 from datetime import datetime
@@ -50,8 +52,12 @@ def build_vllm_bench_serve_argv(
     config: LLMRunConfig,
     server: ServerConnection,
     result_filename: Path,
+    dataset_seed: int = 0,
 ) -> Tuple[List[str], str]:
     """Build the ``vllm bench serve`` argv list.
+
+    ``dataset_seed`` is the random dataset's ``--seed``; use a distinct one per
+    invocation (see ``VLLMBenchDriver``) so prompts don't hit the prefix cache.
 
     Local servers use ``--host``/``--port`` and vLLM-specific ``extra_body``.
     Remote OpenAI-compatible endpoints (e.g. the Tenstorrent console) need
@@ -82,6 +88,8 @@ def build_vllm_bench_serve_argv(
         "--save-detailed",
         "--result-filename",
         str(result_filename),
+        "--seed",
+        str(dataset_seed),
     ]
 
     goodput = render_goodput(config.goodput, VLLM_GOODPUT_KEYS)
@@ -99,8 +107,6 @@ def build_vllm_bench_serve_argv(
                 server.tokenizer,
                 "--random-range-ratio",
                 "0.0",
-                "--seed",
-                "0",
                 "--request-rate",
                 "inf",
                 "--num-warmups",
@@ -169,6 +175,10 @@ class VLLMBenchDriver(LLMDriver):
 
     def __init__(self, vllm_binary: Optional[str] = None) -> None:
         self.vllm_binary = vllm_binary or shutil.which("vllm") or "vllm"
+        # One seed per invocation: with a shared seed, request i at a longer
+        # ISL extends request i at a shorter one and hits the prefix cache.
+        # Random base so a rerun against a live server gets fresh prompts.
+        self._dataset_seeds = itertools.count(secrets.randbelow(2**31))
 
     def run(
         self,
@@ -184,11 +194,14 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
+        dataset_seed = next(self._dataset_seeds)
+        logger.info("vllm bench serve dataset seed: %d", dataset_seed)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
             server=server,
             result_filename=result_filename,
+            dataset_seed=dataset_seed,
         )
 
         binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)

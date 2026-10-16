@@ -27,9 +27,37 @@ _STANDARD_EVAL_VENVS = frozenset(
 )
 
 
+def eval_task_names(runtime_config):
+    """Task names selected by --eval-tasks, or None (all tasks)."""
+    raw = getattr(runtime_config, "eval_tasks", None)
+    if not raw:
+        return None
+    names = [name.strip() for name in str(raw).split(",") if name.strip()]
+    return names or None
+
+
 def _select_tasks(tasks: list, runtime_config) -> list:
-    """Apply --eval-samples / smoke-test task selection (real copy of
-    ``run_evals._select_eval_config``, minus the EvalConfig wrapper)."""
+    """Apply --eval-tasks / --eval-samples / smoke-test task selection (real
+    copy of ``run_evals._select_eval_config``, minus the EvalConfig wrapper).
+
+    --eval-tasks keeps every sample of each named task: it splits one model's
+    eval set across runs, it never caps a task. A name the model does not
+    configure is an error, so a typo cannot silently drop a task from a split.
+    """
+    selected = eval_task_names(runtime_config)
+    if selected and tasks:
+        configured = {t.task_name for t in tasks}
+        unknown = sorted(set(selected) - configured)
+        if unknown:
+            raise ValueError(
+                f"--eval-tasks names task(s) {unknown} that this model does not "
+                f"configure; its eval tasks are {sorted(configured)}."
+            )
+        filtered = [t for t in tasks if t.task_name in set(selected)]
+        logger.info(
+            "--eval-tasks selecting eval tasks: %s", [t.task_name for t in filtered]
+        )
+        return filtered
     eval_samples = getattr(runtime_config, "eval_samples", None)
     if eval_samples and tasks:
         mapping = _parse_eval_samples_mapping(eval_samples)

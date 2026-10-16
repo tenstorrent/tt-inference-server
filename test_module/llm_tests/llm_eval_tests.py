@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import time
 import uuid
@@ -19,13 +18,27 @@ from typing import List, Optional, Tuple, Union
 
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.request_overrides import resolve_request_body
-from llm_module.eval_command import build_eval_command
+from llm_module.eval_command import _resolve_eval_samples, build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
 from utils.pinned_artifacts import get_pinned_revision, resolve_tokenizer
 from workflow_module import accept_blocks
 from workflow_module.engine_types import EvalLimitMode, WorkflowVenvType
+
+# The noise-aware acceptance rule (rationale, constants, functions) lives in a
+# dependency-free module so tools outside the eval venvs grade identically.
+from workflow_module.eval_noise import (  # noqa: F401  (re-exported)
+    BINOMIAL_METRICS,
+    NOISE_Z,
+    RULE_FAIL,
+    RULE_NA,
+    RULE_RATIO,
+    RULE_WITHIN_NOISE,
+    _metric_name,
+    binomial_noise_n,
+    noise_aware_check,
+)
 from workflow_module.proc import run_command
 from workflow_module.target_pack import get_target_pack
 
@@ -53,6 +66,47 @@ def _limit_mode(ctx: MediaContext):
     rc = getattr(ctx, "runtime_config", None)
     mode_str = getattr(rc, "limit_samples_mode", None) if rc is not None else None
     return EvalLimitMode.from_string(mode_str) if mode_str else None
+
+
+def subset_run_reason(ctx, task=None) -> Optional[str]:
+    """Why this run graded only part of ``task``'s samples, or None.
+
+    --eval-shard and --eval-samples both select explicit doc subsets; their
+    scores are measurements only. A sharded task passes only through
+    ``python -m report_module.merge_eval_shards`` over all of its shards.
+
+    What counts is the sample set this task actually resolved to, not whether
+    an option is present: ``--eval-samples '{"t": null}'`` (or a mapping
+    without this task) runs every sample of ``t``. ``_resolve_eval_samples``
+    is the same resolution the command builder uses for lm-eval's
+    ``--samples``, so this task is a subset exactly when that flag is sent.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    shard = getattr(rc, "eval_shard", None)
+    if isinstance(shard, str) and shard:
+        return f"eval shard {shard}; merge all shards to grade"
+    samples = getattr(rc, "eval_samples", None)
+    if not (isinstance(samples, (str, dict)) and samples):
+        return None
+    if task is None:
+        return "explicit --eval-samples subset"
+    from llm_module.eval_command import _resolve_eval_samples
+
+    resolved = _resolve_eval_samples(task, rc)
+    if resolved is None:
+        return None
+    # A task whose EvalConfig defines its doc set (EvalTask.doc_ids, #5393)
+    # runs that set via --samples on every run; resolving to exactly it is the
+    # full task, not a subset. Only a narrower selection is partial.
+    doc_ids = getattr(task, "doc_ids", None)
+    if doc_ids:
+        try:
+            indices = json.loads(resolved).get(task.task_name)
+        except (ValueError, AttributeError):
+            indices = None
+        if isinstance(indices, list) and set(indices) == set(doc_ids):
+            return None
+    return "explicit --eval-samples subset"
 
 
 def _device_label(ctx: MediaContext) -> str:
@@ -236,126 +290,6 @@ def _multilevel_key_resolves(results: dict, keys: tuple) -> bool:
     return True
 
 
-# --- noise-aware acceptance for low-baseline accuracy tasks ------------------
-#
-# The ratio rule (score / reference >= 1 - tolerance, tolerance 0.05) is a
-# relative bar. For a task whose reference is in the single digits, 5% of the
-# reference is smaller than the sampling noise of the score itself: Llama-3.2-3B
-# leaderboard_ifeval scored 9.43 then 8.32 on the same 541 prompts (about 1 SE)
-# and the ratio went 1.02 -> 0.90. So a task also PASSES when its shortfall is
-# within NOISE_Z binomial standard errors of the reference:
-#
-#     reference - score <= NOISE_Z * 100 * sqrt(p * (1 - p) / n),
-#     p = reference / 100
-#
-# NOISE_Z is fixed in advance at 1.96 (two-sided 95%, one-sided 97.5%) and is
-# never fitted to observed scores. Only the reference's own sampling error is
-# counted, not the run's, so the bar is the stricter of the two natural
-# choices (a two-sample test would widen it by sqrt(2)). For a high-baseline
-# task the term is small next to 5% of the reference, so the ratio rule still
-# decides there.
-#
-# The binomial model is valid only where every sample scores 0 or 1, so the
-# rule applies only when:
-#   * the unit is percent and every configured metric is one of
-#     BINOMIAL_METRICS (per-sample correct/incorrect), and
-#   * n is known: the scored entry's effective sample count (a group's count is
-#     the sum of its leaves), or, for an unweighted mean of k subtask
-#     proportions (score_multilevel_keys_mean, e.g. leaderboard_math_hard), the
-#     effective n of that mean, k**2 / sum(1 / n_i), with p taken at the
-#     reference for every subtask.
-# Everything else is graded by the ratio rule alone. That excludes continuous
-# per-sample metrics (LongBench F1 / ROUGE / "score", ANLS, WER, relaxed
-# accuracy) and instruction-level IFEval accuracy, whose unit is the
-# instruction while n counts prompts. For a [0, 1]-bounded per-sample metric
-# the binomial SE is only an upper bound on the true SE (Bhatia-Davis), so
-# using it there would loosen the bar by an unknown amount.
-NOISE_Z = 1.96
-
-BINOMIAL_METRICS = frozenset(
-    {
-        "acc",
-        "acc_norm",
-        "exact_match",
-        "prompt_level_strict_acc",
-        "prompt_level_loose_acc",
-        "pass_at_1",
-        "pass@1",
-    }
-)
-
-RULE_RATIO = "ratio"
-RULE_WITHIN_NOISE = "within_noise"
-RULE_FAIL = "fail"
-RULE_NA = "na"
-
-
-def _metric_name(key) -> str:
-    return str(key).split(",", 1)[0]
-
-
-def binomial_noise_n(
-    result_keys, t_key: str, sample_counts: Optional[dict]
-) -> Optional[float]:
-    """The n of a binomial-eligible score, or None when the rule does not apply.
-
-    ``result_keys`` are the score function's configured keys: one plain metric
-    key on ``t_key`` (n is ``t_key``'s count), or (subtask, metric) paths whose
-    unweighted mean is the score (n is k**2 / sum(1 / n_i)). Any other shape --
-    a mean of several metrics on one entry, a non-binomial metric, an unknown
-    count -- returns None.
-    """
-    counts = sample_counts or {}
-    keys = list(result_keys or [])
-    if not keys:
-        return None
-
-    def known(count) -> bool:
-        return isinstance(count, int) and not isinstance(count, bool) and count > 0
-
-    if all(isinstance(k, str) for k in keys):
-        if len(keys) != 1 or _metric_name(keys[0]) not in BINOMIAL_METRICS:
-            return None
-        count = counts.get(t_key)
-        return float(count) if known(count) else None
-    if all(isinstance(k, tuple) and len(k) == 2 for k in keys):
-        if any(_metric_name(metric) not in BINOMIAL_METRICS for _, metric in keys):
-            return None
-        sizes = [counts.get(name) for name, _ in keys]
-        if not all(known(size) for size in sizes):
-            return None
-        return len(sizes) ** 2 / sum(1.0 / size for size in sizes)
-    return None
-
-
-def noise_aware_check(
-    ratio_pass: Optional[bool],
-    score: float,
-    reference: Optional[float],
-    n: Optional[float],
-    z: float = NOISE_Z,
-) -> Tuple[Optional[bool], str, Optional[float]]:
-    """Apply the noise-aware rule on top of the ratio rule's verdict.
-
-    Returns ``(passed, rule, se)``: ``rule`` is ``ratio`` when the ratio rule
-    passed, ``within_noise`` when only the noise rule passed, ``fail`` when
-    neither did, and ``na`` when there is no reference to grade against.
-    ``se`` is the binomial SE in percentage points at the reference, or None
-    when the rule does not apply (no n, or a reference outside (0, 100]).
-    """
-    if ratio_pass is None:
-        return None, RULE_NA, None
-    se = None
-    if n and reference is not None and 0 < reference <= 100:
-        p = reference / 100.0
-        se = 100.0 * math.sqrt(p * (1.0 - p) / n)
-    if ratio_pass:
-        return True, RULE_RATIO, se
-    if se is not None and reference - score <= z * se:
-        return True, RULE_WITHIN_NOISE, se
-    return False, RULE_FAIL, se
-
-
 def _score_one(
     task,
     results: dict,
@@ -517,6 +451,7 @@ def blocks_for_task(
         else None
     )
 
+    subset = subset_run_reason(ctx, task)
     blocks: List[Block] = []
     for t_key in target_keys:
         score, ratio_pub, ratio_ref, accuracy_check, evidence = _grade_one(
@@ -543,6 +478,12 @@ def blocks_for_task(
         }
         if mean_seconds_per_task is not None:
             data["mean_seconds_per_task"] = mean_seconds_per_task
+        if subset is not None:
+            # A subset is a measurement, never a verdict: explicit PARTIAL
+            # short-circuits grading, and acceptance cannot pass on it.
+            data["status"] = TestStatus.PARTIAL.value
+            data["reason"] = subset
+            data["accuracy_check"] = ReportCheckTypes.NA
         blocks.append(
             Block(
                 kind="evals",
@@ -795,6 +736,79 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     return blocks
 
 
+def _apply_samples_subset_count(task, runtime_config, sample_counts: dict) -> dict:
+    """Use the ``--samples`` doc-id count as the task's sample count.
+
+    lm-eval reports ``n-samples`` as the whole dataset even when ``--samples``
+    restricted the run to a doc-id subset (EvalTask.doc_ids or --eval-samples),
+    which would grade the noise band and the per-task timing against the
+    wrong n (livecodebench: 1055 instead of 131).
+    """
+    samples_arg = _resolve_eval_samples(task, runtime_config)
+    if not samples_arg:
+        return sample_counts
+    try:
+        indices = json.loads(samples_arg).get(task.task_name)
+    except (ValueError, AttributeError):
+        return sample_counts
+    if not isinstance(indices, list) or not indices:
+        return sample_counts
+    counts = dict(sample_counts or {})
+    counts[task.task_name] = len(indices)
+    return counts
+
+
+# The pinned lm-eval API adapters log a request that failed after its retries
+# as this response text, which the task then scores as an (always wrong)
+# answer.
+INFERENCE_ERROR_MARKER = "__INFERENCE_ERROR__"
+
+
+def count_inference_errors(result_files: List[str]) -> tuple[int, int]:
+    """(errored, logged) per-sample rows beside ``result_files``.
+
+    A row is errored when any of its responses is the adapter's inference-error
+    text. Only ``resps``/``filtered_resps`` are read, never the prompt.
+    """
+    errored = logged = 0
+    seen: set = set()
+    for result_file in result_files:
+        for sample_file in sorted(Path(result_file).parent.glob("samples_*.jsonl")):
+            if sample_file in seen:
+                continue
+            seen.add(sample_file)
+            with sample_file.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    logged += 1
+                    answers = json.dumps([row.get("resps"), row.get("filtered_resps")])
+                    if INFERENCE_ERROR_MARKER in answers:
+                        errored += 1
+    return errored, logged
+
+
+def mark_incomplete(blocks: List[Block], errored: int, logged: int) -> None:
+    """An eval with errored requests did not measure the model: FAIL it as
+    incomplete. Acceptance treats ``incomplete`` as non-waivable (no model-
+    status tier, priority or known issue turns it into a pass)."""
+    reason = (
+        f"{errored}/{logged} samples are inference errors "
+        f"({INFERENCE_ERROR_MARKER}); the score is not a measurement"
+    )
+    for block in blocks:
+        block.data["status"] = TestStatus.FAIL.value
+        block.data["incomplete"] = True
+        block.data["accuracy_check"] = ReportCheckTypes.FAIL
+        block.data["inference_error_samples"] = errored
+        block.data["samples_logged"] = logged
+        block.data["reason"] = reason
+
+
 def _score_task(
     ctx: MediaContext,
     task,
@@ -806,6 +820,7 @@ def _score_task(
     """Score one finished task using only its current attempt's result files."""
     result_files = discover_eval_results(output_path, ctx.model_spec)
     results, sample_counts = load_eval_results(result_files)
+    sample_counts = _apply_samples_subset_count(task, ctx.runtime_config, sample_counts)
     task_blocks = blocks_for_task(
         ctx,
         task,
@@ -814,6 +829,16 @@ def _score_task(
         elapsed_seconds=elapsed_seconds,
     )
     if task_blocks:
+        errored, logged = count_inference_errors(result_files)
+        if errored:
+            logger.error(
+                "task=%s: %d/%d samples are inference errors; grading it "
+                "incomplete (FAIL), not as a score.",
+                task.task_name,
+                errored,
+                logged,
+            )
+            mark_incomplete(task_blocks, errored, logged)
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —
     # v1's report path silently drops these; we surface a FAIL block.
