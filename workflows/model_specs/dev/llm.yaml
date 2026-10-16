@@ -2934,16 +2934,20 @@ templates:
     # prefill on Wormhole is far slower than the dense 31B — TTFT 60 s @4k,
     # 449 s @32k and 1506 s @128k (vs 31B's 55 s @32k). Serve 32k: 128k is
     # functional but a ~25 min TTFT is not a usable release target.
-    # BH Galaxy (32x P150) native DP=4 bring-up entry for the MoE 26B-A4B: four
-    # physical-column (1,8) engines through the plugin's standard-DP discovery, as
-    # the 31B / 12B BLACKHOLE_GALAXY entries (see the 31B entry for the mechanism).
-    # Per-engine config mirrors the 26B P150X8 entry above (128K context, 4096
-    # scheduler tokens). Multimodal (text + image + video) like the 31B.
+    # BH Galaxy (32x P150), one 32-chip engine for the MoE 26B-A4B: the plugin folds
+    # data_parallel_size=4 into four in-process lanes (one per mesh column, 32 slots
+    # each; vllm-tt-plugin#218), the dense weights are 2-D fractured with TP=8 on the
+    # long axis and the experts run expert-parallel over the columns (tt-metal#60857).
+    # MoE is rejected under standard multi-process DP, so the lane fold is what makes a
+    # Galaxy entry possible for this model. Per-lane config mirrors the 26B P150X8 entry
+    # above (128K context, 4096 scheduler tokens). Multimodal (text + image + video).
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
-      max_context: 131072  # 128 * 1024 per engine (as the P150X8 entry)
+      max_concurrency: 128  # 32 slots x 4 lanes
+      max_context: 131072  # 128 * 1024 per lane (as the P150X8 entry)
       default_impl: true
       env_vars:
+        GEMMA4_GALAXY_FRACTURE: "1"  # one instance over the (8,4) mesh: 2-D fractured dense weights, TP=8 on axis 0
+        GEMMA4_GALAXY_LANES: "1"  # lane-sharded batch over the four columns (folds the DP ranks into lanes)
         # Text + image + video: route every Gemma4 arch name to the multimodal serving class
         # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
@@ -2961,8 +2965,8 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        data_parallel_size: 4  # folded into 4 lanes on one engine (GEMMA4_GALAXY_LANES)
+        max_num_seqs: 32  # per lane; max_concurrency above is whole-box
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility
         async_scheduling: true
         enable-auto-tool-choice: true
