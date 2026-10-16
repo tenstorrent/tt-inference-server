@@ -2960,6 +2960,7 @@ templates:
       env_vars:
         GEMMA4_GALAXY_FRACTURE: "1"  # one instance over the (8,4) mesh: 2-D fractured dense weights, TP=8 on axis 0
         GEMMA4_GALAXY_LANES: "1"  # lane-sharded batch over the four columns (folds the DP ranks into lanes)
+        GEMMA4_MOE_DISPATCH_PREFILL: "1"  # token-dispatch routed experts for prefill (4K TTFT 3 s -> 0.7 s); the cache marker carries the flag
         # Text + image + video: route every Gemma4 arch name to the multimodal serving class
         # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
