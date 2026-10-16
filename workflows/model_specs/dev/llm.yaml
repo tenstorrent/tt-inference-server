@@ -600,6 +600,9 @@ templates:
       max_context: 262144  # 256 * 1024
       default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       env_vars:
+        # Text + image + video: route every Gemma4 arch name to the multimodal serving class
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
         # laid the TP collectives over the wrong fabric links and corrupted decode
@@ -645,6 +648,8 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
       known_issues:
       - workflow_type: SPEC_TESTS
         task_name: test_penalties
@@ -701,6 +706,9 @@ templates:
       max_context: 262144
       default_impl: true
       env_vars:
+        # Text + image + video: route every Gemma4 arch name to the multimodal serving class
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
@@ -749,6 +757,8 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -869,6 +879,10 @@ templates:
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
   status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1192,6 +1206,9 @@ templates:
       max_context: 262144  # auto-bounded sliding + chunk 4096 at 256k (metal policy)
       default_impl: true
       env_vars:
+        # Text + image + video + audio: route every Gemma4 arch name to the unified multimodal
+        # serving class (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
@@ -1227,6 +1244,8 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1, "audio": 1}'
+        mm-processor-cache-gb: 0
     # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
     # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
     # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
@@ -1240,6 +1259,9 @@ templates:
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       env_vars:
+        # Text + image + video + audio: route every Gemma4 arch name to the unified multimodal
+        # serving class (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"  # 110 cores / 32 rows, one kv head per device at TP=8
@@ -1281,6 +1303,8 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1, "audio": 1}'
+        mm-processor-cache-gb: 0
       known_issues:
       - workflow_type: SPEC_TESTS
         task_name: test_penalties
@@ -1290,6 +1314,11 @@ templates:
           a local run of the same stack (2026-10-06); the other 8 cases pass and the P300X2 entry passes
           all 9. Same exemption as Llama-3.3-70B P300X2 (#3888).'
   status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
+    - audio
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
