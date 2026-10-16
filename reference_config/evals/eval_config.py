@@ -10172,6 +10172,133 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16; tenstorrent/tt-quetzalcoatlus#375); qwen3_moe at b2cff646.
+    # Tasks, prompting and gen_kwargs copied from Qwen/Qwen2.5-Coder-7B-Instruct. The card publishes agentic-coding scores
+    # only, none for these tasks: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
+    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353), TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16; tenstorrent/tt-quetzalcoatlus#375); Llama-shaped thinking
+    # checkpoint at fc7c15c2, ctx 65536. Tasks, prompting, timeouts and gen_kwargs copied from Qwen/QwQ-32B (r1 thinking
+    # profile; r1_aime24 omitted). The card publishes only LLM-as-judge scores (MT-Bench JA/EN, AnswerCarefully,
+    # llm-jp-instructions), none for these tasks: every gpu_reference_score is a full-sample GPU run at this revision /
+    # max_context / concurrency (issue #5353), TBD. Output is Harmony-format and served with NO reasoning parser
+    # (vLLM's openai_gptoss parser assumes the o200k Harmony ids; upstream uses the out-of-tree llm-jp-vllm plugin),
+    # so the graded text carries the analysis and final channels on both the GPU and the TT side.
+    EvalConfig(
+        hf_model_repo="llm-jp/llm-jp-4-8b-thinking",
+        tasks=[
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="BAAI/bge-large-en-v1.5",
         tasks=[
