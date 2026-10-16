@@ -10560,6 +10560,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    gpu_reference_score=88.38,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6210900404",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
