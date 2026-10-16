@@ -68,6 +68,47 @@ def _limit_mode(ctx: MediaContext):
     return EvalLimitMode.from_string(mode_str) if mode_str else None
 
 
+def subset_run_reason(ctx, task=None) -> Optional[str]:
+    """Why this run graded only part of ``task``'s samples, or None.
+
+    --eval-shard and --eval-samples both select explicit doc subsets; their
+    scores are measurements only. A sharded task passes only through
+    ``python -m report_module.merge_eval_shards`` over all of its shards.
+
+    What counts is the sample set this task actually resolved to, not whether
+    an option is present: ``--eval-samples '{"t": null}'`` (or a mapping
+    without this task) runs every sample of ``t``. ``_resolve_eval_samples``
+    is the same resolution the command builder uses for lm-eval's
+    ``--samples``, so this task is a subset exactly when that flag is sent.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    shard = getattr(rc, "eval_shard", None)
+    if isinstance(shard, str) and shard:
+        return f"eval shard {shard}; merge all shards to grade"
+    samples = getattr(rc, "eval_samples", None)
+    if not (isinstance(samples, (str, dict)) and samples):
+        return None
+    if task is None:
+        return "explicit --eval-samples subset"
+    from llm_module.eval_command import _resolve_eval_samples
+
+    resolved = _resolve_eval_samples(task, rc)
+    if resolved is None:
+        return None
+    # A task whose EvalConfig defines its doc set (EvalTask.doc_ids, #5393)
+    # runs that set via --samples on every run; resolving to exactly it is the
+    # full task, not a subset. Only a narrower selection is partial.
+    doc_ids = getattr(task, "doc_ids", None)
+    if doc_ids:
+        try:
+            indices = json.loads(resolved).get(task.task_name)
+        except (ValueError, AttributeError):
+            indices = None
+        if isinstance(indices, list) and set(indices) == set(doc_ids):
+            return None
+    return "explicit --eval-samples subset"
+
+
 def _device_label(ctx: MediaContext) -> str:
     return ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
 
@@ -410,6 +451,7 @@ def blocks_for_task(
         else None
     )
 
+    subset = subset_run_reason(ctx, task)
     blocks: List[Block] = []
     for t_key in target_keys:
         score, ratio_pub, ratio_ref, accuracy_check, evidence = _grade_one(
@@ -436,6 +478,12 @@ def blocks_for_task(
         }
         if mean_seconds_per_task is not None:
             data["mean_seconds_per_task"] = mean_seconds_per_task
+        if subset is not None:
+            # A subset is a measurement, never a verdict: explicit PARTIAL
+            # short-circuits grading, and acceptance cannot pass on it.
+            data["status"] = TestStatus.PARTIAL.value
+            data["reason"] = subset
+            data["accuracy_check"] = ReportCheckTypes.NA
         blocks.append(
             Block(
                 kind="evals",
@@ -710,6 +758,57 @@ def _apply_samples_subset_count(task, runtime_config, sample_counts: dict) -> di
     return counts
 
 
+# The pinned lm-eval API adapters log a request that failed after its retries
+# as this response text, which the task then scores as an (always wrong)
+# answer.
+INFERENCE_ERROR_MARKER = "__INFERENCE_ERROR__"
+
+
+def count_inference_errors(result_files: List[str]) -> tuple[int, int]:
+    """(errored, logged) per-sample rows beside ``result_files``.
+
+    A row is errored when any of its responses is the adapter's inference-error
+    text. Only ``resps``/``filtered_resps`` are read, never the prompt.
+    """
+    errored = logged = 0
+    seen: set = set()
+    for result_file in result_files:
+        for sample_file in sorted(Path(result_file).parent.glob("samples_*.jsonl")):
+            if sample_file in seen:
+                continue
+            seen.add(sample_file)
+            with sample_file.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    logged += 1
+                    answers = json.dumps([row.get("resps"), row.get("filtered_resps")])
+                    if INFERENCE_ERROR_MARKER in answers:
+                        errored += 1
+    return errored, logged
+
+
+def mark_incomplete(blocks: List[Block], errored: int, logged: int) -> None:
+    """An eval with errored requests did not measure the model: FAIL it as
+    incomplete. Acceptance treats ``incomplete`` as non-waivable (no model-
+    status tier, priority or known issue turns it into a pass)."""
+    reason = (
+        f"{errored}/{logged} samples are inference errors "
+        f"({INFERENCE_ERROR_MARKER}); the score is not a measurement"
+    )
+    for block in blocks:
+        block.data["status"] = TestStatus.FAIL.value
+        block.data["incomplete"] = True
+        block.data["accuracy_check"] = ReportCheckTypes.FAIL
+        block.data["inference_error_samples"] = errored
+        block.data["samples_logged"] = logged
+        block.data["reason"] = reason
+
+
 def _score_task(
     ctx: MediaContext,
     task,
@@ -730,6 +829,16 @@ def _score_task(
         elapsed_seconds=elapsed_seconds,
     )
     if task_blocks:
+        errored, logged = count_inference_errors(result_files)
+        if errored:
+            logger.error(
+                "task=%s: %d/%d samples are inference errors; grading it "
+                "incomplete (FAIL), not as a score.",
+                task.task_name,
+                errored,
+                logged,
+            )
+            mark_incomplete(task_blocks, errored, logged)
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —
     # v1's report path silently drops these; we surface a FAIL block.

@@ -50,6 +50,7 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
 )
 from workflows.runtime_config import RuntimeConfig
+from workflows.eval_shard import parse_eval_shard  # noqa: E402
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -310,6 +311,25 @@ def parse_arguments():
         "Accepts a JSON string '{\"task_name\": [int, ...]}' or a path to a JSON file. "
         "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
         "Text/LLM evals only.",
+    )
+    parser.add_argument(
+        "--eval-tasks",
+        type=str,
+        default=None,
+        help="Comma-separated eval task names: run only these of the model's eval "
+        "tasks, every sample of each (no --samples filter). For splitting a long eval "
+        "set across separate runs. Mutually exclusive with --eval-samples.",
+    )
+    parser.add_argument(
+        "--eval-shard",
+        type=str,
+        default=None,
+        help="Run shard i of N (0-based, 'i/N') of each selected eval task: every "
+        "N-th doc, from position i, of each leaf task's doc set (its configured "
+        "doc_ids, else the whole dataset), with no sample caps. The N shards are "
+        "disjoint and cover exactly that set; only `python -m "
+        "report_module.merge_eval_shards` over all N can grade a task PASS. "
+        "Mutually exclusive with --eval-samples and --limit-samples-mode.",
     )
     parser.add_argument(
         "--repeat-evals",
@@ -828,6 +848,23 @@ def parse_arguments():
 
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+    if args.eval_tasks and args.eval_samples:
+        parser.error("--eval-tasks and --eval-samples are mutually exclusive.")
+    if args.eval_shard is not None:
+        try:
+            parse_eval_shard(args.eval_shard)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if args.eval_samples:
+            parser.error("--eval-shard and --eval-samples are mutually exclusive.")
+        if args.limit_samples_mode:
+            parser.error(
+                "--eval-shard and --limit-samples-mode are mutually exclusive."
+            )
+    if args.eval_tasks is not None and not all(
+        name.strip() for name in args.eval_tasks.split(",")
+    ):
+        parser.error("--eval-tasks must be a comma-separated list of task names.")
 
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
@@ -1037,6 +1074,8 @@ def format_cli_args_summary(runtime_config):
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
+        f"  eval_tasks:                 {runtime_config.eval_tasks}",
+        f"  eval_shard:                 {runtime_config.eval_shard}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",
