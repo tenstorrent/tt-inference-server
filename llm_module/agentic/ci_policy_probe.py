@@ -11,9 +11,11 @@ def run_probe(server,context):
     root=Path(context.output_dir)/'UNSCORED-policy-probe';root.mkdir(parents=True,exist_ok=False)
     (root/'config.json').write_text(json.dumps(cfg,indent=2))
     ids=json.loads((here/'token_ids.json').read_text())*3
-    fixture=json.loads((here/'joint-length-fixture.json').read_text())['streams']
+    fixture_path=here/'terminal-joint-fixture.json'
+    fixture_document=json.loads(fixture_path.read_text());fixture=fixture_document['streams']
+    (root/'terminal-joint-fixture.json').write_bytes(fixture_path.read_bytes())
     shapes=json.loads((here/'terminal_shapes.json').read_text())
-    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+5400
+    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+cfg['diagnostic_total_budget_seconds']
     headers={'Content-Type':'application/json'}
     if server.auth_token:headers['Authorization']='Bearer '+server.auth_token
     def url(path,payload=None,session=None):
@@ -21,8 +23,8 @@ def run_probe(server,context):
         if session:h['X-Gemma-Agent-Session']=session
         req=urllib.request.Request(endpoint+path,data=json.dumps(payload).encode() if payload else None,headers=h)
         remaining=deadline-time.monotonic()
-        if remaining<=0:raise TimeoutError('Unscored diagnostic90min budget exhausted')
-        with urllib.request.urlopen(req,timeout=min(3600,remaining)) as r:return r.read()
+        if remaining<=0:raise TimeoutError('Unscored diagnostic configured budget exhausted')
+        with urllib.request.urlopen(req,timeout=min(cfg['diagnostic_http_timeout_seconds'],remaining)) as r:return r.read()
     def request(tokens,output,session):
         started=time.time();payload=dict(model=server.model,prompt=tokens,max_tokens=output,ignore_eos=True,temperature=0,top_p=.95,top_k=20,seed=9472,cache_salt=session,return_token_ids=True)
         response=json.loads(url('/v1/completions',payload,session));assert response['usage']['completion_tokens']==output
@@ -37,7 +39,7 @@ def run_probe(server,context):
     thread=threading.Thread(target=metrics,daemon=True);thread.start();results=[]
     try:
         for profile in cfg['profiles']:
-            workload=profile['workload'];active=profile['A'];count=128 if workload=='swe' else 32
+            workload=profile['workload'];active=profile['A'];count=len(fixture)
             output=128 if workload=='swe' else 1024;gap=.25 if workload=='swe' else 2.
             label=f"{cfg['policy']}-{workload}-a{active}"
             warm_lengths=(16384,16896,17408,49152,49664,50176) if workload=='swe' else (8192,16384,32768,60453)
@@ -46,16 +48,23 @@ def run_probe(server,context):
             tasks=[];lock=threading.Lock();started=time.time()
             def task(i):
                 begin=time.time();calls=[];session=f'diagnostic-{label}-task{i}__agent'
-                for turn in range(3):
-                    length=fixture[i][turn]['prompt_tokens'] if workload=='swe' else shapes[i]['lengths'][turn]
-                    tokens=list(ids[:length]);tokens[0]=10000+i
-                    planned_output=fixture[i][turn]['output_tokens'] if workload=='swe' else output
-                    calls.append(request(tokens,planned_output,session))
-                    if turn<2:time.sleep(gap)
+                edits={0:10000+i}
+                for turn,observed in enumerate(fixture[i]['calls']):
+                    length=observed['prompt_tokens']
+                    if observed['context_shrink_from_previous']:
+                        boundary=min(length-1,max(0,observed['source_cached_tokens'] or 0))
+                        edits={j:v for j,v in edits.items() if j<boundary}
+                        edits[boundary]=20000+32*observed['context_epoch']+i
+                    tokens=list(ids[:length]);assert len(tokens)==length
+                    for j,v in edits.items():
+                        if j<length:tokens[j]=v
+                    planned_output=observed['output_tokens']
+                    call=request(tokens,planned_output,session);call['observed_source']=observed;calls.append(call)
+                    if turn+1<len(fixture[i]['calls']):time.sleep(gap)
                 row={'task':i,'task_start':begin,'task_end':time.time(),'calls':calls}
                 with lock:tasks.append(row);(root/(label+'-partial.json')).write_text(json.dumps(tasks))
             with concurrent.futures.ThreadPoolExecutor(active) as ex:list(ex.map(task,range(count)))
-            ended=time.time();result={'profile':profile,'policy':cfg['policy'],'C':cfg['C'],'F':cfg['F'],'prefix_caching':True,'start':started,'end':ended,'wall_s':ended-started,'task_count':count,'call_count':3*count,'tool_gap_s':gap,'forced_output_per_call':None if workload=='swe' else output,'input_tokens':sum(c['prompt_tokens'] for t in tasks for c in t['calls']),'output_tokens':sum(c['response']['usage']['completion_tokens'] for t in tasks for c in t['calls']),'tasks':tasks}
+            ended=time.time();result={'profile':profile,'policy':cfg['policy'],'C':cfg['C'],'F':cfg['F'],'prefix_caching':True,'start':started,'end':ended,'wall_s':ended-started,'task_count':count,'call_count':sum(len(s['calls']) for s in fixture),'tool_gap_s':gap,'forced_output_per_call':None,'fixture_sha256':hashlib.sha256(fixture_path.read_bytes()).hexdigest(),'fixture_scope':fixture_document['scope'],'input_tokens':sum(c['prompt_tokens'] for t in tasks for c in t['calls']),'output_tokens':sum(c['response']['usage']['completion_tokens'] for t in tasks for c in t['calls']),'tasks':tasks}
             results.append(result);(root/'results.json').write_text(json.dumps(results));print('UNSCORED_POLICY_PROFILE '+json.dumps({k:v for k,v in result.items() if k!='tasks'}),flush=True)
         checks=[]
         for p in json.loads((here/'qualitative_prompts.json').read_text()):

@@ -124,7 +124,7 @@
 +                allocations = get_unsafe_tracked_ids(self.mesh, trace_entry[name])
 +                remaining = {k: v for k, v in allocations.items() if k not in output_ids}
 +                unsafe = unsafe or bool(remaining)
-+                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe": remaining})
++                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe_count": len(remaining), "unsafe_sample": {str(k): str(v)[:512] for k, v in list(remaining.items())[:8]}})
 +        logger.info("TRACE_DEFERRED_RETENTION " + json.dumps({
 +            "shape": shape_key, "history_count": len(state.prefill_history),
 +            "retire": unsafe, "checks": checks}))
@@ -150,7 +150,7 @@
 +                allocations = get_unsafe_tracked_ids(self.mesh, trace_entry[name])
 +                remaining = {k: v for k, v in allocations.items() if k not in consumed_ids}
 +                unsafe = unsafe or bool(remaining)
-+                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe": remaining})
++                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe_count": len(remaining), "unsafe_sample": {str(k): str(v)[:512] for k, v in list(remaining.items())[:8]}})
 +        logger.info("TRACE_SAMPLER_RETENTION " + json.dumps({"retire": unsafe, "checks": checks}))
 +        if unsafe:
 +            self._retire_traces()

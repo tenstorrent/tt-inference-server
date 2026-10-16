@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED native-guarded trace reuse matched width",
+  "purpose": "UNSCORED actual Terminal task-balanced joint-length reuse",
   "policy": "fifo",
   "C": 16,
   "F": 606208,
@@ -7,9 +7,9 @@
   "base_validation": "Individual alias/history full-model gates passed; actual scheduler alias gate required before dispatch",
   "profiles": [
     {
-      "workload": "swe",
+      "workload": "terminal",
       "A": 16,
-      "role": "reuse matched joint-length fixture"
+      "role": "reuse"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
@@ -17,9 +17,9 @@
   "engine_scheduler": "fcfs",
   "trace_reserve_bytes": 134217728,
   "allocation_probe_min_histories": 1,
-  "stream_count": 128,
-  "deadline_seconds": 3600,
-  "fixture": "joint-length-fixture.json",
+  "stream_count": 32,
+  "deadline_seconds": 7200,
+  "fixture": "terminal-joint-fixture.json",
   "diagnostic_http_timeout_seconds": 3600,
-  "diagnostic_total_budget_seconds": 5400
+  "diagnostic_total_budget_seconds": 7200
 }

@@ -1,11 +1,11 @@
 {
   "base_commit": "8f402102-model-safety-target",
-  "target_commit": "alias-layerwise-finality-native-guarded-trace-reuse",
-  "patch_sha256": "4e7be865b4b4164417541a07869b0ace3b550fb49ca0074cb752ee9b19b5e8cf",
+  "target_commit": "terminal-matched-reuse",
+  "patch_sha256": "b18d68aa3930c650d0bc6b581aaefe09c33dcf0c2d9c91c95454b0294c18fd7c",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
-      "target": "448f9333f6c965e8d130568e40e168109e5b18ae1e2c95677974a7a01b64f920"
+      "target": "0eb7f68c9d2cdcecd357d795c1aff26f859f56e0687ae1b8f10954f7bfa61a0e"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",
