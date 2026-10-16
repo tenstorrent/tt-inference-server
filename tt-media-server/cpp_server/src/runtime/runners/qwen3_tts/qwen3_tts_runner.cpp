@@ -80,6 +80,22 @@ void exportWorkerEnvironment(const config::TtsConfig& cfg) {
   setenv("OMP_NUM_THREADS", "2", 0);
   setenv("MKL_NUM_THREADS", "2", 0);
 
+  // Paths Python resolves after the chdir below must not stay relative to it.
+  for (const auto& [name, onlyExistingDirectory] :
+       {std::pair{"TT_METAL_HOME", false}, std::pair{"TT_PYTHON_PATH", false},
+        std::pair{"QWEN3_TTS_CKPT", false}, std::pair{"HF_MODEL", true},
+        std::pair{"HF_HOME", false}, std::pair{"HF_HUB_CACHE", false}}) {
+    const char* value = std::getenv(name);
+    if (!value || !*value) continue;
+    const std::string absolute =
+        absoluteLocalPath(value, onlyExistingDirectory);
+    if (absolute != value) {
+      TT_LOG_INFO("[Qwen3TtsRunner] {}={} resolved to {}", name, value,
+                  absolute);
+      setenv(name, absolute.c_str(), 1);
+    }
+  }
+
   const char* metalHome = std::getenv("TT_METAL_HOME");
   if (!metalHome || !*metalHome) {
     TT_LOG_WARN(

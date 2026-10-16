@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -18,6 +19,10 @@ namespace tt::runners::qwen3_tts {
 std::vector<ipc::tts::TtsAudioChunkMessage> splitIntoChunks(
     uint32_t taskId, const std::vector<int16_t>& samples, size_t chunkSamples,
     uint32_t sampleRateHz);
+
+/** Absolute form of a relative path (only of a directory, if asked). */
+std::string absoluteLocalPath(const std::string& value,
+                              bool onlyExistingDirectory);
 
 /** Recent cancels, bounded since the parent broadcasts them to every worker. */
 class CancelledTaskSet {

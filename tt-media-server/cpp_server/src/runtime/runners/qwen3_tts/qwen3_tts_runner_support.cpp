@@ -4,10 +4,23 @@
 #include "runtime/runners/qwen3_tts/qwen3_tts_runner_support.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 
 namespace tt::runners::qwen3_tts {
+
+std::string absoluteLocalPath(const std::string& value,
+                              bool onlyExistingDirectory) {
+  const std::filesystem::path path(value);
+  if (value.empty() || path.is_absolute()) return value;
+  std::error_code ec;
+  if (onlyExistingDirectory && !std::filesystem::is_directory(path, ec)) {
+    return value;
+  }
+  const auto absolute = std::filesystem::absolute(path, ec);
+  return ec ? value : absolute.lexically_normal().string();
+}
 
 std::vector<ipc::tts::TtsAudioChunkMessage> splitIntoChunks(
     uint32_t taskId, const std::vector<int16_t>& samples, size_t chunkSamples,

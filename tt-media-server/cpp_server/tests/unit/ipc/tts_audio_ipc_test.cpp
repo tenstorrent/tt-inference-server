@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -221,6 +222,30 @@ TEST(TtsWavBytesTest, HeaderAdvertisesTheQwen3Rate) {
   };
   EXPECT_EQ(u32(24), 24000u);      // sample rate
   EXPECT_EQ(u32(28), 24000u * 2);  // byte rate, mono PCM16
+}
+
+TEST(Qwen3AbsoluteLocalPathTest, MakesARelativePathAbsolute) {
+  const auto expected =
+      (std::filesystem::current_path() / "checkpoints/voice").string();
+  EXPECT_EQ(qwen3::absoluteLocalPath("checkpoints/voice", false), expected);
+  EXPECT_EQ(
+      qwen3::absoluteLocalPath("./checkpoints/../checkpoints/voice", false),
+      expected);
+}
+
+TEST(Qwen3AbsoluteLocalPathTest, LeavesAbsoluteAndEmptyValuesAlone) {
+  EXPECT_EQ(qwen3::absoluteLocalPath("/models/voice", false), "/models/voice");
+  EXPECT_EQ(qwen3::absoluteLocalPath("", false), "");
+}
+
+TEST(Qwen3AbsoluteLocalPathTest, LeavesAHubIdAloneButResolvesALocalDirectory) {
+  EXPECT_EQ(qwen3::absoluteLocalPath("Qwen/Qwen3-TTS-12Hz-1.7B-Base", true),
+            "Qwen/Qwen3-TTS-12Hz-1.7B-Base");
+  const std::filesystem::path dir = "qwen3_absolute_path_test_dir";
+  std::filesystem::create_directory(dir);
+  EXPECT_EQ(qwen3::absoluteLocalPath(dir.string(), true),
+            (std::filesystem::current_path() / dir).string());
+  std::filesystem::remove(dir);
 }
 
 }  // namespace
