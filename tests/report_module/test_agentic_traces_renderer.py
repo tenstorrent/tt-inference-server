@@ -215,6 +215,18 @@ class TestTableSplit:
         for raw_key in ("p90_ttft_ms", "median_tpot_ms", "mean_isl", "completed"):
             assert raw_key not in out
 
+    def test_wall_clock_rates_use_input_output_naming(self):
+        """Prefill/Decode is reserved for the (Active) phase rates."""
+        header = _render(_record()).split("#### Per-run Throughput")[1].split("\n")
+        header = next(line for line in header if line.startswith("| Source"))
+        cols = [c.strip() for c in header.strip("|").split("|")]
+        assert "Input Tok/s" in cols
+        assert cols.count("Output Tok/s") == 1
+        assert "Prefill Tok/s" not in cols
+        assert "Decode Tok/s" not in cols
+        assert "Prefill Tok/s (Active)" in cols
+        assert "Decode Tok/s (Active)" in cols
+
     def test_run_identity_appears_in_every_metric_table(self):
         out = _render(_record())
         assert out.count("| inferencex_agentx |") >= 3
