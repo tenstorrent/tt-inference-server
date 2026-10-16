@@ -45,6 +45,9 @@ import json
 import logging
 import shutil
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -204,13 +207,22 @@ class AIPerfSpecDecodeDriver:
         env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
-        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
+        run_start = time.monotonic()
+        with _heartbeat(spec_run.slug, run_start):
+            rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
+        logger.info(
+            "[spec-decode] %s: aiperf exited rc=%d after %.0fs",
+            spec_run.slug,
+            rc,
+            time.monotonic() - run_start,
+        )
         if rc != 0:
             logger.error(
                 "[spec-decode] aiperf failed for %s with rc=%d",
                 spec_run.slug,
                 rc,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=rc, payload=None, raw_path=None)
 
         metrics = _parse_aiperf_output(artifact_dir)
@@ -237,6 +249,7 @@ class AIPerfSpecDecodeDriver:
                 mean_ttft_ms,
                 artifact_dir,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
         spec_decode_metrics = _scrape_acceptance_metrics(
@@ -259,6 +272,52 @@ class AIPerfSpecDecodeDriver:
         _log_run_summary(spec_run, metrics, spec_decode_metrics)
 
         return SpecDecodeDriverResult(return_code=0, payload=payload, raw_path=raw_path)
+
+
+# ---------------------------------------------------------------------
+# Progress logging
+# ---------------------------------------------------------------------
+
+HEARTBEAT_S = 60.0
+
+
+@contextmanager
+def _heartbeat(slug: str, start: float, interval_s: float = HEARTBEAT_S):
+    """Log "still running" every ``interval_s`` while the block runs.
+
+    AIPerf disables its UI when stdout is not a TTY (CI), so without this a
+    run prints nothing until it ends (up to the per-run timeout).
+    """
+    stop = threading.Event()
+
+    def _beat() -> None:
+        while not stop.wait(interval_s):
+            logger.info(
+                "[spec-decode] %s still running (%.0fs elapsed)",
+                slug,
+                time.monotonic() - start,
+            )
+
+    thread = threading.Thread(target=_beat, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+
+
+def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:
+    """Copy the end of AIPerf's own log into ours, so CI shows why a run failed."""
+    for path in sorted(Path(artifact_dir).rglob("aiperf.log")):
+        try:
+            tail = path.read_text(errors="replace").splitlines()[-lines:]
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", path, exc)
+            continue
+        logger.error(
+            "[spec-decode] last %d lines of %s:\n%s", len(tail), path, "\n".join(tail)
+        )
 
 
 # ---------------------------------------------------------------------
