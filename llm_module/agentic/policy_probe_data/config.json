@@ -1,10 +1,10 @@
 {
-  "purpose": "UNSCORED combined memory capacity and admission diagnostic; no benchmark score",
+  "purpose": "UNSCORED native alias plus history capacity/admission gate; RoPE unchanged",
   "policy": "fifo",
   "C": 8,
-  "F": 736256,
+  "F": 704000,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
-  "base_validation": "Individual memory full-model gates passed; combined fixture and same-pool serving gates required before dispatch",
+  "base_validation": "Individual alias/history full-model gates passed; actual scheduler alias gate required before dispatch",
   "profiles": [
     {
       "workload": "swe",
