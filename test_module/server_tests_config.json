@@ -101,7 +101,8 @@
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
       "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-      "Qwen/Qwen3.5-9B-Base"
+      "Qwen/Qwen3.5-9B-Base",
+      "WeiboAI/VibeThinker-3B"
     ]
   },
   "available_markers": {
@@ -1088,6 +1089,16 @@
       "id_name": "Qwen--Qwen3.5-9B-Base",
       "weights": [
         "Qwen/Qwen3.5-9B-Base"
+      ]
+    },
+    "WeiboAI/VibeThinker-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "WeiboAI--VibeThinker-3B",
+      "weights": [
+        "WeiboAI/VibeThinker-3B"
       ]
     }
   },
