@@ -886,12 +886,12 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 8
+      max_concurrency: 16
       max_context: 262144
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
-        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '262144'
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '346112'
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'
