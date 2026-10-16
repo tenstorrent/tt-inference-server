@@ -1,14 +1,14 @@
 {
   "purpose": "UNSCORED actual Terminal task-balanced joint-length reuse",
   "policy": "fifo",
-  "C": 16,
-  "F": 606208,
+  "C": 32,
+  "F": 655360,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
   "base_validation": "Individual alias/history full-model gates passed; actual scheduler alias gate required before dispatch",
   "profiles": [
     {
       "workload": "terminal",
-      "A": 16,
+      "A": 32,
       "role": "reuse"
     }
   ],
@@ -21,5 +21,6 @@
   "deadline_seconds": 7200,
   "fixture": "terminal-joint-fixture.json",
   "diagnostic_http_timeout_seconds": 3600,
-  "diagnostic_total_budget_seconds": 7200
+  "diagnostic_total_budget_seconds": 7200,
+  "cadence": "2p1d"
 }
