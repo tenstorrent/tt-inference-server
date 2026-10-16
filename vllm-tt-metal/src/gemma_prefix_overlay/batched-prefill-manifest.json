@@ -1,0 +1,32 @@
+{
+  "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
+  "target_commit": "spansweep1-native-batch-axis-rs",
+  "patch_sha256": "6fc1ab215dae828939222668c1f9f7ce20eee833b9e1843198418d103af29f7f",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/alias-manifest.json": {
+      "base": null,
+      "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
+    },
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "a56998a1bd9dd5ef2106ff5e9111f63fca2957c39cbdb631a8f2920401bf4c1b"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
+      "target": "b74e3e394e3ce27b7636d554792014c27db3ec57f2b8af7033fe0da6be834815"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
+      "target": "fa82cedb550f94129072ea22258067c712d81b764e5c660cea044d68cd859b12"
+    },
+    "models/demos/gemma4_31b_qb2/tt/model.py": {
+      "base": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
+      "target": "db5a27be55d852533a1677e01d9dba87d3468114f86704125bb2f2f2bde061c8"
+    },
+    "models/demos/gemma4_31b_qb2/tt/prefill_batch.py": {
+      "base": null,
+      "target": "d33e484e040c78a9963ddd0f2d644623c3d92fd6dd4f1351b89e7437d88f3486"
+    }
+  },
+  "evidence_source": "/home/mvasiljev/build/gemma-batched-prefill/spansweep1-source"
+}

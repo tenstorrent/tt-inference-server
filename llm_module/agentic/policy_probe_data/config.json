@@ -1,0 +1,11 @@
+{
+  "policy": "native-fcfs-true-prefill-batch8",
+  "C": 16,
+  "F": 606208,
+  "profiles": [
+    {
+      "workload": "swe",
+      "A": 16
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+[
+  {"id":"literal_ok","messages":[{"role":"user","content":"Reply with exactly the word OK."}],"expected_text":"OK"},
+  {"id":"integer_addition","messages":[{"role":"user","content":"What is 17 + 25? Return only the integer."}],"expected_text":"42"},
+  {"id":"json_fields","messages":[{"role":"user","content":"Return a JSON object with exactly two keys: language set to the string English, and count set to the integer 3. Do not include markdown or other text."}],"expected_json":{"language":"English","count":3}}
+]
