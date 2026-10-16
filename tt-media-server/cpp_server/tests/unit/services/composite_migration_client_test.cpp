@@ -101,13 +101,13 @@ class FakeBackend : public MI {
   }
 
   // --- Single migrate ---
-  MigrationToken migrate(int /*remote_endpoint_id*/, uint32_t src_slot,
+  MigrationToken migrate(int /*remote_endpoint_id*/, uint32_t srcSlot,
                          uint32_t /*dst_slot*/, uint32_t /*layer_start*/,
                          uint32_t /*layer_end_exclusive*/,
                          uint32_t /*pos_start*/,
                          uint32_t /*pos_end_exclusive*/) override {
     ++migrate_calls;
-    last_migrate_src_slot = src_slot;
+    last_migrate_src_slot = srcSlot;
     return migrate_return_value;
   }
 
@@ -149,9 +149,9 @@ class FakeBackend : public MI {
     last_connect_to_role = role;
   }
 
-  void wait_ready(int timeout_ms) override {
+  void wait_ready(int timeoutMs) override {
     ++wait_ready_calls;
-    last_wait_ready_timeout_ms = timeout_ms;
+    last_wait_ready_timeout_ms = timeoutMs;
   }
 
   void shutdown(bool drain) override {
@@ -315,10 +315,10 @@ TEST(CompositeMigrationClientTest,
   auto w = makeWiring();
 
   int calls = 0;
-  MigrationToken last_token = 0;
+  MigrationToken lastToken = 0;
   w.composite->on_migration_complete([&](const MigrationCompleteEvent& e) {
     ++calls;
-    last_token = e.token;
+    lastToken = e.token;
   });
 
   // Composite must have registered onto both backends.
@@ -328,14 +328,14 @@ TEST(CompositeMigrationClientTest,
   // An event from the BURST backend (typical: Kafka burst completes).
   w.burst->onComplete({.token = 100, .ok = true});
   EXPECT_EQ(calls, 1);
-  EXPECT_EQ(last_token, 100u);
+  EXPECT_EQ(lastToken, 100u);
 
   // An event from the LOOPBACK backend (typical: shmem migrate() completes
   // — the case that PREFILL_USE_REMOTE_KV_MANAGER=1 would previously have
   // dropped on the floor via a thrown logic_error).
   w.loopback->onComplete({.token = 200, .ok = true});
   EXPECT_EQ(calls, 2);
-  EXPECT_EQ(last_token, 200u);
+  EXPECT_EQ(lastToken, 200u);
 }
 
 TEST(CompositeMigrationClientTest,
