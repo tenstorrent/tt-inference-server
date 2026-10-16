@@ -8424,6 +8424,86 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16): WeiboAI/VibeThinker-3B, a Qwen2 reasoning model
+    # fine-tuned from Qwen2.5-Coder-3B. No like-for-like reference exists: the card's scores (AIME, HMMT, GPQA,
+    # IMO-AnswerBench) are the technical report's own vLLM runs at 64K-100K output budgets, not these TTIS lm-eval
+    # task variants, so every task is ungated for the Colab GPU-reference sweep to fill (issue #5353). Tasks and the
+    # 32768-token generation cap follow meta-models/Muse-Glimmer-30B (the other reasoning candidate); the cap leaves
+    # room in the 131072 context and is the same on the GPU reference run, so truncation is like-for-like.
+    # Quetzal manifest row: tenstorrent/tt-quetzalcoatlus#379.
+    EvalConfig(
+        hf_model_repo="WeiboAI/VibeThinker-3B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card / technical-report benchmark sampling (temperature 1.0, top_p 0.95, top_k -1 i.e. disabled).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card / technical-report benchmark sampling (temperature 1.0, top_p 0.95, top_k -1 i.e. disabled).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2: meta-models/Muse-Glimmer-30B (text decoder; business-priority list).
     # No like-for-like reference exists: the card's scores (GPQA-Diamond 83.5, AIME 2026 94.7, IFBench 77.0) are
     # Artificial Analysis runs at "High Reasoning", not the TTIS lm-eval task variants, so every task is ungated
