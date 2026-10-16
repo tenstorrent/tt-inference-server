@@ -1,0 +1,15 @@
+{
+  "base_commit": "8f40210262226be1c759415f18202608ab3aa4de-model-safety-target",
+  "target_commit": "rope-prefix-32768-v1",
+  "patch_sha256": "422fd5a4343a51d4fa7b2fe2299a436302ae129a545b1cf7df7502b6e73bbc84",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "f38916ff38cd7fa80859dd6b51f3544eae9fb29442f5b9e5cb803f91c2f34e7a"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
+      "target": "6b7dbb8caf5ee6816a25ee220164b195d706e30e4afdeb074ef674c60ac1eca6"
+    }
+  }
+}

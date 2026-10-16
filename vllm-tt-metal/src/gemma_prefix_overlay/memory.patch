@@ -1,0 +1,77 @@
+--- a/models/demos/gemma4_31b_qb2/tt/decoder.py
++++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
+@@ -309,11 +309,18 @@
+                 torch.arange(self.max_context).reshape(1, -1),
+                 layer_type=self.kind,
+             )
+-            self.cos, self.sin = (tensor(cos[0]), tensor(sin[0]))
++            # Keep a fast tiled prefix and the full decode representation. The
++            # 32K prefix also covers the setup-only norm-stat geometry view.
++            self.cos, self.sin = (tensor(cos[0, :32768]), tensor(sin[0, :32768]))
+             # Embedding requires row-major tables. Hoist full-table untilizes out
+             # of decode; retain tiled tables for prefill slicing.
+-            self.decode_cos = ttnn.to_layout(self.cos, ttnn.ROW_MAJOR_LAYOUT)
+-            self.decode_sin = ttnn.to_layout(self.sin, ttnn.ROW_MAJOR_LAYOUT)
++            self.decode_cos, self.decode_sin = (
++                ttnn.from_torch(value[0].contiguous(), device=mesh_device,
++                    mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
++                    dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT,
++                    memory_config=ttnn.DRAM_MEMORY_CONFIG)
++                for value in (cos, sin)
++            )
+             if self.sliding:
+                 qi = torch.arange(1024)[:, None]
+                 ki = torch.arange(2048)[None, :]
+@@ -324,6 +331,9 @@
+             shared_setup[table_key] = {name: getattr(self, name) for name in names}
+         for name, value in shared_setup[table_key].items():
+             setattr(self, name, value)
++        # Shared by all layers of one geometry; bounded even for standalone
++        # full-context prefills. Entries are cleared at prefill completion.
++        self.prefill_rope_cache = shared_setup.setdefault(("prefill_rope_cache", self.kind), {})
+         self.decode_sdpa_config = ttnn.SDPAProgramConfig(
+             compute_with_storage_grid_size=ttnn.CoreCoord(*[8, 4]),
+             q_chunk_size=0,
+@@ -751,9 +761,19 @@
+         if start == 0:
+             cos = ttnn.reshape(self.cos, rope_shape, rope_shape)
+             sin = ttnn.reshape(self.sin, rope_shape, rope_shape)
+-        else:
++        elif start + x.shape[2] <= self.cos.shape[0]:
+             cos = ttnn.reshape(self.cos[start : start + x.shape[2], :], rope_shape)
+             sin = ttnn.reshape(self.sin[start : start + x.shape[2], :], rope_shape)
++        else:
++            key = (start, x.shape[2])
++            if key not in self.prefill_rope_cache:
++                if len(self.prefill_rope_cache) >= 8:
++                    self.prefill_rope_cache.pop(next(iter(self.prefill_rope_cache)))
++                self.prefill_rope_cache[key] = tuple(
++                    ttnn.reshape(ttnn.to_layout(table[start : start + x.shape[2], :], ttnn.TILE_LAYOUT), rope_shape)
++                    for table in (self.decode_cos, self.decode_sin)
++                )
++            cos, sin = self.prefill_rope_cache[key]
+         q = self._norm(q, "self_attn.q_norm")
+         q = ttnn.experimental.rotary_embedding(q, cos, sin)
+         if not self.sliding:
+--- a/models/demos/gemma4_31b_qb2/tt/generator.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator.py
+@@ -390,7 +390,7 @@
+         if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
+             raise ValueError("Prefill must advance each request from its current position")
+         shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
+-        if history_keys is not None or shape_key not in self.prefill_shapes:
++        if history_keys is not None or shape_key not in self.prefill_shapes or max(prompt_lens) > 32768:
+             # Request histories allocate persistent K/V tails even for a seen
+             # signature. Unseen signatures can also allocate native cached state.
+             # Both must be created before the next trace capture.
+@@ -465,6 +465,10 @@
+             outputs.append(
+                 out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
+             )
++            # RoPE conversion scratch must not survive into decode capture.
++            # CQ0 orders all reads; no forced deallocation of borrowed owners.
++            for layer in self.model.layers:
++                layer.prefill_rope_cache.clear()
+             # Device-return outputs retain their own owners in outputs. Host
+             # mode has consumed out; do not carry it into the next prefill.
+             del out, tt_ids, tables, uploaded_rows
