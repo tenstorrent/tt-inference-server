@@ -169,6 +169,9 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         try:
             if self.ttnn_device is None:
                 return True
+            decoder = getattr(self, "device_decoder", None)
+            if decoder is not None and hasattr(decoder, "release_backend_traces"):
+                decoder.release_backend_traces()
             if self._opened_mesh:
                 ttnn.close_mesh_device(self.ttnn_device)
             else:
@@ -342,10 +345,16 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             and self._decode_continue
             and os.environ.get("TT_QWEN3_DECODE_TRACE", "1") == "1"
         ):
-            self.device_decoder.capture_backend_traces(warm_buckets)
+            failed = self.device_decoder.capture_backend_traces(warm_buckets)
+            traced = [b for b in warm_buckets if b not in failed]
             self.logger.info(
-                f"Device {self.device_id}: decoder back-end traced for buckets {warm_buckets}"
+                f"Device {self.device_id}: decoder back-end traced for buckets {traced}"
             )
+            for bucket, err in failed.items():
+                self.logger.warning(
+                    f"Device {self.device_id}: decoder bucket {bucket} not traced, "
+                    f"decodes eagerly: {err}"
+                )
 
         self.logger.info(
             f"Device {self.device_id}: Voice prompts ready: "
