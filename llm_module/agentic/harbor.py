@@ -203,6 +203,13 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_config: dict[str, Any] = {"name": config.dataset}
+    # This dedicated full500 ref freezes acquisition to the historical dataset.
+    # Agent, model, verifier, limits and scoring stay on their existing paths.
+    if config.dataset == "swebench-verified" and len(config.task_names) == 500:
+        registry_path = Path(__file__).with_name("swe500_registry.json")
+        frozen = json.loads(registry_path.read_text())[0]["tasks"]
+        assert len(frozen) == 500 and {t["name"] for t in frozen} == set(config.task_names)
+        dataset_config["registry_path"] = str(registry_path)
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -317,7 +324,7 @@ def run(config: HarborRunConfig) -> int:
     interpreter = config.venv_python or Path(sys.executable)
     harbor_exec = Path(interpreter).parent / "harbor"
 
-    if _needs_config_file(config):
+    if _needs_config_file(config) or (config.dataset == "swebench-verified" and len(config.task_names) == 500):
         harbor_config_path = _write_harbor_config(config)
         cmd = [str(harbor_exec), "run", "--config", str(harbor_config_path)]
         if config.yes:
