@@ -1666,6 +1666,58 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen3.8-27B BH Galaxy MTP spec decode (qwen36_blackhole_mtp): TP=8 x DP=4, text-only.
+# Select with --impl qwen36-blackhole-mtp (no default_impl, so the plain qwen36_blackhole spec stays the default).
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36_blackhole_mtp
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # DP=4 x 8 per rank
+      max_context: 262144
+      max_tokens_all_users_override: 2101248  # total KV pool: 4 DP ranks x 525312 tokens per rank
+      # MTP spec decode via vllm-tt-plugin custom_class (Qwen36MTPContractForCausalLM); text-only
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
+        QWEN36_SPEC_K: "3"
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
+        QWEN_SDPA_BF8: "1"  # bfp8 paged KV cache: +12-14% aggregate at 8k-32k context, accuracy within noise (see QWEN38_GALAXY_HANDOFF.md §1a)
+      vllm_args:
+        data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 32 -> max_num_seqs 8 per rank
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        exclude_tools_when_tool_choice_none: true
+        # backend must be explicit: the validator rejects this under "auto".
+        # Disabling any_whitespace forces the closing brace (see the non-MTP Qwen3.8 template).
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace":
+          true}'
+        max_num_batched_tokens: "525312"  # per-rank KV capacity, as for the non-MTP template
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'
+        speculative-config: '{"method":"custom_class","model":"vllm_tt_plugin.model_owned_drafter","num_speculative_tokens":3}'
+        no-async-scheduling: true
+        no-enable-prefix-caching: true
+        enable_chunked_prefill: false
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING  # each rank is a Galaxy column; its Ring CCLs need the column's wrap link
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen38_27b_qb2

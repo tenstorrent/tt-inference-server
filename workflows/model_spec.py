@@ -379,6 +379,14 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Same tt-metal code as qwen36_blackhole; distinct impl_id so the Galaxy MTP
+# spec-decode profile gets its own model_id. Selectable via --impl qwen36-blackhole-mtp.
+qwen36_blackhole_mtp_impl = ImplSpec(
+    impl_id="qwen36_blackhole_mtp",
+    impl_name="qwen36-blackhole-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -494,6 +502,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "qwen36_blackhole_mtp": qwen36_blackhole_mtp_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
