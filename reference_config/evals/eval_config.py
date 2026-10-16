@@ -4568,6 +4568,18 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # lm-eval's humaneval_instruct ends the chat with an assistant
+                # gen_prefix ("```python\n<prompt>") to be continued. vLLM's
+                # mistral tokenizer (tokenizer_mode auto -> mistral) refuses
+                # add_generation_prompt=True after a final assistant message, so
+                # every request was a 400 and pass@1 graded 0 (Shield run
+                # 38216483981: 164/164 __INFERENCE_ERROR__, 0.089 s/task). Ask
+                # the server to continue the final message instead, which is
+                # what the prefix means.
+                request_body={
+                    "add_generation_prompt": False,
+                    "continue_final_message": True,
+                },
                 apply_chat_template=True,
                 max_concurrent=8,
                 gen_kwargs={
@@ -8397,6 +8409,88 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2: meta-models/Muse-Glimmer-30B (text decoder; business-priority list).
+    # No like-for-like reference exists: the card's scores (GPQA-Diamond 83.5, AIME 2026 94.7, IFBench 77.0) are
+    # Artificial Analysis runs at "High Reasoning", not the TTIS lm-eval task variants, so every task is ungated
+    # (published and GPU reference None) for the Colab GPU-reference sweep to fill (issue #5353). leaderboard_ifeval
+    # is left out: its pinned task caps generation at 1280 tokens, which truncates this reasoning model's thinking.
+    EvalConfig(
+        hf_model_repo="meta-models/Muse-Glimmer-30B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=82.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6108470321",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
+                # at the chat template's default "Reasoning strength: high".
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=90.00,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6108470321",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
+                # at the chat template's default "Reasoning strength: high".
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2. meta_ifeval / meta_gpqa_cot (the Llama-3.1-8B-Instruct tasks) need
     # "<hf_model_repo>-evals", which Meta did not publish for Llama 3, so the scored tasks are the Open LLM Leaderboard v2
     # ones, cited to this checkpoint's OLL v2 results JSON; GPU reference TBD.
@@ -10426,7 +10520,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
@@ -10440,29 +10537,15 @@ _eval_config_list = [
                     # generation. That job belongs to wall_clock_timeout_seconds below,
                     # which bounds the TASK rather than the request.
                     #
-                    # Left at main's value. Worst case here is a break-even question,
-                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
-                    # a full generation fits inside 14400s only if decode sustains
-                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
-                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
-                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
-                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
-                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
-                    # about 5.7h for a full generation. So the break-even for 14400 sits
-                    # ~42% above the fastest rate measured on this model, and every value
-                    # proposed for this field is on the truncating side of it.
-                    #
-                    # Stated as a threshold on purpose: no TPOT has been measured under
-                    # the real eval condition (max_concurrent=32, 122k-token generations),
-                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
-                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
-                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
-                    # than traced) and has been withdrawn.
-                    #
-                    # Making a per-request budget genuinely computable requires clamping
-                    # max_gen_toks to what the device context supports, which is a
-                    # separate change from this PR.
-                    "timeout": "14400",
+                    # Keep the request budget at the task budget so the task deadline is
+                    # always the binding failure mode. Shield run 38056762498 measured
+                    # one healthy streamed AIME request reaching the old 14400s total
+                    # timeout; lm-eval kept its partial output, reported one failed
+                    # prompt, and still scored the task PASS. That is not a clean full
+                    # eval. With this value a healthy long request can finish; a real
+                    # hang is killed by wall_clock_timeout_seconds below and the whole
+                    # task reports incomplete instead of scoring partial text.
+                    "timeout": "36000",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -10484,7 +10567,9 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Sized from Shield run 37996687040 (QB2, limited): 14/15 samples in 10136 s, the 15th ~75k
+                # tokens deep at 19 tok/s, so 15 ~= 12,700 s and the full 30 ~= 25,400 s; x1.4 margin.
+                wall_clock_timeout_seconds=36000,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -10507,7 +10592,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
@@ -10521,29 +10609,10 @@ _eval_config_list = [
                     # generation. That job belongs to wall_clock_timeout_seconds below,
                     # which bounds the TASK rather than the request.
                     #
-                    # Left at main's value. Worst case here is a break-even question,
-                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
-                    # a full generation fits inside 14400s only if decode sustains
-                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
-                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
-                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
-                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
-                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
-                    # about 5.7h for a full generation. So the break-even for 14400 sits
-                    # ~42% above the fastest rate measured on this model, and every value
-                    # proposed for this field is on the truncating side of it.
-                    #
-                    # Stated as a threshold on purpose: no TPOT has been measured under
-                    # the real eval condition (max_concurrent=32, 122k-token generations),
-                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
-                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
-                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
-                    # than traced) and has been withdrawn.
-                    #
-                    # Making a per-request budget genuinely computable requires clamping
-                    # max_gen_toks to what the device context supports, which is a
-                    # separate change from this PR.
-                    "timeout": "14400",
+                    # Match the task budget for the same reason as AIME above: the task
+                    # deadline must report a hang as incomplete before lm-eval can score
+                    # a timeout's partial streamed output.
+                    "timeout": "42000",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -10559,7 +10628,9 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Slower of two measured QB2 rates: 7 samples / 498 s (run 37996687040) and 48/198 in
+                # 8100 s (run 37097968441) -> 0.0059 samples/s, 198 ~= 33,600 s; x1.25 margin.
+                wall_clock_timeout_seconds=42000,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -10593,6 +10664,8 @@ _eval_config_list = [
                     "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
+                # 0.15-limited QB2 run (37996687040) took 2940 s, so full ~= 19,600 s; x1.3 margin.
+                wall_clock_timeout_seconds=25600,
             ),
         ],
     ),
