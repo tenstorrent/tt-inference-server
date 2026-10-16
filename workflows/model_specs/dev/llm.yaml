@@ -891,7 +891,7 @@ templates:
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
-        GEMMA_BATCH_PREFILL_MAX_BATCH: '8'
+        GEMMA_BATCH_PREFILL_MAX_BATCH: '1'
         GEMMA_BATCH_PREFILL_REPORT: '1'
         GEMMA_EXPERIMENT_KV_POOL_TOKENS: '606208'
         GEMMA_EXPERIMENT_NATIVE_ALIAS: '1'
