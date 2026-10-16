@@ -1,0 +1,15 @@
+{
+  "base_commit": "8f402102-model-safety-target",
+  "target_commit": "alias-plus-revised-history-no-RoPE",
+  "patch_sha256": "bae264cac9acf8ff80bbd98c3e48e8957482a3bf3e574587f7ba186940c4063f",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
+      "target": "6d9aa2691fbc994d42ff385333c35a712a04fe3ca7db9f346f489b9a287ab8dd"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",
+      "target": "e93d40c99bacc8ff05cb77d6181c0ace9329b911d9e45e8b74a62ae43a9f8fd4"
+    }
+  }
+}
