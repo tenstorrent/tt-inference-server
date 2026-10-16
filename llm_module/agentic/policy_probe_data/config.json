@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED native alias plus history capacity/admission gate; RoPE unchanged",
+  "purpose": "UNSCORED integrated native FCFS memory gate; original RoPE; same fixed A16 work",
   "policy": "fifo",
   "C": 8,
   "F": 704000,
@@ -8,20 +8,13 @@
   "profiles": [
     {
       "workload": "swe",
-      "A": 8,
-      "role": "fixed 64-stream cumulative workload at larger shared pool"
-    },
-    {
-      "workload": "swe",
       "A": 16,
-      "role": "fixed 64-stream cumulative workload at larger shared pool"
-    },
-    {
-      "workload": "swe",
-      "A": 32,
-      "role": "fixed 64-stream cumulative workload at larger shared pool"
+      "role": "native FCFS integrated gate and selected-pool comparison"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
-  "credit_s": 120
+  "credit_s": 120,
+  "engine_scheduler": "fcfs",
+  "trace_reserve_bytes": 134217728,
+  "allocation_probe_min_histories": 6
 }
