@@ -11,7 +11,7 @@ def run_probe(server,context):
     root=Path(context.output_dir)/'UNSCORED-policy-probe';root.mkdir(parents=True,exist_ok=False)
     (root/'config.json').write_text(json.dumps(cfg,indent=2))
     ids=json.loads((here/'token_ids.json').read_text())*3
-    output_lengths=json.loads((here/'output-length-mix.json').read_text())['output_lengths']
+    fixture=json.loads((here/'joint-length-fixture.json').read_text())['streams']
     shapes=json.loads((here/'terminal_shapes.json').read_text())
     endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+3600
     headers={'Content-Type':'application/json'}
@@ -47,9 +47,9 @@ def run_probe(server,context):
             def task(i):
                 begin=time.time();calls=[];session=f'diagnostic-{label}-task{i}__agent'
                 for turn in range(3):
-                    length=((49152 if i%4==3 else 16384)+512*turn) if workload=='swe' else shapes[i]['lengths'][turn]
+                    length=fixture[i][turn]['prompt_tokens'] if workload=='swe' else shapes[i]['lengths'][turn]
                     tokens=list(ids[:length]);tokens[0]=10000+i
-                    planned_output=output_lengths[3*i+turn] if workload=='swe' else output
+                    planned_output=fixture[i][turn]['output_tokens'] if workload=='swe' else output
                     calls.append(request(tokens,planned_output,session))
                     if turn<2:time.sleep(gap)
                 row={'task':i,'task_start':begin,'task_end':time.time(),'calls':calls}
