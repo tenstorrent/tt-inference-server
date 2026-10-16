@@ -905,7 +905,7 @@ templates:
         TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: '0'
       override_tt_config:
         sample_on_device_mode: all
-        trace_region_size: 536870912
+        trace_region_size: 134217728
         l1_small_size: 16384
       vllm_args:
         scheduling-policy: priority
