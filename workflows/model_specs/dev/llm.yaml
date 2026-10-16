@@ -878,7 +878,7 @@ templates:
       tool_call_parser_name: gemma4
 
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
-# models/demos/gemma4_31b_qb2. C8 conservative lifetime control; eight physical
+# models/demos/gemma4_31b_qb2. C16 experimental memory candidate; sixteen physical
 # decode rows are warmed before serving, with the full-context shared KV pool.
 - weights:
     - google/gemma-4-31B-it
@@ -886,18 +886,18 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 8
+      max_concurrency: 16
       max_context: 262144
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         GEMMA_CONTINUATION_POLICY: fifo
         GEMMA_CONTINUATION_WINDOW_S: '120'
         MESH_DEVICE: P300x2
-        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '736256'
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '524288'
         GEMMA_EXPERIMENT_NATIVE_ALIAS: '1'
         GEMMA_EXPERIMENT_NATIVE_ALIAS_AUDIT: '1'
         GEMMA_ALLOCATION_EVENT_PROBES: '2'
-        GEMMA_PEAK_MIN_HISTORIES: '7'
+        GEMMA_PEAK_MIN_HISTORIES: '15'
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'

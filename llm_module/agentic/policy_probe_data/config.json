@@ -1,8 +1,8 @@
 {
   "purpose": "UNSCORED combined memory capacity and admission diagnostic; no benchmark score",
   "policy": "fifo",
-  "C": 8,
-  "F": 736256,
+  "C": 16,
+  "F": 524288,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
   "base_validation": "Individual memory full-model gates passed; combined fixture and same-pool serving gates required before dispatch",
   "profiles": [
