@@ -2,9 +2,9 @@
   "purpose": "UNSCORED combined memory capacity and admission diagnostic; no benchmark score",
   "policy": "fifo",
   "C": 8,
-  "F": 736256,
+  "F": 731648,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
-  "base_validation": "Individual memory full-model gates passed; combined fixture and same-pool serving gates required before dispatch",
+  "base_validation": "64K composition and same-pool alias gates pending; RoPE32 A16 regression preserved",
   "profiles": [
     {
       "workload": "swe",

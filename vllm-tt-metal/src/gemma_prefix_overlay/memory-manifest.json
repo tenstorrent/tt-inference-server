@@ -1,15 +1,15 @@
 {
   "base_commit": "8f402102-model-safety-target",
-  "target_commit": "combined-memory-9df1a12-ci-adapter",
-  "patch_sha256": "5cf6fcded23aaa9720ca0b9c7885cb55e35833ffe411b0fe14fd03fd59d37bc0",
+  "target_commit": "combined64-memory-de22fe4-ci-adapter",
+  "patch_sha256": "83e65464d164b28b1397d40b6bdffde18ffbb3527e29904bf07796b18081fd60",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "f38916ff38cd7fa80859dd6b51f3544eae9fb29442f5b9e5cb803f91c2f34e7a"
+      "target": "13171efe7a3a701ea2dfc4ef2ef2ebd4ccfc928faa0efd1df96a6eac993c1113"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
-      "target": "ed93c5c58c275aaf8f0c1e80014902770186af5513c1ad148d29b82fcd731b44"
+      "target": "1b329e0c1b2b32aab71fa4af5afb1f81a1f64d8517f07b6902b3f7b79077217c"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",
