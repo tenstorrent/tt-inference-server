@@ -6,6 +6,10 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`gemma-4-12B-it` is also supported on hardware:
+
+- [BH Galaxy](gemma-4-12B-it_blackhole_galaxy.md)
+
 ## Quickstart - Deploy gemma-4-12B-it Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
@@ -22,7 +26,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gemma-4-12B-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.24.0-29f93c9-3506696 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.25.0-978f93b-a723030 \
   --model google/gemma-4-12B-it \
   --tt-device p300x2
 ```
@@ -39,10 +43,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [google/gemma-4-12B-it](https://huggingface.co/google/gemma-4-12B-it) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 262144 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/29f93c9/models/tt_transformers) |
-| tt-metal Commit | `29f93c9` |
-| vLLM Commit | `3506696` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.24.0-29f93c9-3506696` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/978f93b/models/tt_transformers) |
+| tt-metal Commit | `978f93b` |
+| vLLM Commit | `a723030` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.25.0-978f93b-a723030` |

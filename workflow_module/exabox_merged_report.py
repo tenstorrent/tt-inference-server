@@ -15,6 +15,7 @@ This rebuilds that answer without re-running anything:
     discover_test_reports(container)  -> [Path]
       -> load_test_reports(...)       -> [SourceReport]
       -> build_merged_schema(...)     -> ReportSchema   (sections concatenated)
+      -> relocate_telemetry_charts    -> chart SVGs copied beside the markdown
       -> acceptance_criteria_check    -> recomputed, model_status-gated
       -> ReportGenerator.generate     -> report_<id>.md + data/report_data_<id>.json
       -> with --job-id N              -> merged_report_<N>.json (the full merge)
@@ -304,6 +305,102 @@ def load_test_reports(
 
 
 # --------------------------------------------------------------------------- #
+# telemetry charts
+# --------------------------------------------------------------------------- #
+#: Payload keys holding a chart's link relative to its source report's
+#: directory (see ``llm_module.agentic_traces.charts.TELEMETRY_CHART_PREFIX``).
+#: Duplicated here: the merger only needs the prefix, not the chart code.
+TELEMETRY_CHART_PREFIX = "telemetry_chart_"
+
+#: Directory, beside the merged markdown, that the charts are gathered into.
+TELEMETRY_CHART_DIR = "telemetry_charts"
+
+#: Suffix of a chart's Mermaid twin (``llm_module.agentic_traces.charts``).
+MERMAID_SUFFIX = ".mmd"
+
+
+def _chart_records(block: Any) -> List[Dict[str, Any]]:
+    """The mutable record dicts of a block that may carry chart links."""
+    data = getattr(block, "data", None)
+    if isinstance(data, dict):
+        records = data.get("records")
+        if isinstance(records, list):
+            return [r for r in records if isinstance(r, dict)]
+        return [data]
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    return []
+
+
+def relocate_telemetry_charts(sources: Sequence[SourceReport], output_dir: Path) -> int:
+    """Gather each source's chart SVGs beside the merged markdown.
+
+    The markdown a test writes links its charts relative to its own report
+    directory, but the merge writes ``release_report.md`` somewhere else and
+    only the per-test JSON reaches it -- so the links would dangle and the
+    charts, which live in the per-test artifact, would not travel with the
+    merged report. Copy each into ``<output_dir>/telemetry_charts/<job>/`` and
+    point the link there. A link whose file cannot be found is dropped, so the
+    report never carries a broken image.
+
+    Returns the number of charts copied.
+    """
+    copied = 0
+    for source in sources:
+        for block in source.schema.sections:
+            for record in _chart_records(block):
+                for key in [k for k in record if k.startswith(TELEMETRY_CHART_PREFIX)]:
+                    link = record[key]
+                    found = (
+                        _find_chart(source.path.parent, link)
+                        if isinstance(link, str) and link
+                        else None
+                    )
+                    if found is None:
+                        logger.warning(
+                            "Chart %r from %s not found; dropping its link.",
+                            link,
+                            source.path.name,
+                        )
+                        del record[key]
+                        continue
+                    relative = Path(
+                        TELEMETRY_CHART_DIR, str(source.job_id), *Path(link).parts
+                    )
+                    dest = output_dir / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(found, dest)
+                    # The chart's Mermaid twin, which the CI job summary shows
+                    # in place of the image it cannot load.
+                    twin = found.with_suffix(MERMAID_SUFFIX)
+                    if twin.is_file():
+                        shutil.copyfile(twin, dest.with_suffix(MERMAID_SUFFIX))
+                    record[key] = relative.as_posix()
+                    copied += 1
+    if copied:
+        logger.info("Copied %d telemetry chart(s) into %s", copied, output_dir)
+    return copied
+
+
+def _find_chart(report_root: Path, link: str) -> Optional[Path]:
+    """Locate a chart link under the source report's artifact directory.
+
+    The link is relative to the markdown's directory, which sits somewhere
+    below the artifact root the JSON was found in, so match on the link's own
+    path wherever it landed.
+    """
+    parts = Path(link).parts
+    if not parts or ".." in parts or Path(link).is_absolute():
+        return None
+    direct = report_root / link
+    if direct.is_file():
+        return direct
+    return next(
+        (p for p in report_root.rglob(parts[-1]) if p.as_posix().endswith(link)), None
+    )
+
+
+# --------------------------------------------------------------------------- #
 # merge
 # --------------------------------------------------------------------------- #
 def build_merged_schema(
@@ -438,6 +535,7 @@ def merge_reports(
         len(superseded),
     )
 
+    relocate_telemetry_charts(sources, output_dir)
     schema = build_merged_schema(sources, model=model, target=target, job_id=job_id)
     model_status = resolve_model_status(sources)
 
