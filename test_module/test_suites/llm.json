@@ -1074,6 +1074,23 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }
