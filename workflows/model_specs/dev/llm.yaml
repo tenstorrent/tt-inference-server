@@ -2882,6 +2882,8 @@ templates:
         # B=1+B=32 lean decode; nightly uses 300MB + max_num_seqs=1.
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
+        # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
+        l1_small_size: 65536
       vllm_args:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -2916,6 +2918,8 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
+        # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
+        l1_small_size: 65536
       vllm_args:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -2976,6 +2980,10 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
+        # Collective semaphores go to this region instead of worker L1: a collective first compiled
+        # after the decode-trace capture (a new prefill shape) would otherwise place them where the
+        # replay writes its L1 intermediates (wrong first token / hang on the next prefill).
+        l1_small_size: 65536
       vllm_args:
         data_parallel_size: 4  # folded into 4 lanes on one engine (GEMMA4_GALAXY_LANES)
         max_num_seqs: 32  # per lane; max_concurrency above is whole-box
