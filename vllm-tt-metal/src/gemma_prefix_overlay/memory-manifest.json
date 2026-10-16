@@ -1,0 +1,19 @@
+{
+  "base_commit": "8f402102-model-safety-target",
+  "target_commit": "combined-memory-9df1a12-ci-adapter",
+  "patch_sha256": "5cf6fcded23aaa9720ca0b9c7885cb55e35833ffe411b0fe14fd03fd59d37bc0",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "f38916ff38cd7fa80859dd6b51f3544eae9fb29442f5b9e5cb803f91c2f34e7a"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
+      "target": "ed93c5c58c275aaf8f0c1e80014902770186af5513c1ad148d29b82fcd731b44"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",
+      "target": "e93d40c99bacc8ff05cb77d6181c0ace9329b911d9e45e8b74a62ae43a9f8fd4"
+    }
+  }
+}
