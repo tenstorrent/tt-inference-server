@@ -968,16 +968,13 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
       benchmark_max_concurrency: 1
-      # The bounded QB2 release cohort was validated without thinking and with
-      # one client request at a time. Keep that policy on this profile only;
-      # the shared/full GPQA task remains thinking-on for other implementations.
-      eval_task_mode_overrides:
-        ci-nightly:
-          r1_gpqa_diamond:
-            max_concurrent: 1
-            request_body:
-              chat_template_kwargs:
-                enable_thinking: false
+      # This implementation's validated GPQA path uses one non-thinking request.
+      eval_task_overrides:
+        r1_gpqa_diamond:
+          max_concurrent: 1
+          request_body:
+            chat_template_kwargs:
+              enable_thinking: false
 
 - weights:
     - google/gemma-4-12B-it

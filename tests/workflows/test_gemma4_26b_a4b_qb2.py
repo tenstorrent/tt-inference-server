@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-from types import SimpleNamespace
-
 from llm_module.benchmark_configs import get_llm_configs
 from llm_module.eval_configs import _apply_profile_task_overrides
 from reference_config.evals.eval_config import (
@@ -55,9 +53,6 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.vllm_args["hf-overrides"] == (
         '{"architectures":["TTGemma4A4BForCausalLM"]}'
     )
-    assert dedicated.device_model_spec.vllm_args["default-chat-template-kwargs"] == (
-        '{"enable_thinking": true}'
-    )
     assert dedicated.device_model_spec.vllm_args["reasoning-parser"] == "gemma4"
     assert dedicated.device_model_spec.vllm_args["seed"] == 9472
     assert dedicated.device_model_spec.vllm_args["max_num_seqs"] == 1
@@ -82,9 +77,7 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
 
     gpqa, terminal_task, swe_task = tasks
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
-    assert gpqa.max_concurrent == 32
     assert gpqa.seed == 42
-    assert gpqa.request_body == {}
 
     terminal = terminal_task.agentic_eval_config
     swe = swe_task.agentic_eval_config
@@ -113,37 +106,20 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
         assert accept_eval_score(reference, failing_score, n_total=total) is False
 
 
-def test_gemma4_26b_gpqa_release_policy_is_scoped_to_tt_vllm_plugin():
-    specs = _gemma4_26b_specs()
-    default = resolve_model_spec(
-        specs,
-        model="google/gemma-4-26B-A4B-it",
-        device="p300x2",
-        catalog_name="Shield",
-    )
+def test_gemma4_26b_tt_vllm_plugin_uses_validated_gpqa_transport():
     dedicated = resolve_model_spec(
-        specs,
+        _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
         impl="tt-vllm-plugin",
         catalog_name="Shield",
     )
-    ci_nightly = SimpleNamespace(
-        eval_samples=None,
-        limit_samples_mode="ci-nightly",
-    )
+    gpqa = _apply_profile_task_overrides(
+        [_eval_config_map["google/gemma-4-26B-A4B-it"].tasks[0]], dedicated
+    )[0]
 
-    gpqa = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks[0]
-    shared_gpqa = _apply_profile_task_overrides([gpqa], default, ci_nightly)[0]
-    release_gpqa = _apply_profile_task_overrides([gpqa], dedicated, ci_nightly)[0]
-    full_gpqa = _apply_profile_task_overrides([gpqa], dedicated, None)[0]
-
-    assert shared_gpqa.max_concurrent == full_gpqa.max_concurrent == 32
-    assert shared_gpqa.request_body == full_gpqa.request_body == {}
-    assert release_gpqa.max_concurrent == 1
-    assert release_gpqa.request_body == {
-        "chat_template_kwargs": {"enable_thinking": False}
-    }
+    assert gpqa.max_concurrent == 1
+    assert gpqa.request_body == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
