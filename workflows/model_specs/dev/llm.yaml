@@ -891,7 +891,9 @@ templates:
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
-        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '393216'
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '704000'
+        GEMMA_EXPERIMENT_NATIVE_ALIAS: '1'
+        GEMMA_EXPERIMENT_NATIVE_ALIAS_AUDIT: '1'
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'
@@ -899,9 +901,10 @@ templates:
         TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: '0'
       override_tt_config:
         sample_on_device_mode: all
-        trace_region_size: 536870912
+        trace_region_size: 134217728
         l1_small_size: 16384
       vllm_args:
+        scheduling-policy: fcfs
         block_size: '128'
         enable-prompt-tokens-details: true
         revision: '842da3794eaa0b77d5f08bae87a17459d91ff475'
