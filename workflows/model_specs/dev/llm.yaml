@@ -2862,6 +2862,13 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
+        # Text + image + video: route every Gemma4 arch name to the multimodal serving class
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # vLLM prefix caching as on the 31B / 12B entries: the plugin gates it on the model class
+        # capability (GEMMA4_PREFIX_CACHING), which the class refuses under bounded sliding rings.
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -2885,11 +2892,20 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
     - device: P150X8
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
+        # Text + image + video: route every Gemma4 arch name to the multimodal serving class
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # vLLM prefix caching as on the 31B / 12B entries: the plugin gates it on the model class
+        # capability (GEMMA4_PREFIX_CACHING), which the class refuses under bounded sliding rings.
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
         MESH_DEVICE: "P150x8"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
@@ -2909,6 +2925,8 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096
         long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
     # WH T3K (1x8 = 8x n300, ~96 GB). Metal policy (generator_trace 26B-A4B/T3K):
     # bounded + multi-chunk (2048) above 16k. 4k / 32k / 128k all PASS, but MoE
     # prefill on Wormhole is far slower than the dense 31B — TTFT 60 s @4k,
@@ -2982,6 +3000,10 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
   status: EXPERIMENTAL
+  supported_modalities:
+    - text
+    - image
+    - video
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
