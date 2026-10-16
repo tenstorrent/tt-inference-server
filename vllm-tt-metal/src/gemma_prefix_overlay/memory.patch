@@ -8,7 +8,7 @@
  import time
  from dataclasses import dataclass, field
  from types import SimpleNamespace
-@@ -15,7 +16,8 @@
+@@ -15,9 +16,11 @@
  import torch
  from loguru import logger
  from transformers import AutoTokenizer, GenerationConfig
@@ -17,8 +17,11 @@
 +from ttnn._ttnn.operations.trace import get_unsafe_tracked_ids
  
  import ttnn
++from .page_gather import gather_pages
  from models.common.sampling.tt_sampling import TTSampling
-@@ -41,6 +43,8 @@
+ from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
+ from models.demos.gemma4_31b_qb2.tt.model import Gemma4Model
+@@ -41,6 +44,8 @@
  
  class Gemma4Generator:
      def __init__(self, model, *, max_seq_len=2048):
@@ -27,6 +30,16 @@
          self.model, self.mesh = model, model.mesh
          self.tokenizer = AutoTokenizer.from_pretrained(model.checkpoint, local_files_only=True)
          generation_config = GenerationConfig.from_pretrained(model.checkpoint, local_files_only=True)
+@@ -350,8 +355,7 @@
+                 raise ValueError(f"Missing sliding prefix pages for layer {i} at position {start}: {pages}")
+             pair = []
+             for cache in state.kv[i]:
+-                parts = [cache[p : p + 1, :, :, :] for p in pages]
+-                tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
++                tail = gather_pages(cache, pages, self.mesh)
+                 pair.append(ttnn.typecast(tail, ttnn.bfloat16))
+             histories.append(tuple(pair))
+         return histories
 @@ -368,6 +372,7 @@
          return_device=False,
          start_positions=None,
@@ -482,3 +495,66 @@
              self.generator._tables(kv_cache, tables)
          if sample and (reload_sampling_params or reset_sampling_state):
              params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/page_gather.py
+@@ -0,0 +1,22 @@
++"""Experimental raw tiled-page gather; not integrated or promoted."""
++from pathlib import Path
++import ttnn
++
++def gather_pages(cache,pages,mesh):
++    shape=tuple(cache.shape);pages=[int(p) for p in pages]
++    assert len(shape)==4 and shape[2]==128 and shape[3]%32==0
++    assert cache.dtype==ttnn.bfloat8_b and cache.layout==ttnn.TILE_LAYOUT
++    assert 1<=len(pages)<=8 and all(0<p<shape[0] for p in pages)
++    assert cache.memory_config()==ttnn.DRAM_MEMORY_CONFIG
++    heads=shape[1];head_tiles=4*(shape[3]//32)
++    output=ttnn.allocate_tensor_on_device(ttnn.Shape([1,heads,len(pages)*128,shape[3]]),cache.dtype,ttnn.TILE_LAYOUT,mesh,ttnn.DRAM_MEMORY_CONFIG)
++    grid=ttnn.CoreRangeSet([ttnn.CoreRange(ttnn.CoreCoord(0,0),ttnn.CoreCoord(7,0))])
++    args=ttnn.RuntimeArgs()
++    for x in range(8):args[x][0]=[cache.buffer_address(),output.buffer_address(),x,heads*head_tiles*len(pages),head_tiles,heads,len(pages)]+pages+[0]*(8-len(pages))
++    ct=ttnn.TensorAccessorArgs(cache).get_compile_time_args()+ttnn.TensorAccessorArgs(output).get_compile_time_args()
++    kernel=ttnn.KernelDescriptor(kernel_source=str(Path(__file__).with_name('copy_pages.cpp')),source_type=ttnn.KernelDescriptor.SourceType.FILE_PATH,core_ranges=grid,compile_time_args=ct,runtime_args=args,config=ttnn.DataMovementConfigDescriptor(processor=ttnn.DataMovementProcessor.RISCV_0,noc=ttnn.NOC.NOC_0))
++    tile_bytes=cache.get_tile().get_tile_size(cache.dtype)
++    cb=ttnn.CBDescriptor(total_size=tile_bytes,core_ranges=grid,format_descriptors=[ttnn.CBFormatDescriptor(buffer_index=0,data_format=cache.dtype,page_size=tile_bytes)])
++    descriptor=ttnn.ProgramDescriptor(kernels=[kernel],cbs=[cb])
++    ttnn.generic_op([cache,output],descriptor)
++    return output
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/copy_pages.cpp
+@@ -0,0 +1,35 @@
++#include "api/dataflow/dataflow_api.h"
++#include "api/dataflow/noc.h"
++#include "api/dataflow/dataflow_buffer.h"
++#include "api/tensor/noc_traits.h"
++void kernel_main() {
++    const uint32_t src_address = get_arg_val<uint32_t>(0);
++    const uint32_t dst_address = get_arg_val<uint32_t>(1);
++    const uint32_t first_tile = get_arg_val<uint32_t>(2);
++    const uint32_t tile_count = get_arg_val<uint32_t>(3);
++    const uint32_t tiles_per_head_page = get_arg_val<uint32_t>(4);
++    const uint32_t heads = get_arg_val<uint32_t>(5);
++    const uint32_t pages = get_arg_val<uint32_t>(6);
++    constexpr auto src_args = TensorAccessorArgs<0>();
++    constexpr auto dst_args = TensorAccessorArgs<src_args.next_compile_time_args_offset()>();
++    const auto src = TensorAccessor(src_args, src_address);
++    const auto dst = TensorAccessor(dst_args, dst_address);
++    const uint32_t bytes = get_local_cb_interface(0).fifo_page_size;
++    Noc noc;
++    DataflowBuffer buffer(0);
++    for (uint32_t out = first_tile; out < tile_count; out += 8) {
++        const uint32_t head = out / (pages * tiles_per_head_page);
++        const uint32_t within_head = out % (pages * tiles_per_head_page);
++        const uint32_t page_index = within_head / tiles_per_head_page;
++        const uint32_t page = get_arg_val<uint32_t>(7 + page_index);
++        const uint32_t in = page * heads * tiles_per_head_page + head * tiles_per_head_page + within_head % tiles_per_head_page;
++        buffer.reserve_back(1);
++        noc.async_read(src, buffer, bytes, {.page_id = in}, {});
++        noc.async_read_barrier();
++        buffer.push_back(1);
++        buffer.wait_front(1);
++        noc.async_write(buffer, dst, bytes, {}, {.page_id = out});
++        noc.async_write_barrier();
++        buffer.pop_front(1);
++    }
++}

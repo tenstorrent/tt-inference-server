@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED native-guarded trace reuse matched width",
+  "purpose": "UNSCORED runtime page gather matched swe",
   "policy": "fifo",
   "C": 16,
   "F": 606208,
@@ -9,7 +9,7 @@
     {
       "workload": "swe",
       "A": 16,
-      "role": "reuse matched joint-length fixture"
+      "role": "runtime page gather"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
