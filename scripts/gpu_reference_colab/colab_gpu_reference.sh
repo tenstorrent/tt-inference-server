@@ -495,7 +495,7 @@ if epoch not in epochs:
         # recomputes status from it plus the reports on disk, so a finish after a
         # report_pending pass grades the recovered reports, not that pass's result.
         local verdict
-        [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched; cannot finish without it"; return 1; }
+        [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched and cannot be recovered; cannot finish without it"; return 1; }
         verdict="$(gpuref shield-provenance --prov "${SERVE_PROV}" --shield-dir "${SHIELD_DIR}" \
             --serving-dir "${SERVING_DIR}" --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
         gpuref summary "${SHIELD_DIR}" | tee "${OUT_DIR}/summary.txt" || true
@@ -517,8 +517,35 @@ if epoch not in epochs:
             retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)" \
                 || log "WARNING: ${task}: report still not retrievable; the record stays report_pending"
         done
+        if [[ ! -s "${SERVE_PROV}" ]]; then recover_serving_provenance || true; fi
         FINISH_RC=0; finish_serve || FINISH_RC=1
         return 0
+    }
+    recover_serving_provenance() {   # SERVE_PROV was never fetched: bring it home from the VM that served
+        # Every run finished but the final fetch did not (e.g. its download
+        # failed). If that VM is still up (--keep, or a driver that died before
+        # stopping it), stop its runner and fetch again. Only a VM whose
+        # serving snapshot is one of the saved ones served these runs; any
+        # other VM's provenance is set aside, never graded.
+        local snap="${SERVE_PROV%/*}/serving_provenance.json" epoch aside
+        colab sessions < /dev/null 2>&1 | has_session || { log "the serving VM '${SESSION}' is gone; its final provenance cannot be fetched"; return 1; }
+        SESSION_ACTIVE=1   # stopped on exit unless --keep
+        log "final provenance missing; fetching it from '${SESSION}'"
+        if remote_state && [[ "${STATE}" == "SERVING" || "${STATE}" == "RUNNING" ]]; then
+            remote_step stop 60 GPUREF_STOP_REQUESTED
+            for _ in $(seq 1 40); do remote_state && [[ "${STATE}" == "DONE" || "${STATE}" == "FAILED" ]] && break; sleep "${STOP_POLL_SECONDS:-15}"; done
+        fi
+        fetch_results
+        epoch="$( [[ -s "${snap}" ]] && "${PYRUN[@]}" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:12])' "${snap}")" || epoch=""
+        if [[ -z "${epoch}" || ! -s "${SERVING_DIR}/${epoch}.json" ]]; then
+            if [[ -s "${SERVE_PROV}" ]]; then
+                aside="${SERVE_PROV%.json}.unbound-$(date -u +%Y%m%dT%H%M%SZ).json"; mv "${SERVE_PROV}" "${aside}"
+                log "WARNING: '${SESSION}' is not a VM that served these runs (no saved snapshot ${epoch:-none}); set its provenance aside as ${aside}"
+            fi
+            return 1
+        fi
+        [[ -s "${SERVE_PROV}" ]] || { log "'${SESSION}' (epoch ${epoch}) has no provenance.json"; return 1; }
+        log "recovered the final provenance of serving epoch ${epoch}"
     }
     keep_serving_provenance() {   # after fetch_results: never let a later VM replace SERVE_PROV
         # $1 = SERVE_PROV saved before the fetch (empty if there was none).
