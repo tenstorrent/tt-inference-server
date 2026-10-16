@@ -460,16 +460,21 @@ if epoch not in epochs:
     retrieve_report() {   # TASK REC RUN_ID CONCLUSION: download the run's report, record the outcome
         # A completed run is recorded "completed" only once its report is on disk;
         # otherwise "report_pending", which a re-run retries instead of skipping.
-        local task="$1" rec="$2" run_id="$3" conclusion="$4" state=completed shown endpoint_id dispatched test
+        # Reports land in <task>/run-<run_id>, so each record is graded on its
+        # own run's reports; the run's failed steps tell an accuracy miss from
+        # any other failure.
+        local task="$1" rec="$2" run_id="$3" conclusion="$4" state=completed shown endpoint_id dispatched test failed
         shown="$(field "${rec}" endpoint)" endpoint_id="$(field "${rec}" endpoint_id)"
         dispatched="$(field "${rec}" dispatched_at)" test="$(field "${rec}" test)"
-        rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}"
-        gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}" -p '*report*' > /dev/null 2>&1 || true
-        report_on_disk "${SHIELD_DIR}/${task}" || state=report_pending
+        rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}/run-${run_id}"
+        gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}/run-${run_id}" -p '*report*' > /dev/null 2>&1 || true
+        report_on_disk "${SHIELD_DIR}/${task}/run-${run_id}" || state=report_pending
+        failed="$(gh run view "${run_id}" -R "${SHIELD_REPO}" --json jobs 2>/dev/null | gpuref shield-failed-steps)" || failed=""
         gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=${state}" \
             "conclusion=${conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
             "endpoint=${shown}" "endpoint_id=${endpoint_id}" "ttis=${TTIS_SHA}" \
-            "dispatched_at=${dispatched}" "test=${test}" "serving_epochs=$(field "${rec}" serving_epochs)"
+            "dispatched_at=${dispatched}" "test=${test}" "serving_epochs=$(field "${rec}" serving_epochs)" \
+            "failed_steps=${failed}"
         [[ "${state}" == "completed" ]]
     }
     retry_report() {   # TASK REC RUN_ID CONCLUSION: retrieve_report, REPORT_TRIES times a minute apart
@@ -513,7 +518,7 @@ if epoch not in epochs:
         log "every Shield run already finished; retrieving reports only (no VM is started)"
         for task in "${SERVE_TASKS[@]}"; do
             rec="${SHIELD_DIR}/${task}.json"
-            report_on_disk "${SHIELD_DIR}/${task}" && [[ "$(field "${rec}" state)" == "completed" ]] && continue
+            report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)" && [[ "$(field "${rec}" state)" == "completed" ]] && continue
             retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)" \
                 || log "WARNING: ${task}: report still not retrievable; the record stays report_pending"
         done
@@ -629,7 +634,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
         rec="${SHIELD_DIR}/${task}.json"
         rec_state=""
         if [[ -s "${rec}" ]]; then rec_state="$(field "${rec}" state)"; fi
-        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}"; then
+        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)"; then
             log "${task}: Shield run already completed"; continue
         fi
         if [[ "${rec_state}" == "completed" || "${rec_state}" == "report_pending" ]]; then
