@@ -68,7 +68,7 @@ def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
     """
     if not isinstance(image, str) or ":" not in image:
         return None
-    return parse_version_tuple(image.rsplit(":", 1)[1])
+    return parse_version_tuple(image.split("@", 1)[0].rsplit(":", 1)[1])
 
 
 def get_repo_root_path(marker: str = ".git") -> Path:
@@ -116,7 +116,7 @@ def parse_commits_from_docker_image(
         return None, None
 
     try:
-        image_name, tag = docker_image.rsplit(":", 1)
+        image_name, tag = docker_image.split("@", 1)[0].rsplit(":", 1)
         is_media_server = "tt-media-inference-server" in image_name
 
         # Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
