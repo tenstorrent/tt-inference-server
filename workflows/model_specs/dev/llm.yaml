@@ -2965,6 +2965,10 @@ templates:
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        # Eager prefill on the lane engine: a captured prefill trace bakes one lane's row slice (the
+        # single-lane fast path) or, lane-agnostic, carries all four lanes' gathered rows and overflows
+        # the trace region; eager prefill keeps the per-request owner-lane fast path (1x the expert rows).
+        GEMMA4_DISABLE_PREFILL_TRACE: "1"
         # vLLM prefix caching as on the other gemma-4 entries (plugin capability gate).
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
