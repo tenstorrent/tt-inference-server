@@ -2953,7 +2953,9 @@ templates:
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        # KV pool: 32 slots x 128K per lane (the first boot with the P150X8 value reported a 133,120-token
+        # pool, i.e. one 128K user for the whole engine). Per chip this is pool / 8 (TP) x 20 KB per token.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "4194304"
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
