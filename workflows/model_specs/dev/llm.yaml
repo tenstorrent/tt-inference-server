@@ -6072,6 +6072,19 @@ templates:
       tokenizer_revision: ff3c701f2424c7625fdefb9dd470f45ef18b02d6
   status: EXPERIMENTAL
 - weights:
+  - XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 262144  # quetzal P300X2 row max_context 262144, native 262144
+    default_impl: true
+    vllm_args:
+      revision: 2367e865d009c13ac81713a2878291d33ab28177
+      tokenizer_revision: 2367e865d009c13ac81713a2878291d33ab28177
+  status: EXPERIMENTAL
+- weights:
   - arcee-ai/AFM-4.5B
   impl: tt_transformers
   inference_engine: VLLM

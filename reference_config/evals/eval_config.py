@@ -8863,6 +8863,50 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16): Xiaomi's agentic SFT of Qwen3.5-9B (reasoning model, thinking on
+    # by default). Task and settings copied from Qwen/Qwen3.8-27B's r1_gpqa_diamond (same chat-API reasoning profile); sampling
+    # from this checkpoint's generation_config (temperature 0.6, top_k 20, top_p 0.95). The card publishes only agentic and
+    # internal benchmarks, so gpu_reference_score is a like-for-like GPU run at this revision / max_context / concurrency
+    # (issue #5353), TBD.
+    EvalConfig(
+        hf_model_repo="XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16); base checkpoint (Qwen3_5ForConditionalGeneration, text
     # path); tasks and apply_chat_template=False copied from Qwen/Qwen3-4B-Base (the base profile). The model card
     # publishes no scores: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
