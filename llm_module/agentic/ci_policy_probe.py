@@ -10,6 +10,19 @@ def run_probe(server,context):
     cfg=json.loads((here/'config.json').read_text())
     root=Path(context.output_dir)/'UNSCORED-policy-probe';root.mkdir(parents=True,exist_ok=False)
     (root/'config.json').write_text(json.dumps(cfg,indent=2))
+    # Read-only host provisioning census; never change Docker/network state.
+    import subprocess
+    census = {"wall_s": time.time(), "scope": "read-only diagnostic host Docker pools and existing network IPAM"}
+    def docker_read(args):
+        p = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=30)
+        return {"returncode": p.returncode, "stdout": p.stdout, "stderr": p.stderr[:2000]}
+    census["default_address_pools"] = docker_read(["info", "--format", "{{json .DefaultAddressPools}}"])
+    networks = docker_read(["network", "ls", "--format", "{{.ID}}"])
+    census["network_list"] = networks
+    if networks["returncode"] == 0:
+        census["networks"] = [docker_read(["network", "inspect", n, "--format", "{{json .IPAM.Config}}"])
+                              for n in networks["stdout"].split()]
+    (root / "docker-network-census.json").write_text(json.dumps(census, indent=2))
     ids=json.loads((here/'token_ids.json').read_text())*3
     fixture_path=here/'terminal-joint-fixture.json'
     fixture_document=json.loads(fixture_path.read_text());fixture=fixture_document['streams']
