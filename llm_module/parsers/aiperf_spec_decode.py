@@ -80,13 +80,18 @@ class AIPerfSpecDecodeParser(LLMResultParser):
         for field in DISPLAY_FIELDS:
             record[field] = _value(field)
         # Where acceptance came from: "metrics" (/metrics counters) or "usage" (per response),
-        # with the responses usage left out when any lacked the prediction tokens.
+        # with the responses usage left out: lacking the prediction tokens, or failed.
         record["acceptance_source"] = spec_metrics.get("source")
+        notes = []
         if spec_metrics.get("responses_without_usage"):
-            record["acceptance_source"] = (
-                f"usage ({spec_metrics['responses_without_usage']}/"
-                f"{spec_metrics.get('responses')} without)"
+            notes.append(
+                f"{spec_metrics['responses_without_usage']}/"
+                f"{spec_metrics.get('responses')} without"
             )
+        if spec_metrics.get("failed_responses"):
+            notes.append(f"{spec_metrics['failed_responses']} failed")
+        if notes:
+            record["acceptance_source"] = f"usage ({', '.join(notes)})"
         # SPEED-Bench placeholder sentences in the dataset aiperf loaded (#5279); None when not counted.
         if raw.get("placeholder_prompts") is not None:
             record["placeholder_prompts"] = (

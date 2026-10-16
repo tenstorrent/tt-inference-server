@@ -299,8 +299,12 @@ class TestUsageAcceptance:
     """Acceptance from per-request usage, for frontends (Dynamo) whose
     /metrics carries no spec-decode counters."""
 
-    def _write_raw(self, artifact_dir: Path, usages: list, num_drafts=None) -> None:
-        records = []
+    def _write_raw(
+        self, artifact_dir: Path, usages: list, num_drafts=None, errors=0
+    ) -> None:
+        records = [
+            {"status": 500, "error": {"code": 500, "message": "boom"}, "responses": []}
+        ] * errors
         for usage in usages:
             packets = [{"name": "data", "value": json.dumps({"choices": []})}]
             if num_drafts is not None:
@@ -361,6 +365,51 @@ class TestUsageAcceptance:
             }
             assert parser.parse(raw).data["acceptance_source"] == source
         assert parser.parse(base).data["acceptance_source"] is None
+
+    def test_failed_requests_are_not_counted_as_missing_usage(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}] * 3, errors=1
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["failed_responses"] == 1
+        assert out["responses"] == 3
+        assert out["responses_without_usage"] == 0
+        assert out["accepted_tokens"] == 18.0
+        assert "carry no prediction tokens" not in caplog.text
+        source = AIPerfSpecDecodeParser().parse({"spec_decode_metrics": out}).data
+        assert source["acceptance_source"] == "usage (1 failed)"
+
+    def test_invalid_response_with_prediction_tokens_still_counts(self, tmp_path):
+        # aiperf marks a 200 with no text content as an error, but the server drafted.
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        usage = {"usage": {"completion_tokens_details": details}}
+        record = {
+            "status": 200,
+            "error": {"type": "InvalidInferenceResultError"},
+            "responses": [{"packets": [{"name": "data", "value": json.dumps(usage)}]}],
+        }
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(json.dumps(record))
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+        assert out["failed_responses"] == 0
+        assert out["responses"] == 1
+
+    def test_source_cell_shows_missing_usage_and_failures_together(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}, None, None], errors=2
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        source = AIPerfSpecDecodeParser().parse({"spec_decode_metrics": out}).data
+        assert source["acceptance_source"] == "usage (2/3 without, 2 failed)"
 
     def test_responses_without_usage_are_counted_and_shown(self, tmp_path, caplog):
         details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}

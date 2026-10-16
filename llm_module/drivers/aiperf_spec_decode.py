@@ -601,18 +601,21 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
     ``rejected_prediction_tokens`` over each request's last usage chunk.
     ``usage`` has no draft count, so ``num_drafts`` (and with it mean
     accepted length) comes from ``nvext.engine_data.spec_decode`` when the
-    server sends it. A response without the prediction tokens is left out of
-    the sums, counted in ``responses_without_usage`` and warned about. ``None``
-    when no response reports prediction tokens.
+    server sends it. A response that reports the prediction tokens is
+    counted even when aiperf marked it invalid (e.g. no text content): the
+    server did the drafting. One without them is left out of the sums, as
+    ``failed_responses`` when the request failed (an aiperf ``error`` or HTTP
+    status >= 400), otherwise as ``responses_without_usage`` with a warning.
+    ``None`` when no response reports prediction tokens.
     """
-    accepted = rejected = num_drafts = responses = without = 0
+    accepted = rejected = num_drafts = responses = without = failed = 0
     found = has_drafts = False
     for path in Path(artifact_dir).rglob("profile_export_raw.jsonl"):
         with path.open(errors="replace") as fh:
             for line in fh:
-                responses += 1
+                record = json.loads(line)
                 details = spec = None
-                for response in json.loads(line).get("responses") or []:
+                for response in record.get("responses") or []:
                     for packet in response.get("packets") or []:
                         value = packet.get("value") or ""
                         if '"completion_tokens_details"' not in value and (
@@ -630,8 +633,12 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
                     found = True
                     accepted += details.get("accepted_prediction_tokens") or 0
                     rejected += details.get("rejected_prediction_tokens") or 0
+                elif record.get("error") or (record.get("status") or 200) >= 400:
+                    failed += 1
+                    continue
                 else:
                     without += 1
+                responses += 1
                 if spec and spec.get("num_drafts") is not None:
                     has_drafts = True
                     num_drafts += spec["num_drafts"]
@@ -659,6 +666,7 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
         "source": "usage",
         "responses_without_usage": without,
         "responses": responses,
+        "failed_responses": failed,
     }
 
 
