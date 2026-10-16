@@ -278,8 +278,14 @@ setup() {
             # CPython, which ships venv/ensurepip, as the host python3 for
             # run.py and gpuref.py.
             log "apt could not install python${pyver}-venv; using a uv-managed Python 3.12 as host python3"
-            { command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv; } \
-                && uv venv -q --seed --python 3.12 "${WORK_DIR}/hostpy" || return 1
+            # Colab's deadsnakes python3 may lack pip too: get uv from its
+            # standalone installer then.
+            if ! command -v uv >/dev/null 2>&1 && ! python3 -m pip install -q uv 2>/dev/null; then
+                mkdir -p "${WORK_DIR}/bin"
+                curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${WORK_DIR}/bin" INSTALLER_NO_MODIFY_PATH=1 sh || return 1
+                export PATH="${WORK_DIR}/bin:${PATH}"
+            fi
+            uv venv --seed --python 3.12 "${WORK_DIR}/hostpy" || return 1
             export PATH="${WORK_DIR}/hostpy/bin:${PATH}"
             python3 -m venv "${probe}/v2" >/dev/null 2>&1 || return 1
         fi
