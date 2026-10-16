@@ -12,7 +12,7 @@ def run_probe(server,context):
     (root/'config.json').write_text(json.dumps(cfg,indent=2))
     ids=json.loads((here/'token_ids.json').read_text())*3
     shapes=json.loads((here/'terminal_shapes.json').read_text())
-    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+2700
+    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+3600
     headers={'Content-Type':'application/json'}
     if server.auth_token:headers['Authorization']='Bearer '+server.auth_token
     def url(path,payload=None,session=None):
@@ -20,7 +20,7 @@ def run_probe(server,context):
         if session:h['X-Gemma-Agent-Session']=session
         req=urllib.request.Request(endpoint+path,data=json.dumps(payload).encode() if payload else None,headers=h)
         remaining=deadline-time.monotonic()
-        if remaining<=0:raise TimeoutError('Unscored diagnostic45min budget exhausted')
+        if remaining<=0:raise TimeoutError('Unscored diagnostic60min budget exhausted')
         with urllib.request.urlopen(req,timeout=min(900,remaining)) as r:return r.read()
     def request(tokens,output,session):
         started=time.time();payload=dict(model=server.model,prompt=tokens,max_tokens=output,ignore_eos=True,temperature=0,top_p=.95,top_k=20,seed=9472,cache_salt=session,return_token_ids=True)
