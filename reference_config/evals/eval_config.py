@@ -8871,6 +8871,8 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B",
         tasks=[
+            # terminal_bench_2_1: published by the card (37.1), omitted pending agentic-ref infra (same blocker as
+            # Qwen3.8).
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
@@ -8913,6 +8915,8 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="ornith-ai/Ornith-1.5-9B",
         tasks=[
+            # terminal_bench_2_1: published by the card (46.2 (Terminus-2)), omitted pending agentic-ref infra (same blocker as
+            # Qwen3.8).
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
