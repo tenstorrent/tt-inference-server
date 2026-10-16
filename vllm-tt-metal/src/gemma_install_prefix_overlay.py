@@ -13,7 +13,7 @@ def _install(repo, manifest_name, patch_name, marker):
     manifest = json.loads((bundle / manifest_name).read_text())
     patch = bundle / patch_name
     def digest(path):
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
     if digest(patch) != manifest["patch_sha256"]:
         raise RuntimeError("Gemma prefix patch digest mismatch")
     current = {name: digest(repo / name) for name in manifest["files"]}
