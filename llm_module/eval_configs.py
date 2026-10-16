@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from typing import List
 
@@ -25,6 +26,77 @@ _STANDARD_EVAL_VENVS = frozenset(
         WorkflowVenvType.EVALS_VISION,
     }
 )
+
+_PROFILE_OVERRIDE_FIELDS = frozenset(
+    {
+        "apply_chat_template",
+        "batch_size",
+        "capture_reasoning",
+        "custom_dataset_kwargs",
+        "doc_ids",
+        "fewshot_as_multiturn",
+        "gen_kwargs",
+        "log_samples",
+        "max_attempts",
+        "max_concurrent",
+        "min_context_required",
+        "model_kwargs",
+        "propagate_seed_to_gen_kwargs",
+        "request_body",
+        "thinking",
+        "thinking_kwarg",
+        "use_chat_api",
+        "wall_clock_timeout_seconds",
+    }
+)
+
+
+def _apply_profile_task_overrides(tasks: list, model_spec, runtime_config) -> list:
+    """Apply limit-mode eval transport overrides owned by one model profile."""
+    limit_mode = _get_limit_mode(runtime_config)
+    metadata = getattr(model_spec, "metadata", None) or {}
+    configured = metadata.get("eval_task_mode_overrides") or {}
+    if limit_mode is None or not configured:
+        return tasks
+
+    mode_overrides = None
+    for mode_name, overrides in configured.items():
+        if EvalLimitMode.from_string(mode_name) == limit_mode:
+            mode_overrides = overrides
+            break
+    if not mode_overrides:
+        return tasks
+
+    task_names = {task.task_name for task in tasks}
+    unknown_tasks = set(mode_overrides) - task_names
+    if unknown_tasks:
+        raise ValueError(
+            f"Model profile {model_spec.model_id!r} defines eval overrides for "
+            f"unknown tasks: {sorted(unknown_tasks)}"
+        )
+
+    resolved = []
+    for task in tasks:
+        overrides = mode_overrides.get(task.task_name)
+        if not overrides:
+            resolved.append(task)
+            continue
+        unsupported = set(overrides) - _PROFILE_OVERRIDE_FIELDS
+        if unsupported:
+            raise ValueError(
+                f"Model profile {model_spec.model_id!r} cannot override "
+                f"EvalTask fields {sorted(unsupported)} for {task.task_name!r}"
+            )
+        resolved.append(replace(task, **overrides))
+        logger.info(
+            "Applied model-profile eval overrides for model_id=%s task=%s "
+            "limit_mode=%s: %s",
+            model_spec.model_id,
+            task.task_name,
+            limit_mode.name,
+            sorted(overrides),
+        )
+    return resolved
 
 
 def _select_tasks(tasks: list, runtime_config) -> list:
@@ -99,6 +171,8 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
 
     if device is not None:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
+
+    standard = _apply_profile_task_overrides(standard, model_spec, runtime_config)
 
     return _select_tasks(standard, runtime_config)
 

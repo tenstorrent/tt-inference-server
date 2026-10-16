@@ -11190,21 +11190,19 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # The fixed 10-item release cohort was validated with the
-                # checkpoint's non-thinking chat template and seed 42.
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
                 seed=42,
-                request_body={
-                    "chat_template_kwargs": {"enable_thinking": False},
-                },
-                # Serialize requests to match the validated release run.
-                max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,
                     "timeout": 7200,
                 },
-                # Validated release sampling: temperature=1.0, top_p=0.95,
-                # top_k=20, seed=42.
+                # Thinking-mode sampling (Gemma 4 model card / HF README):
+                # temperature=1.0, top_p=0.95, top_k=20.
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={

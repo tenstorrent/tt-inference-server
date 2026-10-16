@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+from types import SimpleNamespace
+
 from llm_module.benchmark_configs import get_llm_configs
+from llm_module.eval_configs import _apply_profile_task_overrides
 from reference_config.evals.eval_config import (
     _eval_config_map,
     accept_eval_score,
@@ -79,9 +82,9 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
 
     gpqa, terminal_task, swe_task = tasks
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
-    assert gpqa.max_concurrent == 1
+    assert gpqa.max_concurrent == 32
     assert gpqa.seed == 42
-    assert gpqa.request_body == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert gpqa.request_body == {}
 
     terminal = terminal_task.agentic_eval_config
     swe = swe_task.agentic_eval_config
@@ -108,6 +111,39 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
         assert reference["tolerance"] == 0.0
         assert accept_eval_score(reference, passing_score, n_total=total) is True
         assert accept_eval_score(reference, failing_score, n_total=total) is False
+
+
+def test_gemma4_26b_gpqa_release_policy_is_scoped_to_tt_vllm_plugin():
+    specs = _gemma4_26b_specs()
+    default = resolve_model_spec(
+        specs,
+        model="google/gemma-4-26B-A4B-it",
+        device="p300x2",
+        catalog_name="Shield",
+    )
+    dedicated = resolve_model_spec(
+        specs,
+        model="google/gemma-4-26B-A4B-it",
+        device="p300x2",
+        impl="tt-vllm-plugin",
+        catalog_name="Shield",
+    )
+    ci_nightly = SimpleNamespace(
+        eval_samples=None,
+        limit_samples_mode="ci-nightly",
+    )
+
+    gpqa = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks[0]
+    shared_gpqa = _apply_profile_task_overrides([gpqa], default, ci_nightly)[0]
+    release_gpqa = _apply_profile_task_overrides([gpqa], dedicated, ci_nightly)[0]
+    full_gpqa = _apply_profile_task_overrides([gpqa], dedicated, None)[0]
+
+    assert shared_gpqa.max_concurrent == full_gpqa.max_concurrent == 32
+    assert shared_gpqa.request_body == full_gpqa.request_body == {}
+    assert release_gpqa.max_concurrent == 1
+    assert release_gpqa.request_body == {
+        "chat_template_kwargs": {"enable_thinking": False}
+    }
 
 
 def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
