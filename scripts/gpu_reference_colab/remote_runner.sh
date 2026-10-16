@@ -285,7 +285,9 @@ setup() {
                 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${WORK_DIR}/bin" INSTALLER_NO_MODIFY_PATH=1 sh || return 1
                 export PATH="${WORK_DIR}/bin:${PATH}"
             fi
-            uv venv --seed --python 3.12 "${WORK_DIR}/hostpy" || return 1
+            # A uv-managed (standalone) CPython: the system python3.12 lacks
+            # ensurepip as well, so a venv over it cannot make venvs either.
+            uv venv --seed --python-preference only-managed --python 3.12 "${WORK_DIR}/hostpy" || return 1
             export PATH="${WORK_DIR}/hostpy/bin:${PATH}"
             python3 -m venv "${probe}/v2" >/dev/null 2>&1 || return 1
         fi
