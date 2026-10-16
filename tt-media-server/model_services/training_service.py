@@ -81,6 +81,7 @@ class TrainingService(BaseJobService):
             progress_tracker=request._progress_tracker,
             worker_assignment=request._worker_assignment,
             mark_worker_retiring=self.scheduler.mark_worker_retiring,
+            clear_worker_retirement=self.scheduler.clear_worker_retirement,
             replace_worker=self.scheduler.replace_worker,
             org_id=org_id,
         )

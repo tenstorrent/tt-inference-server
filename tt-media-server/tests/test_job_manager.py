@@ -1034,6 +1034,7 @@ class TestJobManager:
             cancel_event=ClaimWhenCancelled(),
             worker_assignment=worker_assignment,
             mark_worker_retiring=mark_worker_retiring,
+            clear_worker_retirement=Mock(return_value=True),
             replace_worker=replace_worker,
         )
 
@@ -1117,7 +1118,7 @@ class TestJobManager:
             job.completed_at = int(time.time()) - 10  # 10 seconds ago
 
         # Run cleanup
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         # Job should be removed
         metadata = job_manager.get_job_metadata("job-123")
@@ -1146,7 +1147,7 @@ class TestJobManager:
             job = job_manager._jobs["training-job"]
             job.completed_at = int(time.time()) - 10
 
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         assert job_manager.get_job_metadata("training-job") is not None
         if job_manager.db:
@@ -1246,10 +1247,36 @@ class TestJobManager:
         with job_manager._jobs_lock:
             job_manager._jobs["merge-job"].completed_at = int(time.time()) - 10
 
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         assert job_manager.get_job_metadata("merge-job") is not None
         assert result_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_adapter_merge_rejects_parent_pending_worker_replacement(
+        self, job_manager
+    ):
+        parent = Job(
+            id="training-parent",
+            job_type=JobTypes.TRAINING.value,
+            model="test-model",
+            status=JobStatus.CANCELLING,
+        )
+        with job_manager._jobs_lock:
+            job_manager._jobs[parent.id] = parent
+            job_manager._pending_worker_replacement_ids.add(parent.id)
+
+        with pytest.raises(ValueError, match="being recovered"):
+            await job_manager.create_job(
+                job_id="merge-job",
+                job_type=JobTypes.ADAPTER_MERGE,
+                model="test-model",
+                request=AdapterMergeRequest(
+                    source_job_id=parent.id,
+                    checkpoint_id="checkpoint-1",
+                ),
+                task_function=Mock(),
+            )
 
     @pytest.mark.asyncio
     async def test_manual_delete_removes_adapter_merge_result_directory(
@@ -1584,6 +1611,7 @@ class TestJobManager:
             cancel_event=Event(),
             worker_assignment=worker_assignment,
             mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=Mock(return_value=True),
             replace_worker=replace_worker,
         )
         await asyncio.sleep(0.1)
@@ -1636,6 +1664,7 @@ class TestJobManager:
             cancel_event=ClaimBeforeCancellation(),
             worker_assignment=worker_assignment,
             mark_worker_retiring=mark_worker_retiring,
+            clear_worker_retirement=Mock(return_value=True),
             replace_worker=replace_worker,
         )
 
@@ -1653,6 +1682,13 @@ class TestJobManager:
         result_dir = adapters_dir / "force-delete-failure"
         result_dir.mkdir(parents=True)
         worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        clear_worker_retirement = Mock(return_value=True)
+        replace_worker = Mock(
+            side_effect=[
+                RuntimeError("replacement failed"),
+                WorkerReplacementOutcome.REPLACED,
+            ]
+        )
 
         async def active_training(req):
             await asyncio.sleep(10)
@@ -1667,13 +1703,14 @@ class TestJobManager:
             cancel_event=Event(),
             worker_assignment=worker_assignment,
             mark_worker_retiring=Mock(return_value=True),
-            replace_worker=Mock(side_effect=RuntimeError("replacement failed")),
+            clear_worker_retirement=clear_worker_retirement,
+            replace_worker=replace_worker,
         )
         await asyncio.sleep(0.1)
 
         with patch(
             "utils.job_manager.adapters_root", return_value=str(adapters_dir)
-        ), pytest.raises(ValueError, match="Could not force-delete"):
+        ), pytest.raises(ValueError, match="Could not replace worker"):
             await job_manager.delete_job("force-delete-failure")
 
         assert result_dir.exists()
@@ -1681,6 +1718,17 @@ class TestJobManager:
             job_manager.get_job_metadata("force-delete-failure")["status"]
             == JobStatus.CANCELLING
         )
+        clear_worker_retirement.assert_called_once_with(
+            "worker-0", 123, worker_assignment
+        )
+        assert "force-delete-failure" in job_manager._pending_worker_replacement_ids
+        assert job_manager.cancel_job("force-delete-failure") is None
+
+        with patch("utils.job_manager.adapters_root", return_value=str(adapters_dir)):
+            assert await job_manager.delete_job("force-delete-failure") is True
+
+        assert job_manager.get_job_metadata("force-delete-failure") is None
+        assert not result_dir.exists()
 
     @pytest.mark.asyncio
     async def test_force_delete_fences_updated_worker_identity(
@@ -1709,6 +1757,7 @@ class TestJobManager:
             cancel_event=Event(),
             worker_assignment=worker_assignment,
             mark_worker_retiring=mark_worker_retiring,
+            clear_worker_retirement=Mock(return_value=True),
             replace_worker=replace_worker,
         )
         await asyncio.sleep(0.1)
@@ -1746,7 +1795,7 @@ class TestJobManager:
             job.local_progress_time = time.monotonic() - 10
 
         # Run cleanup
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         # Job should remain as a diagnosable terminal record.
         metadata = job_manager.get_job_metadata("job-123")
@@ -1755,6 +1804,311 @@ class TestJobManager:
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("job-123")
             assert db_job["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_retries_failed_training_worker_replacement(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        clear_worker_retirement = Mock(return_value=True)
+        replace_worker = Mock(
+            side_effect=[
+                RuntimeError("replacement failed"),
+                WorkerReplacementOutcome.REPLACED,
+            ]
+        )
+
+        async def stuck_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="stale-training",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=stuck_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=clear_worker_retirement,
+            replace_worker=replace_worker,
+        )
+        await asyncio.sleep(0.1)
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["stale-training"]
+            job.mark_in_progress()
+            job.local_progress_time = time.monotonic() - 10
+            task = job._task
+
+        await job_manager._cleanup_old_jobs()
+
+        assert (
+            job_manager.get_job_metadata("stale-training")["status"]
+            == JobStatus.CANCELLING
+        )
+        clear_worker_retirement.assert_called_once_with(
+            "worker-0", 123, worker_assignment
+        )
+        assert not task.done()
+        assert "stale-training" in job_manager._pending_worker_replacement_ids
+
+        # A failed replacement remains retryable even if the runner keeps
+        # reporting progress while it ignores cancellation.
+        with job_manager._jobs_lock:
+            job.local_progress_time = time.monotonic()
+        await job_manager._cleanup_old_jobs()
+        await asyncio.gather(task, return_exceptions=True)
+
+        metadata = job_manager.get_job_metadata("stale-training")
+        assert metadata["status"] == JobStatus.FAILED
+        assert metadata["error"]["code"] == "stale_job"
+        assert replace_worker.call_count == 2
+        assert "stale-training" not in job_manager._pending_worker_replacement_ids
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_assigned_training_without_replacement_callbacks(
+        self, job_manager, mock_request
+    ):
+        async def stuck_training(req):
+            await asyncio.sleep(10)
+
+        with pytest.raises(ValueError, match="require worker retirement"):
+            await job_manager.create_job(
+                job_id="training-without-replacement",
+                job_type=JobTypes.TRAINING,
+                model="test-model",
+                request=mock_request,
+                task_function=stuck_training,
+                worker_assignment=SimpleNamespace(identity=("worker-0", 123)),
+            )
+
+        assert job_manager.get_job_metadata("training-without-replacement") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_does_not_race_stale_training_recovery(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        replacement_started = threading.Event()
+        allow_replacement = threading.Event()
+        task_cancelled = asyncio.Event()
+        allow_task_cleanup = asyncio.Event()
+
+        def replace_worker(_worker_id, _worker_pid, _worker_assignment):
+            replacement_started.set()
+            allow_replacement.wait(timeout=1)
+            return WorkerReplacementOutcome.REPLACED
+
+        async def stuck_training(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                task_cancelled.set()
+                await allow_task_cleanup.wait()
+                raise
+
+        await job_manager.create_job(
+            job_id="stale-training-delete-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=stuck_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=Mock(return_value=True),
+            replace_worker=replace_worker,
+        )
+        await asyncio.sleep(0.1)
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["stale-training-delete-race"]
+            job.mark_in_progress()
+            job.local_progress_time = time.monotonic() - 10
+            task = job._task
+
+        cleanup_task = asyncio.create_task(job_manager._cleanup_old_jobs())
+        assert await asyncio.to_thread(replacement_started.wait, 1)
+
+        with pytest.raises(ValueError, match="being recovered"):
+            await job_manager.delete_job("stale-training-delete-race")
+
+        allow_replacement.set()
+        await asyncio.wait_for(task_cancelled.wait(), timeout=1)
+        assert not cleanup_task.done()
+
+        with pytest.raises(ValueError, match="being recovered"):
+            await job_manager.delete_job("stale-training-delete-race")
+
+        allow_task_cleanup.set()
+        await cleanup_task
+
+        assert task.done()
+        assert (
+            job_manager.get_job_metadata("stale-training-delete-race")["status"]
+            == JobStatus.FAILED
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_after_cleanup_timeout_ignores_late_completion(
+        self, job_manager, mock_request
+    ):
+        allow_task_cleanup = asyncio.Event()
+
+        async def stuck_training(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                while not allow_task_cleanup.is_set():
+                    try:
+                        await allow_task_cleanup.wait()
+                    except asyncio.CancelledError:
+                        continue
+                return "late-result"
+
+        await job_manager.create_job(
+            job_id="stale-training-slow-cancellation",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=stuck_training,
+            cancel_event=Event(),
+            worker_assignment=SimpleNamespace(identity=("worker-0", 123)),
+            mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=Mock(return_value=True),
+            replace_worker=Mock(return_value=WorkerReplacementOutcome.REPLACED),
+        )
+        await asyncio.sleep(0.1)
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["stale-training-slow-cancellation"]
+            job.mark_in_progress()
+            job.local_progress_time = time.monotonic() - 10
+            task = job._task
+
+        with patch("utils.job_manager.CANCELLED_TASK_WAIT_TIMEOUT_SECONDS", 0.01):
+            await job_manager._cleanup_old_jobs()
+            assert job.status == JobStatus.FAILED
+            assert (
+                "stale-training-slow-cancellation"
+                not in job_manager._recovering_job_ids
+            )
+            assert not task.done()
+            assert (
+                await job_manager.delete_job("stale-training-slow-cancellation") is True
+            )
+
+        assert job_manager.get_job_metadata("stale-training-slow-cancellation") is None
+        if job_manager.db:
+            assert (
+                job_manager.db.get_job_by_id("stale-training-slow-cancellation") is None
+            )
+        assert not task.done()
+
+        allow_task_cleanup.set()
+        await asyncio.gather(task, return_exceptions=True)
+        assert job.status == JobStatus.FAILED
+        assert job_manager.get_job_metadata("stale-training-slow-cancellation") is None
+
+    @pytest.mark.asyncio
+    async def test_force_delete_timeout_ignores_late_task_failure(
+        self, job_manager, mock_request
+    ):
+        allow_task_cleanup = asyncio.Event()
+
+        async def cancellation_suppressing_training(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                while not allow_task_cleanup.is_set():
+                    try:
+                        await allow_task_cleanup.wait()
+                    except asyncio.CancelledError:
+                        continue
+                raise RuntimeError("late failure")
+
+        await job_manager.create_job(
+            job_id="force-delete-slow-cancellation",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=cancellation_suppressing_training,
+            cancel_event=Event(),
+            worker_assignment=SimpleNamespace(identity=("worker-0", 123)),
+            mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=Mock(return_value=True),
+            replace_worker=Mock(return_value=WorkerReplacementOutcome.REPLACED),
+        )
+        await asyncio.sleep(0.1)
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["force-delete-slow-cancellation"]
+            job.mark_in_progress()
+            task = job._task
+
+        with patch("utils.job_manager.CANCELLED_TASK_WAIT_TIMEOUT_SECONDS", 0.01):
+            assert (
+                await job_manager.delete_job("force-delete-slow-cancellation") is True
+            )
+
+        assert job.status == JobStatus.CANCELLED
+        assert not task.done()
+        assert job_manager.get_job_metadata("force-delete-slow-cancellation") is None
+
+        allow_task_cleanup.set()
+        await asyncio.gather(task, return_exceptions=True)
+        assert job.status == JobStatus.CANCELLED
+        assert task.done()
+        assert not task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_force_delete_leaves_job_terminal(
+        self, job_manager, mock_request
+    ):
+        task_cancelled = asyncio.Event()
+        allow_task_cleanup = asyncio.Event()
+
+        async def cancellation_suppressing_training(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                task_cancelled.set()
+                await allow_task_cleanup.wait()
+                raise
+
+        await job_manager.create_job(
+            job_id="cancelled-force-delete",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=cancellation_suppressing_training,
+            cancel_event=Event(),
+            worker_assignment=SimpleNamespace(identity=("worker-0", 123)),
+            mark_worker_retiring=Mock(return_value=True),
+            clear_worker_retirement=Mock(return_value=True),
+            replace_worker=Mock(return_value=WorkerReplacementOutcome.REPLACED),
+        )
+        await asyncio.sleep(0.1)
+
+        delete_task = asyncio.create_task(
+            job_manager.delete_job("cancelled-force-delete")
+        )
+        await asyncio.wait_for(task_cancelled.wait(), timeout=1)
+        delete_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await delete_task
+
+        metadata = job_manager.get_job_metadata("cancelled-force-delete")
+        assert metadata["status"] == JobStatus.CANCELLED
+        assert "cancelled-force-delete" not in job_manager._deleting_job_ids
+
+        allow_task_cleanup.set()
+        await asyncio.gather(
+            job_manager._jobs["cancelled-force-delete"]._task,
+            return_exceptions=True,
+        )
+        assert await job_manager.delete_job("cancelled-force-delete") is True
 
     @pytest.mark.asyncio
     async def test_cleanup_keeps_old_job_with_recent_progress(
@@ -1780,7 +2134,7 @@ class TestJobManager:
             job.mark_in_progress()
             job.local_progress_time = time.monotonic()
 
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
 
@@ -1837,7 +2191,7 @@ class TestJobManager:
 
             job.progress_time = progress_time_with_racing_heartbeat
 
-        job_manager._cleanup_old_jobs()
+        await job_manager._cleanup_old_jobs()
 
         assert job_manager.get_job_metadata("job-race")["status"] == "in_progress"
 
@@ -1873,7 +2227,7 @@ class TestJobManager:
                 job.completed_at = int(time.time()) - 10
 
             # Run cleanup
-            job_manager._cleanup_old_jobs()
+            await job_manager._cleanup_old_jobs()
 
             # File should be deleted
             assert not os.path.exists(file_path)
@@ -1893,6 +2247,38 @@ class TestJobManager:
 
         # Task should be done (either cancelled or completed)
         assert job_manager._cleanup_task.done()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_does_not_block_on_slow_task_cancellation(
+        self, job_manager, mock_request
+    ):
+        allow_task_cleanup = asyncio.Event()
+
+        async def cancellation_suppressing_task(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await allow_task_cleanup.wait()
+                raise
+
+        await job_manager.create_job(
+            job_id="slow-shutdown",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=cancellation_suppressing_task,
+        )
+        await asyncio.sleep(0.1)
+        task = job_manager._jobs["slow-shutdown"]._task
+
+        with patch("utils.job_manager.CANCELLED_TASK_WAIT_TIMEOUT_SECONDS", 0.01):
+            await job_manager.shutdown()
+
+        assert job_manager.get_job_metadata("slow-shutdown") is None
+        assert not task.done()
+
+        allow_task_cleanup.set()
+        await asyncio.gather(task, return_exceptions=True)
 
     @pytest.mark.asyncio
     async def test_shutdown_workflow(self, job_manager, mock_request):
@@ -2051,6 +2437,7 @@ class TestJobManager:
             cancel_event=cancel_event,
             worker_assignment=worker_assignment,
             mark_worker_retiring=mark_worker_retiring,
+            clear_worker_retirement=Mock(return_value=True),
             replace_worker=replace_worker,
         )
 
