@@ -1,8 +1,8 @@
 {
   "purpose": "UNSCORED native alias plus history capacity/admission gate; RoPE unchanged",
   "policy": "fifo",
-  "C": 8,
-  "F": 704000,
+  "C": 16,
+  "F": 524288,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
   "base_validation": "Individual alias/history full-model gates passed; actual scheduler alias gate required before dispatch",
   "profiles": [
