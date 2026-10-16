@@ -943,7 +943,7 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 32
+      max_concurrency: 1
       max_context: 262144
       default_impl: false
       env_vars:
@@ -986,14 +986,11 @@ templates:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
-      benchmark_max_concurrency: 1
-      # This implementation's validated GPQA path uses one non-thinking request.
-      eval_task_overrides:
+      # This implementation's validated GPQA path disables thinking.
+      eval_task_request_body_overrides:
         r1_gpqa_diamond:
-          max_concurrent: 1
-          request_body:
-            chat_template_kwargs:
-              enable_thinking: false
+          chat_template_kwargs:
+            enable_thinking: false
 
 - weights:
     - google/gemma-4-12B-it

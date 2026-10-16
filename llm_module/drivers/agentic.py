@@ -231,8 +231,7 @@ def build_harbor_config(
         ),
         harbor_timeout_sec=cfg.harbor_timeout_sec,
         llm_timeout_sec=cfg.llm_timeout_sec,
-        # Tests and external callers may supply older duck-typed configs.
-        normalize_submission_marker=getattr(cfg, "normalize_submission_marker", False),
+        normalize_submission_marker=cfg.normalize_submission_marker,
         per_task_overhead_sec=cfg.per_task_overhead_sec,
         startup_grace_sec=cfg.startup_grace_sec,
         stall_grace_sec=cfg.stall_grace_sec,

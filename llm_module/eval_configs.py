@@ -28,11 +28,11 @@ _STANDARD_EVAL_VENVS = frozenset(
 )
 
 
-def _apply_profile_task_overrides(tasks: list, model_spec) -> list:
-    """Apply EvalTask overrides owned by the resolved model profile."""
-    overrides = model_spec.metadata.get("eval_task_overrides", {})
+def _apply_profile_request_body_overrides(tasks: list, model_spec) -> list:
+    """Apply request bodies owned by the resolved model profile."""
+    overrides = model_spec.metadata.get("eval_task_request_body_overrides", {})
     return [
-        replace(task, **overrides[task.task_name])
+        replace(task, request_body=overrides[task.task_name])
         if task.task_name in overrides
         else task
         for task in tasks
@@ -140,7 +140,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     if device is not None:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
-    standard = _apply_profile_task_overrides(standard, model_spec)
+    standard = _apply_profile_request_body_overrides(standard, model_spec)
 
     return _select_tasks(standard, runtime_config)
 

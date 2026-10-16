@@ -590,16 +590,6 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency
-    benchmark_max_concurrency = model_spec.metadata.get(
-        "benchmark_max_concurrency", model_max_concurrency
-    )
-    if not isinstance(benchmark_max_concurrency, int) or not (
-        1 <= benchmark_max_concurrency <= model_max_concurrency
-    ):
-        raise ValueError(
-            "benchmark_max_concurrency must be an integer between 1 and "
-            f"the model max_concurrency ({model_max_concurrency})"
-        )
     max_context = model_spec.device_model_spec.max_context
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
@@ -613,7 +603,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (
-            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * benchmark_max_concurrency
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
         )
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
@@ -624,7 +614,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             params,
             max_context,
             max_tokens_all_users,
-            benchmark_max_concurrency,
+            model_max_concurrency,
             model_spec.model_name,
         )
         for params in perf_reference
@@ -662,7 +652,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 param_map={
                     device: [
                         BenchmarkTaskParams(
-                            max_concurrency=benchmark_max_concurrency,
+                            max_concurrency=model_max_concurrency,
                             num_prompts=8,
                             task_type="tts",
                         )
@@ -689,7 +679,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             osl=osl,
                             max_context=max_context,
                             max_tokens_all_users=max_tokens_all_users,
-                            model_max_concurrency=benchmark_max_concurrency,
+                            model_max_concurrency=model_max_concurrency,
                             min_num_prompts=sweep_min_num_prompts,
                         )
                     ]
@@ -706,7 +696,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                                 images_per_prompt=images_per_prompt,
                                 max_context=max_context,
                                 max_tokens_all_users=max_tokens_all_users,
-                                model_max_concurrency=benchmark_max_concurrency,
+                                model_max_concurrency=model_max_concurrency,
                                 model_name=model_spec.model_name,
                             )
                         ]

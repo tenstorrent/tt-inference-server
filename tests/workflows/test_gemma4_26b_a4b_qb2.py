@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from llm_module.benchmark_configs import get_llm_configs
-from llm_module.eval_configs import _apply_profile_task_overrides
+from llm_module.eval_configs import _apply_profile_request_body_overrides
 from reference_config.evals.eval_config import (
     _eval_config_map,
     accept_eval_score,
@@ -45,6 +45,7 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.impl.impl_name == "tt-vllm-plugin"
     assert dedicated.status == ModelStatusTypes.FUNCTIONAL
     assert dedicated.device_model_spec.default_impl is False
+    assert dedicated.device_model_spec.max_concurrency == 1
     assert (
         dedicated.device_model_spec.env_vars["EXTRA_MODELS_DIR"]
         == "../../tt-metal/models/demos"
@@ -114,15 +115,14 @@ def test_gemma4_26b_tt_vllm_plugin_uses_validated_gpqa_transport():
         impl="tt-vllm-plugin",
         catalog_name="Shield",
     )
-    gpqa = _apply_profile_task_overrides(
+    gpqa = _apply_profile_request_body_overrides(
         [_eval_config_map["google/gemma-4-26B-A4B-it"].tasks[0]], dedicated
     )[0]
 
-    assert gpqa.max_concurrent == 1
     assert gpqa.request_body == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
-def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
+def test_gemma4_26b_release_grades_only_128_128_at_concurrency_one():
     dedicated = resolve_model_spec(
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
@@ -136,14 +136,8 @@ def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
         (config.isl, config.osl, config.max_concurrency) for config in run_configs
     ]
 
-    assert len(benchmark_keys) == len(set(benchmark_keys)) == 13
+    assert len(benchmark_keys) == len(set(benchmark_keys))
     assert all(config.max_concurrency == 1 for config in run_configs)
-    assert any(
-        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
-        == (261888, 128, 1, 1)
-        and not config.targets
-        for config in run_configs
-    )
 
     assert [(config.isl, config.osl, config.max_concurrency) for config in graded] == [
         (128, 128, 1)

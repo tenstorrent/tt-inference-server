@@ -11779,11 +11779,8 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false and
-                # suppress native reasoning (see gemma-4-31B-it note above).
+                # Use the chat endpoint so the resolved model profile controls
+                # chat-template behavior.
                 use_chat_api=True,
                 seed=42,
                 model_kwargs={
