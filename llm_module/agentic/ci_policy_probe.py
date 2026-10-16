@@ -40,6 +40,7 @@ def run_probe(server,context):
             output=128 if workload=='swe' else 1024;gap=.25 if workload=='swe' else 2.
             label=f"{cfg['policy']}-{workload}-a{active}"
             warm_lengths=(16384,16896,17408,49152,49664,50176) if workload=='swe' else (8192,16384,32768,60453)
+            warm_lengths=tuple(warm_lengths)+tuple(cfg.get("additional_warm_lengths",[]))
             warm=[request(ids[:n],2,f'warm-{label}-{n}') for n in warm_lengths]
             (root/(label+'-warmup.json')).write_text(json.dumps(warm))
             tasks=[];lock=threading.Lock();started=time.time()

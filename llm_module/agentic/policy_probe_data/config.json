@@ -14,5 +14,8 @@
       "output_mode": "historical_saved"
     }
   ],
-  "credit_s": 120
+  "credit_s": 120,
+  "additional_warm_lengths": [
+    73729
+  ]
 }
