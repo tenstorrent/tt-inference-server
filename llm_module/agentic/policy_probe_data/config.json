@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED final-history physical width control",
+  "purpose": "UNSCORED native-guarded trace reuse matched width",
   "policy": "fifo",
   "C": 16,
   "F": 606208,
@@ -9,7 +9,7 @@
     {
       "workload": "swe",
       "A": 16,
-      "role": "control"
+      "role": "reuse matched joint-length fixture"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
@@ -19,5 +19,7 @@
   "allocation_probe_min_histories": 1,
   "stream_count": 128,
   "deadline_seconds": 3600,
-  "fixture": "joint-length-fixture.json"
+  "fixture": "joint-length-fixture.json",
+  "diagnostic_http_timeout_seconds": 3600,
+  "diagnostic_total_budget_seconds": 5400
 }
