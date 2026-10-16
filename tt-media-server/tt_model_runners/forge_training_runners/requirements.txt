@@ -13,10 +13,11 @@ blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@06fe1f6d2ad681
 transformers==5.12.1
 # Held back by tt-crank's click==8.1.7.
 huggingface-hub==1.16.1
-# pyarrow newer than this needs NumPy 2 at runtime (undeclared), but tt-crank
-# pins numpy<2; these are the versions tt-blacksmith's crank env runs.
-datasets==3.6.0
-pyarrow==15.0.2
+# Floors fix CVE-2026-66007 (datasets) and CVE-2026-25087 (pyarrow). pyarrow 26
+# fails to import without NumPy 2 (undeclared in its metadata), but tt-crank
+# pins numpy<2.
+datasets>=5.0.1
+pyarrow>=23.0.1,<26
 pandas
 peft
 pyyaml
