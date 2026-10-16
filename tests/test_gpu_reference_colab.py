@@ -1700,15 +1700,15 @@ def test_redact_url_hides_the_tunnel_host():
 
 
 def _agentic_report(
-    path, model, task, score, device="GPU", stamp="2026-10-14T00:00:00Z"
+    path, model, task, score, device="GPU", stamp="2026-10-14T00:00:00Z", check=2
 ):
     # AgenticEvalParser's schema: Harbor counters (n_trials) live in the
     # block's targets, not its data.
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "metadata": {"model_repo": model, "device": device, "generated_at": stamp},
-        "sections": [{"kind": "evals", "data": {"task_name": task, "score": score},
-                      "targets": {"task_name": task, "n_trials": 89}}],
+        "sections": [{"kind": "evals", "data": {"task_name": task, "score": score, "accuracy_check": check},
+                      "targets": {"task_name": task, "n_trials": 89, "n_errors": 0}}],
     }))  # fmt: skip
 
 
@@ -1745,8 +1745,10 @@ def test_shield_provenance_ok_only_when_every_task_scored(tmp_path):
         model,
         "terminal_bench_2_1",
         40.0,
+        check=3,  # complete, but under the accuracy target
     )
-    prov = {"model": model, "status": "ok"}
+    prov = {"model": model, "status": "ok",
+            "agentic_expected_trials": {"terminal_bench_2_1": 89, "swe_bench_verified": 89}}  # fmt: skip
     tb = {
         "task": "terminal_bench_2_1",
         "run_id": "7",
@@ -2044,6 +2046,9 @@ mkdir -p "$SHIELD_DIR"
 log() {{ echo "LOG $*" >&2; }}
 status() {{ echo "STATUS $*" >&2; }}
 start_session() {{ echo "VM_STARTED" >&2; return 1; }}
+colab() {{ echo "COLAB $*" >&2; }}  # never the real CLI; no session listed
+has_session() {{ grep -qF "[${{SESSION}}]"; }}
+SESSION=s1 SESSION_ACTIVE=0
 field() {{ python3 -c 'import json,sys; print((json.load(open(sys.argv[1])) or {{}}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }}
 gpuref() {{
     case "$1" in
@@ -2123,6 +2128,7 @@ def test_a_recovered_report_passes_on_the_unchanged_serving_provenance(tmp_path)
     served = {
         "model": "org/m",
         "status": "ok",  # the runner's own status: the VM served
+        "agentic_expected_trials": {"tb2": 89},
         "gpu": {
             "name": "NVIDIA H100 80GB HBM3",
             "driver": "570",
@@ -2136,7 +2142,7 @@ def test_a_recovered_report_passes_on_the_unchanged_serving_provenance(tmp_path)
     report = json.dumps({
         "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-14T18:00:00Z"},
         "sections": [{"kind": "evals", "data": {"task_name": "tb2", "score": 40.0},
-                      "targets": {"task_name": "tb2", "n_trials": 89}}],
+                      "targets": {"task_name": "tb2", "n_trials": 89, "n_errors": 0}}],
     })  # fmt: skip
     prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
 
@@ -2186,7 +2192,7 @@ serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
 def test_shield_provenance_never_rewrites_the_serving_status(tmp_path):
     model = "Qwen/Qwen3.5-27B"
     shield, serving = tmp_path / "shield", tmp_path / "serving"
-    vm = {"model": model, "status": "ok"}
+    vm = {"model": model, "status": "ok", "agentic_expected_trials": {"tb2": 89}}
     tb = {"task": "tb2", "run_id": "7", "conclusion": "success", "state": "completed",
           "serving_epochs": _snapshot(serving, vm)}  # fmt: skip
     pending = gpuref.shield_provenance(vm, [tb], shield, serving)  # no report yet
@@ -2264,13 +2270,14 @@ def test_rollover_keeps_each_tasks_score_with_the_vm_that_served_it(tmp_path):
     def vm(gpu, cap=None):
         return {"model": "org/m", "gpu": {"name": gpu, "memory_total": "80 GiB"},
                 "vllm_serve_command": ["vllm", "serve", "org/m"], "max_model_len_cap": cap,
-                "packages": {"vllm": "0.23.0"}, "started_at": gpu}  # fmt: skip
+                "packages": {"vllm": "0.23.0"}, "started_at": gpu,
+                "agentic_expected_trials": {"tb2": 89, "swe": 89}}  # fmt: skip
 
     def report(task):
         return json.dumps({
             "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-16T00:00:00Z"},
             "sections": [{"kind": "evals", "data": {"task_name": task, "score": 40.0},
-                          "targets": {"task_name": task, "n_trials": 89}}],
+                          "targets": {"task_name": task, "n_trials": 89, "n_errors": 0}}],
         })  # fmt: skip
 
     def run(name, first_vm, second_vm):
@@ -2359,14 +2366,17 @@ def test_serve_loop_snapshots_each_vm_and_binds_runs_to_it():
 # --- n_trials from the real AgenticEvalParser report (#5395) -----------------
 
 
-def _parser_report(path, n_trials):
+def _parser_report(path, n_trials, n_errors=0, n_total=None, mean=0.4, score=None):
     from llm_module.parsers.agentic import AgenticEvalParser
 
-    evals = {"metrics": [{"mean": 0.4}]}
+    evals = {"metrics": [{"mean": mean}], "n_errors": n_errors}
     if n_trials is not None:
         evals["n_trials"] = n_trials
-    block = AgenticEvalParser(task_name="terminal_bench_2_1").parse(
-        {"stats": {"evals": {"terminal-bench": evals}}}, device="gpu"
+    raw = {"stats": {"evals": {"terminal-bench": evals}}}
+    if n_total is not None:
+        raw["n_total_trials"] = n_total
+    block = AgenticEvalParser(task_name="terminal_bench_2_1", score=score).parse(
+        raw, device="gpu"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
@@ -2382,7 +2392,11 @@ def test_n_trials_is_read_from_the_agentic_parsers_report(tmp_path):
     _parser_report(shield / "terminal_bench_2_1" / "report_1.json", 89)
     row = gpuref.summary_rows(shield)[0]
     assert row["score"] == 40.0 and row["n_trials"] == 89
-    prov = {"model": "org/m", "status": "ok"}
+    prov = {
+        "model": "org/m",
+        "status": "ok",
+        "agentic_expected_trials": {"terminal_bench_2_1": 89},
+    }
     tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
           "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
@@ -2392,7 +2406,11 @@ def test_n_trials_is_read_from_the_agentic_parsers_report(tmp_path):
 def test_a_report_without_n_trials_is_not_ok(tmp_path):
     shield, serving = tmp_path / "shield", tmp_path / "serving"
     _parser_report(shield / "terminal_bench_2_1" / "report_1.json", None)
-    prov = {"model": "org/m", "status": "ok"}
+    prov = {
+        "model": "org/m",
+        "status": "ok",
+        "agentic_expected_trials": {"terminal_bench_2_1": 89},
+    }
     tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
           "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
@@ -2451,3 +2469,153 @@ def test_the_snapshot_wait_is_bounded_and_reset_per_vm():
     )
     rollover = driver.split("    rollover() {", 1)[1].split("\n    }", 1)[0]
     assert "SNAPSHOT_WAITS=0" in rollover
+
+
+# --- trial coverage: a partial Harbor run never grades ok (#5395) ------------
+
+
+def _graded(tmp_path, conclusion="success", expected=89, **report):
+    shield, serving = tmp_path / "shield", tmp_path / "serving"
+    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", **report)
+    prov = {"model": "org/m", "status": "ok",
+            "agentic_expected_trials": {"terminal_bench_2_1": expected}}  # fmt: skip
+    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": conclusion,
+          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    return gpuref.shield_provenance(prov, [tb], shield, serving)
+
+
+def test_a_run_whose_trials_mostly_errored_is_not_ok(tmp_path):
+    # Review on #5395 (gpuref.py:1147): 1 scored trial + 88 infrastructure
+    # errors gave status ok with n_trials 1 and a 1.12% score.
+    out = _graded(tmp_path, n_trials=1, n_errors=88, n_total=89, mean=1.0)
+    task = out["agentic"][0]
+    assert task["n_trials"] == 1 and task["n_errors"] == 88
+    assert task["trials_expected"] == 89 and not task["trials_complete"]
+    assert out["status"] == "failed"
+
+
+def test_trial_coverage_needs_the_expected_count_and_the_error_count(tmp_path):
+    # The whole dataset (no fixed count in the config): Harbor's own job size.
+    full = _graded(tmp_path / "a", expected=None, n_trials=500, n_total=500)
+    assert full["agentic"][0]["trials_expected"] == 500 and full["status"] == "ok"
+    short = _graded(tmp_path / "b", expected=None, n_trials=499, n_total=500)
+    assert short["status"] == "failed"
+    # Neither the config nor the report gives a count: not verifiable.
+    unknown = _graded(tmp_path / "c", expected=None, n_trials=89)
+    assert unknown["status"] == "failed"
+    # Config and job size disagree: the job did not run the configured set.
+    mismatch = _graded(tmp_path / "d", n_trials=50, n_total=50)
+    assert mismatch["status"] == "failed"
+    # A report without Harbor's error count (an older parser) does not count.
+    no_errors = _graded(tmp_path / "e", n_trials=89, n_errors=None)
+    assert no_errors["agentic"][0]["n_errors"] is None
+    assert no_errors["status"] == "failed"
+    # A provenance without expected counts (an older runner) does not count.
+    shield, serving = tmp_path / "f" / "shield", tmp_path / "f" / "serving"
+    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", 89)
+    prov = {"model": "org/m", "status": "ok"}
+    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
+          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    assert gpuref.shield_provenance(prov, [tb], shield, serving)["status"] == "failed"
+
+
+def test_a_complete_run_that_missed_its_accuracy_target_still_counts(tmp_path):
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    # 89 scored (3 agent timeouts were still verified), 40% < 77.5% reference:
+    # Shield fails the job, the score is still a full measurement.
+    missed = _graded(tmp_path / "a", conclusion="failure", n_trials=89, n_errors=3,
+                     n_total=89, mean=0.4, score=score)  # fmt: skip
+    assert missed["agentic"][0]["accuracy_check"] == 3
+    assert missed["status"] == "ok"
+    # A failed job whose report met its target failed for some other reason.
+    other = _graded(tmp_path / "b", conclusion="failure", n_trials=89, n_total=89,
+                    mean=0.8, score=score)  # fmt: skip
+    assert other["agentic"][0]["accuracy_check"] == 2
+    assert other["status"] == "failed"
+    # No reference to miss (N/A): a failed job is not an accuracy miss either.
+    na = _graded(tmp_path / "c", conclusion="failure", n_trials=89, n_total=89)
+    assert na["status"] == "failed"
+
+
+def test_the_runner_records_each_agentic_tasks_expected_trials():
+    expected = gpuref.agentic_expected_trials(
+        "Qwen/Qwen3.8-27B", ["terminal_bench_2_1", "swe_bench_verified"]
+    )
+    # terminal-bench 2.1 fixes 89 tasks x 1 attempt; SWE-bench Verified runs
+    # the whole dataset (the job's own n_total_trials is the count).
+    assert expected == {"terminal_bench_2_1": 89, "swe_bench_verified": None}
+
+
+# --- a report-only resume recovers a final provenance that was never fetched --
+
+
+def _unfetched_resume(tmp_path, vm_up, fetched_snapshot):
+    """Every run finished, reports on disk, the serving snapshot saved, but the
+    final fetch failed: no provenance.json. ``fetch_results`` (stubbed) brings
+    home a provenance.json and the VM's serving snapshot."""
+    snap = json.dumps(
+        {"gpu": {"name": "NVIDIA H100 80GB HBM3"}, "status": "serving", "t": 1}
+    )
+    serving = tmp_path / "out" / "serving"
+    serving.mkdir(parents=True)
+    import hashlib
+
+    epoch = hashlib.sha256(snap.encode()).hexdigest()[:12]
+    (serving / f"{epoch}.json").write_text(snap)
+    _record(tmp_path, "tb2", state="completed", run_id="77", conclusion="success",
+            serving_epochs=epoch)  # fmt: skip
+    _agentic_report(
+        tmp_path / "out" / "shield" / "tb2" / "report_1.json", "org/m", "tb2", 40.0
+    )
+    model_dir = tmp_path / "out" / "results" / "org__m"
+    final = json.dumps({"gpu": {"name": "NVIDIA H100 80GB HBM3"}, "status": "ok"})
+    script = _resume_helpers(tmp_path, ["tb2"], True)
+    script += f"""
+colab() {{ echo "COLAB $*" >&2; {"echo '[s1]'" if vm_up else "true"}; }}
+remote_state() {{ STATE=SERVING; echo "STATE_READ" >&2; }}
+remote_step() {{ echo "STEP $1" >&2; }}
+STOP_POLL_SECONDS=0
+fetch_results() {{
+    echo FETCHED >&2; mkdir -p {model_dir}
+    printf '%s' {shlex.quote(final)} > {model_dir}/provenance.json
+    printf '%s' {shlex.quote(fetched_snapshot or snap)} > {model_dir}/serving_provenance.json
+}}
+serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
+"""
+    return _bash(script), model_dir
+
+
+def test_report_only_resume_fetches_a_missing_final_provenance_from_the_kept_vm(
+    tmp_path,
+):
+    # Review on #5395 (colab_gpu_reference.sh:512): every run finished, the
+    # final fetch failed, and every later resume failed on the missing
+    # provenance.json without ever retrying the fetch, though --keep kept the VM.
+    out, model_dir = _unfetched_resume(tmp_path, vm_up=True, fetched_snapshot=None)
+    assert out.returncode == 0 and "HANDLED rc=0" in out.stdout, out.stderr
+    assert (
+        "STEP stop" in out.stderr and "FETCHED" in out.stderr
+    )  # stopped, then fetched
+    assert "GRADED_ON NVIDIA H100 80GB HBM3" in out.stderr
+    assert "VM_STARTED" not in out.stderr  # never a new VM
+
+
+def test_report_only_resume_fails_clearly_when_the_provenance_is_unrecoverable(
+    tmp_path,
+):
+    gone, _ = _unfetched_resume(tmp_path / "gone", vm_up=False, fetched_snapshot=None)
+    assert gone.returncode == 0 and "HANDLED rc=1" in gone.stdout, gone.stderr
+    assert "FETCHED" not in gone.stderr and "VM_STARTED" not in gone.stderr
+    assert "is gone" in gone.stderr and "cannot be recovered" in gone.stderr
+    # A session of that name that is not the VM that served: set aside, not graded.
+    other = json.dumps({"gpu": {"name": "NVIDIA A100-SXM4-80GB"}, "status": "serving"})
+    stray, model_dir = _unfetched_resume(
+        tmp_path / "stray", vm_up=True, fetched_snapshot=other
+    )
+    assert stray.returncode == 0 and "HANDLED rc=1" in stray.stdout, stray.stderr
+    assert "GRADED_ON" not in stray.stderr
+    assert not (model_dir / "provenance.json").exists()
+    assert len(list(model_dir.glob("provenance.unbound-*.json"))) == 1

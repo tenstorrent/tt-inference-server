@@ -538,8 +538,13 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             # The n TTIS graded this score with (None: ratio rule only, or a
             # report from before the noise rule).
             "noise_n": data.get("noise_n"),
-            # Agentic (Harbor) blocks: trials run, for the full-set check.
+            # Agentic (Harbor) blocks, for the full-set check: trials the
+            # verifier scored, trials that raised, trials the job ran.
             "n_trials": targets.get("n_trials"),
+            "n_errors": targets.get("n_errors"),
+            "n_total_trials": targets.get("n_total_trials"),
+            # ReportCheckTypes: 1 N/A, 2 PASS, 3 FAIL (the accuracy target).
+            "accuracy_check": data.get("accuracy_check"),
         }
         for (model, _), (_, meta, data, targets) in sorted(
             newest.items(), key=lambda kv: tuple(str(x) for x in kv[0])
@@ -799,6 +804,53 @@ def eval_fingerprint(
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+def agentic_expected_trials(
+    model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT
+) -> Dict[str, Optional[int]]:
+    """task -> the trials its Harbor job must score in full (n_tasks x
+    n_attempts on GPU), or None when the config does not fix the count (the
+    whole dataset, or task_names / exclude patterns): then the job's own
+    n_total_trials is the expected count."""
+    sys.path.insert(0, str(ttis_dir))
+    from reference_config.evals.eval_config import (
+        _eval_config_map,
+        resolve_task_for_device,
+    )
+
+    cfg = _eval_config_map.get(model)
+    out: Dict[str, Optional[int]] = {}
+    for task in cfg.tasks if cfg else []:
+        if task.task_name not in tasks:
+            continue
+        h = resolve_task_for_device(task, "GPU").agentic_eval_config
+        fixed = h is not None and h.n_tasks and not h.task_names
+        fixed = fixed and not h.exclude_task_names
+        out[task.task_name] = h.n_tasks * h.n_attempts if fixed else None
+    return out
+
+
+def trial_coverage(row: Dict[str, Any], expected: Any) -> Dict[str, Any]:
+    """Did a task's report score every trial? ``expected`` is the count from
+    the task config (agentic_expected_trials), None for "the job's own
+    n_total_trials", or missing (the provenance predates the check). Complete
+    only when the scored trials equal the expected count (and the job size,
+    when both are known), with Harbor's error count present."""
+
+    def count(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+    scored, errors, total = (
+        count(row.get(k)) for k in ("n_trials", "n_errors", "n_total_trials")
+    )
+    want = count(expected) if expected is not None else total
+    complete = (
+        want is not None and want > 0 and scored == want and errors is not None
+        and (total is None or total == want)
+    )  # fmt: skip
+    return {"trials_expected": want, "n_errors": errors, "n_total_trials": total,
+            "trials_complete": complete}  # fmt: skip
+
+
 def task_kind(model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT) -> str:
     """ "lm-eval" when every task is one of the model's lm-eval tasks (run on the
     VM by run.py), "agentic" when every task is an agentic one (served from the
@@ -927,6 +979,13 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # --serve: the tasks Shield runs against this server, and its URL
         # (redacted); the driver adds each Shield run (shield-provenance).
         "endpoint": args.endpoint,
+        # --serve: the trials each agentic task must score at this commit
+        # (shield-provenance checks the reports against it).
+        "agentic_expected_trials": agentic_expected_trials(
+            args.model, sorted(args.agentic_tasks.split(",")), ttis
+        )
+        if args.agentic_tasks
+        else None,
         "run_py_command": [
             "python3",
             "run.py",
@@ -1053,6 +1112,8 @@ def redact_url(url: Optional[str]) -> Optional[str]:
     )
 
 
+ACCURACY_FAIL = 3  # workflow_module.engine_types.ReportCheckTypes.FAIL
+
 # What a served score depends on, compared between the VM(s) that served a
 # task's Shield run (their serving snapshots) and the provenance it is filed under.
 SERVING_KEYS = ("vllm_serve_command", "max_model_len_cap", "packages", "vllm_env")
@@ -1116,10 +1177,13 @@ def shield_provenance(
     def entry(rec):
         row = rows.get(rec.get("task")) or {}
         vms = served_by(rec, serving_root)
+        expected = prov.get("agentic_expected_trials") or {}
         return dict(
             rec,
             score=row.get("score"),
             n_trials=row.get("n_trials"),
+            **trial_coverage(row, expected.get(rec.get("task"), "missing")),
+            accuracy_check=row.get("accuracy_check"),
             served_by=vms,
             serving_matches=bool(vms)
             and all(
@@ -1138,15 +1202,26 @@ def shield_provenance(
     if "serving_status" not in prov:
         prov["serving_status"] = prov.get("status")
     served = prov["serving_status"] == "ok"
-    # A completed run counts whether or not the model met its acceptance
-    # criteria (Shield fails the job on a miss); a cancelled or crashed one not.
-    # A full agentic run reports its trial count; without one it is not
-    # verifiable, so it does not count either.
-    prov["status"] = "ok" if served and prov["agentic"] and all(
-        a.get("conclusion") in ("success", "failure") and a.get("task") in rows
-        and isinstance(a["n_trials"], int) and a["n_trials"] > 0 and a["serving_matches"]
-        for a in prov["agentic"]
-    ) else "failed"  # fmt: skip
+
+    # A task counts only when its report scored every expected trial
+    # (trial_coverage) on a VM that matches this provenance. Shield fails the
+    # job when the model misses its acceptance criteria, so a "failure"
+    # conclusion counts only when the report says that is all it was (a
+    # complete run whose accuracy_check is FAIL); a cancelled, crashed or
+    # otherwise failed job never does.
+    def counts(a):
+        accuracy_miss = a.get("accuracy_check") == ACCURACY_FAIL
+        return (
+            a.get("task") in rows and a["trials_complete"] and a["serving_matches"]
+            and (a.get("conclusion") == "success"
+                 or (a.get("conclusion") == "failure" and accuracy_miss))
+        )  # fmt: skip
+
+    prov["status"] = (
+        "ok"
+        if served and prov["agentic"] and all(map(counts, prov["agentic"]))
+        else "failed"
+    )
     return prov
 
 
