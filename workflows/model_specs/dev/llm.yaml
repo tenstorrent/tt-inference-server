@@ -407,14 +407,21 @@ templates:
       # per chip, and two 1M prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
       # c32 measurements up to isl 8192 used 32 slots at 15,360 of context.
       max_concurrency: 8
-      # The native context: 1024 * 1024, rounded up to the 5,120 chunk by
-      # the generator (1,049,600 rows); the 1,048,448 + 128 of point 11 fit
-      # below its last 32 rows.
-      max_context: 1048576
+      # The native context plus one 5,120 chunk: vLLM admits a request only
+      # if prompt + max_tokens <= max_model_len, and point 11's prompt is
+      # isl 1,048,448 plus the 4 tokens the chat template adds, so at exactly
+      # 1,048,576 the 128 output tokens do not fit (32
+      # of 32 requests rejected with 400). The generator rounds to the chunk
+      # (1,053,696 rows) and keeps 32 rows below it for the step. vLLM
+      # refuses a max_model_len above the config's max_position_embeddings
+      # (1,048,576) unless VLLM_ALLOW_LONG_MAX_MODEL_LEN is set (below): the
+      # positions past it are the template's 4 tokens and the 128 outputs,
+      # within the generator's RoPE tables (rounded to the chunk).
+      max_context: 1053696
       # Every slot holds a full context (the pool is per slot, not a shared
       # token budget); without this the benchmark caps the concurrency to
       # what fits one context.
-      max_tokens_all_users_override: 8388608  # 8 * 1048576
+      max_tokens_all_users_override: 8429568  # 8 * 1053696
       default_impl: true
       # Health-wait budget: the model build reads the two 123 GB Engram tables
       # into host RAM, 10 to 15 minutes from the NVMe when the page cache is
@@ -460,6 +467,9 @@ templates:
         TT_V41_KV_FORMAT: "scaled_fp8"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+        # See max_context: point 11's prompt plus the chat template plus the
+        # 128 output tokens is 4 tokens past max_position_embeddings.
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
       override_tt_config:
         # Inherited reference notes; runtime settings follow below.
         # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
