@@ -12,7 +12,7 @@ def run_probe(server,context):
     (root/'config.json').write_text(json.dumps(cfg,indent=2))
     ids=json.loads((here/'token_ids.json').read_text())*3
     shapes=json.loads((here/'terminal_shapes.json').read_text())
-    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+3600
+    endpoint=server.url_with_port.rstrip('/');deadline=time.monotonic()+1500
     headers={'Content-Type':'application/json'}
     if server.auth_token:headers['Authorization']='Bearer '+server.auth_token
     def url(path,payload=None,session=None):
