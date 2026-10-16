@@ -1,0 +1,18 @@
+{
+  "purpose": "UNSCORED historical-length Terminal integrated cache-on/off gate",
+  "policy": "fifo",
+  "engine_scheduler": "fcfs",
+  "C": 16,
+  "F": 606208,
+  "prefix_caching": false,
+  "base_tti": "bfdf4bb6dfa416036fe9af6d1394d22117729683",
+  "scored_parent": "4f280b73274b974cba5e80aab5312cb9057479fd",
+  "profiles": [
+    {
+      "workload": "terminal",
+      "A": 16,
+      "output_mode": "historical_saved"
+    }
+  ],
+  "credit_s": 120
+}
