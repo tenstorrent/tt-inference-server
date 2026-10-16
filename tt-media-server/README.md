@@ -616,7 +616,7 @@ Environment variables (runner):
 | `QWEN3_TTS_LANGUAGE` | auto | Force a language; otherwise Japanese script selects `japanese`, everything else `english`. |
 | `TT_QWEN3_DEVICE_DECODE` | `1` | Decode audio on the device; `0` falls back to the CPU decoder (slower). |
 | `TT_QWEN3_DEVICE_DECODE_MODE` | `continue` | `continue`: exact CPU front-end + device back-end; `full`: whole decoder on device. |
-| `TT_QWEN3_MAX_NEW_TOKENS` | `256` | Max codec frames per request (12.5 frames per second of audio). |
+| `TT_QWEN3_MAX_NEW_TOKENS` | `512` | Max codec frames per request (12.5 frames per second of audio; 512 = 40.96 s). |
 | `TT_QWEN3_SEED` | unset | Fixed RNG seed for reproducible sampling. |
 | `TT_QWEN3_DECODE_COMPARE` | `0` | Log device-vs-CPU decode SNR per request (debug; adds latency). |
 

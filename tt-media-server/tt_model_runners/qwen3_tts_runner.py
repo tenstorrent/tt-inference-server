@@ -56,7 +56,9 @@ class Qwen3TTSConstants:
     L1_SMALL_SIZE = int(os.environ.get("TT_QWEN3_L1_SMALL_SIZE", "32768"))
     TRACE_REGION_SIZE = 512_000_000
     NUM_COMMAND_QUEUES = 2
-    MAX_NEW_TOKENS = 256
+    # 512 frames = 40.96 s: long sentences (e.g. ~150-character Japanese, 260-275 frames) are
+    # no longer cut at 20.48 s. Warms decoder buckets up to 1024.
+    MAX_NEW_TOKENS = 512
     # Longest reference (in 12.5 fps codec frames, so 150 ~= 12s) the device decoder
     # warms buckets for. Ad-hoc voice clones above this are rejected, not decoded.
     MAX_REF_FRAMES = 150
