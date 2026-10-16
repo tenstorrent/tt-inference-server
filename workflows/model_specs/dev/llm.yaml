@@ -2885,6 +2885,9 @@ templates:
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
       vllm_args:
+        # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
+        # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
+        block_size: 128
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
@@ -2921,6 +2924,9 @@ templates:
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
       vllm_args:
+        # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
+        # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
+        block_size: 128
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
@@ -2985,6 +2991,9 @@ templates:
         # replay writes its L1 intermediates (wrong first token / hang on the next prefill).
         l1_small_size: 65536
       vllm_args:
+        # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
+        # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
+        block_size: 128
         data_parallel_size: 4  # folded into 4 lanes on one engine (GEMMA4_GALAXY_LANES)
         max_num_seqs: 32  # per lane; max_concurrency above is whole-box
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility
