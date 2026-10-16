@@ -404,7 +404,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
     # One serving snapshot per VM (epoch), saved the moment it serves, so each
     # task's score stays bound to the VM(s) that served its run (records carry
     # serving_epochs) even after a rollover loses that VM.
-    SERVING_DIR="${OUT_DIR}/serving" SERVE_EPOCH=""
+    SERVING_DIR="${OUT_DIR}/serving" SERVE_EPOCH="" SNAPSHOT_WAITS=0
     SERVE_PROV="${OUT_DIR}/results/${MODELS[0]//\//__}/provenance.json"
     IFS=',' read -r -a SERVE_TASKS <<< "${AGENTIC_TASKS}"
     mkdir -p "${SHIELD_DIR}"
@@ -436,6 +436,23 @@ if epoch not in epochs:
     with open(path + ".tmp", "w") as f:
         json.dump(rec, f, indent=2, sort_keys=True)
     os.replace(path + ".tmp", path)' "$1" "$2"
+    }
+    no_serving_snapshot() {   # REC: fail closed, the serving VM never wrote its snapshot
+        # SNAPSHOT_TRIES checks a minute apart after it served: a runner from
+        # before the snapshot (or one that cannot write it). Its scores could
+        # not be bound to a VM, so stop it and grade nothing. A run in flight
+        # (a reserved --tunnel-domain reaches this VM) gets an epoch that never
+        # resolves, so it can never count either.
+        local rec="$1" reason="no serving snapshot (pre-snapshot runner?)"
+        log "ERROR: ${reason} after ${SNAPSHOT_WAITS} checks; stopping '${SESSION}', nothing is graded"
+        if [[ -s "${rec}" ]]; then add_serving_epoch "${rec}" unsnapshotted; fi
+        [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
+        SESSION_ACTIVE=0
+        mkdir -p "${SERVING_DIR}"
+        gpuref driver-status "${SERVING_DIR}/no_snapshot.json" "serving_status=failed" "reason=${reason}" \
+            "session=${SESSION}" "rollovers=${ROLLOVERS}"
+        status FAILED "reason=${reason}" "out=${OUT_DIR}"
+        exit 1
     }
     report_on_disk() {   # DIR: a downloaded report*.json is under DIR
         [[ -d "$1" ]] && [[ -n "$(find "$1" -type f -name 'report*.json' -print -quit 2>/dev/null)" ]]
@@ -540,7 +557,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
     rollover() {   # REASON: replace the serving VM and relaunch the runner
         ROLLOVERS=$((ROLLOVERS + 1)); log "rollover ${ROLLOVERS}: $1"; status ROLLOVER "reason=$1" "rollovers=${ROLLOVERS}"
         [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
-        SESSION_ACTIVE=0 SESSIONS_OUT="" SERVE_EPOCH=""   # the next VM is a new epoch
+        SESSION_ACTIVE=0 SESSIONS_OUT="" SERVE_EPOCH="" SNAPSHOT_WAITS=0   # the next VM is a new epoch
         start_session; launch_runner
     }
     snapshot_serving() {   # sets SERVE_EPOCH from this VM's serving snapshot (written before it serves)
@@ -616,7 +633,11 @@ if [[ "${SERVE}" -eq 1 ]]; then
                 *) rollover "runner ${STATE} before STOP (${PHASE:-})"; continue ;;
             esac
             serve_endpoint || { log "no tunnel URL yet"; sleep 60; continue; }
-            [[ -n "${SERVE_EPOCH}" ]] || snapshot_serving || { log "no serving snapshot from this VM yet"; sleep 60; continue; }
+            if [[ -z "${SERVE_EPOCH}" ]] && ! snapshot_serving; then
+                SNAPSHOT_WAITS=$((SNAPSHOT_WAITS + 1))
+                (( SNAPSHOT_WAITS >= ${SNAPSHOT_TRIES:-10} )) && no_serving_snapshot "${rec}"
+                log "no serving snapshot from this VM yet (${SNAPSHOT_WAITS}/${SNAPSHOT_TRIES:-10})"; sleep 60; continue
+            fi
             run_id="$(record_run_id "${rec}")"
             if [[ -n "${run_id}" && "$(field "${rec}" endpoint_id)" != "${ENDPOINT_ID}" ]]; then
                 log "${task}: endpoint changed (rollover without --tunnel-domain); cancelling run ${run_id} and dispatching again"

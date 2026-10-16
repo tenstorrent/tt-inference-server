@@ -2398,3 +2398,56 @@ def test_a_report_without_n_trials_is_not_ok(tmp_path):
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
     assert out["agentic"][0]["score"] == 40.0
     assert out["agentic"][0]["n_trials"] is None and out["status"] == "failed"
+
+
+def test_a_vm_without_a_serving_snapshot_is_stopped_and_never_graded(tmp_path):
+    # A runner that never writes serving_provenance.json (e.g. launched before
+    # the snapshot existed) must not be waited on forever, nor graded.
+    script = _resume_helpers(
+        tmp_path, ["tb2"], True, prov={"model": "org/m", "status": "ok"}
+    )
+    _record(
+        tmp_path, "tb2", state="dispatched", run_id="5", serving_epochs="a1b2c3d4e5f6"
+    )
+    rec = tmp_path / "out" / "shield" / "tb2.json"
+    script += f"""
+SESSION=s1 SESSION_ACTIVE=1 SNAPSHOT_WAITS=10
+colab_cmd() {{ echo "COLAB $*" >&2; }}
+gpuref() {{
+    case "$1" in
+      driver-status) shift; local rec="$1"; shift
+        python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
+      *) echo "GRADED" >&2 ;;
+    esac
+}}
+no_serving_snapshot {rec}
+echo NOT_REACHED
+"""
+    out = _bash(script)
+    assert out.returncode == 1 and "NOT_REACHED" not in out.stdout, out.stderr
+    assert "COLAB stop -s s1" in out.stderr  # the VM is stopped
+    assert "GRADED" not in out.stderr  # finish_serve / shield-provenance never run
+    assert (
+        "STATUS FAILED reason=no serving snapshot (pre-snapshot runner?)" in out.stderr
+    )
+    marker = json.loads((tmp_path / "out" / "serving" / "no_snapshot.json").read_text())
+    assert marker["serving_status"] == "failed"
+    assert marker["reason"] == "no serving snapshot (pre-snapshot runner?)"
+    # The in-flight run is bound to a VM epoch that never resolves: it can
+    # never count, even if a later VM finishes it.
+    record = json.loads(rec.read_text())
+    assert record["serving_epochs"] == "a1b2c3d4e5f6,unsnapshotted"
+    served = gpuref.served_by(record, tmp_path / "out" / "serving")
+    assert [v["found"] for v in served] == [False, False]
+
+
+def test_the_snapshot_wait_is_bounded_and_reset_per_vm():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    loop = driver.split("serve_endpoint || {", 1)[1].split("shield_dispatch", 1)[0]
+    assert "SNAPSHOT_WAITS=$((SNAPSHOT_WAITS + 1))" in loop
+    assert (
+        '(( SNAPSHOT_WAITS >= ${SNAPSHOT_TRIES:-10} )) && no_serving_snapshot "${rec}"'
+        in loop
+    )
+    rollover = driver.split("    rollover() {", 1)[1].split("\n    }", 1)[0]
+    assert "SNAPSHOT_WAITS=0" in rollover
