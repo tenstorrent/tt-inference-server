@@ -685,35 +685,36 @@ void applyQwen3TtsConfig(TtsConfig& cfg) {
        .ckptDir = ckptDir,
        .hfModel = hfModel,
        .checkpoint = checkpoint});
-  cfg.qwen3Release = resolved.release;
-  cfg.qwen3ModelSize = resolved.size;
-  cfg.qwen3CheckpointDir = ckptDir;
-  cfg.qwen3HfModel = hfModel;
+  cfg.qwen3.emplace();
+  cfg.qwen3->release = resolved.release;
+  cfg.qwen3->modelSize = resolved.size;
+  cfg.qwen3->checkpointDir = ckptDir;
+  cfg.qwen3->hfModel = hfModel;
   if (checkpoint) {
-    cfg.qwen3Speakers = checkpoint->speakers;
-    cfg.qwen3Languages = checkpoint->languages;
+    cfg.qwen3->speakers = checkpoint->speakers;
+    cfg.qwen3->languages = checkpoint->languages;
   }
 
-  cfg.qwen3MaxFrames = static_cast<uint32_t>(
+  cfg.qwen3->maxFrames = static_cast<uint32_t>(
       envUlong("TTS_QWEN3_MAX_FRAMES", defaults::TTS_QWEN3_MAX_FRAMES));
-  if (cfg.qwen3MaxFrames == 0) {
+  if (cfg.qwen3->maxFrames == 0) {
     throw std::runtime_error("[Config] TTS_QWEN3_MAX_FRAMES must be >= 1");
   }
   if (const std::string seed = envString("TTS_QWEN3_SEED", ""); !seed.empty()) {
     try {
       size_t used = 0;
-      cfg.qwen3Seed = std::stoull(seed, &used);
+      cfg.qwen3->seed = std::stoull(seed, &used);
       if (used != seed.size()) throw std::invalid_argument(seed);
     } catch (const std::exception&) {
       throw std::runtime_error("[Config] TTS_QWEN3_SEED='" + seed +
                                "' is not a non-negative integer");
     }
   }
-  cfg.qwen3MaxReferenceSeconds = static_cast<uint32_t>(
+  cfg.qwen3->maxReferenceSeconds = static_cast<uint32_t>(
       envUlong("TTS_QWEN3_MAX_REFERENCE_SECONDS",
                defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS));
-  if (cfg.qwen3MaxReferenceSeconds == 0 ||
-      cfg.qwen3MaxReferenceSeconds >
+  if (cfg.qwen3->maxReferenceSeconds == 0 ||
+      cfg.qwen3->maxReferenceSeconds >
           defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT) {
     throw std::runtime_error(
         "[Config] TTS_QWEN3_MAX_REFERENCE_SECONDS must be in [1, " +
@@ -724,10 +725,11 @@ void applyQwen3TtsConfig(TtsConfig& cfg) {
   TT_LOG_INFO(
       "[Config] Qwen3-TTS release={} size={} checkpoint={} speakers={} "
       "languages={} max_frames={} seed={} max_users={}",
-      toString(cfg.qwen3Release), toString(cfg.qwen3ModelSize),
+      toString(cfg.qwen3->release), toString(cfg.qwen3->modelSize),
       configPath.empty() ? "(not on local disk yet)" : configPath,
-      cfg.qwen3Speakers.size(), cfg.qwen3Languages.size(), cfg.qwen3MaxFrames,
-      cfg.qwen3Seed ? std::to_string(*cfg.qwen3Seed) : "unseeded",
+      cfg.qwen3->speakers.size(), cfg.qwen3->languages.size(),
+      cfg.qwen3->maxFrames,
+      cfg.qwen3->seed ? std::to_string(*cfg.qwen3->seed) : "unseeded",
       cfg.maxUsers);
 }
 

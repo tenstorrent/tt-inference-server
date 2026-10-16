@@ -197,14 +197,18 @@ void validateRequest(const domain::tts::TtsRequest& request,
 }
 
 RequestValidator::RequestValidator(const config::TtsConfig& config) {
-  rules.release = config.qwen3Release;
-  rules.size = config.qwen3ModelSize;
-  rules.speakers = config.qwen3Speakers;
-  rules.languages = config.qwen3Languages;
-  rules.maxReferenceSeconds = config.qwen3MaxReferenceSeconds;
-  checkpointListsKnown = !config.qwen3Languages.empty();
-  checkpointDir = config.qwen3CheckpointDir;
-  hfModel = config.qwen3HfModel;
+  if (!config.qwen3) {
+    throw std::invalid_argument(
+        "Qwen3-TTS request validator needs a Qwen3-TTS config");
+  }
+  rules.release = config.qwen3->release;
+  rules.size = config.qwen3->modelSize;
+  rules.speakers = config.qwen3->speakers;
+  rules.languages = config.qwen3->languages;
+  rules.maxReferenceSeconds = config.qwen3->maxReferenceSeconds;
+  checkpointListsKnown = !config.qwen3->languages.empty();
+  checkpointDir = config.qwen3->checkpointDir;
+  hfModel = config.qwen3->hfModel;
 }
 
 void RequestValidator::validate(const domain::tts::TtsRequest& request) const {

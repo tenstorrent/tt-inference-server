@@ -128,6 +128,21 @@ struct ImageConfig : MediaRunnerConfigBase {
   size_t imageHeight = 1024;
 };
 
+/** Qwen3-TTS deployment settings; one release per deployment. */
+struct Qwen3TtsConfig {
+  Qwen3TtsRelease release = Qwen3TtsRelease::BASE;
+  Qwen3TtsModelSize modelSize = Qwen3TtsModelSize::SIZE_1B7;
+  std::string checkpointDir;
+  std::string hfModel;
+  // From the checkpoint's config.json; empty = unknown, left to the worker.
+  std::vector<std::string> speakers;
+  std::vector<std::string> languages;
+  uint32_t maxFrames = defaults::TTS_QWEN3_MAX_FRAMES;
+  // Sampling seed applied before every request; unset = unseeded sampling.
+  std::optional<uint64_t> seed;
+  uint32_t maxReferenceSeconds = defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS;
+};
+
 struct TtsConfig : RunnerConfigBase {
   TtsConfig() { runner_type = ModelRunnerType::TT_TTS; }
 
@@ -173,18 +188,8 @@ struct TtsConfig : RunnerConfigBase {
   // Chip ids this worker may use, e.g. "0" or "1" (its DEVICE_IDS group).
   std::string visibleDevices;
 
-  // Qwen3-TTS (runner_type == TT_QWEN3_TTS) only; one release per deployment.
-  Qwen3TtsRelease qwen3Release = Qwen3TtsRelease::BASE;
-  Qwen3TtsModelSize qwen3ModelSize = Qwen3TtsModelSize::SIZE_1B7;
-  std::string qwen3CheckpointDir;
-  std::string qwen3HfModel;
-  // From the checkpoint's config.json; empty = unknown, left to the worker.
-  std::vector<std::string> qwen3Speakers;
-  std::vector<std::string> qwen3Languages;
-  uint32_t qwen3MaxFrames = defaults::TTS_QWEN3_MAX_FRAMES;
-  // Sampling seed applied before every request; unset = unseeded sampling.
-  std::optional<uint64_t> qwen3Seed;
-  uint32_t qwen3MaxReferenceSeconds = defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS;
+  // Set only when runner_type == TT_QWEN3_TTS.
+  std::optional<Qwen3TtsConfig> qwen3;
 };
 
 using RunnerConfig =

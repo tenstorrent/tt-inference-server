@@ -192,6 +192,10 @@ Qwen3TtsRunner::Qwen3TtsRunner(config::TtsConfig config,
       cancelQueue(cancelQueue),
       cancelled(CANCELLED_TASK_MEMORY),
       python(std::make_unique<detail::PythonState>()) {
+  if (!this->config.qwen3) {
+    throw std::invalid_argument(
+        "Qwen3TtsRunner: config has no Qwen3-TTS block");
+  }
   if (!this->taskQueue) {
     throw std::invalid_argument("Qwen3TtsRunner: taskQueue must not be null");
   }
@@ -255,8 +259,8 @@ bool Qwen3TtsRunner::warmup() {
       py::module_ weights = py::module_::import(WEIGHTS_MODULE);
       const auto kind = weights.attr("model_kind")().cast<std::string>();
       const auto size = weights.attr("model_size")().cast<std::string>();
-      const std::string wantKind = config::toString(config.qwen3Release);
-      const std::string wantSize = config::toString(config.qwen3ModelSize);
+      const std::string wantKind = config::toString(config.qwen3->release);
+      const std::string wantSize = config::toString(config.qwen3->modelSize);
       if (kind != wantKind || size != wantSize) {
         throw std::runtime_error(
             "the checkpoint is a " + size + " " + kind +
@@ -277,20 +281,20 @@ bool Qwen3TtsRunner::warmup() {
           config.visibleDevices.empty() ? "(all)" : config.visibleDevices);
 
       python->pipelineModule = py::module_::import(PIPELINE_MODULE);
-      py::object seed = config.qwen3Seed
-                            ? py::object(py::int_(*config.qwen3Seed))
+      py::object seed = config.qwen3->seed
+                            ? py::object(py::int_(*config.qwen3->seed))
                             : py::object(py::none());
       python->pipeline = python->pipelineModule.attr("Qwen3TTSPipeline")(
-          python->device, "max_frames"_a = config.qwen3MaxFrames,
+          python->device, "max_frames"_a = config.qwen3->maxFrames,
           "seed"_a = seed);
       TT_LOG_INFO("[Qwen3TtsRunner] Pipeline built (max_frames={})",
-                  config.qwen3MaxFrames);
+                  config.qwen3->maxFrames);
 
       const auto started = std::chrono::steady_clock::now();
       try {
         const uint32_t frames =
-            std::min(config.qwen3MaxFrames, WARMUP_MAX_FRAMES);
-        switch (config.qwen3Release) {
+            std::min(config.qwen3->maxFrames, WARMUP_MAX_FRAMES);
+        switch (config.qwen3->release) {
           case config::Qwen3TtsRelease::BASE: {
             // A synthetic tone compiles the speaker encoder without a clip.
             const auto count = static_cast<size_t>(WARMUP_TONE_SECONDS *
@@ -313,11 +317,11 @@ bool Qwen3TtsRunner::warmup() {
           }
           case config::Qwen3TtsRelease::CUSTOM_VOICE: {
             std::string speaker = WARMUP_SPEAKER;
-            if (!config.qwen3Speakers.empty() &&
-                std::find(config.qwen3Speakers.begin(),
-                          config.qwen3Speakers.end(),
-                          speaker) == config.qwen3Speakers.end()) {
-              speaker = config.qwen3Speakers.front();
+            if (!config.qwen3->speakers.empty() &&
+                std::find(config.qwen3->speakers.begin(),
+                          config.qwen3->speakers.end(),
+                          speaker) == config.qwen3->speakers.end()) {
+              speaker = config.qwen3->speakers.front();
             }
             python->pipeline.attr("generate")(
                 WARMUP_TEXT, "speaker"_a = speaker,
@@ -365,8 +369,8 @@ bool Qwen3TtsRunner::warmup() {
 
 void Qwen3TtsRunner::run() {
   TT_LOG_INFO("[Qwen3TtsRunner] Serving {} {} (worker {})",
-              config::toString(config.qwen3ModelSize),
-              config::toString(config.qwen3Release), config.workerId);
+              config::toString(config.qwen3->modelSize),
+              config::toString(config.qwen3->release), config.workerId);
   auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
   ipc::tts::TtsIpcTask task;
   while (!stopped.load(std::memory_order_acquire)) {
@@ -418,9 +422,9 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
     py::gil_scoped_acquire gil;
     try {
       auto& pipeline = python->pipeline;
-      if (config.qwen3Seed) {
+      if (config.qwen3->seed) {
         // Reproducible per request, not per position in the worker's history.
-        pipeline.attr("reseed")(*config.qwen3Seed);
+        pipeline.attr("reseed")(*config.qwen3->seed);
       }
 
       // on_frame(step, frame): once per generated 12.5 Hz frame.
@@ -445,7 +449,7 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
       };
 
       py::object result;
-      switch (config.qwen3Release) {
+      switch (config.qwen3->release) {
         case config::Qwen3TtsRelease::BASE: {
           // Voice-only (x-vector) without a transcript, in-context with one.
           const bool xVectorOnly = !task.referenceText.has_value();

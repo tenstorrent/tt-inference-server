@@ -201,8 +201,9 @@ config::TtsConfig makeConfig(config::Qwen3TtsRelease release) {
   config.voiceSampleRateHz = config::defaults::TTS_QWEN3_SAMPLE_RATE_HZ;
   config.audioSampleRateHz = config::defaults::TTS_QWEN3_SAMPLE_RATE_HZ;
   config.tokenizerPath.clear();
-  config.qwen3Release = release;
-  config.qwen3MaxFrames = 8;
+  config.qwen3.emplace();
+  config.qwen3->release = release;
+  config.qwen3->maxFrames = 8;
   return config;
 }
 

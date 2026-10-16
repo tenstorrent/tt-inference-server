@@ -68,13 +68,13 @@ TEST_F(Qwen3TtsSettingsTest, DerivesReleaseAndQwen3Defaults) {
         runChild([] {
           const auto cfg = tt::config::ttsEngineConfig();
           return cfg.runner_type == ModelRunnerType::TT_QWEN3_TTS &&
-                 cfg.qwen3Release == Qwen3TtsRelease::CUSTOM_VOICE &&
-                 cfg.qwen3ModelSize == Qwen3TtsModelSize::SIZE_1B7 &&
+                 cfg.qwen3->release == Qwen3TtsRelease::CUSTOM_VOICE &&
+                 cfg.qwen3->modelSize == Qwen3TtsModelSize::SIZE_1B7 &&
                  cfg.audioSampleRateHz == 24000 &&
                  cfg.voiceSampleRateHz == 24000 && cfg.maxUsers == 2 &&
-                 cfg.maxBatchSize == 1 && cfg.qwen3MaxFrames == 400 &&
-                 cfg.qwen3Seed == 7u &&
-                 cfg.qwen3HfModel == "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice";
+                 cfg.maxBatchSize == 1 && cfg.qwen3->maxFrames == 400 &&
+                 cfg.qwen3->seed == 7u &&
+                 cfg.qwen3->hfModel == "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice";
         });
       },
       ::testing::ExitedWithCode(0), "");
@@ -88,7 +88,7 @@ TEST_F(Qwen3TtsSettingsTest, WorkersGetTheirOwnDevices) {
           const auto cfg = std::get<tt::config::TtsConfig>(
               tt::config::workerRunnerConfig(1));
           return cfg.workerId == 1 && cfg.visibleDevices == "1" &&
-                 cfg.qwen3Release == Qwen3TtsRelease::BASE;
+                 cfg.qwen3->release == Qwen3TtsRelease::BASE;
         });
       },
       ::testing::ExitedWithCode(0), "");

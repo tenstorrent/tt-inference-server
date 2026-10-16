@@ -286,11 +286,12 @@ tt::config::TtsConfig qwen3Config(Qwen3TtsRelease release) {
   cfg.runner_type = ModelRunnerType::TT_QWEN3_TTS;
   cfg.voiceSampleRateHz = 24000;
   cfg.audioSampleRateHz = 24000;
-  cfg.qwen3Release = release;
-  cfg.qwen3Languages = {"english"};
-  cfg.qwen3Speakers = release == Qwen3TtsRelease::CUSTOM_VOICE
-                          ? std::vector<std::string>{"ryan"}
-                          : std::vector<std::string>{};
+  cfg.qwen3.emplace();
+  cfg.qwen3->release = release;
+  cfg.qwen3->languages = {"english"};
+  cfg.qwen3->speakers = release == Qwen3TtsRelease::CUSTOM_VOICE
+                            ? std::vector<std::string>{"ryan"}
+                            : std::vector<std::string>{};
   // No TTS-2 tokenizer: a Qwen3 deployment must not need one.
   cfg.tokenizerPath.clear();
   return cfg;
