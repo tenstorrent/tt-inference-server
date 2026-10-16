@@ -1,0 +1,11 @@
+{
+  "base_commit": "8f402102-model-safety-target",
+  "target_commit": "experimental-native-alias-v1-audited",
+  "patch_sha256": "a05fc7f1b5ba61077ffa206cdc51c96084b7bb256f078b62776532d753dda355",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",
+      "target": "2143fb37afecf570864abce72963860460352ae9f7dd6bed5e6ce5d85d020ef6"
+    }
+  }
+}
