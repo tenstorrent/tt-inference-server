@@ -2786,6 +2786,6 @@ def test_runner_host_python_falls_back_to_uv_when_apt_fails():
     setup = runner[
         runner.index('phase "setup: host python"') : runner.index("ensure_stack() {")
     ]
-    assert 'uv venv --seed --python 3.12 "${WORK_DIR}/hostpy"' in setup
+    assert "uv venv --seed --python-preference only-managed --python 3.12" in setup
     assert "astral.sh/uv/install.sh" in setup  # no pip on that python3 either
     assert 'export PATH="${WORK_DIR}/hostpy/bin:${PATH}"' in setup
