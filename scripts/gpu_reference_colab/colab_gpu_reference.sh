@@ -29,6 +29,14 @@ VLLM_VERSION="" TRANSFORMERS_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=() TASK_A
 SWEEP=0 REFRESH=0 WRITE_SPECS=0 PRUNE=0 TT_REPORTS="" AUDIT_REFS="" ORIG_ARGS=("$@")
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS="${GPUREF_NEW_RETRY_SECONDS:-120}"   # per GPU type, on 503 (no capacity)
 RETRY_CAPACITY="" DETACH=0             # --retry-capacity MINUTES,HOURS; --detach
+SERVE=0 AGENTIC_TASKS="" TUNNEL_DOMAIN="" # --serve mode (agentic --task): set from the tasks
+# --serve credentials (0600 files; never on a command line or in a log): the
+# endpoint API key (the same value is the tt-shield secret SHIELD_SECRET) and
+# the ngrok authtoken.
+ENDPOINT_KEY_FILE="${GPUREF_ENDPOINT_KEY_FILE:-${HOME}/.config/gpuref/endpoint_api_key}"
+NGROK_TOKEN_FILE="${GPUREF_NGROK_TOKEN_FILE:-${HOME}/.config/gpuref/ngrok_authtoken}"
+SHIELD_SECRET="${GPUREF_SHIELD_SECRET:-TEST_GPUREF_ENDPOINT_API_KEY}"
+SHIELD_REF="${GPUREF_SHIELD_REF:-main}"   # tt-shield ref whose workflow file is dispatched
 EX_NO_CAPACITY=75
 
 usage() {
@@ -45,8 +53,10 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --min-balance CU    stop (keeping partial results) below this compute-unit balance
   --vllm-version V    override every model's serving-stack vLLM (default: per model)
   --transformers-version V  override every model's transformers pin
-  --task MODEL=T[,T]  run only these lm-eval tasks of MODEL (each in full); repeatable,
-                      explicit runs only. Default: all of the model's tasks
+  --task MODEL=T[,T]  run only these tasks of MODEL (each in full); repeatable,
+                      explicit runs only. Default: all of the model's lm-eval tasks.
+                      Agentic tasks (one model): --serve mode, see README "Agentic tasks"
+  --tunnel-domain D   --serve: reserved ngrok domain, so the URL survives a rollover
   --retry-capacity M,H  when no GPU is free (503) or the concurrent-session limit
                       is hit (412), retry every M minutes for up to H hours, then
                       exit 75; a sweep moves on to other groups and retries later
@@ -79,6 +89,7 @@ while [[ $# -gt 0 ]]; do
         --retry-capacity) RETRY_CAPACITY="$2"; shift 2 ;;
         --detach) DETACH=1; shift ;;
         --task) TASK_ARGS+=("$2"); shift 2 ;;
+        --tunnel-domain) TUNNEL_DOMAIN="$2"; shift 2 ;;
         --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
         --refresh-quetzal) AUDIT_REFS="$2"; shift 2 ;;
         --write-specs) WRITE_SPECS=1; shift ;; --emit-patch) shift ;;  # always written now
@@ -102,6 +113,9 @@ for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do
     [[ " ${MODELS[*]} " == *" ${t%%=*} "* ]] || die "--task names a model that is not being run: ${t%%=*}"
 done
 [[ -z "${RETRY_CAPACITY}" || "${RETRY_CAPACITY}" =~ ^[1-9][0-9]*,[0-9]+([.][0-9]+)?$ ]] || die "--retry-capacity is MINUTES,HOURS (e.g. 15,8)"
+[[ -z "${TUNNEL_DOMAIN}" || "${TUNNEL_DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]] || die "bad --tunnel-domain"
+[[ "${SHIELD_SECRET}" =~ ^TEST_[A-Z0-9_]+$ ]] || die "GPUREF_SHIELD_SECRET must be a TEST_* tt-shield secret name"
+[[ "${SHIELD_REF}" =~ ^[A-Za-z0-9._/-]+$ ]] || die "bad GPUREF_SHIELD_REF"
 if [[ "${DETACH}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then   # re-run in the background, own session
     mkdir -p "${RESULTS_ROOT}"
     args=(); for a in "${ORIG_ARGS[@]}"; do [[ "$a" == "--detach" ]] || args+=("$a"); done
@@ -165,7 +179,7 @@ remote_step() {   # NAME TIMEOUT MARKER [ARGS...]: `colab exec` exits 0 even if 
         # A lost kernel websocket is transient. Every step but launch is
         # idempotent; launch may have started the runner, so check first.
         printf '%s\n' "${out}" | grep -q "Connection was lost" || break
-        if [[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" ]]; then return 0; fi
+        if [[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" || "${STATE}" == "SERVING" ]]; then return 0; fi
         log "VM step '${name}': connection lost (attempt ${attempt}/3); retrying in 30s"; sleep 30
     done
     die "VM step '${name}' failed:"$'\n'"${out}"
@@ -270,9 +284,25 @@ status STARTING "models=${#MODELS[@]}"
 usable="$(gpuref preflight --gpus "${GPU}" "${MODELS[@]}")" || die "preflight failed (see above)"
 # --task: fail fast against this checkout's EvalConfigs (the runner re-checks at --ttis-ref).
 for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do
+    kind="$(gpuref task-kind "${t%%=*}" "${t#*=}")" || die "--task ${t} (see above)"
+    if [[ "${kind}" == "agentic" ]]; then
+        SERVE=1; AGENTIC_TASKS="${t#*=}"
+        log "${t%%=*}: agentic ${AGENTIC_TASKS}: --serve (Shield runs each task against this VM's server)"
+        continue
+    fi
     sel="$(gpuref task-selection "${t%%=*}" "${t#*=}")" || die "--task ${t} (see above)"
     log "${t%%=*}: only ${sel} (each task in full)"
 done
+if [[ "${SERVE}" -eq 1 ]]; then
+    [[ ${#MODELS[@]} -eq 1 && ${#TASK_ARGS[@]} -eq 1 ]] || die "--serve (agentic tasks) runs one model with one --task"
+    if [[ "${DRY_RUN}" -eq 0 ]]; then
+        for f in "${ENDPOINT_KEY_FILE}" "${NGROK_TOKEN_FILE}"; do
+            [[ -s "${f}" ]] || die "--serve needs ${f} (README: Agentic tasks)"
+            [[ "$(stat -c %a "${f}" 2>/dev/null || stat -f %Lp "${f}")" == "600" ]] || die "${f} must be mode 0600"
+        done
+        command -v gh >/dev/null 2>&1 || die "--serve dispatches Shield's endpoint tests with gh"
+    fi
+fi
 read -r -a GPUS <<< "${usable}"
 [[ ${#GPUS[@]} -gt 0 ]] || die "no usable GPU type"
 HAVE_TOKEN=0; [[ -n "${HF_TOKEN:-}" || -s "${HOME}/.cache/huggingface/token" ]] && HAVE_TOKEN=1
@@ -285,16 +315,18 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then colab_cmd sessions; SESSIONS_OUT=""
 else SESSIONS_OUT="$(colab_cmd sessions 2>&1)" || die "'colab sessions' failed: ${SESSIONS_OUT}"; fi
 
 # 2 start VM (or re-attach) ---------------------------------------------------
-STATE="ABSENT"
-if [[ "${DRY_RUN}" -eq 0 ]] && printf '%s\n' "${SESSIONS_OUT}" | has_session; then
-    SESSION_ACTIVE=1
-    remote_state || die "could not read the runner state on '${SESSION}'"
-    log "session '${SESSION}' exists; runner ${STATE}"
-else
+start_session() {   # sets STATE (ABSENT for a new VM), SESSION_ACTIVE
+    STATE="ABSENT"
+    if [[ "${DRY_RUN}" -eq 0 ]] && printf '%s\n' "${SESSIONS_OUT}" | has_session; then
+        SESSION_ACTIVE=1
+        remote_state || die "could not read the runner state on '${SESSION}'"
+        log "session '${SESSION}' exists; runner ${STATE}"
+        return 0
+    fi
     # Capacity: each pass tries every GPU in --gpu (3 attempts on 503 each).
     # With --retry-capacity M,H, passes repeat every M minutes for up to H hours
     # on 503 (no capacity) or 412 (concurrent-session limit); then exit 75.
-    interval_min=0 deadline=0
+    local interval_min=0 deadline=0 capacity_only attempt delay
     if [[ -n "${RETRY_CAPACITY}" ]]; then
         interval_min="${RETRY_CAPACITY%,*}"
         deadline=$(( $(date +%s) + $(awk -v h="${RETRY_CAPACITY#*,}" 'BEGIN { printf "%d", h * 3600 }') ))
@@ -324,9 +356,17 @@ else
         log "no capacity on ${GPUS[*]}; next pass in ${interval_min} min"; sleep $(( interval_min * 60 ))
     done
     log "allocated ${gpu} (the exact GPU is recorded in provenance.json)"
-fi
+}
 
-if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
+upload_secret() {   # LOCAL_FILE REMOTE_NAME: a 0600 copy, through `colab upload`
+    local tmp="${LOCAL_TMP}/$2"
+    if [[ "${DRY_RUN}" -eq 1 ]]; then colab_cmd upload -s "${SESSION}" "$1" "${REMOTE_REL}/$2"; return 0; fi
+    ( umask 077; cp "$1" "${tmp}" )
+    colab_cmd upload -s "${SESSION}" "${tmp}" "${REMOTE_REL}/$2" > /dev/null || { rm -f "${tmp}"; die "upload of $2 failed"; }
+    rm -f "${tmp}"
+}
+
+launch_runner() {   # steps 3-4 on a fresh (or dead-runner) VM
     # 3 upload token --------------------------------------------------------
     remote_step prepare 60 GPUREF_PREPARED
     if [[ "${HAVE_TOKEN}" -eq 1 ]]; then
@@ -336,6 +376,11 @@ if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
         rm -f "${tok}"
         remote_step install_token 60 GPUREF_TOKEN_INSTALLED
     fi
+    if [[ "${SERVE}" -eq 1 ]]; then
+        upload_secret "${ENDPOINT_KEY_FILE}" endpoint_api_key.upload
+        upload_secret "${NGROK_TOKEN_FILE}" ngrok_authtoken.upload
+        remote_step install_serve_secrets 60 GPUREF_SERVE_SECRETS_INSTALLED
+    fi
     # 4 launch the runner detached ------------------------------------------
     colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/remote_runner.sh" "${REMOTE_REL}/remote_runner.sh"
     colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/gpuref.py" "${REMOTE_REL}/gpuref.py"
@@ -343,8 +388,295 @@ if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
     [[ -n "${VLLM_VERSION}" ]] && runner_args+=(--vllm-version "${VLLM_VERSION}")
     [[ -n "${TRANSFORMERS_VERSION}" ]] && runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")
     for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do runner_args+=(--task "$t"); done
+    if [[ "${SERVE}" -eq 1 ]]; then
+        runner_args+=(--serve); [[ -n "${TUNNEL_DOMAIN}" ]] && runner_args+=(--tunnel-domain "${TUNNEL_DOMAIN}")
+    fi
     remote_step launch 60 GPUREF_LAUNCHED "${runner_args[@]}" "${MODELS[@]}"
     STATE="RUNNING"
+}
+
+# --serve record state lives on this machine (<out>/shield/<task>.json), so it is
+# read before any VM is started: a resume whose every Shield run has already
+# finished only needs reports, never a new VM (see serve_report_only_resume).
+if [[ "${SERVE}" -eq 1 ]]; then
+    read -r SHIELD_REPO SHIELD_WORKFLOW < <(gpuref shield-workflow)
+    ENDPOINT_FILE="${OUT_DIR}/endpoint.url" SHIELD_DIR="${OUT_DIR}/shield" ROLLOVERS=0
+    # One serving snapshot per VM (epoch), saved the moment it serves, so each
+    # task's score stays bound to the VM(s) that served its run (records carry
+    # serving_epochs) even after a rollover loses that VM.
+    SERVING_DIR="${OUT_DIR}/serving" SERVE_EPOCH="" SNAPSHOT_WAITS=0
+    SERVE_PROV="${OUT_DIR}/results/${MODELS[0]//\//__}/provenance.json"
+    IFS=',' read -r -a SERVE_TASKS <<< "${AGENTIC_TASKS}"
+    mkdir -p "${SHIELD_DIR}"
+    field() { "${PYRUN[@]}" -c 'import json,sys; print((json.load(open(sys.argv[1])) or {}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }
+    # >>> serve-record helpers (tests/test_gpu_reference_colab.py runs this block
+    # under set -euo pipefail with field/gh/gpuref stubbed)
+    record_run_id() {   # REC: the task's recorded Shield run id; empty, status 0, before any record
+        local id=""
+        if [[ -s "$1" ]]; then id="$(field "$1" run_id)"; fi
+        printf '%s' "${id}"
+    }
+    save_serving_snapshot() {   # FILE: copy a VM's serving_provenance.json into SERVING_DIR; print its epoch id
+        # The id is the snapshot's content hash: the runner writes it once per
+        # launch, so a re-attach to the same VM finds the same epoch.
+        local epoch
+        epoch="$("${PYRUN[@]}" -c 'import hashlib,json,sys; json.load(open(sys.argv[1])); print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:12])' "$1")" || return 1
+        mkdir -p "${SERVING_DIR}"
+        [[ -s "${SERVING_DIR}/${epoch}.json" ]] || cp "$1" "${SERVING_DIR}/${epoch}.json"
+        printf '%s' "${epoch}"
+    }
+    add_serving_epoch() {   # REC EPOCH: the VM of EPOCH serves the record's run (appended once)
+        "${PYRUN[@]}" -c '
+import json, os, sys
+path, epoch = sys.argv[1], sys.argv[2]
+rec = json.load(open(path))
+epochs = [e for e in (rec.get("serving_epochs") or "").split(",") if e]
+if epoch not in epochs:
+    rec["serving_epochs"] = ",".join(epochs + [epoch])
+    with open(path + ".tmp", "w") as f:
+        json.dump(rec, f, indent=2, sort_keys=True)
+    os.replace(path + ".tmp", path)' "$1" "$2"
+    }
+    no_serving_snapshot() {   # REC: fail closed, the serving VM never wrote its snapshot
+        # SNAPSHOT_TRIES checks a minute apart after it served: a runner from
+        # before the snapshot (or one that cannot write it). Its scores could
+        # not be bound to a VM, so stop it and grade nothing. A run in flight
+        # (a reserved --tunnel-domain reaches this VM) gets an epoch that never
+        # resolves, so it can never count either.
+        local rec="$1" reason="no serving snapshot (pre-snapshot runner?)"
+        log "ERROR: ${reason} after ${SNAPSHOT_WAITS} checks; stopping '${SESSION}', nothing is graded"
+        if [[ -s "${rec}" ]]; then add_serving_epoch "${rec}" unsnapshotted; fi
+        [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
+        SESSION_ACTIVE=0
+        mkdir -p "${SERVING_DIR}"
+        gpuref driver-status "${SERVING_DIR}/no_snapshot.json" "serving_status=failed" "reason=${reason}" \
+            "session=${SESSION}" "rollovers=${ROLLOVERS}"
+        status FAILED "reason=${reason}" "out=${OUT_DIR}"
+        exit 1
+    }
+    report_on_disk() {   # DIR: a downloaded report*.json is under DIR
+        [[ -d "$1" ]] && [[ -n "$(find "$1" -type f -name 'report*.json' -print -quit 2>/dev/null)" ]]
+    }
+    retrieve_report() {   # TASK REC RUN_ID CONCLUSION: download the run's report, record the outcome
+        # A completed run is recorded "completed" only once its report is on disk;
+        # otherwise "report_pending", which a re-run retries instead of skipping.
+        local task="$1" rec="$2" run_id="$3" conclusion="$4" state=completed shown endpoint_id dispatched test
+        shown="$(field "${rec}" endpoint)" endpoint_id="$(field "${rec}" endpoint_id)"
+        dispatched="$(field "${rec}" dispatched_at)" test="$(field "${rec}" test)"
+        rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}"
+        gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}" -p '*report*' > /dev/null 2>&1 || true
+        report_on_disk "${SHIELD_DIR}/${task}" || state=report_pending
+        gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=${state}" \
+            "conclusion=${conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
+            "endpoint=${shown}" "endpoint_id=${endpoint_id}" "ttis=${TTIS_SHA}" \
+            "dispatched_at=${dispatched}" "test=${test}" "serving_epochs=$(field "${rec}" serving_epochs)"
+        [[ "${state}" == "completed" ]]
+    }
+    retry_report() {   # TASK REC RUN_ID CONCLUSION: retrieve_report, REPORT_TRIES times a minute apart
+        local try
+        for try in $(seq 1 "${REPORT_TRIES:-10}"); do
+            retrieve_report "$@" && return 0
+            log "$1: report for Shield run $3 not downloaded (try ${try}/${REPORT_TRIES:-10})"
+            [[ "${try}" -lt "${REPORT_TRIES:-10}" ]] && sleep "${REPORT_RETRY_SECONDS:-60}"
+        done
+        return 1
+    }
+    all_runs_finished() {   # every task has a record whose Shield run finished (completed / report_pending)
+        local task rec state
+        for task in "${SERVE_TASKS[@]}"; do
+            rec="${SHIELD_DIR}/${task}.json"
+            [[ -s "${rec}" ]] || return 1
+            state="$(field "${rec}" state)"
+            [[ "${state}" == "completed" || "${state}" == "report_pending" ]] || return 1
+        done
+    }
+    finish_serve() {   # the verdict from the recorded runs against SERVE_PROV's serving provenance
+        # shield-provenance keeps the VM's serving_status as written and
+        # recomputes status from it plus the reports on disk, so a finish after a
+        # report_pending pass grades the recovered reports, not that pass's result.
+        local verdict
+        [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched; cannot finish without it"; return 1; }
+        verdict="$(gpuref shield-provenance --prov "${SERVE_PROV}" --shield-dir "${SHIELD_DIR}" \
+            --serving-dir "${SERVING_DIR}" --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
+        gpuref summary "${SHIELD_DIR}" | tee "${OUT_DIR}/summary.txt" || true
+        [[ "${verdict}" == "ok" ]] || { status FAILED "out=${OUT_DIR}" "rollovers=${ROLLOVERS}"; log "a task has no Shield score; see ${SHIELD_DIR}"; return 1; }
+        status DONE "tasks=${AGENTIC_TASKS}" "rollovers=${ROLLOVERS}" "out=${OUT_DIR}"
+        log "done: ${OUT_DIR}"
+    }
+    serve_report_only_resume() {   # 0 = handled (exit with FINISH_RC), 1 = a task still needs a serving VM
+        # Every Shield run already finished on an earlier pass: the scores belong
+        # to that pass's VM, whose GPU and serving settings are in SERVE_PROV.
+        # Fetch any missing report and finish against that provenance, with no
+        # new VM (a new one could be a different GPU and would overwrite it).
+        local task rec
+        all_runs_finished || return 1
+        log "every Shield run already finished; retrieving reports only (no VM is started)"
+        for task in "${SERVE_TASKS[@]}"; do
+            rec="${SHIELD_DIR}/${task}.json"
+            report_on_disk "${SHIELD_DIR}/${task}" && [[ "$(field "${rec}" state)" == "completed" ]] && continue
+            retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)" \
+                || log "WARNING: ${task}: report still not retrievable; the record stays report_pending"
+        done
+        FINISH_RC=0; finish_serve || FINISH_RC=1
+        return 0
+    }
+    keep_serving_provenance() {   # after fetch_results: never let a later VM replace SERVE_PROV
+        # $1 = SERVE_PROV saved before the fetch (empty if there was none).
+        local saved="$1" fetched
+        [[ -n "${saved}" && -s "${saved}" ]] || return 0
+        if [[ -s "${SERVE_PROV}" ]] && ! cmp -s "${saved}" "${SERVE_PROV}"; then
+            fetched="${SERVE_PROV%.json}.refetch-$(date -u +%Y%m%dT%H%M%SZ).json"
+            mv "${SERVE_PROV}" "${fetched}"
+            log "WARNING: the fetched provenance differs from the one the scores were measured with; kept the original, saved the new one as ${fetched}"
+        fi
+        cp -p "${saved}" "${SERVE_PROV}"
+    }
+    # <<< serve-record helpers
+    if [[ "${DRY_RUN}" -eq 0 ]] && serve_report_only_resume; then exit "${FINISH_RC}"; fi
+fi
+
+start_session
+if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then launch_runner; fi
+
+# 5s --serve: serve until Shield's endpoint tests have run every task -----------
+# One Shield run per agentic task, dispatched once the VM serves through the
+# tunnel and recorded in <out>/shield/<task>.json, so a re-run of this command
+# resumes (never re-dispatches a recorded run on the same URL). Polls keep the
+# VM alive; a lost VM or a runner that stopped serving rolls over to a new
+# session. A new URL (no --tunnel-domain) cancels the task's run and dispatches
+# it again; a reserved domain keeps it.
+if [[ "${SERVE}" -eq 1 ]]; then
+    serve_endpoint() {   # the VM's tunnel URL -> ENDPOINT_FILE (0600); sets ENDPOINT_ID, ENDPOINT_SHOWN
+        local out url
+        out="$(remote_exec endpoint 60 2>&1)" || return 1
+        url="$(printf '%s\n' "${out}" | sed -n 's/^ENDPOINT_URL=//p' | tail -1)"
+        [[ "${url}" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || return 1
+        ( umask 077; printf '%s\n' "${url}" > "${ENDPOINT_FILE}" )
+        read -r ENDPOINT_SHOWN ENDPOINT_ID < <(gpuref redact-url --url-file "${ENDPOINT_FILE}")
+    }
+    rollover() {   # REASON: replace the serving VM and relaunch the runner
+        ROLLOVERS=$((ROLLOVERS + 1)); log "rollover ${ROLLOVERS}: $1"; status ROLLOVER "reason=$1" "rollovers=${ROLLOVERS}"
+        [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
+        SESSION_ACTIVE=0 SESSIONS_OUT="" SERVE_EPOCH="" SNAPSHOT_WAITS=0   # the next VM is a new epoch
+        start_session; launch_runner
+    }
+    snapshot_serving() {   # sets SERVE_EPOCH from this VM's serving snapshot (written before it serves)
+        local tmp="${LOCAL_TMP}/serving_provenance.json"
+        rm -f "${tmp}"
+        colab_cmd download -s "${SESSION}" "${REMOTE_REL}/results/${MODELS[0]//\//__}/serving_provenance.json" "${tmp}" \
+            > /dev/null 2>&1 || return 1
+        SERVE_EPOCH="$(save_serving_snapshot "${tmp}")" || { SERVE_EPOCH=""; return 1; }
+        log "serving epoch ${SERVE_EPOCH} (${SERVING_DIR}/${SERVE_EPOCH}.json)"
+    }
+    shield_dispatch() {   # TASK REC: start the task's Shield run against ENDPOINT_FILE
+        local task="$1" rec="$2" since runs id=""
+        since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        gpuref shield-inputs --model "${MODELS[0]}" --task "${task}" --url-file "${ENDPOINT_FILE}" \
+            --ttis-sha "${TTIS_SHA}" --secret "${SHIELD_SECRET}" > "${LOCAL_TMP}/inputs.json" || die "shield inputs for ${task}"
+        gh workflow run "${SHIELD_WORKFLOW}" -R "${SHIELD_REPO}" --ref "${SHIELD_REF}" --json < "${LOCAL_TMP}/inputs.json" > /dev/null \
+            || die "could not dispatch ${SHIELD_WORKFLOW} on ${SHIELD_REPO}"
+        for _ in $(seq 1 20); do
+            sleep 15
+            runs="$(gh run list -R "${SHIELD_REPO}" --workflow "${SHIELD_WORKFLOW}" --event workflow_dispatch \
+                --limit 40 --json databaseId,displayTitle,createdAt 2>/dev/null)" || continue
+            id="$(printf '%s' "${runs}" | gpuref shield-find-run --model "${MODELS[0]}" --url-file "${ENDPOINT_FILE}" --since "${since}")" && break
+        done
+        [[ -n "${id}" ]] || die "dispatched ${task} but found no matching Shield run"
+        gpuref driver-status "${rec}" "task=${task}" "run_id=${id}" "state=dispatched" \
+            "url=https://github.com/${SHIELD_REPO}/actions/runs/${id}" "endpoint=${ENDPOINT_SHOWN}" \
+            "endpoint_id=${ENDPOINT_ID}" "dispatched_at=${since}" "ttis=${TTIS_SHA}" "serving_epochs=${SERVE_EPOCH}" \
+            "test=$(printf 'inference-workflow-agentic --device gpu --agentic-benchmark %s' "${task}")"
+        log "${task}: Shield run https://github.com/${SHIELD_REPO}/actions/runs/${id} against ${ENDPOINT_SHOWN}"
+    }
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+        for task in "${SERVE_TASKS[@]}"; do
+            log "would dispatch ${SHIELD_WORKFLOW} on ${SHIELD_REPO} for ${task} once the VM serves:"
+            printf 'https://example.invalid\n' > "${LOCAL_TMP}/url"
+            gpuref shield-inputs --model "${MODELS[0]}" --task "${task}" --url-file "${LOCAL_TMP}/url" \
+                --ttis-sha "${TTIS_SHA}" --secret "${SHIELD_SECRET}" >&2
+        done
+        exit 0
+    fi
+    failures=0
+    for task in "${SERVE_TASKS[@]}"; do
+        rec="${SHIELD_DIR}/${task}.json"
+        rec_state=""
+        if [[ -s "${rec}" ]]; then rec_state="$(field "${rec}" state)"; fi
+        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}"; then
+            log "${task}: Shield run already completed"; continue
+        fi
+        if [[ "${rec_state}" == "completed" || "${rec_state}" == "report_pending" ]]; then
+            # The run finished on an earlier pass but its report is not on disk:
+            # retrieve it, never dispatch the task again.
+            if retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)"; then
+                log "${task}: report for Shield run $(field "${rec}" run_id) retrieved"
+            else
+                log "WARNING: ${task}: report still not retrievable; the record stays report_pending for the next run"
+            fi
+            continue
+        fi
+        while :; do
+            if ! remote_state; then
+                failures=$((failures + 1)); log "status poll failed (${failures}/6)"
+                if (( failures >= 6 )); then
+                    failures=0
+                    colab sessions < /dev/null 2>&1 | has_session || { SESSION_ACTIVE=0; rollover "session '${SESSION}' is gone"; }
+                fi
+                sleep 60; continue
+            fi
+            failures=0
+            case "${STATE}" in
+                SERVING) ;;
+                RUNNING)   # model download / load: one status line per phase
+                    [[ "${PHASE:-}" == "${last_phase:-}" ]] || status STARTING "phase=${PHASE:-}" "task=${task}"
+                    last_phase="${PHASE:-}"; sleep 60; continue ;;
+                *) rollover "runner ${STATE} before STOP (${PHASE:-})"; continue ;;
+            esac
+            serve_endpoint || { log "no tunnel URL yet"; sleep 60; continue; }
+            if [[ -z "${SERVE_EPOCH}" ]] && ! snapshot_serving; then
+                SNAPSHOT_WAITS=$((SNAPSHOT_WAITS + 1))
+                (( SNAPSHOT_WAITS >= ${SNAPSHOT_TRIES:-10} )) && no_serving_snapshot "${rec}"
+                log "no serving snapshot from this VM yet (${SNAPSHOT_WAITS}/${SNAPSHOT_TRIES:-10})"; sleep 60; continue
+            fi
+            run_id="$(record_run_id "${rec}")"
+            if [[ -n "${run_id}" && "$(field "${rec}" endpoint_id)" != "${ENDPOINT_ID}" ]]; then
+                log "${task}: endpoint changed (rollover without --tunnel-domain); cancelling run ${run_id} and dispatching again"
+                gh run cancel "${run_id}" -R "${SHIELD_REPO}" > /dev/null 2>&1 || true
+                run_id=""
+            fi
+            if [[ -z "${run_id}" ]]; then shield_dispatch "${task}" "${rec}"; run_id="$(field "${rec}" run_id)"; fi
+            # This VM serves the run now (a reserved --tunnel-domain keeps a run
+            # across a rollover, so it can list several VMs).
+            add_serving_epoch "${rec}" "${SERVE_EPOCH}"
+            view="$(gh run view "${run_id}" -R "${SHIELD_REPO}" --json status,conclusion -q '.status+" "+.conclusion' 2>/dev/null)" || view="unknown"
+            read -r run_status run_conclusion <<< "${view}"
+            status SERVING "task=${task}" "shield_run=${run_id}" "shield_status=${run_status}" \
+                "endpoint=${ENDPOINT_SHOWN}" "rollovers=${ROLLOVERS}"
+            if [[ "${run_status}" == "completed" ]]; then
+                if retry_report "${task}" "${rec}" "${run_id}" "${run_conclusion}"; then
+                    log "${task}: Shield run ${run_id} completed (${run_conclusion})"
+                else
+                    log "WARNING: ${task}: Shield run ${run_id} completed but its report was not downloaded; recorded report_pending, a re-run retries it"
+                fi
+                break
+            fi
+            if [[ "${MIN_BALANCE}" != "0" ]] && balance="$(colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}")"; then
+                log "balance ${balance} CU is below --min-balance ${MIN_BALANCE}; cancelling Shield run ${run_id} and stopping"
+                gh run cancel "${run_id}" -R "${SHIELD_REPO}" > /dev/null 2>&1 || true
+                status LOW_BALANCE "balance=${balance}" "task=${task}"; exit 1
+            fi
+            sleep $((POLL_MINUTES * 60))
+        done
+    done
+    # Every task ran: stop serving, bring home the VM's logs, finish provenance.
+    remote_step stop 60 GPUREF_STOP_REQUESTED
+    for _ in $(seq 1 40); do remote_state && [[ "${STATE}" == "DONE" || "${STATE}" == "FAILED" ]] && break; sleep 15; done
+    saved_prov=""
+    if [[ -s "${SERVE_PROV}" ]]; then saved_prov="${LOCAL_TMP}/provenance.kept.json"; cp -p "${SERVE_PROV}" "${saved_prov}"; fi
+    fetch_results
+    keep_serving_provenance "${saved_prov}"
+    finish_serve || exit 1
+    exit 0
 fi
 
 # 5 poll (each poll is a kernel execution, which also keeps the VM alive) -----
