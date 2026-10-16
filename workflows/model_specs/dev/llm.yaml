@@ -890,6 +890,7 @@ templates:
       max_context: 262144
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
+        GEMMA_CONTINUATION_POLICY: fifo
         MESH_DEVICE: P300x2
         GEMMA_EXPERIMENT_KV_POOL_TOKENS: '606208'
         GEMMA_EXPERIMENT_NATIVE_ALIAS: '1'
@@ -904,6 +905,7 @@ templates:
         trace_region_size: 134217728
         l1_small_size: 16384
       vllm_args:
+        middleware: continuation_priority.ContinuationPriorityMiddleware
         scheduling-policy: fcfs
         block_size: '128'
         enable-prompt-tokens-details: true
