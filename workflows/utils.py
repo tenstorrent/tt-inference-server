@@ -66,9 +66,12 @@ def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
 
     Returns None for unparseable tags (`:dev`, `:latest`, no tag).
     """
-    if not isinstance(image, str) or ":" not in image:
+    if not isinstance(image, str):
         return None
-    return parse_version_tuple(image.split("@", 1)[0].rsplit(":", 1)[1])
+    image = image.split("@", 1)[0]
+    if ":" not in image:
+        return None
+    return parse_version_tuple(image.rsplit(":", 1)[1])
 
 
 def get_repo_root_path(marker: str = ".git") -> Path:
