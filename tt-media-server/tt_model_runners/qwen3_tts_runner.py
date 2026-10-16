@@ -279,6 +279,15 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
                 api, voice_id, self.voice_prompts.get(voice_id).ref_codes
             )
 
+        # Compile the text projection for every padded text length now (before any trace
+        # capture) instead of on the first request with that length.
+        if hasattr(api, "warm_text_projection"):
+            lengths = api.warm_text_projection(self.model, self.ttnn_device, self.config)
+            self.logger.info(
+                f"Device {self.device_id}: text projection warmed for {len(lengths)} lengths "
+                f"(up to {lengths[-1]} tokens)"
+            )
+
         if self._use_device_decode:
             # The decoder MUST be built and warmed BEFORE init_server_context captures
             # the talker/CP/ECAPA traces. A trace replays its captured ops at the
@@ -598,6 +607,16 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             raise RuntimeError("Model not loaded. Call warmup() first.")
 
         t_total = _time.perf_counter()
+        # Per-stage wall time (ms), logged with the request line: where the time after the
+        # talker goes (ICL, decoder front-end on host, decoder back-end on device, encoding).
+        stage = {}
+        _t = [t_total]
+
+        def _mark(name):
+            now = _time.perf_counter()
+            stage[name] = (now - _t[0]) * 1000
+            _t[0] = now
+
         ref_codes, ref_text, audio_data, voice_id = self._resolve_voice(request)
         ref_codes, audio_data = self._trim_ref(
             ref_codes, audio_data, ref_text, request.text
@@ -616,6 +635,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             speaker_embedding = self.model.extract_speaker_embedding(audio_data)
 
         language = self._language_for(request)
+        _mark("prep")
         inputs_embeds_tt, trailing_text_hidden, tts_pad_embed, _ = (
             api.create_icl_embedding_ttnn(
                 target_text=request.text,
@@ -631,6 +651,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             )
         )
 
+        _mark("icl")
         if self._post_warmup_rng_state is not None:
             torch.set_rng_state(self._post_warmup_rng_state)
 
@@ -646,6 +667,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         if codes is None:
             raise RuntimeError("Qwen3-TTS generation returned no codec frames")
+        _mark("talker")
 
         # Decode the reference and generated codes together, then cut the
         # reference's portion, as HF Qwen3-TTS does. Decoding the generated
@@ -660,6 +682,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # scaled with frame count and inflated TTFT. Both return generated speech
         # only. CPU path kept as a fallback via TT_QWEN3_DEVICE_DECODE=0.
         ref_state = self._ref_state_for(api, voice_id, ref_codes)
+        _mark("ref_state")
         if self._use_device_decode and self.device_decoder is not None:
             audio = self._device_decode(api, ref_codes, codes, ref_state)
             if os.environ.get("TT_QWEN3_DECODE_COMPARE", "0") == "1":
@@ -668,12 +691,21 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             audio = api.decode_icl_audio(
                 ref_codes, codes, self.decoder_weights, ref_state=ref_state
             )
+        _mark("decode")
         audio_np = audio.squeeze().detach().cpu().float().numpy()
         duration_s = float(len(audio_np)) / SAMPLE_RATE_HZ
 
         buf = io.BytesIO()
         sf.write(buf, audio_np, SAMPLE_RATE_HZ, format="WAV")
         b64_audio = base64.b64encode(buf.getvalue()).decode("ascii")
+        _mark("encode")
+        backend = getattr(self.device_decoder, "last_backend", None) or {}
+        if "ms" in backend and "decode" in stage:
+            stage["dec_device"] = backend["ms"]
+            stage["dec_host"] = stage["decode"] - backend["ms"]
+        stages = " ".join(f"{k}={v:.0f}" for k, v in stage.items())
+        if backend:
+            stages += f" dec_frames={backend.get('frames')} dec_bucket={backend.get('bucket')}"
 
         total_ms = (_time.perf_counter() - t_total) * 1000
         rtf = (total_ms / 1000.0) / duration_s if duration_s > 0 else float("inf")
@@ -684,7 +716,8 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         self.logger.info(
             f"Device {self.device_id}: voice={voice_id} lang={language} "
             f"frames={len(codes)} audio={duration_s:.2f}s "
-            f"total={total_ms:.0f}ms RTF={rtf:.3f} ctrl_ids={ctrl_ids} hit_cap={hit_cap}"
+            f"total={total_ms:.0f}ms RTF={rtf:.3f} ctrl_ids={ctrl_ids} hit_cap={hit_cap} "
+            f"stages_ms[{stages}]"
         )
         if hit_cap:
             self.logger.warning(
