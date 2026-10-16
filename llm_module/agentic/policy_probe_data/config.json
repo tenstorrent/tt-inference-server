@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED fixed-work scheduling/eviction diagnostic, not Terminal/SWE benchmark score",
+  "purpose": "UNSCORED RoPE64 follow-up, same SWE A8 thenA16 control workload; final chat checks retained",
   "policy": "fifo",
   "C": 8,
   "F": 393216,
@@ -15,11 +15,6 @@
       "workload": "swe",
       "A": 16,
       "role": "additional oversubscription mechanism control"
-    },
-    {
-      "workload": "terminal",
-      "A": 8,
-      "role": "Terminal shape transfer diagnostic; no scored C8 best-config claim"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",

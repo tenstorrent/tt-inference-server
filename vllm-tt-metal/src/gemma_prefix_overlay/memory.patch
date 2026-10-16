@@ -6,8 +6,8 @@
              )
 -            self.cos, self.sin = (tensor(cos[0]), tensor(sin[0]))
 +            # Keep a fast tiled prefix and the full decode representation. The
-+            # 32K prefix also covers the setup-only norm-stat geometry view.
-+            self.cos, self.sin = (tensor(cos[0, :32768]), tensor(sin[0, :32768]))
++            # 64K prefix also covers the setup-only norm-stat geometry view.
++            self.cos, self.sin = (tensor(cos[0, :65536]), tensor(sin[0, :65536]))
              # Embedding requires row-major tables. Hoist full-table untilizes out
              # of decode; retain tiled tables for prefill slicing.
 -            self.decode_cos = ttnn.to_layout(self.cos, ttnn.ROW_MAJOR_LAYOUT)
@@ -60,7 +60,7 @@
              raise ValueError("Prefill must advance each request from its current position")
          shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
 -        if history_keys is not None or shape_key not in self.prefill_shapes:
-+        if history_keys is not None or shape_key not in self.prefill_shapes or max(prompt_lens) > 32768:
++        if history_keys is not None or shape_key not in self.prefill_shapes or max(prompt_lens) > 65536:
              # Request histories allocate persistent K/V tails even for a seen
              # signature. Unseen signatures can also allocate native cached state.
              # Both must be created before the next trace capture.
