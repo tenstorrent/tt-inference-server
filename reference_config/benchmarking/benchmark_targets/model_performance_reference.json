@@ -7392,6 +7392,42 @@
             }
         ]
     },
+    "meta-models/Muse-Glimmer-30B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B entry; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries. Decoder + untied LM",
+                    "head = 26.5B params = 53.0 GB bf16, 13.3 GB per chip on the 4-chip TP mesh at ~560 GB/s = 23.7 ms per step",
+                    "= 42 t/s/u; TTFT floor two step-times (~50 ms). The deployed BFP4/BFP8 precision streams ~3.5x fewer bytes, so",
+                    "measured decode is above this ceiling; theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: release runs 38773036733 and 39584812502 (tt-agentic-bringup-qb2, bh-qb-ge) gave",
+                    "TTFT 84.5-84.6 ms and 58.1 t/s/u. Tolerance 0.30, the runner-spread cap the Kolibri-1 entry uses."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 42,
+                        "tput": 42
+                    },
+                    "measured": {
+                        "ttft_ms": 84.5,
+                        "tput_user": 58.1,
+                        "tput": 56.3,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-4-26B-A4B-it": {
         "p300x2": [
             {
