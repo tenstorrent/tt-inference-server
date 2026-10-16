@@ -272,7 +272,17 @@ setup() {
     if ! python3 -m venv "${probe}/v" >/dev/null 2>&1; then
         pyver="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
         log "python3 -m venv unavailable; installing python${pyver}-venv"
-        apt-get update -qq && apt-get install -y -qq "python${pyver}-venv" python3-venv || return 1
+        if ! { apt-get update -qq && apt-get install -y -qq "python${pyver}-venv" python3-venv; }; then
+            # The apt route depends on third-party PPAs (deadsnakes for Colab's
+            # python), which can be down (503). Fall back to a uv-managed
+            # CPython, which ships venv/ensurepip, as the host python3 for
+            # run.py and gpuref.py.
+            log "apt could not install python${pyver}-venv; using a uv-managed Python 3.12 as host python3"
+            { command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv; } \
+                && uv venv -q --seed --python 3.12 "${WORK_DIR}/hostpy" || return 1
+            export PATH="${WORK_DIR}/hostpy/bin:${PATH}"
+            python3 -m venv "${probe}/v2" >/dev/null 2>&1 || return 1
+        fi
     fi
     rm -rf "${probe}"
     python3 -c 'import yaml' 2>/dev/null || python3 -m pip install -q pyyaml || return 1

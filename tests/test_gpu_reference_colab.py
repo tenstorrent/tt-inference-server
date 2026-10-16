@@ -2777,3 +2777,14 @@ def test_reports_record_the_ttis_commit_that_produced_them():
     assert _checkout_commit() == head
     src = (REPO_ROOT / "workflow_module" / "execution.py").read_text()
     assert 'meta["tt_inference_server_commit"] = _checkout_commit()' in src
+
+
+def test_runner_host_python_falls_back_to_uv_when_apt_fails():
+    # Colab's python3 lacks venv and the apt route uses deadsnakes, which can
+    # 503; the runner must not fail setup on that (runs gpuref-vt3b-79330017).
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    setup = runner[
+        runner.index('phase "setup: host python"') : runner.index("ensure_stack() {")
+    ]
+    assert 'uv venv -q --seed --python 3.12 "${WORK_DIR}/hostpy"' in setup
+    assert 'export PATH="${WORK_DIR}/hostpy/bin:${PATH}"' in setup
