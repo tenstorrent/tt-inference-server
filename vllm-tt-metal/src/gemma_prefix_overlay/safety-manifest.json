@@ -1,11 +1,11 @@
 {
   "base_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d",
-  "target_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d+conservative-lifetime-and-measured-pool",
-  "patch_sha256": "bbd43982b89837dc0c8235933115c0ea613b1fcc32d0e8f9dcd3d8c51717fa54",
+  "target_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d+conservative-pool-fast-recapture-v2",
+  "patch_sha256": "860bab766c0a1a1837a706dcff1a4b8bc449cbd6e02af9a1bb59f9471c302633",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "b8536118d6601ca26d19baf028c0b42f0f5577e9955781bae5bb6a64dcb2d3d7",
-      "target": "7c6dfef672861aab97c7bcb111c949a2946e1b1515fdd1fd00cf71f1ee64d77b"
+      "target": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "9f3487bc72493988e7d95de5ce63f2131009f10c41a613027a9709c2f96f2d72",
