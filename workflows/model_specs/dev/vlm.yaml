@@ -401,6 +401,13 @@ templates:
         trust-remote-code: true
         mm-processor-cache-gb: 0
         allowed-local-media-path: /
+        # Decode only the sampled frames (Molmo2: uniform_last_frame, <=2 fps, <=384 frames). Without this vLLM decodes EVERY
+        # frame into RAM first (8.6 min of 720p30 = 43 GB; an hour of video would OOM the host).
+        media-io-kwargs:
+          video:
+            frame_sample_mode: uniform_last_frame
+            num_frames: 384
+            max_fps: 2
     - device: GALAXY_T3K
       max_concurrency: 1
       max_context: 36864
@@ -413,6 +420,13 @@ templates:
         trust-remote-code: true
         mm-processor-cache-gb: 0
         allowed-local-media-path: /
+        # Decode only the sampled frames (Molmo2: uniform_last_frame, <=2 fps, <=384 frames). Without this vLLM decodes EVERY
+        # frame into RAM first (8.6 min of 720p30 = 43 GB; an hour of video would OOM the host).
+        media-io-kwargs:
+          video:
+            frame_sample_mode: uniform_last_frame
+            num_frames: 384
+            max_fps: 2
     - device: GALAXY
       # One server for the whole 32-chip Galaxy with in-process DP=4: the adapter (models/demos/molmo2/tt/
       # generator_vllm.py) splits the (8,4) mesh into four 1x8 replicas, one request slot each. vLLM's own
@@ -428,6 +442,13 @@ templates:
         trust-remote-code: true
         mm-processor-cache-gb: 0
         allowed-local-media-path: /
+        # Decode only the sampled frames (Molmo2: uniform_last_frame, <=2 fps, <=384 frames). Without this vLLM decodes EVERY
+        # frame into RAM first (8.6 min of 720p30 = 43 GB; an hour of video would OOM the host).
+        media-io-kwargs:
+          video:
+            frame_sample_mode: uniform_last_frame
+            num_frames: 384
+            max_fps: 2
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
