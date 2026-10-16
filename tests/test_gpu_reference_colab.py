@@ -2788,4 +2788,7 @@ def test_runner_host_python_falls_back_to_uv_when_apt_fails():
     ]
     assert "uv venv --seed --python-preference only-managed --python 3.12" in setup
     assert "astral.sh/uv/install.sh" in setup  # no pip on that python3 either
+    assert (
+        "python3 -m pip install -q requests" in setup
+    )  # run.py imports it on the host
     assert 'export PATH="${WORK_DIR}/hostpy/bin:${PATH}"' in setup
