@@ -1,5 +1,5 @@
 {
-  "purpose": "UNSCORED actual Terminal task-balanced joint-length reuse",
+  "purpose": "UNSCORED runtime page gather matched terminal",
   "policy": "fifo",
   "C": 16,
   "F": 606208,
@@ -9,7 +9,7 @@
     {
       "workload": "terminal",
       "A": 16,
-      "role": "reuse"
+      "role": "runtime page gather"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
