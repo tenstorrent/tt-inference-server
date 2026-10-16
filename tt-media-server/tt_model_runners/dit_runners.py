@@ -1403,6 +1403,18 @@ class TTLTX23DistilledRunner(TTDiTRunner):
             )
             from models.tt_dit.utils.ltx import default_ltx_gemma
 
+            # LTX_PROMPT_ENHANCER=host|device rewrites each prompt before encoding. Unset
+            # passes nothing, so tt-metal trees without the enhancer module still load.
+            extra = {}
+            if os.environ.get("LTX_PROMPT_ENHANCER"):
+                from models.tt_dit.pipelines.ltx.prompt_enhancer import (
+                    build_prompt_enhancer,
+                )
+
+                extra["prompt_enhancer"] = build_prompt_enhancer(
+                    os.environ["LTX_PROMPT_ENHANCER"]
+                )
+
             return LTXDistilledPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=self.settings.model_weights_path,
@@ -1419,6 +1431,7 @@ class TTLTX23DistilledRunner(TTDiTRunner):
                 width=LTX_WIDTH,
                 fps=LTX_FPS,
                 image_conditioning=False,
+                **extra,
             )
         except Exception as e:
             log_exception_chain(
