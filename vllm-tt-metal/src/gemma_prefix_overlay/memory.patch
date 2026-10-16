@@ -1,6 +1,33 @@
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
-@@ -368,6 +368,7 @@
+@@ -8,6 +8,7 @@
+ 
+ import json
+ import math
++import os
+ import time
+ from dataclasses import dataclass, field
+ from types import SimpleNamespace
+@@ -15,7 +16,8 @@
+ import torch
+ from loguru import logger
+ from transformers import AutoTokenizer, GenerationConfig
+-from ttnn.tools.trace_allocation_tracker import corruptible_allocation_scope
++from ttnn.tools.trace_allocation_tracker import corruptible_allocation_scope, TRACE_ALLOC_TRACKING
++from ttnn._ttnn.operations.trace import get_unsafe_tracked_ids
+ 
+ import ttnn
+ from models.common.sampling.tt_sampling import TTSampling
+@@ -41,6 +43,8 @@
+ 
+ class Gemma4Generator:
+     def __init__(self, model, *, max_seq_len=2048):
++        if not TRACE_ALLOC_TRACKING or os.environ.get("TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE", "0") != "0":
++            raise RuntimeError("Deferred retention requires native allocation tracking including program-cache buffers")
+         self.model, self.mesh = model, model.mesh
+         self.tokenizer = AutoTokenizer.from_pretrained(model.checkpoint, local_files_only=True)
+         generation_config = GenerationConfig.from_pretrained(model.checkpoint, local_files_only=True)
+@@ -368,6 +372,7 @@
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -8,7 +35,7 @@
          **kwargs,
      ):
          state = kv_cache
-@@ -386,6 +387,11 @@
+@@ -386,15 +391,19 @@
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -20,7 +47,20 @@
          starts = [0] * len(prompt_lens) if start_positions is None else list(start_positions)
          if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
              raise ValueError("Prefill must advance each request from its current position")
-@@ -423,17 +429,26 @@
+         shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
+-        if history_keys is not None or shape_key not in self.prefill_shapes:
+-            # Request histories allocate persistent K/V tails even for a seen
+-            # signature. Unseen signatures can also allocate native cached state.
+-            # Both must be created before the next trace capture.
+-            self._retire_traces()
++        logger.info("TRACE_PREFILL_SIGNATURE " + json.dumps({"shape": shape_key, "slots": slots,
++            "retain_history": retain_prefill_history, "return_device": return_device}))
++        # Eager prefill itself does not replay traces. Decide whether replay
++        # is safe after transient work and final histories are released.
+         self._tables(state, page_table)
+         outputs = []
+         for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
+@@ -423,17 +432,26 @@
                              f"key={key}, saved_end={previous['end']}, start={start}"
                          )
                      rewind = start - aligned_start
@@ -54,7 +94,7 @@
              ids = torch.zeros(1, (chunk_length + 31) // 32 * 32, dtype=torch.int32)
              ids[0, :chunk_length] = tokens[row, aligned_start:length]
              tt_ids = self._upload(ids, ttnn.uint32)
-@@ -461,7 +476,14 @@
+@@ -461,13 +479,37 @@
                  histories=histories,
              )
              if history_keys is not None:
@@ -70,6 +110,81 @@
              outputs.append(
                  out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
              )
+             # Device-return outputs retain their own owners in outputs. Host
+             # mode has consumed out; do not carry it into the next prefill.
+             del out, tt_ids, tables, uploaded_rows
++        histories = previous = tail = None
++        # Outputs are consumed and released by sample_prefill_outputs before
++        # replay; do not exempt them in the authoritative native tracker.
++        output_ids = {t.buffer_unique_id() for t in outputs if isinstance(t, ttnn.Tensor)}
++        checks = []
++        unsafe = False
++        for trace_entry in self.traces.values():
++            for name in ("model_trace", "sampling_trace"):
++                allocations = get_unsafe_tracked_ids(self.mesh, trace_entry[name])
++                remaining = {k: v for k, v in allocations.items() if k not in output_ids}
++                unsafe = unsafe or bool(remaining)
++                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe_count": len(remaining), "unsafe_sample": {str(k): str(v)[:512] for k, v in list(remaining.items())[:8]}})
++        logger.info("TRACE_DEFERRED_RETENTION " + json.dumps({
++            "shape": shape_key, "history_count": len(state.prefill_history),
++            "retire": unsafe, "checks": checks}))
++        if unsafe:
++            self._retire_traces()
+         self.prefill_shapes.add(shape_key)
+         if return_device:
+             return outputs
+@@ -497,13 +539,29 @@
+         merged = outputs[0] if batch == 1 else ttnn.concat(outputs, dim=2)
+         if batch > 1 and batch < 32:
+             merged = ttnn.pad(merged, [(0, 0), (0, 0), (0, 32 - batch), (0, 0)], value=0.0)
++        shape = ttnn.Shape([1, 1, 32, self.model.config.vocab_size // 4])
++        merged_view = ttnn.reshape(merged, shape, shape)
++        # Sampling helpers can also create late native program buffers. Prepare
++        # them before deciding whether the existing graph is safe to retain.
++        consumed_ids = {t.buffer_unique_id() for t in outputs}
++        consumed_ids.update((merged.buffer_unique_id(), merged_view.buffer_unique_id()))
++        checks = []
++        unsafe = False
++        for trace_entry in self.traces.values():
++            for name in ("model_trace", "sampling_trace"):
++                allocations = get_unsafe_tracked_ids(self.mesh, trace_entry[name])
++                remaining = {k: v for k, v in allocations.items() if k not in consumed_ids}
++                unsafe = unsafe or bool(remaining)
++                checks.append({"kind": name, "trace_id": str(trace_entry[name]), "unsafe_count": len(remaining), "unsafe_sample": {str(k): str(v)[:512] for k, v in list(remaining.items())[:8]}})
++        logger.info("TRACE_SAMPLER_RETENTION " + json.dumps({"retire": unsafe, "checks": checks}))
++        if unsafe:
++            self._retire_traces()
+         entry = self._entry(state)
+-        shape = ttnn.Shape([1, 1, 32, self.model.config.vocab_size // 4])
+-        ttnn.copy(ttnn.reshape(merged, shape, shape), entry["logits"])
++        ttnn.copy(merged_view, entry["logits"])
+         # CQ0 consumes the copy before replay. Release temporary prefill owners
+         # so a hot trace never replays with unrelated live postcapture buffers.
+         outputs.clear()
+-        del merged
++        del merged, merged_view
+         ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
+         self.counters["sampling_replays"] += 1
+         return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
+@@ -611,6 +669,18 @@
+         if programs_before != programs_after:
+             raise RuntimeError("Native program cache grew during trace capture")
+         self.traces[key] = entry
++        # Shared read-only instrumentation in control and candidate.
++        import hashlib
++        binding = {"batch": state.batch, "capacity": state.capacity,
++                   "cache": cache_buffer_ids, "tables": {str(k): v for k, v in table_buffer_ids.items()},
++                   "io": {name: entry[name].buffer_unique_id() for name in
++                          ("tokens", "positions", "rope_positions", "logits")}}
++        binding_key = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
++        logger.info("TRACE_BINDING_CAPTURE " + json.dumps({
++            "binding_sha256": binding_key, "binding": binding,
++            "model_trace": str(entry["model_trace"]),
++            "sampling_trace": str(entry["sampling_trace"]),
++            "prepared": prepared, "programs": programs_after}))
+         logger.info("TRACE_ENTRY_COST " + json.dumps({"seconds": time.perf_counter() - trace_entry_start,
+             "prepared": prepared, "programs_before": programs_before, "programs_after": programs_after}))
+         return entry
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 @@ -28,6 +28,7 @@
