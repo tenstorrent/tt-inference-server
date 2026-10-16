@@ -48,12 +48,13 @@ def run_probe(server,context):
                 for turn in range(3):
                     length=((49152 if i%4==3 else 16384)+512*turn) if workload=='swe' else shapes[i]['lengths'][turn]
                     tokens=list(ids[:length]);tokens[0]=10000+i
-                    calls.append(request(tokens,output,session))
+                    requested_output=shapes[i]['output_lengths'][turn] if profile.get('output_mode')=='historical_saved' else output
+                    calls.append(request(tokens,requested_output,session))
                     if turn<2:time.sleep(gap)
                 row={'task':i,'task_start':begin,'task_end':time.time(),'calls':calls}
                 with lock:tasks.append(row);(root/(label+'-partial.json')).write_text(json.dumps(tasks))
             with concurrent.futures.ThreadPoolExecutor(active) as ex:list(ex.map(task,range(count)))
-            ended=time.time();result={'profile':profile,'policy':cfg['policy'],'C':cfg['C'],'F':cfg['F'],'prefix_caching':True,'start':started,'end':ended,'wall_s':ended-started,'task_count':count,'call_count':3*count,'tool_gap_s':gap,'forced_output_per_call':output,'input_tokens':sum(c['prompt_tokens'] for t in tasks for c in t['calls']),'output_tokens':sum(c['response']['usage']['completion_tokens'] for t in tasks for c in t['calls']),'tasks':tasks}
+            ended=time.time();result={'profile':profile,'policy':cfg['policy'],'C':cfg['C'],'F':cfg['F'],'prefix_caching':cfg.get('prefix_caching',True),'start':started,'end':ended,'wall_s':ended-started,'task_count':count,'call_count':3*count,'tool_gap_s':gap,'forced_output_per_call':None if profile.get('output_mode')=='historical_saved' else output,'input_tokens':sum(c['prompt_tokens'] for t in tasks for c in t['calls']),'output_tokens':sum(c['response']['usage']['completion_tokens'] for t in tasks for c in t['calls']),'tasks':tasks}
             results.append(result);(root/'results.json').write_text(json.dumps(results));print('UNSCORED_POLICY_PROFILE '+json.dumps({k:v for k,v in result.items() if k!='tasks'}),flush=True)
         checks=[]
         for p in json.loads((here/'qualitative_prompts.json').read_text()):
