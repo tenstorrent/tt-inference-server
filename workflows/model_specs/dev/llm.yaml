@@ -6026,6 +6026,19 @@ templates:
       tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
   status: EXPERIMENTAL
 - weights:
+  - unsloth/Llama-3.2-3B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 006f5dcd1393c3add266de40994ba96225e9689d
+      tokenizer_revision: 006f5dcd1393c3add266de40994ba96225e9689d
+  status: EXPERIMENTAL
+- weights:
   - TinyLlama/TinyLlama-1.1B-Chat-v1.0
   impl: quetzal
   inference_engine: VLLM
