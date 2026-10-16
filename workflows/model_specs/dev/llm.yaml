@@ -2953,9 +2953,15 @@ templates:
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool: 32 slots x 128K per lane (the first boot with the P150X8 value reported a 133,120-token
-        # pool, i.e. one 128K user for the whole engine). Per chip this is pool / 8 (TP) x 20 KB per token.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "4194304"
+        # KV pool per lane: 24 users x 128K. The plugin fits a larger request to free DRAM (32 x 128K became
+        # 3.78M tokens = 29 GB per chip) and the 4096-token prefill warmup then has no room for its
+        # activations (OOM on a 184 MB buffer); 3.15M tokens leaves ~4 GB per chip for prefill and traces.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "3145728"
+        # Every layer allocates the pool unless the sliding layers live in vLLM-managed hybrid KV groups
+        # (window-sized caches): without them 30 x 4.3 GB per chip at this pool (OOM at layer 4). bfp8 KV
+        # halves the global layers' bytes, as on the 31B / 12B Galaxy entries.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_KV_BFP8: "1"
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
