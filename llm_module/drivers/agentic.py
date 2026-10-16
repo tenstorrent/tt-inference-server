@@ -121,7 +121,9 @@ class HarborAgenticDriver(AgenticEvalDriver):
             from report_module.schema import Block
             return Block(kind="benchmarks", id="unscored_policy_probe",
                          title="UNSCORED scheduling diagnostic — accuracy not measured",
-                         data={"diagnostic": dict(raw)},
+                         data={"status": "na" if raw.get("status") == "completed" else "error",
+                               "reason": "Unscored mechanism diagnostic; benchmark accuracy not measured.",
+                               "diagnostic": dict(raw)},
                          targets={"tool": "gemma_policy_probe", "device": device})
         return super().parse(raw, device=device)
 
