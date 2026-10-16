@@ -546,7 +546,12 @@ def _llm_spec(*, version="0.16.0", tensor_cache_timeout=5400.0, engine="vLLM"):
 
 def _docker_setup(**host_storage):
     fields = dict.fromkeys(
-        ("host_model_volume_root", "host_hf_cache", "host_weights_dir")
+        (
+            "host_model_volume_root",
+            "host_hf_cache",
+            "host_weights_dir",
+            "host_model_weights_mount_dir",
+        )
     )
     fields.update(host_storage)
     return SimpleNamespace(**fields)
@@ -631,6 +636,12 @@ class TestNoRetryAfterTimeoutOnNonResumableDownload:
             # Weights downloaded on the host: resumable, so a retry can succeed.
             (_llm_spec(version="0.16.0"), _docker_setup(host_model_volume_root="/v")),
             (_llm_spec(version="0.16.0"), _docker_setup(host_hf_cache="/hf")),
+            # Existing weights mounted read-only (MODEL_SOURCE=local with
+            # MODEL_WEIGHTS_DIR): the container gets MODEL_WEIGHTS_DIR, no download.
+            (
+                _llm_spec(version="0.16.0"),
+                _docker_setup(host_model_weights_mount_dir="/weights"),
+            ),
             # Images from v0.19.0 on resume the download themselves.
             (_llm_spec(version="0.19.0"), _docker_setup()),
             # Media images use a different launcher.
@@ -647,6 +658,31 @@ class TestNoRetryAfterTimeoutOnNonResumableDownload:
             ready_error="timed out after 7200s waiting for http://127.0.0.1:8000/health",
         )
         assert result.return_code == 1
+        assert len(attempts) == 2
+
+    def test_timeout_with_local_model_source_weights_is_still_retried(
+        self, monkeypatch, tmp_path
+    ):
+        # MODEL_SOURCE=local + MODEL_WEIGHTS_DIR sets none of --host-volume,
+        # --host-hf-cache or --host-weights-dir, but the container gets the
+        # mounted weights through MODEL_WEIGHTS_DIR and downloads nothing.
+        from workflows.setup_host import SetupConfig
+
+        weights_dir = tmp_path / "local_weights"
+        weights_dir.mkdir()
+        monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(weights_dir))
+        model_spec = _llm_spec(version="0.16.0")
+        model_spec.impl = SimpleNamespace(impl_id="tt_transformers")
+        model_spec.model_name = "Llama-3.1-70B-Instruct"
+        setup_config = SetupConfig(model_spec=model_spec, model_source="local")
+        assert setup_config.host_model_weights_mount_dir == weights_dir
+
+        result, attempts = self._run(
+            monkeypatch,
+            model_spec=model_spec,
+            setup_config=setup_config,
+            ready_error="timed out after 7200s waiting for http://127.0.0.1:8000/health",
+        )
         assert len(attempts) == 2
 
     def test_device_hang_on_old_image_is_still_retried(self, monkeypatch):

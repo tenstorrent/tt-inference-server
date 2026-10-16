@@ -175,9 +175,12 @@ def _parse_version(version: Any) -> Optional[tuple]:
 def _container_cannot_resume_download(spec: ServerLaunchSpec) -> bool:
     """True when a timed-out boot may have left a half-downloaded weights dir behind.
 
-    That happens only when the weights are downloaded inside the container (no
-    --host-volume, --host-hf-cache or --host-weights-dir) by a vLLM image whose
-    launcher predates resumable downloads. Retrying such a boot cannot succeed.
+    That happens only when the weights are downloaded inside the container by a
+    vLLM image whose launcher predates resumable downloads. Retrying such a boot
+    cannot succeed. The container does not download when run.py fetched the weights
+    on the host (--host-volume, --host-hf-cache), or when it mounts existing weights
+    (host_model_weights_mount_dir: --host-weights-dir, or MODEL_SOURCE=local with
+    MODEL_WEIGHTS_DIR), because the container then gets MODEL_WEIGHTS_DIR.
     """
     if spec.mode is not ServerMode.DOCKER:
         return False
@@ -190,7 +193,12 @@ def _container_cannot_resume_download(spec: ServerLaunchSpec) -> bool:
     setup_config = spec.setup_config
     return not any(
         getattr(setup_config, name, None)
-        for name in ("host_model_volume_root", "host_hf_cache", "host_weights_dir")
+        for name in (
+            "host_model_volume_root",
+            "host_hf_cache",
+            "host_weights_dir",
+            "host_model_weights_mount_dir",
+        )
     )
 
 
