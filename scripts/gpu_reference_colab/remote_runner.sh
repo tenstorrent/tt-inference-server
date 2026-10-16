@@ -293,7 +293,11 @@ setup() {
         fi
     fi
     rm -rf "${probe}"
+    # run.py imports these on the host before it builds any venv (PyYAML for
+    # the catalog, requests via llm_module). Colab's own python3 has both; a
+    # fresh uv-managed host python does not.
     python3 -c 'import yaml' 2>/dev/null || python3 -m pip install -q pyyaml || return 1
+    python3 -c 'import requests' 2>/dev/null || python3 -m pip install -q requests || return 1
     command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv || return 1
 
 }
