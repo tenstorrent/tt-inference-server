@@ -1,0 +1,27 @@
+{
+  "purpose": "UNSCORED fixed-work scheduling/eviction diagnostic, not Terminal/SWE benchmark score",
+  "policy": "fifo",
+  "C": 8,
+  "F": 393216,
+  "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
+  "base_validation": "Strict17 source gate passed; longer representative local validation still running at preparation",
+  "profiles": [
+    {
+      "workload": "swe",
+      "A": 8,
+      "role": "best mixed-workload admission baseline"
+    },
+    {
+      "workload": "swe",
+      "A": 16,
+      "role": "additional oversubscription mechanism control"
+    },
+    {
+      "workload": "terminal",
+      "A": 8,
+      "role": "Terminal shape transfer diagnostic; no scored C8 best-config claim"
+    }
+  ],
+  "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
+  "credit_s": 120
+}

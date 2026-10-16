@@ -8913,6 +8913,7 @@ _eval_config_list = [
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
+                        "session_id_headers": ["X-Gemma-Agent-Session"],
                         "parser_name": "json",
                         "temperature": 1.0,
                         "max_turns": 50,
@@ -8956,6 +8957,7 @@ _eval_config_list = [
                     agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs={
+                        "session_id_headers": ["X-Gemma-Agent-Session"],
                         "version": MINI_SWE_AGENT_VERSION,
                         "max_tokens": 8 * 1024,
                         "config": {
