@@ -116,12 +116,27 @@ class HarborAgenticDriver(AgenticEvalDriver):
 
     name = "harbor"
 
+    def parse(self, raw, *, device=""):
+        if raw.get("unscored_policy_probe"):
+            from report_module.schema import Block
+            return Block(kind="benchmarks", id="unscored_policy_probe",
+                         title="UNSCORED scheduling diagnostic — accuracy not measured",
+                         data={"status": "na" if raw.get("status") == "completed" else "error",
+                               "reason": "Unscored mechanism diagnostic; benchmark accuracy not measured.",
+                               "diagnostic": dict(raw)},
+                         targets={"tool": "gemma_policy_probe", "device": device})
+        return super().parse(raw, device=device)
+
     def run(
         self,
         config: LLMRunConfig,
         server: ServerConnection,
         context: DriverContext,
     ) -> DriverResult:
+        if self.task.task_name == "terminal_bench_2":
+            from ..agentic.ci_policy_probe import run_probe
+            raw, path = run_probe(server, context)
+            return DriverResult(return_code=0, raw=raw, raw_path=path)
         n_tasks = resolve_n_tasks(self.task, self.runtime_config)
         if n_tasks == 0:
             logger.info(
