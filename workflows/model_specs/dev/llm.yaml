@@ -2884,6 +2884,7 @@ templates:
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
+        decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
@@ -2923,6 +2924,7 @@ templates:
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
+        decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
@@ -2990,6 +2992,7 @@ templates:
         # after the decode-trace capture (a new prefill shape) would otherwise place them where the
         # replay writes its L1 intermediates (wrong first token / hang on the next prefill).
         l1_small_size: 65536
+        decode_interleave_prefill_steps: 1  # one decode-only step (~0.1 s) after every prefill step: with 3-9 s prefill steps the default 2:1 starved running users
       vllm_args:
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
@@ -3003,7 +3006,7 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         enable_chunked_prefill: true
-        max_num_batched_tokens: 4096
+        max_num_batched_tokens: 4096  # vLLM needs >= max_tokens_per_mm_item (2496 for a video item); prefill chunks pad to a power of two, so 4096 is the only useful value above 2048
         long_prefill_token_threshold: 4096
         limit-mm-per-prompt: '{"image": 4, "video": 1}'
         mm-processor-cache-gb: 0
