@@ -1699,6 +1699,33 @@ def test_redact_url_hides_the_tunnel_host():
     assert gpuref.redact_url(None) is None
 
 
+# What a dispatch records and its Shield report echoes back: the pinned TTIS
+# commit and the endpoint (run.py --server-url; Shield adds :443).
+TTIS = "a" * 40
+URL = "https://abcd1234.ngrok-free.app"
+
+
+def _report_meta(model, device="GPU", stamp="2026-10-14T00:00:00Z", ttis=TTIS, url=URL):
+    return {"model_repo": model, "device": device, "generated_at": stamp,
+            "tt_inference_server_commit": ttis, "report_partial": False,
+            "run_command": f"python run.py --model {model} --workflow agentic --device gpu "
+                           f"--server-url {url}:443 --dev-mode --agentic-benchmark x"}  # fmt: skip
+
+
+# The step Shield fails when the test's acceptance check fails.
+_TEST_STEP = (
+    "Test | inference-workflow-agentic | --dev-mode --device gpu --agentic-benchmark {task}"
+    " / Run | inference-workflow-agentic --dev-mode --device gpu --agentic-benchmark {task}"
+    " / Run test"
+)
+
+
+def _dispatched(task, run_id, conclusion="success", **fields):
+    """A completed Shield-run record as the driver writes it."""
+    return dict(task=task, run_id=str(run_id), conclusion=conclusion, state="completed",
+                ttis=TTIS, endpoint_id=gpuref.endpoint_id(URL), **fields)  # fmt: skip
+
+
 def _agentic_report(
     path, model, task, score, device="GPU", stamp="2026-10-14T00:00:00Z", check=2
 ):
@@ -1706,7 +1733,7 @@ def _agentic_report(
     # block's targets, not its data.
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
-        "metadata": {"model_repo": model, "device": device, "generated_at": stamp},
+        "metadata": _report_meta(model, device, stamp),
         "sections": [{"kind": "evals", "data": {"task_name": task, "score": score, "accuracy_check": check},
                       "targets": {"task_name": task, "n_trials": 89, "n_errors": 0}}],
     }))  # fmt: skip
@@ -1741,7 +1768,7 @@ def test_shield_provenance_ok_only_when_every_task_scored(tmp_path):
     model = "Qwen/Qwen3.5-27B"
     shield, serving = tmp_path / "shield", tmp_path / "serving"
     _agentic_report(
-        shield / "terminal_bench_2_1" / "x" / "report_1.json",
+        shield / "terminal_bench_2_1" / "run-7" / "report_1.json",
         model,
         "terminal_bench_2_1",
         40.0,
@@ -1749,25 +1776,16 @@ def test_shield_provenance_ok_only_when_every_task_scored(tmp_path):
     )
     prov = {"model": model, "status": "ok",
             "agentic_expected_trials": {"terminal_bench_2_1": 89, "swe_bench_verified": 89}}  # fmt: skip
-    tb = {
-        "task": "terminal_bench_2_1",
-        "run_id": "7",
-        "conclusion": "failure",
-        "state": "completed",
-        "serving_epochs": _snapshot(serving, prov),
-    }
+    tb = _dispatched("terminal_bench_2_1", 7, "failure", serving_epochs=_snapshot(serving, prov),
+                     failed_steps=json.dumps([_TEST_STEP.format(task="terminal_bench_2_1")]))  # fmt: skip
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
     # A completed run that missed its acceptance criteria still measured the task.
     assert out["status"] == "ok" and out["agentic"][0]["score"] == 40.0
-    assert out["agentic"][0]["report_files"] == ["terminal_bench_2_1/x/report_1.json"]
+    assert out["agentic"][0]["report_files"] == [
+        "terminal_bench_2_1/run-7/report_1.json"
+    ]
     assert out["tasks_selected"] == ["terminal_bench_2_1"]
-    swe = {
-        "task": "swe_bench_verified",
-        "run_id": "8",
-        "conclusion": "success",
-        "state": "completed",
-        "serving_epochs": tb["serving_epochs"],
-    }
+    swe = _dispatched("swe_bench_verified", 8, serving_epochs=tb["serving_epochs"])
     assert (
         gpuref.shield_provenance(prov, [tb, swe], shield, serving)["status"] == "failed"
     )  # no report
@@ -1790,7 +1808,7 @@ def test_shield_provenance_ok_only_when_every_task_scored(tmp_path):
     # A TT (P300X2) report does not count as this GPU run's score.
     tt = tmp_path / "tt"
     _agentic_report(
-        tt / "terminal_bench_2_1" / "r.json",
+        tt / "terminal_bench_2_1" / "run-7" / "report_r.json",
         model,
         "terminal_bench_2_1",
         40.0,
@@ -1930,7 +1948,7 @@ def _serve_helpers(tmp_path, gh_downloads_report):
     )
     stubs = f"""
 set -euo pipefail
-SHIELD_DIR={tmp_path}/shield SHIELD_REPO=org/shield TTIS_SHA=abc REPORT_RETRY_SECONDS=0
+SHIELD_DIR={tmp_path}/shield SHIELD_REPO=org/shield TTIS_SHA={TTIS} REPORT_RETRY_SECONDS=0
 SERVING_DIR={tmp_path}/serving PYRUN=({shlex.quote(sys.executable)})
 mkdir -p "$SHIELD_DIR"
 log() {{ echo "LOG $*" >&2; }}
@@ -1939,8 +1957,8 @@ gpuref() {{  # driver-status REC k=v ...: write the record
     shift; local rec="$1"; shift
     python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@"
 }}
-gh() {{  # run download RUN -R REPO -D DIR -p PAT
-    {gh_body}
+gh() {{  # run download RUN -R REPO -D DIR -p PAT; run view: no failed jobs
+    [[ "$2" == "download" ]] || {{ echo '{{"jobs": []}}'; return 0; }}; {gh_body}
 }}
 """
     return stubs + "#\n" + block
@@ -1995,7 +2013,8 @@ def test_report_retrieval_is_retried_until_the_report_is_on_disk(tmp_path):
     assert out.returncode == 0 and "GOT" in out.stdout, out.stderr
     record = json.loads(rec.read_text())
     assert record["state"] == "completed" and record["run_id"] == "99"
-    assert (tmp_path / "shield" / "t" / "report_x.json").exists()
+    # Bound to its run: the report lands under the run id's own directory.
+    assert (tmp_path / "shield" / "t" / "run-99" / "report_x.json").exists()
 
 
 def test_rerun_retrieves_a_pending_report_and_never_redispatches():
@@ -2003,7 +2022,7 @@ def test_rerun_retrieves_a_pending_report_and_never_redispatches():
     loop = driver.split('for task in "${SERVE_TASKS[@]}"; do\n        rec=', 1)[1]
     head = loop.split("while :; do", 1)[0]
     # Completed only counts as done when the report is on disk ...
-    assert 'report_on_disk "${SHIELD_DIR}/${task}"' in head
+    assert 'report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)"' in head
     # ... and a completed/report_pending record retries retrieval and moves on,
     # before any dispatch code is reached.
     assert '"${rec_state}" == "report_pending"' in head
@@ -2037,7 +2056,7 @@ def _resume_helpers(tmp_path, tasks, gh_downloads_report, prov=None):
     return (
         f"""
 set -euo pipefail
-OUT_DIR={out_dir} SHIELD_DIR={out_dir}/shield SHIELD_REPO=org/shield TTIS_SHA=abc
+OUT_DIR={out_dir} SHIELD_DIR={out_dir}/shield SHIELD_REPO=org/shield TTIS_SHA={TTIS}
 REPORT_RETRY_SECONDS=0 REPORT_TRIES=2 ROLLOVERS=0 AGENTIC_TASKS={",".join(tasks)}
 SERVE_PROV={model_dir}/provenance.json SERVING_DIR={out_dir}/serving
 PYRUN=({shlex.quote(sys.executable)})
@@ -2058,7 +2077,7 @@ gpuref() {{
       summary) echo "SUMMARY" ;;
     esac
 }}
-gh() {{ {gh_body}; }}
+gh() {{ [[ "$2" == "download" ]] || {{ echo '{{"jobs": []}}'; return 0; }}; {gh_body}; }}
 #
 """
         + block
@@ -2140,7 +2159,7 @@ def test_a_recovered_report_passes_on_the_unchanged_serving_provenance(tmp_path)
         "finished_at": "2026-10-14T18:00:00Z",
     }
     report = json.dumps({
-        "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-14T18:00:00Z"},
+        "metadata": _report_meta("org/m", stamp="2026-10-14T18:00:00Z"),
         "sections": [{"kind": "evals", "data": {"task_name": "tb2", "score": 40.0},
                       "targets": {"task_name": "tb2", "n_trials": 89, "n_errors": 0}}],
     })  # fmt: skip
@@ -2155,7 +2174,7 @@ def test_a_recovered_report_passes_on_the_unchanged_serving_provenance(tmp_path)
         )
         # The real shield-provenance and summary; driver-status stays stubbed.
         script += f"""
-gh() {{ {gh_body}; }}
+gh() {{ [[ "$2" == "download" ]] || {{ echo '{{"jobs": []}}'; return 0; }}; {gh_body}; }}
 gpuref() {{
     case "$1" in
       driver-status) shift; local rec="$1"; shift
@@ -2171,7 +2190,7 @@ serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
     prov.write_text(json.dumps(served))
     epoch = _snapshot(tmp_path / "out" / "serving", served)
     _record(tmp_path, "tb2", state="report_pending", run_id="77", conclusion="success",
-            serving_epochs=epoch)  # fmt: skip
+            serving_epochs=epoch, endpoint_id=gpuref.endpoint_id(URL))  # fmt: skip
     first = resume_pass(gh_downloads_report=False)
     assert first.returncode == 0 and "HANDLED rc=1" in first.stdout, first.stderr
     assert json.loads(prov.read_text())["status"] == "failed"  # report missing
@@ -2193,11 +2212,10 @@ def test_shield_provenance_never_rewrites_the_serving_status(tmp_path):
     model = "Qwen/Qwen3.5-27B"
     shield, serving = tmp_path / "shield", tmp_path / "serving"
     vm = {"model": model, "status": "ok", "agentic_expected_trials": {"tb2": 89}}
-    tb = {"task": "tb2", "run_id": "7", "conclusion": "success", "state": "completed",
-          "serving_epochs": _snapshot(serving, vm)}  # fmt: skip
+    tb = _dispatched("tb2", 7, serving_epochs=_snapshot(serving, vm))
     pending = gpuref.shield_provenance(vm, [tb], shield, serving)  # no report yet
     assert pending["status"] == "failed"
-    _agentic_report(shield / "tb2" / "report_1.json", model, "tb2", 40.0)
+    _agentic_report(shield / "tb2" / "run-7" / "report_1.json", model, "tb2", 40.0)
     recovered = gpuref.shield_provenance(pending, [tb], shield, serving)
     assert recovered["status"] == "ok"
     assert pending["serving_status"] == recovered["serving_status"] == "ok"
@@ -2275,7 +2293,7 @@ def test_rollover_keeps_each_tasks_score_with_the_vm_that_served_it(tmp_path):
 
     def report(task):
         return json.dumps({
-            "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-16T00:00:00Z"},
+            "metadata": _report_meta("org/m", stamp="2026-10-16T00:00:00Z"),
             "sections": [{"kind": "evals", "data": {"task_name": task, "score": 40.0},
                           "targets": {"task_name": task, "n_trials": 89, "n_errors": 0}}],
         })  # fmt: skip
@@ -2290,7 +2308,7 @@ def test_rollover_keeps_each_tasks_score_with_the_vm_that_served_it(tmp_path):
         for task in ("tb2", "swe"):
             (out / f"report_{task}.json").write_text(report(task))
         script += f"""
-gh() {{ mkdir -p "$7" && cp {out}/report_"$(basename "$7")".json "$7/report_1.json"; }}
+gh() {{ [[ "$2" == "download" ]] || {{ echo '{{"jobs": []}}'; return 0; }}; mkdir -p "$7" && cp {out}/report_"$(basename "$(dirname "$7")")".json "$7/report_1.json"; }}
 gpuref() {{
     case "$1" in
       driver-status) shift; local rec="$1"; shift
@@ -2300,11 +2318,11 @@ gpuref() {{
 }}
 # VM 1 serves: snapshot, tb2 dispatched and polled on it, completes.
 SERVE_EPOCH="$(save_serving_snapshot {out}/h.json)"
-gpuref driver-status $SHIELD_DIR/tb2.json task=tb2 run_id=1 state=dispatched serving_epochs=$SERVE_EPOCH
+gpuref driver-status $SHIELD_DIR/tb2.json task=tb2 run_id=1 state=dispatched serving_epochs=$SERVE_EPOCH endpoint_id={gpuref.endpoint_id(URL)}
 add_serving_epoch $SHIELD_DIR/tb2.json $SERVE_EPOCH
 retrieve_report tb2 $SHIELD_DIR/tb2.json 1 success
 # VM 1 is lost during swe (dispatched on it); the rollover's VM 2 serves the rest.
-gpuref driver-status $SHIELD_DIR/swe.json task=swe run_id=2 state=dispatched serving_epochs=$SERVE_EPOCH
+gpuref driver-status $SHIELD_DIR/swe.json task=swe run_id=2 state=dispatched serving_epochs=$SERVE_EPOCH endpoint_id={gpuref.endpoint_id(URL)}
 SERVE_EPOCH="$(save_serving_snapshot {out}/a.json)"; ROLLOVERS=1
 add_serving_epoch $SHIELD_DIR/swe.json $SERVE_EPOCH
 add_serving_epoch $SHIELD_DIR/swe.json $SERVE_EPOCH
@@ -2380,7 +2398,7 @@ def _parser_report(path, n_trials, n_errors=0, n_total=None, mean=0.4, score=Non
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
-        "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-16T00:00:00Z"},
+        "metadata": _report_meta("org/m", stamp="2026-10-16T00:00:00Z"),
         "sections": [block.to_dict()],
     }))  # fmt: skip
 
@@ -2389,7 +2407,7 @@ def test_n_trials_is_read_from_the_agentic_parsers_report(tmp_path):
     # Review on #5395 (gpuref.py:540): AgenticEvalParser writes n_trials to
     # section.targets; reading section.data gave n_trials null with status ok.
     shield, serving = tmp_path / "shield", tmp_path / "serving"
-    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", 89)
+    _parser_report(shield / "terminal_bench_2_1" / "run-7" / "report_1.json", 89)
     row = gpuref.summary_rows(shield)[0]
     assert row["score"] == 40.0 and row["n_trials"] == 89
     prov = {
@@ -2397,22 +2415,24 @@ def test_n_trials_is_read_from_the_agentic_parsers_report(tmp_path):
         "status": "ok",
         "agentic_expected_trials": {"terminal_bench_2_1": 89},
     }
-    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
-          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    tb = _dispatched(
+        "terminal_bench_2_1", 7, "success", serving_epochs=_snapshot(serving, prov)
+    )
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
     assert out["agentic"][0]["n_trials"] == 89 and out["status"] == "ok"
 
 
 def test_a_report_without_n_trials_is_not_ok(tmp_path):
     shield, serving = tmp_path / "shield", tmp_path / "serving"
-    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", None)
+    _parser_report(shield / "terminal_bench_2_1" / "run-7" / "report_1.json", None)
     prov = {
         "model": "org/m",
         "status": "ok",
         "agentic_expected_trials": {"terminal_bench_2_1": 89},
     }
-    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
-          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    tb = _dispatched(
+        "terminal_bench_2_1", 7, "success", serving_epochs=_snapshot(serving, prov)
+    )
     out = gpuref.shield_provenance(prov, [tb], shield, serving)
     assert out["agentic"][0]["score"] == 40.0
     assert out["agentic"][0]["n_trials"] is None and out["status"] == "failed"
@@ -2474,13 +2494,19 @@ def test_the_snapshot_wait_is_bounded_and_reset_per_vm():
 # --- trial coverage: a partial Harbor run never grades ok (#5395) ------------
 
 
-def _graded(tmp_path, conclusion="success", expected=89, **report):
+def _graded(tmp_path, conclusion="success", expected=89, steps=None, **report):
     shield, serving = tmp_path / "shield", tmp_path / "serving"
-    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", **report)
+    _parser_report(shield / "terminal_bench_2_1" / "run-7" / "report_1.json", **report)
     prov = {"model": "org/m", "status": "ok",
             "agentic_expected_trials": {"terminal_bench_2_1": expected}}  # fmt: skip
-    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": conclusion,
-          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    if steps is None:  # a failed job: only its test step, as on an accuracy miss
+        steps = (
+            []
+            if conclusion == "success"
+            else [_TEST_STEP.format(task="terminal_bench_2_1")]
+        )
+    tb = _dispatched("terminal_bench_2_1", 7, conclusion, serving_epochs=_snapshot(serving, prov),
+                     failed_steps=json.dumps(steps))  # fmt: skip
     return gpuref.shield_provenance(prov, [tb], shield, serving)
 
 
@@ -2512,10 +2538,11 @@ def test_trial_coverage_needs_the_expected_count_and_the_error_count(tmp_path):
     assert no_errors["status"] == "failed"
     # A provenance without expected counts (an older runner) does not count.
     shield, serving = tmp_path / "f" / "shield", tmp_path / "f" / "serving"
-    _parser_report(shield / "terminal_bench_2_1" / "report_1.json", 89)
+    _parser_report(shield / "terminal_bench_2_1" / "run-7" / "report_1.json", 89)
     prov = {"model": "org/m", "status": "ok"}
-    tb = {"task": "terminal_bench_2_1", "run_id": "7", "conclusion": "success",
-          "state": "completed", "serving_epochs": _snapshot(serving, prov)}  # fmt: skip
+    tb = _dispatched(
+        "terminal_bench_2_1", 7, "success", serving_epochs=_snapshot(serving, prov)
+    )
     assert gpuref.shield_provenance(prov, [tb], shield, serving)["status"] == "failed"
 
 
@@ -2619,3 +2646,134 @@ def test_report_only_resume_fails_clearly_when_the_provenance_is_unrecoverable(
     assert "GRADED_ON" not in stray.stderr
     assert not (model_dir / "provenance.json").exists()
     assert len(list(model_dir.glob("provenance.unbound-*.json"))) == 1
+
+
+# --- each score is its own dispatch's: run id, commit, endpoint, steps -------
+
+
+def test_report_rows_are_bound_to_the_records_run_id(tmp_path):
+    model, shield, serving = "org/m", tmp_path / "shield", tmp_path / "serving"
+    prov = {"model": model, "status": "ok", "agentic_expected_trials": {"tb2": 89}}
+    tb = _dispatched("tb2", 7, serving_epochs=_snapshot(serving, prov))
+    # A newer report of the same model and task from another run (a stale or
+    # foreign download) must not stand in for this run's report.
+    _agentic_report(shield / "tb2" / "run-7" / "report_a.json", model, "tb2", 40.0)
+    _agentic_report(shield / "tb2" / "run-6" / "report_b.json", model, "tb2", 90.0,
+                    stamp="2026-10-15T00:00:00Z")  # fmt: skip
+    out = gpuref.shield_provenance(prov, [tb], shield, serving)
+    assert out["agentic"][0]["score"] == 40.0 and out["status"] == "ok"
+    assert out["agentic"][0]["report_files"] == ["tb2/run-7/report_a.json"]
+    # Only another run's report on disk: this run has no score.
+    other = tmp_path / "other"
+    _agentic_report(other / "tb2" / "run-6" / "report_b.json", model, "tb2", 90.0)
+    out = gpuref.shield_provenance(prov, [tb], other, serving)
+    assert out["agentic"][0]["score"] is None and out["status"] == "failed"
+
+
+def test_a_report_from_another_commit_or_endpoint_is_refused(tmp_path):
+    model = "org/m"
+    prov = {"model": model, "status": "ok", "agentic_expected_trials": {"tb2": 89}}
+
+    def graded(name, **meta):
+        shield, serving = tmp_path / name / "shield", tmp_path / name / "serving"
+        path = shield / "tb2" / "run-7" / "report_1.json"
+        _agentic_report(path, model, "tb2", 40.0)
+        report = json.loads(path.read_text())
+        report["metadata"] = _report_meta(model, **meta)
+        if meta.get("ttis") is None and "ttis" in meta:
+            del report["metadata"]["tt_inference_server_commit"]
+        path.write_text(json.dumps(report))
+        tb = _dispatched("tb2", 7, serving_epochs=_snapshot(serving, prov))
+        return gpuref.shield_provenance(prov, [tb], shield, serving)["agentic"][0]
+
+    same = graded("same")  # Shield's --server-url adds :443: still this endpoint
+    assert same["report_matches_dispatch"]
+    assert not graded("commit", ttis="b" * 40)["report_matches_dispatch"]
+    assert not graded("nocommit", ttis=None)["report_matches_dispatch"]
+    assert not graded("url", url="https://other.ngrok-free.app")[
+        "report_matches_dispatch"
+    ]
+    shield, serving = tmp_path / "url" / "shield", tmp_path / "url" / "serving"
+    tb = _dispatched("tb2", 7, serving_epochs=_snapshot(serving, prov))
+    assert gpuref.shield_provenance(prov, [tb], shield, serving)["status"] == "failed"
+
+
+def test_endpoint_id_is_the_canonical_host():
+    eid = gpuref.endpoint_id
+    assert (
+        eid("https://Abc.ngrok.app")
+        == eid("https://abc.ngrok.app:443")
+        == eid("https://abc.ngrok.app/")
+    )
+    assert eid("https://abc.ngrok.app:8443") != eid("https://abc.ngrok.app")
+    assert eid("https://abc.ngrok.app") != eid("https://abd.ngrok.app")
+    assert eid(None) is None and eid("not a url") is None
+    cmd = "python run.py --model m --server-url https://abc.ngrok.app:443 --dev-mode"
+    assert gpuref.server_url_of(cmd) == "https://abc.ngrok.app:443"
+    assert gpuref.server_url_of("python run.py --model m") is None
+
+
+def test_a_failed_job_counts_only_when_the_accuracy_test_is_all_that_failed(tmp_path):
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    missed = dict(
+        conclusion="failure", n_trials=89, n_errors=0, n_total=89, mean=0.4, score=score
+    )
+    test_step = _TEST_STEP.format(task="terminal_bench_2_1")
+    assert _graded(tmp_path / "a", steps=[test_step], **missed)["status"] == "ok"
+    # Also missed its target, but something else failed too: not ok.
+    also = _graded(
+        tmp_path / "b", steps=[test_step, "Reports | org/m / Upload report"], **missed
+    )
+    assert also["status"] == "failed"
+    # Something other than this task's test failed: not ok.
+    other = _graded(tmp_path / "c", steps=["Validate / Check inputs"], **missed)
+    assert other["status"] == "failed"
+    # The run's failed steps were never recorded: not ok.
+    shield, serving = tmp_path / "d" / "shield", tmp_path / "d" / "serving"
+    _parser_report(shield / "terminal_bench_2_1" / "run-7" / "report_1.json", 89, n_total=89,
+                   mean=0.4, score=score)  # fmt: skip
+    prov = {
+        "model": "org/m",
+        "status": "ok",
+        "agentic_expected_trials": {"terminal_bench_2_1": 89},
+    }
+    tb = _dispatched(
+        "terminal_bench_2_1", 7, "failure", serving_epochs=_snapshot(serving, prov)
+    )
+    assert gpuref.shield_provenance(prov, [tb], shield, serving)["status"] == "failed"
+    # A partial report, or a failed block in it, never counts either.
+    path = shield / "terminal_bench_2_1" / "run-7" / "report_1.json"
+    report = json.loads(path.read_text())
+    report["metadata"]["report_partial"] = True
+    path.write_text(json.dumps(report))
+    tb = dict(tb, conclusion="success")
+    assert gpuref.shield_provenance(prov, [tb], shield, serving)["status"] == "failed"
+
+
+def test_shield_failed_steps_lists_every_failure_of_the_run():
+    view = {"jobs": [
+        {"name": "Validate", "conclusion": "success", "steps": [{"name": "a", "conclusion": "success"}]},
+        {"name": "Test / Run", "conclusion": "failure",
+         "steps": [{"name": "Run test", "conclusion": "failure"}, {"name": "x", "conclusion": "skipped"}]},
+        {"name": "Reports", "conclusion": "cancelled", "steps": []},
+    ]}  # fmt: skip
+    assert gpuref.shield_failed_steps(view) == [
+        "Test / Run / Run test", "Reports / (job cancelled)"]  # fmt: skip
+    out = subprocess.run([sys.executable, str(GPUREF_PATH), "shield-failed-steps"],
+                         input=json.dumps(view), capture_output=True, text=True)  # fmt: skip
+    assert out.returncode == 0 and json.loads(out.stdout) == gpuref.shield_failed_steps(
+        view
+    )
+
+
+def test_reports_record_the_ttis_commit_that_produced_them():
+    from workflow_module.execution import _checkout_commit
+
+    head = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()  # fmt: skip
+    assert _checkout_commit() == head
+    src = (REPO_ROOT / "workflow_module" / "execution.py").read_text()
+    assert 'meta["tt_inference_server_commit"] = _checkout_commit()' in src

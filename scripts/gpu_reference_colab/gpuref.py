@@ -545,6 +545,12 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             "n_total_trials": targets.get("n_total_trials"),
             # ReportCheckTypes: 1 N/A, 2 PASS, 3 FAIL (the accuracy target).
             "accuracy_check": data.get("accuracy_check"),
+            # What produced the report: its TTIS checkout, the endpoint it
+            # tested (run.py --server-url), and whether it is whole.
+            "ttis_commit": meta.get("tt_inference_server_commit"),
+            "endpoint_id": endpoint_id(server_url_of(meta.get("run_command"))),
+            "report_partial": meta.get("report_partial"),
+            "block_failed": data.get("success") is False,
         }
         for (model, _), (_, meta, data, targets) in sorted(
             newest.items(), key=lambda kv: tuple(str(x) for x in kv[0])
@@ -1099,6 +1105,55 @@ def shield_find_run(runs: List[Dict[str, Any]], model: str, url: str, since: str
     return max(found, key=lambda r: r["createdAt"])["databaseId"] if found else None
 
 
+def endpoint_id(url: Optional[str]) -> Optional[str]:
+    """sha256[:12] of the endpoint's canonical form (scheme://host, the
+    default https port dropped), so the dispatched URL and the --server-url
+    run.py records (Shield adds :443) compare equal. Never logged as a URL."""
+    if not url:
+        return None
+    parts = urllib.parse.urlsplit(url.strip())
+    if not parts.scheme or not parts.hostname:
+        return None
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    default = {"https": 443, "http": 80}.get(parts.scheme)
+    canon = f"{parts.scheme}://{parts.hostname.lower()}"
+    if port is not None and port != default:
+        canon += f":{port}"
+    return hashlib.sha256(canon.encode()).hexdigest()[:12]
+
+
+def server_url_of(run_command: Optional[str]) -> Optional[str]:
+    """The --server-url value of a report's recorded run.py command."""
+    tokens = (run_command or "").split()
+    for flag, value in zip(tokens, tokens[1:]):
+        if flag == "--server-url":
+            return value
+    for token in tokens:
+        if token.startswith("--server-url="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def shield_failed_steps(view: Dict[str, Any]) -> List[str]:
+    """Each failed step ("job / step") of a Shield run (`gh run view --json
+    jobs`), and each failed, cancelled or timed-out job with no failed step."""
+    bad = ("failure", "cancelled", "timed_out", "startup_failure")
+    out = []
+    for job in view.get("jobs") or []:
+        steps = [
+            f"{job.get('name')} / {st.get('name')}"
+            for st in job.get("steps") or []
+            if st.get("conclusion") in bad
+        ]
+        if not steps and job.get("conclusion") in bad:
+            steps = [f"{job.get('name')} / (job {job.get('conclusion')})"]
+        out += steps
+    return out
+
+
 def redact_url(url: Optional[str]) -> Optional[str]:
     """https://abcd…<tld>: enough to tell two tunnels apart, not to call one."""
     if not url:
@@ -1164,26 +1219,51 @@ def shield_provenance(
     before a report arrives (``failed``) does not stop a later pass that
     retrieves it from grading ``ok``. status is ok only when the VM served and
     every task's report (device GPU) has a score."""
-    rows = {
-        r["task"]: r
-        for r in summary_rows(shield_root)
-        if r["model"] == prov.get("model")
-        and r["device"] == "GPU"
-        and r["score"] is not None
-    }
     prov = dict(prov)
     filed_under = serving_view(prov)
 
+    def run_dir(rec):  # the reports `gh run download <run_id>` brought home
+        task, run_id = str(rec.get("task") or ""), str(rec.get("run_id") or "")
+        ok = re.fullmatch(r"[A-Za-z0-9_]+", task) and re.fullmatch(r"[0-9]+", run_id)
+        return shield_root / task / f"run-{run_id}" if ok else None
+
+    def row_of(rec):  # this run's own report row for the task, if any
+        d = run_dir(rec)
+        rows = summary_rows(d) if d is not None and d.is_dir() else []
+        return next((r for r in rows if r["task"] == rec.get("task")
+                     and r["model"] == prov.get("model") and r["device"] == "GPU"
+                     and r["score"] is not None), None)  # fmt: skip
+
+    def failed_steps(rec):
+        try:
+            steps = json.loads(rec.get("failed_steps") or "null")
+        except ValueError:
+            return None
+        return steps if isinstance(steps, list) else None
+
     def entry(rec):
-        row = rows.get(rec.get("task")) or {}
+        row = row_of(rec)
         vms = served_by(rec, serving_root)
         expected = prov.get("agentic_expected_trials") or {}
+        d = run_dir(rec)
         return dict(
             rec,
-            score=row.get("score"),
-            n_trials=row.get("n_trials"),
-            **trial_coverage(row, expected.get(rec.get("task"), "missing")),
-            accuracy_check=row.get("accuracy_check"),
+            scored=row is not None,
+            score=(row or {}).get("score"),
+            n_trials=(row or {}).get("n_trials"),
+            **trial_coverage(row or {}, expected.get(rec.get("task"), "missing")),
+            accuracy_check=(row or {}).get("accuracy_check"),
+            # The report is this dispatch's: its checkout is the commit and
+            # its --server-url the endpoint the record dispatched.
+            report_matches_dispatch=row is not None
+            and bool(row["ttis_commit"])
+            and row["ttis_commit"] == rec.get("ttis")
+            and bool(row["endpoint_id"])
+            and row["endpoint_id"] == rec.get("endpoint_id"),
+            report_whole=row is not None
+            and row["report_partial"] is False
+            and not row["block_failed"],
+            failed_steps=failed_steps(rec),
             served_by=vms,
             serving_matches=bool(vms)
             and all(
@@ -1192,7 +1272,9 @@ def shield_provenance(
             ),
             report_files=sorted(
                 str(p.relative_to(shield_root))
-                for p in (shield_root / rec.get("task", "")).rglob("report*.json")
+                for p in (
+                    d.rglob("report*.json") if d is not None and d.is_dir() else []
+                )
             ),
         )
 
@@ -1203,18 +1285,26 @@ def shield_provenance(
         prov["serving_status"] = prov.get("status")
     served = prov["serving_status"] == "ok"
 
-    # A task counts only when its report scored every expected trial
-    # (trial_coverage) on a VM that matches this provenance. Shield fails the
+    # A task counts only when its own run's report (by run id) is whole, comes
+    # from the dispatched commit and endpoint, scored every expected trial
+    # (trial_coverage), on a VM that matches this provenance. Shield fails the
     # job when the model misses its acceptance criteria, so a "failure"
-    # conclusion counts only when the report says that is all it was (a
-    # complete run whose accuracy_check is FAIL); a cancelled, crashed or
-    # otherwise failed job never does.
+    # conclusion counts only when that is all that failed: accuracy_check FAIL
+    # and exactly one failed step, in the job that ran this task's test. A
+    # cancelled, crashed or otherwise failed job never does.
+    def only_the_test_failed(a):
+        steps = a["failed_steps"]
+        flag = f"--agentic-benchmark {a.get('task')}"
+        return steps is not None and len(steps) == 1 and flag in steps[0]
+
     def counts(a):
         accuracy_miss = a.get("accuracy_check") == ACCURACY_FAIL
         return (
-            a.get("task") in rows and a["trials_complete"] and a["serving_matches"]
+            a["scored"] and a["report_whole"] and a["report_matches_dispatch"]
+            and a["trials_complete"] and a["serving_matches"]
             and (a.get("conclusion") == "success"
-                 or (a.get("conclusion") == "failure" and accuracy_miss))
+                 or (a.get("conclusion") == "failure" and accuracy_miss
+                     and only_the_test_failed(a)))
         )  # fmt: skip
 
     prov["status"] = (
@@ -2249,6 +2339,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("shield-find-run", model=req, url_file=req, since=req)
     add("redact-url", url_file=req)
     add("shield-workflow")
+    add("shield-failed-steps")
     p = sub.add_parser(
         "shield-provenance", help="add the Shield runs to provenance.json"
     )
@@ -2509,7 +2600,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.cmd == "redact-url"
     ):  # "<redacted> <sha12>": log the first, compare the second
         url = Path(args.url_file).read_text().strip()
-        print(redact_url(url) or "", hashlib.sha256(url.encode()).hexdigest()[:12])
+        print(redact_url(url) or "", endpoint_id(url) or "")
+    elif args.cmd == "shield-failed-steps":  # gh run view --json jobs on stdin
+        print(json.dumps(shield_failed_steps(json.loads(sys.stdin.read()))))
     elif args.cmd == "shield-workflow":
         print(SHIELD_REPO, SHIELD_WORKFLOW)
     elif args.cmd == "shield-provenance":
