@@ -2955,7 +2955,7 @@ templates:
     # above (128K context, 4096 scheduler tokens). Multimodal (text + image + video).
     - device: BLACKHOLE_GALAXY
       max_concurrency: 128  # 32 slots x 4 lanes
-      max_context: 131072  # 128 * 1024 per lane (as the P150X8 entry)
+      max_context: 262144  # the model's max_position_embeddings; the per-lane KV pool holds ~11 users at 256K (22 at 128K)
       default_impl: true
       env_vars:
         GEMMA4_GALAXY_FRACTURE: "1"  # one instance over the (8,4) mesh: 2-D fractured dense weights, TP=8 on axis 0
