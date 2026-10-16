@@ -4,12 +4,13 @@
   "C": 8,
   "F": 393216,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
-  "base_validation": "Strict17 source gate passed; longer representative local validation still running at preparation",
+  "base_validation": "Strict17 passed; same-source A8 exact192/192, A16 exact184/192; runtime candidate not accuracy promoted",
   "profiles": [
     {
       "workload": "terminal",
-      "A": 16,
-      "role": "additional Terminal oversubscription mechanism; compare existing A8 profile too"
+      "A": 8,
+      "output_mode": "historical_saved",
+      "role": "Dedicated fresh-process historical input/output lengths; task quality not measured"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
