@@ -6290,7 +6290,7 @@ templates:
       limit_mm_per_prompt: {"image": 0, "video": 0}
       # the parsers the P300X2 row serves with (reasoning scored from content after </think>)
       enable_auto_tool_choice: true
-      tool_call_parser: qwen3_coder
+      tool_call_parser: qwen3_xml
       reasoning_parser: qwen3
   status: EXPERIMENTAL
 - weights:
