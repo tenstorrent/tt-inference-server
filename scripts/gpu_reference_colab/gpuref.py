@@ -43,6 +43,25 @@ EXPLICIT_SERVE_KEYS = {
 # DeviceModelSpec defaults for Tenstorrent serving that mean nothing on CUDA
 # vLLM (TT config payload, TT paged-KV block size, log truncation).
 TT_ONLY_SERVE_KEYS = {"additional_config", "block_size", "max-log-len"}
+# vLLM OpenAI-frontend flags that change what a chat client gets back: how
+# reasoning and tool calls are split out of the text, and the chat template's
+# defaults. A derived GPU spec copies them from the TT row it derives from, so
+# chat requests (agentic evals, use_chat_api tasks) are answered alike.
+FRONTEND_SERVE_KEYS = {
+    "reasoning_parser", "tool_call_parser", "enable_auto_tool_choice",
+    "default_chat_template_kwargs", "chat_template", "chat_template_content_format",
+}  # fmt: skip
+
+
+def frontend_args(vllm_args: Dict[str, Any]) -> Dict[str, Any]:
+    """The FRONTEND_SERVE_KEYS of a spec's vllm_args (either spelling)."""
+    return {
+        k: v
+        for k, v in (vllm_args or {}).items()
+        if k.replace("-", "_") in FRONTEND_SERVE_KEYS
+    }
+
+
 # Colab GPU memory (GiB); vLLM's default gpu_memory_utilization; margin for
 # CUDA context, activations and graphs.
 GPU_MEMORY_GIB = {"H100": 80.0, "A100": 40.0, "L4": 22.5, "T4": 15.0}
@@ -202,11 +221,17 @@ def hf_get(url: str, token: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
 
 def kv_bytes_per_token(config: Dict[str, Any]) -> int:
-    """bf16 K+V bytes per token for a standard decoder config.json."""
+    """bf16 K+V bytes per token for a decoder config.json. In a hybrid model
+    (layer_types, e.g. Gated DeltaNet + full attention) only the attention
+    layers grow with the context; linear-attention layers keep a fixed state."""
     heads = int(config["num_attention_heads"])
     kv_heads = int(config.get("num_key_value_heads") or heads)
     head_dim = int(config.get("head_dim") or int(config["hidden_size"]) // heads)
-    return 2 * int(config["num_hidden_layers"]) * kv_heads * head_dim * 2
+    layers = int(config["num_hidden_layers"])
+    types = config.get("layer_types")
+    if isinstance(types, list) and types and any("linear" in str(t) for t in types):
+        layers = sum(1 for t in types if "linear" not in str(t))
+    return 2 * layers * kv_heads * head_dim * 2
 
 
 def memory_estimate(
@@ -451,8 +476,9 @@ STATUS_LABELS = {
 
 
 def parse_status(text: str):
-    """(state, display lines, models finished, phase) from snippets/status.py output."""
-    state, lines, done, phase = None, [], 0, ""
+    """(state, display lines, models finished, phase) from snippets/status.py
+    output. A --serve runner whose model is up behind the tunnel is SERVING."""
+    state, lines, done, phase, serving = None, [], 0, "", False
     for line in text.splitlines():
         if line.startswith("GPUREF_PHASE="):
             phase = line.split("=", 1)[1].strip()
@@ -460,9 +486,13 @@ def parse_status(text: str):
             state = line.split("=", 1)[1].strip() or None
         if line.startswith("GPUREF_DONE="):
             done = int(line.split("=", 1)[1] or 0)
+        if line.strip() == "GPUREF_SERVING=1":
+            serving = True
         for prefix, label in STATUS_LABELS.items():
             if line.startswith(prefix):
                 lines.append(label + line[len(prefix) :])
+    if serving and state == "RUNNING":
+        state = "SERVING"
     return state, lines, done, phase
 
 
@@ -472,9 +502,10 @@ def parse_balance(text: str) -> Optional[float]:
 
 
 def summary_rows(root: Path) -> List[Dict[str, Any]]:
-    """Per-task scores from the newest TTIS eval report per model under root
-    (local reports_output/evals/data/report_data_*.json or Shield's
-    report_*.json), with the GPU name from each provenance.json."""
+    """Per-task scores under root (local reports_output/evals/data/report_data_*.json
+    or Shield's report_*.json), each from the newest report with that model and
+    task (agentic tasks run as one Shield job each, so one model can have
+    several reports), with the GPU name from each provenance.json."""
     gpus, newest = {}, {}
     for path in sorted(root.rglob("provenance.json")):
         prov = load_json(path) or {}
@@ -486,13 +517,15 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
         meta = report.get("metadata") or {}
         model = meta.get("model_repo") or meta.get("model_name")
         stamp = meta.get("generated_at") or ""
-        evals = [
-            s
-            for s in report["sections"]
-            if isinstance(s, dict) and s.get("kind") == "evals"
-        ]
-        if evals and (model not in newest or stamp >= newest[model][0]):
-            newest[model] = (stamp, meta, evals)
+        for section in report["sections"]:
+            if not isinstance(section, dict) or section.get("kind") != "evals":
+                continue
+            data = section.get("data") or {}
+            # AgenticEvalParser keeps Harbor's counters (n_trials) in targets.
+            targets = section.get("targets") or {}
+            key = (model, data.get("task_name"))
+            if key not in newest or stamp >= newest[key][0]:
+                newest[key] = (stamp, meta, data, targets)
     return [
         {
             "model": model,
@@ -505,9 +538,23 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             # The n TTIS graded this score with (None: ratio rule only, or a
             # report from before the noise rule).
             "noise_n": data.get("noise_n"),
+            # Agentic (Harbor) blocks, for the full-set check: trials the
+            # verifier scored, trials that raised, trials the job ran.
+            "n_trials": targets.get("n_trials"),
+            "n_errors": targets.get("n_errors"),
+            "n_total_trials": targets.get("n_total_trials"),
+            # ReportCheckTypes: 1 N/A, 2 PASS, 3 FAIL (the accuracy target).
+            "accuracy_check": data.get("accuracy_check"),
+            # What produced the report: its TTIS checkout, the endpoint it
+            # tested (run.py --server-url), and whether it is whole.
+            "ttis_commit": meta.get("tt_inference_server_commit"),
+            "endpoint_id": endpoint_id(server_url_of(meta.get("run_command"))),
+            "report_partial": meta.get("report_partial"),
+            "block_failed": data.get("success") is False,
         }
-        for model, (_, meta, evals) in sorted(newest.items())
-        for data in (s.get("data") or {} for s in evals)
+        for (model, _), (_, meta, data, targets) in sorted(
+            newest.items(), key=lambda kv: tuple(str(x) for x in kv[0])
+        )
     ]
 
 
@@ -637,6 +684,15 @@ ARCH_STACKS = {
     # config.head_dim, so the server never starts (gemma-4 run, 2026-10-12).
     "Gemma4ForConditionalGeneration": {"vllm": "0.20.0", "transformers": "5.5.3"},
     "Gemma4ForCausalLM": {"vllm": "0.20.0", "transformers": "5.5.3"},
+    # gemma4_unified (gemma-4-12B-it): first in vLLM v0.23.0, whose model code
+    # imports transformers' gemma4_unified config, first released in 5.10.0
+    # (vLLM's test pin 5.5.3 predates it; 5.14+ adds the per-layer configs
+    # that break Gemma 4 serving, see above).
+    "Gemma4UnifiedForConditionalGeneration": {"vllm": "0.23.0", "transformers": "5.10.0"},
+    # qwen3_5: hybrid Gated DeltaNet + full attention (Qwen3.5/3.6/3.8-27B), first
+    # in v0.17.0, with the transformers v0.17.0 is tested with
+    # (requirements/test.txt: 4.57.5; its common.txt requires < 5).
+    "Qwen3_5ForConditionalGeneration": {"vllm": "0.17.0", "transformers": "4.57.5"},
 }  # fmt: skip
 
 
@@ -686,11 +742,35 @@ def _canon(value: Any) -> Any:
     return value
 
 
+# HarborEvalConfig fields read from the runner's environment (where the
+# sandboxes run, Harbor's own process timeout): not part of what is measured.
+AGENTIC_ENV_FIELDS = {
+    "environment_type",
+    "environment_kwargs",
+    "harbor_timeout_sec",
+    "quiet",
+    "yes",
+}
+
+
+def _agentic_canon(config: Any) -> Any:
+    import dataclasses
+
+    if config is None or not dataclasses.is_dataclass(config):
+        return _canon(config)
+    return {
+        f.name: _canon(getattr(config, f.name))
+        for f in dataclasses.fields(config)
+        if f.name not in AGENTIC_ENV_FIELDS
+    }
+
+
 def eval_fingerprint(
     model: str,
     lm_eval_commit: Optional[str],
     stack: Optional[Dict[str, Any]],
     ttis_dir: Path = REPO_ROOT,
+    venvs: Optional[set] = None,
 ) -> Optional[str]:
     """sha256 over everything that decides this model's GPU scores: the
     score-affecting fields of each lm-eval task (GPU overrides applied), its
@@ -710,10 +790,12 @@ def eval_fingerprint(
         return None
     tasks = []
     for task in cfg.tasks:
-        if task.workflow_venv_type.name not in SWEEP_VENVS:
+        if task.workflow_venv_type.name not in (venvs or SWEEP_VENVS):
             continue
         task = resolve_task_for_device(task, "GPU")
         entry = {f: _canon(getattr(task, f, None)) for f in SCORE_FIELDS}
+        if task.workflow_venv_type.name in AGENTIC_VENVS:  # the Harbor job is the eval
+            entry["agentic_eval_config"] = _agentic_canon(task.agentic_eval_config)
         if task.score:
             entry["score_func"] = _canon(task.score.score_func)
             entry["score_func_kwargs"] = _canon(task.score.score_func_kwargs)
@@ -726,6 +808,75 @@ def eval_fingerprint(
         sort_keys=True, default=str,
     )  # fmt: skip
     return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def agentic_expected_trials(
+    model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT
+) -> Dict[str, Optional[int]]:
+    """task -> the trials its Harbor job must score in full (n_tasks x
+    n_attempts on GPU), or None when the config does not fix the count (the
+    whole dataset, or task_names / exclude patterns): then the job's own
+    n_total_trials is the expected count."""
+    sys.path.insert(0, str(ttis_dir))
+    from reference_config.evals.eval_config import (
+        _eval_config_map,
+        resolve_task_for_device,
+    )
+
+    cfg = _eval_config_map.get(model)
+    out: Dict[str, Optional[int]] = {}
+    for task in cfg.tasks if cfg else []:
+        if task.task_name not in tasks:
+            continue
+        h = resolve_task_for_device(task, "GPU").agentic_eval_config
+        fixed = h is not None and h.n_tasks and not h.task_names
+        fixed = fixed and not h.exclude_task_names
+        out[task.task_name] = h.n_tasks * h.n_attempts if fixed else None
+    return out
+
+
+def trial_coverage(row: Dict[str, Any], expected: Any) -> Dict[str, Any]:
+    """Did a task's report score every trial? ``expected`` is the count from
+    the task config (agentic_expected_trials), None for "the job's own
+    n_total_trials", or missing (the provenance predates the check). Complete
+    only when the scored trials equal the expected count (and the job size,
+    when both are known), with Harbor's error count present."""
+
+    def count(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+    scored, errors, total = (
+        count(row.get(k)) for k in ("n_trials", "n_errors", "n_total_trials")
+    )
+    want = count(expected) if expected is not None else total
+    complete = (
+        want is not None and want > 0 and scored == want and errors is not None
+        and (total is None or total == want)
+    )  # fmt: skip
+    return {"trials_expected": want, "n_errors": errors, "n_total_trials": total,
+            "trials_complete": complete}  # fmt: skip
+
+
+def task_kind(model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT) -> str:
+    """ "lm-eval" when every task is one of the model's lm-eval tasks (run on the
+    VM by run.py), "agentic" when every task is an agentic one (served from the
+    VM, run by Shield's endpoint tests: --serve). Raises ValueError otherwise."""
+    sys.path.insert(0, str(ttis_dir))
+    from reference_config.evals.eval_config import _eval_config_map
+
+    cfg = _eval_config_map.get(model)
+    venv = {t.task_name: t.workflow_venv_type.name for t in (cfg.tasks if cfg else [])}
+    kinds = {
+        "lm-eval" if venv.get(t) in SWEEP_VENVS else
+        "agentic" if venv.get(t) in AGENTIC_VENVS else None
+        for t in tasks
+    }  # fmt: skip
+    if not tasks or None in kinds or len(kinds) != 1:
+        raise ValueError(
+            f"{model}: --task {','.join(tasks)} must be all lm-eval or all agentic "
+            f"tasks of the model ({', '.join(f'{k} {v}' for k, v in sorted(venv.items()))})"
+        )
+    return kinds.pop()
 
 
 def task_selection(model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT) -> str:
@@ -831,11 +982,21 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "dropped_tt_only_vllm_args": plan.get("dropped_tt_only_vllm_args"),
         # Config keys removed for GPU serving (e.g. dual_chunk_attention_config).
         "hf_config_dropped_keys": (plan.get("hf_config") or {}).get("drop"),
+        # --serve: the tasks Shield runs against this server, and its URL
+        # (redacted); the driver adds each Shield run (shield-provenance).
+        "endpoint": args.endpoint,
+        # --serve: the trials each agentic task must score at this commit
+        # (shield-provenance checks the reports against it).
+        "agentic_expected_trials": agentic_expected_trials(
+            args.model, sorted(args.agentic_tasks.split(",")), ttis
+        )
+        if args.agentic_tasks
+        else None,
         "run_py_command": [
             "python3",
             "run.py",
             "--workflow",
-            "evals",
+            "agentic" if args.agentic_tasks else "evals",
             "--tt-device",
             "gpu",
             "--model",
@@ -848,6 +1009,8 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # Set when the run was restricted to some tasks (--task); each runs in full.
         "tasks_selected": sorted(json.loads(args.eval_samples))
         if args.eval_samples
+        else sorted(args.agentic_tasks.split(","))
+        if args.agentic_tasks
         else None,
         "lm_eval_commit_pinned": pinned.group(1) if pinned else None,
         "lm_eval_commit_installed": lm_eval_installed,
@@ -858,14 +1021,298 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # Set when the pinned commit had no GPU spec and the runner derived one
         # from that commit's TT row (into the VM's clone only).
         "derived_gpu_spec": load_json(Path(args.plan).parent / "derived_gpu_spec.json"),
+        # Agentic tasks: Shield's run.py drives Harbor, not lm-eval, so the
+        # fingerprint covers the agentic configs and stack (lm-eval: pinned).
         "eval_fingerprint": (
-            eval_fingerprint(args.model, lm_eval_installed, plan.get("stack"), ttis)
+            eval_fingerprint(
+                args.model,
+                (pinned.group(1) if pinned else None)
+                if args.agentic_tasks
+                else lm_eval_installed,
+                plan.get("stack"),
+                ttis,
+                venvs=AGENTIC_VENVS if args.agentic_tasks else None,
+            )
             if plan.get("stack") and stack_installed(plan["stack"], packages)
             else None
-        ),
+        ),  # fmt: skip
         "note": args.note,
         "request_evidence": load_json(Path(args.evidence)) if args.evidence else None,
     }
+
+
+# --- serve: agentic evals through Shield's endpoint tests -----------------------
+# Agentic tasks (Harbor: terminal-bench, SWE-bench) run every trial in its own
+# sandbox, which a Colab VM cannot host. In --serve mode the VM only serves the
+# model (vLLM behind --api-key, published through an ngrok tunnel); Shield's
+# endpoint-test workflow runs TTIS's own `run.py --workflow agentic` against
+# that URL with its sandboxes on the KIX1 cluster (HARBOR_ENV_TYPE=kubernetes),
+# exactly as it runs them for a TT deployment.
+
+SHIELD_REPO = "tenstorrent/tt-shield"
+SHIELD_WORKFLOW = "on-dispatch-tt-blaze-exabox-tests.yml"
+# The tt-shield repo secret holding the endpoint's API key (the TEST_* names are
+# selectable from env-variables). Its value is the driver's key file.
+ENDPOINT_KEY_SECRET = "TEST_GPUREF_ENDPOINT_API_KEY"
+# Every checkbox off: the one test is the agentic workflow on this task, on the
+# model's GPU spec (--device gpu overrides the workflow's super_cluster).
+SHIELD_CHECKBOXES = (
+    "test-sanity", "test-spec-tests", "test-evals-smoke", "test-evals-fast",
+    "test-evals-full", "test-agentic", "test-agentic-full", "test-benchmark",
+    "test-agentic-traces",
+)  # fmt: skip
+
+
+def shield_test(task: str) -> str:
+    return (
+        f"inference-workflow-agentic --dev-mode --device gpu --agentic-benchmark {task}"
+    )
+
+
+def shield_inputs(
+    model: str, task: str, url: str, ttis_sha: str, secret: str = ENDPOINT_KEY_SECRET
+) -> Dict[str, str]:
+    """workflow_dispatch inputs (`gh workflow run --json`) for one agentic task
+    against the served URL, at the pinned TTIS commit. The API key goes by
+    secret name only (KEY=SECRET_<NAME>), never by value."""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", task) or not re.fullmatch(
+        r"[0-9a-f]{40}", ttis_sha
+    ):
+        raise ValueError("bad task name or TTIS sha")
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+/?", url):
+        raise ValueError("the endpoint must be a bare https://host URL")
+    inputs = {box: "false" for box in SHIELD_CHECKBOXES}
+    inputs.update({
+        "service": "v1-old-stack", "model": model, "target": "None", "test_url": url,
+        "env-variables": f"HARBOR_ENV_TYPE=kubernetes API_KEY=SECRET_{secret} "
+                         f"OPENAI_API_KEY=SECRET_{secret}",
+        "inference-server-git-ref": ttis_sha,
+        "extra-tests": json.dumps([shield_test(task)]),
+    })  # fmt: skip
+    return inputs
+
+
+def shield_find_run(runs: List[Dict[str, Any]], model: str, url: str, since: str):
+    """databaseId of the dispatch this driver started: the newest
+    workflow_dispatch run created at or after `since` whose run-name names the
+    model and the URL ("Run tests | <service> | <model> | <url>")."""
+    found = [
+        r for r in runs
+        if (r.get("createdAt") or "") >= since
+        and model in (r.get("displayTitle") or "")
+        and (r.get("displayTitle") or "").rstrip("/").endswith(url.rstrip("/"))
+    ]  # fmt: skip
+    return max(found, key=lambda r: r["createdAt"])["databaseId"] if found else None
+
+
+def endpoint_id(url: Optional[str]) -> Optional[str]:
+    """sha256[:12] of the endpoint's canonical form (scheme://host, the
+    default https port dropped), so the dispatched URL and the --server-url
+    run.py records (Shield adds :443) compare equal. Never logged as a URL."""
+    if not url:
+        return None
+    parts = urllib.parse.urlsplit(url.strip())
+    if not parts.scheme or not parts.hostname:
+        return None
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    default = {"https": 443, "http": 80}.get(parts.scheme)
+    canon = f"{parts.scheme}://{parts.hostname.lower()}"
+    if port is not None and port != default:
+        canon += f":{port}"
+    return hashlib.sha256(canon.encode()).hexdigest()[:12]
+
+
+def server_url_of(run_command: Optional[str]) -> Optional[str]:
+    """The --server-url value of a report's recorded run.py command."""
+    tokens = (run_command or "").split()
+    for flag, value in zip(tokens, tokens[1:]):
+        if flag == "--server-url":
+            return value
+    for token in tokens:
+        if token.startswith("--server-url="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def shield_failed_steps(view: Dict[str, Any]) -> List[str]:
+    """Each failed step ("job / step") of a Shield run (`gh run view --json
+    jobs`), and each failed, cancelled or timed-out job with no failed step."""
+    bad = ("failure", "cancelled", "timed_out", "startup_failure")
+    out = []
+    for job in view.get("jobs") or []:
+        steps = [
+            f"{job.get('name')} / {st.get('name')}"
+            for st in job.get("steps") or []
+            if st.get("conclusion") in bad
+        ]
+        if not steps and job.get("conclusion") in bad:
+            steps = [f"{job.get('name')} / (job {job.get('conclusion')})"]
+        out += steps
+    return out
+
+
+def redact_url(url: Optional[str]) -> Optional[str]:
+    """https://abcd…<tld>: enough to tell two tunnels apart, not to call one."""
+    if not url:
+        return None
+    host = urllib.parse.urlsplit(url).hostname or ""
+    parts = host.split(".")
+    return (
+        f"https://{parts[0][:4]}…{'.'.join(parts[-2:])}"
+        if len(parts) > 2
+        else "https://…"
+    )
+
+
+ACCURACY_FAIL = 3  # workflow_module.engine_types.ReportCheckTypes.FAIL
+
+# What a served score depends on, compared between the VM(s) that served a
+# task's Shield run (their serving snapshots) and the provenance it is filed under.
+SERVING_KEYS = ("vllm_serve_command", "max_model_len_cap", "packages", "vllm_env")
+
+
+def serving_view(prov: Dict[str, Any]) -> Dict[str, Any]:
+    gpu = prov.get("gpu") or {}
+    view = {k: prov.get(k) for k in SERVING_KEYS}
+    return dict(view, gpu=gpu.get("name"), gpu_memory=gpu.get("memory_total"))
+
+
+def served_by(rec: Dict[str, Any], serving_root: Path) -> List[Dict[str, Any]]:
+    """The serving snapshot of each VM epoch that served the record's run
+    (``serving_epochs``, comma-separated ids of <serving_root>/<id>.json); a
+    missing or malformed epoch is listed with ``found: False``."""
+    out = []
+    for epoch in [e for e in str(rec.get("serving_epochs") or "").split(",") if e]:
+        snap = (
+            load_json(serving_root / f"{epoch}.json")
+            if re.fullmatch(r"[0-9a-f]{12}", epoch)
+            else None
+        )
+        out.append(
+            dict(serving_view(snap or {}), epoch=epoch, found=isinstance(snap, dict))
+        )
+    return out
+
+
+def shield_provenance(
+    prov: Dict[str, Any],
+    records: List[Dict[str, Any]],
+    shield_root: Path,
+    serving_root: Path,
+) -> Dict[str, Any]:
+    """The served model's provenance with each task's Shield run: run id/url,
+    conclusion, the dispatch inputs and the run.py report it wrote.
+
+    Each task also carries ``served_by``: the serving snapshot of every VM that
+    served its run (a rollover replaces the VM, so tasks of one result can be
+    served by different VMs). A task counts only when every such VM's GPU and
+    serving settings are the ones in ``prov``, so no score is filed under a
+    VM that did not produce it, and only with its trial count (``n_trials``).
+
+    Two statuses, never conflated: ``serving_status`` is whether the VM served
+    (the runner's own ``status``, copied on the first grading and never
+    rewritten), and ``status`` is the overall result, recomputed on every call
+    from ``serving_status`` and the reports present now. So a pass that grades
+    before a report arrives (``failed``) does not stop a later pass that
+    retrieves it from grading ``ok``. status is ok only when the VM served and
+    every task's report (device GPU) has a score."""
+    prov = dict(prov)
+    filed_under = serving_view(prov)
+
+    def run_dir(rec):  # the reports `gh run download <run_id>` brought home
+        task, run_id = str(rec.get("task") or ""), str(rec.get("run_id") or "")
+        ok = re.fullmatch(r"[A-Za-z0-9_]+", task) and re.fullmatch(r"[0-9]+", run_id)
+        return shield_root / task / f"run-{run_id}" if ok else None
+
+    def row_of(rec):  # this run's own report row for the task, if any
+        d = run_dir(rec)
+        rows = summary_rows(d) if d is not None and d.is_dir() else []
+        return next((r for r in rows if r["task"] == rec.get("task")
+                     and r["model"] == prov.get("model") and r["device"] == "GPU"
+                     and r["score"] is not None), None)  # fmt: skip
+
+    def failed_steps(rec):
+        try:
+            steps = json.loads(rec.get("failed_steps") or "null")
+        except ValueError:
+            return None
+        return steps if isinstance(steps, list) else None
+
+    def entry(rec):
+        row = row_of(rec)
+        vms = served_by(rec, serving_root)
+        expected = prov.get("agentic_expected_trials") or {}
+        d = run_dir(rec)
+        return dict(
+            rec,
+            scored=row is not None,
+            score=(row or {}).get("score"),
+            n_trials=(row or {}).get("n_trials"),
+            **trial_coverage(row or {}, expected.get(rec.get("task"), "missing")),
+            accuracy_check=(row or {}).get("accuracy_check"),
+            # The report is this dispatch's: its checkout is the commit and
+            # its --server-url the endpoint the record dispatched.
+            report_matches_dispatch=row is not None
+            and bool(row["ttis_commit"])
+            and row["ttis_commit"] == rec.get("ttis")
+            and bool(row["endpoint_id"])
+            and row["endpoint_id"] == rec.get("endpoint_id"),
+            report_whole=row is not None
+            and row["report_partial"] is False
+            and not row["block_failed"],
+            failed_steps=failed_steps(rec),
+            served_by=vms,
+            serving_matches=bool(vms)
+            and all(
+                vm["found"] and {k: vm[k] for k in filed_under} == filed_under
+                for vm in vms
+            ),
+            report_files=sorted(
+                str(p.relative_to(shield_root))
+                for p in (
+                    d.rglob("report*.json") if d is not None and d.is_dir() else []
+                )
+            ),
+        )
+
+    prov["agentic"] = [entry(rec) for rec in records]
+    prov["run_py_command"] = [shield_test(rec.get("task", "")) for rec in records]
+    prov["tasks_selected"] = sorted(rec.get("task") for rec in records)
+    if "serving_status" not in prov:
+        prov["serving_status"] = prov.get("status")
+    served = prov["serving_status"] == "ok"
+
+    # A task counts only when its own run's report (by run id) is whole, comes
+    # from the dispatched commit and endpoint, scored every expected trial
+    # (trial_coverage), on a VM that matches this provenance. Shield fails the
+    # job when the model misses its acceptance criteria, so a "failure"
+    # conclusion counts only when that is all that failed: accuracy_check FAIL
+    # and exactly one failed step, in the job that ran this task's test. A
+    # cancelled, crashed or otherwise failed job never does.
+    def only_the_test_failed(a):
+        steps = a["failed_steps"]
+        flag = f"--agentic-benchmark {a.get('task')}"
+        return steps is not None and len(steps) == 1 and flag in steps[0]
+
+    def counts(a):
+        accuracy_miss = a.get("accuracy_check") == ACCURACY_FAIL
+        return (
+            a["scored"] and a["report_whole"] and a["report_matches_dispatch"]
+            and a["trials_complete"] and a["serving_matches"]
+            and (a.get("conclusion") == "success"
+                 or (a.get("conclusion") == "failure" and accuracy_miss
+                     and only_the_test_failed(a)))
+        )  # fmt: skip
+
+    prov["status"] = (
+        "ok"
+        if served and prov["agentic"] and all(map(counts, prov["agentic"]))
+        else "failed"
+    )
+    return prov
 
 
 # --- unattended monitoring ----------------------------------------------------
@@ -902,6 +1349,7 @@ def driver_status(
 # --- sweep: pick targets from the catalog, place, run, report ----------------
 
 SWEEP_VENVS = {"EVALS_COMMON"}  # tasks the lm-eval evals path can run on a GPU
+AGENTIC_VENVS = {"EVALS_AGENTIC"}  # served from the VM, run by Shield (--serve)
 SPEC_BEGIN = (
     "# BEGIN gpu-ref sweep: derived GPU specs. Generated by\n"
     "# scripts/gpu_reference_colab/gpuref.py sweep plan --write-specs from each\n"
@@ -944,6 +1392,7 @@ def catalog_facts(ttis_dir: Path = REPO_ROOT):
             "device": spec.device_type.name, "impl": spec.impl.impl_id,
             "default": d.default_impl, "max_context": d.max_context,
             "max_concurrency": d.max_concurrency, "revision": d.vllm_args.get("revision"),
+            "frontend": frontend_args(d.vllm_args),
         })  # fmt: skip
     return tasks, rows
 
@@ -1007,7 +1456,7 @@ def derive_gpu_spec(model_rows, native_ctx: Optional[int]) -> Optional[Dict[str,
     ctx = min(row["max_context"], native_ctx or row["max_context"])
     return {
         "impl": row["impl"], "max_context": ctx, "max_concurrency": row["max_concurrency"],
-        "revision": row["revision"],
+        "revision": row["revision"], "frontend": row.get("frontend") or {},
         "source": f"{row['impl']} {row['device']} row max_context {row['max_context']}, "
         f"native {native_ctx}",
     }  # fmt: skip
@@ -1139,6 +1588,7 @@ def derived_vllm_args(d: Dict[str, Any]) -> Dict[str, Any]:
         args["hf_overrides"] = d["hf_overrides"]
     if d.get("limit_mm_per_prompt"):
         args["limit_mm_per_prompt"] = d["limit_mm_per_prompt"]
+    args.update(d.get("frontend") or {})
     return args
 
 
@@ -1162,6 +1612,12 @@ def derived_specs_yaml(derived: Dict[str, Dict[str, Any]]) -> str:
             elif key == "limit_mm_per_prompt":
                 out.append("      # text only, as the TT row serves the text decoder")
                 value = json.dumps(value)
+            elif isinstance(value, str) and not re.fullmatch(
+                r"[A-Za-z0-9._/-]+", value
+            ):
+                value = json.dumps(value)  # a YAML-safe scalar (e.g. a JSON object)
+            elif isinstance(value, bool):
+                value = str(value).lower()
             out.append(f"      {key}: {value}")
         out.append("  status: EXPERIMENTAL")
     return "\n".join(out)
@@ -1871,7 +2327,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("provenance", out=req, model=req, ttis_dir=req, plan=req, vllm_python=req,
         vllm_bin=req, status=req, evals_rc={"type": int}, started_at=req,
         finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={},
-        eval_samples={})  # fmt: skip
+        eval_samples={}, agentic_tasks={}, endpoint={})  # fmt: skip
+    # --serve (agentic tasks): see the "serve" section above.
+    add("task-kind", "model", "tasks", ttis_dir={"default": str(REPO_ROOT)})
+    p = sub.add_parser(
+        "write-gpu-specs", help="derive GPU specs from the TT rows into llm.yaml"
+    )
+    p.add_argument("models", nargs="+")
+    add("shield-inputs", model=req, task=req, url_file=req, ttis_sha=req,
+        secret={"default": ENDPOINT_KEY_SECRET})  # fmt: skip
+    add("shield-find-run", model=req, url_file=req, since=req)
+    add("redact-url", url_file=req)
+    add("shield-workflow")
+    add("shield-failed-steps")
+    p = sub.add_parser(
+        "shield-provenance", help="add the Shield runs to provenance.json"
+    )
+    p.add_argument("--prov", required=True)
+    p.add_argument("--shield-dir", required=True)
+    p.add_argument("--records", nargs="+", required=True)
+    p.add_argument("--serving-dir", required=True, help="the VMs' serving snapshots")
+    p.add_argument("--rollovers", type=int, default=0)
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["driver-status"]:
         # FILE --log LOG KEY=VALUE...: older argparse (Python 3.12.3, the system
@@ -2079,6 +2555,65 @@ def main(argv: Optional[List[str]] = None) -> int:
         Path(args.out).write_text(json.dumps(evidence, indent=2) + "\n")
     elif args.cmd == "provenance":
         Path(args.out).write_text(json.dumps(build_provenance(args), indent=2) + "\n")
+    elif args.cmd == "task-kind":
+        try:
+            print(task_kind(args.model, args.tasks.split(","), Path(args.ttis_dir)))
+        except ValueError as exc:
+            print(f"[gpuref] {exc}", file=sys.stderr)
+            return 1
+    elif args.cmd == "write-gpu-specs":
+        _, rows = catalog_facts()
+        derived = {}
+        for model in args.models:
+            d = derive_entry(model, rows.get(model, []), hf_token())
+            if d is None:
+                print(
+                    f"[gpuref] {model}: no TT row to derive a GPU spec from",
+                    file=sys.stderr,
+                )
+                return 1
+            derived[model] = d
+        path = REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
+        path.write_text(write_derived_specs(path.read_text(), derived))
+        print(f"[gpuref] wrote {len(derived)} derived GPU spec(s) to {path}; review and commit",
+              file=sys.stderr)  # fmt: skip
+    elif args.cmd == "shield-inputs":
+        url = Path(args.url_file).read_text().strip()
+        try:
+            print(
+                json.dumps(
+                    shield_inputs(
+                        args.model, args.task, url, args.ttis_sha, args.secret
+                    )
+                )
+            )
+        except ValueError as exc:
+            print(f"[gpuref] {exc}", file=sys.stderr)
+            return 1
+    elif args.cmd == "shield-find-run":
+        url = Path(args.url_file).read_text().strip()
+        found = shield_find_run(json.load(sys.stdin), args.model, url, args.since)
+        if found is None:
+            return 1
+        print(found)
+    elif (
+        args.cmd == "redact-url"
+    ):  # "<redacted> <sha12>": log the first, compare the second
+        url = Path(args.url_file).read_text().strip()
+        print(redact_url(url) or "", endpoint_id(url) or "")
+    elif args.cmd == "shield-failed-steps":  # gh run view --json jobs on stdin
+        print(json.dumps(shield_failed_steps(json.loads(sys.stdin.read()))))
+    elif args.cmd == "shield-workflow":
+        print(SHIELD_REPO, SHIELD_WORKFLOW)
+    elif args.cmd == "shield-provenance":
+        prov = load_json(Path(args.prov)) or {}
+        records = [load_json(Path(r)) or {} for r in args.records]
+        out = shield_provenance(
+            prov, records, Path(args.shield_dir), Path(args.serving_dir)
+        )
+        out["serving_rollovers"] = args.rollovers  # sessions replaced mid-run
+        Path(args.prov).write_text(json.dumps(out, indent=2) + "\n")
+        print(out["status"])
     return 0
 
 
