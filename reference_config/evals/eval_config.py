@@ -8907,6 +8907,48 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16): ornith-ai's reasoning/agentic Qwen3.5-9B derivative. Task and
+    # settings copied from Qwen/Qwen3.8-27B's r1_gpqa_diamond; sampling from the card's general-task recipe (temperature 1.0,
+    # top_p 0.95). published_score is the card's GPQA Diamond (86.4); like-for-like GPU reference (issue #5353) TBD.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-9B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=86.4,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16); base checkpoint (Qwen3_5ForConditionalGeneration, text
     # path); tasks and apply_chat_template=False copied from Qwen/Qwen3-4B-Base (the base profile). The model card
     # publishes no scores: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /

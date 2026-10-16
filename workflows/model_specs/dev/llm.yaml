@@ -6215,6 +6215,19 @@ templates:
       tokenizer_revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
   status: EXPERIMENTAL
 - weights:
+  - ornith-ai/Ornith-1.5-9B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 262144  # quetzal P300X2 row max_context 262144, native 262144
+    default_impl: true
+    vllm_args:
+      revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
+      tokenizer_revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
+  status: EXPERIMENTAL
+- weights:
   - stabilityai/stablelm-2-1_6b
   impl: quetzal
   inference_engine: VLLM
