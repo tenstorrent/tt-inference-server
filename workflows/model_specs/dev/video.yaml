@@ -134,6 +134,7 @@ templates:
   inference_engine: MEDIA
   env_vars:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MEDIA_URL_ALLOWED_DOMAINS: images-assets.nasa.gov
   device_model_specs:
     - device: T3K
       max_concurrency: 1
