@@ -21,7 +21,7 @@ def run_probe(server,context):
         req=urllib.request.Request(endpoint+path,data=json.dumps(payload).encode() if payload else None,headers=h)
         remaining=deadline-time.monotonic()
         if remaining<=0:raise TimeoutError('Unscored diagnostic45min budget exhausted')
-        with urllib.request.urlopen(req,timeout=min(900,remaining)) as r:return r.read()
+        with urllib.request.urlopen(req,timeout=min(1800,remaining)) as r:return r.read()
     def request(tokens,output,session):
         started=time.time();payload=dict(model=server.model,prompt=tokens,max_tokens=output,ignore_eos=True,temperature=0,top_p=.95,top_k=20,seed=9472,cache_salt=session,return_token_ids=True)
         response=json.loads(url('/v1/completions',payload,session));assert response['usage']['completion_tokens']==output
