@@ -400,6 +400,9 @@ def run(config: HarborRunConfig) -> int:
     process_env = os.environ.copy()
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
+    from llm_module.agentic.docker_capacity_preflight import check
+
+    check(config)
     rc = run_with_progress(
         cmd,
         cwd=None,
