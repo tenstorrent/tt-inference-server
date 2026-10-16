@@ -17,6 +17,7 @@ off the worker(s) rather than the spec-decode-unaware Dynamo frontend:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from llm_module.drivers.aiperf_spec_decode import (
     AIPerfSpecDecodeDriver,
     _worker_metrics_urls,
 )
+from llm_module.parsers.aiperf_spec_decode import AIPerfSpecDecodeParser
 from llm_module.spec_decode import SpecDecodeRun
 
 FRONTEND = "http://dynamo-frontend:8000"
@@ -254,3 +256,39 @@ class TestRunScrapesWorkerEndpoints:
 
         assert result.return_code == 0
         assert "spec_decode_metrics" not in result.payload
+
+
+class TestPlaceholderPrompts:
+    """The public SPEED-Bench copy masks prompts with a placeholder (#5279)."""
+
+    def _write_inputs(self, artifact_dir: Path, prompts: list) -> None:
+        sessions = [
+            {"session_id": str(i), "payloads": [{"messages": [{"content": p}]}]}
+            for i, p in enumerate(prompts)
+        ]
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "inputs.json").write_text(json.dumps({"data": sessions}))
+
+    def test_counts_placeholders_and_warns(self, tmp_path, caplog):
+        placeholder = driver_mod.SPEED_BENCH_PLACEHOLDER + " USING SPECDEC_BENCH"
+        self._write_inputs(tmp_path, [placeholder, "real prompt", placeholder])
+
+        assert driver_mod._count_placeholder_prompts(tmp_path) == (2, 3)
+        assert "2/3 prompts" in caplog.text
+
+    def test_clean_dataset_does_not_warn(self, tmp_path, caplog):
+        self._write_inputs(tmp_path, ["real prompt"])
+
+        assert driver_mod._count_placeholder_prompts(tmp_path) == (0, 1)
+        assert "placeholder" not in caplog.text
+
+    def test_missing_inputs_json_is_skipped(self, tmp_path):
+        assert driver_mod._count_placeholder_prompts(tmp_path) is None
+
+    def test_report_shows_placeholder_count(self):
+        parser = AIPerfSpecDecodeParser()
+        base = {"public_dataset": "speed_bench_math", "completed": 80}
+
+        flagged = parser.parse({**base, "placeholder_prompts": 62, "total_prompts": 80})
+        assert flagged.data["placeholder_prompts"] == "62/80"
+        assert parser.parse(base).data["placeholder_prompts"] is None

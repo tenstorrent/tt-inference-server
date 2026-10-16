@@ -147,6 +147,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "public_dataset": "Dataset",
     "output_len": "OSL",
     "completed": "Completed",
+    "placeholder_prompts": "Placeholders in Dataset",
     "acceptance_rate": "Accept Rate",
     "mean_accepted_length": "Mean Acc Len",
     "p95_ttft_ms": "P95 TTFT (ms)",

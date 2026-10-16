@@ -262,6 +262,9 @@ class AIPerfSpecDecodeDriver:
             spec_decode_metrics=spec_decode_metrics,
             model_repo=server.model or self.model_repo,
         )
+        placeholders = _count_placeholder_prompts(artifact_dir)
+        if placeholders is not None:
+            payload["placeholder_prompts"], payload["total_prompts"] = placeholders
         raw_path = _save_payload(
             payload=payload,
             output_dir=self.output_dir,
@@ -318,6 +321,35 @@ def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:
         logger.error(
             "[spec-decode] last %d lines of %s:\n%s", len(tail), path, "\n".join(tail)
         )
+
+
+# The public HF copy of nvidia/SPEED-Bench masks many prompts with this
+# sentence; the full data must be fetched with NVIDIA's specdec_bench (#5279).
+SPEED_BENCH_PLACEHOLDER = "FULL BENCHMARK DATA SHOULD BE FETCHED FROM THE SOURCE"
+
+
+def _count_placeholder_prompts(artifact_dir: Path) -> Optional[Tuple[int, int]]:
+    """``(placeholder, total)`` payloads in aiperf's ``inputs.json``; warn if any.
+
+    ``None`` when aiperf wrote no ``inputs.json`` (best effort).
+    """
+    path = next(Path(artifact_dir).rglob("inputs.json"), None)
+    inputs = load_json(path) if path else None
+    if not inputs:
+        return None
+    payloads = [
+        json.dumps(p) for s in inputs.get("data", []) for p in s.get("payloads", [])
+    ]
+    placeholders = sum(SPEED_BENCH_PLACEHOLDER in p for p in payloads)
+    if placeholders:
+        logger.warning(
+            "[spec-decode] %d/%d prompts in the dataset aiperf loaded are the "
+            "SPEED-Bench placeholder sentence; this run's results are "
+            "unreliable (see #5279).",
+            placeholders,
+            len(payloads),
+        )
+    return placeholders, len(payloads)
 
 
 # ---------------------------------------------------------------------

@@ -33,6 +33,7 @@ DISPLAY_FIELDS = (
     "output_len",
     "max_concurrency",
     "completed",
+    "placeholder_prompts",
     "acceptance_rate",
     "mean_accepted_length",
     "mean_ttft_ms",
@@ -77,6 +78,11 @@ class AIPerfSpecDecodeParser(LLMResultParser):
         }
         for field in DISPLAY_FIELDS:
             record[field] = _value(field)
+        # SPEED-Bench placeholder sentences in the dataset aiperf loaded (#5279); None when not counted.
+        if raw.get("placeholder_prompts") is not None:
+            record["placeholder_prompts"] = (
+                f"{raw['placeholder_prompts']}/{raw.get('total_prompts')}"
+            )
 
         return self._wrap_record(record, title=SECTION_TITLE)
 
