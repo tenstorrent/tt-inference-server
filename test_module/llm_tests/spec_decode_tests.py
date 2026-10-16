@@ -75,7 +75,10 @@ def run_spec_decode(
         every SPEED-Bench qualitative category plus the whole throughput
         ISL x concurrency grid; ``ci`` runs only the ``coding``
         qualitative category plus ``speed_bench_throughput_32k`` at
-        concurrency 1/16/64.
+        concurrency 1/16/64; ``throughput`` runs only the throughput grid.
+        The ``SPEC_DECODE_ISLS`` / ``SPEC_DECODE_CONCURRENCIES`` env vars
+        replace the preset's throughput ISLs / concurrencies (see
+        :func:`llm_module.spec_decode.build_runs`).
     warmup_requests:
         Short chat-completion requests sent before the sweep (matches v1
         behavior; 0 disables).
@@ -108,7 +111,12 @@ def run_spec_decode(
         :func:`workflow_module.accept_blocks` so the unified report
         generator picks them up.
     """
-    runs = build_spec_decode_runs(preset)
+    # Concurrency above the server's user slots measures rejected requests,
+    # not throughput, so the preset's sweep is capped at the spec's slots.
+    device_spec = getattr(ctx.model_spec, "device_model_spec", None)
+    runs = build_spec_decode_runs(
+        preset, max_concurrency=getattr(device_spec, "max_concurrency", None)
+    )
     if not runs:
         logger.error("Spec-decode sweep is empty (preset=%s); nothing to run.", preset)
         return []
