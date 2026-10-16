@@ -1,11 +1,11 @@
 {
   "base_commit": "8f402102-model-safety-target",
-  "target_commit": "alias-plus-layerwise-history-plus-final-row-release",
-  "patch_sha256": "9d78e6c523fd16135392b6cd39281536927d2eefa2edbd53c647cb2900e099b6",
+  "target_commit": "terminal-matched-control",
+  "patch_sha256": "dd1a56e6146973c4f0e2200a748ffedf0309a6b142906fb88de8d8eb4a6cb525",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
-      "target": "d6fc9b718226c2a40155c85cf3ad3f323c2b0d07777dcea71d35226bcb33e6af"
+      "target": "3afebee7f73cb3884955a912e29111818daee3a06f7a082d5ef489841651401a"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2",

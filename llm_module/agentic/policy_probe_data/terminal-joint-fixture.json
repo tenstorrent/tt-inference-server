@@ -1,0 +1,1612 @@
+{
+  "scope": "UNSCORED task-balanced joint prompt/output shapes from 32 actual Terminal trajectories. This underweights long trajectories relative to the request-weighted source distribution; source and selected quantiles are both reported. Each task starts with its actual first call, then a three-call consecutive window where available; omitted intermediate calls are not replayed. Two tasks have only two calls. Synthetic prefixes therefore do not reproduce historical cache hits. Synthetic prompt IDs and fixed2s toolgap, not real task/tool replay or accuracy. Selected context shrink resets synthetic prefix after the recorded common prefix; real source cache starts are annotations, not guaranteed reproduced hits.",
+  "source_run": 38775764422,
+  "selection": {
+    "seed": 91,
+    "algorithm": "actual first call plus best of256 deterministic three-call windows by log-relative mean/quantile distance; require observed maxoutput and first contextshrink per affected task",
+    "loss": 5.5812579484584885
+  },
+  "source_summary": {
+    "calls": 539,
+    "prompt_total": 11207086,
+    "output_total": 1262453,
+    "prompt_mean": 20792.367346938776,
+    "output_mean": 2342.213358070501,
+    "prompt_quantiles": {
+      "0": 798,
+      "0.25": 5699,
+      "0.5": 14939,
+      "0.75": 32426,
+      "0.9": 50341,
+      "0.95": 58357,
+      "0.99": 68080,
+      "1": 70688
+    },
+    "output_quantiles": {
+      "0": 186,
+      "0.25": 770,
+      "0.5": 1466,
+      "0.75": 2894,
+      "0.9": 5602,
+      "0.95": 7086,
+      "0.99": 9207,
+      "1": 15959
+    }
+  },
+  "selected_summary": {
+    "calls": 122,
+    "prompt_total": 1376309,
+    "output_total": 317542,
+    "prompt_mean": 11281.22131147541,
+    "output_mean": 2602.8032786885246,
+    "prompt_quantiles": {
+      "0": 798,
+      "0.25": 1111,
+      "0.5": 6213,
+      "0.75": 12161,
+      "0.9": 25134,
+      "0.95": 55766,
+      "0.99": 63926,
+      "1": 69693
+    },
+    "output_quantiles": {
+      "0": 199,
+      "0.25": 646,
+      "0.5": 1260,
+      "0.75": 3059,
+      "0.9": 6338,
+      "0.95": 8032,
+      "0.99": 13867,
+      "1": 15959
+    }
+  },
+  "streams": [
+    {
+      "task": "adaptive-rejection-sampler__PoFtL9P",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/adaptive-rejection-sampler__PoFtL9P/agent/trajectory.json",
+      "sha256": "4de763af461f9ceafc35a256a5df6df312a01cd7428fec7d2b2ae13963df0143",
+      "source_calls": 8,
+      "start_index": 0,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1333,
+          "output_tokens": 1512,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:49:06.792842+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 1654,
+          "output_tokens": 312,
+          "source_cached_tokens": 1280,
+          "timestamp": "2026-10-15T19:49:31.816928+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 6004,
+          "output_tokens": 5875,
+          "source_cached_tokens": 1536,
+          "timestamp": "2026-10-15T19:54:44.524981+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "bn-fit-modify__7fV4wCq",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/bn-fit-modify__7fV4wCq/agent/trajectory.json",
+      "sha256": "f8dab03ad6ad406e071550f4fe6eb72dde54131d4f0fa82529e6a8b19dedcfd9",
+      "source_calls": 12,
+      "start_index": 9,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1084,
+          "output_tokens": 350,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:42:26.435438+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 11,
+          "prompt_tokens": 18161,
+          "output_tokens": 1319,
+          "source_cached_tokens": 17792,
+          "timestamp": "2026-10-15T19:54:53.360538+00:00",
+          "source_call_index": 9,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 12,
+          "prompt_tokens": 18437,
+          "output_tokens": 2370,
+          "source_cached_tokens": 18048,
+          "timestamp": "2026-10-15T19:57:31.800307+00:00",
+          "source_call_index": 10,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 13,
+          "prompt_tokens": 18793,
+          "output_tokens": 318,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:58:06.288112+00:00",
+          "source_call_index": 11,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "break-filter-js-from-html__mRikoVb",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/break-filter-js-from-html__mRikoVb/agent/trajectory.json",
+      "sha256": "776c4155ff1351dd340cc6b603d3a079c328e734d22e9a1d1ad9b887c4e773a2",
+      "source_calls": 20,
+      "start_index": 5,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 883,
+          "output_tokens": 404,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:00.188617+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 4749,
+          "output_tokens": 8988,
+          "source_cached_tokens": 4096,
+          "timestamp": "2026-10-15T19:53:04.008842+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 5489,
+          "output_tokens": 8032,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:01:25.331732+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 6213,
+          "output_tokens": 6254,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:07:49.104561+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "build-pmars__dBBKzDm",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/build-pmars__dBBKzDm/agent/trajectory.json",
+      "sha256": "20d8cbfa1882316d4fca06fd8cec0bea761f6cb6f00f00b50999a9686d860001",
+      "source_calls": 16,
+      "start_index": 10,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 893,
+          "output_tokens": 740,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:51.976850+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 12,
+          "prompt_tokens": 16420,
+          "output_tokens": 495,
+          "source_cached_tokens": 13824,
+          "timestamp": "2026-10-15T19:36:31.243590+00:00",
+          "source_call_index": 10,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 13,
+          "prompt_tokens": 16915,
+          "output_tokens": 639,
+          "source_cached_tokens": 16384,
+          "timestamp": "2026-10-15T19:37:00.025559+00:00",
+          "source_call_index": 11,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 14,
+          "prompt_tokens": 20066,
+          "output_tokens": 1020,
+          "source_cached_tokens": 16896,
+          "timestamp": "2026-10-15T19:38:13.310946+00:00",
+          "source_call_index": 12,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "caffe-cifar-10__ma2aLRT",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/caffe-cifar-10__ma2aLRT/agent/trajectory.json",
+      "sha256": "750f4447f02cbf14b166bea86921392c641c517605038b2c9c110bf39002d377",
+      "source_calls": 50,
+      "start_index": 43,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 899,
+          "output_tokens": 391,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:00.712101+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 45,
+          "prompt_tokens": 59306,
+          "output_tokens": 1898,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T21:11:19.454088+00:00",
+          "source_call_index": 43,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 46,
+          "prompt_tokens": 61678,
+          "output_tokens": 1130,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T21:15:29.957567+00:00",
+          "source_call_index": 44,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 47,
+          "prompt_tokens": 63926,
+          "output_tokens": 1359,
+          "source_cached_tokens": 61568,
+          "timestamp": "2026-10-15T21:20:40.661073+00:00",
+          "source_call_index": 45,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "cancel-async-tasks__t48WuS4",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/cancel-async-tasks__t48WuS4/agent/trajectory.json",
+      "sha256": "be36f5987eac8a03eb653ce2a28e0cd9a28d76b6e748495550c98676d8a8cbae",
+      "source_calls": 2,
+      "start_index": 0,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 870,
+          "output_tokens": 1608,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:30:16.614746+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 1694,
+          "output_tokens": 2912,
+          "source_cached_tokens": 768,
+          "timestamp": "2026-10-15T19:33:51.385519+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "chess-best-move__tWTBkeg",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/chess-best-move__tWTBkeg/agent/trajectory.json",
+      "sha256": "1ac98948ed3c1d33085eb4d0f49cb3d858b2f6287bb48a04e2546234ee234d62",
+      "source_calls": 11,
+      "start_index": 6,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 812,
+          "output_tokens": 396,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:00.804032+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 9557,
+          "output_tokens": 1871,
+          "source_cached_tokens": 7936,
+          "timestamp": "2026-10-15T19:39:36.861611+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 10566,
+          "output_tokens": 1466,
+          "source_cached_tokens": 9472,
+          "timestamp": "2026-10-15T19:40:57.993102+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 10,
+          "prompt_tokens": 12472,
+          "output_tokens": 7117,
+          "source_cached_tokens": 10496,
+          "timestamp": "2026-10-15T19:47:43.930471+00:00",
+          "source_call_index": 8,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "circuit-fibsqrt__DAhT8Qj",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/circuit-fibsqrt__DAhT8Qj/agent/trajectory.json",
+      "sha256": "4cc78f8fe9f7ba36f60724c797d6e8d2fdd7608d337b38ee131c344285fd6175",
+      "source_calls": 37,
+      "start_index": 28,
+      "forced_coverage": [
+        "observed_context_shrink"
+      ],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1040,
+          "output_tokens": 714,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:48.070397+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 30,
+          "prompt_tokens": 68965,
+          "output_tokens": 3059,
+          "source_cached_tokens": 66816,
+          "timestamp": "2026-10-15T21:45:50.762280+00:00",
+          "source_call_index": 28,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 33,
+          "prompt_tokens": 4632,
+          "output_tokens": 6323,
+          "source_cached_tokens": null,
+          "timestamp": "2026-10-15T21:54:30.270163+00:00",
+          "source_call_index": 29,
+          "context_epoch": 1,
+          "context_shrink_from_previous": true
+        },
+        {
+          "step_id": 34,
+          "prompt_tokens": 5537,
+          "output_tokens": 7294,
+          "source_cached_tokens": 4608,
+          "timestamp": "2026-10-15T21:59:40.586249+00:00",
+          "source_call_index": 30,
+          "context_epoch": 1,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "cobol-modernization__LAawDzr",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/cobol-modernization__LAawDzr/agent/trajectory.json",
+      "sha256": "6c24a6fac61471da2b367a17445f3bacebf929187719567a2b7f4e5941cd52c2",
+      "source_calls": 5,
+      "start_index": 2,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1075,
+          "output_tokens": 639,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:37:19.124822+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 4038,
+          "output_tokens": 7345,
+          "source_cached_tokens": 2816,
+          "timestamp": "2026-10-15T19:46:26.979291+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 7215,
+          "output_tokens": 6273,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:52:00.703174+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 7597,
+          "output_tokens": 3796,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:55:39.567498+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "compile-compcert__RpabHY6",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/compile-compcert__RpabHY6/agent/trajectory.json",
+      "sha256": "c030451183229129ff86d830e925f03da3cd4ad3c1c97034561b079e2198e8a7",
+      "source_calls": 45,
+      "start_index": 28,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 813,
+          "output_tokens": 451,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:41.689327+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 30,
+          "prompt_tokens": 38040,
+          "output_tokens": 3891,
+          "source_cached_tokens": 35968,
+          "timestamp": "2026-10-15T20:41:06.548675+00:00",
+          "source_call_index": 28,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 31,
+          "prompt_tokens": 39831,
+          "output_tokens": 13867,
+          "source_cached_tokens": 38016,
+          "timestamp": "2026-10-15T20:53:11.994723+00:00",
+          "source_call_index": 29,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 32,
+          "prompt_tokens": 39878,
+          "output_tokens": 2373,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:56:27.558798+00:00",
+          "source_call_index": 30,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "configure-git-webserver__GJYx74R",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/configure-git-webserver__GJYx74R/agent/trajectory.json",
+      "sha256": "0f72102ac09247080bd52e79ca9a9208d6bb4581fc56e0c0d309124f5e816c98",
+      "source_calls": 9,
+      "start_index": 3,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 871,
+          "output_tokens": 1544,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:05:34.112449+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 5191,
+          "output_tokens": 791,
+          "source_cached_tokens": 3840,
+          "timestamp": "2026-10-15T20:08:00.320600+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 5914,
+          "output_tokens": 920,
+          "source_cached_tokens": 5120,
+          "timestamp": "2026-10-15T20:08:46.742842+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 7020,
+          "output_tokens": 904,
+          "source_cached_tokens": 5888,
+          "timestamp": "2026-10-15T20:09:34.323243+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "count-dataset-tokens__ZUsXRUH",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/count-dataset-tokens__ZUsXRUH/agent/trajectory.json",
+      "sha256": "abbc63a382c0f3037244812935b3d87f397c3c734f44931aecb235d5939ea127",
+      "source_calls": 10,
+      "start_index": 7,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 853,
+          "output_tokens": 771,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:37:19.520428+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 16712,
+          "output_tokens": 1006,
+          "source_cached_tokens": 16256,
+          "timestamp": "2026-10-15T19:46:18.724669+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 10,
+          "prompt_tokens": 17547,
+          "output_tokens": 322,
+          "source_cached_tokens": 16640,
+          "timestamp": "2026-10-15T19:46:40.195564+00:00",
+          "source_call_index": 8,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 11,
+          "prompt_tokens": 17850,
+          "output_tokens": 731,
+          "source_cached_tokens": 17536,
+          "timestamp": "2026-10-15T19:47:15.193865+00:00",
+          "source_call_index": 9,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "distribution-search__RhK6NXa",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/distribution-search__RhK6NXa/agent/trajectory.json",
+      "sha256": "5def0b86c23e6be941742a38a118930099ea5a2eae1ad14bc166ec754dc01f0a",
+      "source_calls": 14,
+      "start_index": 4,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1053,
+          "output_tokens": 6198,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:35:40.340496+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 9397,
+          "output_tokens": 5293,
+          "source_cached_tokens": 7424,
+          "timestamp": "2026-10-15T19:53:35.953981+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 11711,
+          "output_tokens": 6338,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:00:01.756862+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 12772,
+          "output_tokens": 5973,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:06:31.097969+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "feal-differential-cryptanalysis__zFLeNvG",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/feal-differential-cryptanalysis__zFLeNvG/agent/trajectory.json",
+      "sha256": "bc868f4e370406c6482dc314c132d442cbfb1fb027e8fe958f79be4530042a71",
+      "source_calls": 46,
+      "start_index": 1,
+      "forced_coverage": [
+        "observed_maximum_output"
+      ],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 876,
+          "output_tokens": 199,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:46:17.753613+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 3670,
+          "output_tokens": 14915,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:15:29.693429+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 5949,
+          "output_tokens": 15959,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:28:02.592810+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 7411,
+          "output_tokens": 9015,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:34:53.878853+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "financial-document-processor__e7njaNk",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/financial-document-processor__e7njaNk/agent/trajectory.json",
+      "sha256": "60b7d76a83d7dcfacafae14ffdb8fde61fee7e3efc3cfc9e61aabb555352359d",
+      "source_calls": 12,
+      "start_index": 3,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1010,
+          "output_tokens": 752,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:56:01.417046+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 7284,
+          "output_tokens": 2050,
+          "source_cached_tokens": 6016,
+          "timestamp": "2026-10-15T20:00:20.626115+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 9965,
+          "output_tokens": 2056,
+          "source_cached_tokens": 7168,
+          "timestamp": "2026-10-15T20:02:52.804355+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 11876,
+          "output_tokens": 1079,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:04:04.838183+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "git-leak-recovery__DmaRBMC",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/git-leak-recovery__DmaRBMC/agent/trajectory.json",
+      "sha256": "c9c0a7fb06f0d9df1d4405001921408be6f26471c09497be7c1922cc0183de51",
+      "source_calls": 9,
+      "start_index": 4,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 860,
+          "output_tokens": 647,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:28:38.099169+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 3049,
+          "output_tokens": 316,
+          "source_cached_tokens": 2432,
+          "timestamp": "2026-10-15T19:33:24.145611+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 3641,
+          "output_tokens": 768,
+          "source_cached_tokens": 2944,
+          "timestamp": "2026-10-15T19:34:15.843087+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 4313,
+          "output_tokens": 444,
+          "source_cached_tokens": 3584,
+          "timestamp": "2026-10-15T19:34:36.407570+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "git-multibranch__QjAoFeh",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/git-multibranch__QjAoFeh/agent/trajectory.json",
+      "sha256": "1331c116cacc9262f6d96d8e84be8e03c662c6ffef43d5e2b55ab46025b0abd0",
+      "source_calls": 12,
+      "start_index": 5,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1010,
+          "output_tokens": 3481,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:32:49.569692+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 10293,
+          "output_tokens": 1707,
+          "source_cached_tokens": 8960,
+          "timestamp": "2026-10-15T19:39:59.454473+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 11039,
+          "output_tokens": 646,
+          "source_cached_tokens": 10240,
+          "timestamp": "2026-10-15T19:40:34.217061+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 11773,
+          "output_tokens": 1255,
+          "source_cached_tokens": 11008,
+          "timestamp": "2026-10-15T19:42:00.297855+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "headless-terminal__s5mVd8B",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/headless-terminal__s5mVd8B/agent/trajectory.json",
+      "sha256": "0df5b72350d58712decd42527d2474bb5c2695be430a1a4f362e9317d8d5a206",
+      "source_calls": 6,
+      "start_index": 3,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 900,
+          "output_tokens": 339,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:27:51.632492+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 3226,
+          "output_tokens": 1047,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:38:29.798998+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 3984,
+          "output_tokens": 1809,
+          "source_cached_tokens": 3200,
+          "timestamp": "2026-10-15T19:40:27.039404+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 4304,
+          "output_tokens": 391,
+          "source_cached_tokens": 3968,
+          "timestamp": "2026-10-15T19:40:52.594612+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "kv-store-grpc__Dnnb3DG",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/kv-store-grpc__Dnnb3DG/agent/trajectory.json",
+      "sha256": "e82b7c23353347f4967ea2bb5c9dfcc3db9f331d5516114e0f8d61745c4dec12",
+      "source_calls": 8,
+      "start_index": 1,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1035,
+          "output_tokens": 967,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:29:33.227442+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 1300,
+          "output_tokens": 759,
+          "source_cached_tokens": 1024,
+          "timestamp": "2026-10-15T19:30:25.553070+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 2624,
+          "output_tokens": 1260,
+          "source_cached_tokens": 1280,
+          "timestamp": "2026-10-15T19:32:11.343567+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 3656,
+          "output_tokens": 302,
+          "source_cached_tokens": 2560,
+          "timestamp": "2026-10-15T19:32:39.150328+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "merge-diff-arc-agi-task__fauaoTx",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/merge-diff-arc-agi-task__fauaoTx/agent/trajectory.json",
+      "sha256": "428e9aa57818d0221804ea0dd7854d11647ef2fa1caacc99d9ea4e2aad30ce8f",
+      "source_calls": 10,
+      "start_index": 3,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1111,
+          "output_tokens": 374,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:27:52.011431+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 9199,
+          "output_tokens": 524,
+          "source_cached_tokens": 4480,
+          "timestamp": "2026-10-15T19:30:55.040947+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 9873,
+          "output_tokens": 415,
+          "source_cached_tokens": 9088,
+          "timestamp": "2026-10-15T19:31:24.434578+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 11793,
+          "output_tokens": 7181,
+          "source_cached_tokens": 9856,
+          "timestamp": "2026-10-15T19:39:11.729242+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "model-extraction-relu-logits__7vchBgW",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/model-extraction-relu-logits__7vchBgW/agent/trajectory.json",
+      "sha256": "bb2134e3bf25132caa9743665159216927d73bd7de587eeb6561f824486c96f8",
+      "source_calls": 10,
+      "start_index": 6,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 891,
+          "output_tokens": 853,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:41:35.596843+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 10309,
+          "output_tokens": 3513,
+          "source_cached_tokens": 8192,
+          "timestamp": "2026-10-15T20:03:09.645812+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 12482,
+          "output_tokens": 1787,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:05:06.097436+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 10,
+          "prompt_tokens": 15306,
+          "output_tokens": 530,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:05:43.609871+00:00",
+          "source_call_index": 8,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "mteb-leaderboard__AggtUmA",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/mteb-leaderboard__AggtUmA/agent/trajectory.json",
+      "sha256": "718d131e0c9158620fe836229b64243905fb010306a3253b545204c1a3d4e18f",
+      "source_calls": 50,
+      "start_index": 37,
+      "forced_coverage": [
+        "observed_context_shrink"
+      ],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 832,
+          "output_tokens": 695,
+          "source_cached_tokens": null,
+          "timestamp": "2026-10-15T19:28:43.525367+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 39,
+          "prompt_tokens": 69693,
+          "output_tokens": 794,
+          "source_cached_tokens": 68992,
+          "timestamp": "2026-10-15T21:00:41.314270+00:00",
+          "source_call_index": 37,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 42,
+          "prompt_tokens": 6403,
+          "output_tokens": 1746,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T21:06:44.766537+00:00",
+          "source_call_index": 38,
+          "context_epoch": 1,
+          "context_shrink_from_previous": true
+        },
+        {
+          "step_id": 43,
+          "prompt_tokens": 7861,
+          "output_tokens": 865,
+          "source_cached_tokens": 6400,
+          "timestamp": "2026-10-15T21:07:27.709384+00:00",
+          "source_call_index": 39,
+          "context_epoch": 1,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "mteb-retrieve__7w9HiER",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/mteb-retrieve__7w9HiER/agent/trajectory.json",
+      "sha256": "6ed1882b5bba6b27d9dfd4e190ec6f2f986ee8d5ef2d1272b722d1387b99c716",
+      "source_calls": 7,
+      "start_index": 0,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 867,
+          "output_tokens": 1130,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:57:12.910503+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 1224,
+          "output_tokens": 1934,
+          "source_cached_tokens": 768,
+          "timestamp": "2026-10-15T19:59:04.362645+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 2354,
+          "output_tokens": 1022,
+          "source_cached_tokens": 1152,
+          "timestamp": "2026-10-15T19:59:59.259198+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "password-recovery__ikgZVGp",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/password-recovery__ikgZVGp/agent/trajectory.json",
+      "sha256": "2514448c97f743b2eb37460d181f0a7e5e3edf97e7a4b6a2c904c02936f17959",
+      "source_calls": 17,
+      "start_index": 12,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 884,
+          "output_tokens": 694,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:45:48.992611+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 14,
+          "prompt_tokens": 5967,
+          "output_tokens": 2495,
+          "source_cached_tokens": 5632,
+          "timestamp": "2026-10-15T19:57:52.525217+00:00",
+          "source_call_index": 12,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 15,
+          "prompt_tokens": 6338,
+          "output_tokens": 590,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:58:27.889385+00:00",
+          "source_call_index": 13,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 16,
+          "prompt_tokens": 6684,
+          "output_tokens": 2146,
+          "source_cached_tokens": 6272,
+          "timestamp": "2026-10-15T20:00:20.219405+00:00",
+          "source_call_index": 14,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "path-tracing-reverse__b8VNwJV",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/path-tracing-reverse__b8VNwJV/agent/trajectory.json",
+      "sha256": "b750771ca15480a0408b7555aa1cf285d4a7ef5c90af45bb18a63e97404231e3",
+      "source_calls": 23,
+      "start_index": 14,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 862,
+          "output_tokens": 402,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:58:51.974214+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 16,
+          "prompt_tokens": 25134,
+          "output_tokens": 1864,
+          "source_cached_tokens": 23040,
+          "timestamp": "2026-10-15T20:35:52.656686+00:00",
+          "source_call_index": 14,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 17,
+          "prompt_tokens": 26588,
+          "output_tokens": 1829,
+          "source_cached_tokens": 25088,
+          "timestamp": "2026-10-15T20:37:20.881858+00:00",
+          "source_call_index": 15,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 18,
+          "prompt_tokens": 28246,
+          "output_tokens": 4372,
+          "source_cached_tokens": 26496,
+          "timestamp": "2026-10-15T20:40:44.462424+00:00",
+          "source_call_index": 16,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "qemu-startup__NyhXmdA",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/qemu-startup__NyhXmdA/agent/trajectory.json",
+      "sha256": "074aaef9f946b24de9e95a1cdad8a4d4d1a9700ab770dc6844beae2c273bf0fa",
+      "source_calls": 50,
+      "start_index": 44,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 831,
+          "output_tokens": 2325,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:03:56.388806+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 46,
+          "prompt_tokens": 55766,
+          "output_tokens": 1822,
+          "source_cached_tokens": 54784,
+          "timestamp": "2026-10-15T21:15:05.457203+00:00",
+          "source_call_index": 44,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 47,
+          "prompt_tokens": 57124,
+          "output_tokens": 544,
+          "source_cached_tokens": 55680,
+          "timestamp": "2026-10-15T21:15:49.864841+00:00",
+          "source_call_index": 45,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 48,
+          "prompt_tokens": 58070,
+          "output_tokens": 533,
+          "source_cached_tokens": 57088,
+          "timestamp": "2026-10-15T21:16:31.369659+00:00",
+          "source_call_index": 46,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "query-optimize__oFtBiRT",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/query-optimize__oFtBiRT/agent/trajectory.json",
+      "sha256": "f041074311f05464a73eb4fdde157ee8f0b3e776dfc84d04723047492a62f717",
+      "source_calls": 4,
+      "start_index": 1,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 870,
+          "output_tokens": 461,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:41:36.750869+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 2899,
+          "output_tokens": 2387,
+          "source_cached_tokens": 768,
+          "timestamp": "2026-10-15T19:44:02.375096+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 4,
+          "prompt_tokens": 3301,
+          "output_tokens": 10392,
+          "source_cached_tokens": 2816,
+          "timestamp": "2026-10-15T19:53:23.501440+00:00",
+          "source_call_index": 2,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 12161,
+          "output_tokens": 4819,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:58:34.221297+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "regex-log__yC5jk8U",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/regex-log__yC5jk8U/agent/trajectory.json",
+      "sha256": "f9abe84616a86d85e9f7eed79f3f93e8ede7b5f4a94c240029dbceb0e9ec9998",
+      "source_calls": 2,
+      "start_index": 0,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1003,
+          "output_tokens": 9207,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:38:39.707847+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 3,
+          "prompt_tokens": 2015,
+          "output_tokens": 7098,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:45:49.051647+00:00",
+          "source_call_index": 1,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "sparql-university__pysXQGi",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/sparql-university__pysXQGi/agent/trajectory.json",
+      "sha256": "54c4a850703bf6b7c83a5f020cf06f904d7abeed9bcb7b0f41be4c0efdc0a0a2",
+      "source_calls": 7,
+      "start_index": 4,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1043,
+          "output_tokens": 683,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:41:56.856814+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 7011,
+          "output_tokens": 3760,
+          "source_cached_tokens": 3712,
+          "timestamp": "2026-10-15T19:47:25.699299+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 8081,
+          "output_tokens": 5665,
+          "source_cached_tokens": 6912,
+          "timestamp": "2026-10-15T19:52:36.372841+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 9515,
+          "output_tokens": 2292,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:54:38.464891+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "sqlite-db-truncate__ADfsyot",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/sqlite-db-truncate__ADfsyot/agent/trajectory.json",
+      "sha256": "20707e2afd4b5734dca31e12e56f79d944284b65d82bbb60a78412f54bfc2876",
+      "source_calls": 13,
+      "start_index": 5,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 814,
+          "output_tokens": 683,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:46:51.261769+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 4558,
+          "output_tokens": 1920,
+          "source_cached_tokens": 3712,
+          "timestamp": "2026-10-15T19:51:01.634578+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 14745,
+          "output_tokens": 4515,
+          "source_cached_tokens": 4480,
+          "timestamp": "2026-10-15T19:55:25.466806+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 16968,
+          "output_tokens": 5192,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T20:00:39.047161+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "sqlite-with-gcov__72ERpsw",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/sqlite-with-gcov__72ERpsw/agent/trajectory.json",
+      "sha256": "319e2ef84c13e76404c46ec7df397913cee5328b3ce22ad6ab8c7955b897f63f",
+      "source_calls": 6,
+      "start_index": 3,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 798,
+          "output_tokens": 543,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:34:50.168185+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 5,
+          "prompt_tokens": 6512,
+          "output_tokens": 1636,
+          "source_cached_tokens": 1920,
+          "timestamp": "2026-10-15T19:38:46.137620+00:00",
+          "source_call_index": 3,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 6,
+          "prompt_tokens": 7149,
+          "output_tokens": 832,
+          "source_cached_tokens": 6400,
+          "timestamp": "2026-10-15T19:39:52.696563+00:00",
+          "source_call_index": 4,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 7571,
+          "output_tokens": 535,
+          "source_cached_tokens": 7040,
+          "timestamp": "2026-10-15T19:40:20.909911+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    },
+    {
+      "task": "video-processing__hev6MiD",
+      "source": "/home/mvasiljev/build/gemma-terminal-opt/ci-38775764422/artifacts/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2/reports_output/agentic/google__gemma-4-31B-it_p300x2_agentic/eval_google__gemma-4-31B-it/agentic/terminal_bench_2_20261015T192623/video-processing__hev6MiD/agent/trajectory.json",
+      "sha256": "0c76af228e34cca3ebcd088112e86e2118034b75a33089dc9ff80c6dfde4a587",
+      "source_calls": 8,
+      "start_index": 5,
+      "forced_coverage": [],
+      "calls": [
+        {
+          "step_id": 2,
+          "prompt_tokens": 1074,
+          "output_tokens": 855,
+          "source_cached_tokens": 640,
+          "timestamp": "2026-10-15T19:29:13.619812+00:00",
+          "source_call_index": 0,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 7,
+          "prompt_tokens": 10401,
+          "output_tokens": 2330,
+          "source_cached_tokens": 8576,
+          "timestamp": "2026-10-15T19:40:37.624550+00:00",
+          "source_call_index": 5,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 8,
+          "prompt_tokens": 12702,
+          "output_tokens": 557,
+          "source_cached_tokens": 10368,
+          "timestamp": "2026-10-15T19:41:19.535619+00:00",
+          "source_call_index": 6,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        },
+        {
+          "step_id": 9,
+          "prompt_tokens": 12952,
+          "output_tokens": 446,
+          "source_cached_tokens": 12672,
+          "timestamp": "2026-10-15T19:41:47.696157+00:00",
+          "source_call_index": 7,
+          "context_epoch": 0,
+          "context_shrink_from_previous": false
+        }
+      ]
+    }
+  ],
+  "context_shrinks_selected": 2
+}
