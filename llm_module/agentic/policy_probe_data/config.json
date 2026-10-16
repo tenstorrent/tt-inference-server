@@ -1,15 +1,15 @@
 {
-  "purpose": "UNSCORED physicalC32 study;128 streams with empirical SWE100 output mix",
+  "purpose": "UNSCORED final-history physical width equalnative",
   "policy": "fifo",
   "C": 32,
-  "F": 344064,
+  "F": 509952,
   "base_tti": "8f40210262226be1c759415f18202608ab3aa4de",
   "base_validation": "Individual alias/history full-model gates passed; actual scheduler alias gate required before dispatch",
   "profiles": [
     {
       "workload": "swe",
       "A": 32,
-      "role": "matched128-stream empirical-output fixture"
+      "role": "equalnative"
     }
   ],
   "fixed_seed": "9472 diagnostic only; original scored sampling unchanged in subsequent scored branch",
@@ -18,5 +18,6 @@
   "trace_reserve_bytes": 134217728,
   "allocation_probe_min_histories": 1,
   "stream_count": 128,
-  "deadline_seconds": 3600
+  "deadline_seconds": 3600,
+  "fixture": "joint-length-fixture.json"
 }

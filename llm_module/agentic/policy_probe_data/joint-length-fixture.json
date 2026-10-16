@@ -1,0 +1,2186 @@
+{
+  "source_run": 38887263691,
+  "source_sha256": "6fb2a04911ebf5d26077d619df4864ade0ddf5eb909a72318c51f01b34eeb765",
+  "method": "384 midpoint empirical output-length quantiles, preserve corresponding real promptlengths; sort chosen recordsbyprompt and groupinto128monotonic3turnstreams; shuffle groupsseed9472; no truncation",
+  "streams": [
+    [
+      {
+        "prompt_tokens": 12057,
+        "output_tokens": 359,
+        "reference_request_id": "chatcmpl-bd5b153e820bd968"
+      },
+      {
+        "prompt_tokens": 12059,
+        "output_tokens": 52,
+        "reference_request_id": "chatcmpl-80396c9b6e8a08c3"
+      },
+      {
+        "prompt_tokens": 12078,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-bd3a2a1acfb9c22e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 13317,
+        "output_tokens": 532,
+        "reference_request_id": "chatcmpl-9ef74ce7073fb8a6"
+      },
+      {
+        "prompt_tokens": 13323,
+        "output_tokens": 66,
+        "reference_request_id": "chatcmpl-84d25499ed2fd942"
+      },
+      {
+        "prompt_tokens": 13419,
+        "output_tokens": 269,
+        "reference_request_id": "chatcmpl-bac946fb06cbf180"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 33722,
+        "output_tokens": 144,
+        "reference_request_id": "chatcmpl-9b0cc5ed93d66be7"
+      },
+      {
+        "prompt_tokens": 34239,
+        "output_tokens": 153,
+        "reference_request_id": "chatcmpl-88162bdc2c25dc1e"
+      },
+      {
+        "prompt_tokens": 34320,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-b149d224d269b396"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 13504,
+        "output_tokens": 41,
+        "reference_request_id": "chatcmpl-9ccacc9722d7b233"
+      },
+      {
+        "prompt_tokens": 13531,
+        "output_tokens": 553,
+        "reference_request_id": "chatcmpl-a0103e22533f4c5e"
+      },
+      {
+        "prompt_tokens": 13593,
+        "output_tokens": 2002,
+        "reference_request_id": "chatcmpl-ae153d902a6c44ba"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 9690,
+        "output_tokens": 39,
+        "reference_request_id": "chatcmpl-a93fecab287f6d11"
+      },
+      {
+        "prompt_tokens": 9853,
+        "output_tokens": 84,
+        "reference_request_id": "chatcmpl-ac891a8a3c150251"
+      },
+      {
+        "prompt_tokens": 9897,
+        "output_tokens": 306,
+        "reference_request_id": "chatcmpl-81936c556c6e8b02"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 21721,
+        "output_tokens": 56,
+        "reference_request_id": "chatcmpl-91eb34cae10c1250"
+      },
+      {
+        "prompt_tokens": 21736,
+        "output_tokens": 258,
+        "reference_request_id": "chatcmpl-bea0741c7383e7f6"
+      },
+      {
+        "prompt_tokens": 21754,
+        "output_tokens": 33,
+        "reference_request_id": "chatcmpl-9324eed45a60bb3c"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1826,
+        "output_tokens": 195,
+        "reference_request_id": "chatcmpl-8dc493108b49e5d5"
+      },
+      {
+        "prompt_tokens": 1875,
+        "output_tokens": 75,
+        "reference_request_id": "chatcmpl-9423099818a293fd"
+      },
+      {
+        "prompt_tokens": 1937,
+        "output_tokens": 311,
+        "reference_request_id": "chatcmpl-91f1cce43596db91"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5620,
+        "output_tokens": 323,
+        "reference_request_id": "chatcmpl-840cf055b792bc29"
+      },
+      {
+        "prompt_tokens": 5638,
+        "output_tokens": 67,
+        "reference_request_id": "chatcmpl-a5c10297661595ab"
+      },
+      {
+        "prompt_tokens": 5662,
+        "output_tokens": 63,
+        "reference_request_id": "chatcmpl-824df9b9ac2cc34e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 916,
+        "output_tokens": 339,
+        "reference_request_id": "chatcmpl-867f09c3e45262c4"
+      },
+      {
+        "prompt_tokens": 916,
+        "output_tokens": 319,
+        "reference_request_id": "chatcmpl-a4dced43c5637236"
+      },
+      {
+        "prompt_tokens": 944,
+        "output_tokens": 126,
+        "reference_request_id": "chatcmpl-83fd78ded5b1b142"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 41294,
+        "output_tokens": 97,
+        "reference_request_id": "chatcmpl-ba3bf1d294b78f3f"
+      },
+      {
+        "prompt_tokens": 41646,
+        "output_tokens": 62,
+        "reference_request_id": "chatcmpl-b1b74a3c73629486"
+      },
+      {
+        "prompt_tokens": 42400,
+        "output_tokens": 56,
+        "reference_request_id": "chatcmpl-82d188050dec064d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 7948,
+        "output_tokens": 496,
+        "reference_request_id": "chatcmpl-8fcd6c2ee4154c74"
+      },
+      {
+        "prompt_tokens": 7972,
+        "output_tokens": 41,
+        "reference_request_id": "chatcmpl-80a3f30ff8d78201"
+      },
+      {
+        "prompt_tokens": 7988,
+        "output_tokens": 206,
+        "reference_request_id": "chatcmpl-9e8b2eb6d474aeb4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 23321,
+        "output_tokens": 45,
+        "reference_request_id": "chatcmpl-8ab074296e0a517c"
+      },
+      {
+        "prompt_tokens": 23555,
+        "output_tokens": 45,
+        "reference_request_id": "chatcmpl-bc508e8162222d4e"
+      },
+      {
+        "prompt_tokens": 23577,
+        "output_tokens": 64,
+        "reference_request_id": "chatcmpl-9af925a40b717fc4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 10966,
+        "output_tokens": 115,
+        "reference_request_id": "chatcmpl-a8929756797058ec"
+      },
+      {
+        "prompt_tokens": 11049,
+        "output_tokens": 140,
+        "reference_request_id": "chatcmpl-bc2e5239826b3312"
+      },
+      {
+        "prompt_tokens": 11209,
+        "output_tokens": 50,
+        "reference_request_id": "chatcmpl-a5f0108cffa6bb89"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 18676,
+        "output_tokens": 35,
+        "reference_request_id": "chatcmpl-b5b9f1b346625fc8"
+      },
+      {
+        "prompt_tokens": 18686,
+        "output_tokens": 51,
+        "reference_request_id": "chatcmpl-91ef83f3a6e8e626"
+      },
+      {
+        "prompt_tokens": 18759,
+        "output_tokens": 45,
+        "reference_request_id": "chatcmpl-a899eba35e90402a"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 24990,
+        "output_tokens": 69,
+        "reference_request_id": "chatcmpl-8d1c3893dfe64393"
+      },
+      {
+        "prompt_tokens": 25078,
+        "output_tokens": 509,
+        "reference_request_id": "chatcmpl-b5ca4466e960e996"
+      },
+      {
+        "prompt_tokens": 25092,
+        "output_tokens": 50,
+        "reference_request_id": "chatcmpl-b883628fe5012007"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 3907,
+        "output_tokens": 58,
+        "reference_request_id": "chatcmpl-a8438134da795b47"
+      },
+      {
+        "prompt_tokens": 3925,
+        "output_tokens": 155,
+        "reference_request_id": "chatcmpl-a41fac8c086fcf3c"
+      },
+      {
+        "prompt_tokens": 4205,
+        "output_tokens": 151,
+        "reference_request_id": "chatcmpl-9dfc075d75756814"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 28677,
+        "output_tokens": 714,
+        "reference_request_id": "chatcmpl-a372e3158f345176"
+      },
+      {
+        "prompt_tokens": 28789,
+        "output_tokens": 387,
+        "reference_request_id": "chatcmpl-bd1705371198c654"
+      },
+      {
+        "prompt_tokens": 28790,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-905629f74dad3769"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 26185,
+        "output_tokens": 71,
+        "reference_request_id": "chatcmpl-9ac14e32ea19f9ec"
+      },
+      {
+        "prompt_tokens": 26588,
+        "output_tokens": 775,
+        "reference_request_id": "chatcmpl-ae887d198ee96ee6"
+      },
+      {
+        "prompt_tokens": 26727,
+        "output_tokens": 53,
+        "reference_request_id": "chatcmpl-94451c5364a0cf43"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5437,
+        "output_tokens": 62,
+        "reference_request_id": "chatcmpl-a2452f11c8879cac"
+      },
+      {
+        "prompt_tokens": 5474,
+        "output_tokens": 54,
+        "reference_request_id": "chatcmpl-90d6b78fe411a662"
+      },
+      {
+        "prompt_tokens": 5490,
+        "output_tokens": 402,
+        "reference_request_id": "chatcmpl-8cd0bec55c869cbe"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 28885,
+        "output_tokens": 263,
+        "reference_request_id": "chatcmpl-98951e7c7729aaa3"
+      },
+      {
+        "prompt_tokens": 28908,
+        "output_tokens": 70,
+        "reference_request_id": "chatcmpl-bc12ebcf3aea892d"
+      },
+      {
+        "prompt_tokens": 29681,
+        "output_tokens": 51,
+        "reference_request_id": "chatcmpl-9eb34af71939d328"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 16083,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-aa89b78aefce2eaa"
+      },
+      {
+        "prompt_tokens": 16089,
+        "output_tokens": 436,
+        "reference_request_id": "chatcmpl-8211c42e9c2f1fae"
+      },
+      {
+        "prompt_tokens": 16178,
+        "output_tokens": 242,
+        "reference_request_id": "chatcmpl-8dd06bac8a64b6b9"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5083,
+        "output_tokens": 50,
+        "reference_request_id": "chatcmpl-9ea71b587c709777"
+      },
+      {
+        "prompt_tokens": 5231,
+        "output_tokens": 614,
+        "reference_request_id": "chatcmpl-8bebf4233d570b00"
+      },
+      {
+        "prompt_tokens": 5237,
+        "output_tokens": 31,
+        "reference_request_id": "chatcmpl-b1373afcd646727a"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 24847,
+        "output_tokens": 8192,
+        "reference_request_id": "chatcmpl-a098015e46f07b4e"
+      },
+      {
+        "prompt_tokens": 24875,
+        "output_tokens": 106,
+        "reference_request_id": "chatcmpl-b91ad80f72690d77"
+      },
+      {
+        "prompt_tokens": 24908,
+        "output_tokens": 394,
+        "reference_request_id": "chatcmpl-bf2af5640b8c7786"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 11899,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-a4ab53b2a9d60836"
+      },
+      {
+        "prompt_tokens": 11935,
+        "output_tokens": 91,
+        "reference_request_id": "chatcmpl-94a6fd9b260f09dd"
+      },
+      {
+        "prompt_tokens": 11941,
+        "output_tokens": 202,
+        "reference_request_id": "chatcmpl-8fda603565b851d3"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 15583,
+        "output_tokens": 70,
+        "reference_request_id": "chatcmpl-8413ec47b5d5ed82"
+      },
+      {
+        "prompt_tokens": 15589,
+        "output_tokens": 34,
+        "reference_request_id": "chatcmpl-ab036f7ee4fc8b9a"
+      },
+      {
+        "prompt_tokens": 15655,
+        "output_tokens": 26,
+        "reference_request_id": "chatcmpl-b0d4fbda19a43f28"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8463,
+        "output_tokens": 61,
+        "reference_request_id": "chatcmpl-ad3fbfd1731b1d70"
+      },
+      {
+        "prompt_tokens": 8474,
+        "output_tokens": 53,
+        "reference_request_id": "chatcmpl-a9512d1a87753479"
+      },
+      {
+        "prompt_tokens": 8631,
+        "output_tokens": 224,
+        "reference_request_id": "chatcmpl-8202a420fdd41d53"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 15670,
+        "output_tokens": 42,
+        "reference_request_id": "chatcmpl-9e9bb67c175dc9f8"
+      },
+      {
+        "prompt_tokens": 15759,
+        "output_tokens": 83,
+        "reference_request_id": "chatcmpl-8bbe887a3ea9f89f"
+      },
+      {
+        "prompt_tokens": 15763,
+        "output_tokens": 31,
+        "reference_request_id": "chatcmpl-9b28928f2eea252c"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 16532,
+        "output_tokens": 442,
+        "reference_request_id": "chatcmpl-a942614db69105aa"
+      },
+      {
+        "prompt_tokens": 16568,
+        "output_tokens": 963,
+        "reference_request_id": "chatcmpl-bd6c36ab8189785d"
+      },
+      {
+        "prompt_tokens": 16606,
+        "output_tokens": 760,
+        "reference_request_id": "chatcmpl-9b1eb1d7a51b540a"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 18108,
+        "output_tokens": 93,
+        "reference_request_id": "chatcmpl-84af824efc220bd0"
+      },
+      {
+        "prompt_tokens": 18325,
+        "output_tokens": 171,
+        "reference_request_id": "chatcmpl-92fa7f9998b8f0db"
+      },
+      {
+        "prompt_tokens": 18344,
+        "output_tokens": 74,
+        "reference_request_id": "chatcmpl-862133b5f33aadf9"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 12301,
+        "output_tokens": 117,
+        "reference_request_id": "chatcmpl-af08de628e31d86c"
+      },
+      {
+        "prompt_tokens": 12383,
+        "output_tokens": 248,
+        "reference_request_id": "chatcmpl-b6cdd7a6b21d24a0"
+      },
+      {
+        "prompt_tokens": 12482,
+        "output_tokens": 208,
+        "reference_request_id": "chatcmpl-87350662524ead72"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 15823,
+        "output_tokens": 76,
+        "reference_request_id": "chatcmpl-b79fda391807d5a2"
+      },
+      {
+        "prompt_tokens": 15915,
+        "output_tokens": 77,
+        "reference_request_id": "chatcmpl-bd5dc2f73f8597a1"
+      },
+      {
+        "prompt_tokens": 15994,
+        "output_tokens": 300,
+        "reference_request_id": "chatcmpl-b8aa09d7d0c2b1fa"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 11645,
+        "output_tokens": 365,
+        "reference_request_id": "chatcmpl-8cb5240daeec3b7b"
+      },
+      {
+        "prompt_tokens": 11851,
+        "output_tokens": 103,
+        "reference_request_id": "chatcmpl-97c63baa66b58077"
+      },
+      {
+        "prompt_tokens": 11867,
+        "output_tokens": 74,
+        "reference_request_id": "chatcmpl-b4923649af05b51f"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 21412,
+        "output_tokens": 106,
+        "reference_request_id": "chatcmpl-84e435f51531f039"
+      },
+      {
+        "prompt_tokens": 21554,
+        "output_tokens": 72,
+        "reference_request_id": "chatcmpl-ae4289aab8b36a7b"
+      },
+      {
+        "prompt_tokens": 21595,
+        "output_tokens": 81,
+        "reference_request_id": "chatcmpl-83bc46a8704f06db"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 18389,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-8341a32baac9db18"
+      },
+      {
+        "prompt_tokens": 18617,
+        "output_tokens": 425,
+        "reference_request_id": "chatcmpl-989de955b5d793b5"
+      },
+      {
+        "prompt_tokens": 18644,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-91c016e4fa995de2"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 6268,
+        "output_tokens": 133,
+        "reference_request_id": "chatcmpl-acf7c3cbf98b0b4a"
+      },
+      {
+        "prompt_tokens": 6293,
+        "output_tokens": 63,
+        "reference_request_id": "chatcmpl-93d8ac09698bc97d"
+      },
+      {
+        "prompt_tokens": 6409,
+        "output_tokens": 41,
+        "reference_request_id": "chatcmpl-bb9b8b8ea603be31"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 6072,
+        "output_tokens": 1678,
+        "reference_request_id": "chatcmpl-9ff9189c0f537e82"
+      },
+      {
+        "prompt_tokens": 6107,
+        "output_tokens": 30,
+        "reference_request_id": "chatcmpl-b67d129b7a66fce1"
+      },
+      {
+        "prompt_tokens": 6149,
+        "output_tokens": 35,
+        "reference_request_id": "chatcmpl-802eb3c21cd3123c"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 21601,
+        "output_tokens": 60,
+        "reference_request_id": "chatcmpl-9b4867411acb5072"
+      },
+      {
+        "prompt_tokens": 21643,
+        "output_tokens": 67,
+        "reference_request_id": "chatcmpl-8bc58cd58652b356"
+      },
+      {
+        "prompt_tokens": 21709,
+        "output_tokens": 56,
+        "reference_request_id": "chatcmpl-a52e96b477e11092"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8969,
+        "output_tokens": 46,
+        "reference_request_id": "chatcmpl-990b7d0fb8534503"
+      },
+      {
+        "prompt_tokens": 9014,
+        "output_tokens": 119,
+        "reference_request_id": "chatcmpl-83eb5688803b44f4"
+      },
+      {
+        "prompt_tokens": 9060,
+        "output_tokens": 111,
+        "reference_request_id": "chatcmpl-898b76d21d6a0818"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 14094,
+        "output_tokens": 50,
+        "reference_request_id": "chatcmpl-8d2fa419386cb4cd"
+      },
+      {
+        "prompt_tokens": 14095,
+        "output_tokens": 316,
+        "reference_request_id": "chatcmpl-872393022cee77bd"
+      },
+      {
+        "prompt_tokens": 14103,
+        "output_tokens": 1222,
+        "reference_request_id": "chatcmpl-802386e84213a2ad"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 25655,
+        "output_tokens": 107,
+        "reference_request_id": "chatcmpl-9a35219018529a7e"
+      },
+      {
+        "prompt_tokens": 25679,
+        "output_tokens": 123,
+        "reference_request_id": "chatcmpl-ac1c1074e10185f6"
+      },
+      {
+        "prompt_tokens": 25693,
+        "output_tokens": 38,
+        "reference_request_id": "chatcmpl-ae3f1ec4360562ea"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 10018,
+        "output_tokens": 135,
+        "reference_request_id": "chatcmpl-ad5aa8da2dfbd330"
+      },
+      {
+        "prompt_tokens": 10128,
+        "output_tokens": 56,
+        "reference_request_id": "chatcmpl-b5ea0d1e0a9a980f"
+      },
+      {
+        "prompt_tokens": 10140,
+        "output_tokens": 40,
+        "reference_request_id": "chatcmpl-add45e247e0a039d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1993,
+        "output_tokens": 48,
+        "reference_request_id": "chatcmpl-8bc966e35490d7e0"
+      },
+      {
+        "prompt_tokens": 2004,
+        "output_tokens": 73,
+        "reference_request_id": "chatcmpl-963b06dbe58248f6"
+      },
+      {
+        "prompt_tokens": 2031,
+        "output_tokens": 30,
+        "reference_request_id": "chatcmpl-8e2fbd8a6655729d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 11262,
+        "output_tokens": 66,
+        "reference_request_id": "chatcmpl-9c26548ec8f6ff27"
+      },
+      {
+        "prompt_tokens": 11312,
+        "output_tokens": 59,
+        "reference_request_id": "chatcmpl-b2194c81c6cd46ae"
+      },
+      {
+        "prompt_tokens": 11345,
+        "output_tokens": 137,
+        "reference_request_id": "chatcmpl-9f2e6f2075dd001c"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2618,
+        "output_tokens": 60,
+        "reference_request_id": "chatcmpl-af51b8039c840e37"
+      },
+      {
+        "prompt_tokens": 2657,
+        "output_tokens": 92,
+        "reference_request_id": "chatcmpl-a3834ffccf751309"
+      },
+      {
+        "prompt_tokens": 2841,
+        "output_tokens": 145,
+        "reference_request_id": "chatcmpl-a379bd6989f74382"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1194,
+        "output_tokens": 297,
+        "reference_request_id": "chatcmpl-9fdbaa2c2677a80c"
+      },
+      {
+        "prompt_tokens": 1259,
+        "output_tokens": 185,
+        "reference_request_id": "chatcmpl-89fb961fbe0e979f"
+      },
+      {
+        "prompt_tokens": 1285,
+        "output_tokens": 55,
+        "reference_request_id": "chatcmpl-a1dacc2541c7aa4d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5790,
+        "output_tokens": 253,
+        "reference_request_id": "chatcmpl-8a0c20ce84b033c8"
+      },
+      {
+        "prompt_tokens": 5846,
+        "output_tokens": 93,
+        "reference_request_id": "chatcmpl-a72af8afd4f2d46d"
+      },
+      {
+        "prompt_tokens": 5871,
+        "output_tokens": 197,
+        "reference_request_id": "chatcmpl-81578d60bc3cb695"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8720,
+        "output_tokens": 87,
+        "reference_request_id": "chatcmpl-96df0e79eff260a5"
+      },
+      {
+        "prompt_tokens": 8745,
+        "output_tokens": 67,
+        "reference_request_id": "chatcmpl-bf6612af7cb2b631"
+      },
+      {
+        "prompt_tokens": 8850,
+        "output_tokens": 154,
+        "reference_request_id": "chatcmpl-8de8a8f64ae569a1"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1588,
+        "output_tokens": 230,
+        "reference_request_id": "chatcmpl-bbc36b362cc02212"
+      },
+      {
+        "prompt_tokens": 1629,
+        "output_tokens": 48,
+        "reference_request_id": "chatcmpl-b129de7f9c3f826c"
+      },
+      {
+        "prompt_tokens": 1650,
+        "output_tokens": 215,
+        "reference_request_id": "chatcmpl-871d70db3643534c"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 21773,
+        "output_tokens": 59,
+        "reference_request_id": "chatcmpl-9af978ac12a3928c"
+      },
+      {
+        "prompt_tokens": 21853,
+        "output_tokens": 210,
+        "reference_request_id": "chatcmpl-a5c21033ebc089c5"
+      },
+      {
+        "prompt_tokens": 22064,
+        "output_tokens": 44,
+        "reference_request_id": "chatcmpl-878edf90a4f5c6f6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 3494,
+        "output_tokens": 76,
+        "reference_request_id": "chatcmpl-a08f33b1fd37f579"
+      },
+      {
+        "prompt_tokens": 3502,
+        "output_tokens": 179,
+        "reference_request_id": "chatcmpl-b99746c7f66b31ea"
+      },
+      {
+        "prompt_tokens": 3668,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-973ff97a8e6e551b"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 10464,
+        "output_tokens": 375,
+        "reference_request_id": "chatcmpl-8c0e4dd5dbb3c746"
+      },
+      {
+        "prompt_tokens": 10513,
+        "output_tokens": 120,
+        "reference_request_id": "chatcmpl-877fe01f297e0c0e"
+      },
+      {
+        "prompt_tokens": 10580,
+        "output_tokens": 47,
+        "reference_request_id": "chatcmpl-86814aa3aa69c532"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 20215,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-bff3538e7e6c0e7c"
+      },
+      {
+        "prompt_tokens": 20250,
+        "output_tokens": 61,
+        "reference_request_id": "chatcmpl-8fd568b304405474"
+      },
+      {
+        "prompt_tokens": 20312,
+        "output_tokens": 47,
+        "reference_request_id": "chatcmpl-b7e4547bdedb36b5"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 34682,
+        "output_tokens": 329,
+        "reference_request_id": "chatcmpl-b47db5ad151d2f67"
+      },
+      {
+        "prompt_tokens": 34815,
+        "output_tokens": 409,
+        "reference_request_id": "chatcmpl-a7b7c03e5e77744c"
+      },
+      {
+        "prompt_tokens": 34913,
+        "output_tokens": 100,
+        "reference_request_id": "chatcmpl-b2853bc0250a7dc4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 20872,
+        "output_tokens": 141,
+        "reference_request_id": "chatcmpl-ba02223ba7523f3e"
+      },
+      {
+        "prompt_tokens": 20932,
+        "output_tokens": 78,
+        "reference_request_id": "chatcmpl-a467d19c16da81a2"
+      },
+      {
+        "prompt_tokens": 20970,
+        "output_tokens": 53,
+        "reference_request_id": "chatcmpl-b71b8d32b1b3637d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 17038,
+        "output_tokens": 524,
+        "reference_request_id": "chatcmpl-abb6592f11eee450"
+      },
+      {
+        "prompt_tokens": 17059,
+        "output_tokens": 2440,
+        "reference_request_id": "chatcmpl-a43aeb5d6640f852"
+      },
+      {
+        "prompt_tokens": 17143,
+        "output_tokens": 78,
+        "reference_request_id": "chatcmpl-90841bb560e91b22"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 16254,
+        "output_tokens": 36,
+        "reference_request_id": "chatcmpl-ac7d25976d662c12"
+      },
+      {
+        "prompt_tokens": 16388,
+        "output_tokens": 420,
+        "reference_request_id": "chatcmpl-90e1d55e5cec2164"
+      },
+      {
+        "prompt_tokens": 16413,
+        "output_tokens": 101,
+        "reference_request_id": "chatcmpl-bf54c28ab7dcf69d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 21007,
+        "output_tokens": 80,
+        "reference_request_id": "chatcmpl-8e08e810f9e15a3e"
+      },
+      {
+        "prompt_tokens": 21233,
+        "output_tokens": 33,
+        "reference_request_id": "chatcmpl-ad365159f5dfccae"
+      },
+      {
+        "prompt_tokens": 21274,
+        "output_tokens": 46,
+        "reference_request_id": "chatcmpl-8842036c93461b13"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 6894,
+        "output_tokens": 51,
+        "reference_request_id": "chatcmpl-872f35cf0f164020"
+      },
+      {
+        "prompt_tokens": 6896,
+        "output_tokens": 84,
+        "reference_request_id": "chatcmpl-8dde89ef27e981d2"
+      },
+      {
+        "prompt_tokens": 7229,
+        "output_tokens": 796,
+        "reference_request_id": "chatcmpl-926cf0b15a8cd063"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 14596,
+        "output_tokens": 94,
+        "reference_request_id": "chatcmpl-b750d6fc39545880"
+      },
+      {
+        "prompt_tokens": 14603,
+        "output_tokens": 353,
+        "reference_request_id": "chatcmpl-9090c6e5466f2b4a"
+      },
+      {
+        "prompt_tokens": 14610,
+        "output_tokens": 139,
+        "reference_request_id": "chatcmpl-b3179404a9a0b5b8"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 16614,
+        "output_tokens": 44,
+        "reference_request_id": "chatcmpl-b95a391e2324edcc"
+      },
+      {
+        "prompt_tokens": 16651,
+        "output_tokens": 35,
+        "reference_request_id": "chatcmpl-95e4cd50b7104882"
+      },
+      {
+        "prompt_tokens": 16679,
+        "output_tokens": 876,
+        "reference_request_id": "chatcmpl-99ca0d16d669acdd"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 14710,
+        "output_tokens": 699,
+        "reference_request_id": "chatcmpl-8546f7ef1e3c74e2"
+      },
+      {
+        "prompt_tokens": 14967,
+        "output_tokens": 236,
+        "reference_request_id": "chatcmpl-936becf4150354b0"
+      },
+      {
+        "prompt_tokens": 15013,
+        "output_tokens": 565,
+        "reference_request_id": "chatcmpl-915281451aab2de6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5741,
+        "output_tokens": 73,
+        "reference_request_id": "chatcmpl-83f091fa94c808b3"
+      },
+      {
+        "prompt_tokens": 5743,
+        "output_tokens": 57,
+        "reference_request_id": "chatcmpl-8e7245ac0a031b70"
+      },
+      {
+        "prompt_tokens": 5781,
+        "output_tokens": 62,
+        "reference_request_id": "chatcmpl-95e0ed343b2c8859"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 19603,
+        "output_tokens": 143,
+        "reference_request_id": "chatcmpl-97837fc772bd3092"
+      },
+      {
+        "prompt_tokens": 19950,
+        "output_tokens": 857,
+        "reference_request_id": "chatcmpl-99e8fe3eaea5b84e"
+      },
+      {
+        "prompt_tokens": 20039,
+        "output_tokens": 178,
+        "reference_request_id": "chatcmpl-83950fee020203dd"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 7374,
+        "output_tokens": 120,
+        "reference_request_id": "chatcmpl-bfa6d2a1d7d5d8ee"
+      },
+      {
+        "prompt_tokens": 7460,
+        "output_tokens": 29,
+        "reference_request_id": "chatcmpl-b7f7f42ee195981e"
+      },
+      {
+        "prompt_tokens": 7916,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-83e7f6f7c83d1674"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5888,
+        "output_tokens": 96,
+        "reference_request_id": "chatcmpl-af213cc9958c773f"
+      },
+      {
+        "prompt_tokens": 5933,
+        "output_tokens": 67,
+        "reference_request_id": "chatcmpl-b4fc4bb1d534c04e"
+      },
+      {
+        "prompt_tokens": 6012,
+        "output_tokens": 43,
+        "reference_request_id": "chatcmpl-90918404a1400244"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 10639,
+        "output_tokens": 52,
+        "reference_request_id": "chatcmpl-95f0d747907b6481"
+      },
+      {
+        "prompt_tokens": 10713,
+        "output_tokens": 50,
+        "reference_request_id": "chatcmpl-93da06a535b7984b"
+      },
+      {
+        "prompt_tokens": 10760,
+        "output_tokens": 1146,
+        "reference_request_id": "chatcmpl-95a3e44e09184676"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 4616,
+        "output_tokens": 239,
+        "reference_request_id": "chatcmpl-8b7c02b10ef0d6e0"
+      },
+      {
+        "prompt_tokens": 4692,
+        "output_tokens": 58,
+        "reference_request_id": "chatcmpl-bcd82b96dfe5ec93"
+      },
+      {
+        "prompt_tokens": 4886,
+        "output_tokens": 31,
+        "reference_request_id": "chatcmpl-8d514a209f0d25ee"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 11428,
+        "output_tokens": 234,
+        "reference_request_id": "chatcmpl-8f9c67d7654cfc5a"
+      },
+      {
+        "prompt_tokens": 11513,
+        "output_tokens": 40,
+        "reference_request_id": "chatcmpl-9655f5357b66af0e"
+      },
+      {
+        "prompt_tokens": 11615,
+        "output_tokens": 293,
+        "reference_request_id": "chatcmpl-a2f53d70683a69b4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 27413,
+        "output_tokens": 37,
+        "reference_request_id": "chatcmpl-9ec635059bbb1d29"
+      },
+      {
+        "prompt_tokens": 27707,
+        "output_tokens": 147,
+        "reference_request_id": "chatcmpl-9caf6e20e7e66d37"
+      },
+      {
+        "prompt_tokens": 27754,
+        "output_tokens": 2735,
+        "reference_request_id": "chatcmpl-a4dd0f856f65f708"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 19494,
+        "output_tokens": 453,
+        "reference_request_id": "chatcmpl-94276cd83c6c32e3"
+      },
+      {
+        "prompt_tokens": 19496,
+        "output_tokens": 62,
+        "reference_request_id": "chatcmpl-858eb8801a150ef2"
+      },
+      {
+        "prompt_tokens": 19578,
+        "output_tokens": 65,
+        "reference_request_id": "chatcmpl-83e1c838cf3b9d06"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5292,
+        "output_tokens": 109,
+        "reference_request_id": "chatcmpl-b8ff00a9c9f35c35"
+      },
+      {
+        "prompt_tokens": 5344,
+        "output_tokens": 34,
+        "reference_request_id": "chatcmpl-9cedbc3c1816b8a0"
+      },
+      {
+        "prompt_tokens": 5345,
+        "output_tokens": 95,
+        "reference_request_id": "chatcmpl-a6152228ef7cef86"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 13676,
+        "output_tokens": 75,
+        "reference_request_id": "chatcmpl-a8a59b5a1450b5fd"
+      },
+      {
+        "prompt_tokens": 13695,
+        "output_tokens": 60,
+        "reference_request_id": "chatcmpl-8855994b3fe4dd01"
+      },
+      {
+        "prompt_tokens": 13831,
+        "output_tokens": 58,
+        "reference_request_id": "chatcmpl-838fa995e10122e6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 4924,
+        "output_tokens": 29,
+        "reference_request_id": "chatcmpl-917f2d46b56aff07"
+      },
+      {
+        "prompt_tokens": 5027,
+        "output_tokens": 97,
+        "reference_request_id": "chatcmpl-8cc97644fe50b0f9"
+      },
+      {
+        "prompt_tokens": 5035,
+        "output_tokens": 43,
+        "reference_request_id": "chatcmpl-a9344c341eeb8fa7"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 23957,
+        "output_tokens": 51,
+        "reference_request_id": "chatcmpl-afcdf68a34cedc4a"
+      },
+      {
+        "prompt_tokens": 23966,
+        "output_tokens": 286,
+        "reference_request_id": "chatcmpl-8e51f1a1d6d003c6"
+      },
+      {
+        "prompt_tokens": 24120,
+        "output_tokens": 129,
+        "reference_request_id": "chatcmpl-8faf08e2e9d87c34"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 12536,
+        "output_tokens": 1494,
+        "reference_request_id": "chatcmpl-940ad011824deb5e"
+      },
+      {
+        "prompt_tokens": 12545,
+        "output_tokens": 56,
+        "reference_request_id": "chatcmpl-9ba4e62f55d077d7"
+      },
+      {
+        "prompt_tokens": 12662,
+        "output_tokens": 28,
+        "reference_request_id": "chatcmpl-a36e34cf266e1ef6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 22313,
+        "output_tokens": 459,
+        "reference_request_id": "chatcmpl-b8234efae8ef4a34"
+      },
+      {
+        "prompt_tokens": 22378,
+        "output_tokens": 729,
+        "reference_request_id": "chatcmpl-8f9abe24f516a9a4"
+      },
+      {
+        "prompt_tokens": 22387,
+        "output_tokens": 83,
+        "reference_request_id": "chatcmpl-ba410085c1e00974"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2383,
+        "output_tokens": 130,
+        "reference_request_id": "chatcmpl-be7b0337959e662f"
+      },
+      {
+        "prompt_tokens": 2392,
+        "output_tokens": 625,
+        "reference_request_id": "chatcmpl-85d879c16b031a48"
+      },
+      {
+        "prompt_tokens": 2420,
+        "output_tokens": 228,
+        "reference_request_id": "chatcmpl-9ac7334bbc945e90"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 9146,
+        "output_tokens": 94,
+        "reference_request_id": "chatcmpl-a3757f305f386077"
+      },
+      {
+        "prompt_tokens": 9331,
+        "output_tokens": 54,
+        "reference_request_id": "chatcmpl-a8a46d03765b5916"
+      },
+      {
+        "prompt_tokens": 9409,
+        "output_tokens": 200,
+        "reference_request_id": "chatcmpl-a4bf8feb7ff171a9"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 17980,
+        "output_tokens": 604,
+        "reference_request_id": "chatcmpl-92c144b0f6e4abcc"
+      },
+      {
+        "prompt_tokens": 18016,
+        "output_tokens": 54,
+        "reference_request_id": "chatcmpl-b318fea2cbc1d895"
+      },
+      {
+        "prompt_tokens": 18034,
+        "output_tokens": 89,
+        "reference_request_id": "chatcmpl-9fa1ad23c2d80801"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 10855,
+        "output_tokens": 112,
+        "reference_request_id": "chatcmpl-8b9f226cb65a3d54"
+      },
+      {
+        "prompt_tokens": 10900,
+        "output_tokens": 899,
+        "reference_request_id": "chatcmpl-9fbba7369b7f9023"
+      },
+      {
+        "prompt_tokens": 10942,
+        "output_tokens": 63,
+        "reference_request_id": "chatcmpl-a7156ec6af95209e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 31400,
+        "output_tokens": 266,
+        "reference_request_id": "chatcmpl-af94f67149276e86"
+      },
+      {
+        "prompt_tokens": 31699,
+        "output_tokens": 204,
+        "reference_request_id": "chatcmpl-97046bacc0cb309b"
+      },
+      {
+        "prompt_tokens": 31934,
+        "output_tokens": 30,
+        "reference_request_id": "chatcmpl-aad007bc7c6c7b6e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 22480,
+        "output_tokens": 36,
+        "reference_request_id": "chatcmpl-96ed90e35f19b318"
+      },
+      {
+        "prompt_tokens": 22624,
+        "output_tokens": 102,
+        "reference_request_id": "chatcmpl-aa57e75861af45d3"
+      },
+      {
+        "prompt_tokens": 22654,
+        "output_tokens": 247,
+        "reference_request_id": "chatcmpl-9812a3fe59856a01"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 22067,
+        "output_tokens": 39,
+        "reference_request_id": "chatcmpl-890560ae4fdb6db8"
+      },
+      {
+        "prompt_tokens": 22090,
+        "output_tokens": 25,
+        "reference_request_id": "chatcmpl-b6ba2c7ef623e4f4"
+      },
+      {
+        "prompt_tokens": 22181,
+        "output_tokens": 126,
+        "reference_request_id": "chatcmpl-bacabf2a1821b1ce"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 36724,
+        "output_tokens": 63,
+        "reference_request_id": "chatcmpl-bc634ea9d35b9fe8"
+      },
+      {
+        "prompt_tokens": 37018,
+        "output_tokens": 166,
+        "reference_request_id": "chatcmpl-be6f3cf7b895d1c0"
+      },
+      {
+        "prompt_tokens": 37399,
+        "output_tokens": 472,
+        "reference_request_id": "chatcmpl-b37cc3273448b8f4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 18774,
+        "output_tokens": 220,
+        "reference_request_id": "chatcmpl-a28af4f2898805d2"
+      },
+      {
+        "prompt_tokens": 18916,
+        "output_tokens": 49,
+        "reference_request_id": "chatcmpl-991bb695187e6e41"
+      },
+      {
+        "prompt_tokens": 18947,
+        "output_tokens": 79,
+        "reference_request_id": "chatcmpl-a945a62a3b40de52"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 32814,
+        "output_tokens": 124,
+        "reference_request_id": "chatcmpl-b3a7e3a97c62adf0"
+      },
+      {
+        "prompt_tokens": 32846,
+        "output_tokens": 1004,
+        "reference_request_id": "chatcmpl-8cc8fd519e9cb6fb"
+      },
+      {
+        "prompt_tokens": 33136,
+        "output_tokens": 150,
+        "reference_request_id": "chatcmpl-9363928936814143"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 23643,
+        "output_tokens": 545,
+        "reference_request_id": "chatcmpl-ae4faaf6ccc30acd"
+      },
+      {
+        "prompt_tokens": 23675,
+        "output_tokens": 66,
+        "reference_request_id": "chatcmpl-aa399d37e1aef499"
+      },
+      {
+        "prompt_tokens": 23933,
+        "output_tokens": 86,
+        "reference_request_id": "chatcmpl-89a35e89e89fd47f"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2477,
+        "output_tokens": 136,
+        "reference_request_id": "chatcmpl-97c56ec765f3f97e"
+      },
+      {
+        "prompt_tokens": 2540,
+        "output_tokens": 57,
+        "reference_request_id": "chatcmpl-b34ae62743c9517a"
+      },
+      {
+        "prompt_tokens": 2602,
+        "output_tokens": 48,
+        "reference_request_id": "chatcmpl-9c60f6bcc03dc1d4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 25936,
+        "output_tokens": 42,
+        "reference_request_id": "chatcmpl-b99dee70ec0856b1"
+      },
+      {
+        "prompt_tokens": 26045,
+        "output_tokens": 54,
+        "reference_request_id": "chatcmpl-bacc5d41fbfebf33"
+      },
+      {
+        "prompt_tokens": 26090,
+        "output_tokens": 165,
+        "reference_request_id": "chatcmpl-8d0eb0b9dd8d09b4"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 26935,
+        "output_tokens": 69,
+        "reference_request_id": "chatcmpl-a9d5a6541900fe6c"
+      },
+      {
+        "prompt_tokens": 26994,
+        "output_tokens": 3412,
+        "reference_request_id": "chatcmpl-a5e9d74f0a905943"
+      },
+      {
+        "prompt_tokens": 27276,
+        "output_tokens": 81,
+        "reference_request_id": "chatcmpl-ab0151a9711a494a"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8365,
+        "output_tokens": 448,
+        "reference_request_id": "chatcmpl-8fe52d1d8205da06"
+      },
+      {
+        "prompt_tokens": 8406,
+        "output_tokens": 284,
+        "reference_request_id": "chatcmpl-80d63f5671f9dfb7"
+      },
+      {
+        "prompt_tokens": 8453,
+        "output_tokens": 28,
+        "reference_request_id": "chatcmpl-939e2d872491d8fd"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8174,
+        "output_tokens": 55,
+        "reference_request_id": "chatcmpl-926985ae21d4b8c5"
+      },
+      {
+        "prompt_tokens": 8271,
+        "output_tokens": 75,
+        "reference_request_id": "chatcmpl-be7dd416d299dc72"
+      },
+      {
+        "prompt_tokens": 8300,
+        "output_tokens": 540,
+        "reference_request_id": "chatcmpl-8e75829a96c7d733"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 15434,
+        "output_tokens": 431,
+        "reference_request_id": "chatcmpl-bf3fd4c3bf7c46c1"
+      },
+      {
+        "prompt_tokens": 15529,
+        "output_tokens": 590,
+        "reference_request_id": "chatcmpl-b4c8c18587ce004d"
+      },
+      {
+        "prompt_tokens": 15572,
+        "output_tokens": 77,
+        "reference_request_id": "chatcmpl-a6a05c15d64a4d77"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 27956,
+        "output_tokens": 37,
+        "reference_request_id": "chatcmpl-82a093d871b2cd47"
+      },
+      {
+        "prompt_tokens": 27956,
+        "output_tokens": 108,
+        "reference_request_id": "chatcmpl-b69ce0e0b4d4cf63"
+      },
+      {
+        "prompt_tokens": 28370,
+        "output_tokens": 88,
+        "reference_request_id": "chatcmpl-a6857dafe8b5b5c5"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 45028,
+        "output_tokens": 170,
+        "reference_request_id": "chatcmpl-8989badae24110be"
+      },
+      {
+        "prompt_tokens": 46981,
+        "output_tokens": 116,
+        "reference_request_id": "chatcmpl-ab07a99edce12253"
+      },
+      {
+        "prompt_tokens": 47691,
+        "output_tokens": 90,
+        "reference_request_id": "chatcmpl-81328cd4da9a2217"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 20326,
+        "output_tokens": 343,
+        "reference_request_id": "chatcmpl-9eb044b74da921d0"
+      },
+      {
+        "prompt_tokens": 20423,
+        "output_tokens": 175,
+        "reference_request_id": "chatcmpl-a1e47e3f30008d16"
+      },
+      {
+        "prompt_tokens": 20486,
+        "output_tokens": 28,
+        "reference_request_id": "chatcmpl-b0fe7adf5122c1e1"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 3321,
+        "output_tokens": 98,
+        "reference_request_id": "chatcmpl-a03ca336c71d0910"
+      },
+      {
+        "prompt_tokens": 3359,
+        "output_tokens": 37,
+        "reference_request_id": "chatcmpl-b39bb5144e1097c5"
+      },
+      {
+        "prompt_tokens": 3427,
+        "output_tokens": 168,
+        "reference_request_id": "chatcmpl-aecda3cf938d3939"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 4215,
+        "output_tokens": 113,
+        "reference_request_id": "chatcmpl-9a96b59bc7e999b7"
+      },
+      {
+        "prompt_tokens": 4449,
+        "output_tokens": 34,
+        "reference_request_id": "chatcmpl-831172928112a5ee"
+      },
+      {
+        "prompt_tokens": 4492,
+        "output_tokens": 99,
+        "reference_request_id": "chatcmpl-88947fe5463212b3"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 24142,
+        "output_tokens": 132,
+        "reference_request_id": "chatcmpl-82384938cd02ee91"
+      },
+      {
+        "prompt_tokens": 24259,
+        "output_tokens": 198,
+        "reference_request_id": "chatcmpl-b099d42e7a8a03c9"
+      },
+      {
+        "prompt_tokens": 24260,
+        "output_tokens": 162,
+        "reference_request_id": "chatcmpl-b66caf04ad989520"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 6732,
+        "output_tokens": 182,
+        "reference_request_id": "chatcmpl-8d3efbafd8a66504"
+      },
+      {
+        "prompt_tokens": 6741,
+        "output_tokens": 667,
+        "reference_request_id": "chatcmpl-888b33d435c0e538"
+      },
+      {
+        "prompt_tokens": 6888,
+        "output_tokens": 73,
+        "reference_request_id": "chatcmpl-b35b75858cf33006"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1318,
+        "output_tokens": 930,
+        "reference_request_id": "chatcmpl-874a4692e756e69c"
+      },
+      {
+        "prompt_tokens": 1376,
+        "output_tokens": 68,
+        "reference_request_id": "chatcmpl-b0aa7a75c3978bb9"
+      },
+      {
+        "prompt_tokens": 1477,
+        "output_tokens": 70,
+        "reference_request_id": "chatcmpl-a3070bddc67f8a61"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 17765,
+        "output_tokens": 275,
+        "reference_request_id": "chatcmpl-a0ec4a7fc6d37518"
+      },
+      {
+        "prompt_tokens": 17771,
+        "output_tokens": 466,
+        "reference_request_id": "chatcmpl-942bd02108fbd45e"
+      },
+      {
+        "prompt_tokens": 17803,
+        "output_tokens": 41,
+        "reference_request_id": "chatcmpl-a8f145f0193ba86f"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 14139,
+        "output_tokens": 577,
+        "reference_request_id": "chatcmpl-be5cfced5d2093be"
+      },
+      {
+        "prompt_tokens": 14230,
+        "output_tokens": 64,
+        "reference_request_id": "chatcmpl-ae9a695d40d8f553"
+      },
+      {
+        "prompt_tokens": 14326,
+        "output_tokens": 212,
+        "reference_request_id": "chatcmpl-99b3d58502603386"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2939,
+        "output_tokens": 27,
+        "reference_request_id": "chatcmpl-ba92defb619feb9d"
+      },
+      {
+        "prompt_tokens": 3066,
+        "output_tokens": 1028,
+        "reference_request_id": "chatcmpl-baeeac4964dd1d0f"
+      },
+      {
+        "prompt_tokens": 3082,
+        "output_tokens": 148,
+        "reference_request_id": "chatcmpl-afc5681261224266"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 1694,
+        "output_tokens": 157,
+        "reference_request_id": "chatcmpl-ba7ddad9e3356b80"
+      },
+      {
+        "prompt_tokens": 1731,
+        "output_tokens": 68,
+        "reference_request_id": "chatcmpl-a33b38af2097a87a"
+      },
+      {
+        "prompt_tokens": 1824,
+        "output_tokens": 348,
+        "reference_request_id": "chatcmpl-a7ce6e351ae67ab6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 6570,
+        "output_tokens": 65,
+        "reference_request_id": "chatcmpl-97ac109f0ee9c1a6"
+      },
+      {
+        "prompt_tokens": 6576,
+        "output_tokens": 336,
+        "reference_request_id": "chatcmpl-a544bb9fc111dfed"
+      },
+      {
+        "prompt_tokens": 6597,
+        "output_tokens": 79,
+        "reference_request_id": "chatcmpl-8e3ad37389e6b52a"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8001,
+        "output_tokens": 332,
+        "reference_request_id": "chatcmpl-a94bdcdee1b32e15"
+      },
+      {
+        "prompt_tokens": 8016,
+        "output_tokens": 121,
+        "reference_request_id": "chatcmpl-bd012d36d13341e0"
+      },
+      {
+        "prompt_tokens": 8046,
+        "output_tokens": 39,
+        "reference_request_id": "chatcmpl-9cb9ff6a131dd988"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 25159,
+        "output_tokens": 1074,
+        "reference_request_id": "chatcmpl-82b68626e3fc8b83"
+      },
+      {
+        "prompt_tokens": 25614,
+        "output_tokens": 127,
+        "reference_request_id": "chatcmpl-b7261ab5afb6ebac"
+      },
+      {
+        "prompt_tokens": 25647,
+        "output_tokens": 308,
+        "reference_request_id": "chatcmpl-a8c976817b5d1764"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 9665,
+        "output_tokens": 1347,
+        "reference_request_id": "chatcmpl-82f2c2af7f76507b"
+      },
+      {
+        "prompt_tokens": 9671,
+        "output_tokens": 64,
+        "reference_request_id": "chatcmpl-8a32e7334bb2b9cd"
+      },
+      {
+        "prompt_tokens": 9683,
+        "output_tokens": 65,
+        "reference_request_id": "chatcmpl-b408335bff6da31d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 5529,
+        "output_tokens": 71,
+        "reference_request_id": "chatcmpl-b4d6f7d80a0b489d"
+      },
+      {
+        "prompt_tokens": 5571,
+        "output_tokens": 52,
+        "reference_request_id": "chatcmpl-ad01536ae269b19a"
+      },
+      {
+        "prompt_tokens": 5611,
+        "output_tokens": 57,
+        "reference_request_id": "chatcmpl-9b882b408c2516a0"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 19052,
+        "output_tokens": 826,
+        "reference_request_id": "chatcmpl-b3294c503c61bd77"
+      },
+      {
+        "prompt_tokens": 19142,
+        "output_tokens": 100,
+        "reference_request_id": "chatcmpl-8d5c044c05821593"
+      },
+      {
+        "prompt_tokens": 19142,
+        "output_tokens": 44,
+        "reference_request_id": "chatcmpl-9d6d2cc8b211078b"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 15290,
+        "output_tokens": 41,
+        "reference_request_id": "chatcmpl-8cc96299ed8883dc"
+      },
+      {
+        "prompt_tokens": 15351,
+        "output_tokens": 159,
+        "reference_request_id": "chatcmpl-91e5c2ecb48c5bec"
+      },
+      {
+        "prompt_tokens": 15356,
+        "output_tokens": 191,
+        "reference_request_id": "chatcmpl-ac30a6be63b024c6"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 3100,
+        "output_tokens": 683,
+        "reference_request_id": "chatcmpl-a6275bb68f0a3e0d"
+      },
+      {
+        "prompt_tokens": 3197,
+        "output_tokens": 42,
+        "reference_request_id": "chatcmpl-895f89b7525cdb7e"
+      },
+      {
+        "prompt_tokens": 3211,
+        "output_tokens": 326,
+        "reference_request_id": "chatcmpl-8a99ef3519dbfc93"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 16787,
+        "output_tokens": 122,
+        "reference_request_id": "chatcmpl-aa2500b5321588a7"
+      },
+      {
+        "prompt_tokens": 16837,
+        "output_tokens": 750,
+        "reference_request_id": "chatcmpl-a79edb7678c45d09"
+      },
+      {
+        "prompt_tokens": 16959,
+        "output_tokens": 53,
+        "reference_request_id": "chatcmpl-81f278c08316c742"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2208,
+        "output_tokens": 105,
+        "reference_request_id": "chatcmpl-8884fe376ffabdc4"
+      },
+      {
+        "prompt_tokens": 2231,
+        "output_tokens": 1260,
+        "reference_request_id": "chatcmpl-a3e78448039bd8b6"
+      },
+      {
+        "prompt_tokens": 2241,
+        "output_tokens": 385,
+        "reference_request_id": "chatcmpl-925ecfdd545ad043"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 11968,
+        "output_tokens": 128,
+        "reference_request_id": "chatcmpl-985d6b4d09c72d39"
+      },
+      {
+        "prompt_tokens": 12017,
+        "output_tokens": 72,
+        "reference_request_id": "chatcmpl-9ae630ccfdf6277d"
+      },
+      {
+        "prompt_tokens": 12032,
+        "output_tokens": 46,
+        "reference_request_id": "chatcmpl-adae422c71f393e8"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 12207,
+        "output_tokens": 77,
+        "reference_request_id": "chatcmpl-85feb49552c4a1a2"
+      },
+      {
+        "prompt_tokens": 12258,
+        "output_tokens": 193,
+        "reference_request_id": "chatcmpl-a46d220053c8cbcb"
+      },
+      {
+        "prompt_tokens": 12285,
+        "output_tokens": 281,
+        "reference_request_id": "chatcmpl-a45626d877cac5c0"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 8141,
+        "output_tokens": 483,
+        "reference_request_id": "chatcmpl-81543afd3341c5a8"
+      },
+      {
+        "prompt_tokens": 8144,
+        "output_tokens": 52,
+        "reference_request_id": "chatcmpl-a4d70cb8d8ec7b25"
+      },
+      {
+        "prompt_tokens": 8148,
+        "output_tokens": 226,
+        "reference_request_id": "chatcmpl-a5f385de01d92916"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 17405,
+        "output_tokens": 652,
+        "reference_request_id": "chatcmpl-946981c885c30081"
+      },
+      {
+        "prompt_tokens": 17460,
+        "output_tokens": 635,
+        "reference_request_id": "chatcmpl-84585732cacdfd7f"
+      },
+      {
+        "prompt_tokens": 17644,
+        "output_tokens": 85,
+        "reference_request_id": "chatcmpl-874e4e5031d12f6d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 2326,
+        "output_tokens": 58,
+        "reference_request_id": "chatcmpl-96f1795ddf19bff2"
+      },
+      {
+        "prompt_tokens": 2332,
+        "output_tokens": 369,
+        "reference_request_id": "chatcmpl-a7d1a191541f0f18"
+      },
+      {
+        "prompt_tokens": 2364,
+        "output_tokens": 101,
+        "reference_request_id": "chatcmpl-8b2d49b7ac1bba7d"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 3214,
+        "output_tokens": 38,
+        "reference_request_id": "chatcmpl-9bbf9f1f700135bb"
+      },
+      {
+        "prompt_tokens": 3220,
+        "output_tokens": 32,
+        "reference_request_id": "chatcmpl-a3587f50123fffed"
+      },
+      {
+        "prompt_tokens": 3317,
+        "output_tokens": 92,
+        "reference_request_id": "chatcmpl-80b1f036bc6afce1"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 974,
+        "output_tokens": 217,
+        "reference_request_id": "chatcmpl-83ddf3fea859b330"
+      },
+      {
+        "prompt_tokens": 1063,
+        "output_tokens": 189,
+        "reference_request_id": "chatcmpl-9eedcb12eb4e70ab"
+      },
+      {
+        "prompt_tokens": 1191,
+        "output_tokens": 186,
+        "reference_request_id": "chatcmpl-93116a368982a5fe"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 22920,
+        "output_tokens": 31,
+        "reference_request_id": "chatcmpl-814641d6ed99512a"
+      },
+      {
+        "prompt_tokens": 23040,
+        "output_tokens": 377,
+        "reference_request_id": "chatcmpl-a7146a0fbe00de6f"
+      },
+      {
+        "prompt_tokens": 23292,
+        "output_tokens": 161,
+        "reference_request_id": "chatcmpl-9bfd46035b50bded"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 38047,
+        "output_tokens": 86,
+        "reference_request_id": "chatcmpl-a8142ccd7c2ec544"
+      },
+      {
+        "prompt_tokens": 38875,
+        "output_tokens": 82,
+        "reference_request_id": "chatcmpl-98542591018d7793"
+      },
+      {
+        "prompt_tokens": 38897,
+        "output_tokens": 66,
+        "reference_request_id": "chatcmpl-90d4ac68d66a5d6e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 12675,
+        "output_tokens": 55,
+        "reference_request_id": "chatcmpl-b586412436a6a10e"
+      },
+      {
+        "prompt_tokens": 13163,
+        "output_tokens": 114,
+        "reference_request_id": "chatcmpl-ad8390d1cb087462"
+      },
+      {
+        "prompt_tokens": 13267,
+        "output_tokens": 24,
+        "reference_request_id": "chatcmpl-9d0643390ca3d47e"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 36195,
+        "output_tokens": 87,
+        "reference_request_id": "chatcmpl-b72e6abd36ebf693"
+      },
+      {
+        "prompt_tokens": 36280,
+        "output_tokens": 413,
+        "reference_request_id": "chatcmpl-903ef0e91a970d08"
+      },
+      {
+        "prompt_tokens": 36565,
+        "output_tokens": 59,
+        "reference_request_id": "chatcmpl-9190d37a1512f690"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 9418,
+        "output_tokens": 47,
+        "reference_request_id": "chatcmpl-a990d9765feeb66a"
+      },
+      {
+        "prompt_tokens": 9503,
+        "output_tokens": 173,
+        "reference_request_id": "chatcmpl-a31b112ac65aaa70"
+      },
+      {
+        "prompt_tokens": 9552,
+        "output_tokens": 514,
+        "reference_request_id": "chatcmpl-b9235bb35c389bb8"
+      }
+    ],
+    [
+      {
+        "prompt_tokens": 29711,
+        "output_tokens": 256,
+        "reference_request_id": "chatcmpl-a75fc5546f067a4b"
+      },
+      {
+        "prompt_tokens": 29895,
+        "output_tokens": 47,
+        "reference_request_id": "chatcmpl-969ce80ebd16b269"
+      },
+      {
+        "prompt_tokens": 30384,
+        "output_tokens": 288,
+        "reference_request_id": "chatcmpl-be96e1161f1b7945"
+      }
+    ]
+  ],
+  "mean_prompt_tokens": 14835.497395833334,
+  "mean_output_tokens": 246.25520833333334,
+  "cold_turn_fraction_limitation": "Three turns cold-start each stream; not90%cachehit fullSWE; useactualphaseweights separately"
+}

@@ -1,6 +1,26 @@
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
-@@ -423,17 +423,26 @@
+@@ -368,6 +368,7 @@
+         return_device=False,
+         start_positions=None,
+         history_keys=None,
++        retain_prefill_history=None,
+         **kwargs,
+     ):
+         state = kv_cache
+@@ -386,6 +387,11 @@
+         self._validate_tokens(tokens)
+         if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
+             raise ValueError("Invalid logical prompt length")
++        if retain_prefill_history is not None:
++            if history_keys is None or len(retain_prefill_history) != len(prompt_lens) or any(
++                type(flag) is not bool for flag in retain_prefill_history
++            ):
++                raise ValueError("Expected one explicit history retention bool per prefill row")
+         starts = [0] * len(prompt_lens) if start_positions is None else list(start_positions)
+         if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
+             raise ValueError("Prefill must advance each request from its current position")
+@@ -423,17 +429,26 @@
                              f"key={key}, saved_end={previous['end']}, start={start}"
                          )
                      rewind = start - aligned_start
@@ -34,9 +54,33 @@
              ids = torch.zeros(1, (chunk_length + 31) // 32 * 32, dtype=torch.int32)
              ids[0, :chunk_length] = tokens[row, aligned_start:length]
              tt_ids = self._upload(ids, ttnn.uint32)
+@@ -461,7 +476,14 @@
+                 histories=histories,
+             )
+             if history_keys is not None:
+-                state.prefill_history[history_keys[row]] = {"end": length, "layers": histories}
++                if retain_prefill_history is None or retain_prefill_history[row]:
++                    state.prefill_history[history_keys[row]] = {"end": length, "layers": histories}
++                else:
++                    state.prefill_history.pop(history_keys[row], None)
++                # Final prefill rows cannot consume BF16 chunk tails again.
++                # Native KV owners persist; CQ0 orders all preceding consumers
++                # before later allocations may reuse these tail addresses.
++                del histories
+             outputs.append(
+                 out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
+             )
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-@@ -112,17 +112,43 @@
+@@ -28,6 +28,7 @@
+             "router_config": _router,
+         },
+     }
++    supports_prefill_history_finality = True
+     decode_input_update_contract = 1
+     MAX_PREFILL_TOKENS = 8192
+ 
+@@ -112,17 +113,43 @@
      def allocate_kv_cache_per_layer(self, per_layer_specs):
          before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
          print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
@@ -88,7 +132,7 @@
          tables = {
              i: torch.zeros(self.max_batch_size, self.max_seq_len // 128, dtype=torch.int32) for i in range(len(kv))
          }
-@@ -132,6 +158,113 @@
+@@ -132,6 +159,113 @@
          after = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
          print("KV_POOL_MEMORY " + json.dumps({"phase":"after","banks":after.num_banks,"allocated_per_bank":after.total_bytes_allocated_per_bank,"free_per_bank":after.total_bytes_free_per_bank,"unique_pools":len(pools),"pool_full_tokens":int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))}), flush=True)
          return self.cache
@@ -202,7 +246,7 @@
  
      def _sample_pool_memory(self, phase):
          # Host allocator snapshots at operation boundaries: NOT a device peak.
-@@ -144,22 +277,29 @@
+@@ -144,22 +278,29 @@
          self._pool_memory_samples = getattr(self, "_pool_memory_samples", 0) + 1
          self._pool_memory_host_s = getattr(self, "_pool_memory_host_s", 0.0) + time.perf_counter() - started
          if allocated > previous_high or self._pool_memory_samples % 64 == 0:
@@ -234,7 +278,7 @@
              if key not in translated:
                  dest = torch.zeros_like(cache.page_tables[i])
                  rows, cols = source.shape
-@@ -170,7 +310,10 @@
+@@ -170,7 +311,10 @@
                      raise ValueError("Page table has fewer rows than prefill requests")
                  # Prefill rows are compact, then padded to the decode batch.
                  # Scatter only the live prefix into its assigned state slots.
@@ -246,7 +290,13 @@
                  translated[key] = dest
              result[i] = translated[key]
          return result
-@@ -217,7 +360,7 @@
+@@ -212,12 +356,13 @@
+         page_tables_per_layer=None,
+         start_pos=None,
+         empty_slots=None,
++        retain_prefill_history=None,
+         **kwargs,
+     ):
          starts = [0] * len(prompt_lens) if start_pos is None else [int(x) for x in start_pos]
          lengths = [int(x) for x in prompt_lens]
          slots = list(range(len(lengths))) if empty_slots is None else list(empty_slots)
@@ -255,7 +305,7 @@
          self.entry = None
          # Prefix pages can be shared by several live requests. History belongs
          # to a request's stable state slot, never to a shared physical page.
-@@ -227,22 +370,26 @@
+@@ -227,22 +372,27 @@
                  self.prefill_slot_keys[slot] = self.next_prefill_key
                  self.next_prefill_key += 1
              keys.append(self.prefill_slot_keys[slot])
@@ -287,6 +337,7 @@
 +                return_device=sampling_params is not None,
 +                start_positions=starts,
 +                history_keys=keys,
++                retain_prefill_history=retain_prefill_history,
 +            )
 +            self._sample_pool_memory("after_prefill")
 +            if sampling_params is None:
@@ -298,7 +349,7 @@
  
      def decode_forward(
          self,
-@@ -272,7 +419,7 @@
+@@ -272,7 +422,7 @@
              raise ValueError("Serving must use the cache allocated by vLLM")
          sample = sampling_params is not None
          if reload_inputs:
@@ -307,7 +358,7 @@
              # A row entering decode no longer needs its private prefill tail.
              # The plugin notifies slot moves after submission succeeds, so
              # histories still use source slots when a decode row is gathered.
-@@ -285,7 +432,7 @@
+@@ -285,7 +435,7 @@
          elif self.entry is None or self.generator.traces.get(id(kv_cache)) is not self.entry:
              raise ValueError("A retired decode trace requires current scheduler inputs")
          elif reload_page_table:
