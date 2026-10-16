@@ -819,7 +819,14 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     cfg = _eval_config_for(model_spec)
     if cfg is None:
         return []
-    tasks = _selected_eval_tasks(cfg.tasks, runtime_config)
+    from llm_module.eval_configs import tasks_for_modalities
+
+    tasks = _selected_eval_tasks(
+        tasks_for_modalities(
+            cfg.tasks, getattr(model_spec, "supported_modalities", None)
+        ),
+        runtime_config,
+    )
     seen = {
         t.workflow_venv_type
         for t in tasks
