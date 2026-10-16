@@ -10,7 +10,13 @@ import time
 
 from .._libritts import iter_speaker_clips
 from .._test_common import BaseTest
-from .tts_client import SynthesizedAudio, VoiceClip, make_tts_client
+from .tts_client import (
+    DEFAULT_MIN_VALID_FRACTION,
+    SynthesizedAudio,
+    VoiceClip,
+    enough_valid,
+    make_tts_client,
+)
 
 # Pinned MOS predictor: torch.hub repo tag + entrypoint.
 MOS_PREDICTOR_REPO = "tarepan/SpeechMOS:v1.2.0"
@@ -48,6 +54,9 @@ class TTSNaturalnessTest(BaseTest):
         self.url = f"{self.base_url}/v1/audio/speech"
         sample_count = self.targets.get("sample_count", DEFAULT_SAMPLE_COUNT)
         threshold = self.targets.get("utmos_threshold", DEFAULT_UTMOS_THRESHOLD)
+        min_valid_fraction = self.targets.get(
+            "min_valid_fraction", DEFAULT_MIN_VALID_FRACTION
+        )
         split = self.targets.get("dataset_split", DEFAULT_DATASET_SPLIT)
         client = make_tts_client(self.targets)
         # A server without a default voice (Qwen3-TTS Base) is scored on clones.
@@ -92,11 +101,16 @@ class TTSNaturalnessTest(BaseTest):
 
         valid = [r["utmos"] for r in results if r["utmos"] is not None]
         mean_utmos = sum(valid) / len(valid) if valid else None
-        success = mean_utmos is not None and mean_utmos >= threshold
+        failed = len(results) - len(valid)
+        success = (
+            enough_valid(len(valid), len(results), min_valid_fraction)
+            and mean_utmos >= threshold
+        )
         logger.info(
             "TTS Naturalness completed: mean_utmos="
             + (f"{mean_utmos:.3f}" if mean_utmos is not None else "N/A")
-            + f", valid={len(valid)}/{len(results)}, threshold={threshold}, "
+            + f", valid={len(valid)}/{len(results)} (failed={failed}, "
+            f"min_valid_fraction={min_valid_fraction}), threshold={threshold}, "
             f"success={success}, duration={time.time() - start:.1f}s"
         )
         return {
@@ -106,7 +120,9 @@ class TTSNaturalnessTest(BaseTest):
             "client": client.describe(),
             "cloned": cloned,
             "valid_samples": len(valid),
+            "failed_samples": failed,
             "sample_count": len(results),
+            "min_valid_fraction": min_valid_fraction,
             "per_sample": results,
         }
 

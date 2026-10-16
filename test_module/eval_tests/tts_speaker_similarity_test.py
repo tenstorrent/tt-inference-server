@@ -10,7 +10,14 @@ import time
 
 from .._libritts import iter_speaker_clips
 from .._test_common import BaseTest
-from .tts_client import SynthesizedAudio, VoiceClip, decode_wav_file, make_tts_client
+from .tts_client import (
+    DEFAULT_MIN_VALID_FRACTION,
+    SynthesizedAudio,
+    VoiceClip,
+    decode_wav_file,
+    enough_valid,
+    make_tts_client,
+)
 
 # Pinned speaker-verification encoder; transformers + torch are already eval deps.
 SPEAKER_ENCODER_REPO = "microsoft/unispeech-sat-base-plus-sv"
@@ -38,7 +45,12 @@ def cross_speaker_partner(index: int, count: int) -> int:
     return (index - 1) % count
 
 
-def summarize_secs(results, secs_floor: float, margin_threshold: float) -> dict:
+def summarize_secs(
+    results,
+    secs_floor: float,
+    margin_threshold: float,
+    min_valid_fraction: float = DEFAULT_MIN_VALID_FRACTION,
+) -> dict:
     """Aggregate per-sample ``secs``/``baseline_secs``/``margin`` into the gate."""
     valid = [r for r in results if r.get("margin") is not None]
     mean_secs = sum(r["secs"] for r in valid) / len(valid) if valid else None
@@ -47,7 +59,7 @@ def summarize_secs(results, secs_floor: float, margin_threshold: float) -> dict:
     )
     mean_margin = sum(r["margin"] for r in valid) / len(valid) if valid else None
     success = (
-        mean_secs is not None
+        enough_valid(len(valid), len(results), min_valid_fraction)
         and mean_secs >= secs_floor
         and mean_margin >= margin_threshold
     )
@@ -57,7 +69,9 @@ def summarize_secs(results, secs_floor: float, margin_threshold: float) -> dict:
         "mean_baseline_secs": mean_baseline,
         "mean_margin": mean_margin,
         "valid_samples": len(valid),
+        "failed_samples": len(results) - len(valid),
         "sample_count": len(results),
+        "min_valid_fraction": min_valid_fraction,
     }
 
 
@@ -167,12 +181,18 @@ class TTSSpeakerSimilarityTest(BaseTest):
         finally:
             self._unload_encoder()
 
-        summary = summarize_secs(results, secs_floor, margin_threshold)
+        summary = summarize_secs(
+            results,
+            secs_floor,
+            margin_threshold,
+            self.targets.get("min_valid_fraction", DEFAULT_MIN_VALID_FRACTION),
+        )
         logger.info(
             f"TTS Speaker Similarity completed: mean_secs={_fmt(summary['mean_secs'])}, "
             f"mean_baseline={_fmt(summary['mean_baseline_secs'])}, "
             f"mean_margin={_fmt(summary['mean_margin'], '+.3f')}, "
-            f"valid={summary['valid_samples']}/{summary['sample_count']}, "
+            f"valid={summary['valid_samples']}/{summary['sample_count']} "
+            f"(failed={summary['failed_samples']}), "
             f"floor={secs_floor}, margin_threshold={margin_threshold}, "
             f"success={summary['success']}, duration={time.time() - start:.1f}s"
         )

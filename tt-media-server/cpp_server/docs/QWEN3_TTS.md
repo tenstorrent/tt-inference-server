@@ -250,7 +250,9 @@ LibriTTS-R `test.clean` speakers with 3 to 12 s clips and request
 | `tts_speaker_similarity` | SECS: cosine similarity of `microsoft/unispeech-sat-base-plus-sv` embeddings between each reference clip and a voice-only clone of it reading another speaker's sentence. Baseline (`cross_speaker`): the same sentence cloned from a different speaker's clip; margin = SECS minus baseline |
 | `tts_naturalness` | predicted MOS (UTMOS22-strong) over 8 sentences: voice-only clones on Base, speaker `ryan` on CustomVoice, the fixed description "A calm adult male voice, speaking clearly at a moderate pace." on VoiceDesign. No 0.6B request carries a description |
 
-Each release passes when its means reach these thresholds. Calibration is on
+Each release passes when every sample synthesizes (`min_valid_fraction`, default 1.0; failed
+samples are counted in the report, and an eval whose samples all fail is a FAIL) and its means
+reach these thresholds. Calibration is on
 N150 with `TTS_QWEN3_SEED=0`; the same thresholds apply on P150, where they have
 not been measured yet. Upstream is Qwen3-TTS on CPU (fp32) for the same requests:
 

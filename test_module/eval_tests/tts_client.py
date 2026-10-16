@@ -32,6 +32,14 @@ QWEN3_CLONE_MODES = ("voice_only", "in_context")
 
 # Shorter output is a failed sample: post-200 errors end the C++ stream early.
 MIN_AUDIO_SECONDS = 0.3
+# Share of samples that must synthesize for an eval to pass; seeded servers are deterministic.
+DEFAULT_MIN_VALID_FRACTION = 1.0
+
+
+def enough_valid(valid: int, total: int, min_fraction: float) -> bool:
+    """Whether ``valid`` of ``total`` samples meet ``min_fraction`` (and at least one did)."""
+    return total > 0 and valid > 0 and valid >= min_fraction * total - 1e-9
+
 
 _STREAMING_SIZE = 0xFFFFFFFF
 

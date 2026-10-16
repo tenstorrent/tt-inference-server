@@ -158,9 +158,10 @@ class TestSummarizeSecs:
             {"secs": 0.8, "baseline_secs": None, "margin": None},
         ]
         summary = secs_mod.summarize_secs(
-            results, secs_floor=0.65, margin_threshold=0.15
+            results, secs_floor=0.65, margin_threshold=0.15, min_valid_fraction=0.6
         )
         assert summary["valid_samples"] == 2 and summary["sample_count"] == 3
+        assert summary["failed_samples"] == 1
         assert summary["mean_secs"] == pytest.approx(0.8)
         assert summary["mean_baseline_secs"] == pytest.approx(0.6)
         assert summary["mean_margin"] == pytest.approx(0.2)
@@ -169,6 +170,14 @@ class TestSummarizeSecs:
     def test_margin_below_threshold_fails(self):
         results = [{"secs": 0.9, "baseline_secs": 0.88, "margin": 0.02}]
         assert not secs_mod.summarize_secs(results, 0.65, 0.05)["success"]
+
+    def test_one_failed_pair_fails_by_default(self):
+        results = [{"secs": 0.95, "baseline_secs": 0.6, "margin": 0.35}] * 7 + [
+            {"secs": None, "baseline_secs": None, "margin": None}
+        ]
+        summary = secs_mod.summarize_secs(results, 0.65, 0.05)
+        assert summary["mean_secs"] == pytest.approx(0.95)
+        assert summary["failed_samples"] == 1 and not summary["success"]
 
     def test_no_complete_pair_fails(self):
         summary = secs_mod.summarize_secs([{"secs": None, "margin": None}], 0.65, 0.05)
@@ -284,6 +293,73 @@ class TestNaturalnessBattery:
         assert [text for text, _ in battery] == ["text b", "text c", "text a"]
         assert [voice.wav_bytes for _, voice in battery] == [b"A", b"B", b"C"]
         assert battery[0][1].transcript == "text a"
+
+
+class _FailingClient:
+    """Synthesizes only the first ``good`` requests; the rest fail like a 400 would."""
+
+    can_clone = True
+    has_default_voice = True
+
+    def __init__(self, good):
+        self.good = good
+        self.calls = 0
+
+    def describe(self):
+        return "failing"
+
+    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
+        self.calls += 1
+        if self.calls > self.good:
+            return None
+        return SynthesizedAudio(samples=np.zeros(24000), sample_rate=24000)
+
+
+def _naturalness_result(monkeypatch, good, targets=None):
+    clips = [(f"spk{i}", b"x", f"text {i}") for i in range(8)]
+    mod = tts_naturalness_test
+    monkeypatch.setattr(mod, "iter_speaker_clips", lambda *a, **k: iter(clips))
+    monkeypatch.setattr(mod, "make_tts_client", lambda t: _FailingClient(good))
+    test = mod.TTSNaturalnessTest(_config(), targets or {"utmos_threshold": 3.0})
+    test.base_url = "http://fake"
+    monkeypatch.setattr(test, "_load_predictor", lambda: None)
+    monkeypatch.setattr(test, "_score", lambda audio: 4.5)
+    return asyncio.run(test._run_specific_test_async())
+
+
+class TestNaturalnessFailedSamples:
+    def test_one_good_sample_out_of_eight_does_not_pass(self, monkeypatch):
+        result = _naturalness_result(monkeypatch, good=1)
+        assert result["mean_utmos"] == pytest.approx(4.5)
+        assert result["valid_samples"] == 1 and result["failed_samples"] == 7
+        assert result["success"] is False
+
+    def test_all_samples_valid_passes(self, monkeypatch):
+        result = _naturalness_result(monkeypatch, good=8)
+        assert result["failed_samples"] == 0 and result["success"] is True
+
+    def test_a_lower_valid_fraction_tolerates_failures(self, monkeypatch):
+        targets = {"utmos_threshold": 3.0, "min_valid_fraction": 0.75}
+        assert _naturalness_result(monkeypatch, good=6, targets=targets)["success"]
+        assert not _naturalness_result(monkeypatch, good=5, targets=targets)["success"]
+
+
+class TestEvalBlockSampleCounts:
+    def test_counts_reach_the_report_and_no_audio_is_a_fail(self, monkeypatch):
+        result = {
+            "success": False,
+            "mean_utmos": None,
+            "valid_samples": 0,
+            "failed_samples": 8,
+            "sample_count": 8,
+        }
+        monkeypatch.setattr(tts_eval_tests, "_missing_deps", lambda deps: [])
+        monkeypatch.setattr(
+            tts_eval_tests, "_run_tts_naturalness_eval", lambda ctx, task: result
+        )
+        block = tts_eval_tests._run_naturalness_task(_ctx(), _task())
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["failed_samples"] == 8 and block.data["sample_count"] == 8
 
 
 # ------------------------------------------------------- harness wiring

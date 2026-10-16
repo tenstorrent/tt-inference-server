@@ -271,6 +271,14 @@ def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
     return dict(test.run_tests().data)
 
 
+def _sample_counts(result: dict) -> dict:
+    """Valid, failed and total sample counts of an eval result, for the report."""
+    return {
+        key: result.get(key)
+        for key in ("valid_samples", "failed_samples", "sample_count")
+    }
+
+
 def _run_secs_task(ctx: MediaContext, task) -> Block:
     """Speaker-similarity eval (task_name=tts_speaker_similarity) -> one Block."""
     missing = _missing_deps(TTS_SECS_DEPS)
@@ -304,7 +312,9 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
     mean_margin = result.get("mean_margin")
     valid_samples = int(result.get("valid_samples") or 0)
     if valid_samples <= 0 or mean_secs is None or mean_margin is None:
-        accuracy_check = ReportCheckTypes.NA
+        # Requests ran but none produced audio: that is a failed eval, not a missing one.
+        sampled = int(result.get("sample_count") or 0) > 0
+        accuracy_check = ReportCheckTypes.FAIL if sampled else ReportCheckTypes.NA
         score = None
     else:
         accuracy_check = (
@@ -324,7 +334,11 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
         task,
         score=score,
         accuracy_check=accuracy_check,
-        metrics={"mean_secs": mean_secs, "mean_margin": mean_margin},
+        metrics={
+            "mean_secs": mean_secs,
+            "mean_margin": mean_margin,
+            **_sample_counts(result),
+        },
     )
 
 
@@ -384,7 +398,8 @@ def _run_naturalness_task(ctx: MediaContext, task) -> Block:
     mean_utmos = result.get("mean_utmos")
     valid_samples = int(result.get("valid_samples") or 0)
     if valid_samples <= 0 or mean_utmos is None:
-        accuracy_check = ReportCheckTypes.NA
+        sampled = int(result.get("sample_count") or 0) > 0
+        accuracy_check = ReportCheckTypes.FAIL if sampled else ReportCheckTypes.NA
         score = None
     else:
         accuracy_check = (
@@ -404,7 +419,7 @@ def _run_naturalness_task(ctx: MediaContext, task) -> Block:
         task,
         score=score,
         accuracy_check=accuracy_check,
-        metrics={"mean_utmos": mean_utmos},
+        metrics={"mean_utmos": mean_utmos, **_sample_counts(result)},
     )
 
 
