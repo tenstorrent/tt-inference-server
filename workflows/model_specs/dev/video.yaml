@@ -333,6 +333,8 @@ templates:
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V
     MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V/lightx2v/minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
+    MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
     VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
   metadata:
