@@ -401,6 +401,10 @@ launch_runner() {   # steps 3-4 on a fresh (or dead-runner) VM
 if [[ "${SERVE}" -eq 1 ]]; then
     read -r SHIELD_REPO SHIELD_WORKFLOW < <(gpuref shield-workflow)
     ENDPOINT_FILE="${OUT_DIR}/endpoint.url" SHIELD_DIR="${OUT_DIR}/shield" ROLLOVERS=0
+    # One serving snapshot per VM (epoch), saved the moment it serves, so each
+    # task's score stays bound to the VM(s) that served its run (records carry
+    # serving_epochs) even after a rollover loses that VM.
+    SERVING_DIR="${OUT_DIR}/serving" SERVE_EPOCH=""
     SERVE_PROV="${OUT_DIR}/results/${MODELS[0]//\//__}/provenance.json"
     IFS=',' read -r -a SERVE_TASKS <<< "${AGENTIC_TASKS}"
     mkdir -p "${SHIELD_DIR}"
@@ -411,6 +415,27 @@ if [[ "${SERVE}" -eq 1 ]]; then
         local id=""
         if [[ -s "$1" ]]; then id="$(field "$1" run_id)"; fi
         printf '%s' "${id}"
+    }
+    save_serving_snapshot() {   # FILE: copy a VM's serving_provenance.json into SERVING_DIR; print its epoch id
+        # The id is the snapshot's content hash: the runner writes it once per
+        # launch, so a re-attach to the same VM finds the same epoch.
+        local epoch
+        epoch="$("${PYRUN[@]}" -c 'import hashlib,json,sys; json.load(open(sys.argv[1])); print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:12])' "$1")" || return 1
+        mkdir -p "${SERVING_DIR}"
+        [[ -s "${SERVING_DIR}/${epoch}.json" ]] || cp "$1" "${SERVING_DIR}/${epoch}.json"
+        printf '%s' "${epoch}"
+    }
+    add_serving_epoch() {   # REC EPOCH: the VM of EPOCH serves the record's run (appended once)
+        "${PYRUN[@]}" -c '
+import json, os, sys
+path, epoch = sys.argv[1], sys.argv[2]
+rec = json.load(open(path))
+epochs = [e for e in (rec.get("serving_epochs") or "").split(",") if e]
+if epoch not in epochs:
+    rec["serving_epochs"] = ",".join(epochs + [epoch])
+    with open(path + ".tmp", "w") as f:
+        json.dump(rec, f, indent=2, sort_keys=True)
+    os.replace(path + ".tmp", path)' "$1" "$2"
     }
     report_on_disk() {   # DIR: a downloaded report*.json is under DIR
         [[ -d "$1" ]] && [[ -n "$(find "$1" -type f -name 'report*.json' -print -quit 2>/dev/null)" ]]
@@ -427,7 +452,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
         gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=${state}" \
             "conclusion=${conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
             "endpoint=${shown}" "endpoint_id=${endpoint_id}" "ttis=${TTIS_SHA}" \
-            "dispatched_at=${dispatched}" "test=${test}"
+            "dispatched_at=${dispatched}" "test=${test}" "serving_epochs=$(field "${rec}" serving_epochs)"
         [[ "${state}" == "completed" ]]
     }
     retry_report() {   # TASK REC RUN_ID CONCLUSION: retrieve_report, REPORT_TRIES times a minute apart
@@ -455,7 +480,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
         local verdict
         [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched; cannot finish without it"; return 1; }
         verdict="$(gpuref shield-provenance --prov "${SERVE_PROV}" --shield-dir "${SHIELD_DIR}" \
-            --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
+            --serving-dir "${SERVING_DIR}" --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
         gpuref summary "${SHIELD_DIR}" | tee "${OUT_DIR}/summary.txt" || true
         [[ "${verdict}" == "ok" ]] || { status FAILED "out=${OUT_DIR}" "rollovers=${ROLLOVERS}"; log "a task has no Shield score; see ${SHIELD_DIR}"; return 1; }
         status DONE "tasks=${AGENTIC_TASKS}" "rollovers=${ROLLOVERS}" "out=${OUT_DIR}"
@@ -515,8 +540,16 @@ if [[ "${SERVE}" -eq 1 ]]; then
     rollover() {   # REASON: replace the serving VM and relaunch the runner
         ROLLOVERS=$((ROLLOVERS + 1)); log "rollover ${ROLLOVERS}: $1"; status ROLLOVER "reason=$1" "rollovers=${ROLLOVERS}"
         [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
-        SESSION_ACTIVE=0 SESSIONS_OUT=""
+        SESSION_ACTIVE=0 SESSIONS_OUT="" SERVE_EPOCH=""   # the next VM is a new epoch
         start_session; launch_runner
+    }
+    snapshot_serving() {   # sets SERVE_EPOCH from this VM's serving snapshot (written before it serves)
+        local tmp="${LOCAL_TMP}/serving_provenance.json"
+        rm -f "${tmp}"
+        colab_cmd download -s "${SESSION}" "${REMOTE_REL}/results/${MODELS[0]//\//__}/serving_provenance.json" "${tmp}" \
+            > /dev/null 2>&1 || return 1
+        SERVE_EPOCH="$(save_serving_snapshot "${tmp}")" || { SERVE_EPOCH=""; return 1; }
+        log "serving epoch ${SERVE_EPOCH} (${SERVING_DIR}/${SERVE_EPOCH}.json)"
     }
     shield_dispatch() {   # TASK REC: start the task's Shield run against ENDPOINT_FILE
         local task="$1" rec="$2" since runs id=""
@@ -534,7 +567,8 @@ if [[ "${SERVE}" -eq 1 ]]; then
         [[ -n "${id}" ]] || die "dispatched ${task} but found no matching Shield run"
         gpuref driver-status "${rec}" "task=${task}" "run_id=${id}" "state=dispatched" \
             "url=https://github.com/${SHIELD_REPO}/actions/runs/${id}" "endpoint=${ENDPOINT_SHOWN}" \
-            "endpoint_id=${ENDPOINT_ID}" "dispatched_at=${since}" "ttis=${TTIS_SHA}" "test=$(printf 'inference-workflow-agentic --device gpu --agentic-benchmark %s' "${task}")"
+            "endpoint_id=${ENDPOINT_ID}" "dispatched_at=${since}" "ttis=${TTIS_SHA}" "serving_epochs=${SERVE_EPOCH}" \
+            "test=$(printf 'inference-workflow-agentic --device gpu --agentic-benchmark %s' "${task}")"
         log "${task}: Shield run https://github.com/${SHIELD_REPO}/actions/runs/${id} against ${ENDPOINT_SHOWN}"
     }
     if [[ "${DRY_RUN}" -eq 1 ]]; then
@@ -582,6 +616,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
                 *) rollover "runner ${STATE} before STOP (${PHASE:-})"; continue ;;
             esac
             serve_endpoint || { log "no tunnel URL yet"; sleep 60; continue; }
+            [[ -n "${SERVE_EPOCH}" ]] || snapshot_serving || { log "no serving snapshot from this VM yet"; sleep 60; continue; }
             run_id="$(record_run_id "${rec}")"
             if [[ -n "${run_id}" && "$(field "${rec}" endpoint_id)" != "${ENDPOINT_ID}" ]]; then
                 log "${task}: endpoint changed (rollover without --tunnel-domain); cancelling run ${run_id} and dispatching again"
@@ -589,6 +624,9 @@ if [[ "${SERVE}" -eq 1 ]]; then
                 run_id=""
             fi
             if [[ -z "${run_id}" ]]; then shield_dispatch "${task}" "${rec}"; run_id="$(field "${rec}" run_id)"; fi
+            # This VM serves the run now (a reserved --tunnel-domain keeps a run
+            # across a rollover, so it can list several VMs).
+            add_serving_epoch "${rec}" "${SERVE_EPOCH}"
             view="$(gh run view "${run_id}" -R "${SHIELD_REPO}" --json status,conclusion -q '.status+" "+.conclusion' 2>/dev/null)" || view="unknown"
             read -r run_status run_conclusion <<< "${view}"
             status SERVING "task=${task}" "shield_run=${run_id}" "shield_status=${run_status}" \

@@ -197,6 +197,19 @@ serve_until_stop() {
         for i in $(seq 1 10); do tunnel_ready "${model}" && { up=1; break; }; sleep 6; done
     fi
     [[ "${up}" -eq 1 ]] || { log "tunnel did not come up after ${i:-0} checks (tunnel.log)"; return 1; }
+    # This VM's serving snapshot (GPU, stack, serve command, cap), before it
+    # serves: provenance.json is only written after STOP, and a VM lost before
+    # then takes it along. The driver binds each Shield score to the snapshot
+    # of the VM that served it. (mdir, started, cap: the caller's locals.)
+    local -a agentic=()
+    [[ -n "${TASKS[${model}]:-}" ]] && agentic=(--agentic-tasks "${TASKS[${model}]}")
+    python3 "${GPUREF}" provenance --out "${mdir}/serving_provenance.json" --model "${model}" \
+        --ttis-dir "${TTIS_DIR}" --plan "${mdir}/serve_plan.json" \
+        --vllm-python "${VENV}/bin/python" --vllm-bin "${VENV}/bin/vllm" \
+        --status serving --started-at "${started}" --finished-at "$(now)" \
+        ${cap:+--max-model-len-cap "${cap}"} ${agentic[@]+"${agentic[@]}"} \
+        --endpoint "$(python3 "${GPUREF}" redact-url --url-file "${WORK_DIR}/endpoint")" \
+        || { log "serving_provenance.json not written; not serving without it"; return 1; }
     touch "${WORK_DIR}/SERVING"
     log "serving ${model} through the tunnel"
     while [[ ! -e "${WORK_DIR}/STOP" ]]; do
