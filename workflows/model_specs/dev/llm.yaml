@@ -890,7 +890,7 @@ templates:
       max_context: 262144
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
-        GEMMA_CONTINUATION_POLICY: fifo
+        GEMMA_CONTINUATION_POLICY: aged
         GEMMA_CONTINUATION_WINDOW_S: '120'
         MESH_DEVICE: P300x2
         GEMMA_EXPERIMENT_KV_POOL_TOKENS: '393216'
