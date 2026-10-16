@@ -564,6 +564,20 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
+# `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
+# The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
+# (issue #141) let every request finish, so the timeout must cover a full-length
+# generation, never cut it. Derivation from Shield run 38323771398 (P300X2,
+# num_concurrent=32, KV pool 152,000 tokens = 3.71 full-length requests, so
+# requests queue and are preempted under load): per-request decode rate from the
+# KV-usage slope, p10 6.2 tok/s, p50 8.4 tok/s. 32768 / 6.2 = 5285 s, doubled for
+# time spent waiting in the scheduler queue (up to 16 of 32 in-flight requests
+# observed waiting) = 10570 s, rounded up to 3 h. At 3600 s (aime24/math500) the
+# run logged 10 timeouts recovered by retry; at the 1800 s default (gpqa) 22/198
+# requests exhausted retries as __INFERENCE_ERROR__.
+QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -3950,8 +3964,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=74.47,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6181816096",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4615,7 +4629,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -4643,7 +4657,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -4671,6 +4685,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -6623,8 +6638,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=31.89,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=31.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -6644,8 +6659,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=51.66,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=57.69,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -6704,8 +6719,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=7.67,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=3.62,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -11067,6 +11082,9 @@ _eval_config_list = [
             # temperature 1.0, top_p 0.95, top_k 20, max_tokens 81920. The same
             # table reports MMLU-Pro 86.1 and IFEval 95.0; those are not enrolled
             # here because the card does not state the shot count or harness.
+            # The two agentic tasks mirror Qwen3.8-27B's exactly (same harness, scaffold
+            # and sampling); the card's Terminal Bench 2 / SWE-bench Verified values do not
+            # state a scaffold, so both grade against colab GPU references.
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
@@ -11083,6 +11101,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=5,
                 use_chat_api=True,
+                # The quetzal row serves --default-chat-template-kwargs
+                # {"enable_thinking": false} (upstream stance). The card's 85.5
+                # is thinking mode, so this task turns thinking on per request.
+                thinking=True,
                 model_kwargs={
                     "max_length": 262144,
                     "timeout": 7200,
@@ -11100,6 +11122,131 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # Terminal Bench 2 = 41.6, but it names neither the agent scaffold nor the
+                # dataset revision; this task runs terminus-2 on terminal-bench-2-1, so the
+                # card value is not like-for-like. Graded against a GPU reference measured
+                # with exactly this config (issue #5353); NA until it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=6 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            # Qwen3.5-27B's template reads only enable_thinking (no
+                            # reasoning_effort). The quetzal row serves it false by
+                            # default, so thinking is turned on per request, as
+                            # Qwen3.8-27B runs.
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # SWE-bench Verified = 72.4 with no scaffold stated; this task runs
+                # mini-swe-agent, so the card value is not like-for-like. Graded against a
+                # GPU reference measured with exactly this config (issue #5353); NA until
+                # it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    # The row serves enable_thinking=false by
+                                    # default; think per request, as Qwen3.8 runs.
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),
@@ -11156,6 +11303,11 @@ _eval_config_list = [
                 # true}'); client-side apply_chat_template on /v1/completions
                 # would render with the default enable_thinking=false.
                 use_chat_api=True,
+                # Both references are thinking mode. Request it per task rather
+                # than relying on the serving entry's default: a row that keeps
+                # upstream's thinking-off default (the quetzal row) would
+                # otherwise be graded in a different mode than its reference.
+                thinking=True,
                 model_kwargs={
                     "max_length": 131072,
                     # lm-eval default HTTP timeout is 1800s. Under
@@ -11213,6 +11365,10 @@ _eval_config_list = [
                 # chat endpoint with server-side thinking and non-streaming
                 # responses for this 5-shot MMLU-Pro sweep.
                 use_chat_api=True,
+                # Thinking on per request, as for r1_gpqa_diamond above: the run
+                # this matches and the pending GPU reference both think, and a
+                # thinking-off serving default must not change the mode.
+                thinking=True,
                 model_kwargs={
                     "max_length": 49152,
                     "timeout": "3600",
