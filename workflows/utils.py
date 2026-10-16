@@ -8,6 +8,7 @@ import base64
 import logging
 import os
 import re
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -32,6 +33,28 @@ from workflow_module.context_helpers import (  # noqa: E402,F401
     is_streaming_enabled_for_whisper,
 )
 from workflow_module.proc import run_command, stream_subprocess_output  # noqa: E402,F401
+
+
+def can_prompt_interactively() -> bool:
+    """True only when getpass() would read from a real controlling terminal.
+
+    sys.stdin.isatty() is not a sufficient signal: a worker spawned with
+    Popen(..., start_new_session=True) and no stdin= (e.g. TT-Studio's uvicorn
+    worker) inherits the launching terminal on fd 0 — isatty() is True — but
+    has no controlling terminal, so getpass() falls back to reading fd 0 and
+    blocks forever with nobody there to answer. On POSIX getpass() prompts on
+    /dev/tty when it can be opened, so /dev/tty openability is the precise
+    signal for whether a prompt can actually be answered.
+    """
+    if os.name != "posix":
+        return sys.stdin is not None and sys.stdin.isatty()
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
+
 
 # Minimum image version supported by this run.py. The vLLM docker image
 # interface was reshaped in v0.11.0 (commit 50db8ac7 "Simplify and improve
