@@ -6096,6 +6096,12 @@ templates:
     vllm_args:
       revision: 2367e865d009c13ac81713a2878291d33ab28177
       tokenizer_revision: 2367e865d009c13ac81713a2878291d33ab28177
+      # text only, as the TT row serves the text decoder
+      limit_mm_per_prompt: {"image": 0, "video": 0}
+      # the parsers the P300X2 row serves with (reasoning scored from content after </think>)
+      enable_auto_tool_choice: true
+      tool_call_parser: qwen3_coder
+      reasoning_parser: qwen3
   status: EXPERIMENTAL
 - weights:
   - arcee-ai/AFM-4.5B
@@ -6239,6 +6245,12 @@ templates:
     vllm_args:
       revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
       tokenizer_revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
+      # text only, as the TT row serves the text decoder
+      limit_mm_per_prompt: {"image": 0, "video": 0}
+      # the parsers the P300X2 row serves with (reasoning scored from content after </think>)
+      enable_auto_tool_choice: true
+      tool_call_parser: qwen3_coder
+      reasoning_parser: qwen3
   status: EXPERIMENTAL
 - weights:
   - stabilityai/stablelm-2-1_6b
