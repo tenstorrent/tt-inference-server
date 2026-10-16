@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -92,6 +92,7 @@ class HarborRunConfig:
     # Ignored for every non-mini agent (terminus-2, tau3, ... carry their own
     # timeout knob in ``agent_kwargs``).
     llm_timeout_sec: Optional[int] = 10 * 60
+    normalize_submission_marker: bool = False
     # Allowance for Harbor's additive non-agent phases (environment build,
     # agent setup, verifier). Added to the agent timeout for each trial wave.
     per_task_overhead_sec: int = 20 * 60
@@ -319,6 +320,28 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: HarborRunConfig) -> int:
+    if config.normalize_submission_marker:
+        from llm_module.agentic.submission_adapter import SubmissionMarkerProxy
+
+        if config.agent != _MINI_SWE_AGENT or config.environment_type != "docker":
+            raise ValueError(
+                "Submission normalization supports local Docker mini-swe trials only"
+            )
+        endpoint = _get_agent_endpoint(config)
+        with SubmissionMarkerProxy(
+            endpoint,
+            config.llm_timeout_sec or config.agent_timeout_sec or 7200,
+        ) as proxy:
+            env = {
+                key: value
+                for key, value in config.agent_env.items()
+                if key not in _OPENAI_ENDPOINT_ENV
+            }
+            return _run(replace(config, api_base=proxy, agent_env=env))
+    return _run(config)
+
+
+def _run(config: HarborRunConfig) -> int:
     interpreter = config.venv_python or Path(sys.executable)
     harbor_exec = Path(interpreter).parent / "harbor"
 
