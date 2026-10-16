@@ -333,13 +333,14 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             self.ttnn_device, self.model, self.config, self.main_weights
         )
 
-        # TT_QWEN3_DECODE_TRACE=1: record the decoder back-end once per warmed bucket and
-        # replay it per request. Captured after the talker's traces, so its freed scratch
-        # can only alias other traces' scratch (tt-metal capture_backend_traces).
+        # TT_QWEN3_DECODE_TRACE (default 1): record the decoder back-end once per warmed
+        # bucket and replay it per request; 0 runs it eagerly. Captured after the talker's
+        # traces, so its freed scratch can only alias other traces' scratch (tt-metal
+        # capture_backend_traces).
         if (
             self._use_device_decode
             and self._decode_continue
-            and os.environ.get("TT_QWEN3_DECODE_TRACE", "0") == "1"
+            and os.environ.get("TT_QWEN3_DECODE_TRACE", "1") == "1"
         ):
             self.device_decoder.capture_backend_traces(warm_buckets)
             self.logger.info(
