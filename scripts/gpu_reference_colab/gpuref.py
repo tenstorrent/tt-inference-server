@@ -521,9 +521,11 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             if not isinstance(section, dict) or section.get("kind") != "evals":
                 continue
             data = section.get("data") or {}
+            # AgenticEvalParser keeps Harbor's counters (n_trials) in targets.
+            targets = section.get("targets") or {}
             key = (model, data.get("task_name"))
             if key not in newest or stamp >= newest[key][0]:
-                newest[key] = (stamp, meta, data)
+                newest[key] = (stamp, meta, data, targets)
     return [
         {
             "model": model,
@@ -537,9 +539,9 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             # report from before the noise rule).
             "noise_n": data.get("noise_n"),
             # Agentic (Harbor) blocks: trials run, for the full-set check.
-            "n_trials": data.get("n_trials"),
+            "n_trials": targets.get("n_trials"),
         }
-        for (model, _), (_, meta, data) in sorted(
+        for (model, _), (_, meta, data, targets) in sorted(
             newest.items(), key=lambda kv: tuple(str(x) for x in kv[0])
         )
     ]
@@ -1051,11 +1053,48 @@ def redact_url(url: Optional[str]) -> Optional[str]:
     )
 
 
+# What a served score depends on, compared between the VM(s) that served a
+# task's Shield run (their serving snapshots) and the provenance it is filed under.
+SERVING_KEYS = ("vllm_serve_command", "max_model_len_cap", "packages", "vllm_env")
+
+
+def serving_view(prov: Dict[str, Any]) -> Dict[str, Any]:
+    gpu = prov.get("gpu") or {}
+    view = {k: prov.get(k) for k in SERVING_KEYS}
+    return dict(view, gpu=gpu.get("name"), gpu_memory=gpu.get("memory_total"))
+
+
+def served_by(rec: Dict[str, Any], serving_root: Path) -> List[Dict[str, Any]]:
+    """The serving snapshot of each VM epoch that served the record's run
+    (``serving_epochs``, comma-separated ids of <serving_root>/<id>.json); a
+    missing or malformed epoch is listed with ``found: False``."""
+    out = []
+    for epoch in [e for e in str(rec.get("serving_epochs") or "").split(",") if e]:
+        snap = (
+            load_json(serving_root / f"{epoch}.json")
+            if re.fullmatch(r"[0-9a-f]{12}", epoch)
+            else None
+        )
+        out.append(
+            dict(serving_view(snap or {}), epoch=epoch, found=isinstance(snap, dict))
+        )
+    return out
+
+
 def shield_provenance(
-    prov: Dict[str, Any], records: List[Dict[str, Any]], shield_root: Path
+    prov: Dict[str, Any],
+    records: List[Dict[str, Any]],
+    shield_root: Path,
+    serving_root: Path,
 ) -> Dict[str, Any]:
     """The served model's provenance with each task's Shield run: run id/url,
     conclusion, the dispatch inputs and the run.py report it wrote.
+
+    Each task also carries ``served_by``: the serving snapshot of every VM that
+    served its run (a rollover replaces the VM, so tasks of one result can be
+    served by different VMs). A task counts only when every such VM's GPU and
+    serving settings are the ones in ``prov``, so no score is filed under a
+    VM that did not produce it, and only with its trial count (``n_trials``).
 
     Two statuses, never conflated: ``serving_status`` is whether the VM served
     (the runner's own ``status``, copied on the first grading and never
@@ -1072,13 +1111,28 @@ def shield_provenance(
         and r["score"] is not None
     }
     prov = dict(prov)
-    prov["agentic"] = [
-        dict(rec, score=(rows.get(rec.get("task")) or {}).get("score"),
-             n_trials=(rows.get(rec.get("task")) or {}).get("n_trials"),
-             report_files=sorted(str(p.relative_to(shield_root))
-                                 for p in (shield_root / rec.get("task", "")).rglob("report*.json")))
-        for rec in records
-    ]  # fmt: skip
+    filed_under = serving_view(prov)
+
+    def entry(rec):
+        row = rows.get(rec.get("task")) or {}
+        vms = served_by(rec, serving_root)
+        return dict(
+            rec,
+            score=row.get("score"),
+            n_trials=row.get("n_trials"),
+            served_by=vms,
+            serving_matches=bool(vms)
+            and all(
+                vm["found"] and {k: vm[k] for k in filed_under} == filed_under
+                for vm in vms
+            ),
+            report_files=sorted(
+                str(p.relative_to(shield_root))
+                for p in (shield_root / rec.get("task", "")).rglob("report*.json")
+            ),
+        )
+
+    prov["agentic"] = [entry(rec) for rec in records]
     prov["run_py_command"] = [shield_test(rec.get("task", "")) for rec in records]
     prov["tasks_selected"] = sorted(rec.get("task") for rec in records)
     if "serving_status" not in prov:
@@ -1086,9 +1140,12 @@ def shield_provenance(
     served = prov["serving_status"] == "ok"
     # A completed run counts whether or not the model met its acceptance
     # criteria (Shield fails the job on a miss); a cancelled or crashed one not.
-    prov["status"] = "ok" if served and records and all(
-        rec.get("conclusion") in ("success", "failure") and rec.get("task") in rows
-        for rec in records
+    # A full agentic run reports its trial count; without one it is not
+    # verifiable, so it does not count either.
+    prov["status"] = "ok" if served and prov["agentic"] and all(
+        a.get("conclusion") in ("success", "failure") and a.get("task") in rows
+        and isinstance(a["n_trials"], int) and a["n_trials"] > 0 and a["serving_matches"]
+        for a in prov["agentic"]
     ) else "failed"  # fmt: skip
     return prov
 
@@ -2123,6 +2180,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--prov", required=True)
     p.add_argument("--shield-dir", required=True)
     p.add_argument("--records", nargs="+", required=True)
+    p.add_argument("--serving-dir", required=True, help="the VMs' serving snapshots")
     p.add_argument("--rollovers", type=int, default=0)
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["driver-status"]:
@@ -2382,7 +2440,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.cmd == "shield-provenance":
         prov = load_json(Path(args.prov)) or {}
         records = [load_json(Path(r)) or {} for r in args.records]
-        out = shield_provenance(prov, records, Path(args.shield_dir))
+        out = shield_provenance(
+            prov, records, Path(args.shield_dir), Path(args.serving_dir)
+        )
         out["serving_rollovers"] = args.rollovers  # sessions replaced mid-run
         Path(args.prov).write_text(json.dumps(out, indent=2) + "\n")
         print(out["status"])
