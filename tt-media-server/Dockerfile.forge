@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 # Worker venv: "forge" (tt-forge) or "crank" (tt-crank, for the trainer runners).
-# "crank" also needs --build-arg TT_CRANK_WHEEL=<URL or path of the tt-crank wheel>.
+# "crank" builds the venv with tt-blacksmith's `env/activate --crank`, whose tt-crank
+# wheel download needs a GitHub token: --secret id=gh_token,env=GH_TOKEN.
 ARG WORKER_ENV=forge
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
@@ -34,11 +35,17 @@ ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
+# Ubuntu 22.04's gh (2.4) lacks `gh auth token`, which tt-blacksmith's wheel download uses.
+RUN wget -qO /usr/share/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
+    gh \
     libgl1 \
     libsndfile1 \
     wget \
@@ -114,8 +121,9 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 RUN rm -rf ${APP_DIR}/server/cpp_server
 USER root
 ARG WORKER_ENV
-ARG TT_CRANK_WHEEL=""
-RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
+RUN --mount=type=secret,id=gh_token \
+    GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
+    /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
 

@@ -83,6 +83,7 @@ scripts/examples/example_data
 
 venv*/**
 tt-media-server/venv-worker
+tt-media-server/tt-blacksmith
 tt-media-server/huggingface
 
 *.tensorbin
