@@ -14,8 +14,8 @@ from blacksmith.tools.trainer.callback import Callback
 class StopTraining(Exception):
     """Raised from a callback to end the training loop early.
 
-    ``Trainer._train_lifecycle`` catches whatever the loop raises and does not
-    re-raise, so this is the way to leave the loop without failing the job.
+    Like any exception, it goes through ``on_error`` and propagates out of
+    ``Trainer.train()``. The runner treats it as a successful end of the job, and
     ``JobControlCallback.on_error`` tells it apart from a real failure.
     """
 
@@ -203,10 +203,9 @@ class AdapterCheckpointCallback(JobCallback):
 
 
 class JobControlCallback(JobCallback):
-    """Enforces ``max_steps`` and cancellation, and captures real failures."""
+    """Enforces ``max_steps`` and cancellation, and logs real failures to the job."""
 
     def _reset(self) -> None:
-        self.error = None
         self.stop_reason = None
 
     def on_train_start(self, trainer, *args, **kwargs):
@@ -260,7 +259,6 @@ class JobControlCallback(JobCallback):
     def on_error(self, trainer, exception, *args, **kwargs):
         if isinstance(exception, StopTraining):
             return
-        self.error = exception
         self._logger.error(
             f"Job failed at step {trainer.global_step}: {exception}",
             extra={"log_type": "error", "step": trainer.global_step},

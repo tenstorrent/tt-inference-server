@@ -82,6 +82,24 @@ def _end_step(callback, trainer, global_step):
     callback.on_step_end(trainer, global_step)
 
 
+def _train_raising(exception):
+    """What `Trainer.train` does when the loop raises: notify, then re-raise."""
+
+    def train(trainer):
+        trainer.callback_handler("on_error", exception)
+        raise exception
+
+    return train
+
+
+def _job_failures(runner):
+    return [
+        call.args[0]
+        for call in runner.logger.error.call_args_list
+        if call.args[0].startswith("Job failed")
+    ]
+
+
 class TestWarmup:
     @pytest.mark.asyncio
     async def test_builds_trainer_and_callbacks(self, runner):
@@ -300,17 +318,30 @@ class TestRun:
     # These patch the class rather than the instance: run()'s finally
     # calls trainer.cleanup(), which clears the instance __dict__.
     @pytest.mark.asyncio
-    async def test_reraises_failure_reported_through_callbacks(self, runner):
+    async def test_reraises_training_failure_and_reports_it_once(self, runner):
         await runner.warmup()
         boom = RuntimeError("device fell over")
 
-        def fake_train(trainer):
-            # What Trainer._train_lifecycle does: notify, then return normally.
-            trainer.callback_handler("on_error", boom)
-
-        with patch.object(type(runner._trainer), "train", fake_train):
+        with patch.object(type(runner._trainer), "train", _train_raising(boom)):
             with pytest.raises(RuntimeError, match="device fell over"):
                 runner.run([_request()])
+
+        # `train()` already notified the callbacks, so the runner must not again.
+        assert _job_failures(runner) == ["Job failed at step 0: device fell over"]
+
+    @pytest.mark.asyncio
+    async def test_stop_training_ends_the_job_successfully(self, runner):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            StopTraining,
+        )
+
+        await runner.warmup()
+        stop = StopTraining("Reached max_steps=2")
+
+        with patch.object(type(runner._trainer), "train", _train_raising(stop)):
+            assert runner.run([_request()]) == ["/tmp/job"]
+
+        assert _job_failures(runner) == []
 
     @pytest.mark.asyncio
     async def test_reports_pre_training_failure_to_callbacks(self, runner):
@@ -321,7 +352,19 @@ class TestRun:
             with pytest.raises(RuntimeError, match="dataset missing"):
                 runner.run([_request()])
 
-        assert runner._control_callback.error is boom
+        assert _job_failures(runner) == ["Job failed at step 0: dataset missing"]
+
+    @pytest.mark.asyncio
+    async def test_logs_an_invalid_request_as_raised(self, runner):
+        await runner.warmup()
+
+        with pytest.raises(ValueError, match="does not match") as raised:
+            runner.run([_request(device_type="p300")])
+
+        runner.logger.error.assert_any_call(
+            str(raised.value), extra={"log_type": "error", "step": 0}
+        )
+        assert _job_failures(runner) == []
 
     @pytest.mark.asyncio
     async def test_cleans_up_after_failure(self, runner):
@@ -480,7 +523,7 @@ class TestJobControlCallback:
         callback._logger.info.assert_called()
         assert "Job cancelled at step 0" in callback._logger.info.call_args.args[0]
 
-    def test_stop_is_not_recorded_as_an_error(self):
+    def test_stop_is_not_logged_as_an_error(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
             StopTraining,
         )
@@ -490,16 +533,15 @@ class TestJobControlCallback:
         callback = self._callback(request)
 
         callback.on_error(_fake_trainer(), StopTraining("max steps"))
-        assert callback.error is None
+        callback._logger.error.assert_not_called()
 
-    def test_real_failure_is_recorded(self):
+    def test_real_failure_is_logged(self):
         request = _request()
         request._cancel_event = None
         callback = self._callback(request)
         boom = RuntimeError("boom")
 
         callback.on_error(_fake_trainer(), boom)
-        assert callback.error is boom
         error_messages = [
             call.args[0] for call in callback._logger.error.call_args_list
         ]

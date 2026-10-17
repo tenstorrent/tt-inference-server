@@ -4,6 +4,7 @@
 
 """LoRA fine-tuning runner backed by tt-blacksmith's ``CrankLLMTrainer``."""
 
+import contextlib
 import math
 from typing import Optional
 
@@ -33,6 +34,7 @@ from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
     AdapterCheckpointCallback,
     JobControlCallback,
     JobMetricsCallback,
+    StopTraining,
 )
 from utils.decorators import log_execution_time
 
@@ -116,18 +118,10 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         trainer = self._trainer
         try:
             self._validate(request)
-            trainer.setup(self._job_config(request))
-            trainer.train()
-
-            # `_train_lifecycle` notifies callbacks and returns normally, so a
-            # failed job only surfaces through the control callback.
-            if self._control_callback.error is not None:
-                raise self._control_callback.error
-        except Exception as exception:
-            # Anything raised outside `train()` never reached the callbacks.
-            if self._control_callback.error is not exception:
-                trainer.callback_handler("on_error", exception)
-            raise
+            self._setup_trainer(trainer, request)
+            # max_steps or cancellation ends the loop early; the job still succeeded.
+            with contextlib.suppress(StopTraining):
+                trainer.train()
         finally:
             try:
                 trainer.cleanup()
@@ -151,33 +145,48 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
 
         return [request._output_model_path]
 
+    def _setup_trainer(self, trainer, request: TrainingRequest) -> None:
+        try:
+            trainer.setup(self._job_config(request))
+        except Exception as exception:
+            # `train()` reports its own failures to the callbacks; setup's never reach them.
+            trainer.callback_handler("on_error", exception)
+            raise
+
     def _validate(self, request: TrainingRequest) -> None:
+        error = self._validation_error(request)
+        if error is not None:
+            self.logger.error(error, extra={"log_type": "error", "step": 0})
+            raise ValueError(error)
+
+    def _validation_error(self, request: TrainingRequest) -> Optional[str]:
         if request.device_type != self.settings.device:
-            raise ValueError(
+            return (
                 f"Request device '{request.device_type}' does not match "
                 f"server device '{self.settings.device}'"
             )
         if request.dtype not in TORCH_DTYPES:
-            raise ValueError(
+            return (
                 f"Unsupported dtype '{request.dtype}'; "
                 f"expected one of {sorted(TORCH_DTYPES)}"
             )
         if request.dataset_loader not in DATASET_IDS:
-            raise ValueError(
+            return (
                 f"Unsupported dataset_loader '{request.dataset_loader}'; "
                 f"expected one of {sorted(DATASET_IDS)}"
             )
         # CrankLLMTrainer always builds AdamW and masks labels with a fixed index.
         if request.optimizer != TrainingOptimizers.ADAMW.value:
-            raise ValueError(
+            return (
                 f"Unsupported optimizer '{request.optimizer}'; "
                 f"expected '{TrainingOptimizers.ADAMW.value}'"
             )
         if request.ignored_index != IGNORED_INDEX:
-            raise ValueError(
+            return (
                 f"Unsupported ignored_index {request.ignored_index}; "
                 f"expected {IGNORED_INDEX}"
             )
+        return None
 
     def _logging_config(self) -> LoggingConfig:
         return LoggingConfig(
