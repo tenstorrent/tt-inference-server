@@ -10235,7 +10235,8 @@ _eval_config_list = [
     # checkpoint at fc7c15c2, ctx 65536. Tasks, prompting, timeouts and gen_kwargs copied from Qwen/QwQ-32B (r1 thinking
     # profile; r1_aime24 omitted). The card publishes only LLM-as-judge scores (MT-Bench JA/EN, AnswerCarefully,
     # llm-jp-instructions), none for these tasks: every gpu_reference_score is a full-sample GPU run at this revision /
-    # max_context / concurrency (issue #5353), TBD. Output is Harmony-format and served with NO reasoning parser
+    # max_context / concurrency (issue #5353; measured 2026-10-17 on A100 40GB, vLLM 0.13.0, transformers 4.57.6, TTIS 31146440e).
+    # Output is Harmony-format and served with NO reasoning parser
     # (vLLM's openai_gptoss parser assumes the o200k Harmony ids; upstream uses the out-of-tree llm-jp-vllm plugin),
     # so the graded text carries the analysis and final channels on both the GPU and the TT side.
     EvalConfig(
@@ -10246,8 +10247,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=80.80,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229409966",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -10274,8 +10275,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=51.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229409966",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
