@@ -8439,8 +8439,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=66.16,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229410297",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -8473,8 +8473,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229410297",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -8951,6 +8951,9 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B",
         tasks=[
+            # Served thinking-OFF (default_chat_template_kwargs enable_thinking=false: the onboarding generator's rule with no
+            # upstream P300X2 stance; revisitable via one). The GPU reference runs the same stance; card scores are thinking-on
+            # and not comparable.
             # terminal_bench_2_1: published by the card (37.1), omitted pending agentic-ref infra (same blocker as
             # Qwen3.8).
             EvalTask(
@@ -8995,6 +8998,9 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="ornith-ai/Ornith-1.5-9B",
         tasks=[
+            # Served thinking-OFF (default_chat_template_kwargs enable_thinking=false: the onboarding generator's rule with no
+            # upstream P300X2 stance; revisitable via one). The GPU reference runs the same stance; card scores are thinking-on
+            # and not comparable.
             # terminal_bench_2_1: published by the card (46.2 (Terminus-2)), omitted pending agentic-ref infra (same blocker as
             # Qwen3.8).
             EvalTask(

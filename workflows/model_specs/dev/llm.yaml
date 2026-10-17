@@ -6143,7 +6143,14 @@ templates:
       enable_auto_tool_choice: true
       tool_call_parser: qwen3_coder
       reasoning_parser: qwen3
+      # serving stance of the P300X2 row (generator rule: template references enable_thinking, reasoning parser active,
+      # no upstream P300X2 stance), so the reference is like-for-like
+      default_chat_template_kwargs: '{"enable_thinking": false}'
   status: EXPERIMENTAL
+  metadata:
+    XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
 - weights:
   - arcee-ai/AFM-4.5B
   impl: tt_transformers
@@ -6290,9 +6297,16 @@ templates:
       limit_mm_per_prompt: {"image": 0, "video": 0}
       # the parsers the P300X2 row serves with (reasoning scored from content after </think>)
       enable_auto_tool_choice: true
-      tool_call_parser: qwen3_coder
+      tool_call_parser: qwen3_xml
       reasoning_parser: qwen3
+      # serving stance of the P300X2 row (generator rule: template references enable_thinking, reasoning parser active,
+      # no upstream P300X2 stance), so the reference is like-for-like
+      default_chat_template_kwargs: '{"enable_thinking": false}'
   status: EXPERIMENTAL
+  metadata:
+    ornith-ai/Ornith-1.5-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_xml
 - weights:
   - stabilityai/stablelm-2-1_6b
   impl: quetzal
