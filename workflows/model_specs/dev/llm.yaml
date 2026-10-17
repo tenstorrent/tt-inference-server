@@ -2986,7 +2986,7 @@ templates:
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
       override_tt_config:
-        fabric_config: FABRIC_1D
+        fabric_config: FABRIC_1D_RING  # the ring fabric the decode MoE kernel needs; linear-topology collectives still run on it
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1: a collective first compiled
