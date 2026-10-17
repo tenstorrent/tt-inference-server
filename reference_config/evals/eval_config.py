@@ -12680,6 +12680,94 @@ _eval_config_list = [
             ),
         ],
     ),
+    # moonshotai/Kimi-Linear-48B-A3B-Instruct @ e1df551a447157d4658b573f9a695d57658590e9 (MIT).
+    # PRE-REGISTERED 2026-10-17, before any TT or GPU measurement of this checkpoint exists.
+    # GRADING (coordinator rule, the gemma-4-31B mmlu_pro form): no GPU reference can be produced (98.2 GB bf16
+    # fits no single Colab GPU), so each must-eval is graded against the model card's own number. The must-eval
+    # set is exactly the tasks the card at e1df551a publishes a score for AND that TTIS already supports; no
+    # other task is added and no tolerance is changed (EvalTaskScore default).
+    # The card's only published task scores are one sentence, README.md line 31 at e1df551a
+    # (sha256 d2332c5f1c7318737c2d42c6ec09ff7f26223d1b595fd5d0e1a189ba53064dd9), verbatim:
+    #   "<p><em><b>(a)</b> On MMLU-Pro (4k context length), Kimi Linear achieves 51.0 performance with similar
+    #   speed as full attention. On RULER (128k context length), it shows Pareto-optimal performance (84.3) and
+    #   3.98x speedup. <b>(b)</b> Kimi Linear achieves 6.3x faster TPOT compared to MLA, offering significant
+    #   speedups at long sequence lengths (1M tokens).</em></p>"
+    # (the caption of figures/perf_speed.png, sha256 f8951e618db41ae57fa0cec4845d7b275dffbd7f9db12c6496bfea536c625aea,
+    # whose panel (a) labels the points "Kimi Linear 51.0" under "MMLU-Pro (4k)" and "Kimi-Linear 84.3" under
+    # "RULER (128k)"). The card states neither the shot count / prompt format nor which checkpoint the points were
+    # measured on (its Key Features cite "1.4T token training runs" for the full-attention comparison); that is
+    # recorded here, not resolved by choice.
+    EvalConfig(
+        hf_model_repo="moonshotai/Kimi-Linear-48B-A3B-Instruct",
+        tasks=[
+            EvalTask(
+                # Card: "MMLU-Pro (4k context length) ... 51.0". TTIS's MMLU-Pro form (5-shot CoT, generative,
+                # scored by the task's own extractor) at the card's 4k context; non-thinking instruct model.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=51.0,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/e1df551a447157d4658b573f9a695d57658590e9/README.md#L31",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 4096,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # Card: "RULER (128k context length) ... (84.3)". TTIS's RULER task at the card's single length.
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/e1df551a447157d4658b573f9a695d57658590e9/README.md#L31",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "131072,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,
+                },
+                custom_dataset_kwargs={
+                    "max_seq_lengths": [131072],
+                    "pretrained": "moonshotai/Kimi-Linear-48B-A3B-Instruct",
+                    "num_samples_per_length": 50,
+                    "limit_factor": 0.1,
+                },
+            ),
+        ],
+    ),
 ]
 
 
