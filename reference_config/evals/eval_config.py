@@ -10175,7 +10175,9 @@ _eval_config_list = [
     # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16; tenstorrent/tt-quetzalcoatlus#375); qwen3_moe at b2cff646.
     # Tasks, prompting and gen_kwargs copied from Qwen/Qwen2.5-Coder-7B-Instruct. The card publishes agentic-coding scores
     # only, none for these tasks: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
-    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353), TBD.
+    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353; measured 2026-10-17, H100 80GB, vLLM 0.13.0,
+    # transformers 4.57.6, TTIS 31146440e). mbpp_instruct is length-bound at max_gen_toks 256 (318/500 responses hit the cap
+    # before the closing fence, so extract_code returns empty); like-for-like because TT runs the same EvalConfig.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-Coder-30B-A3B-Instruct",
         tasks=[
@@ -10186,8 +10188,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=31.60,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6241501452",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -10211,8 +10213,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=89.02,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6241501452",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
