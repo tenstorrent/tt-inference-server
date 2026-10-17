@@ -346,6 +346,19 @@ class TestRun:
 
         torch._dynamo.reset.assert_called_once_with()
 
+    @pytest.mark.asyncio
+    async def test_failed_dynamo_reset_keeps_the_job_error(self, runner):
+        await runner.warmup()
+
+        with patch.object(
+            type(runner._trainer), "train", side_effect=RuntimeError("boom")
+        ), patch(
+            "tt_model_runners.forge_training_runners.trainer_training_lora_runner.torch"
+        ) as torch:
+            torch._dynamo.reset.side_effect = RuntimeError("reset failed")
+            with pytest.raises(RuntimeError, match="boom"):
+                runner.run([_request()])
+
 
 class TestCleanup:
     @pytest.mark.asyncio

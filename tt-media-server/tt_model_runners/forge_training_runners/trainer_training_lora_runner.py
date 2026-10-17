@@ -137,7 +137,12 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 )
             # Each job compiles the loss afresh; drop the previous job's graphs so
             # they neither hold memory nor count toward dynamo's recompile limit.
-            torch._dynamo.reset()
+            try:
+                torch._dynamo.reset()
+            except Exception as reset_error:
+                self.logger.error(
+                    f"Device {self.device_id}: dynamo reset failed: {reset_error}"
+                )
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
