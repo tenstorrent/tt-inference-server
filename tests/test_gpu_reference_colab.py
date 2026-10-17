@@ -1953,7 +1953,8 @@ SERVING_DIR={tmp_path}/serving PYRUN=({shlex.quote(sys.executable)})
 mkdir -p "$SHIELD_DIR"
 log() {{ echo "LOG $*" >&2; }}
 field() {{ python3 -c 'import json,sys; print((json.load(open(sys.argv[1])) or {{}}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }}
-gpuref() {{  # driver-status REC k=v ...: write the record
+gpuref() {{  # driver-status REC k=v ...: write the record; anything else: the real one
+    if [[ "$1" != driver-status ]]; then {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@"; return; fi
     shift; local rec="$1"; shift
     python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@"
 }}
@@ -1993,7 +1994,7 @@ def test_failed_report_download_is_recorded_pending_not_completed(tmp_path):
     assert out.returncode == 0, out.stderr
     assert "PENDING" in out.stdout
     assert json.loads(rec.read_text())["state"] == "report_pending"
-    assert out.stderr.count("not downloaded") == 2
+    assert out.stderr.count("not retrieved") == 2
 
 
 def test_report_retrieval_is_retried_until_the_report_is_on_disk(tmp_path):
@@ -2075,6 +2076,7 @@ gpuref() {{
         python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
       shield-provenance) python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); print("GRADED_ON " + p["gpu"]["name"], file=sys.stderr); print("ok")' "$3" ;;
       summary) echo "SUMMARY" ;;
+      shield-failed-steps) {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@" ;;
     esac
 }}
 gh() {{ [[ "$2" == "download" ]] || {{ echo '{{"jobs": []}}'; return 0; }}; {gh_body}; }}
@@ -2803,3 +2805,68 @@ def test_text_decoder_model_type_picks_the_stack_before_the_architecture():
     small31 = {"architectures": ["Mistral3ForConditionalGeneration"],
                "text_config": {"model_type": "mistral"}}  # fmt: skip
     assert gpuref.serving_stack(small31) == gpuref.serving_stack(None)
+
+
+def test_missing_job_metadata_stays_retryable_and_a_resume_recovers_it(tmp_path):
+    # Review on #5395 (colab_gpu_reference.sh:472): the report downloaded but
+    # `gh run view --json jobs` failed, so the record was marked completed
+    # with no failed_steps; grading an accuracy miss then failed, and every
+    # resume skipped retrieval. A complete 89-trial report, real parser.
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    task = "terminal_bench_2_1"
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    built = tmp_path / "built" / "report_1.json"
+    _parser_report(built, 89, n_total=89, mean=0.4, score=score)  # an accuracy miss
+    served = {"model": "org/m", "status": "ok", "gpu": {"name": "NVIDIA H100 80GB HBM3"},
+              "agentic_expected_trials": {task: 89}}  # fmt: skip
+    prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
+    prov.parent.mkdir(parents=True)
+    prov.write_text(json.dumps(served))
+    epoch = _snapshot(tmp_path / "out" / "serving", served)
+    _record(tmp_path, task, state="dispatched", run_id="7", conclusion="failure",
+            serving_epochs=epoch, endpoint_id=gpuref.endpoint_id(URL))  # fmt: skip
+    rec = tmp_path / "out" / "shield" / f"{task}.json"
+    jobs = json.dumps({"jobs": [{"name": "Test / Run", "conclusion": "failure",
+        "steps": [{"name": _TEST_STEP.format(task=task), "conclusion": "failure"}]}]})  # fmt: skip
+    network = tmp_path / "network_up"  # gh run view works only while this exists
+
+    def run(tail):
+        script = _resume_helpers(tmp_path, [task], True)
+        script += f"""
+gh() {{
+    case "$2" in
+      download) mkdir -p "$7" && cp {built} "$7/report_1.json" ;;
+      view) [[ -e {network} ]] && printf '%s' {shlex.quote(jobs)} || return 1 ;;
+    esac
+}}
+gpuref() {{
+    case "$1" in
+      driver-status) shift; local rec="$1"; shift
+        python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
+      *) {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@" ;;
+    esac
+}}
+{tail}
+"""
+        return _bash(script)
+
+    # The run completes while the job metadata is unreachable.
+    first = run(f"retry_report {task} {rec} 7 failure && echo GOT || echo PENDING")
+    assert first.returncode == 0 and "PENDING" in first.stdout, first.stderr
+    record = json.loads(rec.read_text())
+    assert record["state"] == "report_pending" and not record.get("failed_steps")
+    # The network is back: a resume fetches the job metadata, without a VM,
+    # and grades the complete accuracy miss ok.
+    network.touch()
+    second = run('serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"')
+    assert second.returncode == 0 and "HANDLED rc=0" in second.stdout, second.stderr
+    assert "VM_STARTED" not in second.stderr
+    record = json.loads(rec.read_text())
+    assert record["state"] == "completed"
+    assert json.loads(record["failed_steps"]) == [
+        f"Test / Run / {_TEST_STEP.format(task=task)}"
+    ]
+    graded = json.loads(prov.read_text())
+    assert graded["status"] == "ok" and graded["agentic"][0]["accuracy_check"] == 3
