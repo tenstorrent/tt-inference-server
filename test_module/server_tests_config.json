@@ -102,7 +102,8 @@
       "Qwen/QwQ-32B",
       "Qwen/Qwen3.5-9B-Base",
       "WeiboAI/VibeThinker-3B",
-      "ornith-ai/Ornith-1.5-9B"
+      "ornith-ai/Ornith-1.5-9B",
+      "XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B"
     ]
   },
   "available_markers": {
@@ -1099,6 +1100,16 @@
       "id_name": "ornith-ai--Ornith-1.5-9B",
       "weights": [
         "ornith-ai/Ornith-1.5-9B"
+      ]
+    },
+    "XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "XiaomiMiMo--MiMo-V2.6-Distill-Qwen-9B",
+      "weights": [
+        "XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B"
       ]
     }
   },
