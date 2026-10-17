@@ -17,6 +17,7 @@ os.environ.setdefault("TT_QWEN3_CP_FP32", "1")
 
 import asyncio
 import base64
+import gc
 import io
 import tempfile
 from pathlib import Path
@@ -404,6 +405,13 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
                 raise ValueError("Device not initialized. Call set_device() first.")
             await asyncio.to_thread(self._initialize_models)
             await asyncio.to_thread(self._warmup_inference)
+            # Everything built at startup (weights, tables, traces' host objects) is long-lived:
+            # collect once and freeze it so later GC passes do not walk it. Blaze measured
+            # 250-311 ms collector pauses every ~2 min under load without this.
+            # TT_QWEN3_GC_FREEZE=0 skips it.
+            if os.environ.get("TT_QWEN3_GC_FREEZE", "1") == "1":
+                gc.collect()
+                gc.freeze()
             self.logger.info(f"Device {self.device_id}: Qwen3-TTS warmup complete")
             return True
         except Exception as e:
