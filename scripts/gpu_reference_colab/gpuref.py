@@ -696,15 +696,38 @@ ARCH_STACKS = {
 }  # fmt: skip
 
 
+# Like ARCH_STACKS, keyed on a config model_type (the top level's or the text
+# decoder's), for checkpoints that share an architecture name but need a newer
+# stack: Devstral-Small-2 is Mistral3ForConditionalGeneration, like
+# Mistral-Small-3.1, but its text decoder is "ministral3".
+MODEL_TYPE_STACKS = {
+    # ministral3: the config ships in transformers 5.x, and vLLM v0.20.0 is the
+    # first release that allows transformers 5 (<5 through 0.19) and registers
+    # Ministral3ForCausalLM; its requirements/test/cuda.txt pin is 5.5.3.
+    "ministral3": {"vllm": "0.20.0", "transformers": "5.5.3"},
+}  # fmt: skip
+
+
 def serving_stack(
     config: Optional[Dict[str, Any]],
     vllm: Optional[str] = None,
     transformers: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The stack for a model from its HF config's architectures (ARCH_STACKS,
-    else DEFAULT_STACK). vllm/transformers override it (--vllm-version etc.)."""
+    """The stack for a model from its HF config: MODEL_TYPE_STACKS by its (or
+    its text decoder's) model_type, else ARCH_STACKS by architecture, else
+    DEFAULT_STACK. vllm/transformers override it (--vllm-version etc.)."""
     stack = dict(DEFAULT_STACK, env=dict(DEFAULT_STACK["env"]))
-    for arch in (config or {}).get("architectures") or []:
+    config = config or {}
+    types = [
+        config.get("model_type"),
+        (config.get("text_config") or {}).get("model_type"),
+    ]
+    by_type = next(
+        (MODEL_TYPE_STACKS[t] for t in types if t in MODEL_TYPE_STACKS), None
+    )
+    if by_type:
+        stack.update(by_type)
+    for arch in [] if by_type else config.get("architectures") or []:
         if arch in ARCH_STACKS:
             stack.update(ARCH_STACKS[arch])
             break
