@@ -1108,6 +1108,28 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "ornith-ai/Ornith-1.5-9B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
     }
   ]
 }
