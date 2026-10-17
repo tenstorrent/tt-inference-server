@@ -12697,6 +12697,13 @@ _eval_config_list = [
     # "RULER (128k)"). The card states neither the shot count / prompt format nor which checkpoint the points were
     # measured on (its Key Features cite "1.4T token training runs" for the full-attention comparison); that is
     # recorded here, not resolved by choice.
+    # AMENDED 2026-10-17 (still before any TT or GPU measurement of this checkpoint): RULER is dropped from the
+    # must-evals by the same pre-registered rule (card score AND supported by TTIS). The card's RULER number is
+    # 84.3 at 128k, i.e. length 131072, and the pinned harness (tstescoTT/lm-evaluation-harness@be23028b) has no
+    # 131072 metric: lm_eval/tasks/ruler/ruler.yaml aggregates 4096-65536 only ("# - metric: \"131072\"" commented
+    # out) and every subtask does the same (niah_single_1.yaml:30 "# - metric: \"131072\""), so no
+    # "131072,none" score is ever reported. RULER at a length the card does not publish (e.g. 65536) is not
+    # substituted, and the harness is not changed. MMLU-Pro 51.0 is the only card-graded must-eval.
     EvalConfig(
         hf_model_repo="moonshotai/Kimi-Linear-48B-A3B-Instruct",
         tasks=[
@@ -12728,42 +12735,6 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 1,
-                },
-            ),
-            EvalTask(
-                # Card: "RULER (128k context length) ... (84.3)". TTIS's RULER task at the card's single length.
-                task_name="ruler",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    published_score=84.3,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/e1df551a447157d4658b573f9a695d57658590e9/README.md#L31",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "131072,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 131072,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 256,
-                    "do_sample": "false",
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: None,
-                    EvalLimitMode.SMOKE_TEST: None,
-                },
-                custom_dataset_kwargs={
-                    "max_seq_lengths": [131072],
-                    "pretrained": "moonshotai/Kimi-Linear-48B-A3B-Instruct",
-                    "num_samples_per_length": 50,
-                    "limit_factor": 0.1,
                 },
             ),
         ],
