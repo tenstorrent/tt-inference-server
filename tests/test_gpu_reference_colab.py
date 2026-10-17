@@ -2792,3 +2792,14 @@ def test_runner_host_python_falls_back_to_uv_when_apt_fails():
         "python3 -m pip install -q requests" in setup
     )  # run.py imports it on the host
     assert 'export PATH="${WORK_DIR}/hostpy/bin:${PATH}"' in setup
+
+
+def test_text_decoder_model_type_picks_the_stack_before_the_architecture():
+    devstral2 = {"architectures": ["Mistral3ForConditionalGeneration"],
+                 "text_config": {"model_type": "ministral3"}}  # fmt: skip
+    stack = gpuref.serving_stack(devstral2)
+    assert (stack["vllm"], stack["transformers"]) == ("0.20.0", "5.5.3")
+    # Mistral-Small-3.1 shares the architecture but not the decoder: default stack.
+    small31 = {"architectures": ["Mistral3ForConditionalGeneration"],
+               "text_config": {"model_type": "mistral"}}  # fmt: skip
+    assert gpuref.serving_stack(small31) == gpuref.serving_stack(None)
