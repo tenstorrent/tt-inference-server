@@ -6103,6 +6103,10 @@ templates:
       tool_call_parser: qwen3_coder
       reasoning_parser: qwen3
   status: EXPERIMENTAL
+  metadata:
+    XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
 - weights:
   - arcee-ai/AFM-4.5B
   impl: tt_transformers
@@ -6252,6 +6256,10 @@ templates:
       tool_call_parser: qwen3_xml
       reasoning_parser: qwen3
   status: EXPERIMENTAL
+  metadata:
+    ornith-ai/Ornith-1.5-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_xml
 - weights:
   - stabilityai/stablelm-2-1_6b
   impl: quetzal
