@@ -1,0 +1,11 @@
+# Worker venv for the tt-crank training image (setup_env.sh with WORKER_ENV=crank).
+# tt-crank pins torch 2.10 while tt-forge pins torch 2.11, so this replaces
+# forge_runners/requirements.txt rather than extending it. setup_env.sh builds the
+# venv with tt-blacksmith's `env/activate --crank` (tt-crank, blacksmith and its
+# requirements, at the ref pinned there) and then installs this file on top, so only
+# what blacksmith leaves out belongs here.
+
+# pyarrow 26 fails to import without NumPy 2 (undeclared in its metadata), but
+# tt-crank pins numpy<2.
+pyarrow<26
+pyyaml
