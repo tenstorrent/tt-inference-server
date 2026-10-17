@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -601,6 +601,31 @@ def _env_isl_osl_pairs() -> List[Tuple[int, int]]:
     return pairs
 
 
+def full_sweep_isl_osl_pairs(
+    max_context: int,
+    base_pairs: Optional[List[Tuple[int, int]]] = None,
+    osl: int = 128,
+) -> List[Tuple[int, int]]:
+    """Full text sweep: the standard pairs plus every power-of-two ISL (128, 256, ...) that fits
+    ``isl + osl <= max_context``, plus the near-max pair ``(max_context - osl, osl)``.
+
+    The standard list stops at 131072, so a 256K or 1M context server would never see a long prompt.
+    Opt in with ``TT_BENCH_FULL_SWEEP=1`` (``TT_BENCH_ISL_OSL_PAIRS`` still replaces the pairs).
+    """
+    pairs = list(BENCHMARK_ISL_OSL_PAIRS if base_pairs is None else base_pairs)
+    isl = 128
+    while isl + osl <= max_context:
+        pairs.append((isl, osl))
+        isl *= 2
+    if max_context - osl > 0:
+        pairs.append((max_context - osl, osl))
+    return sorted(p for p in set(pairs) if p[0] + p[1] <= max_context)
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def build_benchmark_config(model_spec) -> BenchmarkConfig:
     """Build benchmark tasks directly from a resolved model spec.
 
@@ -629,6 +654,14 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     if bench_pairs:
         text_isl_osl_pairs = bench_pairs
     bench_concurrencies = _env_int_list("TT_BENCH_CONCURRENCIES")
+    # TT_BENCH_FULL_SWEEP=1: every power-of-two ISL up to the model's max context (plus the near-max
+    # pair) and every power-of-two concurrency up to the spec's maximum (capped per point as usual).
+    # Explicit TT_BENCH_ISL_OSL_PAIRS / TT_BENCH_CONCURRENCIES take precedence.
+    if _env_flag("TT_BENCH_FULL_SWEEP"):
+        if not bench_pairs:
+            text_isl_osl_pairs = full_sweep_isl_osl_pairs(max_context)
+        if not bench_concurrencies:
+            bench_concurrencies = powers_of_two_up_to(model_max_concurrency)
     sweep_min_num_prompts = 0
     text_isl_osl_pairs += MODEL_EXTRA_ISL_OSL_PAIRS.get(model_spec.model_name, [])
     if device == DeviceTypes.SUPER_CLUSTER:

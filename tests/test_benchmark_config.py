@@ -465,3 +465,49 @@ def test_env_isl_osl_and_concurrency_override(monkeypatch):
     assert not any(
         t.__class__.__name__ == "BenchmarkTaskStructuredOutput" for t in cfg.tasks
     )
+
+
+def test_full_sweep_pairs_cover_every_power_of_two_up_to_max_context(monkeypatch):
+    bc = _import_benchmark_config(monkeypatch)
+    for max_context in (131072, 262144, 1048576):
+        pairs = bc.full_sweep_isl_osl_pairs(max_context)
+        isls = {isl for isl, _ in pairs}
+        k = 128
+        while k + 128 <= max_context:
+            assert k in isls, (max_context, k)
+            k *= 2
+        assert all(isl + osl <= max_context for isl, osl in pairs)
+        assert (max_context - 128, 128) in pairs
+        assert {p for p in bc.BENCHMARK_ISL_OSL_PAIRS if sum(p) <= max_context} <= set(pairs)
+    assert max(isl for isl, _ in bc.full_sweep_isl_osl_pairs(1048576)) == 1048576 - 128
+    assert 524288 in {isl for isl, _ in bc.full_sweep_isl_osl_pairs(1048576)}
+
+
+def test_full_sweep_env_runs_powers_of_two_concurrency_and_keeps_default_off(monkeypatch):
+    monkeypatch.setenv("TT_BENCH_NO_STRUCTURED", "1")
+    monkeypatch.delenv("TT_BENCH_ISL_OSL_PAIRS", raising=False)
+    monkeypatch.delenv("TT_BENCH_CONCURRENCIES", raising=False)
+    model_id = next(iter(MODEL_SPECS))
+    spec = MODEL_SPECS[model_id]
+
+    def points(bc):
+        cfg = bc.get_benchmark_config(spec)
+        return {
+            (p.isl, p.osl, p.max_concurrency)
+            for t in cfg.tasks
+            for params in t.param_map.values()
+            for p in params
+            if p.isl is not None
+        }
+
+    monkeypatch.delenv("TT_BENCH_FULL_SWEEP", raising=False)
+    default = points(_import_benchmark_config(monkeypatch))
+    monkeypatch.setenv("TT_BENCH_FULL_SWEEP", "1")
+    bc = _import_benchmark_config(monkeypatch)
+    full = points(bc)
+    max_context = spec.device_model_spec.max_context
+    assert {(i, o) for i, o, _ in default} <= {(i, o) for i, o, _ in full}
+    assert (max_context - 128, 128) in {(i, o) for i, o, _ in full}
+    assert all(i + o <= max_context for i, o, _ in full)
+    conc = {c for _, _, c in full}
+    assert 1 in conc and all(c & (c - 1) == 0 for c in conc if c <= spec.device_model_spec.max_concurrency)
