@@ -5,6 +5,7 @@
 # lmms-eval has no CV-Bench task: this one is loaded with --include_path (EvalTask.include_path).
 task: dsv41_cv_bench
 dataset_path: nyu-visionx/CV-Bench
+dataset_name: default
 test_split: test
 output_type: generate_until
 doc_to_visual: !function utils.doc_to_visual
