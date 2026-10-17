@@ -6102,6 +6102,9 @@ templates:
       enable_auto_tool_choice: true
       tool_call_parser: qwen3_coder
       reasoning_parser: qwen3
+      # serving stance of the P300X2 row (generator rule: template references enable_thinking, reasoning parser active,
+      # no upstream P300X2 stance), so the reference is like-for-like
+      default_chat_template_kwargs: '{"enable_thinking": false}'
   status: EXPERIMENTAL
   metadata:
     XiaomiMiMo/MiMo-V2.6-Distill-Qwen-9B:
@@ -6255,6 +6258,9 @@ templates:
       enable_auto_tool_choice: true
       tool_call_parser: qwen3_xml
       reasoning_parser: qwen3
+      # serving stance of the P300X2 row (generator rule: template references enable_thinking, reasoning parser active,
+      # no upstream P300X2 stance), so the reference is like-for-like
+      default_chat_template_kwargs: '{"enable_thinking": false}'
   status: EXPERIMENTAL
   metadata:
     ornith-ai/Ornith-1.5-9B:
