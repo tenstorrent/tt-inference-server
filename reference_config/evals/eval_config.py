@@ -595,6 +595,131 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# DeepSeek-V4.1-Flash tasks that run ONLY when named in DSV41_EVAL_TASKS (the default, un-selected run is
+# unchanged). Every published_score is the model card's number for the BASE model
+# (https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash, "Base Model" table, card's internal framework);
+# these runs use the chat template / the lmms-eval prompt, so they are not like for like (see
+# evals_DSV41_NOTES.md). The gate is the workflow's: accuracy >= published * (1 - 0.05).
+_DSV41_CKPT_PATH = "/mnt/tt-data/ssinghal/deepseek-v41-flash"
+_DSV41_VISION_MODEL_KWARGS = {
+    "max_retries": 1,
+    "tokenized_requests": "False",
+    "add_bos_token": "False",
+    "timeout": "9999",
+    "eos_string": "<｜end▁of▁sentence｜>",
+}
+
+
+def _dsv41_longbench2_task(task_name: str, max_context: int, max_isl: int, concurrency: int, timeout: int):
+    """LongBench v2 (lm_eval_tasks/dsv41_longbench2): the questions whose context fits max_isl tokens
+    (max_isl + 4096 generated + chat template <= max_context), skipped on a server with a smaller max_context."""
+    return EvalTask(
+        task_name=task_name,
+        workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+        include_path=str(Path(__file__).resolve().parent / "lm_eval_tasks"),
+        use_chat_api=True,
+        apply_chat_template=True,
+        max_concurrent=concurrency,
+        min_context_required=max_context,
+        score=EvalTaskScore(
+            published_score=45.2,
+            published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": ["exact_match,none"], "unit": "percent"},
+        ),
+        model_kwargs={"tokenizer": _DSV41_CKPT_PATH, "max_length": max_context, "timeout": timeout},
+        gen_kwargs={
+            "max_gen_toks": 4096,
+            "until": [],
+            "do_sample": "true",
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "stream": "true",
+        },
+        custom_dataset_kwargs={
+            # DSV41_LONGBENCH_MIN_ISL / DSV41_LONGBENCH_MAX_ISL narrow the window (e.g. only the questions
+            # that do not fit a smaller server); default: every question that fits this server
+            "minimum_isl": int(os.getenv("DSV41_LONGBENCH_MIN_ISL", "0")),
+            "maximum_isl": min(max_isl, int(os.getenv("DSV41_LONGBENCH_MAX_ISL", str(max_isl)))),
+            "pretrained": _DSV41_CKPT_PATH,
+            "tokenizer_num_proc": 16,
+        },
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 2, EvalLimitMode.CI_NIGHTLY: 8},
+    )
+
+
+_DSV41_OPT_IN_TASKS = [
+    # Long context: LongBench-V2 (card: 45.2, EM, 1-shot, base model; the only long-context number on the card).
+    _dsv41_longbench2_task("dsv41_longbench2_262k", 262144, 256000, 16, 28800),  # 16-user / 262144-token server
+    _dsv41_longbench2_task("dsv41_longbench2_1m", 1048576, 1040000, 4, 86400),  # 4-user / 1048576-token server
+    # Reasoning: BIG-Bench Hard, 3-shot chain of thought, exact match (card: BBH 86.1, EM, 3-shot, base model).
+    EvalTask(
+        task_name="bbh_cot_fewshot",
+        workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+        num_fewshot=3,
+        use_chat_api=True,
+        apply_chat_template=True,
+        max_concurrent=32,
+        score=EvalTaskScore(
+            published_score=86.1,
+            published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": ["exact_match,get-answer"], "unit": "percent"},
+        ),
+        model_kwargs={"tokenizer": _DSV41_CKPT_PATH, "max_length": 40000, "timeout": 14400},
+        gen_kwargs={
+            "max_gen_toks": 2048,
+            "until": ["Q:"],  # the next exemplar
+            "do_sample": "true",
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "stream": "true",
+        },
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 2, EvalLimitMode.CI_NIGHTLY: 4},  # per subtask (27 subtasks)
+    ),
+    # Image input (lmms-eval through the chat API; VLM profile: --impl deepseek-v41-flash-vlm).
+    # MMMU-Pro, 10-option standard set, direct option letter (card: MMMU-Pro 56.5, EM, 4-shot, base model; the card
+    # does not say standard or vision).
+    EvalTask(
+        eval_class="openai_compatible",
+        task_name="mmmu_pro_standard",
+        workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+        apply_chat_template=False,
+        use_chat_api=True,
+        max_concurrent=16,
+        score=EvalTaskScore(
+            published_score=56.5,
+            published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": ["mmmu_acc,none"], "unit": "percent"},
+        ),
+        model_kwargs=dict(_DSV41_VISION_MODEL_KWARGS),
+        gen_kwargs={"stream": "False", "max_new_tokens": "256"},
+        limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.1, EvalLimitMode.SMOKE_TEST: 0.005},
+    ),
+    # CV-Bench (card: CVBench 77.9, EM, 4-shot, base model): custom lmms-eval task in lmms_eval_tasks/.
+    EvalTask(
+        eval_class="openai_compatible",
+        task_name="dsv41_cv_bench",
+        workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+        include_path=str(Path(__file__).resolve().parent / "lmms_eval_tasks"),
+        apply_chat_template=False,
+        use_chat_api=True,
+        max_concurrent=16,
+        score=EvalTaskScore(
+            published_score=77.9,
+            published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": ["cvbench_acc,none"], "unit": "percent"},
+        ),
+        model_kwargs=dict(_DSV41_VISION_MODEL_KWARGS),
+        gen_kwargs={"stream": "False", "max_new_tokens": "32"},
+        # --limit takes the first N questions, which are all 2D (the 3D questions come last)
+        limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.1, EvalLimitMode.SMOKE_TEST: 0.005},
+    ),
+]
+_DSV41_OPT_IN_TASK_NAMES = {t.task_name for t in _DSV41_OPT_IN_TASKS}
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -13320,8 +13445,9 @@ _eval_config_list = [
                     limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.2, EvalLimitMode.SMOKE_TEST: 0.01},
                 ),
             ]
-            if not os.getenv("DSV41_EVAL_TASKS")
-            or t.task_name in os.getenv("DSV41_EVAL_TASKS").split(",")
+            + _DSV41_OPT_IN_TASKS
+            if (not os.getenv("DSV41_EVAL_TASKS") and t.task_name not in _DSV41_OPT_IN_TASK_NAMES)
+            or t.task_name in os.getenv("DSV41_EVAL_TASKS", "").split(",")
         ],
     ),
 ]

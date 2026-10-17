@@ -1,0 +1,32 @@
+# CV-Bench (Cambrian-1; nyu-visionx/CV-Bench, 2638 four/two-choice questions on COCO / ADE20K / Omni3D
+# images: 2D count + relation, 3D depth + distance), multiple choice answered through the chat API with
+# one image per prompt. Score = the benchmark's official average of the 2D accuracy (mean of the
+# ADE20K and COCO accuracies) and the 3D accuracy ("cvbench_acc").
+# lmms-eval has no CV-Bench task: this one is loaded with --include_path (EvalTask.include_path).
+task: dsv41_cv_bench
+dataset_path: nyu-visionx/CV-Bench
+test_split: test
+output_type: generate_until
+doc_to_visual: !function utils.doc_to_visual
+doc_to_text: !function utils.doc_to_text
+doc_to_target: "answer"
+process_results: !function utils.process_results
+generation_kwargs:
+  max_new_tokens: 32
+  temperature: 0
+  do_sample: false
+metric_list:
+  - metric: cvbench_acc
+    aggregation: !function utils.aggregate_official
+    higher_is_better: true
+  - metric: cvbench_2d
+    aggregation: !function utils.aggregate_2d
+    higher_is_better: true
+  - metric: cvbench_3d
+    aggregation: !function utils.aggregate_3d
+    higher_is_better: true
+lmms_eval_specific_kwargs:
+  default:
+    post_prompt: "\nAnswer with the option letter from the given choices directly."
+metadata:
+  version: 0.0

@@ -1,0 +1,25 @@
+# LongBench v2 (503 four-choice questions over long documents), generate-then-answer through the
+# chat API; same prompt / scoring as the workflow's longbench2_generate. The ISL window
+# (custom_dataset_kwargs of the EvalTask in eval_config.py) selects the questions whose context
+# fits the server (dsv41_longbench2_262k: ISL <= 256000 for the 262144-token / 16-user server;
+# dsv41_longbench2_1m: ISL <= 1040000 for the 1048576-token / 4-user server).
+task: dsv41_longbench2_1m
+custom_dataset: !function utils.load_longbench2
+dataset_path: ""
+test_split: train
+output_type: generate_until
+doc_to_text: "Please read the following text and answer the question below.\n\n<text>\n{{context}}\n</text>\n\nWhat is the correct answer to this question: {{question.strip()}}\nChoices:\n(A) {{choices[0]}}\n(B) {{choices[1]}}\n(C) {{choices[2]}}\n(D) {{choices[3]}}\n\nPlease reason step by step. Your final answer must be only (A), (B), (C), or (D) within \\boxed{}.\nAnswer:"
+doc_to_target: answer
+process_results: !function utils.process_results
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 4096
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 0.1
