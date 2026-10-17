@@ -1,0 +1,31 @@
+# LiveCodeBench v6, the "LiveCodeBench v6" row of the Qwen/Qwen3.8-27B card.
+# The fork's livecodebench prompt and local test-case execution grader, on the 175
+# problems added in release v6 (test6.jsonl, contest dates 2025-01-04 .. 2025-04-06).
+# The card does not state its window; Qwen's earlier cards use 25.02-25.05, i.e. the
+# 131 problems with contest_date >= 2025-02-01 (main's LIVECODEBENCH_V6_DOC_IDS), all
+# inside test6. Both are reported from the same per-problem samples.
+task: qwen38_livecodebench_v6
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test:
+      - "hf://datasets/livecodebench/code_generation_lite@0fe84c3912ea0c4d4a78037083943e8f0c4dd505/test6.jsonl"
+output_type: generate_until
+test_split: test
+process_docs: !function utils.process_lcb_v6
+doc_to_text: !function utils.lcb_doc_to_text
+doc_to_target: !function utils.lcb_doc_to_target
+process_results: !function utils.process_results_lcb
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 65536
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

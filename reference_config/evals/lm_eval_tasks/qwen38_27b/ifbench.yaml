@@ -1,0 +1,37 @@
+# IFBench (allenai/IFBench, NOT IFEval), the "IFBench" row of the Qwen/Qwen3.8-27B card.
+# 300 prompts with 58 out-of-distribution constraints, scored by the official verifiers
+# of the `ifbench` package (strict/loose as in allenai/IFBench evaluation_lib.py). The
+# IFBench paper reports prompt_level_loose_acc; that is the headline metric here.
+# Data: the HF copy of the test set; it differs from the repo jsonl only in whitespace
+# inside two prompts (keys 13 and 19).
+task: qwen38_ifbench
+dataset_path: allenai/IFBench_test
+dataset_kwargs:
+  revision: 2e8a48de45ff3bf41242f927254ca81b59ca3ae2
+test_split: train
+output_type: generate_until
+doc_to_text: !function utils.ifbench_doc_to_text
+doc_to_target: 0
+process_results: !function utils.process_results_ifbench
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: prompt_level_loose_acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: prompt_level_strict_acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: inst_level_loose_acc
+    aggregation: !function utils.agg_inst_level_acc
+    higher_is_better: true
+  - metric: inst_level_strict_acc
+    aggregation: !function utils.agg_inst_level_acc
+    higher_is_better: true
+metadata:
+  version: 1.0

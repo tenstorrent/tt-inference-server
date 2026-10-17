@@ -22,3 +22,5 @@ protobuf
 pyjwt
 pillow
 datasets==3.1.0
+# Official IFBench verifiers for the Qwen/Qwen3.8-27B IFBench task (lm_eval_tasks/qwen38_27b).
+ifbench @ git+https://github.com/allenai/IFBench.git@1c40f0c10d9b5c5c2f10a175a28007ebb64f7f4d

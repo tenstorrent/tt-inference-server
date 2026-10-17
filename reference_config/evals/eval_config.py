@@ -550,6 +550,13 @@ LIVECODEBENCH_V6_DOC_IDS = [
     *range(1040, 1055),
 ]
 
+
+# lm-eval task packages for the Qwen/Qwen3.8-27B model-card evals the pinned fork does
+# not ship (IFBench, HLE text-only, LiveCodeBench v6). Absolute, like gemma4_31b's.
+_QWEN38_27B_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "qwen38_27b"
+)
+
 # Terminal-Bench 2.0 as published on the Harbor Hub (terminal-bench/terminal-bench-2
 # rev 1, 2026-03-20, 89 tasks). Pinned so the task set and images cannot move
 # under a release run; bump deliberately when a new revision is published.
@@ -10945,6 +10952,112 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # IFBench (allenai, not IFEval): 300 prompts, official verifiers;
+                # the IFBench paper's headline metric is prompt-level loose.
+                task_name="qwen38_ifbench",
+                include_path=_QWEN38_27B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=79.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["prompt_level_loose_acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=12,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench v6 (175 release-v6 problems); the card-window
+                # (>= 2025-02-01, 131 problems) score comes from the same samples.
+                task_name="qwen38_livecodebench_v6",
+                include_path=_QWEN38_27B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=90.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=12,
+                use_chat_api=True,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 96 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # HLE text-only; exact_match is deterministic, the judged score
+                # comes from lm_eval_tasks/qwen38_27b/hle_judge.py on the samples.
+                task_name="qwen38_hle_text",
+                include_path=_QWEN38_27B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=30.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=12,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 96 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 2,
                 },
             ),
             EvalTask(
