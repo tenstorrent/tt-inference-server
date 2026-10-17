@@ -98,3 +98,8 @@ In the client container: the image's tt-inference-server tree must contain these
   `--impl deepseek-v41-flash-vlm` (workflows/model_specs/dev/vlm.yaml) instead of `--runtime-model-spec-json`.
 * lmms-eval's `openai_compatible` model sends greedy requests (temperature 0) and caps `max_new_tokens` at 4096.
 * Few-shot settings of the card (4-shot image rows) are not reproduced: lmms-eval image tasks are zero-shot.
+
+
+## BBH result on the chat endpoint (2026-10-17)
+
+`bbh_cot_fewshot` against the 131072 server scored 32.6 % EM (strict `get-answer` filter). The chat model does not end with the exemplars' "the answer is (X)" sentence, so most answers are `[invalid]` or mis-extracted; a loose offline re-score of the same samples gives ~79 %. The 86.1 reference is a base-model 3-shot number. Treat this task as not comparable until the filter is relaxed (e.g. take the last bold `(X)` / True / False / number).
