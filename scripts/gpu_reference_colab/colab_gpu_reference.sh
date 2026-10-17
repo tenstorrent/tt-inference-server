@@ -469,7 +469,11 @@ if epoch not in epochs:
         rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}/run-${run_id}"
         gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}/run-${run_id}" -p '*report*' > /dev/null 2>&1 || true
         report_on_disk "${SHIELD_DIR}/${task}/run-${run_id}" || state=report_pending
+        # The job metadata is evidence too: without it an accuracy miss cannot
+        # be told from any other failure, so the record stays report_pending
+        # (retried on a resume) until both are in hand.
         failed="$(gh run view "${run_id}" -R "${SHIELD_REPO}" --json jobs 2>/dev/null | gpuref shield-failed-steps)" || failed=""
+        [[ -n "${failed}" ]] || state=report_pending
         gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=${state}" \
             "conclusion=${conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
             "endpoint=${shown}" "endpoint_id=${endpoint_id}" "ttis=${TTIS_SHA}" \
@@ -481,7 +485,7 @@ if epoch not in epochs:
         local try
         for try in $(seq 1 "${REPORT_TRIES:-10}"); do
             retrieve_report "$@" && return 0
-            log "$1: report for Shield run $3 not downloaded (try ${try}/${REPORT_TRIES:-10})"
+            log "$1: report or job metadata for Shield run $3 not retrieved (try ${try}/${REPORT_TRIES:-10})"
             [[ "${try}" -lt "${REPORT_TRIES:-10}" ]] && sleep "${REPORT_RETRY_SECONDS:-60}"
         done
         return 1
@@ -688,7 +692,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
                 if retry_report "${task}" "${rec}" "${run_id}" "${run_conclusion}"; then
                     log "${task}: Shield run ${run_id} completed (${run_conclusion})"
                 else
-                    log "WARNING: ${task}: Shield run ${run_id} completed but its report was not downloaded; recorded report_pending, a re-run retries it"
+                    log "WARNING: ${task}: Shield run ${run_id} completed but its report or job metadata was not retrieved; recorded report_pending, a re-run retries it"
                 fi
                 break
             fi
