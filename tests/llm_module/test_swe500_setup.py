@@ -20,12 +20,16 @@ class NetworkTests(unittest.IsolatedAsyncioTestCase):
             env._network_overlay = root / 'compose.json'
             env.logger = logging.getLogger('test')
             created = []
+            inspection_calls = []
             async def output(*command):
                 if command[0] == 'ip':
                     return json.dumps([{'dst': '100.64.0.0/10'}, {'dst': 'default'}])
                 if command[1:3] == ('network', 'ls'):
                     return 'existing'
                 if command[1:3] == ('network', 'inspect'):
+                    inspection_calls.append(command)
+                    if len(inspection_calls) == 1:
+                        raise RuntimeError('Error: No such network: existing')
                     return json.dumps([{'IPAM': {'Config': [{'Subnet': '10.0.0.0/9'}]}}])
                 created.append(command)
                 if len(created) == 1:
@@ -33,6 +37,7 @@ class NetworkTests(unittest.IsolatedAsyncioTestCase):
                 return 'new-network-id'
             env._docker_output = output
             await env._allocate_network()
+            self.assertEqual(len(inspection_calls), 2)
             self.assertEqual(len(created), 2)
             for command in created:
                 subnet = ipaddress.ip_network(command[command.index('--subnet') + 1])
