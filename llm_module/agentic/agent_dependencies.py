@@ -22,3 +22,14 @@ def patch_mini_dependencies(harbor_dir: Path) -> dict:
         assert source.count(NEW) == 1, 'Unexpected Harbor mini install source'
     return {'file': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'change': 'Only uv tool install dependencies: litellm==1.106.0 and mcp==2.3.0; mini version/config/execution unchanged'}
+
+
+def dependency_source_proof() -> dict:
+    import harbor
+    path = Path(harbor.__file__).parent / 'agents/installed/mini_swe_agent.py'
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == 'db78a917f58ea56b5e3a3e56660d45323671b73aba5e4fcf5b21363bcd68758d', 'Harbor dependency repair was not applied'
+    return {'harbor_ref': '1da0bfd8c71cadbff17413fac984b8e391d2afc2',
+            'mini_source_sha256': digest, 'mini_swe_agent': '2.2.8',
+            'litellm': '1.106.0', 'mcp': '2.3.0',
+            'scope': 'Dependency install only; original agent configuration/execution unchanged'}

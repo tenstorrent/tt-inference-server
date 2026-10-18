@@ -32,6 +32,9 @@ class ExactMirrorDockerEnvironment(DockerEnvironment):
         proof['rendered_dockerfile'] = rendered
         self.trial_paths.trial_dir.mkdir(parents=True, exist_ok=True)
         (self.trial_paths.trial_dir / 'image-acquisition-proof.json').write_text(json.dumps(proof, indent=2) + '\n')
+        from llm_module.agentic.agent_dependencies import dependency_source_proof
+        (self.trial_paths.trial_dir / "agent-dependency-source-proof.json").write_text(
+            json.dumps(dependency_source_proof(), indent=2) + "\n")
         self._mirror_proof = proof
         self._isolated_network = None
         self._network_overlay = temporary / 'network-compose.json'

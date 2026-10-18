@@ -224,6 +224,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         from llm_module.agentic.swe500_mirror import load_manifest
 
         load_manifest()  # Refuse incomplete acquisition before scheduling any task.
+        from llm_module.agentic.agent_dependencies import dependency_source_proof
+        dependency_source_proof()  # Fail once before scheduling if setup patch is absent.
         environment_config["import_path"] = "llm_module.agentic.swe500_mirror_environment:ExactMirrorDockerEnvironment"
     if _mini_swe_needs_host_gateway(config):
         overlay_path = (
