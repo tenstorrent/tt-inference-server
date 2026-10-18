@@ -6,6 +6,7 @@
 not ship: IFBench (allenai), HLE text-only, and LiveCodeBench v6 (release-v6 problems).
 Ported from lm_eval_tasks/gemma4_31b/utils.py; HLE is judged offline (hle_judge.py)."""
 
+import io
 import os
 import re
 from typing import Dict, List, Optional
@@ -146,6 +147,63 @@ def process_results_hle(doc: dict, results: List[str]) -> Dict[str, int]:
 # (contest_date >= 2025-02-01, 131 problems) is a subset; both are reported from the
 # same per-problem samples. LCB_START_DATE / LCB_END_DATE narrow the set if needed.
 # ----------------------------------------------------------------------------------
+class _MockStdinWithBuffer:
+    """stdin mock with a binary .buffer, as in upstream LiveCodeBench's testing_util.
+    The fork patches sys.stdin with a bare StringIO, so every stdin solution that reads
+    sys.stdin.buffer (the usual competitive-programming idiom) fails with a runtime error."""
+
+    def __init__(self, inputs: str):
+        self.inputs = inputs
+        self._stringio = io.StringIO(inputs)
+        self.buffer = io.BytesIO(inputs.encode("utf-8"))
+
+    def read(self, *args):
+        return self.inputs
+
+    def readline(self, *args):
+        return self._stringio.readline(*args)
+
+    def readlines(self, *args):
+        return self.inputs.split("\n")
+
+    def __iter__(self):
+        return iter(self._stringio)
+
+    def __getattr__(self, name):
+        return getattr(self._stringio, name)
+
+
+def _call_method_with_buffer(method, inputs):
+    from unittest.mock import mock_open, patch
+
+    if isinstance(inputs, list):
+        inputs = "\n".join(inputs)
+    inputs_line_iterator = iter(inputs.split("\n"))
+
+    @patch("builtins.open", mock_open(read_data=inputs))
+    @patch("sys.stdin", _MockStdinWithBuffer(inputs))
+    @patch("sys.stdin.readline", lambda *args: next(inputs_line_iterator))
+    @patch("sys.stdin.readlines", lambda *args: inputs.split("\n"))
+    @patch("sys.stdin.read", lambda *args: inputs)
+    def _inner_call_method(_method):
+        try:
+            return _method()
+        except SystemExit:
+            pass
+
+    return _inner_call_method(method)
+
+
+def patch_lcb_stdin_buffer():
+    """Replace the fork's call_method; run_test resolves it at call time (forked worker)."""
+    from lm_eval.tasks.livecodebench import testing_util
+
+    testing_util.call_method = _call_method_with_buffer
+
+
+patch_lcb_stdin_buffer()
+
+
 def process_lcb_v6(dataset):
     start = os.getenv("LCB_START_DATE")
     end = os.getenv("LCB_END_DATE")
