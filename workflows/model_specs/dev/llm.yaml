@@ -1638,6 +1638,62 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen/Qwen3.8-Flash-Next (125B MoE, 6B active, 512 experts, Gated DeltaNet + QSA hybrid
+# attention, 51B n-gram embedding) TP4 autoport (models/autoports/qwen_qwen3_8_flash_next)
+# from the tt-model-bringup multigoal pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on
+# a 4x p300c QB2. CI TEST ENTRY, not for merge: requires tt-metal branch
+# vkovacevic/qwen38-flash-next-ci (lean model code + 4 shared-code changes) and
+# vllm-tt-plugin branch vkovacevic/qwen38-flash-next-ci (4 serving fixes; vLLM 0.30).
+# Server settings are the bring-up's stage-11 benchmark server. Stage-11 numbers
+# (4096/128): c1 TTFT 14.3 s, TPOT 49.9 ms (20.0 t/s/u); c32 16.7 tok/s output
+# (prefill-bound, ~290 prompt tok/s single stream). KV pool 263,168 tokens for all users.
+# The BFP4 n-gram embedding shards (~54 GB) are built under TT_CACHE_PATH on first start.
+- weights:
+    - Qwen/Qwen3.8-Flash-Next
+  impl: qwen38_flash_next_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen4ExpForConditionalGeneration=models.autoports.qwen_qwen3_8_flash_next.tt.generator_vllm:QwenFlashNextForCausalLM"
+        MESH_DEVICE: P300x2
+        OMP_NUM_THREADS: "8"
+        VLLM_RPC_TIMEOUT: "1800000"
+        # The device sampler covers top_k 1..32; requests outside it (and seeded
+        # requests) take the adapter's host path, which it only allows when set.
+        QWEN_FLASH_ALLOW_HOST_SAMPLING: "1"
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 1073741824
+        fabric_config: FABRIC_1D
+        seeded_sampling_policy: host
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        language-model-only: true
+        no-enable-prefix-caching: true
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "1024"
+        reasoning-parser: qwen3
+        enable-auto-tool-choice: true
+        tool-call-parser: qwen3_coder
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3.8-Flash-Next:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 # IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
 # the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
 # TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the

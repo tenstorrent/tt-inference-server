@@ -12762,6 +12762,100 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Qwen/Qwen3.8-Flash-Next (TP4 autoport, P300X2). CI TEST ENTRY, not for merge.
+    # Thinking model; the model card lists no IFEval/GPQA-subset references we can
+    # match (it reports GPQA Diamond 91.7 with very long reasoning budgets and
+    # IFBench, not IFEval), so these runs are informational.
+    # Order matters: tasks run sequentially and GPQA (bounded, longest) goes last.
+    # Wall bounds are sized so benchmarks (~4-5.5 h, prefill-bound) + IFEval (<= 3.5 h)
+    # + GPQA (<= 5.5 h) + server start (~1-1.5 h) stay under the 18 h device-job cap even on the
+    # slowest bh-qb-ge runner; exceeding a bound marks that task incomplete (rc=124)
+    # instead of losing the whole run. Request timeout == wall bound (never retry).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.8-Flash-Next",
+        tasks=[
+            EvalTask(
+                # All 541 prompts (no CI limit). prompt_level_strict_acc, 0-shot.
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results (no IFEval score; IFBench 81.3)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                wall_clock_timeout_seconds=int(3.5 * 60 * 60),
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": int(3.5 * 60 * 60),
+                },
+                # Model-card thinking-mode sampling; the qwen3 reasoning parser keeps
+                # the thinking out of the scored content.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 16384,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=91.7,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                wall_clock_timeout_seconds=int(5.5 * 60 * 60),
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": int(5.5 * 60 * 60),
+                },
+                # 32K thinking budget (the card's GPQA uses far longer budgets, so
+                # truncated answers are expected to cost points).
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                # 80 of 198 questions (+/-4.5 pts), the first 80 docs.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.CI_LONG: 80,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 

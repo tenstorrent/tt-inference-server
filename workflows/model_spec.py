@@ -454,6 +454,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# Qwen/Qwen3.8-Flash-Next TP4 autoport produced by the tt-model-bringup pipeline. The
+# code_path lives under models/autoports/ and exists only on the tt-metal CI test branch
+# vkovacevic/qwen38-flash-next-ci, not on main.
+qwen38_flash_next_qb2_impl = ImplSpec(
+    impl_id="qwen38_flash_next_qb2",
+    impl_name="qwen38-flash-next-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_flash_next",
+)
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
@@ -480,6 +489,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "qwen38_flash_next_qb2": qwen38_flash_next_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
