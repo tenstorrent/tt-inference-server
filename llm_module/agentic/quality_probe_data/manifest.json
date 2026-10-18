@@ -6,9 +6,9 @@
   ],
   "files": {
     "quality_repetition_client.py": {
-      "bytes": 4695,
-      "sha256": "275d6561e6343f7ab454adc7e1b20f6f6769157225029893bc0cc1f53c4098ad",
-      "gzip_sha256": "ed03d29f4ed84a74d811830576497f570430b4d8cdbe5daf97f9e994950f535f"
+      "bytes": 5147,
+      "sha256": "d941d3fcceb1a84ebae170e5a96a28eca14619a7b9a83e30dbf906851a8b68ec",
+      "gzip_sha256": "0d19317909fd9c215924cf2e49aefdb18aa6a12edad4264db10b6d248f95a3e8"
     },
     "quality-repetition-requests.json": {
       "bytes": 92568,
@@ -19,6 +19,16 @@
       "bytes": 498,
       "sha256": "9e9ae8cff10ce7c923b1d8b7217fc29720658650db10a1fc958e51381dd36d67",
       "gzip_sha256": "3ffc54f19c5b0b9c2f7725a9f8e96b06f544439638e13f0ba639b2ad0f23a722"
+    },
+    "quality-tokenization-requests-r2.json": {
+      "bytes": 88973,
+      "sha256": "81dd663297d3911fd7d19c60212da9c611c57bf75c36649b09023346a83f8f35",
+      "gzip_sha256": "40c8380256bdacd0745825ecb04e0ae5b65c51fbcdef582fe476b64759d028dd"
+    },
+    "quality-tokenization-r2-proof.json": {
+      "bytes": 1170,
+      "sha256": "a48d4bc57eda65310e66a212854d963a8493d819811889277e76e37d816f5f74",
+      "gzip_sha256": "9edd23dac52a5a52e86b5b09cd42d6bd6a799d2c63298214b1c335b904e5709a"
     }
   }
 }
