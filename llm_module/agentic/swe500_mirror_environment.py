@@ -22,10 +22,8 @@ class ExactMirrorDockerEnvironment(DockerEnvironment):
         temporary = Path(self._mirror_temp_dir.name)
         original = (self.environment_dir / 'Dockerfile').read_text()
         rendered, proof = mirrored_dockerfile(original, load_manifest())
-        dockerfile = temporary / 'Dockerfile'
-        dockerfile.write_text(rendered)
         overlay = temporary / 'mirror-compose.json'
-        overlay.write_text(json.dumps({'services': {'main': {'build': {'dockerfile': str(dockerfile)}}}}))
+        overlay.write_text(json.dumps({'services': {'main': {'build': {'dockerfile_inline': rendered}}}}))
         self.extra_docker_compose_paths = [*self.extra_docker_compose_paths, overlay]
         manifest_path = Path(__file__).with_name('swe500_mirror_manifest.json')
         proof['mirror_manifest_sha256'] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
