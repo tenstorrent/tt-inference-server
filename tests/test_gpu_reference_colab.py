@@ -2870,3 +2870,73 @@ gpuref() {{
     ]
     graded = json.loads(prov.read_text())
     assert graded["status"] == "ok" and graded["agentic"][0]["accuracy_check"] == 3
+
+
+def test_a_legacy_completed_record_without_job_metadata_is_refetched(tmp_path):
+    # Review on #5395 (colab_gpu_reference.sh:525): the previous version could
+    # leave a record `completed`, report on disk, but no failed_steps. A resume
+    # skipped it because the report was there, so the job metadata was never
+    # fetched and an accuracy miss could not be graded.
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    task = "terminal_bench_2_1"
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    built = tmp_path / "built" / "report_1.json"
+    _parser_report(built, 89, n_total=89, mean=0.4, score=score)  # an accuracy miss
+    on_disk = tmp_path / "out" / "shield" / task / "run-7" / "report_1.json"
+    on_disk.parent.mkdir(parents=True)
+    on_disk.write_text(built.read_text())
+    served = {"model": "org/m", "status": "ok", "gpu": {"name": "NVIDIA H100 80GB HBM3"},
+              "agentic_expected_trials": {task: 89}}  # fmt: skip
+    prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
+    prov.parent.mkdir(parents=True)
+    prov.write_text(json.dumps(served))
+    epoch = _snapshot(tmp_path / "out" / "serving", served)
+    # The legacy record: completed, with no failed_steps field at all.
+    _record(tmp_path, task, state="completed", run_id="7", conclusion="failure",
+            serving_epochs=epoch, endpoint_id=gpuref.endpoint_id(URL),
+            dispatched_at="2026-10-16T00:00:00Z", test="t", ttis=TTIS)  # fmt: skip
+    rec = tmp_path / "out" / "shield" / f"{task}.json"
+    jobs = json.dumps({"jobs": [{"name": "Test / Run", "conclusion": "failure",
+        "steps": [{"name": _TEST_STEP.format(task=task), "conclusion": "failure"}]}]})  # fmt: skip
+    views = tmp_path / "views"  # one line per `gh run view`
+    script = (
+        _resume_helpers(tmp_path, [task], True)
+        + f"""
+gh() {{
+    case "$2" in
+      download) mkdir -p "$7" && cp {built} "$7/report_1.json" ;;
+      view) echo view >> {views}; printf '%s' {shlex.quote(jobs)} ;;
+    esac
+}}
+gpuref() {{
+    case "$1" in
+      driver-status) shift; local rec="$1"; shift
+        python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
+      *) {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@" ;;
+    esac
+}}
+job_metadata_recorded {rec} && echo HAS_METADATA || echo NO_METADATA
+serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
+"""
+    )
+    out = _bash(script)
+    assert out.returncode == 0 and "HANDLED rc=0" in out.stdout, out.stderr
+    assert "NO_METADATA" in out.stdout and "VM_STARTED" not in out.stderr
+    assert views.read_text().count("view") == 1  # the job metadata was fetched
+    record = json.loads(rec.read_text())
+    assert record["state"] == "completed"
+    assert json.loads(record["failed_steps"]) == [
+        f"Test / Run / {_TEST_STEP.format(task=task)}"
+    ]
+    assert json.loads(prov.read_text())["status"] == "ok"
+    # A second resume finds the metadata recorded and fetches nothing again.
+    again = _bash(script)
+    assert again.returncode == 0 and "HAS_METADATA" in again.stdout, again.stderr
+    assert views.read_text().count("view") == 1
+    # The serving loop skips a completed record only with its job metadata too.
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    loop = driver.split('for task in "${SERVE_TASKS[@]}"; do\n        rec=', 1)[1]
+    skip = loop.split('log "${task}: Shield run already completed"', 1)[0]
+    assert 'job_metadata_recorded "${rec}"' in skip

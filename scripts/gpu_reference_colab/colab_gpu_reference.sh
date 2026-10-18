@@ -457,6 +457,11 @@ if epoch not in epochs:
     report_on_disk() {   # DIR: a downloaded report*.json is under DIR
         [[ -d "$1" ]] && [[ -n "$(find "$1" -type f -name 'report*.json' -print -quit 2>/dev/null)" ]]
     }
+    job_metadata_recorded() {   # REC: the record holds the run's failed steps (a JSON list)
+        # A "completed" record from before the job metadata was required can
+        # lack failed_steps; it is not done until a resume fetches them.
+        "${PYRUN[@]}" -c 'import json,sys; s=(json.load(open(sys.argv[1])) or {}).get("failed_steps"); sys.exit(0 if isinstance(s, str) and isinstance(json.loads(s), list) else 1)' "$1" 2>/dev/null
+    }
     retrieve_report() {   # TASK REC RUN_ID CONCLUSION: download the run's report, record the outcome
         # A completed run is recorded "completed" only once its report is on disk;
         # otherwise "report_pending", which a re-run retries instead of skipping.
@@ -522,7 +527,8 @@ if epoch not in epochs:
         log "every Shield run already finished; retrieving reports only (no VM is started)"
         for task in "${SERVE_TASKS[@]}"; do
             rec="${SHIELD_DIR}/${task}.json"
-            report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)" && [[ "$(field "${rec}" state)" == "completed" ]] && continue
+            report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)" && [[ "$(field "${rec}" state)" == "completed" ]] \
+                && job_metadata_recorded "${rec}" && continue
             retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)" \
                 || log "WARNING: ${task}: report still not retrievable; the record stays report_pending"
         done
@@ -638,7 +644,8 @@ if [[ "${SERVE}" -eq 1 ]]; then
         rec="${SHIELD_DIR}/${task}.json"
         rec_state=""
         if [[ -s "${rec}" ]]; then rec_state="$(field "${rec}" state)"; fi
-        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)"; then
+        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}/run-$(field "${rec}" run_id)" \
+            && job_metadata_recorded "${rec}"; then
             log "${task}: Shield run already completed"; continue
         fi
         if [[ "${rec_state}" == "completed" || "${rec_state}" == "report_pending" ]]; then
