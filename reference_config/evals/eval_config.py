@@ -13592,6 +13592,73 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Qwen/Qwen3.8-Flash-Next (TP4 autoport, P300X2). CI TEST ENTRY, not for merge.
+    # Agentic only: leak-free SWE-bench Pro (see llm_module/agentic/swebench_pro.py).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.8-Flash-Next",
+        tasks=[
+            EvalTask(
+                # SWE-bench Pro (card 62.5, Claude Code harness on a refined task
+                # set; ours is mini-swe-agent on the public 731, so informational).
+                # Tasks are rebuilt without the fix in the image's git history and
+                # the agent can reach only the inference server; every trajectory is
+                # scanned for leak attempts. The 5 tasks are the ones #90's stock run
+                # used (4 of them leaked there). 2 concurrent trials x 2.75 h.
+                task_name="swe_bench_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results (SWE-bench Pro 62.5, Claude Code harness)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebenchpro",
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    leak_scan=True,
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=int(2.75 * 60 * 60),
+                    llm_timeout_sec=60 * 60,
+                    # Pin the in-container agent toolchain (litellm 1.106.0 breaks mini-swe-agent).
+                    agent_env={"UV_EXCLUDE_NEWER": "2026-10-17T00:00:00Z"},
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "instance_internetarchive__openlibrary-2abe28b472ffed563a87cfe83685b161b35263b0-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+                            "instance_future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+                            "instance_qutebrowser__qutebrowser-8d05f0282a271bfd45e614238bd1b555c58b3fc1-v35616345bb8052ea303186706cec663146f0f184",
+                            "instance_element-hq__element-web-18c03daa865d3c5b10e52b669cd50be34c67b2e5-vnan",
+                            "instance_ansible__ansible-a6e671db25381ed111bbad0ab3e7d97366395d05-v0f01c69f1e2528b935359cfe578530722bca2c59",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
 ]
 
 
