@@ -418,13 +418,11 @@ templates:
       # (1,048,576) unless VLLM_ALLOW_LONG_MAX_MODEL_LEN is set (below): the
       # positions past it are the template's 4 tokens and the 128 outputs,
       # within the generator's RoPE tables (rounded to the chunk).
-      # 3 * 5120: the c32 short points (isl <= 8192 + 128) with 32 slots
-      # the native context with 32 slots is the next step.
-      max_context: 15360
+      max_context: 1053696
       # Every slot holds a full context (the pool is per slot, not a shared
       # token budget); without this the benchmark caps the concurrency to
       # what fits one context.
-      max_tokens_all_users_override: 491520  # 32 * 15360
+      max_tokens_all_users_override: 33718272  # 32 * 1053696
       default_impl: true
       # Health-wait budget: the model build reads the two 123 GB Engram tables
       # into host RAM, 10 to 15 minutes from the NVMe when the page cache is
@@ -471,7 +469,7 @@ templates:
         # replayed: the four registered c1 points, each
         # isl plus the 4 tokens the chat template adds. Any other length runs
         # eagerly; keep this list in step with the points and the template.
-        TT_V41_TRACE_PREFILL_LENGTHS: "1028,2052,4100,8196"
+        TT_V41_TRACE_PREFILL_LENGTHS: "1028,2052,4100,8196,16388,32772,65540,131076,262148,524292,1048452"
         # Compressed-KV rows in the checkpoint's own fp8 format (528 B a row,
         # against 1,024 in bf16): 1.6x less cache memory per context token on
         # every chip.

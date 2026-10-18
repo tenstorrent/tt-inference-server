@@ -845,7 +845,7 @@
     "DeepSeek-V4.1-Flash": {
         "blackhole_galaxy": [
             {
-                "isl": 1024,
+                "isl": 16384,
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 128,
@@ -855,7 +855,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2833.2369,
+                        "ttft_ms": 42331.7904,
                         "tput_user": 29.0,
                         "tput": 928.0
                     }
@@ -863,7 +863,7 @@
                 "tolerance": 0.1
             },
             {
-                "isl": 2048,
+                "isl": 32768,
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 128,
@@ -873,7 +873,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 5466.4738,
+                        "ttft_ms": 84463.5808,
                         "tput_user": 29.0,
                         "tput": 928.0
                     }
@@ -881,7 +881,7 @@
                 "tolerance": 0.1
             },
             {
-                "isl": 4096,
+                "isl": 65536,
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 128,
@@ -891,7 +891,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 10732.9476,
+                        "ttft_ms": 168727.1617,
                         "tput_user": 29.0,
                         "tput": 928.0
                     }
@@ -899,7 +899,7 @@
                 "tolerance": 0.1
             },
             {
-                "isl": 8192,
+                "isl": 131072,
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 128,
@@ -909,7 +909,61 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 21265.8952,
+                        "ttft_ms": 337254.3234,
+                        "tput_user": 29.0,
+                        "tput": 928.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 262144,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 674308.6467,
+                        "tput_user": 29.0,
+                        "tput": 928.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 524288,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1348417.2935,
+                        "tput_user": 29.0,
+                        "tput": 928.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 1048448,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2696305.4323,
                         "tput_user": 29.0,
                         "tput": 928.0
                     }
