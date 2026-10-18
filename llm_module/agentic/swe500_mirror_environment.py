@@ -75,12 +75,23 @@ class ExactMirrorDockerEnvironment(DockerEnvironment):
         routes = json.loads(await self._docker_output('ip', '-j', '-4', 'route', 'show', 'table', 'all'))
         occupied = [ipaddress.ip_network(r['dst'], strict=False) for r in routes
                     if r.get('dst', 'default') != 'default' and r.get('dst') != '0.0.0.0/0']
-        ids = (await self._docker_output('docker', 'network', 'ls', '-q')).split()
-        if ids:
-            networks = json.loads(await self._docker_output('docker', 'network', 'inspect', *ids))
+        for snapshot_attempt in range(8):
+            ids = (await self._docker_output('docker', 'network', 'ls', '-q')).split()
+            if not ids:
+                break
+            try:
+                networks = json.loads(await self._docker_output('docker', 'network', 'inspect', *ids))
+            except RuntimeError as error:
+                # Other trials may finish between listing and inspection. A
+                # fresh snapshot is safe; atomic create still rejects overlap.
+                vanished = re.search(r'no such network|network [^\n]+ not found', str(error), re.IGNORECASE)
+                if not vanished or snapshot_attempt == 7:
+                    raise
+                continue
             occupied.extend(ipaddress.ip_network(c['Subnet'], strict=False)
                             for n in networks for c in n.get('IPAM', {}).get('Config') or []
                             if c.get('Subnet') and ':' not in c['Subnet'])
+            break
         name = 'swe500-' + uuid.uuid4().hex
         # Shared-address space first; use private space only if host routes allow.
         pools = ['100.64.0.0/10', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
