@@ -11,16 +11,17 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
-
-from utils.model_naming import slugify_model_id
-from workflow_module.engine_types import EvalLimitMode
+from typing import Any
 
 from llm_module.request_overrides import (
     agent_kwargs_with_request_body,
     resolve_request_body,
 )
-from ..agentic.harbor import HarborRunConfig, run as run_harbor
+from utils.model_naming import slugify_model_id
+from workflow_module.engine_types import EvalLimitMode
+
+from ..agentic.harbor import HarborRunConfig
+from ..agentic.harbor import run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
 from .base import DriverResult, LLMDriver
@@ -62,7 +63,7 @@ class AgenticEvalDriver(LLMDriver):
         # Set at the start of run(); stamped onto the harness job/output folder
         # so a re-run into the same logs dir does not collide with the previous
         # run's folder (harbor/sweagent refuse to start in an existing one).
-        self._run_stamp: Optional[str] = None
+        self._run_stamp: str | None = None
         self._parser = AgenticEvalParser(
             task_name=task.task_name,
             score=task.score,
@@ -116,12 +117,34 @@ class HarborAgenticDriver(AgenticEvalDriver):
 
     name = "harbor"
 
+    def parse(self, raw, *, device=""):
+        if raw.get("unscored_policy_probe"):
+            if not getattr(self, "_formation_probe_validated", False):
+                raise ValueError(
+                    "Unscored formation output without validated execution"
+                )
+            from report_module.schema import Block
+
+            return Block(
+                kind="benchmarks",
+                id="unscored_policy_probe",
+                title="UNSCORED scheduling diagnostic — accuracy not measured",
+                data={
+                    "status": "na" if raw.get("status") == "completed" else "error",
+                    "reason": "Unscored mechanism diagnostic; accuracy not measured.",
+                    "diagnostic": dict(raw),
+                },
+                targets={"tool": "gemma_policy_probe", "device": device},
+            )
+        return super().parse(raw, device=device)
+
     def run(
         self,
         config: LLMRunConfig,
         server: ServerConnection,
         context: DriverContext,
     ) -> DriverResult:
+        self._formation_probe_validated = False
         n_tasks = resolve_n_tasks(self.task, self.runtime_config)
         if n_tasks == 0:
             logger.info(
@@ -129,6 +152,34 @@ class HarborAgenticDriver(AgenticEvalDriver):
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
+        # Explicit API-only opt-in; unmarked tasks retain the Harbor path.
+        marker = (getattr(self.task.agentic_eval_config, "agent_kwargs", {}) or {}).get(
+            "gemma_formation_probe"
+        )
+        if marker is not None:
+            score = self.task.score
+            references = (
+                "published_score",
+                "published_score_ref",
+                "gpu_reference_score",
+                "gpu_reference_score_ref",
+            )
+            if (
+                marker != "v1"
+                or self.task.task_name != "terminal_bench_2"
+                or server.model != "google/gemma-4-31B-it"
+                or score is None
+                or any(getattr(score, field, None) is not None for field in references)
+                or getattr(score, "mode_reference_scores", {})
+            ):
+                raise ValueError(
+                    "Formation probe requires exact model/task and absent score references"
+                )
+            from ..agentic.ci_formation_probe import run_probe
+
+            self._formation_probe_validated = True
+            raw, path = run_probe(server, context)
+            return DriverResult(return_code=0, raw=raw, raw_path=path)
         self._run_stamp = _run_timestamp()
         _cfg = self.task.agentic_eval_config
         logger.info(
@@ -153,7 +204,7 @@ class HarborAgenticDriver(AgenticEvalDriver):
         return self._load_result(rc, self.result_path(server, context))
 
 
-def _agentic_venv_python() -> Optional[Path]:
+def _agentic_venv_python() -> Path | None:
     """Interpreter of the EVALS_AGENTIC venv whose bin/ holds harbor/sweagent.
 
     Returned to the harness so it can locate its CLI even when the agentic
@@ -167,7 +218,7 @@ def _agentic_venv_python() -> Optional[Path]:
         from workflow_module.venv_provisioner import get_venv_provisioner
 
         return Path(get_venv_provisioner().venv_python(WorkflowVenvType.EVALS_AGENTIC))
-    except Exception as e:  # pragma: no cover - defensive
+    except Exception as e:  # noqa: BLE001 - existing defensive venv lookup
         logger.warning("Could not resolve EVALS_AGENTIC venv python (%s).", e)
         return None
 
@@ -186,9 +237,9 @@ def build_harbor_config(
     context: DriverContext,
     *,
     runtime_config: Any = None,
-    n_tasks: Optional[int] = None,
-    venv_python: Optional[Path] = None,
-    run_stamp: Optional[str] = None,
+    n_tasks: int | None = None,
+    venv_python: Path | None = None,
+    run_stamp: str | None = None,
 ) -> HarborRunConfig:
     cfg = task.agentic_eval_config
     task_output_dir = _agentic_output_dir(
@@ -239,7 +290,7 @@ def build_harbor_config(
     )
 
 
-def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
+def resolve_task_names(task: Any, runtime_config: Any = None) -> list[str]:
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
@@ -249,7 +300,7 @@ def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     return agentic_config.task_names
 
 
-def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
+def resolve_n_tasks(task: Any, runtime_config: Any = None) -> int | None:
     agentic_config = task.agentic_eval_config
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is None:
@@ -267,7 +318,7 @@ def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
     return int(limit_arg)
 
 
-def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
+def _get_limit_mode(runtime_config: Any = None) -> EvalLimitMode | None:
     if runtime_config is None or not getattr(
         runtime_config, "limit_samples_mode", None
     ):
@@ -286,7 +337,7 @@ def _agentic_output_dir(
     task: Any,
     *,
     release_layout: bool = False,
-    run_stamp: Optional[str] = None,
+    run_stamp: str | None = None,
 ) -> Path:
     safe_model_id = slugify_model_id(model_id)
     task_dir = task.task_name if not run_stamp else f"{task.task_name}_{run_stamp}"
