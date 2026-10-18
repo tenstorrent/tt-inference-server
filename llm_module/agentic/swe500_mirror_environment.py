@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import re
 from pathlib import Path
 import tempfile
 import time
@@ -51,7 +52,9 @@ class ExactMirrorDockerEnvironment(DockerEnvironment):
                 return await super()._run_docker_compose_command(command, *args, **kwargs)
             except RuntimeError as error:
                 message = str(error).lower()
-                if attempt == 4 or not any(s in message for s in ('429', 'too many requests', 'toomanyrequests', '503 service unavailable', '502 bad gateway')):
+                transient = bool(re.search(r'\b(?:429|502|503)\b', message)) or any(
+                    s in message for s in ('too many requests', 'toomanyrequests'))
+                if attempt == 4 or not transient:
                     raise
                 async with cls._registry_lock:
                     delay = min(15 * 2 ** attempt, 120)
