@@ -1,0 +1,1646 @@
+diff --git a/models/demos/gemma4_31b_qb2/tt/alias-manifest.json b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
+new file mode 100644
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
+@@ -0,0 +1,12 @@
++{
++  "research_only": true,
++  "upstream_supported_width_changing_view": false,
++  "files": {
++    "sdpa_l1.py": "473d098d7cdf97e81e323c0c93b9308b3b77173f257c32a8d4646252f0c75710",
++    "generator_vllm.py": "e93d40c99bacc8ff05cb77d6181c0ace9329b911d9e45e8b74a62ae43a9f8fd4",
++    "model.py": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
++    "decoder.py": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
++    "generator.py": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
++    "__init__.py": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
++  }
++}
+diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
+--- a/models/demos/gemma4_31b_qb2/tt/decoder.py
++++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
+@@ -14,6 +14,8 @@
+ The bounded ring supports forward decoding with complete live history, not
+ arbitrary rollback into evicted tokens. Page-ID changes require live KV migration.
+ """
++
++import os
+ 
+ import ttnn
+ from models.demos.gemma4_31b_qb2.tt.sdpa_l1 import BLACKHOLE_L1_BYTES, full_sdpa_fp32_l1_end
+@@ -71,6 +73,7 @@
+         self.activation_dtype = ttnn.bfloat16
+         self.residual_dtype = ttnn.bfloat16
+         self.norms_dtype = ttnn.bfloat16
++        self.PREFILL_BATCH_ROWS = 8192 if os.environ.get("GEMMA_BATCH_PREFILL_WIDE", "0") == "1" else 2048
+         self.PREFILL_CHUNK = 1024 if self.kind == "sliding_attention" else 6656
+         if self.PREFILL_CHUNK <= 0 or self.PREFILL_CHUNK % self.PAGE_SIZE:
+             raise ValueError("Compute chunks must contain a positive whole number of cache pages")
+@@ -365,10 +368,11 @@
+         # tile storage for this descriptor instead of allocating and releasing
+         # a large unused template between persistent norm owners. The view's
+         # values are intentionally never consumed by a numerical operation.
+-        elements = self.PREFILL_CHUNK * 1344
++        max_rows = max(self.PREFILL_CHUNK, self.PREFILL_BATCH_ROWS)
++        elements = max_rows * 1344
+         prefix_shape = ttnn.Shape([1, 1, elements // self.head_dim, self.head_dim])
+         prefix = ttnn.reshape(self.cos, prefix_shape, prefix_shape)
+-        x = ttnn.experimental.view(prefix, [1, 1, self.PREFILL_CHUNK, 1344])
++        x = ttnn.experimental.view(prefix, [1, 1, max_rows, 1344])
+         assert x.buffer_unique_id() == self.cos.buffer_unique_id()
+         assert x.dtype == ttnn.bfloat16 and x.layout == ttnn.TILE_LAYOUT
+         assert x.memory_config() == ttnn.DRAM_MEMORY_CONFIG
+@@ -385,14 +389,14 @@
+         # Query the native factory rather than duplicating worker/round
+         # sizing. Its geometry does not depend on the norm weight's values.
+         shapes = {}
+-        for rows in range(self.PAGE_SIZE, self.PREFILL_CHUNK + 1, self.PAGE_SIZE):
++        for rows in range(self.PAGE_SIZE, max_rows + 1, self.PAGE_SIZE):
+             shape = ttnn.Shape([1, 1, rows, 1344])
+             probe = native_stats(ttnn.reshape(x, shape, shape), names[0])
+             assert probe.dtype == ttnn.float32 and probe.layout == ttnn.ROW_MAJOR_LAYOUT
+             assert probe.memory_config() == ttnn.DRAM_MEMORY_CONFIG
+             assert probe.buffer_aligned_page_size() == 8192
+             shapes[rows] = (probe.shape, probe.padded_shape)
+-            if rows == self.PREFILL_CHUNK:
++            if rows == max_rows:
+                 first_owner = probe
+             del probe
+         self.prefill_norm_stats_owners = {}
+@@ -474,15 +478,24 @@
+         """Residual ownership chosen once at entry to the entire layer stack."""
+         return 1344 if sequence_length > 128 else 5376
+ 
+-    def _reduce(self, x, residual_width=None):
++    def _reduce(self, x, residual_width=None, *, batch=1):
+         residual_width = self.residual_width if residual_width is None else residual_width
+         x = ttnn.to_memory_config(x, ttnn.DRAM_MEMORY_CONFIG)
+         dtype = ttnn.bfloat16
+         if x.dtype != dtype:
+             x = ttnn.typecast(x, dtype)
+         if residual_width == self.hidden_size:
++            if x.shape[2] > 128:
++                return ttnn.concat(
++                    [self._reduce(x[:, :, i : i + 128, :], residual_width) for i in range(0, x.shape[2], 128)], dim=2
++                )
+             y = ttnn.all_reduce(x, cluster_axis=1, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+             return ttnn.typecast(y, ttnn.bfloat16) if y.dtype != ttnn.bfloat16 else y
++        # Ring BF16 pair ordering restarts per native batch unit. Preserve each
++        # request's row origin when packed spans are not multiples of 256.
++        packed_rows = x.shape[2]
++        if batch > 1:
++            x = ttnn.reshape(x, [batch, 1, packed_rows // batch, x.shape[-1]])
+         y = ttnn.experimental.reduce_scatter_minimal_async(
+             x,
+             dim=3,
+@@ -494,17 +507,42 @@
+             memory_config=ttnn.DRAM_MEMORY_CONFIG,
+             num_workers_per_link=None,
+         )
++        if batch > 1:
++            y = ttnn.reshape(y, [1, 1, packed_rows, y.shape[-1]])
+         return ttnn.typecast(y, ttnn.bfloat16) if y.dtype != ttnn.bfloat16 else y
+ 
+-    def _pref_linear(self, x, name, activation=None):
++    def _pref_linear(self, x, name, activation=None, *, sequence_hint=None):
+         import math
+ 
++        sequence = x.shape[2] if sequence_hint is None else sequence_hint
++        packed_rows = x.shape[2]
++        if packed_rows > 2048 and sequence_hint is not None and 256 < sequence_hint < 1024:
++            return ttnn.concat(
++                [
++                    self._pref_linear(
++                        x[:, :, begin : min(begin + 2048, packed_rows), :],
++                        name,
++                        activation,
++                        sequence_hint=sequence_hint,
++                    )
++                    for begin in range(0, packed_rows, 2048)
++                ],
++                dim=2,
++            )
++        native_batch = (
++            sequence_hint is not None
++            and packed_rows > sequence_hint
++            and ((not self.sliding and sequence_hint in (128, 256)) or sequence_hint == 1024 or packed_rows > 2048)
++        )
++        if native_batch:
++            native_rows = max(rows for rows in range(128, min(sequence_hint, 1024) + 1, 128) if packed_rows % rows == 0)
++            x = ttnn.reshape(x, [packed_rows // native_rows, 1, native_rows, x.shape[-1]])
+         weight = getattr(self, name)
+         grid = (8, 8) if self.sliding and name in ("qkv", "qk") else (11, 8) if self.sliding else (11, 10)
+         wide_qkv = (
+             self.sliding
+             and name == "qkv"
+-            and x.shape[2] == 1024
++            and sequence == 1024
+             and weight.dtype == ttnn.bfloat4_b
+             and x.dtype == ttnn.bfloat16
+         )
+@@ -519,9 +557,9 @@
+         cap = (8 if name == "o" else 14) if self.sliding else (4 if name == "o" else 6)
+         expected_input = ttnn.bfloat8_b if name == "o" and not self.sliding else ttnn.bfloat16
+         if not wide_qkv and weight.dtype == ttnn.bfloat4_b and x.dtype == expected_input:
+-            if not self.sliding and x.shape[2] in (128, 256):
++            if not self.sliding and sequence in (128, 256):
+                 cap = 64 if name == "o" else 42
+-            elif x.shape[2] == 1024:
++            elif sequence == 1024:
+                 cap = 32 if name == "o" else 28
+         if wide_qkv:
+             cap = 42
+@@ -538,7 +576,7 @@
+             fuse_batch=False,
+             fused_activation=ttnn.UnaryWithParam(ttnn.UnaryOpType.GELU_TANH) if activation else None,
+         )
+-        return ttnn.linear(
++        result = ttnn.linear(
+             x,
+             weight,
+             program_config=config,
+@@ -546,6 +584,8 @@
+             dtype=ttnn.bfloat16,
+             memory_config=ttnn.DRAM_MEMORY_CONFIG,
+         )
++
++        return ttnn.reshape(result, [1, 1, packed_rows, result.shape[-1]]) if native_batch else result
+ 
+     def _dlinear(self, x, name):
+         weight = self.decode_weights[name]
+@@ -584,6 +624,10 @@
+             return self._dnorm(x, name)
+         if x.shape[-1] == self.hidden_size:
+             rows = x.padded_shape[-2]
++            if rows > 128:
++                return ttnn.concat(
++                    [self._resnorm(x[:, :, i : i + 128, :], name, False) for i in range(0, rows, 128)], dim=2
++                )
+             mem = ttnn.create_sharded_memory_config(
+                 (rows, 192),
+                 ttnn.CoreGrid(x=7, y=4),
+@@ -641,16 +685,16 @@
+         n = self._resnorm(x, name, decode)
+         return self._gather(n) if x.shape[-1] != self.hidden_size else n
+ 
+-    def _prefill_mlp(self, x):
++    def _prefill_mlp(self, x, *, sequence_hint=None, batch=1):
+         n = self._input_norm(x, "pre_feedforward_layernorm", False)
+-        gate = self._pref_linear(n, "gate", "gelu_tanh")
+-        up = self._pref_linear(n, "up")
++        gate = self._pref_linear(n, "gate", "gelu_tanh", sequence_hint=sequence_hint)
++        up = self._pref_linear(n, "up", sequence_hint=sequence_hint)
+         del n
+         product = ttnn.multiply(gate, up)
+         del gate, up
+-        local = self._pref_linear(product, "down")
++        local = self._pref_linear(product, "down", sequence_hint=sequence_hint)
+         del product
+-        reduced = self._reduce(local, x.shape[-1])
++        reduced = self._reduce(local, x.shape[-1], batch=batch)
+         del local
+         post = self._resnorm(reduced, "post_feedforward_layernorm", False)
+         del reduced
+@@ -681,11 +725,15 @@
+             activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.MUL_UNARY_SFPU, self.layer_scalar)],
+         )
+ 
+-    def _prefill_sdpa_config(self, q, cache, page_table, *, start=0):
++    def _prefill_sdpa_config(self, q, cache, page_table, *, start=0, logical_sequence=None):
+         k_chunk = 128
+         if not self.sliding and start % k_chunk:
+             raise ValueError(f"Full-attention SDPA start {start} must align to K chunk {k_chunk}")
+-        eligible = sorted((c for c in self.pref_sdpa_by_q if q.shape[2] % c == 0 and start % c == 0), reverse=True)
++        logical_sequence = q.shape[2] if logical_sequence is None else logical_sequence
++        eligible = sorted(
++            (c for c in self.pref_sdpa_by_q if q.shape[2] % c == 0 and logical_sequence % c == 0 and start % c == 0),
++            reverse=True,
++        )
+         if not eligible:
+             raise ValueError(f"No SDPA Q chunk aligns with rows {q.shape[2]} and start {start}")
+         if self.sliding or not self.pref_compute.fp32_dest_acc_en:
+@@ -730,9 +778,15 @@
+         result = self._apply_decode_rope(x, cos, sin)
+         return ttnn.reshape(result, ttnn.Shape(list(x.shape)), ttnn.Shape(list(x.padded_shape)))
+ 
+-    def _prefill_qkv(self, x, start):
++    def _prefill_qkv(self, x, start, *, batch=1, sequence_hint=None):
+         tied = not self.sliding
+-        fused = self._pref_linear(self._input_norm(x, "input_layernorm", False), "qk" if tied else "qkv")
++        fused = self._pref_linear(
++            self._input_norm(x, "input_layernorm", False),
++            "qk" if tied else "qkv",
++            sequence_hint=x.shape[2] // batch if sequence_hint is None else sequence_hint,
++        )
++        if batch > 1:
++            fused = ttnn.reshape(fused, [batch, 1, x.shape[2] // batch, fused.shape[-1]])
+         q, k, v = ttnn.experimental.nlp_create_qkv_heads(
+             fused,
+             num_heads=8,
+@@ -746,24 +800,289 @@
+             # Full attention derives rotated K from normalized V below.
+             # The raw K output has no consumer after head creation.
+             del k
+-        # Only a start-zero, whole-width prefix can alias the table buffer.
+-        rope_shape = ttnn.Shape([1, 1, x.shape[2], self.head_dim])
+-        if start == 0:
+-            cos = ttnn.reshape(self.cos, rope_shape, rope_shape)
+-            sin = ttnn.reshape(self.sin, rope_shape, rope_shape)
+-        else:
+-            cos = ttnn.reshape(self.cos[start : start + x.shape[2], :], rope_shape)
+-            sin = ttnn.reshape(self.sin[start : start + x.shape[2], :], rope_shape)
+-        q = self._norm(q, "self_attn.q_norm")
+-        q = ttnn.experimental.rotary_embedding(q, cos, sin)
++        sequence = x.shape[2] // batch
++        rope_shape = ttnn.Shape([1, 1, sequence, self.head_dim])
++        starts = [start] * batch if isinstance(start, int) else list(start)
++
++        def rotate(value):
++            def one(tensor, position):
++                if position == 0:
++                    cos = ttnn.reshape(self.cos, rope_shape, rope_shape)
++                    sin = ttnn.reshape(self.sin, rope_shape, rope_shape)
++                else:
++                    available = min(sequence, self.max_context - position)
++                    cos_rows = self.cos[position : position + available, :]
++                    sin_rows = self.sin[position : position + available, :]
++                    if available < sequence:
++                        # Only common-bucket padding can extend beyond context.
++                        # Attention trims each row to its own valid padded span,
++                        # so these extra rotary values are never consumed.
++                        cos_rows = ttnn.concat([cos_rows, self.cos[: sequence - available, :]], dim=0)
++                        sin_rows = ttnn.concat([sin_rows, self.sin[: sequence - available, :]], dim=0)
++                    cos = ttnn.reshape(cos_rows, rope_shape)
++                    sin = ttnn.reshape(sin_rows, rope_shape)
++                return ttnn.experimental.rotary_embedding(tensor, cos, sin)
++
++            if len(set(starts)) == 1:
++                return one(value, starts[0])
++            return ttnn.concat([one(value[row : row + 1], position) for row, position in enumerate(starts)], dim=0)
++
++        q = rotate(self._norm(q, "self_attn.q_norm"))
+         if not self.sliding:
+             v = self._norm(v)
+-            k = ttnn.experimental.rotary_embedding(ttnn.multiply(v, self.norms["self_attn.k_norm"]), cos, sin)
++            k = rotate(ttnn.multiply(v, self.norms["self_attn.k_norm"]))
+         else:
+-            k = self._norm(k, "self_attn.k_norm")
+-            k = ttnn.experimental.rotary_embedding(k, cos, sin)
++            k = rotate(self._norm(k, "self_attn.k_norm"))
+             v = self._norm(v)
+         return (q, k, v)
++
++    def prefill_batched(
++        self,
++        x,
++        *,
++        batch,
++        page_table,
++        kv_cache,
++        start_pos=0,
++        histories=None,
++        logical_lengths=None,
++        return_history=False,
++        fill_page_table=None,
++        batch_indices=None,
++        sequence_hint=None,
++    ):
++        """Shared projections/CCL/MLP, with native batched attention by compatible span.
++
++        Packed residual rows are independent requests. Attention groups share
++        causal coordinates; different full-cache starts form distinct groups.
++        Sliding groups share preceding-history length, normally 1024 on hits.
++        """
++        total = x.shape[2]
++        if batch < 2 or total % batch or total > 8192:
++            raise ValueError("Batched prefill requires 2+ equal padded spans and at most 8192 rows")
++        seq = total // batch
++        starts = [start_pos] * batch if isinstance(start_pos, int) else list(start_pos)
++        lengths = [seq] * batch if logical_lengths is None else list(logical_lengths)
++        histories = [None] * batch if histories is None else list(histories)
++        if seq % self.PAGE_SIZE or len(starts) != batch or any(p % self.PAGE_SIZE for p in starts):
++            raise ValueError("Batched prefill spans and starts must be page aligned")
++        if (
++            len(lengths) != batch
++            or len(histories) != batch
++            or any(
++                not 0 < length <= seq or position < 0 or position + length > self.max_context
++                for position, length in zip(starts, lengths)
++            )
++        ):
++            raise ValueError("Batched prefill logical spans must lie within the model context")
++        if self.sliding and any(p and h is None for p, h in zip(starts, histories)):
++            raise ValueError("Batched sliding continuation requires preceding history")
++        if batch >= 2 and total % batch == 0 and (total > self.PREFILL_BATCH_ROWS or total // batch > 1024):
++            return self._prefill_batched_stream(
++                x,
++                batch=batch,
++                page_table=page_table,
++                kv_cache=kv_cache,
++                start_pos=start_pos,
++                histories=histories,
++                logical_lengths=logical_lengths,
++                return_history=return_history,
++                fill_page_table=fill_page_table,
++                batch_indices=batch_indices,
++            )
++        hint = seq if sequence_hint is None else sequence_hint
++        q, k, v = self._prefill_qkv(x, starts, batch=batch, sequence_hint=hint)
++        if not self.sliding:
++            q = ttnn.typecast(q, ttnn.bfloat8_b)
++        if fill_page_table is not None:
++            if batch_indices is None:
++                raise ValueError("Batched cache fill needs an explicit row-index tensor")
++            for cache, value in zip(kv_cache, (k, v)):
++                ttnn.experimental.paged_fill_cache(
++                    cache,
++                    ttnn.typecast(value, cache.dtype),
++                    fill_page_table,
++                    batch_idx_tensor=batch_indices,
++                )
++        else:
++            for row, position in enumerate(starts):
++                # Write only pages containing actual input; bucket padding cannot
++                # overwrite a following page or another request's scratch space.
++                valid_pages = (lengths[row] + self.PAGE_SIZE - 1) // self.PAGE_SIZE
++                pt = page_table[row : row + 1, position // self.PAGE_SIZE : position // self.PAGE_SIZE + valid_pages]
++                for cache, value in zip(kv_cache, (k, v)):
++                    ttnn.experimental.paged_fill_cache(
++                        cache,
++                        ttnn.typecast(value[row : row + 1, :, : valid_pages * self.PAGE_SIZE, :], cache.dtype),
++                        pt,
++                        batch_idx=0,
++                    )
++        del cache, value
++        groups = {}
++        for row in range(batch):
++            key = (0 if histories[row] is None else histories[row][0].shape[2]) if self.sliding else starts[row]
++            groups.setdefault((key, (lengths[row] + 127) // 128 * 128), []).append(row)
++        outputs = [None] * batch
++        next_histories = [None] * batch
++        for (coordinate, logical_sequence), rows in groups.items():
++
++            def selected(tensor):
++                return (
++                    tensor
++                    if len(rows) == batch
++                    else ttnn.concat([tensor[r : r + 1] for r in rows], dim=0)
++                    if len(rows) > 1
++                    else tensor[rows[0] : rows[0] + 1]
++                )
++
++            qq, pt = selected(q), selected(page_table)
++            if logical_sequence < seq:
++                qq = qq[:, :, :logical_sequence, :]
++            cfg = self._prefill_sdpa_config(
++                qq, kv_cache[0], pt, start=0 if self.sliding else coordinate, logical_sequence=logical_sequence
++            )
++            if self.sliding:
++                kk, vv = selected(k), selected(v)
++                if logical_sequence < seq:
++                    kk, vv = kk[:, :, :logical_sequence, :], vv[:, :, :logical_sequence, :]
++                if coordinate:
++                    previous = [
++                        ttnn.concat([histories[r][j] for r in rows], dim=0) if len(rows) > 1 else histories[rows[0]][j]
++                        for j in range(2)
++                    ]
++                    attn = ttnn.transformer.scaled_dot_product_attention(
++                        qq,
++                        ttnn.concat([previous[0], kk], dim=2),
++                        ttnn.concat([previous[1], vv], dim=2),
++                        attn_mask=self.history_mask[
++                            :, :, :logical_sequence, 1024 - coordinate : 1024 + logical_sequence
++                        ],
++                        is_causal=False,
++                        scale=1.0,
++                        program_config=cfg,
++                        compute_kernel_config=self.pref_compute,
++                    )
++                else:
++                    attn = ttnn.transformer.scaled_dot_product_attention(
++                        qq,
++                        kk,
++                        vv,
++                        is_causal=True,
++                        scale=1.0,
++                        sliding_window_size=self.window,
++                        program_config=cfg,
++                        compute_kernel_config=self.pref_compute,
++                    )
++            else:
++                attn = ttnn.transformer.chunked_scaled_dot_product_attention(
++                    qq,
++                    kv_cache[0],
++                    kv_cache[1],
++                    pt,
++                    chunk_start_idx=coordinate,
++                    scale=1.0,
++                    program_config=cfg,
++                    compute_kernel_config=self.pref_compute,
++                )
++            del qq, pt
++            if self.sliding:
++                del kk, vv
++                if coordinate:
++                    del previous
++            if logical_sequence < seq:
++                attn = ttnn.pad(attn, [(0, 0), (0, 0), (0, seq - logical_sequence), (0, 0)], value=0.0)
++            if len(rows) == batch:
++                all_attention = attn
++            else:
++                for index, row in enumerate(rows):
++                    outputs[row] = attn[index : index + 1] if len(rows) > 1 else attn
++        if self.sliding and return_history:
++            for row, length in enumerate(lengths):
++                tails = []
++                for j, value in enumerate((k, v)):
++                    live = value[row : row + 1, :, :length, :]
++                    joined = ttnn.concat([histories[row][j], live], dim=2) if histories[row] is not None else live
++                    tails.append(joined[:, :, max(0, joined.shape[2] - self.window - self.PAGE_SIZE) :, :])
++                next_histories[row] = tuple(tails)
++            del live, joined, value, tails
++        del q, k, v, histories
++        attn = all_attention if len(groups) == 1 else ttnn.concat(outputs, dim=0)
++        if len(groups) == 1:
++            del all_attention
++        joined = self._concat_heads(attn)
++        del attn, outputs
++        joined = ttnn.reshape(joined, [1, 1, total, joined.shape[-1]])
++        local = self._pref_linear(joined, "o", sequence_hint=hint)
++        del joined
++        reduced = self._reduce(local, x.shape[-1], batch=batch)
++        del local
++        post = self._resnorm(reduced, "post_attention_layernorm", False)
++        del reduced
++        residual = ttnn.add(x, post, dtype=self.residual_dtype)
++        del post
++        result = self._prefill_mlp(residual, sequence_hint=hint, batch=batch)
++        return (result, next_histories) if return_history else result
++
++    def _prefill_batched_stream(
++        self,
++        x,
++        *,
++        batch,
++        page_table,
++        kv_cache,
++        start_pos,
++        histories,
++        logical_lengths,
++        return_history,
++        fill_page_table,
++        batch_indices,
++    ):
++        """Bound packed activation work while advancing every request per layer."""
++        seq = x.shape[2] // batch
++        if x.shape[2] > 8192 or seq % self.PAGE_SIZE:
++            raise ValueError("Batched stream exceeds the 8192 aggregate padded-token budget")
++        if self.sliding and batch * min(seq, self.PREFILL_CHUNK) > self.PREFILL_BATCH_ROWS:
++            raise ValueError("Batched streaming must preserve whole native sliding-attention chunks")
++        lengths = [seq] * batch if logical_lengths is None else list(logical_lengths)
++        if any((length + 127) // 128 * 128 != seq for length in lengths):
++            raise ValueError("Long batched spans must occupy the same padded span")
++        starts = [start_pos] * batch if isinstance(start_pos, int) else list(start_pos)
++        tails = [None] * batch if histories is None else list(histories)
++        parts = [[] for _ in range(batch)]
++        # Native BF16 reduce-scatter alternates reduction order every 256
++        # sequence rows. Keep every nonfinal slice at the original phase.
++        chunk = min(1024, self.PREFILL_BATCH_ROWS // (batch * 256) * 256)
++        if chunk == 0:
++            raise ValueError("Streaming prefill needs at least 256 packed rows per request")
++        begin = 0
++        while begin < seq:
++            native_begin = begin // self.PREFILL_CHUNK * self.PREFILL_CHUNK
++            end = min(seq, begin + chunk, native_begin + self.PREFILL_CHUNK)
++            span = end - begin
++            inp = ttnn.concat([x[:, :, row * seq + begin : row * seq + end, :] for row in range(batch)], dim=2)
++            previous = []
++            for tail in tails:
++                previous.append(
++                    tuple(t[:, :, max(0, t.shape[2] - 1024) :, :] for t in tail) if tail is not None else None
++                )
++            result, tails = self.prefill_batched(
++                inp,
++                batch=batch,
++                page_table=page_table,
++                kv_cache=kv_cache,
++                start_pos=[position + begin for position in starts],
++                histories=previous,
++                logical_lengths=[min(length - begin, span) for length in lengths],
++                return_history=True,
++                fill_page_table=fill_page_table[:, begin // 128 : end // 128] if fill_page_table is not None else None,
++                batch_indices=batch_indices,
++                sequence_hint=min(self.PREFILL_CHUNK, seq - native_begin),
++            )
++            for row in range(batch):
++                parts[row].append(result[:, :, row * span : (row + 1) * span, :])
++            begin = end
++        result = ttnn.concat([ttnn.concat(part, dim=2) if len(part) > 1 else part[0] for part in parts], dim=2)
++        return (result, tails) if return_history else result
+ 
+     def prefill_forward(
+         self, x, *, page_table, kv_cache, consume_input=False, start_pos=0, history=None, return_history=False
+diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
+--- a/models/demos/gemma4_31b_qb2/tt/generator.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator.py
+@@ -6,7 +6,9 @@
+ token; position advances in the model trace. Host sampling is opt-in compatibility.
+ """
+ 
++import json
+ import math
++import os
+ import time
+ from dataclasses import dataclass, field
+ from types import SimpleNamespace
+@@ -14,12 +16,12 @@
+ import torch
+ from loguru import logger
+ from transformers import AutoTokenizer, GenerationConfig
+-from ttnn.tools.trace_allocation_tracker import corruptible_allocation_scope
+ 
+ import ttnn
+ from models.common.sampling.tt_sampling import TTSampling
+ from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
+ from models.demos.gemma4_31b_qb2.tt.model import Gemma4Model
++from models.demos.gemma4_31b_qb2.tt.prefill_batch import DeferredPrefillHistory, padded_span, plan_prefill_batches
+ 
+ 
+ @dataclass
+@@ -49,6 +51,9 @@
+         self.initial_capacity = max_seq_len
+         self.states = {}
+         self.traces = {}
++        # Keep explicit decode/sampler IO across conservative trace retirement.
++        # The next capture gets a new entry object, so old handles stay invalid.
++        self._entry_storage = None
+         self.prefill_shapes = set()
+         self.counters = {
+             k: 0
+@@ -84,6 +89,7 @@
+         if not 1 <= batch <= 32 or not 1 <= capacity <= self.max_seq_len:
+             raise ValueError("Expected batch1..32 and context1..262144")
+         self._retire_traces()
++        self._entry_storage = None
+         # All accepted decode SDPA chunks are64/128: one128-token page covers
+         # the rounded read window. No power-of-two capacity restriction.
+         pages = (capacity + 127) // 128
+@@ -327,7 +333,39 @@
+         self.counters["token_readbacks"] += 1
+         return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
+ 
+-    def prefill_forward(
++    def _restore_prefill_history(self, state, page_tables, slot, start, *, layer_index=None):
++        """Gather the preceding sliding window from vLLM's retained KV pages.
++
++        The scheduler owns cache identity and eviction. Only pages in this
++        request's current table are read; null pages are never valid history.
++        Decode and cached continuation consume the same stored BF8 values.
++        """
++        histories = []
++        indices = range(len(self.model.layers)) if layer_index is None else [layer_index]
++        for i in indices:
++            layer = self.model.layers[i]
++            if not layer.sliding:
++                histories.append(None)
++                continue
++            first = max(0, start - layer.window) // Decoder.PAGE_SIZE
++            pages = page_tables[i][slot, first : start // Decoder.PAGE_SIZE].tolist()
++            if not pages or any(p <= 0 or p >= state.kv[i][0].shape[0] for p in pages):
++                raise ValueError(f"Missing sliding prefix pages for layer {i} at position {start}: {pages}")
++            pair = []
++            for cache in state.kv[i]:
++                parts = [cache[p : p + 1, :, :, :] for p in pages]
++                tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
++                pair.append(ttnn.typecast(tail, ttnn.bfloat16))
++            histories.append(tuple(pair))
++        return histories
++
++    def prefill_forward(self, tokens, **kwargs):
++        maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
++        if maximum > 1 and len(kwargs.get("prompt_lens", ())) > 1 and not kwargs.get("return_all_logits", False):
++            return self._prefill_jobs_forward(tokens, **kwargs)
++        return self._prefill_serial_forward(tokens, **kwargs)
++
++    def _prefill_jobs_forward(
+         self,
+         tokens,
+         *,
+@@ -339,6 +377,7 @@
+         return_device=False,
+         start_positions=None,
+         history_keys=None,
++        retain_prefill_history=None,
+         **kwargs,
+     ):
+         state = kv_cache
+@@ -357,13 +396,253 @@
+         self._validate_tokens(tokens)
+         if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
+             raise ValueError("Invalid logical prompt length")
++        if retain_prefill_history is not None:
++            if (
++                history_keys is None
++                or len(retain_prefill_history) != len(prompt_lens)
++                or any(type(flag) is not bool for flag in retain_prefill_history)
++            ):
++                raise ValueError("Expected one explicit history retention bool per prefill row")
+         starts = [0] * len(prompt_lens) if start_positions is None else list(start_positions)
+         if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
+             raise ValueError("Prefill must advance each request from its current position")
+         shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
+-        if shape_key not in self.prefill_shapes:
+-            # A new prefill signature may create cached protocol semaphores or
+-            # norm buffers. Retire old traces before those persistent allocations.
++        if history_keys is not None or shape_key not in self.prefill_shapes:
++            # Request histories allocate persistent K/V tails even for a seen
++            # signature. Unseen signatures can also allocate native cached state.
++            # Both must be created before the next trace capture.
++            self._retire_traces()
++        self._tables(state, page_table)
++        jobs = []
++        for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
++            if not 0 < length <= state.capacity or length > tokens.shape[1]:
++                raise ValueError("Invalid logical prompt length")
++            start = starts[row]
++            aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
++            chunk_length = length - aligned_start
++            histories = None
++            if history_keys is not None:
++                key = history_keys[row]
++                if start == 0:
++                    histories = [None] * len(self.model.layers)
++                else:
++                    previous = state.prefill_history.get(key)
++                    if previous is None:
++                        if not state.vllm_owned or start != aligned_start:
++                            raise ValueError("Cached prefill must start at a whole page in the serving cache")
++                        previous = {
++                            "end": start,
++                            "layers": DeferredPrefillHistory(
++                                len(self.model.layers),
++                                lambda i, slot=slot, start=start: self._restore_prefill_history(
++                                    state, page_table, slot, start, layer_index=i
++                                )[0],
++                            ),
++                        }
++                    if previous["end"] != start:
++                        raise ValueError(
++                            "Prefill history does not match the scheduler continuation: "
++                            f"key={key}, saved_end={previous['end']}, start={start}"
++                        )
++                    rewind = start - aligned_start
++                    # Never leave a partially consumed list under its old end
++                    # position if a later device operation raises. Successful
++                    # prefill publishes the completed history below.
++                    state.prefill_history.pop(key, None)
++                    # This request owns the list; other requests never borrow it.
++                    # Replace each consumed tail as soon as its CQ0 slice has
++                    # been enqueued. Bank tensors may have another root owner,
++                    # so use normal reference release, never forced deallocation.
++                    histories = previous["layers"]
++                    for index, tail in enumerate(histories):
++                        if tail is None:
++                            continue
++                        valid = tail[0].shape[2] - rewind
++                        if valid == 0:
++                            histories[index] = None
++                        else:
++                            begin = max(0, valid - 1024)
++                            histories[index] = tuple(t[:, :, begin:valid, :] for t in tail)
++                        del tail
++                    del previous
++            ids = torch.zeros(1, (chunk_length + 31) // 32 * 32, dtype=torch.int32)
++            ids[0, :chunk_length] = tokens[row, aligned_start:length]
++            tables, host_rows = {}, {}
++            for kind, table in page_table.items():
++                sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
++                table_key = (id(table), sentinel)
++                if table_key not in host_rows:
++                    row_table = table[slot : slot + 1]
++                    if sentinel:
++                        row_table = row_table.masked_fill(row_table == 0, -1)
++                    host_rows[table_key] = row_table
++                tables[kind] = host_rows[table_key]
++            jobs.append(
++                dict(
++                    row=row,
++                    slot=slot,
++                    length=length,
++                    span=chunk_length,
++                    start=aligned_start,
++                    ids=ids,
++                    tables=tables,
++                    histories=histories,
++                )
++            )
++            # The job owns this history until it is consumed or republished.
++            # A borrowed loop local must not retain a completed request's tails.
++            del histories
++        outputs = [None] * len(jobs)
++        maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
++        for indices in plan_prefill_batches(
++            [job["span"] for job in jobs],
++            maximum,
++            long_spans=os.environ.get("GEMMA_BATCH_PREFILL_LONG", "0") == "1",
++            packed_rows=self.model.layers[0].PREFILL_BATCH_ROWS,
++        ):
++            group = [jobs[index] for index in indices]
++            padded = max(padded_span(job["span"]) for job in group)
++            if os.environ.get("GEMMA_BATCH_PREFILL_REPORT", "0") == "1":
++                logger.info(
++                    "PREFILL_REQUEST_BATCH "
++                    + json.dumps(
++                        {
++                            "requests": len(group),
++                            "slots": [job["slot"] for job in group],
++                            "spans": [job["span"] for job in group],
++                            "padded_span": padded,
++                            "starts": [job["start"] for job in group],
++                            "time": time.time(),
++                        }
++                    )
++                )
++            if len(group) == 1:
++                job = group[0]
++                tt_ids = self._upload(job["ids"], ttnn.uint32)
++                tables, uploaded = {}, {}
++                for kind, table in job["tables"].items():
++                    if id(table) not in uploaded:
++                        uploaded[id(table)] = self._upload(table)
++                        self.counters["prefill_table_uploads"] += 1
++                    tables[kind] = uploaded[id(table)]
++                device_outputs = [
++                    self.model.prefill_device(
++                        tt_ids,
++                        sequence_length=job["span"],
++                        page_tables=tables,
++                        kv_cache=state.kv,
++                        start_pos=job["start"],
++                        histories=job["histories"],
++                    )
++                ]
++            else:
++                packed = torch.zeros(len(group), padded, dtype=torch.int32)
++                for index, job in enumerate(group):
++                    packed[index, : job["span"]] = job["ids"][0, : job["span"]]
++                tt_ids = self._upload(packed, ttnn.uint32)
++                tables, fill_tables, uploaded = {}, {}, {}
++                for kind in group[0]["tables"]:
++                    # Layers sharing immutable host rows also share device tables
++                    # within this prefill group. A later scheduler update gets
++                    # new uploads; mutable decode tables are never reused here.
++                    table_key = tuple(id(job["tables"][kind]) for job in group)
++                    if table_key not in uploaded:
++                        table = self._upload(torch.cat([job["tables"][kind] for job in group], dim=0))
++                        fill = torch.full((len(group), padded // 128), -1, dtype=torch.int32)
++                        for index, job in enumerate(group):
++                            pages = (job["span"] + 127) // 128
++                            begin = job["start"] // 128
++                            fill[index, :pages] = job["tables"][kind][0, begin : begin + pages]
++                        uploaded[table_key] = (table, self._upload(fill))
++                        del table, fill
++                        self.counters["prefill_table_uploads"] += 2
++                    tables[kind], fill_tables[kind] = uploaded[table_key]
++                batch_indices = self._upload(torch.arange(len(group), dtype=torch.int32))
++                merged = self.model.prefill_batched_device(
++                    tt_ids,
++                    batch=len(group),
++                    sequence_length=padded,
++                    page_tables=tables,
++                    kv_cache=state.kv,
++                    logical_lengths=[job["span"] for job in group],
++                    start_positions=[job["start"] for job in group],
++                    histories=[job["histories"] for job in group] if history_keys is not None else None,
++                    retain_histories=[retain_prefill_history[job["row"]] for job in group]
++                    if retain_prefill_history is not None
++                    else None,
++                    fill_page_tables=fill_tables,
++                    batch_indices=batch_indices,
++                )
++                del fill_tables, batch_indices
++                device_outputs = [merged[:, :, index : index + 1, :] for index in range(len(group))]
++                del merged
++            for job, out in zip(group, device_outputs):
++                row = job["row"]
++                if history_keys is not None:
++                    if retain_prefill_history is None or retain_prefill_history[row]:
++                        state.prefill_history[history_keys[row]] = {"end": job["length"], "layers": job["histories"]}
++                    else:
++                        state.prefill_history.pop(history_keys[row], None)
++                outputs[row] = (
++                    out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
++                )
++                job["histories"] = None
++            del out, device_outputs, tt_ids, tables, uploaded, group
++        self.prefill_shapes.add(shape_key)
++        if return_device:
++            return outputs
++        width = max(prompt_lens) if return_all_logits else 1
++        result = torch.zeros(len(outputs), width, self.model.config.vocab_size)
++        for i, out in enumerate(outputs):
++            result[i, : out.shape[1]] = out[0]
++        return result
++
++    def _prefill_serial_forward(
++        self,
++        tokens,
++        *,
++        page_table,
++        kv_cache,
++        prompt_lens,
++        return_all_logits=False,
++        slots=None,
++        return_device=False,
++        start_positions=None,
++        history_keys=None,
++        retain_prefill_history=None,
++        **kwargs,
++    ):
++        state = kv_cache
++        self._check_options(kwargs)
++        if not isinstance(state, CacheState):
++            raise TypeError("kv_cache must be a CacheState; caller may supply its kv tensors and tables")
++        slots = list(range(len(prompt_lens))) if slots is None else list(slots)
++        if (
++            len(slots) != len(prompt_lens)
++            or len(set(slots)) != len(slots)
++            or any(s < 0 or s >= state.batch for s in slots)
++        ):
++            raise ValueError("Expected distinct valid fixed slots, one per prompt")
++        if tokens.ndim != 2 or tokens.shape[0] != len(prompt_lens) or not prompt_lens:
++            raise ValueError("Expected one token row per nonempty prompt")
++        self._validate_tokens(tokens)
++        if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
++            raise ValueError("Invalid logical prompt length")
++        if retain_prefill_history is not None:
++            if (
++                history_keys is None
++                or len(retain_prefill_history) != len(prompt_lens)
++                or any(type(flag) is not bool for flag in retain_prefill_history)
++            ):
++                raise ValueError("Expected one explicit history retention bool per prefill row")
++        starts = [0] * len(prompt_lens) if start_positions is None else list(start_positions)
++        if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
++            raise ValueError("Prefill must advance each request from its current position")
++        shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
++        if history_keys is not None or shape_key not in self.prefill_shapes:
++            # Request histories allocate persistent K/V tails even for a seen
++            # signature. Unseen signatures can also allocate native cached state.
++            # Both must be created before the next trace capture.
+             self._retire_traces()
+         self._tables(state, page_table)
+         outputs = []
+@@ -379,21 +658,40 @@
+                 if start == 0:
+                     histories = [None] * len(self.model.layers)
+                 else:
+-                    previous = state.prefill_history[key]
++                    previous = state.prefill_history.get(key)
++                    if previous is None:
++                        if not state.vllm_owned or start != aligned_start:
++                            raise ValueError("Cached prefill must start at a whole page in the serving cache")
++                        previous = {
++                            "end": start,
++                            "layers": self._restore_prefill_history(state, page_table, slot, start),
++                        }
+                     if previous["end"] != start:
+-                        raise ValueError("Prefill history does not match the scheduler continuation")
++                        raise ValueError(
++                            "Prefill history does not match the scheduler continuation: "
++                            f"key={key}, saved_end={previous['end']}, start={start}"
++                        )
+                     rewind = start - aligned_start
+-                    histories = []
+-                    for tail in previous["layers"]:
++                    # Never leave a partially consumed list under its old end
++                    # position if a later device operation raises. Successful
++                    # prefill publishes the completed history below.
++                    state.prefill_history.pop(key, None)
++                    # This request owns the list; other requests never borrow it.
++                    # Replace each consumed tail as soon as its CQ0 slice has
++                    # been enqueued. Bank tensors may have another root owner,
++                    # so use normal reference release, never forced deallocation.
++                    histories = previous["layers"]
++                    for index, tail in enumerate(histories):
+                         if tail is None:
+-                            histories.append(None)
+                             continue
+                         valid = tail[0].shape[2] - rewind
+                         if valid == 0:
+-                            histories.append(None)
+-                            continue
+-                        begin = max(0, valid - 1024)
+-                        histories.append(tuple(t[:, :, begin:valid, :] for t in tail))
++                            histories[index] = None
++                        else:
++                            begin = max(0, valid - 1024)
++                            histories[index] = tuple(t[:, :, begin:valid, :] for t in tail)
++                        del tail
++                    del previous
+             ids = torch.zeros(1, (chunk_length + 31) // 32 * 32, dtype=torch.int32)
+             ids[0, :chunk_length] = tokens[row, aligned_start:length]
+             tt_ids = self._upload(ids, ttnn.uint32)
+@@ -421,7 +719,14 @@
+                 histories=histories,
+             )
+             if history_keys is not None:
+-                state.prefill_history[history_keys[row]] = {"end": length, "layers": histories}
++                if retain_prefill_history is None or retain_prefill_history[row]:
++                    state.prefill_history[history_keys[row]] = {"end": length, "layers": histories}
++                else:
++                    state.prefill_history.pop(history_keys[row], None)
++                # Final prefill rows cannot consume BF16 chunk tails again.
++                # Native KV owners persist; CQ0 orders all preceding consumers
++                # before later allocations may reuse these tail addresses.
++                del histories
+             outputs.append(
+                 out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
+             )
+@@ -484,61 +789,106 @@
+                     "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
+                 )
+             return self.traces[key]
++        trace_entry_start = time.perf_counter()
+         self._retire_traces()
++        cache_ids = tuple(id(t) for pair in state.kv for t in pair)
++        table_ids = {k: id(v) for k, v in state.device_tables.items()}
++        cache_buffer_ids = tuple(t.buffer_unique_id() for pair in state.kv for t in pair)
++        table_buffer_ids = {k: v.buffer_unique_id() for k, v in state.device_tables.items()}
++        storage = self._entry_storage
++        if (
++            storage is None
++            or storage["state"] is not state
++            or storage["cache_ids"] != cache_ids
++            or storage["table_ids"] != table_ids
++            or storage["cache_buffer_ids"] != cache_buffer_ids
++            or storage["table_buffer_ids"] != table_buffer_ids
++        ):
++            storage = {
++                "state": state,
++                "cache_ids": cache_ids,
++                "table_ids": table_ids,
++                "cache_buffer_ids": cache_buffer_ids,
++                "table_buffer_ids": table_buffer_ids,
++                "tokens": self._upload(torch.zeros(1, 1, 1, 32, dtype=torch.int32), ttnn.uint32),
++                "positions": self._upload(torch.zeros(state.batch, dtype=torch.int32)),
++                "rope_positions": self._upload(torch.zeros(state.batch, dtype=torch.int32)),
++                "logits": self.model.tensor(
++                    torch.zeros(1, 1, 32, self.model.config.vocab_size),
++                    dim=3,
++                    dtype=ttnn.bfloat16,
++                ),
++            }
++            self._entry_storage = storage
++            prepared = False
++        else:
++            prepared = True
+         entry = {
+-            "tokens": self._upload(
+-                torch.zeros(1, 1, 1, 32, dtype=torch.int32),
+-                ttnn.uint32,
+-            ),
+-            "positions": self._upload(torch.zeros(state.batch, dtype=torch.int32)),
+-            "rope_positions": self._upload(torch.zeros(state.batch, dtype=torch.int32)),
+-            "logits": self.model.tensor(
+-                torch.zeros(1, 1, 32, self.model.config.vocab_size),
+-                dim=3,
+-                dtype=ttnn.bfloat16,
+-            ),
++            **storage,
+             "state": state,
+             "cache_owners": tuple(t for pair in state.kv for t in pair),
+             "table_owners": tuple(state.device_tables.values()),
+-            "cache_ids": tuple(id(t) for pair in state.kv for t in pair),
+-            "table_ids": {k: id(v) for k, v in state.device_tables.items()},
+             "remaining_steps": 0,
+         }
+-        for kind, table in state.device_tables.items():
+-            scratch_table = (
+-                torch.tensor(state.scratch_pages[kind])[:, None]
+-                .expand(state.batch, state.capacity // 128)
+-                .int()
+-                .contiguous()
+-            )
+-            self._refresh(scratch_table, table, "page_table_refreshes")
+-        logger.info("Warming model trace")
+-        self._model_step(entry, state)
+-        logger.info("Warming sampling trace")
+-        # Setup must not consume a caller's random stream. Preserve the actual
+-        # on-device seed state even if a previous request already advanced it.
+-        saved_seeds = ttnn.clone(self.sampler.seeds_tt_tensor)
+-        self._sample_step(entry)
+-        ttnn.copy(saved_seeds, self.sampler.seeds_tt_tensor)
+-        ttnn.synchronize_device(self.mesh)
+-        ttnn.deallocate(saved_seeds)
+-        self.counters["synchronizations"] += 1
++        if not prepared:
++            for kind, table in state.device_tables.items():
++                scratch_table = (
++                    torch.tensor(state.scratch_pages[kind])[:, None]
++                    .expand(state.batch, state.capacity // 128)
++                    .int()
++                    .contiguous()
++                )
++                self._refresh(scratch_table, table, "page_table_refreshes")
++            logger.info("Warming model trace")
++            self._model_step(entry, state)
++            logger.info("Warming sampling trace")
++            # Setup must not consume a caller's random stream. Preserve the actual
++            # on-device seed state even if a previous request already advanced it.
++            saved_seeds = ttnn.clone(self.sampler.seeds_tt_tensor)
++            self._sample_step(entry)
++            ttnn.copy(saved_seeds, self.sampler.seeds_tt_tensor)
++            ttnn.synchronize_device(self.mesh)
++            ttnn.deallocate(saved_seeds)
++            self.counters["synchronizations"] += 1
++        else:
++            # Prefill can still be queued after conservative retirement.
++            ttnn.synchronize_device(self.mesh)
++            self.counters["synchronizations"] += 1
+         for kind, table in state.device_tables.items():
+             self._refresh(state.uploaded_tables[kind], table, "page_table_refreshes")
+         self._refresh(torch.zeros(state.batch, dtype=torch.int32), entry["positions"], "position_refreshes")
+         self._refresh(torch.zeros(state.batch, dtype=torch.int32), entry["rope_positions"], "rope_refreshes")
+         self._refresh(torch.zeros(1, 1, 1, 32, dtype=torch.int32), entry["tokens"], "token_refreshes")
+-        logger.info("Capturing model trace")
+-        with corruptible_allocation_scope(self.mesh):
++        programs_before = self.mesh.num_program_cache_entries()
++        self.mesh.set_program_cache_misses_allowed(False)
++        try:
++            logger.info("Capturing model trace")
+             entry["model_trace"] = ttnn.begin_trace_capture(self.mesh, cq_id=0)
+             self._model_step(entry, state)
+             ttnn.end_trace_capture(self.mesh, entry["model_trace"], cq_id=0)
+-        logger.info("Capturing sampling trace")
+-        with corruptible_allocation_scope(self.mesh):
++            logger.info("Capturing sampling trace")
+             entry["sampling_trace"] = ttnn.begin_trace_capture(self.mesh, cq_id=0)
+             self._sample_step(entry)
+             ttnn.end_trace_capture(self.mesh, entry["sampling_trace"], cq_id=0)
++        finally:
++            # Unseen eager prefill shapes still need to compile before the
++            # existing conservative prefill retirement and next capture.
++            self.mesh.set_program_cache_misses_allowed(True)
++        programs_after = self.mesh.num_program_cache_entries()
++        if programs_before != programs_after:
++            raise RuntimeError("Native program cache grew during trace capture")
+         self.traces[key] = entry
++        logger.info(
++            "TRACE_ENTRY_COST "
++            + json.dumps(
++                {
++                    "seconds": time.perf_counter() - trace_entry_start,
++                    "prepared": prepared,
++                    "programs_before": programs_before,
++                    "programs_after": programs_after,
++                }
++            )
++        )
+         return entry
+ 
+     def replay(self, entry, *, sample=True):
+@@ -734,6 +1084,7 @@
+ 
+     def close(self):
+         self._retire_traces()
++        self._entry_storage = None
+ 
+ 
+ def build_generator(mesh_device, *, checkpoint=None, layer_indices=None, max_seq_len=2048):
+diff --git a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
+--- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
+@@ -1,6 +1,10 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: 2026 Tenstorrent USA, Inc.
+ """Translate vLLM scheduler updates into the Gemma4 TP4 generator's inputs."""
++
++import os
++import json
++import time
+ 
+ import torch
+ 
+@@ -13,7 +17,7 @@
+     _router = ttnn.FabricRouterConfig()
+     _router.max_packet_payload_size_bytes = 8192
+     model_capabilities = {
+-        "supports_prefix_caching": False,
++        "supports_prefix_caching": True,
+         "supports_async_decode": True,
+         "supports_sample_on_device": True,
+         "supports_device_penalties": False,
+@@ -24,6 +28,7 @@
+             "router_config": _router,
+         },
+     }
++    supports_prefill_history_finality = True
+     decode_input_update_contract = 1
+     MAX_PREFILL_TOKENS = 8192
+ 
+@@ -38,6 +43,7 @@
+         self.entry = None
+         self.cache = None
+         self.prefill_slot_keys = {}
++        self.next_prefill_key = 0
+ 
+     def embed_input_ids(self, input_ids):
+         raise RuntimeError("Use the TT prefill_forward/decode_forward interface")
+@@ -65,8 +71,6 @@
+     def get_kv_cache_spec(cls, vllm_config):
+         from vllm.v1.kv_cache_interface import FullAttentionSpec, SlidingWindowSpec
+ 
+-        if vllm_config.cache_config.enable_prefix_caching:
+-            raise ValueError("Gemma4 QB2 does not implement prefix caching")
+         if vllm_config.max_in_flight_tokens > 2 * cls.MAX_PREFILL_TOKENS:
+             raise ValueError("Gemma4 QB2 supports at most 8192 batched tokens with async chunked prefill")
+         config = vllm_config.model_config.hf_text_config
+@@ -101,38 +105,202 @@
+         # in-flight prefill tokens globally, in addition to the per-request tails.
+         # The plugin separately adds one output page per request.
+         tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
+-        return 262144 + 5 * (tails + 2 * cls.MAX_PREFILL_TOKENS)
++        pool_tokens = int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))
++        if pool_tokens < 262144 or pool_tokens % Decoder.PAGE_SIZE:
++            raise ValueError("Experimental pool must preserve context and page alignment")
++        return pool_tokens + 5 * (tails + 2 * cls.MAX_PREFILL_TOKENS)
+ 
+     def allocate_kv_cache_per_layer(self, per_layer_specs):
+-        pools, kv, scratch = {}, [], {}
++        before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
++        print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
++        if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":
++            raise RuntimeError("Experimental backing reinterpretation requires explicit opt-in")
++        if len(per_layer_specs) != len(self.generator.model.layers):
++            raise ValueError("The allocator must supply exactly one spec per layer")
++        grouped = {}
+         for i, (layer, (shape, dtype, pool_id)) in enumerate(zip(self.generator.model.layers, per_layer_specs)):
+             if tuple(shape[1:]) != (layer.kv_heads, 128, layer.head_dim) or dtype != torch.bfloat16:
+                 raise ValueError(f"Unexpected allocator geometry or accounting dtype: {shape}, {dtype}")
+-            key = (pool_id, tuple(shape[1:]))
+-            if key not in pools:
+-                pools[key] = layer.allocate_cache(physical_pages=shape[0] + self.max_batch_size)
+-            kv.append(pools[key])
+-            scratch[i] = list(range(shape[0], shape[0] + self.max_batch_size))
+-        if len(kv) != len(self.generator.model.layers):
+-            raise ValueError("The allocator must supply one spec per layer")
++            grouped.setdefault(pool_id, []).append((i, layer, int(shape[0])))
++        pools, full_views, native_factors, scheduler_bounds = {}, {}, {}, {}
++        for pool_id, members in grouped.items():
++            sizes = {n for _, _, n in members}
++            if len(sizes) != 1 or len(members) != 6 or sum(not layer.sliding for _, layer, _ in members) != 1:
++                raise ValueError("Alias requires one full and five sliding layers with identical global block bounds")
++            n = sizes.pop()
++            if n <= 1:
++                raise ValueError("Alias pool must contain null and live block IDs")
++            wide_layer = next(layer for _, layer, _ in members if layer.sliding)
++            pair = wide_layer.allocate_cache(physical_pages=n + self.max_batch_size)
++            pools[pool_id] = pair
++            full_views[pool_id] = tuple(self._reinterpret_kv_backing(t) for t in pair)
++            if pair[0].buffer_unique_id() == pair[1].buffer_unique_id():
++                raise ValueError("K and V root allocations must be distinct")
++            for i, layer, _ in members:
++                native_factors[i] = 1 if layer.sliding else 2
++                scheduler_bounds[i] = n
++        # Explicit roots outlive every native view and every trace using cache.
++        self._kv_alias_pool_members = {pool: [i for i, _, _ in members] for pool, members in grouped.items()}
++        print("KV_ALIAS_ROOTS " + json.dumps({"pools":len(pools), "roots":[{"pool":str(pool),"root_id":root.buffer_unique_id(),"view_id":full_views[pool][index].buffer_unique_id(),"address":root.buffer_address(),"wide_rows":int(root.shape[0]),"logical_backing_bytes":int(root.shape[0])*128*1088} for pool,pair in pools.items() for index,root in enumerate(pair)]}), flush=True)
++        self._kv_alias_roots = pools
++        self._kv_alias_factors = native_factors
++        self._kv_alias_bounds = scheduler_bounds
++        kv, scratch = [], {}
++        for i, (layer, (shape, dtype, pool_id)) in enumerate(zip(self.generator.model.layers, per_layer_specs)):
++            factor = native_factors[i]
++            kv.append(pools[pool_id] if layer.sliding else full_views[pool_id])
++            scratch[i] = [factor * (int(shape[0]) + j) for j in range(self.max_batch_size)]
+         tables = {
+             i: torch.zeros(self.max_batch_size, self.max_seq_len // 128, dtype=torch.int32) for i in range(len(kv))
+         }
+         self.cache = CacheState(
+             kv, tables, self.max_batch_size, self.max_seq_len, scratch_pages=scratch, vllm_owned=True
+         )
++        after = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
++        print("KV_POOL_MEMORY " + json.dumps({"phase":"after","banks":after.num_banks,"allocated_per_bank":after.total_bytes_allocated_per_bank,"free_per_bank":after.total_bytes_free_per_bank,"unique_pools":len(pools),"pool_full_tokens":int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))}), flush=True)
+         return self.cache
+ 
+-    def _tables(self, cache, page_tables_per_layer, *, slots=None):
++    @staticmethod
++    def _reinterpret_kv_backing(root):
++        # Experimental pinned-runtime raw tile alias. This does NOT preserve
++        # tensor values under ordinary reshape semantics. Full scheduler IDs
++        # must be doubled, and global group ownership must remain exclusive.
++        shape = tuple(int(x) for x in root.shape)
++        if (len(shape) != 4 or shape[1:] != (4, 128, 256)
++                or root.dtype != ttnn.bfloat8_b or root.layout != ttnn.TILE_LAYOUT
++                or root.memory_config() != ttnn.DRAM_MEMORY_CONFIG
++                or root.buffer_aligned_page_size() != 1088):
++            raise ValueError("Unsupported root backing geometry")
++        view = ttnn.experimental.view(root, [2 * shape[0], 1, 128, 512])
++        if (view.buffer_unique_id() != root.buffer_unique_id()
++                or view.buffer_address() != root.buffer_address()
++                or view.buffer_aligned_page_size() != root.buffer_aligned_page_size()
++                or tuple(view.padded_shape) != (2 * shape[0], 1, 128, 512)):
++            raise RuntimeError("Pinned runtime did not produce the required zero-copy tile alias")
++        return view
++
++    def _audit_alias_consumers(self, sources, ranges):
++        # Diagnostic of actual scheduler-provided pages consumed by this update.
++        # It complements global allocator source proof; it is not an independent
++        # snapshot of every idle hash or every previously submitted device op.
++        began = time.perf_counter()
++        if ranges is None:
++            raise ValueError("Alias diagnostic requires current active token ranges")
++        maximum_full = maximum_sliding = 0
++        for members in self._kv_alias_pool_members.values():
++            full_ids, sliding_ids = set(), set()
++            for i in members:
++                full = self._kv_alias_factors[i] == 2
++                target = full_ids if full else sliding_ids
++                source = sources[i]
++                for row, limits in enumerate(ranges):
++                    if limits is None:
++                        continue
++                    sliding_begin, end = limits
++                    begin_page = 0 if full else sliding_begin // 128
++                    end_page = (end + 127) // 128
++                    target.update(int(v) for v in source[row, begin_page:end_page].tolist() if int(v) > 0)
++            overlap = full_ids & sliding_ids
++            if overlap:
++                raise RuntimeError(f"Full/sliding live consumer block collision: {sorted(overlap)[:16]}")
++            maximum_full = max(maximum_full, len(full_ids))
++            maximum_sliding = max(maximum_sliding, len(sliding_ids))
++        self._alias_audit_count = getattr(self, "_alias_audit_count", 0) + 1
++        self._alias_audit_seconds = getattr(self, "_alias_audit_seconds", 0.0) + time.perf_counter() - began
++        if self._alias_audit_count <= 3 or self._alias_audit_count % 64 == 0:
++            print("KV_ALIAS_CONSUMER_AUDIT " + json.dumps({"calls":self._alias_audit_count,
++                "full_live_ids":maximum_full,"sliding_live_ids":maximum_sliding,
++                "cross_geometry_overlap":0,"host_seconds":self._alias_audit_seconds}), flush=True)
++
++    def _allocation_probe_begin(self):
++        limit = int(os.environ.get("GEMMA_ALLOCATION_EVENT_PROBES", "0"))
++        if not limit or getattr(self, "_allocation_probe_count", 0) >= limit:
++            return
++        histories = getattr(self.cache, "prefill_history", {})
++        required = int(os.environ.get("GEMMA_PEAK_MIN_HISTORIES", str(self.max_batch_size - 1)))
++        if len(histories) < required:
++            return
++        view = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
++        self._allocation_probe_active = {"before_bytes":view.total_bytes_allocated_per_bank * view.num_banks,
++            "banks":view.num_banks,"before_block_table":view.block_table,
++            "history_count":len(histories),"started":time.perf_counter()}
++        ttnn._ttnn.graph.begin_graph_capture(ttnn.graph.RunMode.NORMAL)
++
++    def _allocation_probe_end(self):
++        state = getattr(self, "_allocation_probe_active", None)
++        if state is None:
++            return
++        self._allocation_probe_active = None
++        graph = ttnn._ttnn.graph.end_graph_capture()
++        if isinstance(graph, str):
++            graph = json.loads(graph)
++        events = [e for e in graph if e.get("node_type") in ("buffer_allocate", "buffer_deallocate")]
++        view = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
++        after = view.total_bytes_allocated_per_bank * view.num_banks
++        delta, peak = {}, {}
++        for event in events:
++            p = event["params"]
++            if int(p["buffer_type"]) != 0:  # Exclude TRACE (4) from ordinary DRAM.
++                continue
++            device = str(p["device_id"])
++            size = int(p["max_size_per_bank"]) * state["banks"]
++            sign = 1 if event["node_type"] == "buffer_allocate" else -1
++            delta[device] = delta.get(device, 0) + sign * size
++            peak[device] = max(peak.get(device, 0), delta[device])
++        self._allocation_probe_count = getattr(self, "_allocation_probe_count", 0) + 1
++        probe = self._allocation_probe_count
++        result = {"probe":probe,"before_bytes":state["before_bytes"],"after_bytes":after,
++            "history_count":state["history_count"],"delta_by_virtual_device":delta,
++            "peak_extra_by_virtual_device":peak,"event_count":len(events),
++            "boundary_reconciles":bool(delta) and all(v == after-state["before_bytes"] for v in delta.values()),
++            "scope":"one adapter prefill including sampling; common mesh allocator, not independent physical-chip samples",
++            "instrumented_host_seconds":time.perf_counter()-state["started"]}
++        # Preserve raw allocation events and the allocator endpoints for an
++        # independent reconstruction. Chunked lines avoid log line truncation.
++        import base64, hashlib, zlib
++        raw = json.dumps({"summary":result,"before_block_table":state["before_block_table"],
++            "after_block_table":view.block_table,"events":events},separators=(",",":")).encode()
++        encoded = base64.b64encode(zlib.compress(raw)).decode()
++        chunks = [encoded[i:i+12000] for i in range(0,len(encoded),12000)]
++        result.update(raw_sha256=hashlib.sha256(raw).hexdigest(),raw_bytes=len(raw),chunks=len(chunks))
++        print("KV_ALLOCATION_EVENT_PEAK " + json.dumps(result),flush=True)
++        for index, chunk in enumerate(chunks):
++            print("KV_ALLOCATION_EVENT_DATA " + json.dumps({"probe":probe,"index":index,"count":len(chunks),"base64_zlib":chunk}),flush=True)
++
++    def _sample_pool_memory(self, phase):
++        # Host allocator snapshots at operation boundaries: NOT a device peak.
++        started = time.perf_counter()
++        view = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
++        allocated = view.total_bytes_allocated_per_bank
++        previous_high = getattr(self, "_pool_observed_high", 0)
++        high = max(previous_high, allocated)
++        self._pool_observed_high = high
++        self._pool_memory_samples = getattr(self, "_pool_memory_samples", 0) + 1
++        self._pool_memory_host_s = getattr(self, "_pool_memory_host_s", 0.0) + time.perf_counter() - started
++        if allocated > previous_high or self._pool_memory_samples % 64 == 0:
++            trace_view = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.TRACE)
++            print("KV_POOL_MEMORY_BOUNDARY " + json.dumps({"phase": phase, "banks": view.num_banks,
++                "allocated_per_bank": allocated, "free_per_bank": view.total_bytes_free_per_bank,
++                "trace_allocated_per_bank": trace_view.total_bytes_allocated_per_bank, "trace_banks": trace_view.num_banks,
++                "trace_free_per_bank": trace_view.total_bytes_free_per_bank,
++                "largest_contiguous_free_per_bank": view.largest_contiguous_bytes_free_per_bank,
++                "observed_high_per_bank": high, "samples": self._pool_memory_samples,
++                "query_host_s_total": self._pool_memory_host_s}), flush=True)
++
++    def _tables(self, cache, page_tables_per_layer, *, slots=None, audit_ranges=None):
+         if cache is not self.cache:
+             raise ValueError("Serving must use the cache allocated by vLLM")
+         if page_tables_per_layer is None or len(page_tables_per_layer) != len(cache.kv):
+             raise ValueError("Hybrid attention requires a page table for every layer")
++        if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS_AUDIT") == "1":
++            self._audit_alias_consumers(page_tables_per_layer, audit_ranges)
+         result, translated = {}, {}
+         for i, source in enumerate(page_tables_per_layer):
+             # Share immutable host rows only within this update: vLLM mutates
+             # its source tensors in place between scheduler steps.
+-            key = id(source)
++            factor = self._kv_alias_factors[i]
++            bound = self._kv_alias_bounds[i]
++            key = (id(source), factor, bound)
+             if key not in translated:
+                 dest = torch.zeros_like(cache.page_tables[i])
+                 rows, cols = source.shape
+@@ -143,7 +311,10 @@
+                     raise ValueError("Page table has fewer rows than prefill requests")
+                 # Prefill rows are compact, then padded to the decode batch.
+                 # Scatter only the live prefix into its assigned state slots.
+-                dest[indices, :cols] = source[: len(indices)].to(torch.int32).clamp_min(0)
++                live = source[: len(indices)].to(torch.int32).clamp_min(0)
++                if live.numel() and int(live.max()) >= bound:
++                    raise ValueError("Scheduler ID enters private warmup storage")
++                dest[indices, :cols] = live if factor == 1 else live * 2
+                 translated[key] = dest
+             result[i] = translated[key]
+         return result
+@@ -185,32 +356,43 @@
+         page_tables_per_layer=None,
+         start_pos=None,
+         empty_slots=None,
++        retain_prefill_history=None,
+         **kwargs,
+     ):
+         starts = [0] * len(prompt_lens) if start_pos is None else [int(x) for x in start_pos]
+         lengths = [int(x) for x in prompt_lens]
+         slots = list(range(len(lengths))) if empty_slots is None else list(empty_slots)
+-        tables = self._tables(kv_cache, page_tables_per_layer, slots=slots)
++        tables = self._tables(kv_cache, page_tables_per_layer, slots=slots, audit_ranges=[(max(0, (start // 128) * 128 - 1024), end) for start, end in zip(starts, lengths)])
+         self.entry = None
+-        # Full-attention block zero identifies a live request across row moves.
+-        full_layer = next(i for i, layer in enumerate(self.generator.model.layers) if not layer.sliding)
+-        keys = [int(tables[full_layer][slot, 0]) for slot in slots]
+-        self.prefill_slot_keys = {s: k for s, k in self.prefill_slot_keys.items() if s not in slots and k not in keys}
+-        self.prefill_slot_keys.update(zip(slots, keys))
+-        outputs = self.generator.prefill_forward(
+-            tokens,
+-            page_table=tables,
+-            kv_cache=kv_cache,
+-            prompt_lens=lengths,
+-            slots=slots,
+-            return_device=sampling_params is not None,
+-            start_positions=starts,
+-            history_keys=keys,
+-        )
+-        if sampling_params is None:
+-            return outputs
+-        params = self._sampling(sampling_params, len(lengths), [n - 1 for n in lengths])
+-        return self.generator.sample_prefill_outputs(outputs, kv_cache, params)
++        # Prefix pages can be shared by several live requests. History belongs
++        # to a request's stable state slot, never to a shared physical page.
++        keys = []
++        for slot in slots:
++            if slot not in self.prefill_slot_keys:
++                self.prefill_slot_keys[slot] = self.next_prefill_key
++                self.next_prefill_key += 1
++            keys.append(self.prefill_slot_keys[slot])
++        self._allocation_probe_begin()
++        try:
++            self._sample_pool_memory("before_prefill")
++            outputs = self.generator.prefill_forward(
++                tokens,
++                page_table=tables,
++                kv_cache=kv_cache,
++                prompt_lens=lengths,
++                slots=slots,
++                return_device=sampling_params is not None,
++                start_positions=starts,
++                history_keys=keys,
++                retain_prefill_history=retain_prefill_history,
++            )
++            self._sample_pool_memory("after_prefill")
++            if sampling_params is None:
++                return outputs
++            params = self._sampling(sampling_params, len(lengths), [n - 1 for n in lengths])
++            return self.generator.sample_prefill_outputs(outputs, kv_cache, params)
++        finally:
++            self._allocation_probe_end()
+ 
+     def decode_forward(
+         self,
+@@ -227,6 +409,7 @@
+         reload_page_table=False,
+         reload_sampling_params=True,
+         reset_sampling_state=True,
++        slot_remap=None,
+         **kwargs,
+     ):
+         if "reset_batch" in kwargs:
+@@ -239,17 +422,20 @@
+             raise ValueError("Serving must use the cache allocated by vLLM")
+         sample = sampling_params is not None
+         if reload_inputs:
+-            tables = self._tables(kv_cache, page_tables_per_layer)
+-            full_layer = next(i for i, layer in enumerate(self.generator.model.layers) if not layer.sliding)
+-            done = {int(tables[full_layer][row, 0]) for row, position in enumerate(start_pos) if int(position) >= 0}
+-            for key in done:
+-                kv_cache.prefill_history.pop(key, None)
+-            self.prefill_slot_keys = {slot: key for slot, key in self.prefill_slot_keys.items() if key not in done}
++            tables = self._tables(kv_cache, page_tables_per_layer, audit_ranges=[(max(0, int(pos) - 1023), int(pos) + 1) if int(pos) >= 0 else None for pos in start_pos])
++            # A row entering decode no longer needs its private prefill tail.
++            # The plugin notifies slot moves after submission succeeds, so
++            # histories still use source slots when a decode row is gathered.
++            for row, position in enumerate(start_pos):
++                if int(position) >= 0:
++                    slot = row if slot_remap is None else int(slot_remap[row])
++                    self.release_request(slot)
+             self.entry = self.generator.prepare_decode(tokens, start_pos, page_table=tables, kv_cache=kv_cache)
++            self._sample_pool_memory("after_prepare_decode")
+         elif self.entry is None or self.generator.traces.get(id(kv_cache)) is not self.entry:
+             raise ValueError("A retired decode trace requires current scheduler inputs")
+         elif reload_page_table:
+-            tables = self._tables(kv_cache, page_tables_per_layer)
++            tables = self._tables(kv_cache, page_tables_per_layer, audit_ranges=[(max(0, int(pos) - 1023), int(pos) + 1) if int(pos) >= 0 else None for pos in start_pos])
+             self.generator._tables(kv_cache, tables)
+         if sample and (reload_sampling_params or reset_sampling_state):
+             params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
+diff --git a/models/demos/gemma4_31b_qb2/tt/model.py b/models/demos/gemma4_31b_qb2/tt/model.py
+--- a/models/demos/gemma4_31b_qb2/tt/model.py
++++ b/models/demos/gemma4_31b_qb2/tt/model.py
+@@ -222,6 +222,83 @@
+             x = x[:, :, last_row : last_row + 1, :]
+         return self.terminal(x)
+ 
++    def prefill_batched_device(
++        self,
++        tokens,
++        *,
++        batch,
++        sequence_length,
++        page_tables,
++        kv_cache,
++        logical_lengths=None,
++        start_positions=None,
++        histories=None,
++        retain_histories=None,
++        fill_page_tables=None,
++        batch_indices=None,
++    ):
++        """Run independent padded request rows through shared layer computation."""
++        if len(kv_cache) != len(self.layers):
++            raise ValueError("Expected one cache pair per loaded layer")
++        total = batch * sequence_length
++        lengths = [sequence_length] * batch if logical_lengths is None else list(logical_lengths)
++        starts = [0] * batch if start_positions is None else list(start_positions)
++        retain = [True] * batch if retain_histories is None else list(retain_histories)
++        if (
++            not 2 <= batch <= 32
++            or sequence_length <= 0
++            or sequence_length % 128
++            or total > 8192
++            or len(lengths) != batch
++            or len(starts) != batch
++            or len(retain) != batch
++            or any(
++                not 0 < length <= sequence_length
++                or start < 0
++                or start % 128
++                or start + length > self.layers[0].max_context
++                for start, length in zip(starts, lengths)
++            )
++            or (
++                histories is not None
++                and (len(histories) != batch or any(len(history) != len(self.layers) for history in histories))
++            )
++        ):
++            raise ValueError("Invalid batched prefill request metadata")
++        keep = histories is not None and any(retain)
++        x = self.embed(ttnn.reshape(tokens, [1, total]), sequence_length=total)
++        if sequence_length <= 128:
++            x = self.gather_hidden(x)
++        for i, (layer, cache) in enumerate(zip(self.layers, kv_cache)):
++            result = layer.prefill_batched(
++                x,
++                batch=batch,
++                page_table=page_tables[i] if i in page_tables else page_tables[layer.kind],
++                kv_cache=cache,
++                start_pos=starts,
++                logical_lengths=lengths,
++                histories=[h[i] for h in histories] if histories is not None else None,
++                return_history=keep,
++                fill_page_table=(fill_page_tables[i] if i in fill_page_tables else fill_page_tables[layer.kind])
++                if fill_page_tables is not None
++                else None,
++                batch_indices=batch_indices,
++            )
++            if keep:
++                x, tails = result
++            else:
++                x, tails = result, [None] * batch
++            if histories is not None:
++                for row in range(batch):
++                    histories[row][i] = tails[row] if retain[row] else None
++        last = []
++        for row, length in enumerate(lengths):
++            index = row * sequence_length + length - 1
++            tile_start = index // 32 * 32
++            tile = x[:, :, tile_start : tile_start + 32, :]
++            last.append(tile[:, :, index - tile_start : index - tile_start + 1, :])
++        return self.terminal(ttnn.concat(last, dim=2))
++
+     def decode_device(self, tokens, positions, *, page_tables, kv_cache, batch, rope_positions=None):
+         if len(kv_cache) != len(self.layers):
+             raise ValueError("Expected one cache pair per loaded layer")
+diff --git a/models/demos/gemma4_31b_qb2/tt/prefill_batch.py b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
+new file mode 100644
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
+@@ -0,0 +1,71 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: 2026 Tenstorrent USA, Inc.
++"""Host planning for independent requests sharing prefill matrix operations."""
++
++PAGE_SIZE = 128
++MAX_PACKED_ROWS = 2048
++MAX_BATCHED_SPAN = 1024
++
++
++def padded_span(length):
++    return (length + PAGE_SIZE - 1) // PAGE_SIZE * PAGE_SIZE
++
++
++def config_family(length):
++    """Keep original norm ownership and matmul accumulation configuration."""
++    rounded = padded_span(length)
++    return rounded if rounded in (128, 256, 1024) else 512
++
++
++def plan_prefill_batches(lengths, maximum, *, long_spans=False, packed_rows=MAX_PACKED_ROWS):
++    if not 1 <= maximum <= 32:
++        raise ValueError(f"Prefill request batch must be 1..32, got {maximum}")
++    if not 0 < packed_rows <= 8192 or packed_rows % PAGE_SIZE:
++        raise ValueError("Packed prefill capacity must be page aligned and at most 8192 rows")
++    if any(type(length) is not int or length <= 0 for length in lengths):
++        raise ValueError("Prefill spans must be positive integer token counts")
++    pending = sorted(range(len(lengths)), key=lambda row: lengths[row])
++    groups = []
++    while pending:
++        group = [pending.pop(0)]
++        while pending and len(group) < maximum:
++            row = pending[0]
++            padded = padded_span(lengths[row])
++            long_group = long_spans and padded > MAX_BATCHED_SPAN and padded == padded_span(lengths[group[0]])
++            if (
++                config_family(lengths[row]) != config_family(lengths[group[0]])
++                # Bound extra matrix rows relative to the native per-request
++                # page rounding. Equal short partial spans must not be penalized
++                # for padding that the serial path already requires.
++                or 4 * padded * (len(group) + 1) > 5 * (sum(padded_span(lengths[index]) for index in group) + padded)
++                or padded * (len(group) + 1) > (8192 if long_group else packed_rows)
++                # Subdividing a native sliding SDPA chunk changes masked K
++                # iterations and their finite-precision softmax corrections.
++                or min(padded, MAX_BATCHED_SPAN) * (len(group) + 1) > packed_rows
++                or (padded > MAX_BATCHED_SPAN and not long_group)
++            ):
++                break
++            group.append(pending.pop(0))
++        groups.append(group)
++    return groups
++
++
++class DeferredPrefillHistory(list):
++    """Restore a cache-hit window only when its layer is about to consume it."""
++
++    def __init__(self, layers, restore):
++        super().__init__([None] * layers)
++        self._pending = set(range(layers))
++        self._restore = restore
++
++    def __getitem__(self, index):
++        if isinstance(index, int) and index in self._pending:
++            value = self._restore(index)
++            self[index] = value
++        return super().__getitem__(index)
++
++    def __setitem__(self, index, value):
++        super().__setitem__(index, value)
++        self._pending.discard(index)
++        if not self._pending:
++            self._restore = None
