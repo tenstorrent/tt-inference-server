@@ -9008,8 +9008,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=86.4,
                     published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=59.60,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6245284631",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
