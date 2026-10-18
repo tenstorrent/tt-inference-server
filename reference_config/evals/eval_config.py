@@ -12854,6 +12854,63 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # SWE-bench Verified with mini-swe-agent, the 10-instance list used for the
+                # K2-Horizon-7B / Muse-Glimmer QB2 runs. The card reports SWE-bench Pro 62.5
+                # (Verified not listed), so this is informational. Prefill (~290 tok/s, no
+                # prefix caching) dominates each agent turn: 2 concurrent trials with a
+                # 2.75 h agent bound keep the worst case (5 x 2.75 h + start) under the 18 h cap.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results (SWE-bench Pro 62.5; Verified not reported)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=int(2.75 * 60 * 60),
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                            "astropy__astropy-14598",
+                            "matplotlib__matplotlib-25122",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
+                            "sphinx-doc__sphinx-8265",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
         ],
     ),
 ]
