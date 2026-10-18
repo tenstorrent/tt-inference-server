@@ -1,0 +1,24 @@
+{
+  "scope": "Two reconstructed diagnostic requests; original RNG and wire token arrays unavailable. Fixed seeds and cache salting are diagnostic interventions.",
+  "response_ids": [
+    "chatcmpl-b170f450eca126a7",
+    "chatcmpl-a79346e09b9b8b8f"
+  ],
+  "files": {
+    "quality_repetition_client.py": {
+      "bytes": 4695,
+      "sha256": "275d6561e6343f7ab454adc7e1b20f6f6769157225029893bc0cc1f53c4098ad",
+      "gzip_sha256": "ed03d29f4ed84a74d811830576497f570430b4d8cdbe5daf97f9e994950f535f"
+    },
+    "quality-repetition-requests.json": {
+      "bytes": 92568,
+      "sha256": "07c45ba51d014f8b7a96dac0aa92457eed7737cad15b4bd63681e56c81e06bd6",
+      "gzip_sha256": "044d715a00a95560c7a53d07f770abd1604e2d37279fafb901f25bb8ac933fb8"
+    },
+    "quality-repetition-renderer.json": {
+      "bytes": 498,
+      "sha256": "9e9ae8cff10ce7c923b1d8b7217fc29720658650db10a1fc958e51381dd36d67",
+      "gzip_sha256": "3ffc54f19c5b0b9c2f7725a9f8e96b06f544439638e13f0ba639b2ad0f23a722"
+    }
+  }
+}
