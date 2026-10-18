@@ -8906,7 +8906,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     override_cpus=16,
@@ -8924,15 +8924,7 @@ _eval_config_list = [
                             "extra_body": {"top_k": 20},
                         },
                     },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
-                    },
+                    task_names_map={EvalLimitMode.CI_NIGHTLY: ['terminal-bench/adaptive-rejection-sampler', 'terminal-bench/bn-fit-modify', 'terminal-bench/break-filter-js-from-html', 'terminal-bench/build-cython-ext', 'terminal-bench/build-pmars', 'terminal-bench/build-pov-ray', 'terminal-bench/caffe-cifar-10', 'terminal-bench/cancel-async-tasks', 'terminal-bench/chess-best-move', 'terminal-bench/circuit-fibsqrt', 'terminal-bench/cobol-modernization', 'terminal-bench/code-from-image', 'terminal-bench/compile-compcert', 'terminal-bench/configure-git-webserver', 'terminal-bench/constraints-scheduling', 'terminal-bench/count-dataset-tokens', 'terminal-bench/crack-7z-hash', 'terminal-bench/custom-memory-heap-crash', 'terminal-bench/db-wal-recovery', 'terminal-bench/distribution-search', 'terminal-bench/dna-assembly', 'terminal-bench/dna-insert', 'terminal-bench/extract-elf', 'terminal-bench/extract-moves-from-video', 'terminal-bench/feal-differential-cryptanalysis', 'terminal-bench/feal-linear-cryptanalysis', 'terminal-bench/filter-js-from-html', 'terminal-bench/financial-document-processor', 'terminal-bench/fix-code-vulnerability', 'terminal-bench/fix-git', 'terminal-bench/fix-ocaml-gc', 'terminal-bench/gcode-to-text', 'terminal-bench/git-leak-recovery', 'terminal-bench/git-multibranch', 'terminal-bench/gpt2-codegolf', 'terminal-bench/headless-terminal', 'terminal-bench/hf-model-inference', 'terminal-bench/install-windows-3-11', 'terminal-bench/kv-store-grpc', 'terminal-bench/large-scale-text-editing', 'terminal-bench/largest-eigenval', 'terminal-bench/llm-inference-batching-scheduler', 'terminal-bench/log-summary-date-ranges', 'terminal-bench/mailman', 'terminal-bench/make-doom-for-mips', 'terminal-bench/make-mips-interpreter', 'terminal-bench/mcmc-sampling-stan', 'terminal-bench/merge-diff-arc-agi-task', 'terminal-bench/model-extraction-relu-logits', 'terminal-bench/modernize-scientific-stack', 'terminal-bench/mteb-leaderboard', 'terminal-bench/mteb-retrieve', 'terminal-bench/multi-source-data-merger', 'terminal-bench/nginx-request-logging', 'terminal-bench/openssl-selfsigned-cert', 'terminal-bench/overfull-hbox', 'terminal-bench/password-recovery', 'terminal-bench/path-tracing', 'terminal-bench/path-tracing-reverse', 'terminal-bench/polyglot-c-py', 'terminal-bench/polyglot-rust-c', 'terminal-bench/portfolio-optimization', 'terminal-bench/protein-assembly', 'terminal-bench/prove-plus-comm', 'terminal-bench/pypi-server', 'terminal-bench/pytorch-model-cli', 'terminal-bench/pytorch-model-recovery', 'terminal-bench/qemu-alpine-ssh', 'terminal-bench/qemu-startup', 'terminal-bench/query-optimize', 'terminal-bench/raman-fitting', 'terminal-bench/regex-chess', 'terminal-bench/regex-log', 'terminal-bench/reshard-c4-data', 'terminal-bench/rstan-to-pystan', 'terminal-bench/sam-cell-seg', 'terminal-bench/sanitize-git-repo', 'terminal-bench/schemelike-metacircular-eval', 'terminal-bench/sparql-university', 'terminal-bench/sqlite-db-truncate', 'terminal-bench/sqlite-with-gcov', 'terminal-bench/torch-pipeline-parallelism', 'terminal-bench/torch-tensor-parallelism', 'terminal-bench/train-fasttext', 'terminal-bench/tune-mjcf', 'terminal-bench/video-processing', 'terminal-bench/vulnerable-secret', 'terminal-bench/winning-avg-corewars', 'terminal-bench/write-compressor']},
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
