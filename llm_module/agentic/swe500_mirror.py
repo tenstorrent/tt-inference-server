@@ -17,6 +17,8 @@ def mirrored_dockerfile(original: str, manifest: dict) -> tuple[str, dict]:
     candidates = [r for r in rows if r['source'] == source]
     assert len(candidates) == 1, f'No unique verified mirror for {source}'
     row = candidates[0]
+    if 'original_dockerfile_sha256' in row:
+        assert hashlib.sha256(original.encode()).hexdigest() == row['original_dockerfile_sha256']
     assert row['verified'] is True
     assert row['source_digest'] == row['destination_digest']
     digest = row['source_digest']
@@ -43,6 +45,7 @@ def load_manifest():
         assert row['verified'] is True and row['source_digest'] == row['destination_digest']
         assert row['architecture'] == 'amd64' and row['os'] == 'linux'
         assert row['layers']
+        assert re.fullmatch(r'[0-9a-f]{64}', row['original_dockerfile_sha256'])
         assert all(re.fullmatch(r'sha256:[0-9a-f]{64}', digest) for digest in
                    [row['source_digest'], row['platform_digest'], row['config_digest'], *row['layers']])
     return manifest

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Docker setup through verified GHCR copies; frozen task files stay untouched."""
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -25,6 +26,11 @@ class ExactMirrorDockerEnvironment(DockerEnvironment):
         overlay = temporary / 'mirror-compose.json'
         overlay.write_text(json.dumps({'services': {'main': {'build': {'dockerfile': str(dockerfile)}}}}))
         self.extra_docker_compose_paths = [*self.extra_docker_compose_paths, overlay]
+        manifest_path = Path(__file__).with_name('swe500_mirror_manifest.json')
+        proof['mirror_manifest_sha256'] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        proof['rendered_dockerfile'] = rendered
+        self.trial_paths.trial_dir.mkdir(parents=True, exist_ok=True)
+        (self.trial_paths.trial_dir / 'image-acquisition-proof.json').write_text(json.dumps(proof, indent=2) + '\n')
         self._mirror_proof = proof
         self.logger.info('SWE500_EXACT_MIRROR %s', json.dumps(proof, sort_keys=True))
 

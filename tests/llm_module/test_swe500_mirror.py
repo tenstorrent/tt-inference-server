@@ -23,6 +23,11 @@ class ExactMirrorTests(unittest.TestCase):
         self.assertIn('@sha256:' + 'a' * 64, rendered)
         self.assertEqual(proof['task'], 'task-7')
 
+    def test_reject_changed_original_dockerfile(self):
+        self.manifest["images"][7]["original_dockerfile_sha256"] = "b" * 64
+        with self.assertRaises(AssertionError):
+            mirrored_dockerfile("FROM swebench/image-7:latest\n", self.manifest)
+
     def test_reject_digest_change(self):
         self.manifest['images'][7]['destination_digest'] = 'sha256:' + 'b' * 64
         with self.assertRaises(AssertionError):
