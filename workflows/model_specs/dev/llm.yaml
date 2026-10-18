@@ -386,6 +386,12 @@ templates:
       # Per-system max concurrent requests (the sweep's loaded corner). The
       # graded targets in model_performance_reference.json are authored at this
       # concurrency: decode tput is 29.0 x 32 = 928.0.
+      # The generator decodes every request slot in one batched step, with caches pooled per mesh
+      # row. An earlier native-context configuration fit eight slots: each slot's pool used 3.8 GB
+      # per chip, and two 1M prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
+      # c32 measurements up to isl 8192 used 32 slots at 15,360 of context.
+      max_concurrency: 32
+      # Inherited reference notes; runtime settings follow below.
       # Full native context. max_position_embeddings in the HF config.json
       # text_config is 1048576.
       # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
@@ -402,11 +408,6 @@ templates:
       # [TBD — Performance: replace with the measured 32-chip pool once
       # available. If the real pool is smaller, the top graded input lengths must
       # come down with it — see docs/rfp/m0-target-convention.md.]
-      # The generator decodes every request slot in one batched step, with caches pooled per mesh
-      # row. An earlier native-context configuration fit eight slots: each slot's pool used 3.8 GB
-      # per chip, and two 1M prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
-      # c32 measurements up to isl 8192 used 32 slots at 15,360 of context.
-      max_concurrency: 8
       # The native context plus one 5,120 chunk: vLLM admits a request only
       # if prompt + max_tokens <= max_model_len, and point 11's prompt is
       # isl 1,048,448 plus the 4 tokens the chat template adds, so at exactly
@@ -417,11 +418,13 @@ templates:
       # (1,048,576) unless VLLM_ALLOW_LONG_MAX_MODEL_LEN is set (below): the
       # positions past it are the template's 4 tokens and the 128 outputs,
       # within the generator's RoPE tables (rounded to the chunk).
-      max_context: 1053696
+      # 3 * 5120: the c32 short points (isl <= 8192 + 128) with 32 slots
+      # the native context with 32 slots is the next step.
+      max_context: 15360
       # Every slot holds a full context (the pool is per slot, not a shared
       # token budget); without this the benchmark caps the concurrency to
       # what fits one context.
-      max_tokens_all_users_override: 8429568  # 8 * 1053696
+      max_tokens_all_users_override: 491520  # 32 * 15360
       default_impl: true
       # Health-wait budget: the model build reads the two 123 GB Engram tables
       # into host RAM, 10 to 15 minutes from the NVMe when the page cache is
@@ -500,6 +503,11 @@ templates:
         # 32 x 129,280 logits took ~100 ms of every step.
         sample_on_device_mode: decode_only
       vllm_args:
+        # Chunked prefill: one 5,120-token chunk of one
+        # request per prefill step (the scheduler keeps the chunks aligned),
+        # so a wave's 32 prompts prefill one after another and every chunk
+        # replays a generic capture.
+        max_num_batched_tokens: "5120"
         # The checkpoint's quantization_config describes its fp8 / fp4 weights,
         # which the TT implementation dequantizes itself; without this vLLM
         # would treat the model as fp8-quantized.
