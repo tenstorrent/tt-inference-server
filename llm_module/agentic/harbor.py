@@ -220,6 +220,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    if config.dataset == "swebench-verified" and config.environment_type == "docker":
+        from llm_module.agentic.swe500_mirror import load_manifest
+
+        load_manifest()  # Refuse incomplete acquisition before scheduling any task.
+        environment_config["import_path"] = "llm_module.agentic.swe500_mirror_environment:ExactMirrorDockerEnvironment"
     if _mini_swe_needs_host_gateway(config):
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
@@ -398,6 +403,9 @@ def run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
+    if config.dataset == "swebench-verified" and config.environment_type == "docker":
+        source_root = str(Path(__file__).resolve().parents[2])
+        process_env["PYTHONPATH"] = source_root + os.pathsep + process_env.get("PYTHONPATH", "")
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(
