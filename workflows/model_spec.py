@@ -491,10 +491,25 @@ deepseek_v41_flash_impl = ImplSpec(
 )
 
 # Same tt-metal code as deepseek_v41_flash; a distinct impl_id only so that the vision (VLM) profile gets its own model_id and is selected with
-# `--impl deepseek-v41-flash-vlm` (the text profile stays the default_impl of the model + device).
+# `--impl deepseek-v41-flash-vlm` (the text profile, now the production 16-user spec, is the default_impl of the model + device).
 deepseek_v41_flash_vlm_impl = ImplSpec(
     impl_id="deepseek_v41_flash_vlm",
     impl_name="deepseek-v41-flash-vlm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
+
+# The 4-user / 1,048,576-token production configuration (text and vision profiles): distinct impl names only so that their model_ids differ from the
+# 16-user default; selected with `--impl deepseek-v41-flash-1m` / `--impl deepseek-v41-flash-vlm-1m`.
+deepseek_v41_flash_1m_impl = ImplSpec(
+    impl_id="deepseek_v41_flash_1m",
+    impl_name="deepseek-v41-flash-1m",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
+deepseek_v41_flash_vlm_1m_impl = ImplSpec(
+    impl_id="deepseek_v41_flash_vlm_1m",
+    impl_name="deepseek-v41-flash-vlm-1m",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/deepseek_v41_flash",
 )
@@ -516,6 +531,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "deepseek_v41_flash": deepseek_v41_flash_impl,
     "deepseek_v41_flash_vlm": deepseek_v41_flash_vlm_impl,
+    "deepseek_v41_flash_1m": deepseek_v41_flash_1m_impl,
+    "deepseek_v41_flash_vlm_1m": deepseek_v41_flash_vlm_1m_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "qwen3_tts": qwen3_tts_impl,
