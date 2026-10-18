@@ -448,9 +448,17 @@ templates:
         # busiest chip reads half as much, 13 GB of DRAM a chip instead of 22).
         TT_V41_EXPERT_DTYPE: "bfp4"
         TT_V41_ENGRAM_MMAP: "0"
-        # Prefill states (traced per state and prompt length): requests
-        # prefill through them into their decode slot.
-        TT_V41_PREFILL_SLOTS: "2"
+        # Prefill states: requests prefill through them into their decode
+        # slot. One: under the plugin's prefill-first scheduling one request
+        # prefills at a time, and the generic prefill captures (below), the
+        # join captures and the state's caches are per state (2.2 GB and
+        # ~350 MB of trace region each at 1M).
+        TT_V41_PREFILL_SLOTS: "1"
+        # Position-generic traced prefill chunks: one
+        # capture per score-width bucket per state at warm-up, replayed for
+        # every chunk but the last of any prompt longer than one chunk (the
+        # eager chunk ran 1.45 s, the traced one 0.20 s at 1M history).
+        TT_V41_PREFILL_GENERIC: "1"
         # 5120, not 8192: a chunk is padded to its full size and the device
         # time of a mostly padded chunk exceeds a full one's
         # so the c1 points up to isl 4096 run in one
