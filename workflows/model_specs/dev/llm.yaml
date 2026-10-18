@@ -1685,6 +1685,8 @@ templates:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
         QWEN36_SPEC_K: "3"
+        QWEN36_SPEC_FAST_PREFILL: "1"
+        OMP_NUM_THREADS: "8"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
