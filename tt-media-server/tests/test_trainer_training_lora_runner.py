@@ -358,6 +358,20 @@ class TestRun:
         assert _job_failures(runner) == ["Job failed at step 0: dataset missing"]
 
     @pytest.mark.asyncio
+    async def test_announces_the_weight_download_before_the_model_loads(self, runner):
+        await runner.warmup()
+        boom = RuntimeError("download failed")
+
+        with patch.object(type(runner._trainer), "_load_model", side_effect=boom):
+            with pytest.raises(RuntimeError, match="download failed"):
+                runner.run([_request()])
+
+        runner.logger.info.assert_any_call(
+            "Downloading and preparing model weights for training.",
+            extra={"log_type": "info", "step": 0},
+        )
+
+    @pytest.mark.asyncio
     async def test_logs_an_invalid_request_as_raised(self, runner):
         await runner.warmup()
 
@@ -658,6 +672,98 @@ class TestJobMetricsCallback:
         assert callback.last_val_loss == 1.25
         assert request._training_metrics[0]["metric_name"] == "val_loss"
         assert request._training_metrics[0]["value"] == 1.25
+
+    def test_announces_each_compile_once_before_its_first_step(self):
+        callback = self._callback(_request())
+        trainer = _fake_trainer(steps_freq=10, num_epochs=2, val_batches=2)
+
+        # The initial validation pass, then two training steps, in `Trainer.train` order.
+        callback.on_validation_start(trainer)
+        for loss in (1.0, 2.0):
+            callback.on_validation_batch_start(trainer, batch=None)
+            callback.on_validation_batch_end(trainer, batch=None, loss=loss)
+        for step in (1, 2):
+            callback.on_forward_start(trainer, batch=None)
+            callback.on_backward_start(trainer, loss=1.0)
+            _end_step(callback, trainer, step)
+
+        messages = [call.args[0] for call in callback._logger.info.call_args_list]
+        assert messages == [
+            "Epoch 1/2 | Step 0 | Starting validation (2 batches)",
+            (
+                "Epoch 1/2 | Step 0 | Compiling validation graph on first validation "
+                "step; this can take several minutes..."
+            ),
+            "Epoch 1/2 | Step 0 | Validation batch 1/2",
+            "Epoch 1/2 | Step 0 | Validation batch 2/2",
+            (
+                "Epoch 1/2 | Step 0 | Compiling train forward graph on first train "
+                "step; this can take several minutes..."
+            ),
+            (
+                "Epoch 1/2 | Step 0 | Compiling train backward graph on first train "
+                "step; this can take several minutes..."
+            ),
+            "Epoch 1/2 | Step 1",
+            "Epoch 1/2 | Step 2",
+        ]
+
+    def test_announces_the_compile_again_for_the_next_job(self):
+        callback = self._callback(_request())
+        trainer = _fake_trainer()
+
+        callback.on_forward_start(trainer, batch=None)
+        callback.bind(_request())
+        callback.on_forward_start(trainer, batch=None)
+
+        messages = [call.args[0] for call in callback._logger.info.call_args_list]
+        assert len(messages) == 2
+        assert all("Compiling train forward graph" in message for message in messages)
+
+    def _end_training(self, request, hook, *args):
+        """Starts training at t=100s, ends it through `hook` at t=165s, returns the end logs."""
+        callback = self._callback(request)
+        trainer = _fake_trainer(num_epochs=2)
+        with patch(
+            "tt_model_runners.forge_training_runners.blacksmith_callbacks.time.monotonic",
+            side_effect=[100.0, 165.0],
+        ):
+            callback.on_train_start(trainer)
+            trainer.global_step = 3
+            getattr(callback, hook)(trainer, *args)
+        # Drop the "Starting training" line.
+        return [call.args[0] for call in callback._logger.info.call_args_list[1:]]
+
+    def test_logs_the_training_time_when_the_loop_finishes(self):
+        assert self._end_training(_request(), "on_train_end") == [
+            "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
+        ]
+
+    def test_stopping_at_max_steps_also_finishes_training(self):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            StopTraining,
+        )
+
+        stop = StopTraining("Reached max_steps=3")
+        assert self._end_training(_request(), "on_error", stop) == [
+            "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
+        ]
+
+    def test_logs_the_training_time_when_cancelled(self):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            StopTraining,
+        )
+
+        request = _request()
+        request._cancel_event = MagicMock()
+        request._cancel_event.is_set.return_value = True
+        stop = StopTraining("Job cancelled at step 3")
+        assert self._end_training(request, "on_error", stop) == [
+            "Epoch 1/2 | Step 3 | Training cancelled after 0:01:05"
+        ]
+
+    def test_a_failure_does_not_end_training_with_a_time(self):
+        assert self._end_training(_request(), "on_error", RuntimeError("boom")) == []
 
 
 class TestAdapterCheckpointCallback:

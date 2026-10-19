@@ -7,6 +7,7 @@
 import os
 import time
 import traceback
+from datetime import timedelta
 
 from blacksmith.tools.trainer.callback import Callback
 
@@ -16,7 +17,7 @@ class StopTraining(Exception):
 
     Like any exception, it goes through ``on_error`` and propagates out of
     ``Trainer.train()``. The runner treats it as a successful end of the job, and
-    ``JobControlCallback.on_error`` tells it apart from a real failure.
+    the job callbacks' ``on_error`` tell it apart from a real failure.
     """
 
 
@@ -44,13 +45,19 @@ class JobMetricsCallback(JobCallback):
     """Feeds train/validation losses to the job's metrics and logs.
 
     Progress (epoch/step, validation batch index) is logged every step so the
-    job stream moves while tqdm stays on process stdout. Loss itself is only
-    logged every ``metrics.steps_freq`` steps, plus once at the end of validation.
+    job stream moves while tqdm stays on process stdout. Each graph a job
+    compiles (train forward, train backward, validation) is announced right
+    before its first run, since compiling it takes minutes, and the end of the
+    loop is logged with its duration since ``on_train_start``. Loss itself is
+    only logged every ``metrics.steps_freq`` steps, plus once at the end of
+    validation.
     """
 
     def _reset(self) -> None:
         self._running_loss = None
         self._val_batch = 0
+        self._compile_announced = set()
+        self._train_started_at = None
         self.last_train_loss = None
         self.last_val_loss = None
 
@@ -64,6 +71,7 @@ class JobMetricsCallback(JobCallback):
             self._running_loss = self._running_loss + window_loss
 
     def on_train_start(self, trainer, *args, **kwargs):
+        self._train_started_at = time.monotonic()
         n_batches = None
         try:
             n_batches = len(trainer.train_dataloader)
@@ -73,6 +81,13 @@ class JobMetricsCallback(JobCallback):
             f" ({n_batches} batches per epoch)" if n_batches is not None else ""
         )
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
+
+    def on_forward_start(self, trainer, batch, *args, **kwargs):
+        self._announce_compile(trainer, "train forward", phase="train")
+
+    def on_backward_start(self, trainer, loss, *args, **kwargs):
+        # The backward graph compiles lazily, on the first backward call.
+        self._announce_compile(trainer, "train backward", phase="train")
 
     def on_validation_start(self, trainer, *args, **kwargs):
         self._val_batch = 0
@@ -85,6 +100,10 @@ class JobMetricsCallback(JobCallback):
             f" ({n_batches} batches)" if n_batches is not None else ""
         )
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
+
+    def on_validation_batch_start(self, trainer, batch, *args, **kwargs):
+        # Validation has no forward hook; its forward runs right after this one.
+        self._announce_compile(trainer, "validation", phase="validation")
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
         self._val_batch += 1
@@ -117,12 +136,46 @@ class JobMetricsCallback(JobCallback):
         self.last_val_loss = trainer.loss_to_float(val_loss)
         self._record(trainer, "val_loss", self.last_val_loss, log_type="eval")
 
+    def on_train_end(self, trainer, *args, **kwargs):
+        self._log_training_end(trainer, cancelled=False)
+
+    def on_error(self, trainer, exception, *args, **kwargs):
+        # max_steps and cancellation end the loop with StopTraining, so on_train_end never fires.
+        if not isinstance(exception, StopTraining):
+            return
+        cancel_event = getattr(self._request, "_cancel_event", None)
+        cancelled = cancel_event is not None and cancel_event.is_set()
+        self._log_training_end(trainer, cancelled=cancelled)
+
     @staticmethod
     def _epoch_step_label(trainer) -> str:
         num_epochs = getattr(trainer.config, "num_epochs", None)
         epoch = trainer.epoch + 1
         epoch_part = f"Epoch {epoch}/{num_epochs}" if num_epochs else f"Epoch {epoch}"
         return f"{epoch_part} | Step {trainer.global_step}"
+
+    def _announce_compile(self, trainer, graph: str, phase: str) -> None:
+        if graph in self._compile_announced:
+            return
+        self._compile_announced.add(graph)
+        self._logger.info(
+            f"{self._epoch_step_label(trainer)} | Compiling {graph} graph on first "
+            f"{phase} step; this can take several minutes...",
+            extra={"log_type": "info", "step": trainer.global_step},
+        )
+
+    def _log_training_end(self, trainer, cancelled: bool) -> None:
+        # Raising from on_error would replace StopTraining and fail the job.
+        if self._train_started_at is None:
+            return
+        elapsed = timedelta(seconds=round(time.monotonic() - self._train_started_at))
+        outcome = (
+            f"cancelled after {elapsed}" if cancelled else f"finished in {elapsed}"
+        )
+        self._logger.info(
+            f"{self._epoch_step_label(trainer)} | Training {outcome}",
+            extra={"log_type": "info", "step": trainer.global_step},
+        )
 
     def _record(self, trainer, name: str, value: float, log_type: str) -> None:
         self._logger.info(
