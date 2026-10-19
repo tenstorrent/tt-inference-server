@@ -1,5 +1,7 @@
 # Zero-Overhead Inference Server
 
+For resident Blaze Llama rollouts and online updates, see [Blaze weight transfer](docs/blaze_weight_transfer.md).
+
 Production-grade, zero-overhead C++ inference server for AI workloads on
 Tenstorrent hardware. Supports LLM and image models; video, audio,
 and text-to-speech models are on the roadmap.
