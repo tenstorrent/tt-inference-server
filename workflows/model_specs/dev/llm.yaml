@@ -7670,12 +7670,14 @@ templates:
       tool_call_parser_name: qwen3_xml
 
 # GLM-5.3-Flash on tt-lab's own engine (impl tt_lab_glm): one `glm-tt serve` process, its own
-# OpenAI-compatible server, no vLLM. MEDIA with a prebuilt image: run_docker_server.py runs it with
-# no arguments, and its entrypoint maps DEVICE, MODEL_WEIGHTS_DIR and the JWT_SECRET bearer key onto
-# glm-tt serve on port 8000. P150X8 serves one user at a time (more requests queue); the 32-chip
-# BLACKHOLE_GALAXY row (4 users, one per 8-chip group) follows separately.
-# Weights are tt-lab's prequantized TTQ plus a vocabulary GGUF, not the HF checkpoint: hf_weights_repo
-# names the repo that holds them (glm53-flash-hot3-meas.ttq, GLM-5.3-Flash-vocab.gguf).
+# OpenAI-compatible server, no vLLM. glm-tt is a prebuilt binary that ships with its own loader and
+# C/C++ libraries, so it runs in any image with a python3: docker_entrypoint replaces the image's
+# entrypoint with vllm-tt-metal/src/run_glm_tt.py, which maps DEVICE, the weights and the bearer key
+# (VLLM_API_KEY, else the JWT of JWT_SECRET, else API_KEY) onto glm-tt serve on port 8000. The
+# script is in the vLLM image's app/src and, with --dev-mode, mounted there from this checkout.
+# The binaries and the weights are read-only host directories on shared storage
+# (docker_host_packages), not a Hugging Face repo: the weights are tt-lab's prequantized TTQ plus a
+# vocabulary GGUF, so host setup downloads nothing.
 - weights:
     - zai-org/GLM-5.3-Flash
   impl: tt_lab_glm
@@ -7683,8 +7685,8 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
-  hf_weights_repo: tenstorrent/GLM-5.3-Flash-TTQ  # TODO: the repo the weights are published to
-  # hot3-meas TTQ (245.7 GB) plus the vocabulary GGUF; serve reads the TTQ through the page cache.
+  # hot3-meas TTQ (245.7 GB) plus the vocabulary GGUF, read through the page cache from the host
+  # package; nothing is written to the host's disk.
   min_disk_gb: 260
   min_ram_gb: 300
   uses_tensor_model_cache: false
@@ -7698,24 +7700,55 @@ templates:
       specifier: ">=2.8.0"
       mode: STRICT
   device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # glm-tt serve --groups 4: four 8-chip groups, one request and one 262144-position context
+      # each; a fifth request waits for the first free group. About 155 t/s per user short and 122
+      # at 262K with all four busy.
+      max_concurrency: 4
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      # Measured on a LoudBox (about 2.5 s after SIGTERM's drain); not yet measured with four
+      # groups releasing their chips. The timeout is a margin over the 8 s default drain.
+      docker_stop_timeout: 20
+      # The "chips need a reset" marker outlives the container here when the host has the
+      # directory (writable by uid 1000); otherwise it goes to the cache volume.
+      docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_glm_tt.py
+      # The four groups map the same TTQ, so the page cache holds it once (a 566 GB host worked).
+      docker_host_packages:
+        # TODO: the published glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) on shared storage.
+        /home/container_app_user/glm-tt: /mnt/weka/model-cache/TODO/glm-tt
+        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/ttq
+        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/gguf-vocab
     - device: P150X8
+      # One user at a time; more requests queue.
       max_concurrency: 1
       max_context: 262144  # 256 * 1024
       default_impl: true
       # SIGTERM drains, then glm-tt releases the chips: about 2.5 s on a LoudBox (12-14 s before
       # glm-tt ff5cc8e1). The timeout is a margin over the 8 s default drain.
       docker_stop_timeout: 20
-      # The "chips need a reset" marker outlives the container here when the host has the
-      # directory (writable by uid 1000); otherwise it goes to the cache volume.
       docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_glm_tt.py
+      docker_host_packages:
+        # TODO: the published glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) on shared storage.
+        /home/container_app_user/glm-tt: /mnt/weka/model-cache/TODO/glm-tt
+        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/ttq
+        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/gguf-vocab
   env_vars:
-    GLM_TT_TTQ: glm53-flash-hot3-meas.ttq
-    GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
+    GLM_TT_HOME: /home/container_app_user/glm-tt
+    GLM_TT_TTQ: /home/container_app_user/glm-weights/ttq/glm53-flash-hot3-meas.ttq
+    GLM_TT_VOCAB: /home/container_app_user/glm-weights/vocab/GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "163840"
   metadata:
     zai-org/GLM-5.3-Flash:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
   status: EXPERIMENTAL
-  # TODO: the pushed glm-tt image's digest (tag 0.1.0-<tt-lab commit7>).
-  docker_image: ghcr.io/tenstorrent/tt-shield/glm-tt@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
+  # the vLLM dev image the entry above uses.
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af

@@ -924,6 +924,27 @@
                     ]
                 }
             }
+        },
+        "tiiuae/Falcon3-7B-Instruct": {
+            "inference_engine": "FORGE",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P150"
+                    ]
+                }
+            }
+        },
+        "zai-org/GLM-5.3-Flash": {
+            "inference_engine": "MEDIA",
+            "impl": "tt-lab-glm",
+            "ci": {
+                "weekly": {
+                    "devices": [
+                        "BH_GALAXY"
+                    ]
+                }
+            }
         }
     }
 }
