@@ -25,18 +25,18 @@ from tests.test_module.llm_tests.test_agentic_eval_tests import (
 
 
 def _claude_code_task(**config_overrides):
+    config = {
+        "dataset": "swebenchpro",
+        "agent": "claude-code",
+        "n_tasks": None,
+        "override_cpus": None,
+        "override_memory_mb": None,
+        "agent_kwargs": dict(CLAUDE_CODE_AGENT_KWARGS),
+        "agent_env": dict(CLAUDE_CODE_AGENT_ENV),
+        **config_overrides,
+    }
     return _harbor_task(
-        task_name="swe_bench_pro",
-        agentic_eval_config=FakeHarborConfig(
-            dataset="swebenchpro",
-            agent="claude-code",
-            n_tasks=None,
-            override_cpus=None,
-            override_memory_mb=None,
-            agent_kwargs=dict(CLAUDE_CODE_AGENT_KWARGS),
-            agent_env=dict(CLAUDE_CODE_AGENT_ENV),
-            **config_overrides,
-        ),
+        task_name="swe_bench_pro", agentic_eval_config=FakeHarborConfig(**config)
     )
 
 
@@ -107,3 +107,14 @@ def test_explicit_agent_env_endpoint_wins(tmp_path, monkeypatch):
     task.agentic_eval_config.agent_env["ANTHROPIC_BASE_URL"] = "http://proxy:4000"
     _, harbor_config, _ = _run(task, tmp_path, monkeypatch, OPENAI_API_KEY="jwt")
     assert harbor_config["agents"][0]["env"]["ANTHROPIC_BASE_URL"] == "http://proxy:4000"
+
+
+def test_absolute_dataset_is_a_local_task_directory(tmp_path, monkeypatch):
+    tasks_dir = tmp_path / "nl2repobench_tasks"
+    tasks_dir.mkdir()
+    task = _claude_code_task(dataset=str(tasks_dir))
+    task.agentic_eval_config.task_names = ["nl2repobench/tinydb"]
+    _, harbor_config, _ = _run(task, tmp_path, monkeypatch, OPENAI_API_KEY="jwt")
+    dataset = harbor_config["datasets"][0]
+    assert dataset["path"] == str(tasks_dir)
+    assert "name" not in dataset

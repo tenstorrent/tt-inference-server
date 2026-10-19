@@ -332,6 +332,11 @@ CLAUDE_CODE_AGENT_KWARGS: Dict[str, Any] = {
     # No WebSearch/WebFetch: the agent must not look up upstream fixes.
     "disable_web_search": True,
 }
+# Generated NL2Repo-Bench Harbor tasks (absolute path = local Harbor dataset).
+NL2REPO_TASKS_DIR = os.environ.get(
+    "TT_NL2REPO_TASKS_DIR",
+    os.path.join(os.path.expanduser("~"), ".cache", "tt-inference-server", "nl2repobench_tasks"),
+)
 CLAUDE_CODE_AGENT_ENV: Dict[str, str] = {
     # Unknown models are otherwise auto-compacted to an assumed 200K window.
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(256 * 1024),
@@ -11106,6 +11111,36 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 2},
+            ),
+            EvalTask(
+                task_name="nl2repo_bench",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=42.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        # Mean per-task test pass rate (each trial's reward).
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                # 104 locally generated tasks, see
+                # reference_config/evals/harbor_tasks/nl2repobench/README.md.
+                agentic_eval_config=HarborEvalConfig(
+                    dataset=NL2REPO_TASKS_DIR,
+                    agent="claude-code",
+                    n_concurrent_trials=6,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=4 * 60 * 60,
+                    agent_kwargs=dict(CLAUDE_CODE_AGENT_KWARGS),
+                    agent_env=dict(CLAUDE_CODE_AGENT_ENV),
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: ["nl2repobench/tinydb"],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 1},
             ),
         ],
     ),

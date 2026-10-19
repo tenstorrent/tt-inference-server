@@ -394,7 +394,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_config: dict[str, Any] = (
+        {"path": config.dataset}
+        if _is_local_dataset(config)
+        else {"name": config.dataset}
+    )
     if config.dataset_ref:
         dataset_config["ref"] = config.dataset_ref
     if config.n_tasks is not None:
@@ -486,9 +490,15 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     return config_path
 
 
+def _is_local_dataset(config: HarborRunConfig) -> bool:
+    """An absolute ``dataset`` is a directory of locally generated Harbor tasks."""
+    return Path(config.dataset).is_absolute()
+
+
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _needs_host_gateway(config)
+        or _is_local_dataset(config)
         or bool(_verifier_shim_packages(config))
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
