@@ -1374,7 +1374,6 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
-    src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
@@ -1516,7 +1515,6 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
-    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/metrics/metrics.cpp
@@ -2041,7 +2039,6 @@ set(SOURCES
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
-    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/services/disaggregation_contract_mapping.cpp

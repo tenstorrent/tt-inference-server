@@ -108,6 +108,7 @@ struct EmbeddingIpcResult {
   static constexpr uint32_t FLAG_CLAIMED = 2;
   static constexpr uint32_t FLAG_BATCH_END = 4;
 
+  uint32_t getTaskId() const { return taskId; }
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
   bool isClaimed() const { return (flags & FLAG_CLAIMED) != 0; }
   bool isBatchEnd() const { return (flags & FLAG_BATCH_END) != 0; }
@@ -241,6 +242,9 @@ class EmbeddingResultQueue {
 
 class EmbeddingQueueSet {
  public:
+  using TaskType = EmbeddingIpcTask;
+  using ResultType = EmbeddingIpcResult;
+
   std::shared_ptr<EmbeddingTaskQueue> taskQueue;
   std::vector<std::shared_ptr<EmbeddingResultQueue>> resultQueues;
   size_t maxTaskMsgBytes = EMBEDDING_MAX_TASK_MSG_BYTES;

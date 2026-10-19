@@ -61,6 +61,8 @@ struct MediaPayloadResult {
   static constexpr uint32_t FLAG_DONE = 1;
   static constexpr uint32_t FLAG_CLAIMED = 2;
 
+  uint32_t getTaskId() const { return task_id; }
+
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
 
   bool isClaimed() const { return (flags & FLAG_CLAIMED) != 0; }
@@ -155,6 +157,9 @@ class MediaPayloadResultQueue {
 
 class MediaPayloadQueueSet {
  public:
+  using TaskType = MediaPayloadTask;
+  using ResultType = MediaPayloadResult;
+
   std::shared_ptr<MediaPayloadTaskQueue> taskQueue;
   std::vector<std::shared_ptr<MediaPayloadResultQueue>> resultQueues;
 

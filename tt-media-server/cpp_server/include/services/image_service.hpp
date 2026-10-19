@@ -3,25 +3,25 @@
 
 #pragma once
 
-#include <atomic>
-#include <functional>
+#include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/media_worker_scheduler.hpp"
 #include "services/request_pipeline.hpp"
 
 namespace tt::services {
 
-/** Image service facade backed by media worker processes. */
-class ImageService : public BaseAsyncService<domain::ImageGenerateRequest,
-                                             domain::image::ImageResponse> {
+/** Image service backed by WorkerManager + MediaPayloadQueueSet. */
+class ImageService
+    : public BaseAsyncService<domain::ImageGenerateRequest,
+                              domain::image::ImageResponse,
+                              tt::ipc::media_payload::MediaPayloadQueueSet> {
  public:
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -29,26 +29,22 @@ class ImageService : public BaseAsyncService<domain::ImageGenerateRequest,
                    queueManager);
   ~ImageService() override;
 
-  ImageService(const ImageService&) = delete;
-  ImageService& operator=(const ImageService&) = delete;
-
-  void start() override;
-  void stop() override;
-  bool isModelReady() const override;
   std::string runnerInUse() const override;
 
  protected:
-  void produceResponseAsync(
-      domain::ImageGenerateRequest request,
-      std::function<void(domain::image::ImageResponse&&)> onComplete) override;
-  void preProcess(domain::ImageGenerateRequest& request) const override;
-  size_t currentQueueSize() const override;
-  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
+  std::string validateRequest(
+      const domain::ImageGenerateRequest& request) const override;
+  IpcTask buildIpcTask(const domain::ImageGenerateRequest& request) override;
+  domain::image::ImageResponse buildResponse(uint32_t taskId,
+                                             const IpcResult& result) override;
+  void cleanupTask(uint32_t taskId) override;
+  void onStopped() override;
 
  private:
-  config::ImageConfig imageConfig;
-  std::unique_ptr<MediaWorkerScheduler> workerScheduler;
-  mutable std::atomic<size_t> inFlight{0};
+  std::string payloadPath(uint32_t taskId, const char* prefix) const;
+
+  config::ImageConfig imageConfig_;
+  std::filesystem::path payloadDir_;
 };
 
 }  // namespace tt::services
