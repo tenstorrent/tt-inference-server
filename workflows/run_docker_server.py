@@ -540,6 +540,31 @@ def _docker_ipc_args(model_spec) -> List[str]:
     return ["--ipc", "host"]
 
 
+def _docker_lifecycle_args(model_spec) -> List[str]:
+    """Stop timeout and host state mount from the device spec (see DeviceModelSpec).
+
+    ``docker_stop_timeout`` becomes ``--stop-timeout``, the grace ``docker stop`` gives
+    SIGTERM before SIGKILL (docker's default is 10 s). ``docker_host_state_dir`` is
+    bind-mounted read-write at the same path when it exists on the host, for state that
+    must outlive the container (e.g. a marker that the chips need a reset); a missing
+    directory is skipped with a warning, so the server falls back to its own default.
+    """
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    args: List[str] = []
+    stop_timeout = getattr(device_spec, "docker_stop_timeout", None)
+    if stop_timeout is not None:
+        args += ["--stop-timeout", str(int(stop_timeout))]
+    state_dir = getattr(device_spec, "docker_host_state_dir", None)
+    if state_dir:
+        if Path(state_dir).is_dir():
+            args += ["--mount", f"type=bind,src={state_dir},dst={state_dir}"]
+        else:
+            logger.warning(
+                f"docker_host_state_dir {state_dir} does not exist on this host; not mounting it"
+            )
+    return args
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -589,6 +614,7 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         *_docker_ipc_args(model_spec),
+        *_docker_lifecycle_args(model_spec),
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]

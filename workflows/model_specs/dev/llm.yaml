@@ -7220,6 +7220,11 @@ templates:
       max_concurrency: 1
       max_context: 262144  # 256 * 1024
       default_impl: true
+      # SIGTERM drains, then glm-tt releases the chips: about 12-14 s in all on a LoudBox.
+      docker_stop_timeout: 30
+      # The "chips need a reset" marker outlives the container here when the host has the
+      # directory (writable by uid 1000); otherwise it goes to the cache volume.
+      docker_host_state_dir: /var/lib/tenstorrent
   env_vars:
     GLM_TT_TTQ: glm53-flash-hot3-meas.ttq
     GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
