@@ -231,8 +231,8 @@ std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
                                      std::shared_ptr<domain::Session> session,
                                      bool preserveTokenIds) {
-  return [writer = std::move(writer), session = std::move(session), preserveTokenIds](
-             const LLMStreamChunk& chunk, bool isFinal) {
+  return [writer = std::move(writer), session = std::move(session),
+          preserveTokenIds](const LLMStreamChunk& chunk, bool isFinal) {
     // Accumulate token for prefix index (always, even if connection closed)
     if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
       session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
@@ -332,7 +332,8 @@ void LLMController::handleNonStreaming(
         // The writer owns the HTTP callback from this point on.
         *writer = NonStreamResponseWriter::create(
             makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
-        return makeStreamingCallback(*writer, std::move(sessionPtr), reqPtr->skip_text_decode);
+        return makeStreamingCallback(*writer, std::move(sessionPtr),
+                                     reqPtr->skip_text_decode);
       },
       std::move(handlers));
 }

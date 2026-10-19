@@ -11,8 +11,9 @@ namespace tt::utils::tokenizers {
 
 class LlamaTokenizer final : public Tokenizer {
  public:
-  explicit LlamaTokenizer(const std::string& path,
-                          std::string model = "meta-llama/Llama-3.1-8B-Instruct")
+  explicit LlamaTokenizer(
+      const std::string& path,
+      std::string model = "meta-llama/Llama-3.1-8B-Instruct")
       : Tokenizer(path), modelId(std::move(model)) {}
 
   std::string modelName() const override { return modelId; }

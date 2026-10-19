@@ -127,7 +127,8 @@ inline sch::GenerationParams makeGenerationParams(
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .seed = seq.getSamplingParams().seed.has_value()
-                  ? std::optional<uint64_t>(static_cast<uint64_t>(*seq.getSamplingParams().seed))
+                  ? std::optional<uint64_t>(
+                        static_cast<uint64_t>(*seq.getSamplingParams().seed))
                   : std::nullopt,
   };
   return {

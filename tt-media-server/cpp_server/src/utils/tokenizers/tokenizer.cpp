@@ -241,7 +241,8 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
     case config::ModelType::LLAMA_3_2_1B_INSTRUCT:
-      return std::make_unique<LlamaTokenizer>(path, "meta-llama/Llama-3.2-1B-Instruct");
+      return std::make_unique<LlamaTokenizer>(
+          path, "meta-llama/Llama-3.2-1B-Instruct");
     case config::ModelType::KIMI_K2_6:
     case config::ModelType::KIMI_K2_7_CODE:
       // Kimi K2.6 / K2.7-Code use model-specific files, but currently share the

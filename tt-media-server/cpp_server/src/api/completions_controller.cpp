@@ -81,6 +81,31 @@ void LLMController::completions(
   }
   auto batch = std::make_shared<CompletionBatch>();
   try {
+    // The shared chat parser does not read these fields. Reject them here
+    // instead of silently sampling a different distribution than requested.
+    for (const char* field :
+         {"allowed_token_ids", "prompt_logprobs", "truncate_prompt_tokens",
+          "best_of", "logit_bias", "guided_json", "guided_regex",
+          "guided_choice", "guided_grammar", "structured_outputs"}) {
+      if (json->isMember(field) && !(*json)[field].isNull()) {
+        throw std::invalid_argument(std::string(field) +
+                                    " is not supported for completions");
+      }
+    }
+    if (json->isMember("stop_token_ids")) {
+      const auto& stopIds = (*json)["stop_token_ids"];
+      if (!stopIds.isArray())
+        throw std::invalid_argument("stop_token_ids must be an array");
+      for (const auto& id : stopIds) {
+        if (!id.isUInt() || id.asUInt() > std::numeric_limits<int32_t>::max() ||
+            (tt::config::modelType() ==
+                 tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT &&
+             id.asUInt() >= 128256)) {
+          throw std::invalid_argument(
+              "stop_token_ids contains an invalid token ID");
+        }
+      }
+    }
     auto parameters = ChatCompletionRequest::fromJson(*json, 0);
     if (parameters.stream || parameters.n != 1 || parameters.echo ||
         parameters.suffix) {
@@ -102,7 +127,8 @@ void LLMController::completions(
     if (parameters.presence_penalty != 0 || parameters.frequency_penalty != 0 ||
         parameters.use_beam_search || parameters.min_tokens != 0 ||
         !parameters.stop.empty() || parameters.min_p.value_or(0) != 0 ||
-        parameters.repetition_penalty.value_or(1) != 1) {
+        parameters.repetition_penalty.value_or(1) != 1 ||
+        parameters.length_penalty != 1) {
       throw std::invalid_argument(
           "requested sampling penalty or constraint is not supported");
     }
