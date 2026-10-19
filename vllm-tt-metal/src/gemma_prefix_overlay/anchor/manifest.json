@@ -1,0 +1,16 @@
+{
+  "files": {
+    "v1/core/single_type_kv_cache_manager.py": {
+      "base": "3038a12b187453a5e1a3b2fd4f5cb4f5be08b23108f8352263032d9179472d55",
+      "target": "c45c6a8c5d8da9038f52046dc7d2f4a7b3cd77e6531073e593a29f69f8fdd255"
+    },
+    "v1/core/kv_cache_manager.py": {
+      "base": "2213a68ea1a2f05b1d99de25a3f1daf4040d8d7fdd0e271d80b7ba9e1977a08d",
+      "target": "b80c872e8023bae09e74ef005ecd443d7fad5d7860f664c46b9bcc98b80a61a8"
+    },
+    "v1/core/kv_cache_coordinator.py": {
+      "base": "43883199a6230b4d9efd98b9702007862e2cfa5466a2dc0326bfd1e69b3e7617",
+      "target": "904d053d347347834909754ddff7aad7c40ed37e8b318de9dad9eb9455564157"
+    }
+  }
+}
