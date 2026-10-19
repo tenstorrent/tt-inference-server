@@ -46,5 +46,5 @@
       "gzip_sha256": "42b59703817c9728e6cb5ba68c482c2faef7ba218e7d78e3881bb3593223eb06"
     }
   },
-  "protocol": "Prespecified longrequest restored-prefix seeds1..12;12targets+12warmups; originalmodel/policyunchanged, not qualityacceptance"
+  "protocol": "Six sequential semantic-continuation targets: before-comment(694 forced tokens,max7498) then before-repeat(710 forced tokens,max7482), seeds0/9472/2026 per cut, each preceded by one13441-token/max1 warmup; targetcached13440; T1/p.95/k20; naturalEOS1/106/50; no original RNG/output-ID replay claim."
 }
