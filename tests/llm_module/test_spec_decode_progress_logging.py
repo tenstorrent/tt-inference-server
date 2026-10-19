@@ -8,6 +8,7 @@ tail on failure, and the health wait's /v1/models fallback."""
 import logging
 import time
 
+import pytest
 import requests
 
 from llm_module.drivers import aiperf_spec_decode as driver_mod
@@ -31,22 +32,58 @@ def test_aiperf_log_tail_is_logged(tmp_path, caplog):
 
 
 class _Resp:
-    def __init__(self, status_code):
+    def __init__(self, status_code, body=None):
         self.status_code = status_code
+        self._body = body
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("no JSON body")
+        return self._body
 
 
-def test_health_wait_accepts_v1_models_when_health_is_missing(monkeypatch):
+_MODELS = {"object": "list", "data": [{"id": "m"}]}
+
+
+def _fake_get(monkeypatch, health_status, models=_MODELS):
     seen = []
 
     def fake_get(url, headers=None, timeout=None):
         seen.append(url)
-        return _Resp(404 if url.endswith("/health") else 200)
+        if url.endswith("/health"):
+            return _Resp(health_status)
+        return _Resp(200, models)
 
     monkeypatch.setattr(requests, "get", fake_get)
+    return seen
+
+
+@pytest.mark.parametrize("status", [404, 405, 501])
+def test_health_wait_accepts_v1_models_when_health_is_missing(monkeypatch, status):
+    seen = _fake_get(monkeypatch, status)
     assert spec_decode_tests._wait_for_url_healthy(
         "https://gw.example:443", timeout=5, interval=0
     )
     assert seen == ["https://gw.example:443/health", "https://gw.example:443/v1/models"]
+
+
+def test_health_wait_ignores_v1_models_when_health_is_unhealthy(monkeypatch):
+    seen = _fake_get(monkeypatch, 503)
+    assert not spec_decode_tests._wait_for_url_healthy(
+        "http://127.0.0.1:8080", timeout=0.2, interval=0.05
+    )
+    assert all(url.endswith("/health") for url in seen)
+
+
+@pytest.mark.parametrize("health_status", [200, 404])
+@pytest.mark.parametrize("models", [{"object": "list", "data": []}, None])
+def test_health_wait_needs_a_listed_model(monkeypatch, caplog, health_status, models):
+    # Dynamo's frontend: /health 200 with no workers, empty model list.
+    _fake_get(monkeypatch, health_status, models)
+    assert not spec_decode_tests._wait_for_url_healthy(
+        "http://127.0.0.1:8080", timeout=0.2, interval=0.05
+    )
+    assert "no models listed" in caplog.text
 
 
 def test_health_wait_logs_last_results_on_failure(monkeypatch, caplog):

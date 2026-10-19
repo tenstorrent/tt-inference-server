@@ -601,47 +601,70 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
     ``rejected_prediction_tokens`` over each request's last usage chunk.
     ``usage`` has no draft count, so ``num_drafts`` (and with it mean
     accepted length) comes from ``nvext.engine_data.spec_decode`` when the
-    server sends it. A response that reports the prediction tokens is
-    counted even when aiperf marked it invalid (e.g. no text content): the
-    server did the drafting. One without them is left out of the sums, as
-    ``failed_responses`` when the request failed (an aiperf ``error`` or HTTP
-    status >= 400), otherwise as ``responses_without_usage`` with a warning.
-    ``None`` when no response reports prediction tokens.
+    server sends it, and covers only responses that report both the draft
+    count and the prediction tokens. A response that reports the prediction
+    tokens is counted even when aiperf marked it invalid (e.g. no text
+    content): the server did the drafting. One without them is left out of
+    the sums, as ``failed_responses`` when the request failed (an aiperf
+    ``error`` or HTTP status >= 400), otherwise as ``responses_without_usage``
+    with a warning. A line or SSE message that is not valid JSON is skipped
+    with a warning. ``None`` when no response reports prediction tokens.
     """
-    accepted = rejected = num_drafts = responses = without = failed = 0
-    found = has_drafts = False
+    accepted = rejected = responses = without = failed = 0
+    paired_accepted = num_drafts = with_drafts = 0
+    unparsable = 0
+    found = False
     for path in Path(artifact_dir).rglob("profile_export_raw.jsonl"):
         with path.open(errors="replace") as fh:
             for line in fh:
-                record = json.loads(line)
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    unparsable += 1
+                    continue
                 details = spec = None
                 for response in record.get("responses") or []:
-                    for packet in response.get("packets") or []:
-                        value = packet.get("value") or ""
-                        if '"completion_tokens_details"' not in value and (
-                            '"engine_data"' not in value
-                        ):
-                            continue
+                    # One SSE message; its data fields join with "\n" per the
+                    # SSE spec (aiperf's SSEMessage.extract_data_content).
+                    value = "\n".join(
+                        packet.get("value") or ""
+                        for packet in response.get("packets") or []
+                        if packet.get("name") == "data"
+                    )
+                    if '"completion_tokens_details"' not in value and (
+                        '"engine_data"' not in value
+                    ):
+                        continue
+                    try:
                         chunk = json.loads(value)
-                        usage = chunk.get("usage") or {}
-                        details = usage.get("completion_tokens_details") or details
-                        engine_data = (chunk.get("nvext") or {}).get(
-                            "engine_data"
-                        ) or {}
-                        spec = engine_data.get("spec_decode") or spec
+                    except json.JSONDecodeError:
+                        unparsable += 1
+                        continue
+                    usage = chunk.get("usage") or {}
+                    details = usage.get("completion_tokens_details") or details
+                    engine_data = (chunk.get("nvext") or {}).get("engine_data") or {}
+                    spec = engine_data.get("spec_decode") or spec
                 if details and "accepted_prediction_tokens" in details:
                     found = True
                     accepted += details.get("accepted_prediction_tokens") or 0
                     rejected += details.get("rejected_prediction_tokens") or 0
+                    if spec and spec.get("num_drafts") is not None:
+                        with_drafts += 1
+                        num_drafts += spec["num_drafts"]
+                        paired_accepted += (
+                            details.get("accepted_prediction_tokens") or 0
+                        )
                 elif record.get("error") or (record.get("status") or 200) >= 400:
                     failed += 1
                     continue
                 else:
                     without += 1
                 responses += 1
-                if spec and spec.get("num_drafts") is not None:
-                    has_drafts = True
-                    num_drafts += spec["num_drafts"]
+    if unparsable:
+        logger.warning(
+            "[spec-decode] skipped %d unparsable raw-export lines or SSE messages.",
+            unparsable,
+        )
     if not found:
         return None
     if without:
@@ -655,13 +678,24 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
             responses,
             responses - without,
         )
+    with_usage = responses - without
+    if with_drafts and with_drafts < with_usage:
+        logger.warning(
+            "[spec-decode] %d/%d responses with prediction tokens report a "
+            "draft count; mean accepted length covers those.",
+            with_drafts,
+            with_usage,
+        )
     draft = accepted + rejected
     return {
         "acceptance_rate": accepted / draft if draft else 0.0,
         "accepted_tokens": float(accepted),
         "draft_tokens": float(draft),
-        "num_drafts": float(num_drafts) if has_drafts else None,
-        "mean_accepted_length": 1 + accepted / num_drafts if num_drafts else None,
+        "num_drafts": float(num_drafts) if with_drafts else None,
+        "mean_accepted_length": (
+            1 + paired_accepted / num_drafts if num_drafts else None
+        ),
+        "responses_with_drafts": with_drafts,
         "accepted_per_pos": [],
         "source": "usage",
         "responses_without_usage": without,

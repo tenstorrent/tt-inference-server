@@ -230,34 +230,32 @@ def _wait_for_url_healthy(
     interval: float = 5.0,
     log_every: float = 30.0,
 ) -> bool:
-    """Poll until ``/health`` or ``/v1/models`` returns 200 or the deadline expires.
+    """Poll until the endpoint is ready or the deadline expires.
 
-    Gateways in front of the server (e.g. tt-console) may not expose
-    ``/health``, while ``/v1/models`` is part of the OpenAI API the benchmark
-    needs anyway. The last probe results are logged every ``log_every``
-    seconds so a stuck wait is visible in CI logs.
+    Ready means ``/health`` returns 200 and ``/v1/models`` lists at least one
+    model. A Dynamo frontend answers ``/health`` with 200 before any worker
+    registers, and lists no models until one does. Gateways in front of the
+    server (e.g. tt-console) may not expose ``/health``, so an absent one
+    (404, 405 or 501) leaves the model listing to decide. Any other
+    ``/health`` status keeps waiting: vLLM answers 503 once its engine has
+    died but still lists the model. The last probe results are logged every
+    ``log_every`` seconds so a stuck wait is visible in CI logs.
     """
-    import requests
-
     headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
     root = base_url.rstrip("/")
+    health_url, models_url = root + "/health", root + "/v1/models"
     last_seen = {}
     logger.info("[spec-decode] waiting up to %.0fs for %s to be healthy", timeout, root)
     start = last_log = time.time()
     while time.time() < start + timeout:
-        for probe_url in (root + "/health", root + "/v1/models"):
-            try:
-                response = requests.get(probe_url, headers=headers, timeout=10)
-                last_seen[probe_url] = f"HTTP {response.status_code}"
-                if response.status_code == 200:
-                    logger.info(
-                        "[spec-decode] %s returned 200 after %.0fs",
-                        probe_url,
-                        time.time() - start,
-                    )
-                    return True
-            except requests.exceptions.RequestException as exc:
-                last_seen[probe_url] = f"{type(exc).__name__}: {exc}"
+        if _probe_ready(health_url, models_url, headers, last_seen):
+            logger.info(
+                "[spec-decode] %s ready after %.0fs: %s",
+                root,
+                time.time() - start,
+                last_seen,
+            )
+            return True
         if time.time() - last_log >= log_every:
             last_log = time.time()
             logger.info(
@@ -271,6 +269,41 @@ def _wait_for_url_healthy(
         "[spec-decode] %s not healthy after %.0fs: %s", root, timeout, last_seen
     )
     return False
+
+
+_HEALTH_ABSENT_STATUSES = (404, 405, 501)
+
+
+def _probe_ready(
+    health_url: str, models_url: str, headers: dict, last_seen: dict
+) -> bool:
+    """One round of the health wait; records each probe's result in ``last_seen``."""
+    import requests
+
+    try:
+        response = requests.get(health_url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as exc:
+        last_seen[health_url] = f"{type(exc).__name__}: {exc}"
+        return False
+    last_seen[health_url] = f"HTTP {response.status_code}"
+    if response.status_code not in (200, *_HEALTH_ABSENT_STATUSES):
+        return False
+    try:
+        response = requests.get(models_url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as exc:
+        last_seen[models_url] = f"{type(exc).__name__}: {exc}"
+        return False
+    last_seen[models_url] = f"HTTP {response.status_code}"
+    if response.status_code != 200:
+        return False
+    try:
+        models = response.json().get("data")
+    except (ValueError, AttributeError):
+        models = None
+    if not models:
+        last_seen[models_url] = "HTTP 200, no models listed"
+        return False
+    return True
 
 
 def _warmup_endpoint(
