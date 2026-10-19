@@ -1712,12 +1712,15 @@ def _report_meta(model, device="GPU", stamp="2026-10-14T00:00:00Z", ttis=TTIS, u
                            f"--server-url {url}:443 --dev-mode --agentic-benchmark x"}  # fmt: skip
 
 
-# The step Shield fails when the test's acceptance check fails.
-_TEST_STEP = (
+# The job that runs a task's test, as `gh run view --json jobs` names it (the
+# dispatch's matrix job over the reusable workflow's job), and the step Shield
+# fails when the report misses its acceptance criteria (run.py itself exits 0,
+# so `Run test` stays green on an accuracy miss).
+_TEST_JOB = (
     "Test | inference-workflow-agentic | --dev-mode --device gpu --agentic-benchmark {task}"
     " / Run | inference-workflow-agentic --dev-mode --device gpu --agentic-benchmark {task}"
-    " / Run test"
 )
+_TEST_STEP = _TEST_JOB + " / Enforce acceptance criteria"
 
 
 def _dispatched(task, run_id, conclusion="success", **fields):
@@ -2828,8 +2831,9 @@ def test_missing_job_metadata_stays_retryable_and_a_resume_recovers_it(tmp_path)
     _record(tmp_path, task, state="dispatched", run_id="7", conclusion="failure",
             serving_epochs=epoch, endpoint_id=gpuref.endpoint_id(URL))  # fmt: skip
     rec = tmp_path / "out" / "shield" / f"{task}.json"
-    jobs = json.dumps({"jobs": [{"name": "Test / Run", "conclusion": "failure",
-        "steps": [{"name": _TEST_STEP.format(task=task), "conclusion": "failure"}]}]})  # fmt: skip
+    jobs = json.dumps({"jobs": [{"name": _TEST_JOB.format(task=task), "conclusion": "failure",
+        "steps": [{"name": "Run test", "conclusion": "success"},
+                  {"name": "Enforce acceptance criteria", "conclusion": "failure"}]}]})  # fmt: skip
     network = tmp_path / "network_up"  # gh run view works only while this exists
 
     def run(tail):
@@ -2865,9 +2869,7 @@ gpuref() {{
     assert "VM_STARTED" not in second.stderr
     record = json.loads(rec.read_text())
     assert record["state"] == "completed"
-    assert json.loads(record["failed_steps"]) == [
-        f"Test / Run / {_TEST_STEP.format(task=task)}"
-    ]
+    assert json.loads(record["failed_steps"]) == [_TEST_STEP.format(task=task)]
     graded = json.loads(prov.read_text())
     assert graded["status"] == "ok" and graded["agentic"][0]["accuracy_check"] == 3
 
@@ -2898,8 +2900,9 @@ def test_a_legacy_completed_record_without_job_metadata_is_refetched(tmp_path):
             serving_epochs=epoch, endpoint_id=gpuref.endpoint_id(URL),
             dispatched_at="2026-10-16T00:00:00Z", test="t", ttis=TTIS)  # fmt: skip
     rec = tmp_path / "out" / "shield" / f"{task}.json"
-    jobs = json.dumps({"jobs": [{"name": "Test / Run", "conclusion": "failure",
-        "steps": [{"name": _TEST_STEP.format(task=task), "conclusion": "failure"}]}]})  # fmt: skip
+    jobs = json.dumps({"jobs": [{"name": _TEST_JOB.format(task=task), "conclusion": "failure",
+        "steps": [{"name": "Run test", "conclusion": "success"},
+                  {"name": "Enforce acceptance criteria", "conclusion": "failure"}]}]})  # fmt: skip
     views = tmp_path / "views"  # one line per `gh run view`
     script = (
         _resume_helpers(tmp_path, [task], True)
@@ -2927,9 +2930,7 @@ serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
     assert views.read_text().count("view") == 1  # the job metadata was fetched
     record = json.loads(rec.read_text())
     assert record["state"] == "completed"
-    assert json.loads(record["failed_steps"]) == [
-        f"Test / Run / {_TEST_STEP.format(task=task)}"
-    ]
+    assert json.loads(record["failed_steps"]) == [_TEST_STEP.format(task=task)]
     assert json.loads(prov.read_text())["status"] == "ok"
     # A second resume finds the metadata recorded and fetches nothing again.
     again = _bash(script)
@@ -2940,3 +2941,259 @@ serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
     loop = driver.split('for task in "${SERVE_TASKS[@]}"; do\n        rec=', 1)[1]
     skip = loop.split('log "${task}: Shield run already completed"', 1)[0]
     assert 'job_metadata_recorded "${rec}"' in skip
+
+
+# --- an accuracy miss is exactly the acceptance-criteria step (#5395) --------
+
+
+def test_only_the_acceptance_step_of_this_tasks_job_is_an_accuracy_miss(tmp_path):
+    # Review on #5395: the task flag is already in the job name, so a substring
+    # match let any failed step of that job (e.g. `Run test` crashing) pass as
+    # an accuracy miss. Only "Enforce acceptance criteria" of this task's job does.
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    missed = dict(
+        conclusion="failure", n_trials=89, n_errors=0, n_total=89, mean=0.4, score=score
+    )
+    job = _TEST_JOB.format(task="terminal_bench_2_1")
+    assert gpuref.shield_test_job("terminal_bench_2_1") == job
+    assert _graded(tmp_path / "ok", steps=[f"{job} / Enforce acceptance criteria"],
+                   **missed)["status"] == "ok"  # fmt: skip
+    for name, step in {
+        "run_test": f"{job} / Run test",  # the test itself crashed
+        "setup": f"{job} / Checkout tt-inference-server",
+        "job": f"{job} / (job failure)",
+        # another task whose name extends this one's
+        "longer": f"{_TEST_JOB.format(task='terminal_bench_2_1_x')} / Enforce acceptance criteria",
+        # the step name only as a substring
+        "suffix": f"{job} / Enforce acceptance criteria (retry)",
+    }.items():
+        assert _graded(tmp_path / name, steps=[step], **missed)["status"] == "failed", (
+            name
+        )
+
+
+def test_a_real_shield_job_view_of_an_accuracy_miss_counts(tmp_path):
+    # The shape `gh run view --json jobs` gives for a run whose report missed
+    # its target: `Run test` succeeds, `Enforce acceptance criteria` fails.
+    from reference_config.evals.eval_config import EvalTaskScore
+
+    task = "terminal_bench_2_1"
+    score = EvalTaskScore(published_score=81.0, published_score_ref="x",
+                          score_func=len, gpu_reference_score=77.5)  # fmt: skip
+    missed = dict(
+        conclusion="failure", n_trials=89, n_errors=0, n_total=89, mean=0.4, score=score
+    )
+
+    def view(run_test, enforce):
+        return {"jobs": [
+            {"name": "Validate", "conclusion": "success", "steps": [{"name": "Parse tests", "conclusion": "success"}]},
+            {"name": _TEST_JOB.format(task=task).split(" / ")[0] + " / Prepare", "conclusion": "success",
+             "steps": [{"name": "Find the deployment", "conclusion": "success"}]},
+            {"name": _TEST_JOB.format(task=task), "conclusion": "failure", "steps": [
+                {"name": "Run test", "conclusion": run_test},
+                {"name": "Enforce acceptance criteria", "conclusion": enforce},
+                {"name": "Upload report bundle", "conclusion": "success"}]},
+            {"name": "Reports | org/m", "conclusion": "success", "steps": []},
+        ]}  # fmt: skip
+
+    miss = gpuref.shield_failed_steps(view("success", "failure"))
+    assert miss == [_TEST_STEP.format(task=task)]
+    assert _graded(tmp_path / "a", steps=miss, **missed)["status"] == "ok"
+    crash = gpuref.shield_failed_steps(view("failure", "skipped"))
+    assert _graded(tmp_path / "b", steps=crash, **missed)["status"] == "failed"
+
+
+# --- --serve rollovers: persistent failures stop, retries are bounded and
+# --- --min-balance is checked before every VM allocation (#5395) -------------
+
+
+def test_persistent_failure_reads_only_a_tagged_failed_phase():
+    tagged = ("FAILED: 1/1 model(s) failed; see results/status.json; persistent setup "
+              "failure: org/m: ngrok tunnel did not start: ERR_NGROK_105 (tunnel.log)")  # fmt: skip
+    assert gpuref.persistent_failure(tagged) == (
+        "org/m: ngrok tunnel did not start: ERR_NGROK_105 (tunnel.log)"
+    )
+    for phase in ("FAILED: 1/1 model(s) failed; see results/status.json",
+                  "FAILED: runner exited unexpectedly (rc=137)",
+                  "model 1/1 org/m: serving persistent setup failure: x", "", None):  # fmt: skip
+        assert gpuref.persistent_failure(phase) is None, phase
+    cli = [sys.executable, str(GPUREF_PATH), "persistent-failure"]
+    out = subprocess.run(cli + [tagged], capture_output=True, text=True)
+    assert out.returncode == 0 and "ERR_NGROK_105" in out.stdout
+    assert (
+        subprocess.run(cli + ["FAILED: runner exited"], capture_output=True).returncode
+        == 1
+    )
+
+
+def test_the_runner_tags_each_persistent_failure_so_the_driver_can_read_it():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    run_model = runner.split("run_model() {", 1)[1].split("\nmain() {", 1)[0]
+    # Plan, stack, vLLM start-up and ngrok start-up failures recur on any VM.
+    for note in ("no GPU spec and none derivable", "GPU spec did not resolve",
+                 "could not write the edited config.json", "did not install (runner.log)",
+                 "vLLM did not become ready", "ngrok tunnel did not start"):  # fmt: skip
+        line = next(ln for ln in run_model.splitlines() if note in ln)
+        assert "persistent=1" in line, line
+    # Losing the VM or the server mid-serve is not persistent: it is retried.
+    lost = next(
+        ln for ln in run_model.splitlines() if "serving ended before STOP" in ln
+    )
+    assert "persistent=1" not in lost
+    serve = runner.split("serve_until_stop() {", 1)[1].split("\n}\n", 1)[0]
+    assert "ERR_NGROK_[0-9]+" in serve and "TUNNEL_SETUP_ERROR=" in serve
+    # The phase the runner writes is the one the driver reads as persistent.
+    finish = next(ln.strip() for ln in runner.split("\nmain() {", 1)[1].splitlines()
+                  if "PERSISTENT_FAILURE" in ln)  # fmt: skip
+    script = (
+        'finish() { printf "%s: %s\\n" "$1" "$2"; }\n'
+        "MODELS=(org/m) failed=1\n"
+        'PERSISTENT_FAILURE="org/m: vLLM did not become ready (vllm_server.log)"\n'
+        f"{finish}\n"
+    )
+    phase = _bash(script).stdout.strip()
+    assert gpuref.persistent_failure(phase) == (
+        "org/m: vLLM did not become ready (vllm_server.log)"
+    )
+    plain = _bash(script.replace('PERSISTENT_FAILURE="org', 'X="org')).stdout.strip()
+    assert phase.startswith("FAILED: ") and gpuref.persistent_failure(plain) is None
+
+
+def _driver_function(driver, name, indent=""):
+    body = driver.split(f"{indent}{name}() {{", 1)[1].split(f"\n{indent}}}\n", 1)[0]
+    return f"{name}() {{{body}\n}}\n"
+
+
+def _rollover_script(tmp_path, balance_out="Current balance: 900.0", rec_state=None):
+    """The driver's real rollover / rollover_gate / vm_allocation_allowed, with
+    start_session, launch_runner, `colab` and `gh` stubbed to log their calls."""
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    script = _serve_helpers(tmp_path, True)
+    rec = tmp_path / "shield" / "tb2.json"
+    if rec_state:
+        rec.parent.mkdir(parents=True, exist_ok=True)
+        rec.write_text(json.dumps({"task": "tb2", "run_id": "41", "state": rec_state}))
+    script += f"""
+ROLLOVERS=0 SESSION=s1 SESSION_ACTIVE=1 DRY_RUN=0 OUT_DIR={tmp_path}/out rec={rec}
+status() {{ echo "STATUS $*" >&2; }}
+colab_cmd() {{ echo "COLAB $*" >&2; }}
+colab() {{ [[ "$1" == usage ]] && {{ printf '%s\\n' {shlex.quote(balance_out)}; return 0; }}; return 1; }}
+gh() {{ echo "GH $*" >> {tmp_path}/gh.log; }}
+start_session() {{ echo "START_SESSION" >&2; SESSION_ACTIVE=1; }}
+launch_runner() {{ echo "LAUNCH" >&2; }}
+"""
+    script += _driver_function(driver, "vm_allocation_allowed")
+    script += _driver_function(driver, "rollover", indent="    ")
+    return script
+
+
+def test_a_persistent_runner_failure_stops_instead_of_rolling_over(tmp_path):
+    # Review on #5395: every FAILED runner allocated another VM, even for
+    # failures that recur on any VM (a rejected ngrok authtoken, a stack
+    # that does not install).
+    script = (
+        _rollover_script(tmp_path, rec_state="dispatched")
+        + """
+MIN_BALANCE=0 MAX_ROLLOVERS=3 STATE=FAILED
+PHASE="FAILED: 1/1 model(s) failed; see results/status.json; persistent setup failure: org/m: ngrok tunnel did not start: ERR_NGROK_105 (tunnel.log)"
+rollover "runner ${STATE} before STOP (${PHASE})"
+echo NOT_REACHED
+"""
+    )
+    out = _bash(script)
+    assert out.returncode == 1 and "NOT_REACHED" not in out.stdout, out.stderr
+    assert "START_SESSION" not in out.stderr and "LAUNCH" not in out.stderr
+    assert "STATUS FAILED reason=persistent setup failure, not retried: org/m: ngrok " \
+           "tunnel did not start: ERR_NGROK_105 (tunnel.log)" in out.stderr  # fmt: skip
+    # The task's run in flight is cancelled: no VM will serve it.
+    assert (tmp_path / "gh.log").read_text() == "GH run cancel 41 -R org/shield\n"
+    # An untagged failure (e.g. vLLM died mid-serve) is still rolled over.
+    transient = _bash(script.replace("; persistent setup failure: org/m", "; org/m"))
+    assert transient.returncode == 0 and "NOT_REACHED" in transient.stdout
+    assert transient.stderr.count("START_SESSION") == 1
+
+
+def test_rollovers_are_capped_per_invocation(tmp_path):
+    script = (
+        _rollover_script(tmp_path)
+        + """
+MIN_BALANCE=0 MAX_ROLLOVERS=2 STATE=DIED PHASE="model 1/1 org/m: serving"
+for i in 1 2 3; do rollover "runner DIED before STOP"; echo "ROLLED $i"; done
+"""
+    )
+    out = _bash(script)
+    assert out.returncode == 1, out.stderr
+    assert "ROLLED 2" in out.stdout and "ROLLED 3" not in out.stdout
+    assert out.stderr.count("START_SESSION") == 2
+    assert "rollover limit reached (2/2, --max-rollovers)" in out.stderr
+    # --max-rollovers 0: a lost VM is never replaced.
+    none = _bash(script.replace("MAX_ROLLOVERS=2", "MAX_ROLLOVERS=0"))
+    assert none.returncode == 1 and "START_SESSION" not in none.stderr
+
+
+def test_min_balance_is_checked_before_every_rollover(tmp_path):
+    # Review on #5395: --min-balance was checked only while a runner served,
+    # so failed runners kept allocating VMs below the floor.
+    tail = """
+MIN_BALANCE=500 MAX_ROLLOVERS=3 STATE=DIED PHASE=""
+rollover "session 's1' is gone"
+echo ROLLED
+"""
+    low = _bash(_rollover_script(tmp_path / "low", "Current balance: 120.5") + tail)
+    assert low.returncode == 1 and "ROLLED" not in low.stdout, low.stderr
+    assert "START_SESSION" not in low.stderr
+    assert (
+        "STATUS LOW_BALANCE reason=balance 120.5 CU is below --min-balance 500"
+        in low.stderr
+    )
+    # A balance that cannot be read is not shown to be above the floor.
+    blind = _bash(_rollover_script(tmp_path / "blind", "Error: not signed in") + tail)
+    assert blind.returncode == 1 and "START_SESSION" not in blind.stderr
+    assert "could not be read" in blind.stderr
+    ok = _bash(_rollover_script(tmp_path / "ok", "Current balance: 900.0") + tail)
+    assert ok.returncode == 0 and "ROLLED" in ok.stdout and "START_SESSION" in ok.stderr
+
+
+def test_min_balance_is_checked_before_the_first_vm_too(tmp_path):
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    start = _driver_function(driver, "start_session")
+    loop = start.split("while :; do", 1)[1]
+    # The check opens every allocation pass, before any `colab new`.
+    assert loop.index("vm_allocation_allowed") < loop.index("new -s")
+    script = f"""
+set -euo pipefail
+MIN_BALANCE=500 DRY_RUN=0 SESSION=s1 SESSIONS_OUT="" RETRY_CAPACITY="" GPUS=(H100) HIGH_MEM=0
+NEW_ATTEMPTS=1 NEW_RETRY_SECONDS=0 LOCAL_TMP={tmp_path} GPU=H100
+log() {{ echo "LOG $*" >&2; }}
+die() {{ echo "DIE $*" >&2; exit 1; }}
+status() {{ echo "STATUS $*" >&2; }}
+has_session() {{ return 1; }}
+gpuref() {{ {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@"; }}
+colab() {{ [[ "$1" == usage ]] && echo "Current balance: 10.0"; }}
+colab_cmd() {{ echo "COLAB $*" >&2; }}
+{_driver_function(driver, "vm_allocation_allowed")}
+{start}
+start_session
+echo NOT_REACHED
+"""
+    out = _bash(script)
+    assert out.returncode == 1 and "NOT_REACHED" not in out.stdout, out.stderr
+    assert "COLAB new" not in out.stderr
+    assert (
+        "DIE balance 10.0 CU is below --min-balance 500; no VM is allocated"
+        in out.stderr
+    )
+    allowed = _bash(script.replace("Current balance: 10.0", "Current balance: 900.0"))
+    assert "COLAB new -s s1 --gpu H100" in allowed.stderr, allowed.stderr
+
+
+def test_max_rollovers_must_be_a_count():
+    out = subprocess.run(
+        ["bash", str(SCRIPT_DIR / "colab_gpu_reference.sh"), "--max-rollovers", "x", "org/m"],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert out.returncode == 1
+    assert "--max-rollovers must be a non-negative integer" in out.stderr

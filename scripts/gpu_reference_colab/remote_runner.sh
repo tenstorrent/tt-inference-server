@@ -12,7 +12,10 @@
 #
 # State in WORK_DIR (polled by the driver):
 #   phase                 one line, the current step
-#   DONE | FAILED         terminal markers (FAILED: setup failed or a model failed)
+#   DONE | FAILED         terminal markers (FAILED: setup failed or a model failed;
+#                         a reason a new VM would hit again ends in
+#                         "persistent setup failure: <note>", so the --serve
+#                         driver stops instead of rolling over)
 #   runner.log            this script's log (the launcher redirects into it)
 #   results/              what the driver downloads:
 #     status.json         per-model status
@@ -85,6 +88,11 @@ RESULTS="${WORK_DIR}/results"
 SERVER_PID=""
 SECRETS="${WORK_DIR}/secrets"   # --serve: endpoint_api_key, auth_header, ngrok_authtoken (0600)
 TUNNEL_PID=""
+# The note of a failure a new VM would hit again (same pinned commit, plan,
+# stack and credentials): no GPU spec, a stack that does not install, a vLLM
+# that never becomes ready, an ngrok error at tunnel start. Empty otherwise.
+PERSISTENT_FAILURE=""
+TUNNEL_SETUP_ERROR=""
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 phase() { printf '%s\n' "$*" > "${WORK_DIR}/phase"; log "PHASE: $*"; }
@@ -196,7 +204,13 @@ serve_until_stop() {
     if start_tunnel; then
         for i in $(seq 1 10); do tunnel_ready "${model}" && { up=1; break; }; sleep 6; done
     fi
-    [[ "${up}" -eq 1 ]] || { log "tunnel did not come up after ${i:-0} checks (tunnel.log)"; return 1; }
+    if [[ "${up}" -ne 1 ]]; then
+        # ngrok's own error (ERR_NGROK_<n>: a rejected authtoken, an unreserved
+        # --tunnel-domain, the account's session limit) recurs on any VM.
+        TUNNEL_SETUP_ERROR="$(grep -oE 'ERR_NGROK_[0-9]+' "${RESULTS}/tunnel.log" 2>/dev/null | head -1)" || TUNNEL_SETUP_ERROR=""
+        log "tunnel did not come up after ${i:-0} checks${TUNNEL_SETUP_ERROR:+ (ngrok ${TUNNEL_SETUP_ERROR})} (tunnel.log)"
+        return 1
+    fi
     # This VM's serving snapshot (GPU, stack, serve command, cap), before it
     # serves: provenance.json is only written after STOP, and a VM lost before
     # then takes it along. The driver binds each Shield score to the snapshot
@@ -323,7 +337,7 @@ run_model() {
     local model="$1" idx="$2" total="$3"
     local slug="${model//\//__}"
     local mdir="${RESULTS}/${slug}"
-    local started finished evals_rc="" status="" note="" cap="" eval_samples=""
+    local started finished evals_rc="" status="" note="" cap="" eval_samples="" persistent=0
     mkdir -p "${mdir}"
     started="$(now)"
 
@@ -336,15 +350,15 @@ run_model() {
     # clone (recorded as derived_gpu_spec.json and in provenance).
     if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" ensure-gpu-spec --ttis-dir "${TTIS_DIR}" --model "${model}" --out "${mdir}/derived_gpu_spec.json") \
             2> "${mdir}/serve_plan.err"; then
-        status="failed"; note="no GPU spec and none derivable from a TT row (serve_plan.err)"
+        status="failed"; note="no GPU spec and none derivable from a TT row (serve_plan.err)"; persistent=1
     elif ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}" ${overrides[@]+"${overrides[@]}"}) \
             > "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
-        status="failed"; note="GPU spec did not resolve (serve_plan.err)"
+        status="failed"; note="GPU spec did not resolve (serve_plan.err)"; persistent=1
     elif ! python3 "${GPUREF}" materialize-hf-config "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
-        status="failed"; note="could not write the edited config.json (serve_plan.err)"
+        status="failed"; note="could not write the edited config.json (serve_plan.err)"; persistent=1
     elif ! read -r stack_vllm stack_tf < <(python3 "${GPUREF}" plan-stack "${mdir}/serve_plan.json") \
             || ! ensure_stack "${stack_vllm}" "${stack_tf}"; then
-        status="failed"; note="serving stack vllm==${stack_vllm} ${stack_tf:+transformers==${stack_tf} }did not install (runner.log)"
+        status="failed"; note="serving stack vllm==${stack_vllm} ${stack_tf:+transformers==${stack_tf} }did not install (runner.log)"; persistent=1
     else
         mapfile -t SERVER_ENV < <(python3 "${GPUREF}" plan-stack --env "${mdir}/serve_plan.json")
         local -a serve_args=()
@@ -373,10 +387,12 @@ run_model() {
             fi
         fi
         if [[ "${ready}" -eq 0 ]]; then
-            status="failed"; note="vLLM did not become ready (vllm_server.log)"
+            status="failed"; note="vLLM did not become ready (vllm_server.log)"; persistent=1
         elif [[ "${SERVE}" -eq 1 ]]; then
             phase "model ${idx}/${total} ${model}: serving"
             if serve_until_stop "${model}"; then status="ok"; note="served for Shield's endpoint tests"
+            elif [[ -n "${TUNNEL_SETUP_ERROR}" ]]; then
+                status="failed"; note="ngrok tunnel did not start: ${TUNNEL_SETUP_ERROR} (tunnel.log)"; persistent=1
             else status="failed"; note="serving ended before STOP (runner.log, tunnel.log, vllm_server.log)"; fi
             if [[ -n "${cap}" ]]; then note="${note}; max_model_len capped to ${cap} on this GPU"; fi
         else
@@ -448,6 +464,9 @@ run_model() {
         || log "WARNING: provenance.json not written for ${model}"
 
     python3 "${GPUREF}" record-status "${RESULTS}/status.json" "${model}" "${status}" "${note}"
+    if [[ "${status}" != "ok" && "${persistent}" -eq 1 && -z "${PERSISTENT_FAILURE}" ]]; then
+        PERSISTENT_FAILURE="${model}: ${note}"
+    fi
     [[ "${status}" == "ok" ]]
 }
 
@@ -465,7 +484,7 @@ main() {
         run_model "${model}" "${i}" "${#MODELS[@]}" || failed=$((failed + 1))
     done
     if (( failed > 0 )); then
-        finish FAILED "${failed}/${#MODELS[@]} model(s) failed; see results/status.json"
+        finish FAILED "${failed}/${#MODELS[@]} model(s) failed; see results/status.json${PERSISTENT_FAILURE:+; persistent setup failure: ${PERSISTENT_FAILURE}}"
         exit 1
     fi
     finish DONE "${#MODELS[@]} model(s) ok"

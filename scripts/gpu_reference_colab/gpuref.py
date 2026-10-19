@@ -1092,6 +1092,41 @@ def shield_test(task: str) -> str:
     )
 
 
+# The step of tt-shield's test job (workflow_tt-blaze-exabox-tests.yml) that
+# turns the report's acceptance_criteria into the job's result. run.py exits 0
+# when the model misses its target, so `Run test` stays green and an accuracy
+# miss fails this step alone.
+ACCEPTANCE_STEP = "Enforce acceptance criteria"
+
+
+def shield_test_job(task: str) -> str:
+    """The name `gh run view --json jobs` gives the job that ran the task's
+    test: the dispatch's run-tests matrix job ("Test | <test> | <args>") over
+    the reusable workflow's job ("Run | <test> <args>")."""
+    test, _, args = shield_test(task).partition(" ")
+    return f"Test | {test} | {args} / Run | {test} {args}"
+
+
+def is_acceptance_miss(failed_step: str, task: str) -> bool:
+    """The failed step (as shield_failed_steps writes it) is exactly the
+    acceptance-criteria step of the job that ran this task's test."""
+    return failed_step == f"{shield_test_job(task)} / {ACCEPTANCE_STEP}"
+
+
+# A runner that FAILED for a reason a new VM would hit again tags its reason
+# (remote_runner.sh: the phase reads "FAILED: ...; persistent setup failure:
+# <note>"), so the --serve driver stops instead of rolling over.
+PERSISTENT_TAG = "persistent setup failure: "
+
+
+def persistent_failure(phase: Optional[str]) -> Optional[str]:
+    """The note of a FAILED runner phase tagged persistent, else None."""
+    phase = phase or ""
+    if not phase.startswith("FAILED:") or PERSISTENT_TAG not in phase:
+        return None
+    return phase.split(PERSISTENT_TAG, 1)[1].strip() or None
+
+
 def shield_inputs(
     model: str, task: str, url: str, ttis_sha: str, secret: str = ENDPOINT_KEY_SECRET
 ) -> Dict[str, str]:
@@ -1313,12 +1348,17 @@ def shield_provenance(
     # (trial_coverage), on a VM that matches this provenance. Shield fails the
     # job when the model misses its acceptance criteria, so a "failure"
     # conclusion counts only when that is all that failed: accuracy_check FAIL
-    # and exactly one failed step, in the job that ran this task's test. A
-    # cancelled, crashed or otherwise failed job never does.
+    # and exactly one failed step, which is the "Enforce acceptance criteria"
+    # step of the job that ran this task's test (matched by the whole job and
+    # step name, not a substring). Any other failure in that job (`Run test`,
+    # a setup step) and a cancelled or crashed job never count.
     def only_the_test_failed(a):
         steps = a["failed_steps"]
-        flag = f"--agentic-benchmark {a.get('task')}"
-        return steps is not None and len(steps) == 1 and flag in steps[0]
+        return (
+            steps is not None
+            and len(steps) == 1
+            and is_acceptance_miss(steps[0], str(a.get("task") or ""))
+        )
 
     def counts(a):
         accuracy_miss = a.get("accuracy_check") == ACCURACY_FAIL
@@ -2363,6 +2403,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("redact-url", url_file=req)
     add("shield-workflow")
     add("shield-failed-steps")
+    add("persistent-failure", "phase")
     p = sub.add_parser(
         "shield-provenance", help="add the Shield runs to provenance.json"
     )
@@ -2626,6 +2667,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(redact_url(url) or "", endpoint_id(url) or "")
     elif args.cmd == "shield-failed-steps":  # gh run view --json jobs on stdin
         print(json.dumps(shield_failed_steps(json.loads(sys.stdin.read()))))
+    elif args.cmd == "persistent-failure":  # rc 0 + the note when persistent
+        why = persistent_failure(args.phase)
+        if why is None:
+            return 1
+        print(why)
     elif args.cmd == "shield-workflow":
         print(SHIELD_REPO, SHIELD_WORKFLOW)
     elif args.cmd == "shield-provenance":

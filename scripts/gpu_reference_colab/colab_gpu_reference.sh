@@ -30,6 +30,7 @@ SWEEP=0 REFRESH=0 WRITE_SPECS=0 PRUNE=0 TT_REPORTS="" AUDIT_REFS="" ORIG_ARGS=("
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS="${GPUREF_NEW_RETRY_SECONDS:-120}"   # per GPU type, on 503 (no capacity)
 RETRY_CAPACITY="" DETACH=0             # --retry-capacity MINUTES,HOURS; --detach
 SERVE=0 AGENTIC_TASKS="" TUNNEL_DOMAIN="" # --serve mode (agentic --task): set from the tasks
+MAX_ROLLOVERS="${GPUREF_MAX_ROLLOVERS:-3}" # --serve: VM replacements per invocation
 # --serve credentials (0600 files; never on a command line or in a log): the
 # endpoint API key (the same value is the tt-shield secret SHIELD_SECRET) and
 # the ngrok authtoken.
@@ -57,6 +58,9 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
                       explicit runs only. Default: all of the model's lm-eval tasks.
                       Agentic tasks (one model): --serve mode, see README "Agentic tasks"
   --tunnel-domain D   --serve: reserved ngrok domain, so the URL survives a rollover
+  --max-rollovers N   --serve: replace a lost or failed VM at most N times per
+                      invocation (default 3, or $GPUREF_MAX_ROLLOVERS); a runner
+                      that failed for a persistent reason is never replaced
   --retry-capacity M,H  when no GPU is free (503) or the concurrent-session limit
                       is hit (412), retry every M minutes for up to H hours, then
                       exit 75; a sweep moves on to other groups and retries later
@@ -90,6 +94,7 @@ while [[ $# -gt 0 ]]; do
         --detach) DETACH=1; shift ;;
         --task) TASK_ARGS+=("$2"); shift 2 ;;
         --tunnel-domain) TUNNEL_DOMAIN="$2"; shift 2 ;;
+        --max-rollovers) MAX_ROLLOVERS="$2"; shift 2 ;;
         --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
         --refresh-quetzal) AUDIT_REFS="$2"; shift 2 ;;
         --write-specs) WRITE_SPECS=1; shift ;; --emit-patch) shift ;;  # always written now
@@ -105,6 +110,7 @@ for m in ${MODELS[@]+"${MODELS[@]}"}; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9.
 [[ "${GPU}" =~ ^((T4|L4|G4|H100|A100),)*(T4|L4|G4|H100|A100)$ ]] || die "bad --gpu: ${GPU}"
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
 [[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number"
+[[ "${MAX_ROLLOVERS}" =~ ^[0-9]+$ ]] || die "--max-rollovers must be a non-negative integer"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
 [[ -z "${TRANSFORMERS_VERSION}" || "${TRANSFORMERS_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --transformers-version"
 [[ ${#TASK_ARGS[@]} -eq 0 || "${SWEEP}" -eq 0 ]] || die "--task is for explicit runs; a sweep picks its own tasks"
@@ -315,6 +321,23 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then colab_cmd sessions; SESSIONS_OUT=""
 else SESSIONS_OUT="$(colab_cmd sessions 2>&1)" || die "'colab sessions' failed: ${SESSIONS_OUT}"; fi
 
 # 2 start VM (or re-attach) ---------------------------------------------------
+vm_allocation_allowed() {   # --min-balance before any new VM; else ALLOCATION_REFUSED says why
+    # Checked before every allocation (the first VM, each capacity pass, each
+    # --serve rollover), not only while a runner serves. With a floor set, a
+    # balance that cannot be read refuses too: it cannot be shown to be above.
+    local balance rc=0
+    ALLOCATION_REFUSED=""
+    [[ "${MIN_BALANCE}" != "0" && "${DRY_RUN}" -eq 0 ]] || return 0
+    balance="$(colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}")" || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+        ALLOCATION_REFUSED="balance ${balance} CU is below --min-balance ${MIN_BALANCE}"
+    elif [[ -z "${balance}" || "${balance}" == "None" ]]; then
+        ALLOCATION_REFUSED="the compute-unit balance could not be read ('colab usage'), so --min-balance ${MIN_BALANCE} cannot be checked"
+    else
+        return 0
+    fi
+    return 1
+}
 start_session() {   # sets STATE (ABSENT for a new VM), SESSION_ACTIVE
     STATE="ABSENT"
     if [[ "${DRY_RUN}" -eq 0 ]] && printf '%s\n' "${SESSIONS_OUT}" | has_session; then
@@ -332,6 +355,10 @@ start_session() {   # sets STATE (ABSENT for a new VM), SESSION_ACTIVE
         deadline=$(( $(date +%s) + $(awk -v h="${RETRY_CAPACITY#*,}" 'BEGIN { printf "%d", h * 3600 }') ))
     fi
     while :; do
+        if ! vm_allocation_allowed; then
+            status LOW_BALANCE "reason=${ALLOCATION_REFUSED}"
+            die "${ALLOCATION_REFUSED}; no VM is allocated"
+        fi
         capacity_only=1
         for gpu in "${GPUS[@]}"; do
             new_args=(new -s "${SESSION}" --gpu "${gpu}"); [[ "${HIGH_MEM}" -eq 1 ]] && new_args+=(--high-mem)
@@ -573,6 +600,32 @@ if epoch not in epochs:
         fi
         cp -p "${saved}" "${SERVE_PROV}"
     }
+    serve_stop() {   # STATE REASON: stop for good, no new VM; cancel the task's Shield run in flight
+        local id=""
+        if [[ -s "${rec:-}" && "$(field "${rec}" state)" == "dispatched" ]]; then id="$(field "${rec}" run_id)"; fi
+        if [[ -n "${id}" ]]; then
+            gh run cancel "${id}" -R "${SHIELD_REPO}" > /dev/null 2>&1 || true
+            log "cancelled Shield run ${id}: no VM will serve it"
+        fi
+        log "ERROR: $2; stopping without allocating another VM"
+        status "$1" "reason=$2" "rollovers=${ROLLOVERS}" "out=${OUT_DIR}"
+        exit 1
+    }
+    rollover_gate() {   # REASON: may the serving VM be replaced? serve_stop (exit) when not
+        # A runner that FAILED for a persistent reason (remote_runner.sh tags
+        # it: no GPU spec, a stack that does not install, a vLLM that never
+        # becomes ready, an ngrok error such as a rejected authtoken) fails the
+        # same way on any VM. Any other loss is retried at most MAX_ROLLOVERS
+        # times, and never below --min-balance.
+        local why
+        if [[ "${STATE:-}" == "FAILED" ]] && why="$(gpuref persistent-failure "${PHASE:-}")"; then
+            serve_stop FAILED "persistent setup failure, not retried: ${why}"
+        fi
+        if (( ROLLOVERS >= MAX_ROLLOVERS )); then
+            serve_stop FAILED "rollover limit reached (${ROLLOVERS}/${MAX_ROLLOVERS}, --max-rollovers) at: $1"
+        fi
+        vm_allocation_allowed || serve_stop LOW_BALANCE "${ALLOCATION_REFUSED}"
+    }
     # <<< serve-record helpers
     if [[ "${DRY_RUN}" -eq 0 ]] && serve_report_only_resume; then exit "${FINISH_RC}"; fi
 fi
@@ -597,6 +650,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
         read -r ENDPOINT_SHOWN ENDPOINT_ID < <(gpuref redact-url --url-file "${ENDPOINT_FILE}")
     }
     rollover() {   # REASON: replace the serving VM and relaunch the runner
+        rollover_gate "$1"
         ROLLOVERS=$((ROLLOVERS + 1)); log "rollover ${ROLLOVERS}: $1"; status ROLLOVER "reason=$1" "rollovers=${ROLLOVERS}"
         [[ "${SESSION_ACTIVE}" -eq 1 ]] && { colab_cmd stop -s "${SESSION}" || true; }
         SESSION_ACTIVE=0 SESSIONS_OUT="" SERVE_EPOCH="" SNAPSHOT_WAITS=0   # the next VM is a new epoch
