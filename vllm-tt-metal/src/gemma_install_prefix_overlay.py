@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 import subprocess
+import sys
 
 
 def _install(repo, manifest_name, patch_name, marker):
@@ -38,5 +39,4 @@ def install_prefix_overlay(metal):
     _install(metal.parent / "vllm-tt-plugin", "plugin-manifest.json", "plugin.patch", "GEMMA_PREFIX_PLUGIN")
 
     # Diagnostic-only CPU proof in the actual server image, before engine startup.
-    from quality_r6_sampling_preflight import run as quality_sampling_preflight
-    quality_sampling_preflight()
+    subprocess.run([sys.executable, "-u", str(Path(__file__).with_name("quality_r6_sampling_preflight.py"))], check=True, timeout=120)
