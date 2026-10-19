@@ -11940,10 +11940,6 @@ _eval_config_list = [
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "astropy__astropy-14096",
-                            "django__django-11299",
-                            "matplotlib__matplotlib-25332",
-                            "scikit-learn__scikit-learn-14629",
-                            "sympy__sympy-13551",
                         ],
                         # ci-long: full accuracy sets, same CI-sized agentic lists.
                         EvalLimitMode.CI_LONG: [
