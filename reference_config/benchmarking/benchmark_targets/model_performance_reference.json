@@ -7764,5 +7764,55 @@
                 }
             }
         ]
+    },
+    "zai-org/GLM-5.3-Flash": {
+        "p150x8": [
+            {
+                "_comment": [
+                    "GLM-5.3-Flash on tt-lab glm-tt (impl tt_lab_glm), single-user LoudBox serve.",
+                    "theoretical: 176 t/s/u is the accepted 5.5 ms decode target (tt-lab notes/glm-deploy-options.md);",
+                    "the RC build measures 165-170 t/s/u. TTFTs are prefill-roofline guesses, so only the",
+                    "functional (10%) and complete (50%) tiers are meaningful; the row is EXPERIMENTAL, no tier gates."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 300.0,
+                        "tput_user": 176.0,
+                        "tput": 176.0
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "GLM-5.3-Flash on tt-lab glm-tt (impl tt_lab_glm), single-user LoudBox serve.",
+                    "theoretical: 176 t/s/u is the accepted 5.5 ms decode target (tt-lab notes/glm-deploy-options.md);",
+                    "the RC build measures 165-170 t/s/u. TTFTs are prefill-roofline guesses, so only the",
+                    "functional (10%) and complete (50%) tiers are meaningful; the row is EXPERIMENTAL, no tier gates."
+                ],
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 600.0,
+                        "tput_user": 176.0,
+                        "tput": 176.0
+                    }
+                }
+            }
+        ]
     }
 }
