@@ -11952,7 +11952,6 @@ _eval_config_list = [
                     },
                 ),
                 request_body={
-                    "seed": 9472,
                     "repetition_detection": {
                         "min_pattern_size": 16,
                         "max_pattern_size": 1024,
