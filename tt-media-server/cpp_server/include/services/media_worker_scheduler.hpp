@@ -7,7 +7,7 @@
 
 #include <atomic>
 #include <filesystem>
-#include <future>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,13 +27,15 @@ struct MediaWorkerResult {
   std::string error;
 };
 
-/** Parent-side scheduler for synchronous media workers.
+/** Parent-side scheduler for media workers.
  *
- * Owns worker lifecycle, request dispatch, result collection, and the temp-file
- * payload handoff used for large media responses.
+ * Owns worker lifecycle, async request dispatch, result collection, and the
+ * temp-file payload handoff used for large media responses.
  */
 class MediaWorkerScheduler {
  public:
+  using ResultCallback = std::function<void(MediaWorkerResult&&)>;
+
   MediaWorkerScheduler(
       std::string serviceName,
       std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -50,11 +52,23 @@ class MediaWorkerScheduler {
   size_t numWorkers() const;
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const;
 
-  MediaWorkerResult submit(uint32_t taskId, const Json::Value& request);
+  void submitAsync(uint32_t taskId, const Json::Value& request,
+                   ResultCallback onComplete);
 
  private:
+  struct PendingEntry {
+    ResultCallback callback;
+    std::string requestPath;
+    std::string responsePath;
+    int claimedByWorker = -1;
+  };
+
   void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
+  void onWorkerDied(size_t workerIdx);
+  void drainPending(const std::string& error);
+  static void removePayloadFiles(const std::string& requestPath,
+                                 const std::string& responsePath);
 
   std::string payloadPath(uint32_t taskId, const char* prefix) const;
 
@@ -63,10 +77,7 @@ class MediaWorkerScheduler {
   std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet> queue_set_;
   std::vector<std::thread> consumer_threads_;
   mutable std::mutex pending_mutex_;
-  std::unordered_map<
-      uint32_t,
-      std::shared_ptr<std::promise<tt::ipc::media_payload::MediaPayloadResult>>>
-      pending_results_;
+  std::unordered_map<uint32_t, PendingEntry> pending_results_;
   std::filesystem::path payload_dir_;
   std::atomic<bool> running_{false};
 };

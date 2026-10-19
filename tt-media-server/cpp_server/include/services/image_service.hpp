@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,8 +20,8 @@
 namespace tt::services {
 
 /** Image service facade backed by media worker processes. */
-class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
-                                            domain::image::ImageResponse> {
+class ImageService : public BaseAsyncService<domain::ImageGenerateRequest,
+                                             domain::image::ImageResponse> {
  public:
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -37,8 +38,9 @@ class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
   std::string runnerInUse() const override;
 
  protected:
-  domain::image::ImageResponse produceResponse(
-      domain::ImageGenerateRequest request) override;
+  void produceResponseAsync(
+      domain::ImageGenerateRequest request,
+      std::function<void(domain::image::ImageResponse&&)> onComplete) override;
   void preProcess(domain::ImageGenerateRequest& request) const override;
   size_t currentQueueSize() const override;
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;

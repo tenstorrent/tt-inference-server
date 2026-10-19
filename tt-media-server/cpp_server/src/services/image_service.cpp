@@ -81,27 +81,35 @@ size_t ImageService::currentQueueSize() const {
   return inFlight.load(std::memory_order_acquire);
 }
 
-domain::image::ImageResponse ImageService::produceResponse(
-    domain::ImageGenerateRequest request) {
-  struct InFlightGuard {
-    std::atomic<size_t>& counter;
-    ~InFlightGuard() { counter.fetch_sub(1, std::memory_order_acq_rel); }
-  } guard{inFlight};
-
-  domain::image::ImageResponse response(request.task_id);
+void ImageService::produceResponseAsync(
+    domain::ImageGenerateRequest request,
+    std::function<void(domain::image::ImageResponse&&)> onComplete) {
+  const uint32_t taskId = request.task_id;
   if (!workerScheduler->isReady()) {
+    inFlight.fetch_sub(1, std::memory_order_acq_rel);
+    domain::image::ImageResponse response(taskId);
     response.error = "Image service not ready";
-    return response;
+    onComplete(std::move(response));
+    return;
   }
 
-  auto workerResponse =
-      workerScheduler->submit(request.task_id, request.toJson());
-  response.generation_time_seconds = workerResponse.generation_time_seconds;
-  if (!workerResponse.error.empty()) {
-    response.error = std::move(workerResponse.error);
-    return response;
-  }
-  return responseFromJson(request.task_id, workerResponse.body);
+  workerScheduler->submitAsync(
+      taskId, request.toJson(),
+      [this, taskId,
+       onComplete = std::move(onComplete)](MediaWorkerResult&& workerResponse) {
+        inFlight.fetch_sub(1, std::memory_order_acq_rel);
+        domain::image::ImageResponse response(taskId);
+        response.generation_time_seconds =
+            workerResponse.generation_time_seconds;
+        if (!workerResponse.error.empty()) {
+          response.error = std::move(workerResponse.error);
+          onComplete(std::move(response));
+          return;
+        }
+        auto parsed = responseFromJson(taskId, workerResponse.body);
+        parsed.generation_time_seconds = workerResponse.generation_time_seconds;
+        onComplete(std::move(parsed));
+      });
 }
 
 }  // namespace tt::services

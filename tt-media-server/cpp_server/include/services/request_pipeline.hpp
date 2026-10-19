@@ -77,20 +77,23 @@ class RequestPipeline : public IService {
   size_t maxQueueSize = std::numeric_limits<size_t>::max();
 };
 
-/** Single-request services: one response per submitRequest. */
+/** Single-response async services: one completion callback per request. */
 template <std::derived_from<domain::BaseRequest> RequestType,
           std::derived_from<domain::BaseResponse> ResponseType>
-class BaseSyncService : public RequestPipeline<RequestType> {
+class BaseAsyncService : public RequestPipeline<RequestType> {
  public:
-  virtual ~BaseSyncService() = default;
+  using Callback = std::function<void(ResponseType&&)>;
 
-  ResponseType submitRequest(RequestType request) {
+  virtual ~BaseAsyncService() = default;
+
+  void submitRequestAsync(RequestType request, Callback onComplete) {
     this->preProcess(request);
-    return produceResponse(std::move(request));
+    produceResponseAsync(std::move(request), std::move(onComplete));
   }
 
  protected:
-  virtual ResponseType produceResponse(RequestType request) = 0;
+  virtual void produceResponseAsync(RequestType request,
+                                    Callback onComplete) = 0;
 };
 
 /** Streaming services: many chunks per request via callback. */

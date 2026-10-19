@@ -86,6 +86,9 @@ void MediaIpcRunner::run() {
       break;
     }
 
+    resultQueue->push(
+        tt::ipc::media_payload::MediaPayloadResult::claimed(task.task_id));
+
     tt::ipc::media_payload::MediaPayloadResult result;
     result.task_id = task.task_id;
     result.response_path = task.response_path;
