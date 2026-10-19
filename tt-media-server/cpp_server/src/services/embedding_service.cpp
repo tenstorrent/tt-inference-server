@@ -3,311 +3,42 @@
 
 #include "services/embedding_service.hpp"
 
-#include <poll.h>
-#include <signal.h>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <sstream>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "services/embedding_codec.hpp"
-#include "services/embedding_pipe.hpp"
-#include "services/embedding_worker_main.hpp"
-#include "services/embedding_worker_process.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
 
-using embedding_detail::pipeReadBinary;
-using embedding_detail::WorkerProcess;
-
 struct EmbeddingService::Impl {
-  struct PendingRequest {
-    domain::EmbeddingRequest request;
-
-    std::function<void(domain::EmbeddingResponse&&)> onComplete;
-
-    // Anchors the batch-fill deadline in collectBatch.
+  struct PendingEntry {
+    Callback onComplete;
     std::chrono::steady_clock::time_point enqueueTime;
-
-    PendingRequest(domain::EmbeddingRequest req,
-                   std::function<void(domain::EmbeddingResponse&&)> complete)
-        : request(std::move(req)),
-          onComplete(std::move(complete)),
-          enqueueTime(std::chrono::steady_clock::now()) {}
+    std::chrono::steady_clock::time_point claimTime;
+    double shmEnqueueMs = 0.0;
+    int claimedByWorker = -1;
   };
-
-  static void completeWithError(PendingRequest& p, const std::string& error) {
-    domain::EmbeddingResponse err(p.request.task_id);
-    err.error = error;
-    p.onComplete(std::move(err));
-  }
-
-  std::vector<std::unique_ptr<WorkerProcess>> workers;
-
-  mutable std::mutex workersMutex;
-  size_t numWorkers = 3;
-
-  TRACY_LOCKABLE(std::mutex, queueMutex);
-  std::queue<std::shared_ptr<PendingRequest>> requestQueue;
-  std::condition_variable_any queueCv;
-
-  std::atomic<bool> running{false};
-  std::atomic<bool> isReady{false};
-
-  // Spawning/warmup run here so start() returns immediately.
-  std::unique_ptr<std::thread> startupThread;
-
-  size_t maxBatchSize = 1;
-  std::chrono::milliseconds batchTimeout{5};
-  size_t maxQueueSize = tt::config::defaults::MAX_QUEUE_SIZE;
-
-  Impl() {
-    numWorkers = tt::config::numWorkers();
-    maxBatchSize = tt::config::embeddingEngineConfig().max_batch_size;
-    batchTimeout = std::chrono::milliseconds(tt::config::batchTimeoutMs());
-    maxQueueSize = tt::config::maxQueueSize();
-    TT_LOG_INFO(
-        "[EmbeddingService] Initialized with {} workers, batch_size={}, "
-        "batch_timeout={}ms",
-        numWorkers, maxBatchSize, batchTimeout.count());
-  }
-
-  ~Impl() { stop(); }
-
-  void start() {
-    if (running.exchange(true)) return;
-
-    TT_LOG_INFO("[EmbeddingService] Starting with {} worker processes",
-                numWorkers);
-    {
-      std::lock_guard lock(workersMutex);
-      workers.reserve(numWorkers);
-      for (size_t i = 0; i < numWorkers; ++i) {
-        auto w = std::make_unique<WorkerProcess>();
-        w->workerId = static_cast<int>(i);
-        workers.push_back(std::move(w));
-      }
-    }
-
-    startupThread = std::make_unique<std::thread>(&Impl::runStartup, this);
-  }
-
-  // The first worker warms up alone so it can populate the shared tensor
-  // cache without racing; the rest then warm up in parallel.
-  void runStartup() {
-    const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
-    const size_t next = warmupCacheLeader(warmupTimeoutMs);
-    spawnAndAwaitRemaining(next, warmupTimeoutMs);
-    logStartupSummary();
-  }
-
-  // Returns the index of the first worker not yet spawned.
-  size_t warmupCacheLeader(unsigned timeoutMs) {
-    size_t next = 0;
-    bool haveReadyWorker = false;
-    while (!haveReadyWorker && next < numWorkers && running.load()) {
-      const size_t idx = next++;
-      if (!spawnWorkerAt(idx)) continue;
-      awaitWorkersReady({idx}, timeoutMs);
-      if (workers[idx]->isReady.load()) {
-        isReady = true;
-        haveReadyWorker = true;
-      } else {
-        TT_LOG_ERROR(
-            "[EmbeddingService] Worker {} failed warmup; trying next worker "
-            "alone",
-            idx);
-      }
-    }
-    return next;
-  }
-
-  void spawnAndAwaitRemaining(size_t firstIdx, unsigned timeoutMs) {
-    for (size_t i = firstIdx; i < numWorkers && running.load(); ++i) {
-      spawnWorkerAt(i);
-    }
-    std::vector<size_t> spawned;
-    for (size_t i = firstIdx; i < numWorkers; ++i) {
-      if (workers[i]->pid.load() > 0) spawned.push_back(i);
-    }
-    awaitWorkersReady(std::move(spawned), timeoutMs);
-  }
-
-  void logStartupSummary() const {
-    size_t readyCount = 0;
-    for (const auto& w : workers) {
-      if (w->isReady.load()) ++readyCount;
-    }
-    TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
-                readyCount, numWorkers);
-  }
-
-  // poll()s all response pipes until every listed worker resolves or the
-  // timeout expires.
-  void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-
-    while (!pending.empty() && running.load()) {
-      const auto remaining =
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-              deadline - std::chrono::steady_clock::now())
-              .count();
-      if (remaining <= 0) break;
-
-      std::vector<struct pollfd> pfds;
-      pfds.reserve(pending.size());
-      for (size_t i : pending) {
-        pfds.push_back({workers[i]->readFd.get(), POLLIN, 0});
-      }
-
-      // 100ms slices keep the shutdown check responsive.
-      const int rc = poll(pfds.data(), pfds.size(),
-                          static_cast<int>(std::min<int64_t>(remaining, 100)));
-      if (rc < 0) {
-        if (errno == EINTR) continue;
-        TT_LOG_ERROR("[EmbeddingService] Warmup poll failed: {}",
-                     strerror(errno));
-        break;
-      }
-      if (rc == 0) continue;
-
-      std::vector<size_t> stillPending;
-      for (size_t k = 0; k < pfds.size(); ++k) {
-        const size_t i = pending[k];
-        if (!resolveWarmupEvent(i, pfds[k].revents)) stillPending.push_back(i);
-      }
-      pending = std::move(stillPending);
-    }
-
-    for (size_t i : pending) {
-      TT_LOG_ERROR(
-          "[EmbeddingService] Worker {} stuck in warmup after {}ms; "
-          "terminating it",
-          i, timeoutMs);
-      workers[i]->terminate();
-    }
-  }
-
-  // Returns true once the worker is resolved: ready, or dead and terminated.
-  bool resolveWarmupEvent(size_t workerIdx, short revents) {
-    if (!(revents & (POLLIN | POLLHUP | POLLERR))) return false;
-
-    if (revents & POLLIN) {
-      const auto msg = pipeReadBinary(workers[workerIdx]->readFd.get());
-      if (embedding_detail::isReadySentinel(msg)) {
-        workers[workerIdx]->isReady.store(true);
-        TT_LOG_INFO("[EmbeddingService] Worker {} reported ready", workerIdx);
-        launchDispatchThread(workerIdx);
-        return true;
-      }
-      TT_LOG_ERROR(
-          "[EmbeddingService] Worker {} exited or sent unexpected data "
-          "during warmup",
-          workerIdx);
-    } else {
-      TT_LOG_ERROR(
-          "[EmbeddingService] Worker {} closed its pipe during warmup "
-          "(process exited)",
-          workerIdx);
-    }
-    workers[workerIdx]->terminate();
-    return true;
-  }
-
-  bool spawnWorkerAt(size_t idx) {
-    const int wid = static_cast<int>(idx);
-    return workers[idx]->spawn(wid, [wid](int rd, int wr) {
-      embedding_detail::workerProcessMain(wid, rd, wr);
-    });
-  }
-
-  void launchDispatchThread(size_t idx) {
-    workers[idx]->dispatchThread =
-        std::make_unique<std::thread>(&Impl::workerDispatchLoop, this, idx);
-  }
-
-  std::vector<tt::worker::WorkerInfo> workerInfoSnapshot() const {
-    std::lock_guard lock(workersMutex);
-    std::vector<tt::worker::WorkerInfo> out;
-    out.reserve(workers.size());
-    for (const auto& w : workers) {
-      if (!w) continue;
-      tt::worker::WorkerInfo info;
-      info.worker_id = std::to_string(w->workerId);
-      info.pid = w->pid.load();
-      // kill(pid, 0) probes without reaping (checkAlive/terminate own waitpid)
-      info.is_alive = info.pid > 0 && kill(info.pid, 0) == 0;
-      info.is_ready = w->isReady.load();
-      out.push_back(std::move(info));
-    }
-    return out;
-  }
-
-  void stop() {
-    if (!running.exchange(false)) return;
-
-    TT_LOG_INFO("[EmbeddingService] Stopping...");
-    if (startupThread && startupThread->joinable()) startupThread->join();
-    startupThread.reset();
-    queueCv.notify_all();
-
-    for (auto& w : workers) w->running = false;
-    queueCv.notify_all();
-
-    for (auto& w : workers) {
-      if (w->dispatchThread && w->dispatchThread->joinable())
-        w->dispatchThread->join();
-      w->terminate();
-    }
-    // No consumers remain; fail anything still queued.
-    drainQueue("Server shutting down");
-    // One line for the whole run; the bench job parses it to verify batching.
-    dispatchSummary.logSummary();
-    {
-      std::lock_guard lock(workersMutex);
-      workers.clear();
-    }
-    isReady = false;
-    TT_LOG_INFO("[EmbeddingService] Stopped");
-  }
-
-  // Fails every queued request; callbacks run outside the queue lock.
-  void drainQueue(const std::string& error) {
-    std::queue<std::shared_ptr<PendingRequest>> drained;
-    {
-      std::lock_guard lock(queueMutex);
-      std::swap(drained, requestQueue);
-    }
-    while (!drained.empty()) {
-      completeWithError(*drained.front(), error);
-      drained.pop();
-    }
-  }
 
   /**
    * Host-path observability: per-phase timings and batch-size counts
-   * aggregated across every dispatch thread, reported as ONE summary line at
-   * shutdown. Per-batch lines stay DEBUG (DispatchStats below): with
-   * microsecond batches, INFO-per-batch logging would distort the
-   * measurement itself. The bench job parses the summary to assert that full
-   * batches dominated under load.
+   * aggregated across worker consumer threads, reported as ONE summary line at
+   * shutdown. The CI bench job parses this line to assert that full batches
+   * dominated under load.
    */
   struct DispatchSummary {
-    // Phase sample vectors, one entry per dispatched batch (milliseconds).
     struct Phase {
       const char* name;
       std::vector<double> samplesMs;
@@ -316,18 +47,18 @@ struct EmbeddingService::Impl {
     std::mutex mutex;
     Phase phases[5] = {{"queue_wait", {}},
                        {"batch_collect", {}},
-                       {"batch_json_encode", {}},
-                       {"pipe_round_trip", {}},
+                       {"shm_enqueue", {}},
+                       {"shm_round_trip", {}},
                        {"completion", {}}};
     std::map<size_t, uint64_t> batchSizeCounts;
 
     void record(size_t batchSize, double queueWaitMs, double collectMs,
-                double encodeMs, double pipeMs, double completeMs) {
+                double enqueueMs, double shmRoundTripMs, double completeMs) {
       std::lock_guard lock(mutex);
       phases[0].samplesMs.push_back(queueWaitMs);
       phases[1].samplesMs.push_back(collectMs);
-      phases[2].samplesMs.push_back(encodeMs);
-      phases[3].samplesMs.push_back(pipeMs);
+      phases[2].samplesMs.push_back(enqueueMs);
+      phases[3].samplesMs.push_back(shmRoundTripMs);
       phases[4].samplesMs.push_back(completeMs);
       batchSizeCounts[batchSize] += 1;
     }
@@ -347,8 +78,6 @@ struct EmbeddingService::Impl {
       return v[std::min(idx, v.size() - 1)];
     }
 
-    /** One line, parseable: phases as name=mean/p99 ms, then the batch-size
-     * histogram sorted by size descending (e.g. "batches: 580x8 15x6"). */
     void logSummary() {
       std::lock_guard lock(mutex);
       if (batchSizeCounts.empty()) return;
@@ -375,201 +104,362 @@ struct EmbeddingService::Impl {
     }
   };
 
+  config::EmbeddingConfig config;
+  std::unique_ptr<tt::worker::WorkerManager> workerManager;
+  std::unique_ptr<tt::ipc::embedding::EmbeddingQueueSet> queueSet;
+
+  TRACY_LOCKABLE(std::mutex, pendingMutex);
+  std::unordered_map<uint32_t, PendingEntry> pendingResults;
+  std::atomic<size_t> inFlight{0};
+
+  std::vector<std::thread> consumerThreads;
+  std::atomic<bool> running{false};
+  size_t maxQueueSize = tt::config::defaults::MAX_QUEUE_SIZE;
+  size_t maxInputBytes = 0;
   DispatchSummary dispatchSummary;
 
-  // Rolling dispatch-loop statistics; logs a summary every 10 batches.
-  struct DispatchStats {
-    uint64_t batches = 0;
-    uint64_t requests = 0;
-    double queueWaitMs = 0;
-    double dispatchMs = 0;
-
-    void record(size_t workerIdx, size_t batchSize, double qMs, double dMs) {
-      queueWaitMs += qMs;
-      batches++;
-      requests += batchSize;
-      dispatchMs += dMs;
-
-      if (batches % 10 == 0) {
-        double avgQueue = queueWaitMs / batches;
-        double avgDispatch = dispatchMs / batches;
-        double throughput = (requests * 1000.0) / (queueWaitMs + dispatchMs);
-        TT_LOG_DEBUG(
-            "[EmbeddingService] Worker {} batches={} requests={} "
-            "avg_queue_wait={}ms avg_dispatch={}ms throughput={} req/s",
-            workerIdx, batches, requests, avgQueue, avgDispatch, throughput);
-      }
-    }
-  };
-
-  // Takes up to maxBatchSize requests; an incomplete batch lingers until
-  // batchTimeout past the oldest request's arrival.
-  std::vector<std::shared_ptr<PendingRequest>> collectBatch(
-      WorkerProcess& worker) {
-    std::vector<std::shared_ptr<PendingRequest>> batch;
-    std::unique_lock lock(queueMutex);
-    queueCv.wait_for(lock, std::chrono::milliseconds(100), [this, &worker] {
-      return !requestQueue.empty() || !worker.running.load() || !worker.isReady;
-    });
-
-    if (!worker.running.load() || !worker.isReady) return batch;
-    if (requestQueue.empty()) return batch;
-
-    if (maxBatchSize > 1 && batchTimeout.count() > 0) {
-      while (requestQueue.size() < maxBatchSize) {
-        const auto deadline = requestQueue.front()->enqueueTime + batchTimeout;
-        if (std::chrono::steady_clock::now() >= deadline) break;
-        queueCv.wait_until(lock, deadline, [this, &worker] {
-          return requestQueue.size() >= maxBatchSize || requestQueue.empty() ||
-                 !worker.running.load() || !worker.isReady;
-        });
-        if (!worker.running.load() || !worker.isReady) break;
-        if (requestQueue.empty()) break;
-      }
-      if (!worker.running.load() || !worker.isReady) return batch;
-      if (requestQueue.empty()) return batch;
-    }
-
-    while (batch.size() < maxBatchSize && !requestQueue.empty()) {
-      batch.push_back(requestQueue.front());
-      requestQueue.pop();
-    }
-    return batch;
+  Impl(config::EmbeddingConfig cfg,
+       std::unique_ptr<tt::worker::WorkerManager> wm,
+       std::unique_ptr<tt::ipc::embedding::EmbeddingQueueSet> qs)
+      : config(std::move(cfg)),
+        workerManager(std::move(wm)),
+        queueSet(std::move(qs)),
+        maxQueueSize(tt::config::maxQueueSize()),
+        maxInputBytes(tt::ipc::embedding::maxInputBytesForTaskMsg(
+            queueSet ? queueSet->maxTaskMsgBytes
+                     : tt::ipc::embedding::EMBEDDING_MAX_TASK_MSG_BYTES)) {
+    TT_LOG_INFO(
+        "[EmbeddingService] Initialized with {} workers, max_batch_size={}, "
+        "max_queue_size={}, max_input_bytes={}",
+        workerManager ? workerManager->numWorkers() : 0, config.max_batch_size,
+        maxQueueSize, maxInputBytes);
   }
 
-  // If no ready worker remains, queued callbacks would never fire — drain.
-  // During stop() workers stay marked ready, so stop()'s own drain handles it.
-  void drainIfLastWorker() {
-    bool anyReady = false;
-    {
-      std::lock_guard lock(workersMutex);
-      for (const auto& w : workers) {
-        if (w && w->isReady.load()) {
-          anyReady = true;
-          break;
+  ~Impl() { stop(); }
+
+  void start() {
+    if (running.exchange(true)) return;
+    if (!workerManager || !queueSet) return;
+
+    workerManager->setWorkerDeathCallback(
+        [this](size_t workerIdx, pid_t /*pid*/) { onWorkerDied(workerIdx); });
+
+    const size_t n = workerManager->numWorkers();
+    consumerThreads.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+      consumerThreads.emplace_back([this, i]() { consumeResults(i); });
+    }
+
+    workerManager->start();
+  }
+
+  void stop() {
+    if (!running.exchange(false)) {
+      drainPending("Server shutting down");
+      if (queueSet) {
+        queueSet->clear();
+      }
+      return;
+    }
+
+    TT_LOG_INFO("[EmbeddingService] Stopping...");
+    if (workerManager && queueSet && queueSet->taskQueue) {
+      for (size_t i = 0; i < workerManager->numWorkers(); ++i) {
+        try {
+          queueSet->taskQueue->push(
+              tt::ipc::embedding::EmbeddingIpcTask::done());
+        } catch (const std::exception& e) {
+          TT_LOG_WARN("[EmbeddingService] Failed to push done task: {}",
+                      e.what());
         }
       }
     }
-    if (!anyReady) drainQueue("No workers available");
+
+    if (queueSet) {
+      for (auto& rq : queueSet->resultQueues) {
+        rq->shutdown();
+      }
+    }
+
+    for (auto& t : consumerThreads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    consumerThreads.clear();
+
+    if (workerManager) {
+      workerManager->stop();
+    }
+
+    drainPending("Server shutting down");
+    dispatchSummary.logSummary();
+
+    if (queueSet) {
+      queueSet->clear();
+    }
+    TT_LOG_INFO("[EmbeddingService] Stopped");
   }
 
-  void workerDispatchLoop(size_t workerIdx) {
-    auto& worker = workers[workerIdx];
-    TT_LOG_INFO("[EmbeddingService] Worker {} dispatch thread started",
-                workerIdx);
+  void submit(domain::EmbeddingRequest request, Callback onComplete) {
+    if (request.input.size() > maxInputBytes) {
+      domain::EmbeddingResponse err(request.task_id);
+      err.error = "Input length (" + std::to_string(request.input.size()) +
+                  " bytes) exceeds maximum allowed (" +
+                  std::to_string(maxInputBytes) + " bytes)";
+      onComplete(std::move(err));
+      return;
+    }
 
-    DispatchStats stats;
+    const uint32_t taskId = request.task_id;
+    const auto enqueueStart = std::chrono::steady_clock::now();
+    auto ipcTask = tt::ipc::embedding::EmbeddingIpcTask::fromDomain(request);
 
-    while (worker->running.load() && worker->isReady) {
-      const auto queueStart = std::chrono::steady_clock::now();
-      auto batch = collectBatch(*worker);
-      const auto queueEnd = std::chrono::steady_clock::now();
+    {
+      std::lock_guard lock(pendingMutex);
+      pendingResults[taskId] =
+          PendingEntry{std::move(onComplete), enqueueStart, {}, 0.0, -1};
+      inFlight.fetch_add(1, std::memory_order_relaxed);
+    }
 
-      if (batch.empty()) continue;
+    try {
+      queueSet->taskQueue->push(ipcTask);
+      const auto enqueueEnd = std::chrono::steady_clock::now();
+      const double enqueueMs =
+          std::chrono::duration<double, std::milli>(enqueueEnd - enqueueStart)
+              .count();
+      std::lock_guard lock(pendingMutex);
+      auto it = pendingResults.find(taskId);
+      if (it != pendingResults.end()) {
+        it->second.shmEnqueueMs = enqueueMs;
+      }
+    } catch (const std::exception& e) {
+      Callback cb;
+      {
+        std::lock_guard lock(pendingMutex);
+        auto it = pendingResults.find(taskId);
+        if (it != pendingResults.end()) {
+          cb = std::move(it->second.onComplete);
+          pendingResults.erase(it);
+          inFlight.fetch_sub(1, std::memory_order_relaxed);
+        }
+      }
+      if (cb) {
+        domain::EmbeddingResponse err(taskId);
+        err.error =
+            std::string("Failed to enqueue embedding task: ") + e.what();
+        cb(std::move(err));
+      }
+    }
+  }
 
-      if (!worker->isReady) {
-        failBatch(batch, "Worker died");
+  void consumeResults(size_t workerIdx) {
+    auto& rq = queueSet->resultQueues.at(workerIdx);
+    tt::ipc::embedding::EmbeddingIpcResult result;
+    size_t currentBatchSize = 0;
+    double currentQueueWaitMs = 0.0;
+    double currentBatchCollectMs = 0.0;
+    double currentBatchEnqueueMs = 0.0;
+    double currentBatchCompleteMs = 0.0;
+    std::chrono::steady_clock::time_point currentBatchClaimTime{};
+    std::chrono::steady_clock::time_point currentBatchFirstResultTime{};
+
+    while (rq->blockingPop(result)) {
+      if (result.isClaimed()) {
+        const auto now = std::chrono::steady_clock::now();
+        double queueWaitMs = 0.0;
+        double shmEnqueueMs = 0.0;
+        {
+          std::lock_guard lock(pendingMutex);
+          auto it = pendingResults.find(result.taskId);
+          if (it != pendingResults.end()) {
+            it->second.claimedByWorker = static_cast<int>(workerIdx);
+            it->second.claimTime = now;
+            queueWaitMs = std::chrono::duration<double, std::milli>(
+                              now - it->second.enqueueTime)
+                              .count();
+            shmEnqueueMs = it->second.shmEnqueueMs;
+          }
+        }
+        if (result.totalTokens > 0) {
+          currentBatchSize = static_cast<size_t>(result.totalTokens);
+          currentQueueWaitMs = queueWaitMs;
+          currentBatchCollectMs = static_cast<double>(result.batchCollectMs);
+          currentBatchEnqueueMs = shmEnqueueMs;
+          currentBatchCompleteMs = 0.0;
+          currentBatchClaimTime = now;
+          currentBatchFirstResultTime = {};
+        } else {
+          currentBatchEnqueueMs += shmEnqueueMs;
+        }
         continue;
       }
 
-      // Queue wait: how long the OLDEST request in the batch sat enqueued.
-      const double queueWaitMs = std::chrono::duration<double, std::milli>(
-                                     queueEnd - batch.front()->enqueueTime)
-                                     .count();
-      const double collectMs =
-          std::chrono::duration<double, std::milli>(queueEnd - queueStart)
-              .count();
-
-      const auto dispatchStart = std::chrono::steady_clock::now();
-      dispatchBatchToWorker(*worker, batch, queueWaitMs, collectMs);
-      const auto dispatchEnd = std::chrono::steady_clock::now();
-
-      stats.record(
-          workerIdx, batch.size(), collectMs,
-          std::chrono::duration<double, std::milli>(dispatchEnd - dispatchStart)
-              .count());
-    }
-
-    TT_LOG_INFO(
-        "[EmbeddingService] Worker {} dispatch thread exiting (isReady={})",
-        workerIdx, worker->isReady.load());
-
-    drainIfLastWorker();
-  }
-
-  static std::string encodeBatchJson(
-      const std::vector<std::shared_ptr<PendingRequest>>& batch) {
-    Json::Value batchJson(Json::arrayValue);
-    for (const auto& p : batch) batchJson.append(p->request.toJson());
-    Json::StreamWriterBuilder builder;
-    return Json::writeString(builder, batchJson);
-  }
-
-  void dispatchBatchToWorker(
-      WorkerProcess& worker,
-      std::vector<std::shared_ptr<PendingRequest>>& batch, double queueWaitMs,
-      double collectMs) {
-    if (!worker.isReady.load() || !worker.checkAlive()) {
-      failBatch(batch, "Worker not available");
-      return;
-    }
-
-    const auto encodeStart = std::chrono::steady_clock::now();
-    const std::string batchJson = encodeBatchJson(batch);
-    const auto encodeEnd = std::chrono::steady_clock::now();
-
-    if (!worker.sendRequest(batchJson)) {
-      failBatch(batch, "Worker pipe broken");
-      return;
-    }
-
-    auto responseBuf = worker.receiveResponse();
-    const auto pipeEnd = std::chrono::steady_clock::now();
-    if (responseBuf.empty()) {
-      failBatch(batch, "Failed to read response from worker");
-      return;
-    }
-
-    auto responseMap = embedding_codec::decodeResponses(responseBuf);
-
-    for (auto& pending : batch) {
-      auto it = responseMap.find(pending->request.task_id);
-      if (it != responseMap.end()) {
-        pending->onComplete(std::move(it->second));
+      const auto gotResultTime = std::chrono::steady_clock::now();
+      if (currentBatchFirstResultTime.time_since_epoch().count() == 0) {
+        currentBatchFirstResultTime = gotResultTime;
+      }
+      Callback cb;
+      {
+        std::lock_guard lock(pendingMutex);
+        auto it = pendingResults.find(result.taskId);
+        if (it != pendingResults.end()) {
+          cb = std::move(it->second.onComplete);
+          pendingResults.erase(it);
+          inFlight.fetch_sub(1, std::memory_order_relaxed);
+        }
+      }
+      if (cb) {
+        cb(result.toDomain());
+        const auto doneTime = std::chrono::steady_clock::now();
+        currentBatchCompleteMs +=
+            std::chrono::duration<double, std::milli>(doneTime - gotResultTime)
+                .count();
+        if (result.isBatchEnd() && currentBatchSize > 0) {
+          const double shmRoundTripMs =
+              currentBatchClaimTime.time_since_epoch().count() > 0
+                  ? std::chrono::duration<double, std::milli>(
+                        currentBatchFirstResultTime - currentBatchClaimTime)
+                        .count()
+                  : 0.0;
+          dispatchSummary.record(currentBatchSize, currentQueueWaitMs,
+                                 currentBatchCollectMs, currentBatchEnqueueMs,
+                                 shmRoundTripMs, currentBatchCompleteMs);
+          currentBatchSize = 0;
+        }
       } else {
-        completeWithError(*pending, "Response not found for task_id");
+        TT_LOG_WARN("[EmbeddingService] Unknown task_id={}", result.taskId);
       }
     }
-    const auto completeEnd = std::chrono::steady_clock::now();
-
-    dispatchSummary.record(
-        batch.size(), queueWaitMs, collectMs,
-        std::chrono::duration<double, std::milli>(encodeEnd - encodeStart)
-            .count(),
-        std::chrono::duration<double, std::milli>(pipeEnd - encodeEnd).count(),
-        std::chrono::duration<double, std::milli>(completeEnd - pipeEnd)
-            .count());
   }
 
-  static void failBatch(std::vector<std::shared_ptr<PendingRequest>>& batch,
-                        const std::string& error) {
-    for (auto& p : batch) completeWithError(*p, error);
-  }
-
-  void submitRequestAsync(
-      domain::EmbeddingRequest request,
-      std::function<void(domain::EmbeddingResponse&&)> onComplete) {
-    auto pending = std::make_shared<PendingRequest>(std::move(request),
-                                                    std::move(onComplete));
-    {
-      std::lock_guard lock(queueMutex);
-      requestQueue.push(pending);
+  void onWorkerDied(size_t workerIdx) {
+    if (workerIdx < queueSet->resultQueues.size()) {
+      auto& rq = queueSet->resultQueues[workerIdx];
+      tt::ipc::embedding::EmbeddingIpcResult result;
+      while (rq->tryPop(result)) {
+        if (result.isDone()) continue;
+        if (result.isClaimed()) {
+          std::lock_guard lock(pendingMutex);
+          auto it = pendingResults.find(result.taskId);
+          if (it != pendingResults.end()) {
+            it->second.claimedByWorker = static_cast<int>(workerIdx);
+          }
+          continue;
+        }
+        Callback cb;
+        {
+          std::lock_guard lock(pendingMutex);
+          auto it = pendingResults.find(result.taskId);
+          if (it != pendingResults.end()) {
+            cb = std::move(it->second.onComplete);
+            pendingResults.erase(it);
+            inFlight.fetch_sub(1, std::memory_order_relaxed);
+          }
+        }
+        if (cb) {
+          cb(result.toDomain());
+        }
+      }
     }
-    queueCv.notify_all();
+
+    std::vector<std::pair<uint32_t, Callback>> orphaned;
+    {
+      std::lock_guard lock(pendingMutex);
+      for (auto it = pendingResults.begin(); it != pendingResults.end();) {
+        if (it->second.claimedByWorker == static_cast<int>(workerIdx)) {
+          orphaned.emplace_back(it->first, std::move(it->second.onComplete));
+          it = pendingResults.erase(it);
+          inFlight.fetch_sub(1, std::memory_order_relaxed);
+        } else {
+          ++it;
+        }
+      }
+    }
+
+    for (auto& [taskId, cb] : orphaned) {
+      if (cb) {
+        domain::EmbeddingResponse err(taskId);
+        err.error = "Worker process " + std::to_string(workerIdx) +
+                    " exited while processing request";
+        cb(std::move(err));
+      }
+    }
+
+    if (running.load(std::memory_order_acquire) && workerManager &&
+        workerManager->isReady()) {
+      // At least one live ready worker remains; unclaimed tasks will be picked
+      // up by surviving workers.
+      return;
+    }
+
+    // If startup already finished and the last ready worker just died, fail
+    // any remaining unclaimed tasks so callers don't hang forever.
+    if (workerManager) {
+      bool anyAliveAndReady = false;
+      for (const auto& info : workerManager->getWorkerInfo()) {
+        if (info.is_alive && info.is_ready) {
+          anyAliveAndReady = true;
+          break;
+        }
+      }
+      if (!anyAliveAndReady && !orphaned.empty()) {
+        drainPending("No workers available");
+      }
+    }
+  }
+
+  void drainPending(const std::string& error) {
+    std::vector<std::pair<uint32_t, Callback>> remaining;
+    {
+      std::lock_guard lock(pendingMutex);
+      remaining.reserve(pendingResults.size());
+      for (auto& [taskId, entry] : pendingResults) {
+        remaining.emplace_back(taskId, std::move(entry.onComplete));
+      }
+      pendingResults.clear();
+      inFlight.store(0, std::memory_order_relaxed);
+    }
+    for (auto& [taskId, cb] : remaining) {
+      if (cb) {
+        domain::EmbeddingResponse err(taskId);
+        err.error = error;
+        cb(std::move(err));
+      }
+    }
   }
 };
 
-EmbeddingService::EmbeddingService() : impl_(std::make_unique<Impl>()) {
+namespace {
+
+std::unique_ptr<tt::worker::WorkerManager> makeDefaultEmbeddingWorkerManager() {
+  tt::worker::WorkerManagerOptions opts;
+  opts.sequentialLeadWorkerWarmup = true;
+  opts.warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
+  return std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers(),
+                                                     opts);
+}
+
+std::unique_ptr<tt::ipc::embedding::EmbeddingQueueSet>
+makeDefaultEmbeddingQueueSet(const config::EmbeddingConfig& cfg) {
+  return std::make_unique<tt::ipc::embedding::EmbeddingQueueSet>(
+      static_cast<int>(tt::config::numWorkers()), cfg.max_seq_len,
+      cfg.max_batch_size);
+}
+
+}  // namespace
+
+EmbeddingService::EmbeddingService()
+    : EmbeddingService(
+          config::embeddingEngineConfig(), makeDefaultEmbeddingWorkerManager(),
+          makeDefaultEmbeddingQueueSet(config::embeddingEngineConfig())) {}
+
+EmbeddingService::EmbeddingService(
+    config::EmbeddingConfig config,
+    std::unique_ptr<tt::worker::WorkerManager> workerManager,
+    std::unique_ptr<tt::ipc::embedding::EmbeddingQueueSet> queueSet)
+    : impl_(std::make_unique<Impl>(std::move(config), std::move(workerManager),
+                                   std::move(queueSet))) {
   maxQueueSize = impl_->maxQueueSize;
 }
 
@@ -579,22 +469,22 @@ void EmbeddingService::start() { impl_->start(); }
 
 void EmbeddingService::stop() { impl_->stop(); }
 
-bool EmbeddingService::isModelReady() const { return impl_->isReady.load(); }
+bool EmbeddingService::isModelReady() const {
+  return impl_->workerManager && impl_->workerManager->isReady();
+}
 
 size_t EmbeddingService::currentQueueSize() const {
-  std::lock_guard lock(impl_->queueMutex);
-  return impl_->requestQueue.size();
+  return impl_->inFlight.load(std::memory_order_relaxed);
 }
 
 std::vector<tt::worker::WorkerInfo> EmbeddingService::getWorkerInfo() const {
-  return impl_->workerInfoSnapshot();
+  if (!impl_->workerManager) return {};
+  return impl_->workerManager->getWorkerInfo();
 }
 
-void EmbeddingService::submitRequestAsync(
-    domain::EmbeddingRequest request,
-    std::function<void(domain::EmbeddingResponse&&)> onComplete) {
-  preProcess(request);
-  impl_->submitRequestAsync(std::move(request), std::move(onComplete));
+void EmbeddingService::produceResponseAsync(domain::EmbeddingRequest request,
+                                            Callback onComplete) {
+  impl_->submit(std::move(request), std::move(onComplete));
 }
 
 }  // namespace tt::services

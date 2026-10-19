@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// Integration tests for EmbeddingService: a real service — real fork, real
-// pipes, real dispatch threads — against the mock runner, in the galaxy
-// shape (32 workers, max_batch_size 8 from the mock's "galaxy" table row).
+// Integration tests for EmbeddingService: a real service — real fork + execv
+// via WorkerManager, real Boost shared-memory IPC queues, real worker-side
+// greedy batching — against the mock runner, in the galaxy shape (32 workers,
+// max_batch_size 8 from the mock's "galaxy" table row).
 //
 // Batching is asserted through outcomes: the mock rejects any batch larger
 // than max_batch_size, so "every request succeeded" proves no oversized batch
-// was ever dispatched. Whether FULL batches form under load is deliberately
-// not asserted here — that is watched by the embedding bench job's dispatch
-// summary, not the gate.
+// was ever dispatched.
 
 #include "services/embedding_service.hpp"
 
@@ -18,6 +17,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -27,6 +27,9 @@
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
 #include "runtime/runners/mock_embedding_runner.hpp"
+#include "runtime/worker/single_process_worker.hpp"
+#include "services/model_service_registration.hpp"
+#include "services/request_pipeline.hpp"
 
 namespace tt::services {
 namespace {
@@ -34,7 +37,7 @@ namespace {
 constexpr char K_MODEL[] = "BAAI/bge-large-en-v1.5";
 constexpr size_t K_WORKERS = 32;       // galaxy: one worker per chip
 constexpr size_t K_MAX_BATCH = 8;      // mock "galaxy" table row
-constexpr int K_READY_TIMEOUT_S = 60;  // 32 sequential-then-parallel warmups
+constexpr int K_READY_TIMEOUT_S = 60;  // 32 leader-first + parallel warmups
 
 /**
  * Env the embedding stack reads once per process and caches. DEVICE_IDS
@@ -182,7 +185,7 @@ TEST_F(EmbeddingServiceTest, ConcurrentRequestsWithinBatchLimitAllSucceed) {
   service.stop();
 }
 
-// A load far above max_batch_size succeeds entirely: the dispatcher must have
+// A load far above max_batch_size succeeds entirely: the worker must have
 // split it into legal batches, because the mock fails any batch > 8 outright.
 TEST_F(EmbeddingServiceTest, LoadAboveBatchLimitIsSplitIntoLegalBatches) {
   constexpr size_t loadCount = 100;
@@ -211,7 +214,6 @@ TEST_F(EmbeddingServiceTest, LoneRequestCompletesWithoutFullBatch) {
   CallbackRecorder recorder(1);
   service.submitRequestAsync(makeRequest(1, "alone"), recorder.slot(0));
 
-  // Batch-fill deadline is MAX_BATCH_DELAY_TIME_MS (2ms); 10s is pure margin.
   ASSERT_TRUE(recorder.awaitAll(10));
   EXPECT_EQ(recorder.successCount(), 1u);
   service.stop();
@@ -253,11 +255,8 @@ TEST_F(EmbeddingServiceTest, WorkerCrashFailsBatchAndServiceRecovers) {
   EXPECT_TRUE(poisoned.allDeliveredExactlyOnce());
   EXPECT_FALSE(poisoned.errorAt(0).empty());
 
-  // The crashed worker drops out of dispatch (isReady false). Note: it stays
-  // is_alive as a ZOMBIE until stop() reaps it — kill(pid, 0) succeeds on
-  // zombies — which is current behavior, deliberately not asserted against.
   EXPECT_TRUE(
-      waitFor([&] { return readyWorkerCount(service) == K_WORKERS - 1; }, 10));
+      waitFor([&] { return aliveWorkerCount(service) == K_WORKERS - 1; }, 10));
   CallbackRecorder followUp(1);
   service.submitRequestAsync(makeRequest(2, "after the crash"),
                              followUp.slot(0));
@@ -328,10 +327,65 @@ TEST_F(EmbeddingServiceTest, ShutdownDrainCompletesEveryCallback) {
   EXPECT_TRUE(recorder.allDeliveredExactlyOnce());
 }
 
+// Oversized input exceeding the IPC task buffer is rejected cleanly with an
+// error callback instead of crashing or hanging.
+TEST_F(EmbeddingServiceTest, OversizedInputCompletesWithError) {
+  EmbeddingService service;
+  startAndAwaitReady(service, 1);
+
+  CallbackRecorder recorder(1);
+  const std::string hugeInput(128 * 1024, 'x');
+  service.submitRequestAsync(makeRequest(1, hugeInput), recorder.slot(0));
+
+  ASSERT_TRUE(recorder.awaitAll(10));
+  EXPECT_TRUE(recorder.allDeliveredExactlyOnce());
+  EXPECT_EQ(recorder.successCount(), 0u);
+  EXPECT_NE(recorder.errorAt(0).find("exceeds maximum allowed"),
+            std::string::npos);
+  service.stop();
+}
+
+// Synchronous back-pressure: when in-flight requests reach maxQueueSize (1000
+// by default), submitRequestAsync throws QueueFullException (HTTP 429).
+TEST_F(EmbeddingServiceTest, QueueFullThrowsSynchronouslyWhenCapacityReached) {
+  // Construct without calling start() so no worker drains the queue while we
+  // fill it to maxQueueSize.
+  EmbeddingService service;
+  const size_t cap = service.getSystemStatus().maxQueueSize;
+  ASSERT_GT(cap, 0u);
+
+  CallbackRecorder recorder(cap);
+  for (size_t i = 0; i < cap; ++i) {
+    service.submitRequestAsync(
+        makeRequest(static_cast<uint32_t>(i + 1), "q " + std::to_string(i)),
+        recorder.slot(i));
+  }
+  EXPECT_EQ(service.getSystemStatus().queueSize, cap);
+
+  EXPECT_THROW(service.submitRequestAsync(
+                   makeRequest(static_cast<uint32_t>(cap + 1), "overflow"),
+                   [](domain::EmbeddingResponse&&) {}),
+               QueueFullException);
+
+  service.stop();
+  ASSERT_TRUE(recorder.awaitAll(10));
+  EXPECT_TRUE(recorder.allDeliveredExactlyOnce());
+}
+
 }  // namespace tt::services
 
 int main(int argc, char** argv) {
   tt::services::configureEnvForTest();
+  tt::services::registerBuiltinModelServices();
+
+  if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+    int workerId = std::stoi(argv[2]);
+    auto cfg = tt::worker::makeWorkerConfigForProcess(workerId);
+    tt::worker::SingleProcessWorker worker(cfg);
+    worker.start();
+    return 0;
+  }
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

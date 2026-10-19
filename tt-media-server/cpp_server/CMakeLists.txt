@@ -1230,21 +1230,13 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(embedding_codec_test tests/unit/services/embedding_codec_test.cpp)
-target_link_libraries(embedding_codec_test PRIVATE
+add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
+target_link_libraries(embedding_ipc_test PRIVATE
+    llm_runner_lib
     JsonCpp::JsonCpp
     GTest::gtest_main
 )
-target_include_directories(embedding_codec_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(embedding_pipe_test
-    tests/unit/services/embedding_pipe_test.cpp
-    src/services/embedding_pipe.cpp
-)
-target_link_libraries(embedding_pipe_test PRIVATE GTest::gtest_main)
-target_include_directories(embedding_pipe_test PRIVATE
+target_include_directories(embedding_ipc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1254,17 +1246,6 @@ target_link_libraries(embedding_json_test PRIVATE
     GTest::gtest_main
 )
 target_include_directories(embedding_json_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(embedding_worker_process_test
-    tests/unit/services/embedding_worker_process_test.cpp
-    src/services/embedding_worker_process.cpp
-    src/services/embedding_pipe.cpp
-)
-target_link_libraries(embedding_worker_process_test PRIVATE
-    llm_runner_lib GTest::gtest_main)
-target_include_directories(embedding_worker_process_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1296,6 +1277,7 @@ target_include_directories(worker_metrics_shm_test PRIVATE
 add_executable(model_service_registry_test
     tests/unit/services/model_service_registry_test.cpp
     src/services/service_container.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
 )
 target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
 
@@ -1387,9 +1369,6 @@ target_include_directories(worker_manager_test PRIVATE
 # pin.
 set(SERVICE_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
-    src/services/embedding_pipe.cpp
-    src/services/embedding_worker_process.cpp
-    src/services/embedding_worker_main.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
     src/services/tts_service.cpp
@@ -1408,7 +1387,7 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1475,25 +1454,22 @@ target_include_directories(qwen3_tts_runner_test PRIVATE
 )
 
 # Embedding service integration test: real EmbeddingService forking 32 mock
-# workers (galaxy shape). Custom main() pins the env before config caching, so
-# no gtest_main. embedding_runner.cpp comes along because the runner factory
-# references it, which pulls in pybind11::embed at link time.
+# workers (galaxy shape) via WorkerManager + SingleProcessWorker. Custom main()
+# pins the env before config caching and routes "--worker N" to
+# SingleProcessWorker, so no gtest_main.
 add_executable(embedding_service_test
     tests/integration/services/embedding_service_test.cpp
-    src/services/embedding_service.cpp
-    src/services/embedding_pipe.cpp
-    src/services/embedding_worker_process.cpp
-    src/services/embedding_worker_main.cpp
-    src/runtime/runners/embedding_runner.cpp
-    src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    ${SERVICE_TEST_COMMON_SOURCES}
 )
 target_link_libraries(embedding_service_test PRIVATE
     llm_runner_lib
+    prometheus-cpp::core
     pybind11::embed
+    stb_image_write
     GTest::gtest)
 target_include_directories(embedding_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 # Common server-stack sources shared by every integration-test executable.
@@ -1502,9 +1478,6 @@ target_include_directories(embedding_service_test PRIVATE
 # rather than duplicated per target.
 set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
-    src/services/embedding_pipe.cpp
-    src/services/embedding_worker_process.cpp
-    src/services/embedding_worker_main.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
@@ -1527,7 +1500,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1734,11 +1707,9 @@ set_tests_properties(EmbeddingServiceIntegrationTest PROPERTIES
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
-gtest_discover_tests(embedding_codec_test)
-gtest_discover_tests(embedding_pipe_test)
+gtest_discover_tests(embedding_ipc_test)
 gtest_discover_tests(embedding_json_test)
 gtest_discover_tests(mock_embedding_runner_test)
-gtest_discover_tests(embedding_worker_process_test PROPERTIES TIMEOUT 30)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
@@ -2052,10 +2023,7 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
-    src/services/embedding_pipe.cpp
-    src/services/embedding_worker_process.cpp
-    src/services/embedding_worker_main.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
