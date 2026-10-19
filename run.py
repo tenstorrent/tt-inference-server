@@ -23,6 +23,7 @@ from pathlib import Path  # noqa: E402
 
 from workflows.bootstrap_uv import bootstrap_uv  # noqa: E402
 from workflows.device_utils import infer_default_device  # noqa: E402
+from workflows.host_packages import host_packages_provide_weights  # noqa: E402
 from workflows.log_setup import setup_run_logger  # noqa: E402
 from workflows.model_spec import (  # noqa: E402
     MODEL_SPECS,
@@ -1293,6 +1294,7 @@ def main():
         # Validation above admits the immutable Quetzal package and all of its
         # auxiliary roots.  Such a package supplies the runtime device weights,
         # so host setup must not apply Hugging Face weight-download sizing to it.
+        # A device spec's docker_host_packages bring their weights the same way.
         package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
         setup_config = setup_host(
             model_spec=model_spec,
@@ -1306,7 +1308,13 @@ def main():
                 runtime_config.image_user if runtime_config.docker_server else None
             ),
             local_server=runtime_config.local_server,
-            package_provides_weights=package_mount is not None,
+            package_provides_weights=(
+                package_mount is not None
+                or (
+                    runtime_config.docker_server
+                    and host_packages_provide_weights(model_spec)
+                )
+            ),
         )
 
     # step 4: optionally run inference server. Server bring-up runs as a

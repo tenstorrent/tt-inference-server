@@ -578,6 +578,13 @@ class DeviceModelSpec:
     # Host directory bind-mounted read-write at the same path when it exists on the host,
     # for state that must outlive the container (e.g. a "chips need a reset" marker).
     docker_host_state_dir: Optional[str] = None
+    # Container path -> host directory, each bind-mounted read-only; every host directory
+    # must exist (workflows/host_packages.py). For a prebuilt server whose binaries and
+    # weights live on shared storage: such an entry skips the Hugging Face weight download.
+    docker_host_packages: Dict[str, str] = field(default_factory=dict)
+    # Replaces the image's entrypoint: argv[0] becomes docker run --entrypoint and the rest
+    # follow the image. For a server the image does not start by default.
+    docker_entrypoint: List[str] = field(default_factory=list)
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
