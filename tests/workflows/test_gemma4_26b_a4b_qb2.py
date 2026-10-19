@@ -89,7 +89,6 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
     assert terminal.n_attempts == swe.n_attempts == 1
     assert terminal.override_cpus == 16
     assert swe.llm_timeout_sec == 30 * 60
-    assert swe.normalize_submission_marker is True
     assert (
         swe.agent_kwargs["config"]["environment"]["env"]["CONDA_DEFAULT_ENV"]
         == "testbed"

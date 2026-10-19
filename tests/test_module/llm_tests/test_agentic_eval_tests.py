@@ -72,7 +72,6 @@ class FakeHarborConfig:
     environment_kwargs: Dict[str, Any] = field(default_factory=dict)
     harbor_timeout_sec: Optional[float] = None
     llm_timeout_sec: Optional[int] = 10 * 60
-    normalize_submission_marker: bool = False
     per_task_overhead_sec: int = 20 * 60
     startup_grace_sec: int = 10 * 60
     stall_grace_sec: int = 5 * 60
@@ -442,7 +441,6 @@ class TestAgenticDriverConfigMapping:
         task.agentic_eval_config.verifier_env = {
             "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"
         }
-        task.agentic_eval_config.normalize_submission_marker = True
 
         cfg = build_harbor_config(
             task,
@@ -455,7 +453,6 @@ class TestAgenticDriverConfigMapping:
         )
         assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen"}
         assert cfg.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"}
-        assert cfg.normalize_submission_marker is True
 
     def test_swebench_config_uses_limit_mode_task_names_and_n_tasks(self):
         # SWE-bench instance ids are plain Harbor task names in the
