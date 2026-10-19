@@ -791,7 +791,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -993,7 +992,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1184,7 +1182,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 - weights:
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
@@ -1212,7 +1209,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1354,7 +1350,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1484,7 +1479,6 @@ templates:
   metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: deepseek_v3
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
