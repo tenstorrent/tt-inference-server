@@ -1171,3 +1171,143 @@ def test_a_shard_whose_expected_set_disagrees_with_its_plan_is_refused():
     records[1]["expected_doc_ids_sha"] = {"sub_a": "x", "sub_b": "y", "sub_c": "z"}
     with pytest.raises(ShardError, match="expected_doc_ids_sha|expected doc set"):
         check_shard_set(records)
+
+
+# --- the merge writes run.py's report layout ----------------------------------
+# Review on tt-shield#1283: CI collects a run.py run from
+# reports_output/evals/data/report_data_*.json and runtime_model_specs/
+# runtime_model_spec_*.json. The merge writes the same two files with run.py's
+# writers (ReportGenerator, RuntimeConfig.to_json), so CI copies them as it
+# copies a run.py run instead of rebuilding the layout itself.
+
+RUN_SPEC = {
+    "model_id": "id_tt-transformers_Qwen2.5-7B_p300x2",
+    "hf_model_repo": MODEL,
+    "model_name": "Qwen2.5-7B",
+    "inference_engine": "vLLM",
+    "impl": {"impl_name": "tt-transformers"},
+    "status": "EXPERIMENTAL",
+    "tt_metal_commit": "78e87bd9",
+    "vllm_commit": "0a76258",
+    "docker_image": "img",
+}
+
+
+def _write_runtime_spec(shard_dir: Path, shard: str, spec=None, **config):
+    """A shard run's runtime model spec, as run.py writes it."""
+    from workflows.runtime_config import RuntimeConfig
+
+    run_config = RuntimeConfig(
+        model=MODEL,
+        workflow="evals",
+        device="p300x2",
+        eval_tasks=TASK,
+        eval_shard=shard,
+        quetzal_package_root="/pkg",
+        run_id=f"run-{shard}",
+    )
+    for key, value in config.items():
+        setattr(run_config, key, value)
+    return run_config.to_json(
+        merge_cli._SerializedModelSpec(dict(spec or RUN_SPEC)),
+        "2026-10-19_00-00-00",
+        RUN_SPEC["model_id"],
+        str(shard_dir / "runtime_model_specs"),
+    )
+
+
+def _merge_with_specs(tmp_path, count=2, **spec_kwargs):
+    dirs = [_write_shard(tmp_path, i, count, _ifeval_plan()) for i in range(count)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/{count}", **spec_kwargs)
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    return rc, out
+
+
+def test_merge_writes_the_run_py_runtime_model_spec(tmp_path):
+    from workflows.runtime_config import RuntimeConfig
+
+    rc, out = _merge_with_specs(tmp_path)
+    assert rc == 0
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    written = json.loads(spec_path.read_text())
+    assert set(written) == {"runtime_model_spec", "runtime_config"}
+    assert written["runtime_model_spec"] == RUN_SPEC  # the shards' spec, unchanged
+    config = written["runtime_config"]
+    assert config["eval_shard"] is None
+    assert config["eval_tasks"] == TASK
+    assert config["quetzal_package_root"] == "/pkg"  # the shards' run config
+    merge_info = config["eval_shard_merge"]
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    assert merge_info == json.loads(json.dumps(report["eval_shard_merge"]))
+    assert merge_info["shard_count"] == 2
+    assert [s["shard"] for s in merge_info["sources"]] == ["0/2", "1/2"]
+    # run.py's reader takes it back.
+    loaded = RuntimeConfig.from_json(str(spec_path))
+    assert loaded.eval_shard is None and loaded.eval_shard_merge == merge_info
+
+
+def test_merge_writes_the_run_py_report_data(tmp_path):
+    from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
+
+    rc, out = _merge_with_specs(tmp_path)
+    assert rc == 0
+    (data_path,) = (out / "reports_output" / "evals" / "data").glob(
+        "report_data_*.json"
+    )
+    assert list((out / "reports_output" / "evals").glob("report_*.md"))
+    data = json.loads(data_path.read_text())
+    # ReportGenerator's layout: acceptance export at the top, not in metadata.
+    assert set(data) == {"metadata", "sections", *ACCEPTANCE_EXPORT_KEYS}
+    assert data["acceptance_criteria"] is True
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    for key in ACCEPTANCE_EXPORT_KEYS:
+        assert data[key] == json.loads(json.dumps(report[key]))
+    meta = data["metadata"]
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    # The evals workflow's metadata injection, from the merged runtime spec.
+    assert meta["workflow"] == "evals"
+    assert meta["report_partial"] is False
+    assert meta["runtime_model_spec_json"] == str(spec_path)
+    assert meta["model_repo"] == MODEL
+    assert meta["model_id"] == RUN_SPEC["model_id"]
+    assert meta["model_impl"] == "tt-transformers"
+    assert meta["tt_metal_commit"] == RUN_SPEC["tt_metal_commit"]
+    assert meta["device"] == PROV["device"]
+    assert meta["run_command"].startswith("python -m report_module.merge_eval_shards")
+    (section,) = data["sections"]
+    assert section["kind"] == "evals"
+    assert section["data"]["task_name"] == TASK
+    assert section["data"]["score"] == pytest.approx(100 * CORRECT / N_DOCS)
+    assert section["data"]["eval_shard_merge"]["shard_count"] == 2
+
+
+def test_merge_without_a_shard_runtime_spec_writes_no_run_layout(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    assert rc == 0  # the grade does not depend on it
+    assert (out / merge_cli.MERGED_REPORT_NAME).exists()
+    assert not (out / "reports_output").exists()
+    assert not (out / "runtime_model_specs").exists()
+    assert "runtime_model_spec_*.json" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("spec_kwargs", "message"),
+    (
+        ({"spec": {**RUN_SPEC, "hf_model_repo": "org/other"}}, "not Qwen/Qwen2.5-7B"),
+        ({"eval_shard": None}, "not a shard run"),
+        ({"eval_shard": "0/3"}, "not one of 2"),
+    ),
+)
+def test_merge_refuses_a_foreign_runtime_spec(tmp_path, capsys, spec_kwargs, message):
+    rc, out = _merge_with_specs(tmp_path, **spec_kwargs)
+    assert rc == 2
+    assert message in capsys.readouterr().err
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
