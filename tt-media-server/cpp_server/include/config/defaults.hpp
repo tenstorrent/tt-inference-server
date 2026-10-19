@@ -79,6 +79,8 @@ constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
 constexpr const char* TT_MEDIA_TASK_QUEUE = "tt_media_tasks";
 constexpr const char* TT_MEDIA_RESULT_QUEUE = "tt_media_results";
+constexpr const char* TT_EMBEDDING_TASK_QUEUE = "tt_embedding_tasks";
+constexpr const char* TT_EMBEDDING_RESULT_QUEUE = "tt_embedding_results";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
@@ -113,12 +115,6 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
  * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var).
  */
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
-// Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
-// the legacy default (16) for small (1-16 worker) deployments.
-constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
-// Safety ceiling for the dispatch thread pool to avoid pathological configs
-// (e.g. accidental CALLBACK_POOL_THREADS=100000).
-constexpr size_t CALLBACK_POOL_THREADS_MAX = 32;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
 

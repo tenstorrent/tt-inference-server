@@ -35,6 +35,15 @@ ProcessLivenessTransition pollProcessLiveness(pid_t pid,
                                               std::atomic<bool>& aliveFlag,
                                               size_t workerIdx);
 
+struct WorkerManagerOptions {
+  /** When true and numWorkers > 1, worker 0 warms up alone first so it can
+   * populate shared on-disk caches before the remaining workers warm up in
+   * parallel. */
+  bool sequentialLeadWorkerWarmup = true;
+  /** Maximum time (ms) allowed for a warmup phase (0 = use service default). */
+  unsigned warmupTimeoutMs = 0;
+};
+
 /**
  * Manages worker process lifecycle: spawning, warmup signaling, crash detection
  * and restart.
@@ -44,7 +53,7 @@ ProcessLivenessTransition pollProcessLiveness(pid_t pid,
  */
 class WorkerManager {
  public:
-  explicit WorkerManager(size_t numWorkers);
+  explicit WorkerManager(size_t numWorkers, WorkerManagerOptions options = {});
   ~WorkerManager();
 
   WorkerManager(const WorkerManager&) = delete;
@@ -54,10 +63,10 @@ class WorkerManager {
 
   /** Stops warmup IPC listener, then kills worker processes. Call only after
    * any threads that dereference worker() pointers (e.g. result consumers) have
-   *  finished. */
+   * finished. */
   void stop();
 
-  bool isReady() const { return ready.load(); }
+  bool isReady() const;
   size_t numWorkers() const { return workerCount; }
 
   std::vector<WorkerInfo> getWorkerInfo() const;
@@ -78,8 +87,9 @@ class WorkerManager {
 
  private:
   bool isWorkerWarmed(int workerId) const;
+  void runWarmupCoordinator(size_t firstUncoordinatedIdx, unsigned timeoutMs);
+  bool awaitWorkersWarmup(std::vector<size_t> pending, unsigned timeoutMs);
 
-  void startWorkers();
   void startWarmupListener();
   void stopWarmupListener();
   void stopProcesses();
@@ -92,11 +102,14 @@ class WorkerManager {
   pid_t startWorker(SingleProcessWorker& worker);
 
   size_t workerCount;
+  WorkerManagerOptions options_;
 
   std::vector<std::unique_ptr<SingleProcessWorker>> workers;
+  mutable std::mutex workersMutex;
 
   std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmupQueue;
   std::thread warmupListenerThread;
+  std::atomic<bool> warmupShouldStop{false};
   std::thread livenessCheckerThread;
   std::atomic<bool> livenessCheckerShouldStop{false};
   std::mutex warmupMutex;
