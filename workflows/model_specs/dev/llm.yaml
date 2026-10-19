@@ -7229,5 +7229,7 @@ templates:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
   status: EXPERIMENTAL
+  # The image is the serving stack; CI's media-server build must not replace it.
+  prebuilt_image: true
   # TODO: the pushed glm-tt image's digest (tag 0.1.0-<tt-lab commit7>).
   docker_image: ghcr.io/tenstorrent/tt-shield/glm-tt@sha256:0000000000000000000000000000000000000000000000000000000000000000

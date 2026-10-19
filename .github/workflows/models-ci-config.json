@@ -826,6 +826,17 @@
                     ]
                 }
             }
+        },
+        "zai-org/GLM-5.3-Flash": {
+            "inference_engine": "MEDIA",
+            "impl": "tt-lab-glm",
+            "ci": {
+                "weekly": {
+                    "devices": [
+                        "P150X8"
+                    ]
+                }
+            }
         }
     }
 }
