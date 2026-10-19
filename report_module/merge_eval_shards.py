@@ -29,9 +29,11 @@ with run.py's own writers and in run.py's layout under ``--out``:
   ``ReportGenerator`` after the evals workflow's stage tagging and metadata
   injection;
 - ``runtime_model_specs/runtime_model_spec_<...>.json``, by
-  ``RuntimeConfig.to_json``: a shard's runtime model spec (found under the
-  shard dirs) with ``eval_shard`` None, ``eval_tasks`` the merged task and
-  ``eval_shard_merge`` the merge provenance.
+  ``RuntimeConfig.to_json``: the runtime model spec of the merged shards
+  (found under the shard dirs and bound to each merged shard's results by the
+  run id in its shard record; see :func:`find_shard_runtime_model_spec`) with
+  ``eval_shard`` None, ``eval_tasks`` the merged task and ``eval_shard_merge``
+  the merge provenance.
 
 So a CI that collects a run.py run collects the merged verdict the same way.
 Without a shard runtime model spec under the shard dirs these two files are
@@ -163,6 +165,7 @@ def merge(
         sources.append(
             {
                 "shard": record["shard"],
+                "run_id": record.get("run_id"),
                 "attempt_dir": str(attempt),
                 "results_sha256": _sha(results_path),
                 "record_sha256": _sha(attempt / f"{SHARD_RECORD_PREFIX}{task}.json"),
@@ -318,17 +321,43 @@ def grade(
     return _graded(model, task_name, doc, results_path)[0]
 
 
-def find_shard_runtime_model_spec(
-    dirs: Sequence[Path], model: str, shard_count: int
-) -> Optional[Path]:
-    """The runtime model spec of the lowest-index shard under ``dirs``, or None.
+# Run config that legitimately differs between the shards of one merge.
+PER_SHARD_RUNTIME_CONFIG_KEYS = frozenset({"eval_shard", "run_id"})
 
-    run.py writes one ``runtime_model_spec_*.json`` per run; a CI that ships it
-    with a shard's eval outputs lets the merge carry the shards' run config into
-    the merged run's. Every spec found must be one of these shards (this model,
-    ``eval_shard`` i/``shard_count``): a foreign spec is refused, not skipped.
+
+def _spec_identity_problems(spec: Mapping[str, Any], provenance: Mapping[str, Any]):
+    """Where a runtime model spec disagrees with the shards' recorded provenance."""
+    env_vars = (spec.get("device_model_spec") or {}).get("env_vars") or {}
+    pairs = (
+        ("hf_model_repo", spec.get("hf_model_repo")),
+        ("docker_image", spec.get("docker_image")),
+        ("device", spec.get("device_type")),
+        ("model_status", spec.get("status")),
+        ("package_manifest_sha256", env_vars.get("QUETZAL_BUNDLE_MANIFEST_SHA256")),
+    )
+    return [
+        f"{key} {mine!r} != shards' {provenance.get(key)!r}"
+        for key, mine in pairs
+        if mine != provenance.get(key)
+    ]
+
+
+def find_shard_runtime_model_spec(
+    dirs: Sequence[Path], model: str, merge_info: Mapping[str, Any]
+) -> Optional[Path]:
+    """The runtime model spec the merged run's identity comes from, or None.
+
+    run.py writes one ``runtime_model_spec_*.json`` per run and stamps the
+    run's ``run_id`` into the shard record next to that run's results, so each
+    spec is bound to the shard attempt it belongs to. Fail closed: when any
+    spec is present, every merged shard must have exactly one spec with its
+    run id and shard id, every spec must belong to a merged shard (a spec from
+    an aborted or foreign attempt is refused, never picked), all specs must
+    agree except on per-shard keys, and their identity (model, image, device,
+    status, package) must match the merged provenance. None only when the
+    shard dirs hold no spec at all. Returns the lowest shard's spec.
     """
-    found = []
+    specs = []
     for root in dirs:
         for path in sorted(Path(root).rglob(RUNTIME_MODEL_SPEC_GLOB)):
             data = json.loads(path.read_text())
@@ -336,22 +365,62 @@ def find_shard_runtime_model_spec(
             config = data.get("runtime_config") if isinstance(data, dict) else None
             if not isinstance(spec, dict) or not isinstance(config, dict):
                 raise ShardError(f"{path}: not a run.py runtime model spec")
-            if spec.get("hf_model_repo") != model:
-                raise ShardError(
-                    f"{path}: runtime model spec is for {spec.get('hf_model_repo')}, "
-                    f"not {model}"
+            specs.append((path, spec, config))
+    if not specs:
+        return None
+    by_run: Dict[str, List[Tuple[Path, dict, dict]]] = {}
+    for entry in specs:
+        by_run.setdefault(entry[2].get("run_id"), []).append(entry)
+    sources = merge_info["sources"]
+    merged_runs = {source.get("run_id") for source in sources}
+    problems = []
+    for run_id, entries in sorted(by_run.items(), key=lambda kv: str(kv[0])):
+        if run_id is None or run_id not in merged_runs:
+            problems.extend(
+                f"{path}: run {run_id!r} contributed no merged shard"
+                for path, _, _ in entries
+            )
+    bound = []
+    for source in sorted(sources, key=lambda s: parse_eval_shard(s["shard"])[0]):
+        run_id = source.get("run_id")
+        entries = by_run.get(run_id, []) if run_id else []
+        if len(entries) != 1:
+            problems.append(
+                f"shard {source['shard']} (run {run_id!r}): expected one runtime "
+                f"model spec, found {len(entries)}"
+            )
+            continue
+        path, spec, config = entries[0]
+        if config.get("eval_shard") != source["shard"]:
+            problems.append(
+                f"{path}: eval_shard {config.get('eval_shard')!r} != {source['shard']!r}"
+            )
+        if spec.get("hf_model_repo") != model:
+            problems.append(
+                f"{path}: spec is for {spec.get('hf_model_repo')}, not {model}"
+            )
+        problems.extend(
+            f"{path}: {problem}"
+            for problem in _spec_identity_problems(spec, merge_info["provenance"])
+        )
+        bound.append((path, spec, config))
+    if not problems and bound:
+        first_path, first_spec, first_config = bound[0]
+        for path, spec, config in bound[1:]:
+            if spec != first_spec:
+                problems.append(f"{path}: runtime model spec differs from {first_path}")
+            keys = (set(config) | set(first_config)) - PER_SHARD_RUNTIME_CONFIG_KEYS
+            differing = sorted(k for k in keys if config.get(k) != first_config.get(k))
+            if differing:
+                problems.append(
+                    f"{path}: runtime config differs from {first_path} on {differing}"
                 )
-            shard = config.get("eval_shard")
-            if not shard:
-                raise ShardError(f"{path}: runtime model spec is not a shard run")
-            index, count = parse_eval_shard(shard)
-            if count != shard_count:
-                raise ShardError(
-                    f"{path}: runtime model spec is shard {shard}, "
-                    f"not one of {shard_count}"
-                )
-            found.append((index, str(path)))
-    return Path(min(found)[1]) if found else None
+    if problems:
+        raise ShardError(
+            "runtime model specs do not bind to the merged shards:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return bound[0][0]
 
 
 class _SerializedModelSpec:
@@ -428,7 +497,7 @@ def main(argv=None) -> int:
         task = eval_task(args.model, args.task)
         doc = merge(args.shard_dirs, args.task, task.doc_ids)
         shard_spec = find_shard_runtime_model_spec(
-            args.shard_dirs, args.model, doc["eval_shard_merge"]["shard_count"]
+            args.shard_dirs, args.model, doc["eval_shard_merge"]
         )
     except ShardError as exc:
         print(f"merge refused: {exc}", file=sys.stderr)

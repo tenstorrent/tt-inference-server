@@ -310,12 +310,26 @@ def _ifeval_plan():
 
 
 def _write_shard(
-    root: Path, index: int, count: int, plan, prov=PROV, correct=CORRECT, configs=None
+    root: Path,
+    index: int,
+    count: int,
+    plan,
+    prov=PROV,
+    correct=CORRECT,
+    configs=None,
+    run_id="default",
 ):
     attempt = root / f"run-{index}" / "evals" / f"eval-attempt-{index}"
     out = attempt / "eval_x" / "org__model"
     out.mkdir(parents=True)
-    record = shard_record(TASK, plan, index, count, {**prov, "hf_model_repo": MODEL})
+    record = shard_record(
+        TASK,
+        plan,
+        index,
+        count,
+        {**prov, "hf_model_repo": MODEL},
+        run_id=f"run-{index}/{count}" if run_id == "default" else run_id,
+    )
     (attempt / f"eval_shard_{TASK}.json").write_text(json.dumps(record))
     docs = shard_indices(N_DOCS, index, count)
     rows = [
@@ -512,7 +526,9 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
     task = EvalTask(
         task_name="gpqa_x", custom_dataset_kwargs={"max_seq_lengths": [4096]}
     )
-    rc = SimpleNamespace(eval_shard="1/3", eval_samples=None, limit_samples_mode=None)
+    rc = SimpleNamespace(
+        eval_shard="1/3", eval_samples=None, limit_samples_mode=None, run_id="run-7"
+    )
     cmd = eval_command.build_eval_command(
         task, model_spec, "P300X2", str(tmp_path), 8000, runtime_config=rc
     )
@@ -520,6 +536,8 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
     assert "--limit" not in cmd
     record = json.loads((tmp_path / "eval_shard_gpqa_x.json").read_text())
     assert record["shard"] == "1/3"
+    # The run that wrote it: the merge binds this run's runtime spec by it.
+    assert record["run_id"] == "run-7"
     assert record["provenance"]["package_manifest_sha256"] == "man"
     assert record["provenance"]["ttis_ref"] == "deadbeef"
     # The planner sees the eval's own lm_eval arguments verbatim, so the
@@ -1190,11 +1208,14 @@ RUN_SPEC = {
     "tt_metal_commit": "78e87bd9",
     "vllm_commit": "0a76258",
     "docker_image": "img",
+    "device_type": "P300X2",
+    "device_model_spec": {"env_vars": {"QUETZAL_BUNDLE_MANIFEST_SHA256": "m"}},
 }
 
 
 def _write_runtime_spec(shard_dir: Path, shard: str, spec=None, **config):
-    """A shard run's runtime model spec, as run.py writes it."""
+    """A shard run's runtime model spec, as run.py writes it (run id as the
+    shard record's in _write_shard)."""
     from workflows.runtime_config import RuntimeConfig
 
     run_config = RuntimeConfig(
@@ -1301,9 +1322,12 @@ def test_merge_without_a_shard_runtime_spec_writes_no_run_layout(tmp_path, capsy
 @pytest.mark.parametrize(
     ("spec_kwargs", "message"),
     (
-        ({"spec": {**RUN_SPEC, "hf_model_repo": "org/other"}}, "not Qwen/Qwen2.5-7B"),
-        ({"eval_shard": None}, "not a shard run"),
-        ({"eval_shard": "0/3"}, "not one of 2"),
+        (
+            {"spec": {**RUN_SPEC, "hf_model_repo": "org/other"}},
+            "spec is for org/other, not Qwen/Qwen2.5-7B",
+        ),
+        ({"eval_shard": None}, "eval_shard None != '0/2'"),
+        ({"eval_shard": "0/3"}, "eval_shard '0/3' != '0/2'"),
     ),
 )
 def test_merge_refuses_a_foreign_runtime_spec(tmp_path, capsys, spec_kwargs, message):
@@ -1311,3 +1335,111 @@ def test_merge_refuses_a_foreign_runtime_spec(tmp_path, capsys, spec_kwargs, mes
     assert rc == 2
     assert message in capsys.readouterr().err
     assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+
+
+# --- review on #5424: a runtime spec is bound to the results it describes -----
+# find_shard_runtime_model_spec used to take any spec of the same model and
+# shard count, by shard index and path. An aborted attempt's 0/2 spec (another
+# device, image, commit) next to valid P300X2 shards then gave the merged PASS
+# that attempt's identity. The spec is now bound by run id to the shard
+# attempt whose results were merged, checked against the merged provenance,
+# and anything unbound, missing, ambiguous or disagreeing is refused.
+
+ABORTED_SPEC = {
+    **RUN_SPEC,
+    "model_id": "id_tt-transformers_Qwen2.5-7B_n150",
+    "device_type": "N150",
+    "docker_image": "other-img",
+    "tt_metal_commit": "0ther",
+}
+
+
+def _valid_shards(tmp_path, count=2):
+    dirs = [_write_shard(tmp_path, i, count, _ifeval_plan()) for i in range(count)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/{count}")
+    return dirs
+
+
+def _run_merge(tmp_path, dirs):
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    return rc, out
+
+
+def test_merge_refuses_an_aborted_attempts_spec_next_to_valid_shards(tmp_path, capsys):
+    dirs = _valid_shards(tmp_path)
+    # An attempt of shard 0 that died before results: its spec, no results.
+    aborted = _write_runtime_spec(
+        dirs[0] / "aborted", "0/2", spec=ABORTED_SPEC, run_id="run-aborted"
+    )
+    rc, out = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"{aborted}: run 'run-aborted' contributed no merged shard" in err
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+    assert not (out / "runtime_model_specs").exists()
+
+
+def test_merge_refuses_a_bound_spec_whose_identity_is_not_the_shards(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2", spec=ABORTED_SPEC)
+    _write_runtime_spec(dirs[1], "1/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "device 'N150' != shards' 'P300X2'" in err
+    assert "docker_image 'other-img' != shards' 'img'" in err
+
+
+def test_merge_refuses_two_specs_for_one_shard_run(tmp_path, capsys):
+    dirs = _valid_shards(tmp_path)
+    _write_runtime_spec(dirs[0] / "again", "0/2", spec=ABORTED_SPEC)
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "expected one runtime model spec, found 2" in capsys.readouterr().err
+
+
+def test_merge_refuses_a_merged_shard_without_its_spec(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert (
+        "shard 1/2 (run 'run-1/2'): expected one runtime model spec, found 0"
+        in capsys.readouterr().err
+    )
+
+
+def test_merge_refuses_shard_specs_that_disagree_beyond_the_shard_id(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2")
+    _write_runtime_spec(dirs[1], "1/2", quetzal_package_root="/other-pkg")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "runtime config differs" in capsys.readouterr().err
+
+
+def test_merge_refuses_specs_it_cannot_bind_to_shard_records(tmp_path, capsys):
+    # Shard records from before run ids were recorded: no spec can be bound.
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan(), run_id=None) for i in range(2)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "contributed no merged shard" in capsys.readouterr().err
+
+
+def test_merged_identity_is_the_bound_shards(tmp_path):
+    rc, out = _run_merge(tmp_path, _valid_shards(tmp_path))
+    assert rc == 0
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    written = json.loads(spec_path.read_text())
+    assert written["runtime_model_spec"] == RUN_SPEC
+    sources = written["runtime_config"]["eval_shard_merge"]["sources"]
+    assert [(s["shard"], s["run_id"]) for s in sources] == [
+        ("0/2", "run-0/2"),
+        ("1/2", "run-1/2"),
+    ]
