@@ -1,14 +1,14 @@
 {
-  "scope": "Two reconstructed diagnostic requests; original RNG and wire token arrays unavailable. Fixed seeds and cache salting are diagnostic interventions.",
+  "scope": "Six reconstructed semantic continuation interventions; original RNG and original output IDs unavailable; no quality waiver or agent feedback.",
   "response_ids": [
     "chatcmpl-b170f450eca126a7",
     "chatcmpl-a79346e09b9b8b8f"
   ],
   "files": {
     "quality_repetition_client.py": {
-      "bytes": 5259,
-      "sha256": "18943a8cfbc4fc286434e76430dc406dafebee73a0cc7cb25231e11f956d77fe",
-      "gzip_sha256": "3fdc7fa99a2fbdd386312d012532a7e17a86c10cc9ac34612cc17d45624ae63c"
+      "bytes": 4147,
+      "sha256": "5786da7a470b20602811d8162588c1471f834f521b2347e0a5425fb32182f943",
+      "gzip_sha256": "eac6e204b4df20c118faa2fb4f0fb2570c855f84d9a7b84c7bdc4f4ad3def5f8"
     },
     "quality-repetition-requests.json": {
       "bytes": 92568,
@@ -34,6 +34,16 @@
       "bytes": 621,
       "sha256": "9da76a1365e3dc8f08fd7de5612625abf689045951fff92879593e9a5ac16ee5",
       "gzip_sha256": "fcf4e9b02aceaa17e671fe6a9ffd7c9fe456cf25f79cf66bc76e6ecd017b2fa0"
+    },
+    "quality-long-continuation-r5.json": {
+      "bytes": 575513,
+      "sha256": "e6583a0457ec82a8e5d96460d9c4461b6d3936f66ab92c0d1bff585f09f49e6e",
+      "gzip_sha256": "6ceaf87e6f68e68e81ea47ef686c319ae83181beeffcb6996f479927043ebfc0"
+    },
+    "quality-long-continuation-contingency-r5.json": {
+      "bytes": 2070,
+      "sha256": "26b4764b55b4e2739ba6a1608f0376e3719a699a3c93cd492f7fb4e30459128a",
+      "gzip_sha256": "42b59703817c9728e6cb5ba68c482c2faef7ba218e7d78e3881bb3593223eb06"
     }
   },
   "protocol": "Prespecified longrequest restored-prefix seeds1..12;12targets+12warmups; originalmodel/policyunchanged, not qualityacceptance"
