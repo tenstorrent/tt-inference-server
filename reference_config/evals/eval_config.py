@@ -12881,6 +12881,12 @@ _eval_config_list = [
                     n_tasks=None,
                     agent_timeout_sec=int(2.75 * 60 * 60),
                     llm_timeout_sec=60 * 60,
+                    # Harbor installs the agent in-container with an unpinned
+                    # `--with litellm`; litellm 1.106.0 (2026-10-18) imports
+                    # `mcp` on the completion path without declaring it, so every
+                    # trial dies with ModuleNotFoundError. Resolve the agent
+                    # toolchain as of 2026-10-17 (litellm 1.105.1).
+                    agent_env={"UV_EXCLUDE_NEWER": "2026-10-17T00:00:00Z"},
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         "max_tokens": 32 * 1024,
