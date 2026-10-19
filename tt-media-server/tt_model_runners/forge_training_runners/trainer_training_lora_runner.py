@@ -231,8 +231,8 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 train_metrics=["loss"],
                 val_metrics=["loss"],
             ),
-            # Only AdapterCheckpointCallback saves, so the rotation and resume
-            # settings below are never acted on.
+            # Only AdapterCheckpointCallback saves, so the rotation and
+            # init-from-checkpoint settings below are never acted on.
             checkpoint=CheckpointConfig(
                 steps_freq=max(request.save_interval, 1),
                 epoch_freq=1,
@@ -245,8 +245,8 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 keep_all_checkpoints=True,
                 checkpoint_metric="val/loss",
                 checkpoint_metric_mode="min",
-                resume_from_checkpoint=False,
-                resume_option="last",
+                init_from_checkpoint=False,
+                init_option="last",
                 checkpoint_path="",
             ),
             lora=LoraConfig(
