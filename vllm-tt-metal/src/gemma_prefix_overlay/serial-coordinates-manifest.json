@@ -1,0 +1,52 @@
+{
+  "base_commit": "4011fd5296f8f8c5ef790793f006000be9485a30",
+  "target_commit": "1c90d3fb771ffb1189bbdd374ddc32e375179f1d",
+  "patch_sha256": "03ef6b288ae84da3a613198933ffef9bb79623d20a54a3ad790625d35d96c8fd",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/prefill_batch.py": {
+      "base": "6bc71038aa609ba31236d02676cb723163ca320950ab71f6e93c27c2e81dee95",
+      "target": "6bc71038aa609ba31236d02676cb723163ca320950ab71f6e93c27c2e81dee95"
+    },
+    "models/demos/gemma4_31b_qb2/tt/history_bank.py": {
+      "base": null,
+      "target": "87767c5e02811e25ec069d30940241a512ca5022d5a34576e1f4e104cdbe44d9"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py": {
+      "base": null,
+      "target": "b7d628d384db24494198497b14ad5f4207bca01d3351b8aa59927fe319a1ab80"
+    },
+    "models/demos/gemma4_31b_qb2/tt/sdpa_l1.py": {
+      "base": "473d098d7cdf97e81e323c0c93b9308b3b77173f257c32a8d4646252f0c75710",
+      "target": "9733c30a68c50fcfe37b01e2529976fe0fd7ae60275398e10d6701ca7dde6170"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "fa82cedb550f94129072ea22258067c712d81b764e5c660cea044d68cd859b12",
+      "target": "667c541ca36e1448341a8ef9406ffdcf5694538504fd02b6c4cfdd1f14930c66"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py": {
+      "base": null,
+      "target": "4c78fa1869fe906f7146b17647cc3534be74d1ccebafb8ae5f89721639c63e90"
+    },
+    "models/demos/gemma4_31b_qb2/tt/model.py": {
+      "base": "0129da7c2a8875556b533c90585846436fcd1f797bb9df1ac33d1b2801240ce7",
+      "target": "27fc5fe7da825668949d2fb1a98009064061995c0be8f8cefe69d26076db8d88"
+    },
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "4b77f4892547bc636b48e573245678426e5a7ffa97cb882b7e943214c54712de",
+      "target": "1adf16996ef6d1846201d766c1e0246671a5099dd1bb978da63b0dbc8f8479c4"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "a359ca5bb8e8fea90548d1139eeb32836f276decb6005e4bd1a394eb30bd5eba",
+      "target": "f4de94510350713804c71d512b54c08f1479dcf4389ed4af7c17363676631c26"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_position.py": {
+      "base": null,
+      "target": "51e2efc838f5881917cfa60232b2ff053089db1c7a2bf463e22d689339699874"
+    },
+    "models/demos/gemma4_31b_qb2/tt/__init__.py": {
+      "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
+      "target": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
+    }
+  },
+  "scope": "Opt-in serial fixed histories/runtime coordinates; conservative trace retirement remains. No prepared-retention serving caller."
+}
