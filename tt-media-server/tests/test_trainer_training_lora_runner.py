@@ -166,6 +166,9 @@ class TestJobConfig:
     def test_checkpoints_are_never_rotated(self, runner):
         assert runner._job_config(_request()).checkpoint.keep_all_checkpoints is True
 
+    def test_never_initializes_from_a_checkpoint(self, runner):
+        assert runner._job_config(_request()).checkpoint.init_from_checkpoint is False
+
     def test_checkpoint_dir_is_the_job_output_path(self, runner):
         request = _request()
         request._output_model_path = "/adapters/job-a"
