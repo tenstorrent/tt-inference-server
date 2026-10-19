@@ -1,0 +1,51 @@
+{
+  "scope": "Exact saved tokenization payload independently reloaded, protocol-validated and rendered; no aliases to renderer-mutated inputs. Original generation bodies unchanged. Native IDs still mandatory.",
+  "payload_sha256": "e638a4ab499bbb1fea86094efdbf7feb42c654282852259f8bcc637351c70d0f",
+  "source_request_sha256": "baa0e67a14dc0350237c2dc494509b065e767d17593c1ed5ed41b93264f694c9",
+  "source_sha256": {
+    "vllm.entrypoints.openai.chat_completion.protocol": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+    "vllm.entrypoints.serve.tokenize.protocol": "0bb4ddf2c0b1412e88c9d853e2ef7163f62665df0b8bbef86df5bdbdd9a76e44"
+  },
+  "rows": [
+    {
+      "response_id": "chatcmpl-84e37f0209575900",
+      "count": 3290,
+      "exact_chat_token_ids": true,
+      "token_ids_sha256": "264281af6e2007f4425a9da29f84af9a2a096d22c9e92b0c843c285a995ab389",
+      "tokenization_body_sha256": "32e06c9b11d4817adda8cd3ac0ce2e8409d485fc682749f16bcccf80281e983c",
+      "original_generation_body_unchanged": true,
+      "saved_payload_reloaded_validated_rendered": true,
+      "tool_arguments_remain_strings": true
+    },
+    {
+      "response_id": "chatcmpl-a20968e369079456",
+      "count": 29139,
+      "exact_chat_token_ids": true,
+      "token_ids_sha256": "706875cde5f91b078c51765da767013ce80abaf77c60f68d8c0376446578eb1d",
+      "tokenization_body_sha256": "482360a728498da05dd2cd2e2a106ca92cad9ed81e8ed8b9aecbf12d342c48e7",
+      "original_generation_body_unchanged": true,
+      "saved_payload_reloaded_validated_rendered": true,
+      "tool_arguments_remain_strings": true
+    },
+    {
+      "response_id": "chatcmpl-876dafd04fab4130",
+      "count": 14255,
+      "exact_chat_token_ids": true,
+      "token_ids_sha256": "0280222441e10a883fa7c19d961ab3c452d386cf61b6dadc88da4ca2b7dd56cb",
+      "tokenization_body_sha256": "f503ae01b82cd63d0df1de3b2e50b76d3f79e7e2050288ec1207ca7cd98e3845",
+      "original_generation_body_unchanged": true,
+      "saved_payload_reloaded_validated_rendered": true,
+      "tool_arguments_remain_strings": true
+    },
+    {
+      "response_id": "chatcmpl-81e67484eac2210f",
+      "count": 2427,
+      "exact_chat_token_ids": true,
+      "token_ids_sha256": "8f6d417eaa5d64b288233cccf9a3b74e1b8554ec3ac5995311c5c77178b6867a",
+      "tokenization_body_sha256": "592546bce69dbf35b637a13a6f986e80f6688f0792e5d3b0e4c3d9c235ebcff2",
+      "original_generation_body_unchanged": true,
+      "saved_payload_reloaded_validated_rendered": true,
+      "tool_arguments_remain_strings": true
+    }
+  ]
+}
