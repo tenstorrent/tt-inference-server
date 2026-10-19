@@ -183,6 +183,11 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
+# Check after the plugin install, which can downgrade shared Hugging Face dependencies.
+# Fail the image build instead of crashing image workers during warmup.
+RUN "${PYTHON_ENV_DIR}/bin/python" -c \
+    "import diffusers.pipelines.pipeline_utils; from diffusers import DiffusionPipeline"
+
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
 ENV AUDIO_VENV_DIR=${TT_METAL_HOME}/audio_venv
