@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
-#include <exception>
-#include <future>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,12 +16,6 @@
 #include "runtime/runners/sdxl/sdxl_python_helpers.hpp"
 #include "utils/image_codec.hpp"
 #include "utils/logger.hpp"
-
-namespace {
-// Window the batcher waits for additional compatible requests before running
-// a non-full batch. Small relative to one SDXL step (~hundreds of ms).
-constexpr std::chrono::milliseconds BATCH_FILL_WINDOW{5};
-}  // namespace
 
 namespace tt::runners::sdxl {
 
@@ -120,22 +112,6 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
 SDXLBaseRunner::~SDXLBaseRunner() { stop(); }
 
 void SDXLBaseRunner::stop() {
-  {
-    std::lock_guard<std::mutex> lk(queue_mutex_);
-    batcher_stop_.store(true, std::memory_order_release);
-    auto pending = std::move(queue_);
-    queue_.clear();
-    for (auto& slot : pending) {
-      try {
-        slot.promise.set_exception(std::make_exception_ptr(
-            std::runtime_error("[SDXL] Runner stopped before request ran")));
-      } catch (const std::future_error&) {
-      }
-    }
-  }
-  queue_cv_.notify_all();
-  if (batcher_thread_.joinable()) batcher_thread_.join();
-
   py::gil_scoped_acquire acquire;
   try {
     if (!ttnn_device().is_none() && !ttnn_module().is_none()) {
@@ -237,8 +213,6 @@ bool SDXLBaseRunner::warmup() {
   try {
     runFullWarmup();
     initialized_ = true;
-    batcher_stop_.store(false, std::memory_order_release);
-    batcher_thread_ = std::thread(&SDXLBaseRunner::batcherLoop, this);
     TT_LOG_INFO("[SDXL] Warmup completed");
     return true;
   } catch (const std::exception& e) {
@@ -257,40 +231,21 @@ void SDXLBaseRunner::runFullWarmup() {
 
   // Distribute weights: minutes-long, GIL is released at this point and
   // runAndCheckDuration's worker re-acquires it.
-  runAndCheckDuration("distribute_block",
-                      config_.weights_distribution_timeout_seconds,
-                      [&]() { distributeBlock(); });
-  TT_LOG_INFO("[SDXL] tt-metal pipeline constructed");
+  runAndCheckDuration(
+      "distribute_block", config_.weights_distribution_timeout_seconds, [&]() {
+        distributeBlock();
+        if (py::hasattr(tt_sdxl(), "batch_size")) {
+          const int pipelineBatch = tt_sdxl().attr("batch_size").cast<int>();
+          if (pipelineBatch > 0) {
+            batch_size_ = static_cast<size_t>(pipelineBatch);
+          }
+        }
+      });
+  TT_LOG_INFO("[SDXL] tt-metal pipeline constructed (batch_size={})",
+              batch_size_);
 
-  runAndCheckDuration("warmup_inference", 1000, [&]() {
-    std::vector<domain::ImageGenerateRequest> singleton{warmupRequest()};
-    const auto& head = singleton.front();
-    auto prompts = processPrompts(singleton);
-    injectLoraTriggers(prompts.prompts, head.lora_path);
-    applyRequestSettings(head);
-    ensureLoraState(head);
-    applyModeSpecificSettings(head);
-
-    tt_sdxl().attr("compile_text_encoding")();
-    py::object encoded = tt_sdxl().attr("encode_prompts")(
-        prompts.prompts,
-        prompts.negative_prompts.has_value()
-            ? py::cast(*prompts.negative_prompts)
-            : py::none(),
-        prompts.prompts_2.has_value() ? py::cast(*prompts.prompts_2)
-                                      : py::none(),
-        prompts.negative_prompt_2.has_value()
-            ? py::cast(*prompts.negative_prompt_2)
-            : py::none());
-    py::object promptEmbeds = encoded[py::int_(0)];
-    py::object addTextEmbeds = encoded[py::int_(1)];
-
-    py::object tensors =
-        generateInputTensors(singleton, promptEmbeds, addTextEmbeds);
-    prepareInputTensorsForIteration(tensors);
-    tt_sdxl().attr("compile_image_processing")();
-    tt_sdxl().attr("generate_images")();
-  });
+  runAndCheckDuration("warmup_inference", 1000,
+                      [&]() { runRequests({warmupRequest()}); });
 }
 
 SDXLBaseRunner::PromptPack SDXLBaseRunner::processPrompts(
@@ -427,138 +382,37 @@ std::vector<std::string> SDXLBaseRunner::postProcessImages(
   return out;
 }
 
-bool SDXLBaseRunner::areBatchCompatible(
-    const domain::ImageGenerateRequest& a,
-    const domain::ImageGenerateRequest& b) const {
-  // Mirrors BaseSDXLRunner.is_request_batchable. Same-LoRA batches are
-  // allowed: _ensure_lora_state is a no-op when path+scale already match.
-  return a.num_inference_steps == b.num_inference_steps &&
-         a.guidance_scale == b.guidance_scale &&
-         a.guidance_rescale == b.guidance_rescale &&
-         a.crop_coords_top_left == b.crop_coords_top_left &&
-         a.timesteps == b.timesteps && a.sigmas == b.sigmas &&
-         a.prompt_2 == b.prompt_2 &&
-         a.negative_prompt_2 == b.negative_prompt_2 &&
-         a.lora_path == b.lora_path && a.lora_scale == b.lora_scale;
-}
+std::vector<std::string> SDXLBaseRunner::runRequests(
+    const std::vector<domain::ImageGenerateRequest>& requests) {
+  if (requests.empty()) return {};
 
-void SDXLBaseRunner::batcherLoop() {
-  while (true) {
-    std::vector<BatchSlot> batch;
-    {
-      std::unique_lock<std::mutex> lk(queue_mutex_);
-      queue_cv_.wait(lk, [&] {
-        return batcher_stop_.load(std::memory_order_acquire) || !queue_.empty();
-      });
-      if (batcher_stop_.load(std::memory_order_acquire)) return;
+  py::gil_scoped_acquire acquire;
+  auto prompts = processPrompts(requests);
+  const auto& head = requests.front();
+  injectLoraTriggers(prompts.prompts, head.lora_path);
+  applyRequestSettings(head);
+  ensureLoraState(head);
+  applyModeSpecificSettings(head);
 
-      batch.push_back(std::move(queue_.front()));
-      queue_.pop_front();
+  tt_sdxl().attr("compile_text_encoding")();
+  py::object encoded = tt_sdxl().attr("encode_prompts")(
+      prompts.prompts,
+      prompts.negative_prompts.has_value() ? py::cast(*prompts.negative_prompts)
+                                           : py::none(),
+      prompts.prompts_2.has_value() ? py::cast(*prompts.prompts_2) : py::none(),
+      prompts.negative_prompt_2.has_value()
+          ? py::cast(*prompts.negative_prompt_2)
+          : py::none());
+  py::object promptEmbeds = encoded[py::int_(0)];
+  py::object addTextEmbeds = encoded[py::int_(1)];
 
-      if (batch_size_ > 1) {
-        const auto deadline =
-            std::chrono::steady_clock::now() + BATCH_FILL_WINDOW;
-        while (batch.size() < batch_size_) {
-          if (!queue_.empty()) {
-            if (areBatchCompatible(batch.front().request,
-                                   queue_.front().request)) {
-              batch.push_back(std::move(queue_.front()));
-              queue_.pop_front();
-              continue;
-            }
-            // Stop on incompatible head to preserve FIFO across groups.
-            break;
-          }
-          if (std::chrono::steady_clock::now() >= deadline) break;
-          queue_cv_.wait_until(lk, deadline, [&] {
-            return batcher_stop_.load(std::memory_order_acquire) ||
-                   !queue_.empty();
-          });
-          if (batcher_stop_.load(std::memory_order_acquire)) break;
-        }
-      }
-    }
-    runBatch(batch);
-  }
-}
+  py::object tensors =
+      generateInputTensors(requests, promptEmbeds, addTextEmbeds);
+  prepareInputTensorsForIteration(tensors);
+  tt_sdxl().attr("compile_image_processing")();
 
-void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
-  if (batch.empty()) return;
-
-  std::vector<std::string> images;
-  std::exception_ptr error;
-  try {
-    std::vector<domain::ImageGenerateRequest> requests;
-    requests.reserve(batch.size());
-    for (auto& slot : batch) requests.push_back(slot.request);
-
-    py::gil_scoped_acquire acquire;
-    auto prompts = processPrompts(requests);
-    // areBatchCompatible guarantees pipeline-state fields are uniform across
-    // the batch; drive the pipeline from requests[0] (matches Python).
-    const auto& head = requests.front();
-    injectLoraTriggers(prompts.prompts, head.lora_path);
-    applyRequestSettings(head);
-    ensureLoraState(head);
-    applyModeSpecificSettings(head);
-
-    tt_sdxl().attr("compile_text_encoding")();
-    py::object encoded = tt_sdxl().attr("encode_prompts")(
-        prompts.prompts,
-        prompts.negative_prompts.has_value()
-            ? py::cast(*prompts.negative_prompts)
-            : py::none(),
-        prompts.prompts_2.has_value() ? py::cast(*prompts.prompts_2)
-                                      : py::none(),
-        prompts.negative_prompt_2.has_value()
-            ? py::cast(*prompts.negative_prompt_2)
-            : py::none());
-    py::object promptEmbeds = encoded[py::int_(0)];
-    py::object addTextEmbeds = encoded[py::int_(1)];
-
-    py::object tensors =
-        generateInputTensors(requests, promptEmbeds, addTextEmbeds);
-    prepareInputTensorsForIteration(tensors);
-    tt_sdxl().attr("compile_image_processing")();
-
-    py::object imgs = tt_sdxl().attr("generate_images")();
-    images = postProcessImages(imgs, requests);
-  } catch (const py::error_already_set& e) {
-    error = std::make_exception_ptr(std::runtime_error(
-        std::string("[SDXL] inference failed: ") + e.what()));
-  } catch (...) {
-    error = std::current_exception();
-  }
-
-  if (error) {
-    for (auto& slot : batch) {
-      try {
-        slot.promise.set_exception(error);
-      } catch (const std::future_error&) {
-      }
-    }
-    return;
-  }
-
-  if (images.size() != batch.size()) {
-    auto eptr = std::make_exception_ptr(std::runtime_error(
-        "[SDXL] postProcessImages returned " + std::to_string(images.size()) +
-        " images for batch of " + std::to_string(batch.size())));
-    for (auto& slot : batch) {
-      try {
-        slot.promise.set_exception(eptr);
-      } catch (const std::future_error&) {
-      }
-    }
-    return;
-  }
-
-  for (size_t i = 0; i < batch.size(); ++i) {
-    try {
-      batch[i].promise.set_value({images[i]});
-    } catch (const std::future_error&) {
-    }
-  }
+  py::object imgs = tt_sdxl().attr("generate_images")();
+  return postProcessImages(imgs, requests);
 }
 
 std::vector<std::string> SDXLBaseRunner::run(
@@ -566,20 +420,18 @@ std::vector<std::string> SDXLBaseRunner::run(
   if (!initialized_) {
     throw std::runtime_error("[SDXL] Runner not initialized");
   }
-
-  std::future<std::vector<std::string>> future;
-  {
-    std::lock_guard<std::mutex> lk(queue_mutex_);
-    // Check under the lock to avoid racing with stop()'s drain pass.
-    if (batcher_stop_.load(std::memory_order_acquire)) {
-      throw std::runtime_error("[SDXL] Runner is stopping");
+  try {
+    auto images = runRequests({request});
+    if (images.size() != 1) {
+      throw std::runtime_error("[SDXL] postProcessImages returned " +
+                               std::to_string(images.size()) +
+                               " images for single request");
     }
-    queue_.emplace_back(request);
-    auto& slot = queue_.back();
-    future = slot.promise.get_future();
+    return images;
+  } catch (const py::error_already_set& e) {
+    throw std::runtime_error(std::string("[SDXL] inference failed: ") +
+                             e.what());
   }
-  queue_cv_.notify_one();
-  return future.get();
 }
 
 }  // namespace tt::runners::sdxl
