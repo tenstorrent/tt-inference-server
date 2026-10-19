@@ -7220,8 +7220,9 @@ templates:
       max_concurrency: 1
       max_context: 262144  # 256 * 1024
       default_impl: true
-      # SIGTERM drains, then glm-tt releases the chips: about 12-14 s in all on a LoudBox.
-      docker_stop_timeout: 30
+      # SIGTERM drains, then glm-tt releases the chips: about 2.5 s on a LoudBox (12-14 s before
+      # glm-tt ff5cc8e1). The timeout is a margin over the 8 s default drain.
+      docker_stop_timeout: 20
       # The "chips need a reset" marker outlives the container here when the host has the
       # directory (writable by uid 1000); otherwise it goes to the cache volume.
       docker_host_state_dir: /var/lib/tenstorrent
