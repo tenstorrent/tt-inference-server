@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
-  "patch_sha256": "9d85a01e26be48546a69e755bc075986283c7bdaa2116d67935bce9f52a23723",
+  "target_commit": null,
+  "patch_sha256": "95e6bb658951896f841573d093b5ab28f464ec00ecc8dbe1180ce9ac82464af0",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -17,7 +17,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
-      "target": "d90827cf2c2ddb920252190b5dd21269f8aab1c4a654d2a3853d2361d19abc2d"
+      "target": "3ffb49ec73348797f15657607d6e1dd332dff144a0ed035874ec73ca715337e6"
     },
     "models/demos/gemma4_31b_qb2/tt/history_bank.py": {
       "base": null,
@@ -64,5 +64,7 @@
       "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
     }
   },
-  "scope": "Immutable Python-only serial preparation/retention with conservative unsupported-family fallback; cap1/no formation; native and serving acceptance separate."
+  "scope": "clean source preparation only; paired same-source e2f cap1 sequential19 interval1 vs64 required; no runtime or quality acceptance",
+  "base_model_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
+  "target_content_manifest_sha256": "63ab3e443149e30444b0d3bd6ee2d478e836298164e8c8f98eb7e316cf92315c"
 }
