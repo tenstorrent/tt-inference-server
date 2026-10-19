@@ -47,12 +47,21 @@ def _install(repo, manifest_name, patch_name, marker):
 
 
 def install_prefix_overlay(metal):
-    _install(
-        metal,
-        "batched-prefill-manifest.json",
-        "batched-prefill.patch",
-        "GEMMA_BATCHED_PREFILL_MODEL",
-    )
+    # A complete later overlay is an accepted final stack state. Re-running
+    # the older installer on those files would reject its own successor.
+    bundle = Path(__file__).with_name("gemma_prefix_overlay")
+    later = json.loads((bundle / "serial-coordinates-manifest.json").read_text())
+    def digest(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    installed = all(digest(metal / name) == value["target"] for name, value in later["files"].items())
+    if installed:
+        earlier = json.loads((bundle / "batched-prefill-manifest.json").read_text())
+        for name, value in earlier["files"].items():
+            if name not in later["files"] and digest(metal / name) != value["target"]:
+                raise RuntimeError("Gemma earlier overlay member changed: " + name)
+    else:
+        # Partial/unknown later states are rejected by the original strict gate.
+        _install(metal, "batched-prefill-manifest.json", "batched-prefill.patch", "GEMMA_BATCHED_PREFILL_MODEL")
     _install(metal, "serial-coordinates-manifest.json", "serial-coordinates.patch", "GEMMA_SERIAL_COORDINATES_MODEL")
     _install(
         metal.parent / "vllm-tt-plugin",
