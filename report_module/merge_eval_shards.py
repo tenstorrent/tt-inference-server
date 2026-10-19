@@ -321,8 +321,24 @@ def grade(
     return _graded(model, task_name, doc, results_path)[0]
 
 
-# Run config that legitimately differs between the shards of one merge.
+# Run config that legitimately differs between the shards of one merge. run.py
+# also copies the whole run config into the model spec's legacy ``cli_args``
+# (populate_model_spec_cli_args), so the same keys are per-shard there too;
+# nothing else in the spec is (apply_overrides copies only build identity).
 PER_SHARD_RUNTIME_CONFIG_KEYS = frozenset({"eval_shard", "run_id"})
+
+
+def _shared_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
+    """``spec`` without the per-shard keys of its legacy ``cli_args`` copy."""
+    shared = dict(spec)
+    cli_args = shared.get("cli_args")
+    if isinstance(cli_args, dict):
+        shared["cli_args"] = {
+            key: value
+            for key, value in cli_args.items()
+            if key not in PER_SHARD_RUNTIME_CONFIG_KEYS
+        }
+    return shared
 
 
 def _spec_identity_problems(spec: Mapping[str, Any], provenance: Mapping[str, Any]):
@@ -407,7 +423,7 @@ def find_shard_runtime_model_spec(
     if not problems and bound:
         first_path, first_spec, first_config = bound[0]
         for path, spec, config in bound[1:]:
-            if spec != first_spec:
+            if _shared_spec(spec) != _shared_spec(first_spec):
                 problems.append(f"{path}: runtime model spec differs from {first_path}")
             keys = (set(config) | set(first_config)) - PER_SHARD_RUNTIME_CONFIG_KEYS
             differing = sorted(k for k in keys if config.get(k) != first_config.get(k))
@@ -424,11 +440,11 @@ def find_shard_runtime_model_spec(
 
 
 class _SerializedModelSpec:
-    """A shard's serialized ``runtime_model_spec``, re-emitted unchanged.
+    """A shard's serialized ``runtime_model_spec``, re-emitted as is.
 
     ``RuntimeConfig.to_json`` only calls ``get_serialized_dict()``; passing the
-    shard's dict (not a ModelSpec rebuilt from it) keeps the merged spec
-    byte-for-byte the shards' model spec.
+    shard's dict (not a ModelSpec rebuilt from it) keeps the merged spec the
+    shards' model spec.
     """
 
     def __init__(self, serialized: dict) -> None:
@@ -444,17 +460,30 @@ def write_runtime_model_spec(
     """The merged run's runtime model spec, written by ``RuntimeConfig.to_json``.
 
     The shard's model spec and run config, except ``eval_shard`` (None: the
-    merged set is the full task), ``eval_tasks`` (the merged task) and
-    ``eval_shard_merge`` (the merge provenance).
+    merged set is the full task), ``run_id`` (None: the merge is no one run;
+    each shard's is in ``eval_shard_merge.sources``), ``eval_tasks`` (the
+    merged task) and ``eval_shard_merge`` (the merge provenance). The model
+    spec's legacy ``cli_args`` copy of the run config gets the same per-shard
+    keys, so no shard's id is left in the merged spec.
     """
     from workflows.runtime_config import RuntimeConfig
 
     data = json.loads(shard_spec.read_text())
     config = RuntimeConfig.from_dict(data["runtime_config"])
     config.eval_shard = None
+    config.run_id = None
     config.eval_tasks = task_name
     config.eval_shard_merge = dict(merge_info)
-    spec = data["runtime_model_spec"]
+    spec = dict(data["runtime_model_spec"])
+    if isinstance(spec.get("cli_args"), dict):
+        spec["cli_args"] = {
+            **spec["cli_args"],
+            **{
+                key: getattr(config, key)
+                for key in (*PER_SHARD_RUNTIME_CONFIG_KEYS, "eval_tasks")
+                if key in spec["cli_args"]
+            },
+        }
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     return config.to_json(
         _SerializedModelSpec(spec),
