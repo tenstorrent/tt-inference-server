@@ -1,0 +1,30 @@
+{
+  "scope": "Frozen local request workload; CI network adaptation only plus explicit reference metadata relabeling. Reconstructed original messages, not original serving token arrays.",
+  "files": {
+    "replay_with_sampling32_shared.py": {
+      "sha256": "9fef348f662d7f26d8ecae279111a936031d3fa7ac7f85a51b015e3720fd2255",
+      "bytes": 11141,
+      "gzip_sha256": "2e24a723b952620b288775056484980b0d9022b5856d68c971de2b42bccc7073"
+    },
+    "reconstructed-swe512.json": {
+      "sha256": "0964fc03576e9da33922d0ae0cb34d34e3afdb3cdb732ba6fdfd6b3013b5e58c",
+      "bytes": 15662558,
+      "gzip_sha256": "04d79cdb6d87fd6152f065f000ca982c6fb0b09e767b10b65a0ba348ff704561"
+    },
+    "reconstruction-engine-tokenization512.json": {
+      "sha256": "97615f7009d8ba18c5bfbb62b7cf8462670d1ebec754f57f51946d7bb12ca788",
+      "bytes": 99056,
+      "gzip_sha256": "f3a75748e6bef4d965db1fdecd66187c29c949ed2f98d350885b7a27a23021fb"
+    },
+    "token_ids.json": {
+      "sha256": "bb4add93f09306d3b299af2e066b1e65d4aa0ba3842eeac94879c66c36f9e28d",
+      "bytes": 227323,
+      "gzip_sha256": "1e616db46272c6ebebe53112e14be05646670db0e8a930cff9de7e044f855fcd"
+    },
+    "qualitative-prompts.json": {
+      "sha256": "25f8b21b5b7f9dfbbd6a285ff005d062d9c002fb0605e0278799c927363bd910",
+      "bytes": 518,
+      "gzip_sha256": "4e4dc9435fce012b3e1335c3a4c8db16f2fd64d554f5a209625445e8ef46d2f9"
+    }
+  }
+}
