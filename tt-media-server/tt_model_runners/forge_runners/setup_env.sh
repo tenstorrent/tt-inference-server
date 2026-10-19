@@ -33,7 +33,9 @@ blacksmith_home="$(pwd)/tt-blacksmith"
 rm -rf "${blacksmith_home}" "${virtual_env_name}"
 git init -q "${blacksmith_home}"
 git -C "${blacksmith_home}" fetch -q --depth 1 https://github.com/tenstorrent/tt-blacksmith.git "${blacksmith_ref}"
-git -C "${blacksmith_home}" checkout -q FETCH_HEAD
+# Leave LFS files (blacksmith's test checkpoints) as pointers: the bare-URL fetch
+# configures no remote for git-lfs to download them from, and nothing here uses them.
+GIT_LFS_SKIP_SMUDGE=1 git -C "${blacksmith_home}" checkout -q FETCH_HEAD
 (cd "${blacksmith_home}" && export PIP_NO_CACHE_DIR=1 && source env/activate --crank)
 rm -rf "${blacksmith_home}/env/wheels"
 ln -s "${blacksmith_home}/env/crank_env" "${virtual_env_name}"
