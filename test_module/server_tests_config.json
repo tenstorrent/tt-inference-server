@@ -101,7 +101,8 @@
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
       "allenai/Olmo-3.1-32B-Instruct",
-      "mistralai/Devstral-Small-2-24B-Instruct-2512"
+      "mistralai/Devstral-Small-2-24B-Instruct-2512",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
     ]
   },
   "available_markers": {
@@ -1088,6 +1089,16 @@
       "id_name": "mistralai--Devstral-Small-2-24B-Instruct-2512",
       "weights": [
         "mistralai/Devstral-Small-2-24B-Instruct-2512"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-70B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
       ]
     }
   },
