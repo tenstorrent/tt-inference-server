@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <string>
 
 #include "config/runner_config.hpp"
@@ -122,15 +123,21 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 inline sch::GenerationParams makeGenerationParams(
     const tt::config::BlazeConfig& config,
     const tt::domain::llm::Sequence& seq) {
-  const sch::SamplingParams sampling{
+  sch::SamplingParams sampling{
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-      .seed = seq.getSamplingParams().seed.has_value()
-                  ? std::optional<uint64_t>(
-                        static_cast<uint64_t>(*seq.getSamplingParams().seed))
-                  : std::nullopt,
   };
+  if (config.wireFormat == "blaze_uniform_sampling") {
+    // Only this explicit wire profile consumes host-generated sampling draws.
+    // Leave the existing Blaze path's sampling parameters untouched.
+    if (seq.getSamplingParams().seed.has_value()) {
+      sampling.seed = static_cast<uint64_t>(*seq.getSamplingParams().seed);
+    } else {
+      static thread_local std::mt19937_64 seedGenerator{std::random_device{}()};
+      sampling.seed = seedGenerator();
+    }
+  }
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
@@ -239,7 +246,9 @@ namespace pl = tt_llm_engine::pipeline;
 
 inline pl::WireFormat wireFormatFromString(const std::string& s) {
   static const std::unordered_map<std::string, pl::WireFormat> formats = {
-      {"loopback", pl::WireFormat::LOOPBACK}, {"blaze", pl::WireFormat::BLAZE}};
+      {"loopback", pl::WireFormat::LOOPBACK},
+      {"blaze", pl::WireFormat::BLAZE},
+      {"blaze_uniform_sampling", pl::WireFormat::BLAZE_UNIFORM_SAMPLING}};
 
   auto it = formats.find(s);
   if (it != formats.end()) {

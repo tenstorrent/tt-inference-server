@@ -15,6 +15,7 @@
 #include "../integration_test_helpers.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "runtime/runners/blaze_runner/blaze_utils.hpp"
 #include "tt_llm_engine/pipeline/pipeline_types.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
@@ -89,6 +90,42 @@ class BlazeDecodeRunnerHarness
 };
 
 }  // namespace
+
+TEST(BlazeDecodeRunnerIntegrationTest,
+     HostSamplingRequiresExplicitWireProfile) {
+  config::BlazeConfig config;
+  config.runner_type = config::ModelRunnerType::PIPELINE_MANAGER;
+  domain::llm::SamplingParams sampling;
+  sampling.temperature = 0.0f;
+  sampling.top_k = 32;
+  sampling.seed = 0;
+  domain::llm::Sequence sequence(1, {11, 22, 33}, sampling);
+
+  EXPECT_EQ(config.wireFormat, "blaze");
+  const auto ordinary = utils::makeGenerationParams(config, sequence);
+  EXPECT_FALSE(ordinary.sampling.seed.has_value());
+  EXPECT_EQ(ordinary.sampling.top_k, 32);
+  EXPECT_EQ(std::get<tt_llm_engine::pipeline::SocketConfig>(
+                utils::makeDecodePipelineConfig(config))
+                .wire_format,
+            tt_llm_engine::pipeline::WireFormat::BLAZE);
+
+  config.wireFormat = "blaze_uniform_sampling";
+  const auto rollout = utils::makeGenerationParams(config, sequence);
+  ASSERT_TRUE(rollout.sampling.seed.has_value());
+  EXPECT_EQ(*rollout.sampling.seed, 0u);
+  EXPECT_EQ(std::get<tt_llm_engine::pipeline::SocketConfig>(
+                utils::makeDecodePipelineConfig(config))
+                .wire_format,
+            tt_llm_engine::pipeline::WireFormat::BLAZE_UNIFORM_SAMPLING);
+
+  sampling.seed.reset();
+  domain::llm::Sequence unseeded(2, {11, 22, 33}, sampling);
+  const auto first = utils::makeGenerationParams(config, unseeded);
+  const auto second = utils::makeGenerationParams(config, unseeded);
+  ASSERT_TRUE(first.sampling.seed.has_value());
+  EXPECT_NE(first.sampling.seed, second.sampling.seed);
+}
 
 TEST(BlazeDecodeRunnerIntegrationTest,
      InMemoryQueuesRoundTripThroughSimulator) {

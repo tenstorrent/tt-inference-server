@@ -25,6 +25,7 @@
 
 #include "../support/multiturn_prefix_cache.hpp"
 #include "../support/test_server.hpp"
+#include "api/response_writer/non_stream_response_writer.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
@@ -90,6 +91,40 @@ class MainIntegrationTest : public ::testing::Test {
 std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
 
 using tt::test::ChatRequest;
+
+TEST(CompletionResponseWriterTest, TokenBufferIsOptIn) {
+  for (bool collectIds : {false, true}) {
+    tt::api::ResponseWriterParams params{};
+    params.countTokenIds = collectIds;
+    bool built = false;
+    auto writer = tt::api::NonStreamResponseWriter::create(
+        params, [](const drogon::HttpResponsePtr&) {},
+        [&](const tt::domain::llm::LLMResponse& response) {
+          built = true;
+          const auto& choice = response.choices.at(0);
+          EXPECT_EQ(choice.text, "hello");
+          if (collectIds) {
+            EXPECT_EQ(choice.token_ids, (std::vector<uint32_t>{42, 128009}));
+            EXPECT_EQ(response.usage.completion_tokens, 2);
+          } else {
+            EXPECT_TRUE(choice.token_ids.empty());
+            EXPECT_EQ(response.usage.completion_tokens, 1);
+          }
+          return std::string("{}");
+        });
+    tt::domain::llm::LLMStreamChunk chunk{0};
+    tt::domain::llm::LLMChoice token;
+    token.token_id = 42;
+    token.text = "hello";
+    chunk.choices.push_back(token);
+    writer->handleTokenChunk(chunk);
+    chunk.choices[0].token_id = 128009;
+    chunk.choices[0].text.clear();
+    writer->handleTokenChunk(chunk);
+    writer->finalize();
+    EXPECT_TRUE(built);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests

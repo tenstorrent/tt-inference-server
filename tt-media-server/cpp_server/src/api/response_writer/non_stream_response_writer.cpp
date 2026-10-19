@@ -52,7 +52,8 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
 
   const auto& choice = chunk.choices[0];
   accumulatedAnswer << choice.text;
-  if (choice.token_id) accumulatedTokenIds.push_back(*choice.token_id);
+  if (params.countTokenIds && choice.token_id)
+    accumulatedTokenIds.push_back(*choice.token_id);
 
   noteToken(choice);
 

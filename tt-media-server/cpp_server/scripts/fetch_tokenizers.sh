@@ -195,12 +195,14 @@ download_tokenizer \
     "true" \
     '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
 
-# Llama 3.2 1B Instruct (gated, requires HF_TOKEN and model license access).
-# Resolve the tokenizer payload rather than downloading an LFS pointer.
-download_tokenizer \
-    "meta-llama/Llama-3.2-1B-Instruct" \
-    "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct/resolve/main" \
-    "true"
+# The optional Llama-1B serving profile requires its own gated assets. Do not
+# make builds for other models depend on access to this model's license.
+if [ "${MODEL:-}" = "meta-llama/Llama-3.2-1B-Instruct" ]; then
+    download_tokenizer \
+        "meta-llama/Llama-3.2-1B-Instruct" \
+        "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct/resolve/main" \
+        "true"
+fi
 
 # Kimi K2.6 (public tiktoken tokenizer + jinja chat template; no tokenizer.json on HF)
 # Uses /resolve/main for tiktoken.model (LFS file) but /raw/main for text files
