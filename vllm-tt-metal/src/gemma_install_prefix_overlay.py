@@ -53,6 +53,7 @@ def install_prefix_overlay(metal):
         "batched-prefill.patch",
         "GEMMA_BATCHED_PREFILL_MODEL",
     )
+    _install(metal, "serial-coordinates-manifest.json", "serial-coordinates.patch", "GEMMA_SERIAL_COORDINATES_MODEL")
     _install(
         metal.parent / "vllm-tt-plugin",
         "plugin-manifest.json",
