@@ -716,7 +716,7 @@ index e9ae70be6fe..af99a3d4222 100644
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058eca3a9..509e755d709 100644
+index f2058eca3a9..c7f9bf7db7e 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -827,7 +827,7 @@ index f2058eca3a9..509e755d709 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -327,7 +382,158 @@ class Gemma4Generator:
+@@ -327,7 +382,157 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -902,7 +902,6 @@ index f2058eca3a9..509e755d709 100644
 +        starts = [0] * len(lengths) if starts is None else list(starts)
 +        supported = (kwargs.get("kv_cache") is state
 +                     and os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1") == "1"
-+                     and kwargs.get("return_device", False)
 +                     and not kwargs.get("return_all_logits", False)
 +                     and 0 < len(lengths) <= state.batch and len(starts) == len(lengths)
 +                     and all(type(n) is int and type(s) is int
@@ -987,7 +986,7 @@ index f2058eca3a9..509e755d709 100644
          self,
          tokens,
          *,
-@@ -339,6 +545,7 @@ class Gemma4Generator:
+@@ -339,6 +544,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -995,7 +994,7 @@ index f2058eca3a9..509e755d709 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +564,24 @@ class Gemma4Generator:
+@@ -357,16 +563,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1024,7 +1023,7 @@ index f2058eca3a9..509e755d709 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +589,289 @@ class Gemma4Generator:
+@@ -374,30 +588,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1323,7 +1322,7 @@ index f2058eca3a9..509e755d709 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +885,22 @@ class Gemma4Generator:
+@@ -411,6 +884,22 @@ class Gemma4Generator:
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1346,7 +1345,7 @@ index f2058eca3a9..509e755d709 100644
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +909,23 @@ class Gemma4Generator:
+@@ -419,15 +908,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1372,7 +1371,7 @@ index f2058eca3a9..509e755d709 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -484,61 +982,110 @@ class Gemma4Generator:
+@@ -484,61 +981,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1519,7 +1518,7 @@ index f2058eca3a9..509e755d709 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1271,8 @@ class Gemma4Generator:
+@@ -724,6 +1270,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1528,7 +1527,7 @@ index f2058eca3a9..509e755d709 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1282,14 @@ class Gemma4Generator:
+@@ -733,7 +1281,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):

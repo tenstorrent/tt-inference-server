@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": "5aa9a06b3e1daa09e73cebf38d31b73ffeea3e60",
-  "patch_sha256": "3f88000e7ff170eebbecd5626ae77c3a305bee2ba7b1a2fe2d42f379dd7e164b",
+  "target_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
+  "patch_sha256": "9d85a01e26be48546a69e755bc075986283c7bdaa2116d67935bce9f52a23723",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -13,7 +13,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "093a1ee1265c0fe4d82f19b5ec7c2c907695fbf801abfeb2f09b1a580881c0dc"
+      "target": "42fe7503cb634cab06e8b3431c1c115c1518e84410bae32c734dd6fa26b5e211"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
