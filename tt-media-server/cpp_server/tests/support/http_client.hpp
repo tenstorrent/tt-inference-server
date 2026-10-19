@@ -21,7 +21,8 @@ namespace tt::test {
 inline std::string sendAndReceive(const char* host, uint16_t port,
                                   const std::string& body,
                                   const std::string& apiKey = "your-secret-key",
-                                  int idleTimeoutMs = 250) {
+                                  int idleTimeoutMs = 250,
+                                  const std::string& path = "/v1/chat/completions") {
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
@@ -33,7 +34,7 @@ inline std::string sendAndReceive(const char* host, uint16_t port,
   }
 
   const std::string req =
-      "POST /v1/chat/completions HTTP/1.1\r\n"
+      "POST " + path + " HTTP/1.1\r\n"
       "Host: " +
       std::string(host) + ":" + std::to_string(port) +
       "\r\n"

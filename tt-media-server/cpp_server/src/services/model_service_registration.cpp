@@ -79,6 +79,8 @@ void registerLLM() {
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
+  routes.registerRoute(config::ModelService::LLM, "POST", "/v1/completions",
+                       "OpenAI-compatible token completions");
 }
 
 void registerEmbedding() {

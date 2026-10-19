@@ -21,6 +21,7 @@ using namespace tt::domain::llm;
  * non-streaming). Wire-format-specific options live on the concrete writer.
  */
 struct ResponseWriterParams {
+  bool countTokenIds = false;
   std::string completionId;
   std::string model;
   int64_t created;

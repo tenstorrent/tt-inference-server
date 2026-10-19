@@ -28,6 +28,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
+  ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
   METHOD_LIST_END
 
   LLMController();
@@ -40,7 +41,13 @@ class LLMController : public drogon::HttpController<LLMController> {
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
+  void completions(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
  private:
+  struct CompletionBatch;
+  void completeBatch(std::shared_ptr<CompletionBatch> batch) const;
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::LLMPipeline> pipeline;
 
@@ -76,7 +83,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
       std::shared_ptr<ResponseWriter> writer,
-      std::shared_ptr<domain::Session> session);
+      std::shared_ptr<domain::Session> session, bool preserveTokenIds = false);
 };
 
 }  // namespace tt::api

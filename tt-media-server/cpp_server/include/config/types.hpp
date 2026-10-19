@@ -47,6 +47,7 @@ inline ModelService modelServiceFromString(const std::string& v) {
 enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  LLAMA_3_2_1B_INSTRUCT,
   KIMI_K2_6,
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
@@ -102,6 +103,7 @@ enum class ModelRunnerType {
 enum class Model {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  LLAMA_3_2_1B_INSTRUCT,
   KIMI_K2_6,
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
@@ -121,6 +123,7 @@ struct ModelMapping {
 static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::DEEPSEEK_R1_0528, "deepseek-ai/DeepSeek-R1-0528"},
     {Model::LLAMA_3_1_8B_INSTRUCT, "meta-llama/Llama-3.1-8B-Instruct"},
+    {Model::LLAMA_3_2_1B_INSTRUCT, "meta-llama/Llama-3.2-1B-Instruct"},
     {Model::KIMI_K2_6, "moonshotai/Kimi-K2.6"},
     {Model::KIMI_K2_7_CODE, "moonshotai/Kimi-K2.7-Code"},
     {Model::GPT_OSS_120B, "openai/gpt-oss-120b"},

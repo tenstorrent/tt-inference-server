@@ -1505,6 +1505,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/completions_controller.cpp
     src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
@@ -1974,6 +1975,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/completions_controller.cpp
     src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/response_writer/response_writer.cpp
