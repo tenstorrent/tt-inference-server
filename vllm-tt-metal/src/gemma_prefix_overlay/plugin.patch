@@ -90,3 +90,127 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
          self.async_decode.note_prefill_submitted()
          return tt_out
  
+diff --git a/src/vllm_tt_plugin/scheduler.py b/src/vllm_tt_plugin/scheduler.py
+--- a/src/vllm_tt_plugin/scheduler.py
++++ b/src/vllm_tt_plugin/scheduler.py
+@@ -1,7 +1,11 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: 2025 Tenstorrent USA, Inc.
+ 
++import json
++import math
++import os
+ import sys
++import time
+ from enum import Enum
+ from typing import TYPE_CHECKING, cast
+ 
+@@ -302,6 +306,15 @@
+         # before every one of its lanes' schedule() calls and owns the one
+         # policy instance for the whole step, so this one stays dormant there.
+         self._decode_interleave = TTDecodeInterleavePolicy(self.vllm_config)
++        wait_ms = float(os.environ.get("GEMMA_PREFILL_FORMATION_WAIT_MS", "0"))
++        target = int(os.environ.get("GEMMA_PREFILL_FORMATION_TARGET", "4"))
++        if not math.isfinite(wait_ms) or not 0 <= wait_ms <= 2000 or not 2 <= target <= 32:
++            raise ValueError("Formation requires wait_ms in0..2000 and target in2..32")
++        if wait_ms and getattr(self.policy, "value", self.policy) != "fcfs":
++            raise ValueError("Experimental prefill formation requires native FCFS")
++        self._prefill_formation_wait_s = wait_ms / 1000
++        self._prefill_formation_target = target
++        self._prefill_formation_first = {}
+         self._pending_forced_reset_discard_counts: dict[str, int] = {}
+         # Block-step decisions for the step currently being committed, read off
+         # its SchedulerOutput in update_from_output so _update_request_with_output
+@@ -703,6 +716,70 @@
+         limit, _ = _effective_prefill_step_limit(cfg)
+         return limit
+ 
++    def _prefill_formation_should_wait(self, has_running_decode: bool) -> bool:
++        """Bound optional admission delay while useful decode can run.
++
++        This never allocates pages, changes queue order, estimates cache hits,
++        delays a running partial prefill, or overrides a forced lane mode.
++        Oldest eligible age is a formation clock, not counterfactual added
++        request latency. Actual queue/TTFT are measured by the normal API trace.
++        """
++        maximum_wait = getattr(self, "_prefill_formation_wait_s", 0)
++        if maximum_wait == 0:
++            return False
++        waiting = list(self.waiting)
++        alive = {request.request_id for request in waiting}
++        first = self._prefill_formation_first
++        for request_id in list(first):
++            if request_id not in alive:
++                del first[request_id]
++        # Let native scheduling promote blocked dependencies and handle resumed
++        # or stale-output requests without introducing another delay policy.
++        if (
++            not waiting
++            or not has_running_decode
++            or self._forced_mode != TTSchedulingMode.DEFAULT
++            or self._pause_state != PauseState.UNPAUSED
++            or getattr(self, "skipped_waiting", False)
++            or any(request.is_prefill_chunk for request in self.running)
++            or any(
++                request.status != RequestStatus.WAITING
++                or request.num_computed_tokens != 0
++                or request.num_output_placeholders != 0
++                or getattr(request, "num_stale_output_tokens", 0) != 0
++                for request in waiting
++            )
++        ):
++            return False
++        free = self.max_num_running_reqs - len(self.running) - self.num_waiting_for_streaming_input
++        if free <= 0:
++            # Native capacity blocking is not an intentional formation wait.
++            return False
++        target = min(self._prefill_formation_target, self.max_num_running_reqs)
++        if len(waiting) + len(self.running) < target:
++            # Observed small tail cannot populate the desired group from its
++            # current participants. Do not wait for hypothetical new actors.
++            return False
++        # Start each clock only when its FCFS row fits currently free request
++        # slots. Rows behind that prefix are still capacity-blocked, even when
++        # an earlier row has a slot. This does not predict KV/token admission.
++        eligible = waiting[:free]
++        now = time.monotonic()
++        for request in eligible:
++            first.setdefault(request.request_id, now)
++        age = now - min(first[request.request_id] for request in eligible)
++        feasible = len(eligible)
++        reason = "target" if feasible >= target else "deadline" if age >= maximum_wait else "wait"
++        logger.info("GEMMA_PREFILL_FORMATION %s", json.dumps({
++            "wall_s": time.time(), "mono_s": now, "reason": reason,
++            "request_ids": [request.request_id for request in eligible],
++            "clock_scope": "first_capacity_feasible_fcfs_prefix",
++            "ready": len(waiting), "free_slots": free, "target": target,
++            "feasible_rows": feasible, "oldest_eligible_age_s": age,
++            "maximum_wait_s": maximum_wait,
++        }))
++        return reason == "wait"
++
+     def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
+         # NOTE: `throttle_prefills` accepted for interface compatibility with the base
+         #        scheduler but unused - TT separates prefill/decode explicitly.
+@@ -746,6 +823,21 @@
+                 )
+                 result = self._schedule_decode_only()
+                 return self._finalize_scheduler_output(result, is_decode=True)
++            if self._prefill_formation_should_wait(has_running_decode):
++                result = self._schedule_decode_only()
++                if result.total_num_scheduled_tokens > 0:
++                    self._decode_interleave.record_step(is_decode=True, prefill_pending=True)
++                    return self._finalize_scheduler_output(result, is_decode=True)
++                # Async placeholders may make every nominal decode ineligible.
++                # Immediately flush prefill and retain all drained cleanup.
++                prefill_result = self._schedule_prefill_only()
++                prefill_result.finished_req_ids |= result.finished_req_ids
++                prefill_result.free_encoder_mm_hashes = result.free_encoder_mm_hashes + prefill_result.free_encoder_mm_hashes
++                if result.preempted_req_ids:
++                    prefill_result.preempted_req_ids = (prefill_result.preempted_req_ids or set()) | result.preempted_req_ids
++                self._decode_interleave.record_step(is_decode=False, prefill_pending=True)
++                logger.info("GEMMA_PREFILL_FORMATION %s", json.dumps({"wall_s": time.time(), "reason": "empty-decode-flush"}))
++                return self._finalize_scheduler_output(prefill_result, is_decode=False)
+             prefill_result = self._schedule_prefill_only()
+             # If prefill cannot make progress (e.g. KV pressure), do not stall
+             # decode. Fall back to decode-only so running requests can advance

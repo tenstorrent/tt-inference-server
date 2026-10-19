@@ -1,13 +1,17 @@
 {
   "base_commit": "c62035d8f16eb591b258a7d5f2b329495829a74c",
-  "target_commit": "validated-final-history-observed-runner-and-reviewed-eligible-clock",
-  "patch_sha256": "e84a379939e6db680bfcbb0f5d3da6fa7dd0a0e4a6301354ee37df84250add6a",
+  "target_commit": "r13-model-unchanged-with-reviewed-capacity-eligible-formation",
+  "patch_sha256": "03eab806a2d57cd505df937ec42833879b506b0daed033f2a20c09c716cd170b",
   "files": {
     "src/vllm_tt_plugin/model_runner.py": {
       "base": "4c369a1180ece55ab0e07912f1e9155eace23a2104b35bbd00f3adfc520a20c8",
       "target": "faa5b518490cf02cd0b3a4c4bdd170d9d9dd17d558f3cc2b0f7796f7b11ca16a"
+    },
+    "src/vllm_tt_plugin/scheduler.py": {
+      "base": "42c7b4f5f6a80fb411dc2cd4a979a350e4b11ab83f61c5e81ff07c858feda34a",
+      "target": "6ff50818a61628f40a734adb0e63e64b229b85c199f66588ee835a237958026b"
     }
   },
   "evidence_source": "/home/mvasiljev/build/gemma-batched-prefill",
-  "scope": "Validated stable slots, final-prefill history lease release and entry observations only; original scheduler unchanged. No formation."
+  "scope": "Validated R13 runner unchanged; exact previously reviewed bounded eligible-prefix scheduler, wait2000 target4. No model, policy, cache or workload changes."
 }
