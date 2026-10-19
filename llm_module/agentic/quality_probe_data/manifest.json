@@ -6,9 +6,9 @@
   ],
   "files": {
     "quality_repetition_client.py": {
-      "bytes": 5147,
-      "sha256": "bec86cb786d3013990aa91a4d6d27b58ab40ba466503d4214ff67fe484647cea",
-      "gzip_sha256": "c72ef2965a2299d2bd02a9edc88f876e08d7d685bf63f286982efc5b019df00e"
+      "bytes": 5259,
+      "sha256": "18943a8cfbc4fc286434e76430dc406dafebee73a0cc7cb25231e11f956d77fe",
+      "gzip_sha256": "3fdc7fa99a2fbdd386312d012532a7e17a86c10cc9ac34612cc17d45624ae63c"
     },
     "quality-repetition-requests.json": {
       "bytes": 92568,
@@ -29,6 +29,12 @@
       "bytes": 1611,
       "sha256": "ce382346b342183361109e30bd08e2c4ca0f52ce5d9982762e8f1d5197b1ebab",
       "gzip_sha256": "0273434fef9fb4a6d297fb8a3555307bf399aa389d562277c69eeaf18e6d9d56"
+    },
+    "quality-long-seed-plan-r4.json": {
+      "bytes": 621,
+      "sha256": "9da76a1365e3dc8f08fd7de5612625abf689045951fff92879593e9a5ac16ee5",
+      "gzip_sha256": "fcf4e9b02aceaa17e671fe6a9ffd7c9fe456cf25f79cf66bc76e6ecd017b2fa0"
     }
-  }
+  },
+  "protocol": "Prespecified longrequest restored-prefix seeds1..12;12targets+12warmups; originalmodel/policyunchanged, not qualityacceptance"
 }
