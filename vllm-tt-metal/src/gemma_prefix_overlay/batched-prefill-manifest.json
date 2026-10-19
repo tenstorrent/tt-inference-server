@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": "4011fd5296f8f8c5ef790793f006000be9485a30",
-  "patch_sha256": "4ebe7fe6d288f085a7fe455ca8f90e36aea9f21bee593f123ca0bf95c1482527",
+  "target_commit": "a78209bdb9aa8741001853232425347b56af5ed9",
+  "patch_sha256": "26625613a751fcaade705993096e35bfd984cd33ece46f604646c0ed79f5d342",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -13,11 +13,11 @@
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "4b77f4892547bc636b48e573245678426e5a7ffa97cb882b7e943214c54712de"
+      "target": "bde1ae98dafc6945c1ca464fd399be6104fe122ece3860fc8d70b8331cd57200"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "a359ca5bb8e8fea90548d1139eeb32836f276decb6005e4bd1a394eb30bd5eba"
+      "target": "ed044b6ade10bf74260a97dceff246892e1ee0e8522eb8507a2c311d12bc93b7"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
@@ -25,11 +25,11 @@
     },
     "models/demos/gemma4_31b_qb2/tt/model.py": {
       "base": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
-      "target": "0129da7c2a8875556b533c90585846436fcd1f797bb9df1ac33d1b2801240ce7"
+      "target": "b00e37d89749c83a55a2cd47ce1b6897da4350db891beb739adbc65282df2920"
     },
     "models/demos/gemma4_31b_qb2/tt/prefill_batch.py": {
       "base": null,
-      "target": "6bc71038aa609ba31236d02676cb723163ca320950ab71f6e93c27c2e81dee95"
+      "target": "59a241836840d2a41defb23168579c822839315ed42112c4e2b9e39675e13288"
     },
     "models/demos/gemma4_31b_qb2/tt/sdpa_l1.py": {
       "base": "473d098d7cdf97e81e323c0c93b9308b3b77173f257c32a8d4646252f0c75710",
@@ -37,5 +37,5 @@
     }
   },
   "evidence_source": "/home/mvasiljev/build/gemma-batched-prefill/job-history-release-source",
-  "scope": "Python-only model4011 and reviewed bounded eligible formation; no kernels, precision, context, TP4, cache alias or agent/verifier policy change"
+  "scope": "Unscored R9 initial causal attention grouping checkpoint, cap8/no wait/rectangular path; no retained-trace hook and no default promotion. Paired same-source flag0 control required."
 }
