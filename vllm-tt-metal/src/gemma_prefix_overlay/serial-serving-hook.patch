@@ -716,7 +716,7 @@ index e9ae70be6fe..af99a3d4222 100644
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058eca3a9..c7f9bf7db7e 100644
+index f2058eca3a9..91532233ef8 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -762,7 +762,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
  
  
  class Gemma4Generator:
-@@ -49,7 +63,18 @@ class Gemma4Generator:
+@@ -49,7 +63,21 @@ class Gemma4Generator:
          self.initial_capacity = max_seq_len
          self.states = {}
          self.traces = {}
@@ -774,6 +774,9 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +        self._prepared_prefill_state = None
 +        self._serving_prefill_prepared_state = None
 +        self._serving_prefill_has_real_work = False
++        self._serving_prefill_batch_limit = 1
++        self._serving_prefill_mixed_retirement = False
++        self._serving_prefill_skip_singletons = False
 +        self.runtime_page_selector = None
 +        if os.environ.get("GEMMA_PREFILL_RUNTIME_PAGES", "0") == "1":
 +            from .runtime_page_selector import RuntimePageSelector
@@ -781,7 +784,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          self.counters = {
              k: 0
              for k in (
-@@ -84,6 +109,7 @@ class Gemma4Generator:
+@@ -84,6 +112,7 @@ class Gemma4Generator:
          if not 1 <= batch <= 32 or not 1 <= capacity <= self.max_seq_len:
              raise ValueError("Expected batch1..32 and context1..262144")
          self._retire_traces()
@@ -789,7 +792,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          # All accepted decode SDPA chunks are64/128: one128-token page covers
          # the rounded read window. No power-of-two capacity restriction.
          pages = (capacity + 127) // 128
-@@ -105,7 +131,36 @@ class Gemma4Generator:
+@@ -105,7 +134,36 @@ class Gemma4Generator:
              kind: list(range(batch * pools[kind] + max(2, batch) - batch, batch * pools[kind] + max(2, batch)))
              for kind in pools
          }
@@ -827,7 +830,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -327,7 +382,157 @@ class Gemma4Generator:
+@@ -327,7 +385,189 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -870,7 +873,9 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +            raise RuntimeError("Serial prepared retention requires all fixed-owner controls and tracking")
 +        if os.environ.get("TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE", "0") != "0":
 +            raise RuntimeError("Program-cache allocations must remain tracked")
-+        if (os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1") != "1"
++        maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
++        mixed = os.environ.get("GEMMA_MIXED_PREFILL_RETENTION", "0") == "1"
++        if (maximum not in ((1, 2, 4, 8) if mixed else (1,))
 +                or state.batch != 16 or state.capacity != 262144
 +                or len(self.model.layers) != 60 or state.history_bank is None
 +                or self.traces or state.prefill_history or state.history_bank.leases
@@ -891,7 +896,28 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +        # Do not capture against the adapter's initially all-null page tables.
 +        # The first normal sampling/decode entry arms retention after capture.
 +        self._serving_prefill_prepared_state = state
++        self._serving_prefill_batch_limit = maximum
++        self._serving_prefill_mixed_retirement = mixed
++        self._serving_prefill_skip_singletons = os.environ.get("GEMMA_PREFILL_SKIP_SINGLETON_GROUPS", "0") == "1"
 +        record({"phase": "ready_for_first_real_capture", "seconds": time.perf_counter() - started})
++
++    def _use_grouped_prefill(self, kwargs):
++        """Use the same pure planner decision before retirement and execution."""
++        maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
++        lengths = kwargs.get("prompt_lens", ())
++        if maximum <= 1 or len(lengths) <= 1 or kwargs.get("return_all_logits", False):
++            return False
++        if os.environ.get("GEMMA_PREFILL_SKIP_SINGLETON_GROUPS", "0") != "1":
++            return True
++        starts = kwargs.get("start_positions")
++        starts = [0] * len(lengths) if starts is None else list(starts)
++        if len(starts) != len(lengths) or any(type(n) is not int or type(p) is not int or not 0 <= p < n for n, p in zip(lengths, starts)):
++            raise ValueError("Invalid prefill positions for grouped planning")
++        spans = [n - p // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE for n, p in zip(lengths, starts)]
++        groups = plan_prefill_batches(spans, maximum,
++            long_spans=os.environ.get("GEMMA_BATCH_PREFILL_LONG", "0") == "1",
++            packed_rows=self.model.layers[0].PREFILL_BATCH_ROWS)
++        return any(len(group) > 1 for group in groups)
 +
 +    def _check_serving_prefill_family(self, tokens, kwargs):
 +        state = self._serving_prefill_prepared_state
@@ -901,7 +927,8 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +        starts = kwargs.get("start_positions")
 +        starts = [0] * len(lengths) if starts is None else list(starts)
 +        supported = (kwargs.get("kv_cache") is state
-+                     and os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1") == "1"
++                     and int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1")) == self._serving_prefill_batch_limit
++                     and (os.environ.get("GEMMA_PREFILL_SKIP_SINGLETON_GROUPS", "0") == "1") == self._serving_prefill_skip_singletons
 +                     and not kwargs.get("return_all_logits", False)
 +                     and 0 < len(lengths) <= state.batch and len(starts) == len(lengths)
 +                     and all(type(n) is int and type(s) is int
@@ -909,6 +936,15 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +                             and n - (s // 128 * 128) <= 8319
 +                             for n, s in zip(lengths, starts)))
 +        if supported:
++            if self._serving_prefill_mixed_retirement and self._use_grouped_prefill(kwargs):
++                # The grouped path is not part of the serial prepared family.
++                # Release every live capture before grouped allocations/writes;
++                # retain only the proof that serial eager families were prepared.
++                self._prepared_prefill_state = None
++                self._serving_prefill_has_real_work = False
++                self.mesh.set_program_cache_misses_allowed(True)
++                self._retire_traces()
++                logger.info("MIXED_PREFILL_RETENTION_RETIRE grouped_entry")
 +            return
 +        # Retire before any unsupported computation, never after a partial write.
 +        self._serving_prefill_prepared_state = None
@@ -972,8 +1008,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +        if bank is not None and keys is not None and (len(keys) != len(kwargs.get("prompt_lens", ())) or len(set(keys)) != len(keys)):
 +            raise ValueError("Expected distinct stable history keys, one per prefill row")
 +        try:
-+            maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
-+            if maximum > 1 and len(kwargs.get("prompt_lens", ())) > 1 and not kwargs.get("return_all_logits", False):
++            if self._use_grouped_prefill(kwargs):
 +                return self._prefill_jobs_forward(tokens, **kwargs)
 +            return self._prefill_serial_forward(tokens, **kwargs)
 +        except Exception:
@@ -986,7 +1021,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          self,
          tokens,
          *,
-@@ -339,6 +544,7 @@ class Gemma4Generator:
+@@ -339,6 +579,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -994,7 +1029,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +563,24 @@ class Gemma4Generator:
+@@ -357,16 +598,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1023,7 +1058,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +588,289 @@ class Gemma4Generator:
+@@ -374,30 +623,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1322,7 +1357,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +884,22 @@ class Gemma4Generator:
+@@ -411,6 +919,22 @@ class Gemma4Generator:
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1345,7 +1380,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +908,23 @@ class Gemma4Generator:
+@@ -419,15 +943,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1371,7 +1406,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -484,61 +981,110 @@ class Gemma4Generator:
+@@ -484,61 +1016,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1503,7 +1538,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
 +        if (self._serving_prefill_prepared_state is state and self._serving_prefill_has_real_work
 +                and self._prepared_prefill_state is None):
 +            self.enable_prepared_prefill_trace_retention(state)
-+            logger.info("SERIAL_PREFILL_RETENTION_ARMED first_real_capture")
++            logger.info("SERIAL_PREFILL_RETENTION_ARMED normal_capture")
 +        logger.info(
 +            "TRACE_ENTRY_COST "
 +            + json.dumps(
@@ -1518,7 +1553,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1270,8 @@ class Gemma4Generator:
+@@ -724,6 +1305,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1527,7 +1562,7 @@ index f2058eca3a9..c7f9bf7db7e 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1281,14 @@ class Gemma4Generator:
+@@ -733,7 +1316,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):
