@@ -36,3 +36,7 @@ def install_prefix_overlay(metal):
     _install(metal, "safety-manifest.json", "safety.patch", "GEMMA_HISTORY_LIFETIME_REPAIR")
     _install(metal, "memory-manifest.json", "memory.patch", "GEMMA_COMBINED_MEMORY")
     _install(metal.parent / "vllm-tt-plugin", "plugin-manifest.json", "plugin.patch", "GEMMA_PREFIX_PLUGIN")
+
+    # Diagnostic-only CPU proof in the actual server image, before engine startup.
+    from quality_r6_sampling_preflight import run as quality_sampling_preflight
+    quality_sampling_preflight()
