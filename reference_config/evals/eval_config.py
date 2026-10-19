@@ -1585,6 +1585,86 @@ _eval_config_list = [
             ),
         ],
     ),
+    # GLM-5.3-Flash on tt-lab's glm-tt (impl tt_lab_glm). GPQA as the GLM-5.3 task (chat API, flexible-extract,
+    # the model card's sampling), with the context and output budget cut to the 262144-position serve. The model
+    # always thinks at Max effort, so ifeval needs a reasoning budget: lm-eval's default 1280 ends every reply
+    # inside its reasoning. max_concurrent 1: P150X8 serves one request at a time and queues the rest.
+    EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3-Flash",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=1,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=91.2,
+                    published_score_ref="Artificial Analysis GPQA Diamond, GLM-5.3-Flash (https://artificialanalysis.ai/evaluations/gpqa-diamond)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    # Prompt plus output fits 262144 positions.
+                    "max_gen_toks": 163840,
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=1,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 16384,
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="moonshotai/Kimi-K2.6",
         tasks=[
