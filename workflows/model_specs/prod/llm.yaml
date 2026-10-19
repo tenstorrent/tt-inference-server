@@ -788,9 +788,6 @@ templates:
       mode: STRICT
   status: COMPLETE
   has_builtin_warmup: true
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -989,9 +986,6 @@ templates:
         MAX_PREFILL_CHUNK_SIZE: "32"
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: FUNCTIONAL
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1179,9 +1173,6 @@ templates:
           specifier: ">=2.3.0"
           mode: STRICT
   status: FUNCTIONAL
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 - weights:
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
@@ -1206,9 +1197,6 @@ templates:
           specifier: ">=2.4.1"
           mode: STRICT
   status: FUNCTIONAL
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1347,9 +1335,6 @@ templates:
             FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
   has_builtin_warmup: true
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
@@ -1476,9 +1461,6 @@ templates:
       override_tt_config:
         fabric_config: FABRIC_1D
   status: FUNCTIONAL
-  metadata:
-    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
-      reasoning_parser_name: deepseek_r1
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
