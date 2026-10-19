@@ -2394,7 +2394,7 @@ templates:
 #   - Temperature / top-k / top-p sampling is exact (device candidates + partition function).
 #   - A cold build can take longer than the default readiness timeout: set TT_SERVER_READY_TIMEOUT_SECONDS=14400.
 #   - Production defaults (this catalog entry, no flags): 16 users, max_model_len 262,144, speculative decoding k=5 (model-owned drafter, requests with
-#     ISL <= DSV41_VLLM_SPEC_ISL_MAX 32768 speculate), model-owned prefix caching (enable-prefix-caching + DSV41_APC=1), chunked prefill (max_num_batched_tokens 4096,
+#     every request speculates, DSV41_VLLM_SPEC_ISL_MAX is unlimited), prefix caching OFF (opt-in: enable-prefix-caching + DSV41_APC=1), chunked prefill budget 67584 (opt-in 4096 for real interleaving with decode,
 #     DSV41_VLLM_CHUNK=512), image input (DSV41_VISION=1). The 4-user / 1,048,576-token configuration is the separate entry `--impl deepseek-v41-flash-1m`
 #     (same flags, trace region 650000000; the small prefill context of max-context >= 524288 builds is on by default there).
 #   - Plain launches (no speculative_config) sample with the shared tt_transformers sampler (DSV41_SHARED_SAMPLER, top_k clamped to 32); speculative launches keep the in-trace sampler.
@@ -2428,7 +2428,6 @@ templates:
         DSV41_VISION: "1"  # device vision tower + image-aware prefill
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_SPEC_MAX_CTX: "262144"
-        DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
@@ -2437,8 +2436,8 @@ templates:
         chat-template-content-format: openai  # the template iterates over the content parts (text / image_url)
         max_num_seqs: "16"
         max_model_len: "262144"
-        max_num_batched_tokens: "4096"  # chunked prefill: token budget per step
-        enable-prefix-caching: true
+        max_num_batched_tokens: "67584"  # chunked prefill token budget per step (67,584 = effectively one large prefill; 4096 for real interleaving with decode, see the _apc specs)
+        no-enable-prefix-caching: true  # prefix caching (DSV41_APC=1 + enable-prefix-caching) is opt-in: it costs batched speed
         limit-mm-per-prompt: '{"image": 16}'
         mm-processor-cache-gb: 0
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
@@ -2481,7 +2480,6 @@ templates:
         DSV41_BUILD_SLOTS: "0"
         DSV41_VISION: "1"  # device vision tower + image-aware prefill
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
-        DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
@@ -2490,8 +2488,8 @@ templates:
         chat-template-content-format: openai  # the template iterates over the content parts (text / image_url)
         max_num_seqs: "4"
         max_model_len: "1048576"
-        max_num_batched_tokens: "4096"  # chunked prefill: token budget per step
-        enable-prefix-caching: true
+        max_num_batched_tokens: "67584"  # chunked prefill token budget per step (67,584 = effectively one large prefill; 4096 for real interleaving with decode, see the _apc specs)
+        no-enable-prefix-caching: true  # prefix caching (DSV41_APC=1 + enable-prefix-caching) is opt-in: it costs batched speed
         limit-mm-per-prompt: '{"image": 16}'
         mm-processor-cache-gb: 0
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
