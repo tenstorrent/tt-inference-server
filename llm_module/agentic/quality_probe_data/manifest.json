@@ -1,50 +1,31 @@
 {
-  "scope": "Six reconstructed semantic continuation interventions; original RNG and original output IDs unavailable; no quality waiver or agent feedback.",
-  "response_ids": [
-    "chatcmpl-b170f450eca126a7",
-    "chatcmpl-a79346e09b9b8b8f"
-  ],
+  "protocol": "busy-entry-r6-single-occupancy-window",
+  "scope": "One fixed busy-window per arm; auxiliary forced8192 with natural original target+neighbor. Not exact original RNG or quality acceptance.",
   "files": {
+    "quality-busy-protocol-r6.json": {
+      "sha256": "3f024987acb8fade24ba39f2c9dd806385074b8ba887015a492c88b72da301b2",
+      "gzip_sha256": "7813608dfca3b0dea4ac8fcec7eea7b6ce5f92ba65944ab8bddd5d6159bc8be0",
+      "bytes": 3408
+    },
+    "quality-busy-requests-r6.json": {
+      "sha256": "c9a001cbb598832085f5354eaf22268d7ed61e6d18e31e2d8f664601bb01a083",
+      "gzip_sha256": "2da1dcd1dd754c4f9ba9bc84203f1705cc8394cab010b7bbcb3c7d5df521a916",
+      "bytes": 1294415
+    },
+    "quality-busy-tokenize-payload-r6.json": {
+      "sha256": "8bc32974f38a5811e54e7f112de91864ec938102de80559c98a1d5343b4c6fb2",
+      "gzip_sha256": "d558f9b77ee645830937d1772fe81bed6561d203f9e336854466d6398e3793b1",
+      "bytes": 1240906
+    },
+    "quality-busy-tokenization-r6-proof.json": {
+      "sha256": "50e3b296b61b8bb6734012ace43cb8bb8bb16a640eb798bf359642b68fbc656b",
+      "gzip_sha256": "983207e1627c1cf1b4132744acf2c5f72646a3b06b67f4f751a053d24e3a7726",
+      "bytes": 7694
+    },
     "quality_repetition_client.py": {
-      "bytes": 4147,
-      "sha256": "5786da7a470b20602811d8162588c1471f834f521b2347e0a5425fb32182f943",
-      "gzip_sha256": "eac6e204b4df20c118faa2fb4f0fb2570c855f84d9a7b84c7bdc4f4ad3def5f8"
-    },
-    "quality-repetition-requests.json": {
-      "bytes": 92568,
-      "sha256": "07c45ba51d014f8b7a96dac0aa92457eed7737cad15b4bd63681e56c81e06bd6",
-      "gzip_sha256": "044d715a00a95560c7a53d07f770abd1604e2d37279fafb901f25bb8ac933fb8"
-    },
-    "quality-repetition-renderer.json": {
-      "bytes": 498,
-      "sha256": "9e9ae8cff10ce7c923b1d8b7217fc29720658650db10a1fc958e51381dd36d67",
-      "gzip_sha256": "3ffc54f19c5b0b9c2f7725a9f8e96b06f544439638e13f0ba639b2ad0f23a722"
-    },
-    "quality-tokenization-requests-r3.json": {
-      "bytes": 88768,
-      "sha256": "1b795d6da3485be73329aac31fda73763a185ce2749dde4eeb44ddd67a7b6a84",
-      "gzip_sha256": "6acc4279a7021ec9b3abda0700af499179899f9d0f0f59d13c9b2f810083b7f3"
-    },
-    "quality-tokenization-r3-proof.json": {
-      "bytes": 1611,
-      "sha256": "ce382346b342183361109e30bd08e2c4ca0f52ce5d9982762e8f1d5197b1ebab",
-      "gzip_sha256": "0273434fef9fb4a6d297fb8a3555307bf399aa389d562277c69eeaf18e6d9d56"
-    },
-    "quality-long-seed-plan-r4.json": {
-      "bytes": 621,
-      "sha256": "9da76a1365e3dc8f08fd7de5612625abf689045951fff92879593e9a5ac16ee5",
-      "gzip_sha256": "fcf4e9b02aceaa17e671fe6a9ffd7c9fe456cf25f79cf66bc76e6ecd017b2fa0"
-    },
-    "quality-long-continuation-r5.json": {
-      "bytes": 575513,
-      "sha256": "e6583a0457ec82a8e5d96460d9c4461b6d3936f66ab92c0d1bff585f09f49e6e",
-      "gzip_sha256": "6ceaf87e6f68e68e81ea47ef686c319ae83181beeffcb6996f479927043ebfc0"
-    },
-    "quality-long-continuation-contingency-r5.json": {
-      "bytes": 2070,
-      "sha256": "26b4764b55b4e2739ba6a1608f0376e3719a699a3c93cd492f7fb4e30459128a",
-      "gzip_sha256": "42b59703817c9728e6cb5ba68c482c2faef7ba218e7d78e3881bb3593223eb06"
+      "sha256": "9e126179faf8b484566098550a69251e146bf04d23c1e422f2b6dc0d79981c96",
+      "gzip_sha256": "55e4170c3ddd8cb086a93d914b45995b41978c99bfcfcc457848a60535370513",
+      "bytes": 7840
     }
-  },
-  "protocol": "Six sequential semantic-continuation targets: before-comment(694 forced tokens,max7498) then before-repeat(710 forced tokens,max7482), seeds0/9472/2026 per cut, each preceded by one13441-token/max1 warmup; targetcached13440; T1/p.95/k20; naturalEOS1/106/50; no original RNG/output-ID replay claim."
+  }
 }

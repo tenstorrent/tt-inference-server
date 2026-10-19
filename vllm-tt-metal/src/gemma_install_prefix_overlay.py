@@ -59,3 +59,7 @@ def install_prefix_overlay(metal):
         "plugin.patch",
         "GEMMA_PREFIX_PLUGIN",
     )
+
+    # Diagnostic-only CPU proof in the actual server image, before engine startup.
+    from quality_r6_sampling_preflight import run as quality_sampling_preflight
+    quality_sampling_preflight()
