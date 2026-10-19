@@ -1,0 +1,68 @@
+{
+  "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
+  "target_commit": "5aa9a06b3e1daa09e73cebf38d31b73ffeea3e60",
+  "patch_sha256": "3f88000e7ff170eebbecd5626ae77c3a305bee2ba7b1a2fe2d42f379dd7e164b",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/__init__.py": {
+      "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
+      "target": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
+    },
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "1adf16996ef6d1846201d766c1e0246671a5099dd1bb978da63b0dbc8f8479c4"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
+      "target": "093a1ee1265c0fe4d82f19b5ec7c2c907695fbf801abfeb2f09b1a580881c0dc"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
+      "target": "d90827cf2c2ddb920252190b5dd21269f8aab1c4a654d2a3853d2361d19abc2d"
+    },
+    "models/demos/gemma4_31b_qb2/tt/history_bank.py": {
+      "base": null,
+      "target": "87767c5e02811e25ec069d30940241a512ca5022d5a34576e1f4e104cdbe44d9"
+    },
+    "models/demos/gemma4_31b_qb2/tt/model.py": {
+      "base": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
+      "target": "27fc5fe7da825668949d2fb1a98009064061995c0be8f8cefe69d26076db8d88"
+    },
+    "models/demos/gemma4_31b_qb2/tt/prefill_batch.py": {
+      "base": null,
+      "target": "6bc71038aa609ba31236d02676cb723163ca320950ab71f6e93c27c2e81dee95"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py": {
+      "base": null,
+      "target": "b7d628d384db24494198497b14ad5f4207bca01d3351b8aa59927fe319a1ab80"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py": {
+      "base": null,
+      "target": "4c78fa1869fe906f7146b17647cc3534be74d1ccebafb8ae5f89721639c63e90"
+    },
+    "models/demos/gemma4_31b_qb2/tt/runtime_position.py": {
+      "base": null,
+      "target": "51e2efc838f5881917cfa60232b2ff053089db1c7a2bf463e22d689339699874"
+    },
+    "models/demos/gemma4_31b_qb2/tt/sdpa_l1.py": {
+      "base": "473d098d7cdf97e81e323c0c93b9308b3b77173f257c32a8d4646252f0c75710",
+      "target": "9733c30a68c50fcfe37b01e2529976fe0fd7ae60275398e10d6701ca7dde6170"
+    },
+    "models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py": {
+      "base": null,
+      "target": "5a6a9efe53b0c54fb2d50ede29a3b952f18eb50a7977898c1c9caf7b7dea621a"
+    },
+    "models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py": {
+      "base": null,
+      "target": "0a3a7a54cb04c6173151bb8e39d256f3b86090f9a4e17f7586e6b49126d741fa"
+    },
+    "models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py": {
+      "base": null,
+      "target": "639590e24385ab0d8595493fc4605a87121bbb2c3f594d34513ad99af8ed4e03"
+    },
+    "models/demos/gemma4_31b_qb2/tt/alias-manifest.json": {
+      "base": null,
+      "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
+    }
+  },
+  "scope": "Immutable Python-only serial preparation/retention with conservative unsupported-family fallback; cap1/no formation; native and serving acceptance separate."
+}

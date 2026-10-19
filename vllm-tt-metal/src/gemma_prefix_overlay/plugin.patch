@@ -1,17 +1,25 @@
 diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runner.py
-index 667609d..65d261a 100644
 --- a/src/vllm_tt_plugin/model_runner.py
 +++ b/src/vllm_tt_plugin/model_runner.py
-@@ -1189,11 +1189,14 @@ class TTModelRunner:
+@@ -3,6 +3,7 @@
+ 
+ from __future__ import annotations
+ 
++import json
+ import threading
+ import time
+ from collections import deque
+@@ -1189,11 +1190,14 @@
              self._req_state_slot.pop(req_id, None)
  
      def _alloc_prefill_state_slots(self, row_req_ids: list[str]) -> list[int]:
 -        """Pick each prefilling request's state slot, skipping slots that live
 -        off-batch requests own. Prefers its own row (where it decodes), so the
 -        steady state moves nothing.
-+        """Keep live prefill slots stable and allocate only new ownership.
- 
+-
 -        Exhaustion is unreachable: holders and prefills are disjoint and both count
++        """Keep live prefill slots stable and allocate only new ownership.
++
 +        A continuing chunk may appear at a different compact batch row. Moving
 +        its slot here would leave model state behind: only decode gathers move
 +        state and notify the model. Reserve all existing owners before assigning
@@ -21,7 +29,7 @@ index 667609d..65d261a 100644
          against ``max_num_seqs``, which is ``n_slots``. Getting here means the map has
          stopped describing the device, and nothing on the host can recover it, so fail
          rather than guess and return plausible, wrong text.
-@@ -1205,13 +1208,19 @@ class TTModelRunner:
+@@ -1205,13 +1209,19 @@
                  "slots; admission is the scheduler's job, not this function's"
              )
          prefilling = set(row_req_ids)
@@ -44,3 +52,41 @@ index 667609d..65d261a 100644
              if row not in held:
                  slot = row
              else:
+@@ -3318,6 +3328,11 @@
+         if model_input.block_tables_per_layer is not None:
+             kwargs["page_tables_per_layer"] = model_input.block_tables_per_layer
+         kwargs.update(model_input.multi_modal_kwargs)
++        if getattr(self.model, "supports_prefill_history_finality", False):
++            mask = model_input.intermediate_prefill_mask
++            if mask is None or mask.numel() != len(model_input.prompt_lens):
++                raise ValueError("Final-prefill history release requires exact row finality")
++            kwargs["retain_prefill_history"] = mask.tolist()
+         if model_input.perform_device_sampling:
+             sampling_params = model_input.tt_sampling_params
+             sampling_param_dict = {
+@@ -3354,7 +3369,25 @@
+                 self.requests[req_id].mrope_position_delta = rope_deltas[i].item()
+             self.async_decode.note_prefill_submitted()
+             return tt_out
++        self._gemma_batch_observation_index = getattr(self, "_gemma_batch_observation_index", 0) + 1
++        _gemma_observation_index = self._gemma_batch_observation_index
++        _gemma_observation_start = time.perf_counter()
++        logger.info("GEMMA_PREFILL_ENTRY " + json.dumps({
++            "index": _gemma_observation_index,
++            "wall_s": time.time(),
++            "request_ids": list(model_input.row_req_ids),
++            "prompt_lens": list(map(int, model_input.prompt_lens)),
++            "starts": model_input.input_positions.tolist(),
++            "slots": kwargs.get("empty_slots"),
++            "retain_history": kwargs.get("retain_prefill_history"),
++            "device_sampling": bool(model_input.perform_device_sampling),
++        }))
+         tt_out = self.model.prefill_forward(**kwargs)
++        logger.info("GEMMA_PREFILL_ENTRY_END " + json.dumps({
++            "index": _gemma_observation_index,
++            "wall_s": time.time(),
++            "submit_s": time.perf_counter() - _gemma_observation_start,
++        }))
+         self.async_decode.note_prefill_submitted()
+         return tt_out
+ 
