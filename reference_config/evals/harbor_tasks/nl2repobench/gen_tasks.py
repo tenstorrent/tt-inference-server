@@ -32,26 +32,35 @@ OFFICIAL_PROMPT = (
     "the <API Usage Guide> section of the document. Please complete this task step by step."
 )
 
-# Lists the target's own names as seen from the official image: the distribution
-# name, and top-level modules the tests import that are not installed (= the
-# package under test, which the image deliberately lacks).
+# Reports, from the official image, the distribution name (packaging metadata)
+# and the top-level modules the tests import that are not installed. The latter
+# include the package under test but also deps that `pip install -e .` adds at
+# grade time, so write_task keeps only modules named like the project.
 _PROBE = r'''
 import ast, importlib.util, json, pathlib, re, sys
 ws = pathlib.Path("/workspace")
-names = set()
-for f in ("pyproject.toml", "setup.cfg", "setup.py"):
+dist = set()
+def section(text, header):
+    m = re.search(r"(?ms)^\[" + re.escape(header) + r"\]\s*$(.*?)(?=^\[|\Z)", text)
+    return m.group(1) if m else ""
+for f, headers in (("pyproject.toml", ("project", "tool.poetry", "tool.flit.metadata")), ("setup.cfg", ("metadata",))):
     p = ws / f
     if p.exists():
         t = p.read_text(errors="replace")
-        for m in re.finditer(r"""(?m)^\s*name\s*[=:]\s*["']?([A-Za-z0-9_.\-]+)""", t):
-            names.add(m.group(1))
-        for m in re.finditer(r"""name\s*=\s*["']([A-Za-z0-9_.\-]+)["']""", t):
-            names.add(m.group(1))
-local = {p.stem for p in ws.rglob("*.py")} | {p.name for p in ws.rglob("*") if p.is_dir()}
+        for h in headers:
+            m = re.search(r"(?m)^\s*(?:name|module|dist-name)\s*[=:]\s*[\"']?([A-Za-z0-9_.\-]+)", section(t, h))
+            if m:
+                dist.add(m.group(1))
+p = ws / "setup.py"
+if p.exists():
+    m = re.search(r"""\bname\s*=\s*["']([A-Za-z0-9_.\-]+)["']""", p.read_text(errors="replace"))
+    if m:
+        dist.add(m.group(1))
+local = {q.stem for q in ws.rglob("*.py")} | {q.name for q in ws.rglob("*") if q.is_dir()}
 mods = set()
-for p in ws.rglob("*.py"):
+for q in ws.rglob("*.py"):
     try:
-        tree = ast.parse(p.read_text(errors="replace"))
+        tree = ast.parse(q.read_text(errors="replace"))
     except SyntaxError:
         continue
     for n in ast.walk(tree):
@@ -59,17 +68,38 @@ for p in ws.rglob("*.py"):
             mods |= {a.name.split(".")[0] for a in n.names}
         elif isinstance(n, ast.ImportFrom) and n.module and n.level == 0:
             mods.add(n.module.split(".")[0])
+missing = []
 for m in sorted(mods):
-    if m in local or m in sys.stdlib_module_names:
+    if m in local or m in getattr(sys, "stdlib_module_names", ()):
         continue
     try:
         found = importlib.util.find_spec(m) is not None
     except Exception:
         found = False
     if not found:
-        names.add(m)
-print(json.dumps({"names": sorted(names), "workspace": sorted(p.name for p in ws.iterdir())}))
+        missing.append(m)
+print(json.dumps({"dist": sorted(dist), "missing_modules": missing,
+                  "workspace": sorted(q.name for q in ws.iterdir()),
+                  "python": "%d.%d.%d" % sys.version_info[:3]}))
 '''
+
+
+def _name_tokens(name: str) -> set:
+    """'ydata-profiling' -> {'ydata', 'profiling'}; 'jinja2' -> {'jinja'}."""
+    return {t for t in re.split(r"[^a-z]+", name.lower()) if len(t) >= 4}
+
+
+def target_names(task: str, probe: dict) -> list:
+    """Names whose install/fetch the guard blocks: the project itself."""
+    names = {task, *probe["dist"]}
+    tokens = set().union(*(_name_tokens(n) for n in names))
+    # A module named after only part of the project ("flask" for Flask-RESTful)
+    # is a dependency the agent may legitimately install, not the project.
+    names |= {
+        m for m in probe["missing_modules"]
+        if _name_tokens(m) & tokens and not _name_tokens(m) < tokens
+    }
+    return sorted(names)
 
 
 def image_for(task: str) -> str:
@@ -91,7 +121,7 @@ def toml_str(s: str) -> str:
 def write_task(src: Path, out_root: Path) -> dict:
     task = src.name
     probe = probe_image(task)
-    targets = sorted({task, *probe["names"]} - {"tests", "test", "src", "setup"})
+    targets = target_names(task, probe)
     dst = out_root / task
     if dst.exists():
         shutil.rmtree(dst)
@@ -173,7 +203,8 @@ memory_mb = 8192
 storage_mb = 20480
 """)
     return {"task": task, "targets": targets, "test_case_count": count,
-            "ref_workspace": probe["workspace"]}
+            "ref_workspace": probe["workspace"], "verifier_python": probe["python"],
+            "probe": probe}
 
 
 def main() -> int:

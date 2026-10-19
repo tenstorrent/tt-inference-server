@@ -33,6 +33,33 @@ PACKAGE_FILES = {
 COMMAND_TIMEOUT_SEC = int(os.environ.get("NL2REPO_COMMAND_TIMEOUT_SEC", "1800"))
 
 
+def _merge_tree(src: Path, dst: Path) -> None:
+    """copytree(dirs_exist_ok=True) for Python 3.7 verifier images."""
+    for root, dirs, files in os.walk(str(src)):
+        rel = Path(root).relative_to(src)
+        (dst / rel).mkdir(parents=True, exist_ok=True)
+        for name in dirs:
+            s = Path(root) / name
+            if s.is_symlink():
+                d = dst / rel / name
+                if d.is_symlink() or d.is_file():
+                    d.unlink()
+                elif d.is_dir():
+                    shutil.rmtree(str(d))
+                os.symlink(os.readlink(str(s)), str(d))
+        dirs[:] = [d for d in dirs if not (Path(root) / d).is_symlink()]
+        for name in files:
+            s, d = Path(root) / name, dst / rel / name
+            if d.is_dir() and not d.is_symlink():
+                shutil.rmtree(str(d))
+            elif d.exists() or d.is_symlink():
+                d.unlink()
+            if s.is_symlink():
+                os.symlink(os.readlink(str(s)), str(d))
+            else:
+                shutil.copy2(str(s), str(d))
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     test_commands = json.loads((META / "test_commands.json").read_text())
@@ -41,7 +68,7 @@ def main() -> int:
 
     # The agent workspace artifact re-materializes at /workspace; move it aside.
     if STAGE.exists():
-        shutil.rmtree(STAGE)
+        shutil.rmtree(str(STAGE))
     if AGENT_WS.exists():
         shutil.move(str(AGENT_WS), str(STAGE))
     else:
@@ -57,15 +84,15 @@ def main() -> int:
     for rel in test_files:
         path = STAGE / rel
         if path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path)
+            shutil.rmtree(str(path))
             removed.append(rel + "/")
         elif path.exists() or path.is_symlink():
             path.unlink()
             removed.append(rel)
 
     # COPY workspace /workspace onto the official image's /workspace.
-    shutil.copytree(REF_WS, AGENT_WS, symlinks=True)
-    shutil.copytree(STAGE, AGENT_WS, symlinks=True, dirs_exist_ok=True)
+    shutil.copytree(str(REF_WS), str(AGENT_WS), symlinks=True)
+    _merge_tree(STAGE, AGENT_WS)
 
     env = dict(os.environ)
     env["PYTHONPATH"] = f"/workspace:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else "/workspace"
