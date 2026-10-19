@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bounded unscored trace-serving smoke; no task or accuracy substitution."""
-import concurrent.futures
 import json
 import time
 import urllib.request
@@ -39,8 +38,7 @@ def run_probe(server, context):
 
     rows = [call(0, 129), call(1, 8449)]
     lengths = [31, 33, 127, 129, 225, 1023, 1025, 2047, 4097, 6657, 8192, 257, 511, 1024, 128, 65]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
-        rows.extend(pool.map(lambda item: call(*item), enumerate(lengths, start=2)))
+    rows.extend(call(index, length) for index, length in enumerate(lengths, start=2))
     rows.append(call(18, 129))
     summary = {'unscored_policy_probe': True, 'status': 'completed', 'request_count': len(rows),
                'output_tokens': sum(r['response']['usage']['completion_tokens'] for r in rows),
