@@ -634,6 +634,118 @@ class TestModelSpecSystem:
         assert spec.version == "0.13.0"
 
 
+_PREBUILT = "ghcr.io/tenstorrent/tt-shield/glm-tt@sha256:" + "a" * 64
+
+
+def _prebuilt_spec(sample_impl, sample_device_model_spec, prebuilt=True):
+    return ModelSpec(
+        device_type=DeviceTypes.N150,
+        impl=sample_impl,
+        hf_model_repo="test/TestModel-7B",
+        model_id="id_test-impl_TestModel-7B_n150",
+        model_name="TestModel-7B",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_spec=sample_device_model_spec,
+        docker_image=_PREBUILT,
+        prebuilt_image=prebuilt,
+    )
+
+
+class TestPrebuiltImage:
+    """prebuilt_image: the spec's own image survives a foreign --override-docker-image."""
+
+    @pytest.mark.parametrize(
+        "image, repository",
+        [
+            (
+                "ghcr.io/tenstorrent/tt-shield/glm-tt@sha256:" + "a" * 64,
+                "ghcr.io/tenstorrent/tt-shield/glm-tt",
+            ),
+            (
+                "ghcr.io/tenstorrent/tt-shield/glm-tt:0.1.0-321ca78",
+                "ghcr.io/tenstorrent/tt-shield/glm-tt",
+            ),
+            ("reg.io:5000/x/y:tag", "reg.io:5000/x/y"),
+            ("glm-tt:0.1.0", "glm-tt"),
+        ],
+    )
+    def test_image_repository(self, image, repository):
+        from workflows.model_spec import image_repository
+
+        assert image_repository(image) == repository
+
+    def test_foreign_override_keeps_prebuilt_image(
+        self, sample_impl, sample_device_model_spec
+    ):
+        from workflows.runtime_config import RuntimeConfig
+
+        spec = _prebuilt_spec(sample_impl, sample_device_model_spec)
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.25.0-abcdef1",
+        )
+        spec.apply_overrides(rc)
+        assert spec.docker_image == _PREBUILT
+
+    def test_same_repository_override_applies(
+        self, sample_impl, sample_device_model_spec
+    ):
+        from workflows.runtime_config import RuntimeConfig
+
+        spec = _prebuilt_spec(sample_impl, sample_device_model_spec)
+        candidate = "ghcr.io/tenstorrent/tt-shield/glm-tt:0.1.0-dev-11d1525"
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image=candidate,
+        )
+        spec.apply_overrides(rc)
+        assert spec.docker_image == candidate
+
+    def test_override_applies_without_prebuilt_image(
+        self, sample_impl, sample_device_model_spec
+    ):
+        from workflows.runtime_config import RuntimeConfig
+
+        spec = _prebuilt_spec(sample_impl, sample_device_model_spec, prebuilt=False)
+        other = "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.25.0-abcdef1"
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image=other,
+        )
+        spec.apply_overrides(rc)
+        assert spec.docker_image == other
+
+    def test_template_requires_digest(self, sample_impl, sample_device_model_spec):
+        with pytest.raises(AssertionError, match="prebuilt_image"):
+            ModelSpecTemplate(
+                weights=["test/TestModel-7B"],
+                impl=sample_impl,
+                inference_engine=InferenceEngine.MEDIA.value,
+                device_model_specs=[sample_device_model_spec],
+                docker_image="ghcr.io/tenstorrent/tt-shield/glm-tt:0.1.0",
+                prebuilt_image=True,
+            )
+
+    def test_template_propagates(self, sample_impl, sample_device_model_spec):
+        template = ModelSpecTemplate(
+            weights=["test/TestModel-7B"],
+            impl=sample_impl,
+            inference_engine=InferenceEngine.MEDIA.value,
+            device_model_specs=[sample_device_model_spec],
+            docker_image=_PREBUILT,
+            prebuilt_image=True,
+        )
+        (spec,) = template.expand_to_specs()
+        assert spec.prebuilt_image is True
+        assert spec.docker_image == _PREBUILT
+
+
 class TestSystemIntegration:
     """Integration tests for the model spec system."""
 

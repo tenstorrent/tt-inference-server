@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import yaml
@@ -30,6 +31,20 @@ from workflows.workflow_types import (
 
 if TYPE_CHECKING:
     from workflows.runtime_config import RuntimeConfig
+
+logger = logging.getLogger(__name__)
+
+_DIGEST_PINNED_IMAGE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
+
+
+def image_repository(image: str) -> str:
+    """The repository of an OCI reference: ``reg/ns/name`` without ``:tag`` or ``@digest``."""
+    name = image.split("@", 1)[0]
+    head, _, last = name.rpartition("/")
+    if ":" in last:
+        last = last.split(":", 1)[0]
+    return f"{head}/{last}" if head else last
+
 
 VERSION = get_version()
 MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
@@ -693,6 +708,9 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     has_builtin_warmup: bool = False
+    # True when docker_image is a prebuilt serving stack that per-engine image
+    # overrides must not replace (see ModelSpecTemplate.prebuilt_image).
+    prebuilt_image: bool = False
     metadata: Dict = field(default_factory=dict)
 
     # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
@@ -1099,7 +1117,24 @@ class ModelSpec:
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if runtime_config.override_docker_image:
+        override_ignored = (
+            runtime_config.override_docker_image
+            and self.prebuilt_image
+            and image_repository(runtime_config.override_docker_image)
+            != image_repository(self.docker_image)
+        )
+        if override_ignored:
+            # A prebuilt-image spec runs only its own image: CI passes every MEDIA leaf the
+            # media-server build as --override-docker-image, which would replace it. A
+            # candidate build of the same repository still overrides it.
+            logger.warning(
+                "%s pins its prebuilt image %s; ignoring --override-docker-image %s "
+                "(another repository)",
+                self.model_id,
+                self.docker_image,
+                runtime_config.override_docker_image,
+            )
+        elif runtime_config.override_docker_image:
             object.__setattr__(
                 self, "docker_image", runtime_config.override_docker_image
             )
@@ -1158,6 +1193,10 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
+    # The serving stack is the spec's own docker_image (an immutable repo@sha256 digest),
+    # built outside this repo: --override-docker-image with another repository (CI's
+    # per-engine build) leaves it in place. See ModelSpec.apply_overrides.
+    prebuilt_image: bool = False
     metadata: Dict[str, Dict] = field(default_factory=dict)
     # Leaf-granular prod entries retain their source model family, which a
     # single-weight entry cannot imply. This keeps documentation grouping
@@ -1176,6 +1215,12 @@ class ModelSpecTemplate:
             f"inference_engine must be a valid InferenceEngine! \
             Available: {[engine for engine in InferenceEngine]}"
         )
+        if self.prebuilt_image:
+            assert isinstance(
+                self.docker_image, str
+            ) and _DIGEST_PINNED_IMAGE.fullmatch(self.docker_image), (
+                "prebuilt_image needs docker_image pinned as an immutable repo@sha256 digest"
+            )
         # check that metadata keys are a subset of weights
         if self.metadata:
             invalid_keys = set(self.metadata.keys()) - set(self.weights)
@@ -1272,6 +1317,7 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
+                    prebuilt_image=self.prebuilt_image,
                     metadata=self.metadata.get(weight, {}),
                 )
 
