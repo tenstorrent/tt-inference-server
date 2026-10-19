@@ -30,6 +30,9 @@ elif os.path.exists(os.path.join(W, "FAILED")):
 else:
     state = "RUNNING" if alive else ("DIED" if pid else "ABSENT")
 print("GPUREF_STATE=" + state)
+# --serve: the model is up behind the tunnel (the URL itself: endpoint.py).
+serving = os.path.exists(os.path.join(W, "SERVING"))
+print("GPUREF_SERVING=%d" % (state == "RUNNING" and serving))
 print("GPUREF_PHASE=" + read("phase"))
 print("GPUREF_DONE=%d" % read("results/status.json").count('"status"'))
 query = [
