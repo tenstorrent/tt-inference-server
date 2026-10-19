@@ -1182,6 +1182,23 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p150x8"
+      ],
+      "impls": [
+        "tt_lab_glm"
+      ],
+      "models": [
+        "zai-org/GLM-5.3-Flash"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }

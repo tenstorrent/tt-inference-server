@@ -483,6 +483,15 @@ blaze_impl = ImplSpec(
     code_path="tt-media-server/cpp_server",
 )
 
+# tt-lab's standalone GLM engine (not TT-NN): the `glm-tt serve` binary, its own OpenAI
+# server, shipped as a prebuilt MEDIA image (deploy/tis in tt-lab).
+tt_lab_glm_impl = ImplSpec(
+    impl_id="tt_lab_glm",
+    impl_name="tt-lab-glm",
+    repo_url="https://github.com/tenstorrent/tt-lab",
+    code_path="src/glm.cpp",
+)
+
 # IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
 # models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
 # the tt-model-bringup pipeline.
@@ -532,6 +541,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
+    "tt_lab_glm": tt_lab_glm_impl,
 }
 
 
