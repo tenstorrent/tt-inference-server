@@ -13,6 +13,7 @@ pullable (docker as the current user).
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -114,6 +115,82 @@ def probe_image(task: str) -> dict:
     return json.loads(out.strip().splitlines()[-1])
 
 
+# Upstream runs a bare `pytest` for these, which also collects tests the agent
+# wrote (reward 1.0 with no implementation, cf. PrimeIntellect-ai/prime-envs#929).
+# The paths are the hidden tests in the official image; pytz keeps them at the
+# workspace root, not at test_files.json's src/pytz/tests.
+EXPLICIT_TEST_PATHS = {
+    "flask-restful": ["tests"],
+    "more-Itertools": ["tests/test_more.py", "tests/test_recipes.py"],
+    "parse": ["tests"],
+    "python-pytest-cases": ["tests"],
+    "pytz": ["test_docs.py", "test_lazy.py", "test_tzinfo.py"],
+    "uiautomator": ["test"],
+}
+_LFS_POINTER = b"version https://git-lfs.github.com/spec/"
+
+
+def _is_bare_pytest(command: str) -> bool:
+    argv = shlex.split(command)
+    if argv[:3] in (["python", "-m", "pytest"], ["python3", "-m", "pytest"]):
+        argv = argv[2:]
+    return argv[:1] == ["pytest"] and all(a.startswith("-") for a in argv[1:])
+
+
+def pin_test_paths(task: str, commands: list) -> list:
+    bare = [c for c in commands if _is_bare_pytest(c)]
+    if bool(bare) != (task in EXPLICIT_TEST_PATHS):
+        raise SystemExit(f"{task}: bare pytest commands {bare} vs EXPLICIT_TEST_PATHS")
+    return [
+        " ".join([c, *EXPLICIT_TEST_PATHS[task]]) if _is_bare_pytest(c) else c
+        for c in commands
+    ]
+
+
+_INSTALLED_PROBE = r'''
+import importlib.util, json, sys
+sys.path[:] = [p for p in sys.path[1:] if p and not p.startswith("/workspace")]
+hits = []
+for n in sys.argv[1:]:
+    try:
+        if importlib.util.find_spec(n) is not None:
+            hits.append(n)
+    except Exception:
+        pass
+print(json.dumps(hits))
+'''
+
+
+def target_modules(targets: list) -> list:
+    """Importable spellings of the target names: 'pytorch-grad-cam' -> 'pytorch_grad_cam'."""
+    names = set()
+    for t in targets:
+        for n in (t, t.lower()):
+            n = re.sub(r"[-.]", "_", n)
+            if n.isidentifier():
+                names.add(n)
+    return sorted(names)
+
+
+def preinstalled_targets(task: str, modules: list) -> list:
+    """Target modules the official image already has installed (the real library)."""
+    out = subprocess.run(
+        ["docker", "run", "--rm", "-w", "/", "--entrypoint", "python", image_for(task),
+         "-c", _INSTALLED_PROBE, *modules],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    return json.loads(out.strip().splitlines()[-1])
+
+
+def read_spec(path: Path) -> bytes:
+    """start.md is stored in Git LFS; a clone without git-lfs has ~130-byte pointers."""
+    data = path.read_bytes()
+    if data.startswith(_LFS_POINTER) or len(data) < 1024:
+        raise SystemExit(f"{path} is not a spec ({len(data)} bytes): run `git lfs pull`")
+    data.decode("utf-8")
+    return data
+
+
 def toml_str(s: str) -> str:
     return json.dumps(s)
 
@@ -122,13 +199,15 @@ def write_task(src: Path, out_root: Path) -> dict:
     task = src.name
     probe = probe_image(task)
     targets = target_names(task, probe)
+    modules = target_modules(targets)
+    preinstalled = preinstalled_targets(task, modules)
     dst = out_root / task
     if dst.exists():
         shutil.rmtree(dst)
     (dst / "environment").mkdir(parents=True)
     (dst / "tests" / "nl2repo").mkdir(parents=True)
 
-    shutil.copy(src / "start.md", dst / "environment" / "start.md")
+    (dst / "environment" / "start.md").write_bytes(read_spec(src / "start.md"))
     shutil.copy(TEMPLATE / "guard.py", dst / "environment" / "nl2repo_guard.py")
     (dst / "environment" / "nl2repo-guard.json").write_text(
         json.dumps({"task": task, "targets": targets}, indent=2) + "\n"
@@ -148,9 +227,18 @@ COPY start.md /workspace/start.md
 WORKDIR /workspace
 """)
 
-    for f in ("test_commands.json", "test_files.json", "test_case_count.txt"):
+    for f in ("test_files.json", "test_case_count.txt"):
         shutil.copy(src / f, dst / "tests" / "nl2repo" / f)
+    upstream_commands = json.loads((src / "test_commands.json").read_text())
+    commands = pin_test_paths(task, upstream_commands)
+    (dst / "tests" / "nl2repo" / "test_commands.json").write_text(json.dumps(commands, indent=2) + "\n")
+    (dst / "tests" / "nl2repo" / "test_commands.upstream.json").write_text(
+        json.dumps(upstream_commands, indent=2) + "\n"
+    )
+    (dst / "tests" / "nl2repo" / "target_modules.json").write_text(json.dumps(modules) + "\n")
     shutil.copy(TEMPLATE / "grade.py", dst / "tests" / "grade.py")
+    shutil.copy(TEMPLATE / "drop_preinstalled.py", dst / "tests" / "drop_preinstalled.py")
+    drop = f"RUN python /tests/drop_preinstalled.py {' '.join(preinstalled)}\n" if preinstalled else ""
     (dst / "tests" / "test.sh").write_text(
         "#!/bin/bash\nset -u\nmkdir -p /logs/verifier\n"
         "python /tests/grade.py || echo 0 > /logs/verifier/reward.txt\n"
@@ -158,8 +246,11 @@ WORKDIR /workspace
     (dst / "tests" / "Dockerfile").write_text(f"""FROM {image_for(task)}
 # The official image's /workspace holds the upstream tests and packaging; the
 # agent never sees it. grade.py lays it under the agent's cleaned workspace.
+# pyautogui's image runs as a non-root user; the grader needs root.
+USER root
 RUN mv /workspace /opt/nl2repo_ref && mkdir /workspace
-COPY nl2repo /tests/nl2repo
+COPY drop_preinstalled.py /tests/drop_preinstalled.py
+{drop}COPY nl2repo /tests/nl2repo
 COPY grade.py /tests/grade.py
 COPY --chmod=755 test.sh /tests/test.sh
 WORKDIR /workspace
@@ -204,7 +295,8 @@ storage_mb = 20480
 """)
     return {"task": task, "targets": targets, "test_case_count": count,
             "ref_workspace": probe["workspace"], "verifier_python": probe["python"],
-            "probe": probe}
+            "probe": probe, "test_commands": commands,
+            "preinstalled_targets": preinstalled}
 
 
 def main() -> int:

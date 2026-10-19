@@ -11134,7 +11134,8 @@ _eval_config_list = [
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=4 * 60 * 60,
-                    agent_kwargs=dict(CLAUDE_CODE_AGENT_KWARGS),
+                    # Turn cap of the Qwen3.6-27B card's Claude Code NL2Repo run.
+                    agent_kwargs={**CLAUDE_CODE_AGENT_KWARGS, "max_turns": 900},
                     agent_env=dict(CLAUDE_CODE_AGENT_ENV),
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: ["tinydb"],
