@@ -314,6 +314,34 @@ TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
 
+# Claude Code harness (Harbor's ``claude-code`` agent) for the Qwen3.8 card's
+# agentic rows (SWE-bench Pro, NL2Repo, DeepSWE: "Claude Code, temp 1.0, top_p
+# 0.95, 256K context"). Claude Code runs inside the task container and talks to
+# vLLM's native Anthropic endpoint (/v1/messages); llm_module.agentic.harbor
+# points it at the Docker host gateway. Sampling is not sent by Claude Code, so
+# the server applies the model's generation_config (Qwen3.8: temp 1.0, top_p
+# 0.95, top_k 20). Pinned to a release at least two weeks old at adoption.
+CLAUDE_CODE_VERSION = "2.1.288"
+CLAUDE_CODE_AGENT_KWARGS: Dict[str, Any] = {
+    "version": CLAUDE_CODE_VERSION,
+    # Claude Code sends output_config.effort="high" by default, which vLLM maps
+    # to reasoning_effort; the Qwen3.8 chat template accepts only xhigh/medium/
+    # low and raises on "high" (HTTP 500 on every request). xhigh is the card
+    # default.
+    "reasoning_effort": "xhigh",
+    # No WebSearch/WebFetch: the agent must not look up upstream fixes.
+    "disable_web_search": True,
+}
+CLAUDE_CODE_AGENT_ENV: Dict[str, str] = {
+    # Unknown models are otherwise auto-compacted to an assumed 200K window.
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(256 * 1024),
+    # Long xhigh turns and 200K-token prefills outlast the 600 s client default.
+    "API_TIMEOUT_MS": str(60 * 60 * 1000),
+    "CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS": str(30 * 60 * 1000),
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": str(15 * 60 * 1000),
+    "DISABLE_AUTOUPDATER": "1",
+}
+
 
 @dataclass(frozen=True)
 class EvalTask:
@@ -11046,6 +11074,38 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=61.7,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                # Public ScaleAI/SWE-bench_Pro test split (731) via the Harbor
+                # registry; the card's "corrected problematic tasks" re-eval is
+                # not reproducible.
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebenchpro",
+                    agent="claude-code",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    agent_kwargs=dict(CLAUDE_CODE_AGENT_KWARGS),
+                    agent_env=dict(CLAUDE_CODE_AGENT_ENV),
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "instance_qutebrowser__qutebrowser-*",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 2},
             ),
         ],
     ),

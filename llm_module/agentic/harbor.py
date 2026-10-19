@@ -47,6 +47,23 @@ _MAIN_SERVICE = "main"  # the compose service Harbor runs the agent and verifier
 # bring its generated model config to parity with the standalone SWE-bench
 # harness (see ``_apply_mini_swe_agent_defaults``).
 _MINI_SWE_AGENT = "mini-swe-agent"
+# Harbor's built-in Claude Code agent. Like mini-swe-agent it runs inside the
+# task container, but it speaks the Anthropic Messages API, which the vLLM
+# server serves natively at <root>/v1/messages -- so its endpoint is the server
+# root (Claude Code appends /v1/messages itself), not the OpenAI /v1 base.
+_CLAUDE_CODE_AGENT = "claude-code"
+_ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL"
+# vLLM authorizes only ``Authorization: Bearer``; Claude Code sends that header
+# for ANTHROPIC_AUTH_TOKEN (ANTHROPIC_API_KEY goes out as x-api-key -> 401).
+_ANTHROPIC_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
+# Host credentials that must never reach a local-server Claude Code run: a real
+# Anthropic key would be resolved ahead of the server token and copied into
+# every task container.
+_ANTHROPIC_HOST_CREDENTIAL_ENV = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+)
 
 
 @dataclass(frozen=True)
@@ -280,25 +297,33 @@ def _is_loopback_endpoint(config: HarborRunConfig) -> bool:
     }
 
 
+def _is_claude_code(config: HarborRunConfig) -> bool:
+    return config.agent == _CLAUDE_CODE_AGENT and config.agent_import_path is None
+
+
+def _is_in_container_builtin_agent(config: HarborRunConfig) -> bool:
+    """Built-in Harbor agents whose process runs inside the task container."""
+    return config.agent_import_path is None and config.agent in (
+        _MINI_SWE_AGENT,
+        _CLAUDE_CODE_AGENT,
+    )
+
+
 def _needs_host_gateway(config: HarborRunConfig) -> bool:
     if config.environment_type != "docker" or not _is_loopback_endpoint(config):
         return False
-    if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
+    if _is_in_container_builtin_agent(config):
         return True
     return bool(_in_container_adapter_services(config))
 
 
-def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
-    return (
-        config.agent == _MINI_SWE_AGENT
-        and config.agent_import_path is None
-        and _needs_host_gateway(config)
-    )
+def _builtin_agent_needs_host_gateway(config: HarborRunConfig) -> bool:
+    return _is_in_container_builtin_agent(config) and _needs_host_gateway(config)
 
 
 def _gateway_services(config: HarborRunConfig) -> tuple[str, ...]:
-    if _mini_swe_needs_host_gateway(config):
-        return ("main",)
+    if _builtin_agent_needs_host_gateway(config):
+        return (_MAIN_SERVICE,)
     return _in_container_adapter_services(config)
 
 
@@ -326,6 +351,20 @@ def _with_gateway_endpoint(env: dict[str, str], config: HarborRunConfig) -> dict
     return out
 
 
+def _server_token() -> Optional[str]:
+    """Bearer token for the inference server (the JWT minted by the test setup)."""
+    return os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or None
+
+
+def _anthropic_base_url(openai_endpoint: str) -> str:
+    """Server root for the Anthropic client: strip the OpenAI ``/v1`` suffix."""
+    parsed = urlsplit(openai_endpoint)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1"):
+        path = path[: -len("/v1")]
+    return urlunsplit(parsed._replace(path=path))
+
+
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
     endpoint = (
@@ -333,6 +372,12 @@ def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
         if _needs_host_gateway(config)
         else _get_agent_endpoint(config)
     )
+    if _is_claude_code(config):
+        env.setdefault(_ANTHROPIC_BASE_URL_ENV, _anthropic_base_url(endpoint))
+        token = _server_token()
+        if token:
+            env.setdefault(_ANTHROPIC_TOKEN_ENV, token)
+        return env
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env
 
@@ -552,6 +597,11 @@ def run(config: HarborRunConfig) -> int:
     process_env = os.environ.copy()
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
+    if _is_claude_code(config):
+        # Harbor resolves Anthropic credentials from the host env too; only the
+        # agent env built above may supply them.
+        for key in (*_ANTHROPIC_HOST_CREDENTIAL_ENV, _ANTHROPIC_BASE_URL_ENV):
+            process_env.pop(key, None)
     rc = run_with_progress(
         cmd,
         cwd=None,

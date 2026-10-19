@@ -38,6 +38,18 @@ def _openai_model_name(model: str) -> str:
     return f"openai/{model}"
 
 
+# Harbor agents that talk to the server through the Anthropic Messages API and
+# take the server's model ID verbatim (Harbor's claude-code agent forwards the
+# name unchanged as ANTHROPIC_MODEL once ANTHROPIC_BASE_URL is set).
+_ANTHROPIC_AGENTS = frozenset({"claude-code"})
+
+
+def _harbor_model_name(agent: str, model: str) -> str:
+    if agent in _ANTHROPIC_AGENTS:
+        return model
+    return _openai_model_name(model)
+
+
 def _runtime_environment_env(configured_env: dict[str, str]) -> dict[str, str]:
     """Add runtime credentials only for compose tasks that need interpolation."""
     environment_env = dict(configured_env)
@@ -203,7 +215,7 @@ def build_harbor_config(
         dataset=cfg.dataset,
         dataset_ref=getattr(cfg, "dataset_ref", None),
         agent=cfg.agent,
-        model_name=_openai_model_name(cfg.model or server.model),
+        model_name=_harbor_model_name(cfg.agent, cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
         n_concurrent_trials=resolve_n_concurrent_trials(cfg),
