@@ -951,6 +951,7 @@ templates:
         OMP_NUM_THREADS: "8"
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         GEMMA4_26B_ALLOW_HOST_SAMPLING: "1"
+        GEMMA4_PREFIX_CACHING_EXPERIMENT: "1"
         TT_METAL_CACHE: /home/container_app_user/cache_root/gemma4_metal_kernel_cache
         HF_HOME: /home/container_app_user/cache_root/huggingface
         HF_HUB_CACHE: /home/container_app_user/cache_root/huggingface/hub
@@ -975,7 +976,7 @@ templates:
         max_model_len: 262144
         max_num_batched_tokens: 262144
         no-enable-chunked-prefill: true
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
         async-scheduling: true
         seed: 9472
   status: FUNCTIONAL
