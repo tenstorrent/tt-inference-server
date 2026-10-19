@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from utils.pinned_artifacts import get_pinned_revision
+from workflows.host_packages import resolve_host_package_mounts
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -577,13 +578,15 @@ def _docker_ipc_args(model_spec) -> List[str]:
 
 
 def _docker_lifecycle_args(model_spec) -> List[str]:
-    """Stop timeout and host state mount from the device spec (see DeviceModelSpec).
+    """Stop timeout, host state mount and host package mounts from the device spec.
 
     ``docker_stop_timeout`` becomes ``--stop-timeout``, the grace ``docker stop`` gives
     SIGTERM before SIGKILL (docker's default is 10 s). ``docker_host_state_dir`` is
     bind-mounted read-write at the same path when it exists on the host, for state that
     must outlive the container (e.g. a marker that the chips need a reset); a missing
     directory is skipped with a warning, so the server falls back to its own default.
+    Each ``docker_host_packages`` directory is bind-mounted read-only at its container
+    path; a missing one raises ValueError (see workflows/host_packages.py).
     """
     device_spec = getattr(model_spec, "device_model_spec", None)
     args: List[str] = []
@@ -598,7 +601,22 @@ def _docker_lifecycle_args(model_spec) -> List[str]:
             logger.warning(
                 f"docker_host_state_dir {state_dir} does not exist on this host; not mounting it"
             )
+    for host_dir, container_path in resolve_host_package_mounts(model_spec):
+        args += ["--mount", f"type=bind,src={host_dir},dst={container_path},readonly"]
     return args
+
+
+def _docker_entrypoint_args(model_spec) -> Tuple[List[str], List[str]]:
+    """(before-image, after-image) docker run arguments for the device spec's entrypoint.
+
+    ``docker_entrypoint`` replaces the image's entrypoint: its first word becomes
+    ``--entrypoint`` and the rest are the container's arguments.
+    """
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    entrypoint = getattr(device_spec, "docker_entrypoint", None)
+    if not isinstance(entrypoint, (list, tuple)) or not entrypoint:
+        return [], []
+    return ["--entrypoint", entrypoint[0]], list(entrypoint[1:])
 
 
 def generate_docker_run_command(
@@ -835,7 +853,12 @@ def generate_docker_run_command(
     if runtime_config.disable_metal_timeout:
         docker_command.extend(["-e", "DISABLE_METAL_OP_TIMEOUT=1"])
 
+    entrypoint_before, entrypoint_after = (
+        ([], []) if runtime_config.interactive else _docker_entrypoint_args(model_spec)
+    )
+    docker_command += entrypoint_before
     docker_command.append(model_spec.docker_image)
+    docker_command += entrypoint_after
     # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
         docker_command.extend(["--model", model_spec.hf_model_repo])

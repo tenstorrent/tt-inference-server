@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
+from workflows.host_packages import resolve_host_package_mounts
 from workflows.model_spec import MODEL_SPECS
 from workflows.quetzal_package import resolve_quetzal_package_mount
 from workflows.utils import (
@@ -485,11 +486,14 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
         return False
 
 
-def validate_bind_mount_permissions(args, quetzal_package_mount=None):
+def validate_bind_mount_permissions(
+    args, quetzal_package_mount=None, host_package_mounts=()
+):
     """Validate that --image-user UID can access bind-mounted host paths.
 
-    Checks read permission for --host-hf-cache and --host-weights-dir (readonly mounts),
-    and read+write permission for --host-volume (read-write mount).
+    Checks read permission for --host-hf-cache, --host-weights-dir and the device spec's
+    docker_host_packages (readonly mounts), and read+write permission for --host-volume
+    (read-write mount). Host packages are shared storage and are never chmod-ed.
 
     If a check fails, attempts to fix permissions via chmod (no sudo).
     Raises ValueError with actionable guidance if the fix is not possible.
@@ -521,6 +525,11 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
                     False,
                 )
             )
+
+    for host_dir, container_path in host_package_mounts:
+        checks.append(
+            (f"docker_host_packages[{container_path}]", str(host_dir), False, False)
+        )
 
     for flag, host_path, need_write, allow_fix in checks:
         ok, reason = check_path_permissions_for_uid(
@@ -668,6 +677,8 @@ def validate_setup(model_spec, runtime_config, json_fpath):
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
         package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
-        validate_bind_mount_permissions(runtime_config, package_mount)
+        validate_bind_mount_permissions(
+            runtime_config, package_mount, resolve_host_package_mounts(model_spec)
+        )
     elif runtime_config.local_server:
         validate_local_server_paths(runtime_config)
