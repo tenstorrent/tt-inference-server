@@ -217,8 +217,20 @@ def setup_evals_agentic(
     outside ``src/``, so a ``.pth`` file exposes the repo root to Python imports.
     """
     harbor_dir = venv_config.venv_path / "harbor"
-    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
+    experiment_deps = os.environ.get("GEMMA4_PREFIX_HARBOR_DEPS") == "1"
+    harbor_ref = "1da0bfd8c71cadbff17413fac984b8e391d2afc2" if experiment_deps else HARBOR_REF
+    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, harbor_ref):
         return False
+    if experiment_deps:
+        # Experiment-only task-tool dependency repair; agent behavior is unchanged.
+        installer = harbor_dir / "src/harbor/agents/installed/mini_swe_agent.py"
+        original = '"--with litellm --with orjson --with fastapi && "'
+        replacement = '"--with \'litellm[mcp]==1.106.0\' --with mcp==2.2.0 --with orjson --with fastapi && "'
+        source = installer.read_text()
+        if source.count(original) != 1:
+            raise RuntimeError("Pinned Harbor installer no longer matches experiment patch")
+        installer.write_text(source.replace(original, replacement))
+        logger.info("Gemma prefix experiment: Harbor %s, task LiteLLM1.106.0 + mcp2.2.0", harbor_ref)
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
