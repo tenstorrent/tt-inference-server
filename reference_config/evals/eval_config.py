@@ -11137,7 +11137,7 @@ _eval_config_list = [
                     agent_kwargs=dict(CLAUDE_CODE_AGENT_KWARGS),
                     agent_env=dict(CLAUDE_CODE_AGENT_ENV),
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: ["nl2repobench/tinydb"],
+                        EvalLimitMode.CI_NIGHTLY: ["tinydb"],
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 1},

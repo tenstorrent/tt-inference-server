@@ -113,7 +113,7 @@ def test_absolute_dataset_is_a_local_task_directory(tmp_path, monkeypatch):
     tasks_dir = tmp_path / "nl2repobench_tasks"
     tasks_dir.mkdir()
     task = _claude_code_task(dataset=str(tasks_dir))
-    task.agentic_eval_config.task_names = ["nl2repobench/tinydb"]
+    task.agentic_eval_config.task_names = ["tinydb"]
     _, harbor_config, _ = _run(task, tmp_path, monkeypatch, OPENAI_API_KEY="jwt")
     dataset = harbor_config["datasets"][0]
     assert dataset["path"] == str(tasks_dir)
