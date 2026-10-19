@@ -606,6 +606,12 @@ class DeviceModelSpec:
     # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
     # auto-generated Helm chart values)
     docker_shm_size: Optional[str] = None
+    # Seconds `docker stop` waits after SIGTERM before SIGKILL (docker run --stop-timeout);
+    # None keeps docker's 10 s. For servers whose drain and device teardown take longer.
+    docker_stop_timeout: Optional[int] = None
+    # Host directory bind-mounted read-write at the same path when it exists on the host,
+    # for state that must outlive the container (e.g. a "chips need a reset" marker).
+    docker_host_state_dir: Optional[str] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
