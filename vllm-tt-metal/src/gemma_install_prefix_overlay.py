@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -61,5 +62,4 @@ def install_prefix_overlay(metal):
     )
 
     # Diagnostic-only CPU proof in the actual server image, before engine startup.
-    from quality_r6_sampling_preflight import run as quality_sampling_preflight
-    quality_sampling_preflight()
+    subprocess.run([sys.executable, "-u", str(Path(__file__).with_name("quality_r6_sampling_preflight.py"))], check=True, timeout=120)

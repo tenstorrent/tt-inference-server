@@ -36,4 +36,4 @@ if __name__=='__main__':
  register()
  from vllm.model_executor.models import ModelRegistry
  ModelRegistry.register_model('TTGemma4QB2ForCausalLM','models.demos.gemma4_31b_qb2.tt.generator_vllm:Gemma4ForCausalLM')
- print(json.dumps(run(),sort_keys=True))
+ print('QUALITY_R6_EFFECTIVE_SAMPLING '+json.dumps(run(),sort_keys=True),flush=True)
