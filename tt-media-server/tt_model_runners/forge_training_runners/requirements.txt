@@ -1,4 +1,4 @@
-# Worker venv of the tt-crank training image (Dockerfile.forge with WORKER_ENV=crank).
+# Worker venv of the tt-crank training image (Dockerfile.crank).
 # tt-crank pins torch 2.10 while tt-forge pins torch 2.11, so this replaces
 # forge_runners/requirements.txt rather than extending it.
 --extra-index-url https://pypi.eng.aws.tenstorrent.com

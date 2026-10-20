@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+# tt-crank image for the trainer runners; Dockerfile.forge stays the tt-forge image.
+# Keep the shared steps in sync with Dockerfile.forge. The tt-crank wheel needs
+# glibc 2.38 and GLIBCXX_3.4.32, hence Ubuntu 24.04, and its download needs a GitHub token:
+#   docker build --secret id=gh_token,env=GH_TOKEN -f tt-media-server/Dockerfile.crank .
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+# connect Github repo with package
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ARG CONTAINER_APP_UID=1000
+
+ENV ENVIRONMENT=development
+
+ENV SHELL=/bin/bash
+ENV CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+ENV LOGURU_LEVEL=INFO
+ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
+
+# extra system deps. Python 3.12 and cmake come with the 24.04 base image.
+RUN apt-get update && apt-get install -y \
+    # required
+    gosu \
+    # tt-blacksmith's tt-crank wheel download (needs `gh auth token`, gh >= 2.17)
+    gh \
+    libgl1 \
+    libsndfile1 \
+    wget \
+    git-lfs \
+    nano \
+    acl \
+    jq \
+    vim \
+    python3-pip \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    # pyluwen build dependencies (Rust package with protobuf)
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
+    htop \
+    screen \
+    tmux \
+    unzip \
+    zip \
+    curl \
+    libcurl4-openssl-dev \
+    iputils-ping \
+    rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && protoc --version
+
+# user setup. Ubuntu 24.04 images ship an `ubuntu` user holding UID 1000.
+RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
+    && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
+
+USER ${CONTAINER_APP_USERNAME}
+
+# install tt-smi
+RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
+    && rustup update \
+    && pip3 install --upgrade pip \
+    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+
+WORKDIR ${HOME_DIR}
+
+# install inference server requirements
+ARG APP_DIR="${HOME_DIR}/app"
+ENV APP_DIR=${APP_DIR}
+WORKDIR ${APP_DIR}
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
+# Remove private submodule source — cpp_server is not used in the crank image
+RUN rm -rf ${APP_DIR}/server/cpp_server
+USER root
+ARG BLACKSMITH_HOME=${HOME_DIR}/tt-blacksmith
+RUN --mount=type=secret,id=gh_token \
+    cd ${APP_DIR}/server \
+    && GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
+        bash tt_model_runners/forge_training_runners/setup_env.sh "${BLACKSMITH_HOME}" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+USER ${CONTAINER_APP_USERNAME}
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
+ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
+
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version
+ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
+ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
+COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
+RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
+    "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
+
+# spinup inference server
+WORKDIR "${APP_DIR}"
+EXPOSE 8000
+CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]

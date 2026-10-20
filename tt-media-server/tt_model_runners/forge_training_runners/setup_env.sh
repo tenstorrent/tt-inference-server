@@ -3,8 +3,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-# Builds venv-worker for the tt-crank training image (Dockerfile.forge with
-# WORKER_ENV=crank). Run from the tt-media-server directory:
+# Builds venv-worker for the tt-crank training image (Dockerfile.crank).
+# Run from the tt-media-server directory:
 #   GH_TOKEN=... tt_model_runners/forge_training_runners/setup_env.sh <tt-blacksmith checkout dir>
 #
 # tt-blacksmith's `env/activate --crank`, at the ref pinned in requirements.txt next to
