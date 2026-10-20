@@ -1606,3 +1606,18 @@ class TestSpecDrivenHfDownload:
         partial.mkdir(parents=True)
         (partial / "abc.incomplete").write_text("")
         assert manager.check_model_weights_dir(root) is False
+
+def test_checkpoint_files_complete_without_safetensors(tmp_path, tiny_model_spec):
+    """A checkpoint in its own format (GLM-5.3-Flash's split TTQ) names its files."""
+    tiny_model_spec.metadata["checkpoint_files"] = [
+        "*.ttq.manifest",
+        "*.ttq.0000?-of-*",
+    ]
+    manager = HostSetupManager(model_spec=tiny_model_spec, host_volume=str(tmp_path))
+    assert not manager.check_model_weights_dir(tmp_path)
+    (tmp_path / "w.ttq.manifest").write_text("glm-tt ttq split 1\n")
+    (tmp_path / "w.ttq.00001-of-00001").write_bytes(b"")
+    assert not manager.check_model_weights_dir(tmp_path)  # empty file: incomplete
+    (tmp_path / "w.ttq.00001-of-00001").write_bytes(b"x")
+    assert manager.check_model_weights_dir(tmp_path)
+    assert manager.setup_config.model_weights_format == "checkpoint_files"
