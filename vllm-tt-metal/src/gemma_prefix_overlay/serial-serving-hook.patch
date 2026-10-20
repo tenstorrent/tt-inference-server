@@ -716,10 +716,10 @@ index e9ae70b..af99a3d 100644
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058ec..9153223 100644
+index f2058ec..883eab9 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
-@@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
+@@ -6,20 +6,24 @@ The optimized loop replays two traces. Only the sampling trace writes the next
  token; position advances in the model trace. Host sampling is opt-in compatibility.
  """
  
@@ -727,9 +727,10 @@ index f2058ec..9153223 100644
  import math
 +import os
  import time
++from models.demos.gemma4_31b_qb2.tt.prefill_phase_timing import profile_prefill, profile_phase, timed_call
  from dataclasses import dataclass, field
  from types import SimpleNamespace
-@@ -14,12 +16,13 @@ from types import SimpleNamespace
+ 
  import torch
  from loguru import logger
  from transformers import AutoTokenizer, GenerationConfig
@@ -744,7 +745,7 @@ index f2058ec..9153223 100644
  
  
  @dataclass
-@@ -36,6 +39,17 @@ class CacheState:
+@@ -36,6 +40,17 @@ class CacheState:
      # Standalone mode retains the stricter private cyclic-cache contract.
      vllm_owned: bool = False
      prefill_history: dict = field(default_factory=dict)
@@ -762,7 +763,7 @@ index f2058ec..9153223 100644
  
  
  class Gemma4Generator:
-@@ -49,7 +63,21 @@ class Gemma4Generator:
+@@ -49,7 +64,21 @@ class Gemma4Generator:
          self.initial_capacity = max_seq_len
          self.states = {}
          self.traces = {}
@@ -784,7 +785,7 @@ index f2058ec..9153223 100644
          self.counters = {
              k: 0
              for k in (
-@@ -84,6 +112,7 @@ class Gemma4Generator:
+@@ -84,6 +113,7 @@ class Gemma4Generator:
          if not 1 <= batch <= 32 or not 1 <= capacity <= self.max_seq_len:
              raise ValueError("Expected batch1..32 and context1..262144")
          self._retire_traces()
@@ -792,7 +793,7 @@ index f2058ec..9153223 100644
          # All accepted decode SDPA chunks are64/128: one128-token page covers
          # the rounded read window. No power-of-two capacity restriction.
          pages = (capacity + 127) // 128
-@@ -105,7 +134,36 @@ class Gemma4Generator:
+@@ -105,7 +135,36 @@ class Gemma4Generator:
              kind: list(range(batch * pools[kind] + max(2, batch) - batch, batch * pools[kind] + max(2, batch)))
              for kind in pools
          }
@@ -830,11 +831,12 @@ index f2058ec..9153223 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -327,7 +385,189 @@ class Gemma4Generator:
+@@ -327,7 +386,190 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
 -    def prefill_forward(
++    @profile_phase("restore_history")
 +    def _restore_prefill_history(self, state, page_tables, slot, start, *, layer_index=None):
 +        """Gather the preceding sliding window from vLLM's retained KV pages.
 +
@@ -1021,7 +1023,7 @@ index f2058ec..9153223 100644
          self,
          tokens,
          *,
-@@ -339,6 +579,7 @@ class Gemma4Generator:
+@@ -339,6 +581,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1029,7 +1031,7 @@ index f2058ec..9153223 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +598,24 @@ class Gemma4Generator:
+@@ -357,16 +600,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1058,7 +1060,7 @@ index f2058ec..9153223 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +623,289 @@ class Gemma4Generator:
+@@ -374,30 +625,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1294,7 +1296,7 @@ index f2058ec..9153223 100644
 +            # signature. Unseen signatures can also allocate native cached state.
 +            # Both must be created before the next trace capture.
 +            self._retire_traces()
-+        self._tables(state, page_table)
++        timed_call("generator_tables", self._tables, state, page_table)
 +        outputs = []
 +        for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
 +            if not 0 < length <= state.capacity or length > tokens.shape[1]:
@@ -1304,7 +1306,7 @@ index f2058ec..9153223 100644
 +            chunk_length = length - aligned_start
 +            histories = None
 +            if history_keys is not None and state.history_bank is not None:
-+                histories = self._bank_history(
++                histories = timed_call("history_bank", self._bank_history, 
 +                    state, history_keys[row], start, aligned_start, page_table, slot,
 +                    retain_prefill_history is None or retain_prefill_history[row],
 +                )
@@ -1351,16 +1353,22 @@ index f2058ec..9153223 100644
 +                    del previous
              ids = torch.zeros(1, (chunk_length + 31) // 32 * 32, dtype=torch.int32)
              ids[0, :chunk_length] = tokens[row, aligned_start:length]
-             tt_ids = self._upload(ids, ttnn.uint32)
+-            tt_ids = self._upload(ids, ttnn.uint32)
++            tt_ids = timed_call("upload", self._upload, ids, ttnn.uint32)
              tables, uploaded_rows = {}, {}
 +            serial_tables, serial_shared = {}, {}
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +919,22 @@ class Gemma4Generator:
-                     uploaded_rows[key] = self._upload(row_table)
+@@ -408,10 +918,26 @@ class Gemma4Generator:
+                         # sentinel. These read-only rows may be shared; mutable
+                         # persistent decode tables retain independent storage.
+                         row_table = row_table.masked_fill(row_table == 0, -1)
+-                    uploaded_rows[key] = self._upload(row_table)
++                    uploaded_rows[key] = timed_call("upload", self._upload, row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
+-            out = self.model.prefill_device(
 +                if os.environ.get("GEMMA_PREFILL_HOST_FILL_TABLES", "0") == "1":
 +                    layer = (self.model.layers[kind] if isinstance(kind, int) else
 +                             next(layer for layer in self.model.layers if layer.kind == kind))
@@ -1374,13 +1382,14 @@ index f2058ec..9153223 100644
 +                            host_table = table[slot:slot+1, first:first+count]
 +                            if sentinel:
 +                                host_table = host_table.masked_fill(host_table == 0, -1)
-+                            serial_shared[fill_key] = self._upload(host_table.contiguous())
++                            serial_shared[fill_key] = timed_call("upload", self._upload, host_table.contiguous())
 +                        selected[begin] = serial_shared[fill_key]
 +                    serial_tables[kind] = selected
-             out = self.model.prefill_device(
++            out = timed_call("model_prefill", self.model.prefill_device, 
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +943,23 @@ class Gemma4Generator:
+                 page_tables=tables,
+@@ -419,15 +945,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1397,7 +1406,8 @@ index f2058ec..9153223 100644
 +                # before later allocations may reuse these tail addresses.
 +                del histories
              outputs.append(
-                 out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
+-                out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
++                out if return_device else timed_call("host_logits_existing_readback", self._host_logits, out).reshape(1, -1, self.model.config.vocab_size)
              )
              # Device-return outputs retain their own owners in outputs. Host
              # mode has consumed out; do not carry it into the next prefill.
@@ -1406,7 +1416,7 @@ index f2058ec..9153223 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -484,61 +1016,110 @@ class Gemma4Generator:
+@@ -484,61 +1018,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1553,7 +1563,7 @@ index f2058ec..9153223 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1305,8 @@ class Gemma4Generator:
+@@ -724,6 +1307,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1562,7 +1572,7 @@ index f2058ec..9153223 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1316,14 @@ class Gemma4Generator:
+@@ -733,7 +1318,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):
@@ -1578,21 +1588,22 @@ index f2058ec..9153223 100644
  
  def build_generator(mesh_device, *, checkpoint=None, layer_indices=None, max_seq_len=2048):
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-index 943e226..305b8f6 100644
+index 943e226..f62c9dc 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-@@ -2,6 +2,10 @@
+@@ -2,6 +2,11 @@
  # SPDX-FileCopyrightText: 2026 Tenstorrent USA, Inc.
  """Translate vLLM scheduler updates into the Gemma4 TP4 generator's inputs."""
  
 +import os
 +import json
 +import time
++from models.demos.gemma4_31b_qb2.tt.prefill_phase_timing import profile_prefill, timed_call
 +
  import torch
  
  import ttnn
-@@ -13,7 +17,7 @@ class Gemma4ForCausalLM:
+@@ -13,7 +18,7 @@ class Gemma4ForCausalLM:
      _router = ttnn.FabricRouterConfig()
      _router.max_packet_payload_size_bytes = 8192
      model_capabilities = {
@@ -1601,7 +1612,7 @@ index 943e226..305b8f6 100644
          "supports_async_decode": True,
          "supports_sample_on_device": True,
          "supports_device_penalties": False,
-@@ -24,6 +28,7 @@ class Gemma4ForCausalLM:
+@@ -24,6 +29,7 @@ class Gemma4ForCausalLM:
              "router_config": _router,
          },
      }
@@ -1609,7 +1620,7 @@ index 943e226..305b8f6 100644
      decode_input_update_contract = 1
      MAX_PREFILL_TOKENS = 8192
  
-@@ -38,6 +43,12 @@ class Gemma4ForCausalLM:
+@@ -38,6 +44,12 @@ class Gemma4ForCausalLM:
          self.entry = None
          self.cache = None
          self.prefill_slot_keys = {}
@@ -1622,7 +1633,7 @@ index 943e226..305b8f6 100644
  
      def embed_input_ids(self, input_ids):
          raise RuntimeError("Use the TT prefill_forward/decode_forward interface")
-@@ -65,8 +76,6 @@ class Gemma4ForCausalLM:
+@@ -65,8 +77,6 @@ class Gemma4ForCausalLM:
      def get_kv_cache_spec(cls, vllm_config):
          from vllm.v1.kv_cache_interface import FullAttentionSpec, SlidingWindowSpec
  
@@ -1631,7 +1642,7 @@ index 943e226..305b8f6 100644
          if vllm_config.max_in_flight_tokens > 2 * cls.MAX_PREFILL_TOKENS:
              raise ValueError("Gemma4 QB2 supports at most 8192 batched tokens with async chunked prefill")
          config = vllm_config.model_config.hf_text_config
-@@ -101,38 +110,215 @@ class Gemma4ForCausalLM:
+@@ -101,38 +111,215 @@ class Gemma4ForCausalLM:
          # in-flight prefill tokens globally, in addition to the per-request tails.
          # The plugin separately adds one output page per request.
          tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
@@ -1858,7 +1869,7 @@ index 943e226..305b8f6 100644
              if key not in translated:
                  dest = torch.zeros_like(cache.page_tables[i])
                  rows, cols = source.shape
-@@ -143,7 +329,10 @@ class Gemma4ForCausalLM:
+@@ -143,7 +330,10 @@ class Gemma4ForCausalLM:
                      raise ValueError("Page table has fewer rows than prefill requests")
                  # Prefill rows are compact, then padded to the decode batch.
                  # Scatter only the live prefix into its assigned state slots.
@@ -1870,7 +1881,15 @@ index 943e226..305b8f6 100644
                  translated[key] = dest
              result[i] = translated[key]
          return result
-@@ -185,32 +374,43 @@ class Gemma4ForCausalLM:
+@@ -174,6 +364,7 @@ class Gemma4ForCausalLM:
+             top_k=rows("top_k"), top_p=rows("top_p"), temperature=rows("temperature"), seed=seeds, reset_seed=reset_seed
+         )
+ 
++    @profile_prefill
+     def prefill_forward(
+         self,
+         tokens,
+@@ -185,32 +376,43 @@ class Gemma4ForCausalLM:
          page_tables_per_layer=None,
          start_pos=None,
          empty_slots=None,
@@ -1881,7 +1900,7 @@ index 943e226..305b8f6 100644
          lengths = [int(x) for x in prompt_lens]
          slots = list(range(len(lengths))) if empty_slots is None else list(empty_slots)
 -        tables = self._tables(kv_cache, page_tables_per_layer, slots=slots)
-+        tables = self._tables(kv_cache, page_tables_per_layer, slots=slots, audit_ranges=[(max(0, (start // 128) * 128 - 1024), end) for start, end in zip(starts, lengths)])
++        tables = timed_call("adapter_tables", self._tables, kv_cache, page_tables_per_layer, slots=slots, audit_ranges=[(max(0, (start // 128) * 128 - 1024), end) for start, end in zip(starts, lengths)])
          self.entry = None
 -        # Full-attention block zero identifies a live request across row moves.
 -        full_layer = next(i for i, layer in enumerate(self.generator.model.layers) if not layer.sliding)
@@ -1910,10 +1929,10 @@ index 943e226..305b8f6 100644
 +                self.prefill_slot_keys[slot] = self.next_prefill_key
 +                self.next_prefill_key += 1
 +            keys.append(self.prefill_slot_keys[slot])
-+        self._allocation_probe_begin()
++        timed_call("allocation_probe_begin", self._allocation_probe_begin)
 +        try:
-+            self._sample_pool_memory("before_prefill")
-+            outputs = self.generator.prefill_forward(
++            timed_call("memory_observation", self._sample_pool_memory, "before_prefill")
++            outputs = timed_call("generator_forward", self.generator.prefill_forward, 
 +                tokens,
 +                page_table=tables,
 +                kv_cache=kv_cache,
@@ -1924,17 +1943,17 @@ index 943e226..305b8f6 100644
 +                history_keys=keys,
 +                retain_prefill_history=retain_prefill_history,
 +            )
-+            self._sample_pool_memory("after_prefill")
++            timed_call("memory_observation", self._sample_pool_memory, "after_prefill")
 +            if sampling_params is None:
 +                return outputs
-+            params = self._sampling(sampling_params, len(lengths), [n - 1 for n in lengths])
-+            return self.generator.sample_prefill_outputs(outputs, kv_cache, params)
++            params = timed_call("sampling_parameters", self._sampling, sampling_params, len(lengths), [n - 1 for n in lengths])
++            return timed_call("device_sampling", self.generator.sample_prefill_outputs, outputs, kv_cache, params)
 +        finally:
-+            self._allocation_probe_end()
++            timed_call("allocation_probe_end", self._allocation_probe_end)
  
      def decode_forward(
          self,
-@@ -227,6 +427,7 @@ class Gemma4ForCausalLM:
+@@ -227,6 +429,7 @@ class Gemma4ForCausalLM:
          reload_page_table=False,
          reload_sampling_params=True,
          reset_sampling_state=True,
@@ -1942,7 +1961,7 @@ index 943e226..305b8f6 100644
          **kwargs,
      ):
          if "reset_batch" in kwargs:
-@@ -239,17 +440,20 @@ class Gemma4ForCausalLM:
+@@ -239,17 +442,20 @@ class Gemma4ForCausalLM:
              raise ValueError("Serving must use the cache allocated by vLLM")
          sample = sampling_params is not None
          if reload_inputs:
@@ -1970,7 +1989,7 @@ index 943e226..305b8f6 100644
              self.generator._tables(kv_cache, tables)
          if sample and (reload_sampling_params or reset_sampling_state):
              params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
-@@ -290,11 +494,11 @@ class Gemma4ForCausalLM:
+@@ -290,11 +496,11 @@ class Gemma4ForCausalLM:
      def release_request(self, slot):
          key = self.prefill_slot_keys.pop(slot, None)
          if key is not None and self.cache is not None:
@@ -2436,6 +2455,83 @@ index 0000000..a435f1f
 +        self._pending.discard(index)
 +        if not self._pending:
 +            self._restore = None
+diff --git a/models/demos/gemma4_31b_qb2/tt/prefill_phase_timing.py b/models/demos/gemma4_31b_qb2/tt/prefill_phase_timing.py
+new file mode 100644
+index 0000000..02204ad
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/prefill_phase_timing.py
+@@ -0,0 +1,71 @@
++"""Opt-in host call envelopes only; never accesses or synchronizes tensors."""
++import contextvars
++import functools
++import json
++import os
++import time
++
++_current = contextvars.ContextVar('gemma_prefill_host_timing', default=None)
++
++def timed_call(name, function, *args, **kwargs):
++    state = _current.get()
++    if state is None:
++        return function(*args, **kwargs)
++    path = '/'.join(state['stack'] + [name])
++    state['stack'].append(name)
++    start = time.perf_counter()
++    try:
++        return function(*args, **kwargs)
++    finally:
++        elapsed = time.perf_counter() - start
++        state['stack'].pop()
++        row = state['phases'].setdefault(path, {'calls': 0, 'host_s': 0.0})
++        row['calls'] += 1
++        row['host_s'] += elapsed
++
++
++def profile_prefill(function):
++    @functools.wraps(function)
++    def wrapped(*args, **kwargs):
++        flag = os.environ.get('GEMMA_PREFILL_PHASE_TIMING', '0')
++        if flag == '0':
++            return function(*args, **kwargs)
++        if flag != '1':
++            raise ValueError('GEMMA_PREFILL_PHASE_TIMING must be 0 or 1')
++        # A nested call must not replace an active parent accounting scope.
++        if _current.get() is not None:
++            return timed_call('nested_prefill', function, *args, **kwargs)
++        state = {'stack': [], 'phases': {}}
++        token = _current.set(state)
++        start = time.perf_counter()
++        status = 'error'
++        try:
++            result = function(*args, **kwargs)
++            status = 'success'
++            return result
++        finally:
++            total = time.perf_counter() - start
++            _current.reset(token)
++            # No tensor inspection, deferred callback, device query or fence.
++            # Printing itself is outside total; the outer runner observes it.
++            record = {'version': 1, 'status': status, 'host_total_s': total,
++                      'phases': state['phases'], 'nested_phases_are_inclusive': True}
++            try:
++                print('GEMMA_PREFILL_PHASE_TIMING ' + json.dumps(record), flush=False)
++            except Exception:
++                # A logging-only failure must not replace the model's return/error.
++                # This catches closed-stream ValueError as well as I/O errors;
++                # no model operation is inside this exception handler.
++                # Acceptance requires one timing record for every runner entry.
++                pass
++    return wrapped
++
++
++def profile_phase(name):
++    """Time every invocation, including deferred history callbacks, if active."""
++    def decorate(function):
++        @functools.wraps(function)
++        def wrapped(*args, **kwargs):
++            return timed_call(name, function, *args, **kwargs)
++        return wrapped
++    return decorate
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py b/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py
 new file mode 100644
 index 0000000..694ab5c
