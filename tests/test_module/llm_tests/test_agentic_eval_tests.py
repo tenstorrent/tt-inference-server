@@ -144,6 +144,26 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+# DeepSWE's verifier writes several rewards, so Harbor reports each key's mean
+# under its own name instead of a single "mean".
+HARBOR_MULTI_REWARD_FIXTURE = {
+    "stats": {
+        "evals": {
+            "deepswe": {
+                "metrics": [
+                    {"f2p": 0.89, "p2p": 0.97, "partial": 0.94, "reward": 0.56}
+                ],
+                "n_trials": 25,
+                "reward_stats": {
+                    "reward": {"1": [f"t{i}" for i in range(14)], "0": ["x"] * 11},
+                    "f2p": {"1.0": ["t0"], "0.5": ["x"]},
+                },
+                "pass_at_k": {},
+            }
+        }
+    },
+}
+
 HARBOR_ZERO_TRIALS_FIXTURE = {
     "stats": {
         "evals": {
@@ -188,6 +208,16 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_multi_reward_harbor_result_scores_from_reward(self):
+        block = AgenticEvalParser(task_name="deepswe", score=FakeScore()).parse(
+            HARBOR_MULTI_REWARD_FIXTURE, device="GPU"
+        )
+
+        assert abs(block.data["score"] - 56.0) < 1e-9
+        assert abs(block.targets["pass_at_1"] - 0.56) < 1e-9
+        assert block.targets["n_resolved"] == 14
+        assert block.data["accuracy_check"] != ReportCheckTypes.NA
 
     def test_priority_defaults_to_must_on_parsed_and_failure_blocks(self):
         # Acceptance reads block.data["priority"] and treats a missing key as
