@@ -12768,10 +12768,11 @@ _eval_config_list = [
     # match (it reports GPQA Diamond 91.7 with very long reasoning budgets and
     # IFBench, not IFEval), so these runs are informational.
     # Order matters: tasks run sequentially and GPQA (bounded, longest) goes last.
-    # Wall bounds are sized so benchmarks (~4-5.5 h, prefill-bound) + IFEval (<= 3.5 h)
-    # + GPQA (<= 5.5 h) + server start (~1-1.5 h) stay under the 18 h device-job cap even on the
-    # slowest bh-qb-ge runner; exceeding a bound marks that task incomplete (rc=124)
-    # instead of losing the whole run. Request timeout == wall bound (never retry).
+    # Run as an evals-only dispatch (no benchmark sweep). The release run 39271633490
+    # (slowest runner) reached IFEval 400/541 in 3.5 h and GPQA 68/80 in 5.5 h, so the
+    # bounds are IFEval <= 6 h + GPQA <= 10 h + server start (~0.5-1.2 h) < 18 h job cap.
+    # Exceeding a bound marks that task incomplete (rc=124) instead of losing the whole
+    # run. Request timeout == wall bound (never retry).
     # =========================================================================
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-Flash-Next",
@@ -12794,10 +12795,10 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(3.5 * 60 * 60),
+                wall_clock_timeout_seconds=int(6 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(3.5 * 60 * 60),
+                    "timeout": int(6 * 60 * 60),
                 },
                 # Model-card thinking-mode sampling; the qwen3 reasoning parser keeps
                 # the thinking out of the scored content.
@@ -12831,10 +12832,10 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(5.5 * 60 * 60),
+                wall_clock_timeout_seconds=int(10 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(5.5 * 60 * 60),
+                    "timeout": int(10 * 60 * 60),
                 },
                 # 32K thinking budget (the card's GPQA uses far longer budgets, so
                 # truncated answers are expected to cost points).
