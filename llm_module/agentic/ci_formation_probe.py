@@ -98,7 +98,7 @@ def execute(wire, root, data):
         results.append(result)
         save(root / 'progress.json', {'results': results})
     assert len(results) == len(seen) == 21
-    summary = dict(status='completed', generation_requests=21, tokenization_requests=2,
+    summary = dict(unscored_policy_probe=True, status='completed', generation_requests=21, tokenization_requests=2,
                    mechanics_requests=19, natural_requests=2, results=results,
                    scope='Unscored serving integration. No cross-precision token equality or general quality acceptance.',
                    deadline_policy='One shared 2700-second client budget, including 19 mechanics and two natural requests; original R7 two-request outer limit retained and applied more broadly. Wire per-call limit remains 3600 bounded by remaining shared budget. Startup is separate CI policy.')
