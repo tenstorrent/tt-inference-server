@@ -52,6 +52,59 @@ def _build_catalog():
     }
 
 
+# The vllm serve flag shapes set_vllm_sys_argv has to tell apart, taken from the
+# real parser in the serving image (vLLM 0.26.0):
+#
+#   from vllm.entrypoints.openai.cli_args import make_arg_parser
+#   from vllm.utils.argparse_utils import FlexibleArgumentParser
+#   for a in make_arg_parser(FlexibleArgumentParser())._actions:
+#       print(a.dest, a.nargs, getattr(a.type, "__name__", a.type))
+#
+# nargs='+' (one token per value): lora_modules, api_key, allowed_media_domains,
+#   served_model_name, logits_processors, ignore_patterns, numa_bind_nodes,
+#   numa_bind_cpus, kv_cache_dtype_skip_layers, cpu_offload_params, offload_params,
+#   lora_target_modules, collect_detailed_traces, cudagraph_capture_sizes.
+# nargs=None with type=json.loads (one JSON token, list or dict): allowed_origins,
+#   allowed_methods, allowed_headers, default_chat_template_kwargs.
+_MOCK_VLLM_SERVE_FLAGS = (
+    ("served_model_name", "+"),
+    ("cudagraph_capture_sizes", "+"),
+    ("lora_modules", "+"),
+    ("allowed_origins", None),
+    ("default_chat_template_kwargs", None),
+    ("hf_overrides", None),
+    ("max_model_len", None),
+)
+
+
+def _install_mock_vllm_serve_parser(monkeypatch, vllm):
+    parser = types.SimpleNamespace(
+        _actions=[
+            types.SimpleNamespace(dest=dest, nargs=nargs)
+            for dest, nargs in _MOCK_VLLM_SERVE_FLAGS
+        ]
+    )
+    vllm.__path__ = []
+    entrypoints = types.ModuleType("vllm.entrypoints")
+    entrypoints.__path__ = []
+    openai = types.ModuleType("vllm.entrypoints.openai")
+    openai.__path__ = []
+    cli_args = types.ModuleType("vllm.entrypoints.openai.cli_args")
+    cli_args.make_arg_parser = MagicMock(return_value=parser)
+    utils = types.ModuleType("vllm.utils")
+    utils.__path__ = []
+    argparse_utils = types.ModuleType("vllm.utils.argparse_utils")
+    argparse_utils.FlexibleArgumentParser = MagicMock()
+    for name, module in (
+        ("vllm.entrypoints", entrypoints),
+        ("vllm.entrypoints.openai", openai),
+        ("vllm.entrypoints.openai.cli_args", cli_args),
+        ("vllm.utils", utils),
+        ("vllm.utils.argparse_utils", argparse_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+
+
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
     monkeypatch.delenv("QZ_TRACE_REGION_BYTES", raising=False)
@@ -66,6 +119,7 @@ def run_vllm_api_server_module(monkeypatch):
     vllm = types.ModuleType("vllm")
     vllm.ModelRegistry = MagicMock()
     monkeypatch.setitem(sys.modules, "vllm", vllm)
+    _install_mock_vllm_serve_parser(monkeypatch, vllm)
 
     utils = types.ModuleType("utils")
     utils.__path__ = [str(get_repo_root_path() / "utils")]
@@ -603,6 +657,104 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
         "  --served-model-name 'my model' \\\n"
         "  '--guided-decoding-backend=outlines backend' \\\n"
         "  --port 8000"
+    )
+
+
+def _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, defaults):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), passthrough, defaults
+    )
+    return sys.argv[1:]
+
+
+@pytest.mark.parametrize(
+    "passthrough",
+    [
+        ["--served-model-name", '["Qwen/Qwen3.6-27B", "local-vlm"]'],
+        ['--served-model-name=["Qwen/Qwen3.6-27B", "local-vlm"]'],
+    ],
+    ids=["separate", "equals"],
+)
+def test_set_vllm_sys_argv_splits_json_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module, passthrough
+):
+    assert _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, {}) == [
+        "--served-model-name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+    ]
+
+
+def test_set_vllm_sys_argv_keeps_json_list_for_single_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # nargs=None, type=json.loads: splitting it makes vLLM exit at parsing.
+    origins = '["https://a.example", "https://b.example"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--allowed-origins", origins],
+        {"default_chat_template_kwargs": {"enable_thinking": False}},
+    ) == [
+        "--allowed-origins",
+        origins,
+        "--default_chat_template_kwargs",
+        '{"enable_thinking": false}',
+    ]
+
+
+def test_set_vllm_sys_argv_leaves_plain_multi_value_tokens_alone(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"],
+        {},
+    ) == ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"]
+
+
+def test_set_vllm_sys_argv_splits_spec_default_lists_for_multi_value_flags(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        [],
+        {
+            "served_model_name": ["Qwen/Qwen3.6-27B", "local-vlm"],
+            "cudagraph_capture_sizes": [1, 2, 4],
+            "lora_modules": [{"name": "adapter", "path": "/adapters/a"}],
+            "hf_overrides": {"max_seq_len": 4096},
+        },
+    ) == [
+        "--served_model_name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+        "--lora_modules",
+        '{"name": "adapter", "path": "/adapters/a"}',
+        "--hf_overrides",
+        '{"max_seq_len": 4096}',
+    ]
+
+
+def test_set_vllm_sys_argv_drops_empty_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # A bare nargs='+' flag is an argparse error, so an empty list falls back to vLLM's default.
+    assert (
+        _vllm_argv_for(
+            run_vllm_api_server_module,
+            monkeypatch,
+            ["--served-model-name", "[]"],
+            {"cudagraph_capture_sizes": []},
+        )
+        == []
     )
 
 
