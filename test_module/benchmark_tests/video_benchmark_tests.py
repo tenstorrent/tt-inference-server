@@ -33,6 +33,12 @@ from .._test_common import (
     is_i2v_video_model,
     run_tiered_check,
 )
+from .._test_common.video_quality_metrics import (
+    MissingVideoQualityDependency,
+    probe_video,
+    sample_video_frames,
+    structural_frame_metrics,
+)
 from ..context import MediaContext, require_health
 from ..test_status import VideoGenerationTestStatus
 
@@ -46,7 +52,23 @@ VIDEO_INFERENCE_STEPS = {
     "genmo/mochi-1-preview": 50,
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 40,
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
+    # AniSora, Distill and Lightning ignore the client's step count and run a fixed
+    # schedule (tt-media-server config/constants.py WAN22_*_NUM_STEPS), so these are
+    # what actually runs. LoRA takes the client's count, like the base model. Prodia
+    # is left out: its pipeline picks its own count and the runner does not expose it.
+    "Wan-AI/Wan2.2-I2V-AniSora-V3.2": 8,
+    "Wan-AI/Wan2.2-I2V-Distill-LightX2V": 4,
+    "Wan-AI/Wan2.2-I2V-Lightning": 4,
+    "Wan-AI/Wan2.2-I2V-LoRA": 40,
 }
+# Wan2.2 serves one shape per mesh (tt-media-server config/constants.py
+# WAN22_NUM_FRAMES and wan22_target_resolution; VideoManager encodes at 16 fps):
+# 1280x720 on Galaxy-class meshes (>= 32 chips), 832x480 on the rest.
+WAN22_NUM_FRAMES = 81
+WAN22_FPS = 16
+WAN22_LARGE_MESH_DEVICES = frozenset({"GALAXY", "BLACKHOLE_GALAXY"})
+WAN22_LARGE_MESH_SIZE = (1280, 720)
+WAN22_SMALL_MESH_SIZE = (832, 480)
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -182,6 +204,59 @@ def _generate_video(
         return False, elapsed, "", ""
 
 
+def _expected_video_shape(ctx: MediaContext) -> tuple[int, int, int] | None:
+    """``(num_frames, width, height)`` the server must return, or None if not pinned."""
+    if not ctx.model_spec.hf_model_repo.startswith("Wan-AI/Wan2.2-"):
+        return None
+    if ctx.device.name.upper() in WAN22_LARGE_MESH_DEVICES:
+        return (WAN22_NUM_FRAMES, *WAN22_LARGE_MESH_SIZE)
+    return (WAN22_NUM_FRAMES, *WAN22_SMALL_MESH_SIZE)
+
+
+def _check_video_output(ctx: MediaContext, video_path: str) -> str | None:
+    """Return why a downloaded clip is unusable, or None when it is fine.
+
+    A completed job whose mp4 is black, flat, frozen or the wrong shape is a failed
+    generation: without this, any file that downloads counts as a success.
+    """
+    path = Path(video_path)
+    try:
+        structural = structural_frame_metrics(sample_video_frames(path))
+    except (ValueError, MissingVideoQualityDependency) as e:
+        return f"clip could not be checked: {e}"
+
+    problems = [
+        f"{kind} ({structural[f'{kind}_frame_fraction']:.0%} of sampled frames)"
+        for kind in ("black", "flat")
+        if structural[f"is_{kind}"]
+    ]
+    if structural["is_frozen"]:
+        problems.append(
+            f"frozen ({structural['frozen_pair_fraction']:.0%} of sampled frame "
+            "pairs unchanged)"
+        )
+
+    expected = _expected_video_shape(ctx)
+    if expected is not None:
+        num_frames, width, height = expected
+        decoded = structural["total_decoded_frames"]
+        if decoded != num_frames:
+            problems.append(f"{decoded} frames, expected {num_frames}")
+        try:
+            probe = probe_video(
+                path,
+                expected_duration=num_frames / WAN22_FPS,
+                expected_ratio=f"{width}:{height}",
+            )
+        except (ValueError, MissingVideoQualityDependency) as e:
+            return f"clip could not be probed: {e}"
+        if (probe["width"], probe["height"]) != (width, height):
+            problems.append(
+                f"{probe['width']}x{probe['height']}, expected {width}x{height}"
+            )
+    return "; ".join(problems) or None
+
+
 def _run_video_generation_benchmark(
     ctx: MediaContext, num_calls: int
 ) -> list[VideoGenerationTestStatus]:
@@ -203,6 +278,13 @@ def _run_video_generation_benchmark(
             image_b64=image_b64,
         )
         logger.info(f"Generated video in {elapsed:.2f} seconds.")
+        if status:
+            problem = _check_video_output(ctx, video_path)
+            if problem:
+                logger.error(
+                    f"❌ Video output check failed for job {job_id}: {problem}"
+                )
+                status = False
 
         inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
         status_list.append(
