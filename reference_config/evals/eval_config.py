@@ -2811,15 +2811,15 @@ _eval_config_list = [
     # scores only for the RL checkpoint, so published scores cite that card.
     # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
     # (the chat template only disables it on enable_thinking=false).
-    # Only a GPU ModelSpec exists (dev catalog); concurrencies are provisional
-    # until a TT spec sets max_concurrency.
+    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 (8
+    # for tau3) and one attempt per task.
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=32,
+                max_concurrent=16,
                 use_chat_api=True,
                 # Thinking is on, so the answer can arrive in reasoning_content.
                 capture_reasoning=True,
@@ -2828,8 +2828,8 @@ _eval_config_list = [
                     # Diamond; the GPU reference is the only anchor.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=85.35,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2861,14 +2861,14 @@ _eval_config_list = [
             # Long-context sweep for MiMo's 1M window (max_position_embeddings).
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=32,
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=66.15,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
@@ -2908,8 +2908,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=87.6,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266196347",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2919,8 +2919,8 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=28,
-                    n_attempts=3,
+                    n_concurrent_trials=16,
+                    n_attempts=1,
                     n_tasks=89,
                     override_cpus=8,
                     override_memory_mb=32 * 1024,
@@ -2960,8 +2960,8 @@ _eval_config_list = [
                     # anchor until a published score is confirmed.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=48.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266198959",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2976,8 +2976,8 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=14,
-                    n_attempts=3,
+                    n_concurrent_trials=8,
+                    n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
@@ -3020,8 +3020,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=67.9,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=56.05,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6288668031",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3036,8 +3036,8 @@ _eval_config_list = [
                     agent="mini-swe-agent",
                     # Tasks block agent egress; let the agent reach the server.
                     allow_agent_endpoint=True,
-                    n_concurrent_trials=28,
-                    n_attempts=3,
+                    n_concurrent_trials=16,
+                    n_attempts=1,
                     n_tasks=None,
                     # None keeps each task's own 3h agent timeout.
                     agent_timeout_sec=None,
