@@ -336,6 +336,30 @@ class HostSetupManager:
                 logger.warning("Incomplete pinned checkpoint: %s", exc)
                 return False
 
+        # A checkpoint in its own format (no safetensors) names the files it needs: complete
+        # when every glob matches a non-empty file.
+        checkpoint_files = self.model_spec.metadata.get("checkpoint_files")
+        if checkpoint_files:
+            missing = [
+                pattern
+                for pattern in checkpoint_files
+                if not any(
+                    path.is_file() and path.stat().st_size
+                    for path in host_weights_dir.glob(pattern)
+                )
+            ]
+            if missing:
+                logger.warning(
+                    f"Incomplete model setup for {self.model_spec.model_name}: no "
+                    f"{', '.join(missing)} in {host_weights_dir}"
+                )
+                return False
+            self.setup_config.model_weights_format = "checkpoint_files"
+            logger.info(
+                f"✅ Setup already completed for model {self.model_spec.model_name}."
+            )
+            return True
+
         # Define supported model formats
         model_formats = [
             {
