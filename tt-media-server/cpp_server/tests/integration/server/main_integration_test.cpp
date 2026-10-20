@@ -35,6 +35,7 @@
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
 
@@ -679,6 +680,37 @@ TEST_F(MainIntegrationTest, CompletionsBatchPreservesOrderAndAggregatesUsage) {
   }
   EXPECT_EQ(body["usage"]["prompt_tokens"], 6);
   EXPECT_EQ(body["usage"]["completion_tokens"], 3);
+}
+
+TEST_F(MainIntegrationTest, CompletionsIgnoreEosReportsLengthAtModelStopToken) {
+  auto future = std::async(std::launch::async, [] {
+    return tt::test::sendAndReceive(
+        server->host(), server->port(),
+        R"({"prompt":[81,82],"max_tokens":1,"return_token_ids":true,"ignore_eos":true,"stop_token_ids":[]})",
+        "your-secret-key", 2000, "/v1/completions");
+  });
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_TRUE(seq->getSamplingParams().ignore_eos);
+  const auto stopToken = tt::utils::tokenizers::staticInfo().stopTokenIds.at(0);
+  tt::test::WorkerResponse(seq->taskId)
+      .tokenWithFlags(stopToken, tt::ipc::SharedToken::FLAG_FINAL)
+      .sendTo(server->resultQueue());
+  auto response = tt::test::HttpResponse::parse(future.get());
+  ASSERT_EQ(response.statusCode(), 200) << response.body();
+  const auto choice = response.json()["choices"][0];
+  EXPECT_EQ(choice["token_ids"][0].asUInt(), stopToken);
+  EXPECT_EQ(choice["finish_reason"], "length");
+}
+
+TEST_F(MainIntegrationTest, CompletionsRejectIgnoreEosWithExplicitStopTokens) {
+  auto response = tt::test::HttpResponse::parse(tt::test::sendAndReceive(
+      server->host(), server->port(),
+      R"({"prompt":[11,22],"ignore_eos":true,"stop_token_ids":[42]})",
+      "your-secret-key", 250, "/v1/completions"));
+  EXPECT_EQ(response.statusCode(), 400) << response.body();
+  EXPECT_NE(response.body().find("ignore_eos=true with stop_token_ids"),
+            std::string::npos);
 }
 
 TEST_F(MainIntegrationTest, CompletionsRejectInvalidOrUnsupportedRequests) {

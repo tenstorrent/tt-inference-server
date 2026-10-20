@@ -15,4 +15,10 @@
 # install-tree copies is no longer needed.
 
 cd cpp_server
+if [ "${MODEL:-${HF_MODEL_ID:-}}" = "meta-llama/Llama-3.2-1B-Instruct" ]; then
+    # Generic images omit these optional gated assets. Fetch only the selected
+    # model before starting the server, or reuse a complete offline cache.
+    export MODEL="meta-llama/Llama-3.2-1B-Instruct"
+    ./scripts/fetch_tokenizers.sh ./tokenizers "${MODEL}" || exit 1
+fi
 ./build/tt_media_server_cpp -p 8000

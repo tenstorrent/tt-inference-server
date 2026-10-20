@@ -733,11 +733,12 @@
               "minimum": 0,
               "maximum": 2147483647
             },
-            "description": "Additional stop tokens. Llama-3.2-1B IDs must be below 128256."
+            "description": "Additional stop tokens. Llama-3.2-1B IDs must be below 128256. Non-empty stop_token_ids cannot be combined with ignore_eos=true."
           },
           "ignore_eos": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Ignore model stop tokens and generate up to max_tokens. Cannot be combined with non-empty stop_token_ids because the engine disables all stop-token handling in this mode."
           },
           "skip_special_tokens": {
             "type": "boolean",

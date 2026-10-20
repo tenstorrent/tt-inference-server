@@ -1660,6 +1660,9 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+add_test(NAME TokenizerProvisioning
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/test_tokenizer_provisioning.py)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
 add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
 # Only built under Mooncake (TARGET transfer_engine); register its host+builtin

@@ -107,6 +107,13 @@ void LLMController::completions(
       }
     }
     auto parameters = ChatCompletionRequest::fromJson(*json, 0);
+    // The pinned engine's ignore_eos disables both EOS and explicit stop IDs.
+    // Reject this combination instead of silently ignoring a requested stop.
+    if (parameters.ignore_eos && !parameters.stop_token_ids.empty()) {
+      throw std::invalid_argument(
+          "ignore_eos=true with stop_token_ids is not supported by this "
+          "engine");
+    }
     if (parameters.stream || parameters.n != 1 || parameters.echo ||
         parameters.suffix) {
       throw std::invalid_argument(
