@@ -5,10 +5,11 @@
 """The GLM-5.3-Flash (tt_lab_glm) catalog rows and the docker command they produce."""
 
 import dataclasses
-import os
+from pathlib import Path
 
 import pytest
 
+from workflows.host_packages import host_packages_provide_weights
 from workflows.model_spec import (
     _MODEL_SPECS_DIR,
     get_model_spec_map,
@@ -16,6 +17,7 @@ from workflows.model_spec import (
 )
 from workflows.run_docker_server import generate_docker_run_command
 from workflows.runtime_config import RuntimeConfig
+from workflows.setup_host import HostSetupManager
 
 GLM_GALAXY_ID = "id_tt-lab-glm_GLM-5.3-Flash_blackhole_galaxy"
 # The GLM-5.3-Flash rows are dev-only, as CI's run.py --dev-mode resolves them.
@@ -23,17 +25,6 @@ MODEL_SPECS = get_model_spec_map(
     load_templates_from_yaml(_MODEL_SPECS_DIR / "dev" / "llm.yaml", env="dev")
 )
 LAUNCHER = ["python3", "/home/container_app_user/app/src/run_glm_tt.py"]
-
-
-def _galaxy_spec(tmp_path):
-    spec = MODEL_SPECS[GLM_GALAXY_ID]
-    packages = {}
-    for container_path in spec.device_model_spec.docker_host_packages:
-        host = tmp_path / container_path.strip("/").replace("/", "_")
-        host.mkdir()
-        packages[container_path] = str(host)
-    device = dataclasses.replace(spec.device_model_spec, docker_host_packages=packages)
-    return dataclasses.replace(spec, device_model_spec=device), packages
 
 
 def _galaxy_runtime():
@@ -51,24 +42,50 @@ def test_glm_galaxy_catalog_row():
     assert device.max_concurrency == 4
     assert device.max_context == 262144
     assert device.docker_entrypoint == LAUNCHER
-    assert set(device.docker_host_packages) == {
-        "/home/container_app_user/glm-tt",
-        "/home/container_app_user/glm-weights/ttq",
-        "/home/container_app_user/glm-weights/vocab",
-    }
-    for name in ("GLM_TT_HOME", "GLM_TT_TTQ", "GLM_TT_VOCAB"):
-        assert any(
-            spec.env_vars[name].startswith(path) for path in device.docker_host_packages
-        ), name
+    # Weights and the glm-tt package come from the weights repo, not host packages.
+    assert spec.hf_weights_repo
+    assert not host_packages_provide_weights(spec)
+    assert spec.min_disk_gb >= 250
+    files = spec.metadata["checkpoint_files"]
+    assert "glm-tt/bin/glm-tt" in files
+    assert f"{spec.env_vars['GLM_TT_TTQ']}.manifest" in files
+    assert spec.env_vars["GLM_TT_VOCAB"] in files
+    assert "GLM_TT_HOME" not in spec.env_vars
 
 
-def test_glm_galaxy_docker_command(tmp_path):
-    spec, packages = _galaxy_spec(tmp_path)
+def test_glm_galaxy_weights_land_where_the_launcher_looks(tmp_path):
+    """TIS downloads the repo to cache_root/weights/<model_name>; the launcher reads
+    $CACHE_ROOT/weights/$MODEL, from the env vars the docker command sets."""
+    spec = MODEL_SPECS[GLM_GALAXY_ID]
+    manager = HostSetupManager(model_spec=spec, host_volume=str(tmp_path))
+    config = manager.setup_config
+    command, _ = generate_docker_run_command(spec, _galaxy_runtime(), config)
+    env = dict(
+        command[i + 1].split("=", 1)
+        for i, value in enumerate(command[:-1])
+        if value == "-e"
+    )
+    assert config.container_model_weights_path == (
+        Path(env["CACHE_ROOT"]) / "weights" / env["MODEL"]
+    )
+    mount = f"type=bind,src={config.host_model_volume_root},dst={config.cache_root}"
+    assert command[command.index(mount) - 1] == "--mount"
+
+    weights = config.host_model_volume_root / "weights" / spec.model_name
+    assert not manager.check_model_weights_dir(weights)
+    weights.mkdir(parents=True)
+    files = spec.metadata["checkpoint_files"]
+    for name in files:
+        (weights / name).parent.mkdir(parents=True, exist_ok=True)
+        (weights / name).write_bytes(b"x")
+    assert manager.check_model_weights_dir(weights)
+    (weights / files[-1]).unlink()  # one file short: download again
+    assert not manager.check_model_weights_dir(weights)
+
+
+def test_glm_galaxy_docker_command():
+    spec = MODEL_SPECS[GLM_GALAXY_ID]
     command, _ = generate_docker_run_command(spec, _galaxy_runtime())
-
-    for container_path, host in packages.items():
-        mount = f"type=bind,src={os.path.realpath(host)},dst={container_path},readonly"
-        assert command[command.index(mount) - 1] == "--mount"
     image = command.index(spec.docker_image)
     assert command[command.index("--entrypoint") + 1] == "python3"
     assert command.index("--entrypoint") < image
@@ -76,8 +93,10 @@ def test_glm_galaxy_docker_command(tmp_path):
     assert command[image + 1 :] == LAUNCHER[1:]
     env = {command[i + 1] for i, value in enumerate(command[:-1]) if value == "-e"}
     assert "DEVICE=blackhole_galaxy" in env
-    assert f"GLM_TT_TTQ={spec.env_vars['GLM_TT_TTQ']}" in env
-    assert "GLM_TT_HOME=/home/container_app_user/glm-tt" in env
+    assert "GLM_TT_TTQ=glm53-flash-hot3-meas.ttq" in env
+    assert not any(
+        value.endswith(",readonly") and "glm-tt" in value for value in command
+    )
 
 
 def test_glm_galaxy_docker_command_needs_its_packages(tmp_path):
