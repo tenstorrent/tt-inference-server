@@ -369,6 +369,13 @@ class EvalTask:
     thinking_kwarg: str = "enable_thinking"
     # Execution policy only; does not reduce samples, context, or output tokens.
     wall_clock_timeout_seconds: Optional[int] = None
+    # Per-mode wall-clock bounds, keyed like limit_samples_map. A run in a
+    # listed mode uses that bound; any other run, including an unrestricted
+    # full run, falls back to wall_clock_timeout_seconds. Lets a task bound its
+    # capped CI subset without also cutting off the full dataset.
+    wall_clock_timeout_seconds_map: Dict[EvalLimitMode, int] = field(
+        default_factory=dict
+    )
     max_attempts: Optional[int] = None
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
@@ -419,6 +426,15 @@ class EvalTask:
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value <= 0):
                 raise ValueError(f"{name} must be a positive integer")
+        for mode, value in self.wall_clock_timeout_seconds_map.items():
+            if not isinstance(mode, EvalLimitMode):
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map keys must be EvalLimitMode"
+                )
+            if type(value) is not int or value <= 0:
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map values must be positive integers"
+                )
         if (
             self.max_attempts is not None
             and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
@@ -12766,77 +12782,37 @@ _eval_config_list = [
     # Aleph-Alpha/Kolibri-1-BF16 (TP4 autoport, P300X2). Reasoning model; the
     # model card recommends temperature 1.0, top_p 0.97, top_k 128 with thinking
     # on (reasoning_effort=high, the chat template default). Published scores are
-    # the model card's own single-harness table (GPQA Diamond EN 84.8, MMLU-Pro
-    # CoT EN 80.1). No GPU reference run exists yet (tt-agentic-bringup-qb2#76).
+    # the model card's own single-harness table (GPQA Diamond EN 84.8, AIME 2025
+    # EN 95.8). No GPU reference run exists yet (tt-agentic-bringup-qb2#76).
+    # MMLU-Pro is not run: 3.4 h of CI for an EXPERIMENTAL-waived score that
+    # needs the GPU reference (#76) to interpret.
     # Chat API so the server renders the native template and the kolibri1
     # reasoning parser separates thinking from the final answer.
     #
     # Nightly (= ci-long; tt-shield's --ci-mode always runs ci-nightly) is the
-    # productization set: MMLU-Pro 25/subject (350), AIME full (30, one pass),
-    # GPQA Diamond 80 at a 64K thinking budget. Measured on the 32-slot QB2 CI
-    # server (runs 37777268044 and 37864081794): MMLU-Pro 3.5K tokens/question
-    # at ~100 tok/s aggregate (350 -> 3.4 h); AIME 25K tokens/question, 16 slots
-    # -> ~54 tok/s (30 -> 3.8 h); GPQA at 64K ~21K+ tokens/question and KV-bound
-    # (the 368K-token KV cache holds ~6 full 64K generations, so 8-20 requests
-    # run instead of 32 and aggregate decode drops from ~114 to ~85 tok/s):
-    # 80 -> ~6-7 h, full 198 -> >= 14.5 h, which does not fit next to anything
-    # in tt-shield's 1080-minute job (run 37864081794 was cancelled at the cap
-    # with GPQA at 142/198 and NO artifacts, losing the two finished scores).
-    # Hence: short tasks first, GPQA last, and EVERY task bounded by
-    # wall_clock_timeout_seconds with setup (~35 min) + sum of bounds < 18 h
-    # (evals workflow: 0.6 + 4 + 4.5 + 8 = 17.1 h). A per-user 64K generation
-    # takes 3.6-5.2 h (3.6-5 tok/s per user) plus queue wait, so the lm-eval
-    # per-request timeout equals the task bound: a timed-out request is re-sent
-    # from scratch (7 times in run 37864081794), pure waste.
+    # productization set: AIME full (30, one pass) and GPQA Diamond 80, both at
+    # a 64K thinking budget. Measured on the 32-slot QB2 CI server (runs
+    # 37777268044 and 37864081794): AIME 25K tokens/question, 16 slots -> ~54
+    # tok/s (30 -> 3.8 h); GPQA at 64K ~21K+ tokens/question and KV-bound (the
+    # 368K-token KV cache holds ~6 full 64K generations, so 8-20 requests run
+    # instead of 32 and aggregate decode drops from ~114 to ~85 tok/s): 80 ->
+    # ~6-7 h, full 198 -> >= 14.5 h, which does not fit next to anything in
+    # tt-shield's 1080-minute job (run 37864081794 was cancelled at the cap with
+    # GPQA at 142/198 and NO artifacts, losing the finished scores).
+    # Hence: AIME first, GPQA last, and in the CI modes each task bounded
+    # (wall_clock_timeout_seconds_map) with setup (~35 min) + sum of bounds
+    # < 18 h (0.6 + 4.5 + 8 = 13.1 h). Full runs (no limit mode) score the whole
+    # datasets and stay unbounded: the CI bounds would cut them off with no
+    # score. A per-user 64K generation takes 3.6-5.2 h (3.6-5 tok/s per user)
+    # plus queue wait, so the lm-eval per-request timeout equals the CI task
+    # bound: a timed-out request is re-sent from scratch (7 times in run
+    # 37864081794), pure waste.
     # =========================================================================
     EvalConfig(
         hf_model_repo="Aleph-Alpha/Kolibri-1-BF16",
         tasks=[
             # Order matters: tasks run sequentially and GPQA (bounded, longest)
-            # goes last so MMLU-Pro and AIME are always scored.
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=80.1,
-                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                use_chat_api=True,
-                # 4 h bound (measured 3h25m for 350 questions).
-                wall_clock_timeout_seconds=14400,
-                model_kwargs={
-                    "max_length": 262144,
-                    "timeout": 14400,  # == wall bound: never retry a request
-                },
-                # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
-                # stream=false is required by lm-eval's chat-completions parser.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_p": 0.97,
-                    "top_k": 128,
-                },
-                # mmlu_pro is a group of 14 subtasks and lm-eval applies an int
-                # limit PER SUBTASK: 25 -> 350 questions (+/-2.3 pts), 1 -> 14 smoke.
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 25,
-                    EvalLimitMode.CI_LONG: 25,
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-            ),
+            # goes last so AIME is always scored.
             # Long-generation math check for the batched-decode MoE path
             # (tt-agentic-bringup-qb2#75). Informational ("should"): one pass over
             # 30 problems is +/-4 pts, and the model card's thinking budget is
@@ -12862,12 +12838,16 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 max_concurrent=16,
-                # 4.5 h bound (measured 3h50m for 30 problems at 16 slots: the
+                # CI bound: 4.5 h (measured 3h50m for 30 problems at 16 slots: the
                 # tail of 64K solutions at ~5 tok/s per user dominates).
-                wall_clock_timeout_seconds=16200,
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 16200,
+                    EvalLimitMode.CI_LONG: 16200,
+                    EvalLimitMode.SMOKE_TEST: 16200,
+                },
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 16200,  # == wall bound: never retry a request
+                    "timeout": 16200,  # == CI wall bound: never retry a request
                 },
                 # Model-card sampling; a 64K generation budget because AIME
                 # solutions regularly exceed the 32K that empties GPQA answers.
@@ -12903,15 +12883,19 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                # 8 h bound for 80 questions (estimate 6-7 h: ~1.8M tokens at
+                # CI bound: 8 h for 80 questions (estimate 6-7 h: ~1.8M tokens at
                 # ~85 tok/s KV-bound plus the tail of 64K generations). Exceeding
                 # it marks GPQA incomplete (rc=124) instead of losing the run.
-                # Full GPQA (198) at 64K measured >= 14.5 h alone: it needs its
-                # own run with a >= 16 h bound and nothing else in the job.
-                wall_clock_timeout_seconds=28800,
+                # Full GPQA (198) at 64K measured >= 14.5 h alone, so full runs
+                # are unbounded.
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 28800,
+                    EvalLimitMode.CI_LONG: 28800,
+                    EvalLimitMode.SMOKE_TEST: 28800,
+                },
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 28800,  # == wall bound: never retry a request
+                    "timeout": 28800,  # == CI wall bound: never retry a request
                 },
                 # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
                 # stream=false is required by lm-eval's chat-completions parser.
