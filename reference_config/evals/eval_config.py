@@ -10303,7 +10303,8 @@ _eval_config_list = [
     # Llama-shaped 33B thinking checkpoint at 9e692862, ctx 65536, concurrency 32. Tasks, prompting, timeouts and gen_kwargs
     # copied verbatim from llm-jp/llm-jp-4-8b-thinking (the Qwen/QwQ-32B r1 thinking profile; r1_aime24 omitted). The card
     # publishes only LLM-as-judge scores (MT-Bench JA/EN, AnswerCarefully, llm-jp-instructions), none for these tasks:
-    # every gpu_reference_score is a full-sample GPU run at this revision / max_context / concurrency (issue #5353), TBD.
+    # every gpu_reference_score is a full-sample GPU run at this revision / max_context / concurrency (issue #5353):
+    # vLLM 0.13.0 bf16 on one Colab G4 (RTX PRO 6000 Blackwell 96 GB; ctx 65536 uncapped, c32), 2026-10-20.
     # Output is Harmony-format and served with NO reasoning parser (vLLM's openai_gptoss parser assumes the o200k
     # Harmony ids; upstream uses the out-of-tree llm-jp-vllm plugin), so the graded text carries the analysis and final
     # channels on both the GPU and the TT side.
@@ -10315,8 +10316,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=85.80,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6292162601",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -10343,8 +10344,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=60.10,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6292162601",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
