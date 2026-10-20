@@ -7236,10 +7236,11 @@ templates:
         - /home/container_app_user/app/src/run_glm_tt.py
       # The four groups map the same TTQ, so the page cache holds it once (a 566 GB host worked).
       docker_host_packages:
-        # TODO: the published glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) on shared storage.
+        # TODO: the glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) and the weights on the
+        # runners' shared storage.
         /home/container_app_user/glm-tt: /mnt/weka/model-cache/TODO/glm-tt
-        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/ttq
-        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/gguf-vocab
+        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/TODO/glm-5.3-flash/ttq
+        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/TODO/glm-5.3-flash/gguf-vocab
     - device: P150X8
       # One user at a time; more requests queue.
       max_concurrency: 1
@@ -7253,10 +7254,11 @@ templates:
         - python3
         - /home/container_app_user/app/src/run_glm_tt.py
       docker_host_packages:
-        # TODO: the published glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) on shared storage.
+        # TODO: the glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) and the weights on the
+        # runners' shared storage.
         /home/container_app_user/glm-tt: /mnt/weka/model-cache/TODO/glm-tt
-        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/ttq
-        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/scratch/zcarver/glm-5.3-flash/gguf-vocab
+        /home/container_app_user/glm-weights/ttq: /mnt/weka/model-cache/TODO/glm-5.3-flash/ttq
+        /home/container_app_user/glm-weights/vocab: /mnt/weka/model-cache/TODO/glm-5.3-flash/gguf-vocab
   env_vars:
     GLM_TT_HOME: /home/container_app_user/glm-tt
     GLM_TT_TTQ: /home/container_app_user/glm-weights/ttq/glm53-flash-hot3-meas.ttq
