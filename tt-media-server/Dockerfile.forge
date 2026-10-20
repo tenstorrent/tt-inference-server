@@ -2,9 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
-# The worker venv runs on tt-crank, whose wheel download needs a GitHub token:
-# docker build --secret id=gh_token,env=GH_TOKEN ...
-
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
 
@@ -33,17 +30,11 @@ ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
-# Ubuntu 22.04's gh (2.4) lacks `gh auth token`, which tt-blacksmith's tt-crank wheel download uses.
-RUN wget -qO /usr/share/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
-    gh \
     libgl1 \
     libsndfile1 \
     wget \
@@ -118,12 +109,10 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # Remove private submodule source — cpp_server is not used in the forge image
 RUN rm -rf ${APP_DIR}/server/cpp_server
 USER root
-RUN --mount=type=secret,id=gh_token \
-    GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
-    /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
+RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
-ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
 # Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version

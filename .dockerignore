@@ -26,7 +26,5 @@ tt-media-server/cpp_server/build
 tt-media-server/cpp_server/build-*
 tt-media-server/cpp_server/compile_commands.json
 tt-media-server/cpp_server/tt-llm-engine
-# setup_env.sh's tt-blacksmith checkout holds a venv built for the host.
-tt-media-server/tt-blacksmith
 # Pulled on demand by --requirements-json "llm-gauntlet;<path>".
 llm-gauntlet

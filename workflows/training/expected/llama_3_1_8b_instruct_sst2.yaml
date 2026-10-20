@@ -11,7 +11,7 @@
 # builds its LLMTrainerConfig directly from the TrainingRequest below (seed=0,
 # deterministic=False) rather than through tt-blacksmith's pytest test-mode, so
 # the trajectory differs. Regenerate from a known-good P150 run whenever the
-# blacksmith pin (tt-media-server/.../forge_runners/requirements.txt)
+# blacksmith pin (tt-media-server/.../forge_training_runners/requirements.txt)
 # or the tt-crank wheel changes.
 #
 # Regenerated from a single-chip P150 run on 2026-09-28 (blacksmith pin
