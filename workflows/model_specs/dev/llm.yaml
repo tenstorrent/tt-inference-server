@@ -7193,9 +7193,10 @@ templates:
 # entrypoint with vllm-tt-metal/src/run_glm_tt.py, which maps DEVICE, the weights and the bearer key
 # (VLLM_API_KEY, else the JWT of JWT_SECRET, else API_KEY) onto glm-tt serve on port 8000. The
 # script is in the vLLM image's app/src and, with --dev-mode, mounted there from this checkout.
-# The binaries and the weights are read-only host directories on shared storage
-# (docker_host_packages), not a Hugging Face repo: the weights are tt-lab's prequantized TTQ plus a
-# vocabulary GGUF, so host setup downloads nothing.
+# hf_weights_repo holds tt-lab's prequantized TTQ (split into parts with a manifest), the
+# vocabulary GGUF and the glm-tt package (glm-tt/: bin/, runtime/, licenses, SHA256SUMS). Host
+# setup downloads it into the persistent volume like any checkpoint (checkpoint_files says when it
+# is complete); the launcher verifies the package and runs a copy, since downloads keep no exec bits.
 - weights:
     - zai-org/GLM-5.3-Flash
   impl: tt_lab_glm
@@ -7203,9 +7204,11 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
-  # hot3-meas TTQ (245.7 GB) plus the vocabulary GGUF, read through the page cache from the host
-  # package; the host's disk holds only logs and the cache volume.
-  min_disk_gb: 20
+  # TODO: the private repo the weights and the package are uploaded to.
+  hf_weights_repo: tenstorrent/GLM-5.3-Flash-TTQ
+  # hot3-meas TTQ (245.7 GB in six parts) plus the vocabulary GGUF and the package, downloaded
+  # once into the persistent volume and read through the page cache.
+  min_disk_gb: 260
   min_ram_gb: 300
   uses_tensor_model_cache: false
   # glm-tt loads its weights and compiles nothing at run time, and /health answers 200 only once it serves.
@@ -7235,12 +7238,6 @@ templates:
         - python3
         - /home/container_app_user/app/src/run_glm_tt.py
       # The four groups map the same TTQ, so the page cache holds it once (a 566 GB host worked).
-      docker_host_packages:
-        # The glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) and the weights on the CI
-        # Galaxies' shared /mnt/MLPerf (Weka), beside the other prepared checkpoints.
-        /home/container_app_user/glm-tt: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/glm-tt-802448b9
-        /home/container_app_user/glm-weights/ttq: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/ttq
-        /home/container_app_user/glm-weights/vocab: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/gguf-vocab
     - device: P150X8
       # One user at a time; more requests queue.
       max_concurrency: 1
@@ -7253,21 +7250,29 @@ templates:
       docker_entrypoint:
         - python3
         - /home/container_app_user/app/src/run_glm_tt.py
-      docker_host_packages:
-        # The glm-tt package (bin/, runtime/, SOURCE, SHA256SUMS) and the weights on the CI
-        # Galaxies' shared /mnt/MLPerf (Weka), beside the other prepared checkpoints.
-        /home/container_app_user/glm-tt: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/glm-tt-802448b9
-        /home/container_app_user/glm-weights/ttq: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/ttq
-        /home/container_app_user/glm-weights/vocab: /mnt/MLPerf/tt_dnn-models/zai-org/GLM-5.3-Flash/gguf-vocab
   env_vars:
-    GLM_TT_HOME: /home/container_app_user/glm-tt
-    GLM_TT_TTQ: /home/container_app_user/glm-weights/ttq/glm53-flash-hot3-meas.ttq
-    GLM_TT_VOCAB: /home/container_app_user/glm-weights/vocab/GLM-5.3-Flash-vocab.gguf
+    # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
+    # launcher takes a split TTQ by its manifest and the package from glm-tt/.
+    GLM_TT_TTQ: glm53-flash-hot3-meas.ttq
+    GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "163840"
   metadata:
     zai-org/GLM-5.3-Flash:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
+      # The repo has no safetensors: complete when these are present (see setup_host).
+      checkpoint_files:
+        - glm53-flash-hot3-meas.ttq.manifest
+        - glm53-flash-hot3-meas.ttq.00001-of-00006
+        - glm53-flash-hot3-meas.ttq.00002-of-00006
+        - glm53-flash-hot3-meas.ttq.00003-of-00006
+        - glm53-flash-hot3-meas.ttq.00004-of-00006
+        - glm53-flash-hot3-meas.ttq.00005-of-00006
+        - glm53-flash-hot3-meas.ttq.00006-of-00006
+        - GLM-5.3-Flash-vocab.gguf
+        - glm-tt/SHA256SUMS
+        - glm-tt/bin/glm-tt
+        - glm-tt/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.
