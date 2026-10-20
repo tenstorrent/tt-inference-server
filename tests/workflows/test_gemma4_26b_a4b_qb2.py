@@ -57,6 +57,9 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.vllm_args["reasoning-parser"] == "gemma4"
     assert dedicated.device_model_spec.vllm_args["seed"] == 9472
     assert dedicated.device_model_spec.vllm_args["max_num_seqs"] == 1
+    assert dedicated.device_model_spec.vllm_args["enable-prefix-caching"] is True
+    assert dedicated.device_model_spec.env_vars["GEMMA4_PREFIX_CACHING"] == "1"
+    assert dedicated.device_model_spec.env_vars["GEMMA4_PREFIX_TRACE_SUFFIX"] == "1"
     assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
         "/gemma4_metal_kernel_cache"
     )

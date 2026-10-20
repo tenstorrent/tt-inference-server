@@ -11779,7 +11779,6 @@ _eval_config_list = [
                 # Use the chat endpoint so the resolved model profile controls
                 # chat-template behavior.
                 use_chat_api=True,
-                seed=42,
                 model_kwargs={
                     "max_length": 131072,
                     "timeout": 7200,
@@ -11913,6 +11912,10 @@ _eval_config_list = [
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=30 * 60,
+                    # Keep the task-isolated tools import dependencies complete.
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt",
+                    },
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         # Output cap left at the value the pre-Harbor runs used,
