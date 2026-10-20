@@ -3,7 +3,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # blacksmith declares no dependencies; these are the ones the trainer imports.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@ce5b882e50c5925fe8722006bbc6ac2e861fa25a
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@7fe2df4b096527fd81329d609e3a8613d4e9643f
 transformers==5.12.1 # version required by tt-crank
 datasets
 peft
