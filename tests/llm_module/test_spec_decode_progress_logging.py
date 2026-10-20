@@ -5,6 +5,7 @@
 """Progress logging for the spec-decode sweep: per-run heartbeat, aiperf.log
 tail on failure, and the health wait's /v1/models fallback."""
 
+import json
 import logging
 import time
 
@@ -20,6 +21,43 @@ def test_heartbeat_logs_while_block_runs(caplog):
     with driver_mod._heartbeat("run-a", time.monotonic(), interval_s=0.05):
         time.sleep(0.3)
     assert any("run-a still running" in r.getMessage() for r in caplog.records)
+
+
+def test_heartbeat_logs_progress_status(caplog):
+    caplog.set_level(logging.INFO)
+    with driver_mod._heartbeat(
+        "run-a", time.monotonic(), interval_s=0.05, progress=lambda e: "3/8 done"
+    ):
+        time.sleep(0.3)
+    assert any("run-a 3/8 done" in r.getMessage() for r in caplog.records)
+
+
+def _raw_line(phase="profiling", error=None, status=200):
+    record = {"metadata": {"benchmark_phase": phase}, "status": status}
+    if error:
+        record["error"] = error
+    return json.dumps(record) + "\n"
+
+
+def test_progress_counts_raw_records_incrementally(tmp_path):
+    raw = tmp_path / "raw_records" / "raw_records_processor_0.jsonl"
+    raw.parent.mkdir()
+    raw.write_text(_raw_line() + _raw_line(phase="warmup") + _raw_line(status=500))
+    progress = driver_mod._RunProgress(artifact_dir=tmp_path, total=8)
+    assert progress(10.0) == "[#####---------------] 2/8 (25%), 1 errors, ETA ~30s"
+    # A partial trailing line waits for the next beat.
+    with raw.open("a") as fh:
+        fh.write(_raw_line(error={"message": "x"}) + _raw_line().rstrip("\n"))
+    status = progress(20.0)
+    assert "3/8 (38%), 2 errors" in status and "ETA ~33s" in status
+    with raw.open("a") as fh:
+        fh.write("\n")
+    assert "4/8 (50%)" in progress(30.0)
+
+
+def test_progress_without_total_counts_only(tmp_path):
+    progress = driver_mod._RunProgress(artifact_dir=tmp_path, total=None)
+    assert progress(5.0) == "0 requests done"
 
 
 def test_aiperf_log_tail_is_logged(tmp_path, caplog):
