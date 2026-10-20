@@ -324,7 +324,7 @@ for submodule, mock in submodules.items():
 
 
 def _install_blacksmith_stubs():
-    """Import shims for tt-blacksmith, which only ships in the forge worker image.
+    """Import shims for tt-blacksmith, which only ships in the crank worker image.
 
     Job callbacks subclass Callback at import time, so it cannot be a MagicMock.
     CrankLLMTrainer is a real class so tests can exercise setup/cleanup. Config
