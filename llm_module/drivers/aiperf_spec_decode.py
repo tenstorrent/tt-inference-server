@@ -56,12 +56,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
 from ..spec_decode.metrics import (
-    SPEC_DECODE_PREFIXES,
-    _acceptance_metrics_from_deltas,
-    _sum_by_metrics,
     fetch_prometheus_counters,
     fetch_prometheus_counters_multi,
-    parse_prometheus_text,
     scrape_spec_decode_metrics,
     scrape_spec_decode_metrics_multi,
 )
@@ -211,12 +207,7 @@ class AIPerfSpecDecodeDriver:
         env = {**AIPERF_PROGRESS_ENV, **context.extra_env}
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
-        progress = _RunProgress(
-            artifact_dir=artifact_dir,
-            total=spec_run.num_prompts,
-            metrics_urls=metrics_urls or (url.rstrip("/") + "/metrics",),
-            before=before,
-        )
+        progress = _RunProgress(artifact_dir=artifact_dir, total=spec_run.num_prompts)
         run_start = time.monotonic()
         with _heartbeat(spec_run.slug, run_start, progress=progress):
             rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
@@ -304,11 +295,6 @@ PROGRESS_BAR_WIDTH = 20
 # AIPerf buffers raw records 10 at a time; flushing each one as its request
 # finishes lets the heartbeat count completions while the run is live.
 AIPERF_PROGRESS_ENV = {"AIPERF_RECORD_RAW_EXPORT_BATCH_SIZE": "1"}
-# vLLM scheduler gauges and output-token counter, read live for progress.
-RUNNING_GAUGE = "vllm:num_requests_running"
-WAITING_GAUGE = "vllm:num_requests_waiting"
-GENERATION_COUNTER = "vllm:generation_tokens_total"
-PROGRESS_SCRAPE_TIMEOUT_S = 5.0
 
 
 @contextmanager
@@ -355,43 +341,22 @@ def _fmt_duration(seconds: float) -> str:
 
 
 class _RunProgress:
-    """Live status of one aiperf run, rendered as one heartbeat line.
+    """Live progress of one aiperf run, rendered as one heartbeat line.
 
-    Client side, it counts finished requests (and how many errored) from
-    the raw records aiperf flushes per request (``AIPERF_PROGRESS_ENV``).
-    Server side, it reads the vLLM running/waiting gauges, the output-token
-    rate between beats and the acceptance rate since the run started from
-    ``metrics_urls``. Each part is best effort and left out of the line when
-    its source is missing.
+    Counts finished requests (and how many errored) from the raw records
+    aiperf flushes per request (``AIPERF_PROGRESS_ENV``), so it works
+    against any server, with or without a ``/metrics`` endpoint.
     """
 
-    def __init__(
-        self,
-        *,
-        artifact_dir: Path,
-        total: Optional[int],
-        metrics_urls: Tuple[str, ...],
-        before: Dict[str, float],
-    ) -> None:
+    def __init__(self, *, artifact_dir: Path, total: Optional[int]) -> None:
         self.artifact_dir = Path(artifact_dir)
         self.total = total
-        self.metrics_urls = metrics_urls
-        self.before = before
         self.done = 0
         self.errors = 0
         self._offsets: Dict[Path, int] = {}
-        # (elapsed_s, generation_tokens) at the previous scrape, for the rate.
-        self._last_generation: Optional[Tuple[float, float]] = None
 
     def __call__(self, elapsed: float) -> str:
         self._read_new_records()
-        parts = [self._bar(elapsed)]
-        counters = self._scrape()
-        if counters:
-            parts += self._server_parts(elapsed, counters)
-        return " | ".join(parts)
-
-    def _bar(self, elapsed: float) -> str:
         finished = self.done + self.errors
         errors = f", {self.errors} errors" if self.errors else ""
         if not self.total:
@@ -429,49 +394,6 @@ class _RunProgress:
             self.errors += 1
         else:
             self.done += 1
-
-    def _scrape(self) -> Dict[str, float]:
-        """Live counters summed over ``metrics_urls``; ``{}`` if none answer."""
-        import requests
-
-        merged: Dict[str, float] = {}
-        for url in self.metrics_urls:
-            try:
-                response = requests.get(url, timeout=PROGRESS_SCRAPE_TIMEOUT_S)
-                response.raise_for_status()
-            except requests.RequestException as exc:
-                logger.debug("[spec-decode] progress scrape of %s failed: %s", url, exc)
-                continue
-            counters = parse_prometheus_text(
-                response.text,
-                prefix=SPEC_DECODE_PREFIXES
-                + (RUNNING_GAUGE, WAITING_GAUGE, GENERATION_COUNTER),
-            )
-            for key, value in counters.items():
-                merged[key] = merged.get(key, 0.0) + value
-        return merged
-
-    def _server_parts(self, elapsed: float, counters: Dict[str, float]) -> List[str]:
-        parts: List[str] = []
-        names = {key.split("{", 1)[0] for key in counters}
-        if RUNNING_GAUGE in names:
-            running = _sum_by_metrics(counters, (RUNNING_GAUGE,))
-            waiting = _sum_by_metrics(counters, (WAITING_GAUGE,))
-            parts.append(f"server: {running:.0f} running, {waiting:.0f} waiting")
-        if GENERATION_COUNTER in names:
-            generated = _sum_by_metrics(counters, (GENERATION_COUNTER,))
-            if self._last_generation is not None:
-                last_elapsed, last_generated = self._last_generation
-                if elapsed > last_elapsed:
-                    rate = (generated - last_generated) / (elapsed - last_elapsed)
-                    parts.append(f"{rate:.1f} gen tok/s")
-            self._last_generation = (elapsed, generated)
-        # Without a before-snapshot the counters span earlier runs too.
-        if self.before:
-            acceptance = _acceptance_metrics_from_deltas(self.before, counters)
-            if acceptance["draft_tokens"] > 0:
-                parts.append(f"acceptance {acceptance['acceptance_rate']:.1%}")
-        return parts
 
 
 def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:
