@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from workflows.host_packages import (
+    _storage_report,
     host_packages_provide_weights,
     resolve_host_package_mounts,
 )
@@ -63,6 +64,21 @@ def test_missing_package_dir_fails_loudly(tmp_path):
         resolve_host_package_mounts(spec)
     with pytest.raises(ValueError, match="does not exist on this host"):
         _docker_lifecycle_args(spec)
+
+
+def test_missing_package_reports_where_shared_storage_is(tmp_path):
+    mounts = tmp_path / "mounts"
+    mounts.write_text(
+        "/dev/sda1 / ext4 rw 0 0\n"
+        "server:/MLPerf /mnt/MLPerf nfs4 rw 0 0\n"
+        "default /mnt/weka wekafs rw 0 0\n"
+        "proc /proc proc rw 0 0\n"
+    )
+    report = _storage_report(tmp_path / "absent" / "pkg", mounts)
+    assert f"Deepest existing ancestor: {tmp_path}." in report
+    assert "/mnt/MLPerf (nfs4), /mnt/weka (wekafs)." in report
+    assert "/proc" not in report
+    assert "none" in _storage_report(tmp_path / "x", tmp_path / "no-mounts-file")
 
 
 @pytest.mark.parametrize("container_path", ["relative/pkg", "/"])
