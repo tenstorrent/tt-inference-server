@@ -1,6 +1,6 @@
 diff --git a/models/demos/gemma4_31b_qb2/tt/alias-manifest.json b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
 new file mode 100644
-index 00000000000..6f3a9057423
+index 0000000..6f3a905
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
 @@ -0,0 +1,12 @@
@@ -17,7 +17,7 @@ index 00000000000..6f3a9057423
 +  }
 +}
 diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
-index e9ae70be6fe..af99a3d4222 100644
+index e9ae70b..af99a3d 100644
 --- a/models/demos/gemma4_31b_qb2/tt/decoder.py
 +++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
 @@ -15,7 +15,10 @@ The bounded ring supports forward decoding with complete live history, not
@@ -716,7 +716,7 @@ index e9ae70be6fe..af99a3d4222 100644
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058eca3a9..91532233ef8 100644
+index f2058ec..9153223 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -1578,7 +1578,7 @@ index f2058eca3a9..91532233ef8 100644
  
  def build_generator(mesh_device, *, checkpoint=None, layer_indices=None, max_seq_len=2048):
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-index 943e2269be3..6b0d4750836 100644
+index 943e226..305b8f6 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 @@ -2,6 +2,10 @@
@@ -1609,15 +1609,20 @@ index 943e2269be3..6b0d4750836 100644
      decode_input_update_contract = 1
      MAX_PREFILL_TOKENS = 8192
  
-@@ -38,6 +43,7 @@ class Gemma4ForCausalLM:
+@@ -38,6 +43,12 @@ class Gemma4ForCausalLM:
          self.entry = None
          self.cache = None
          self.prefill_slot_keys = {}
 +        self.next_prefill_key = 0
++        self._pool_memory_interval = int(os.environ.get("GEMMA_POOL_MEMORY_SAMPLE_INTERVAL", "1"))
++        if not 1 <= self._pool_memory_interval <= 65536:
++            raise ValueError("GEMMA_POOL_MEMORY_SAMPLE_INTERVAL must be in 1..65536")
++        self._pool_memory_attempts = 0
++        self._pool_memory_phase_attempts = {}
  
      def embed_input_ids(self, input_ids):
          raise RuntimeError("Use the TT prefill_forward/decode_forward interface")
-@@ -65,8 +71,6 @@ class Gemma4ForCausalLM:
+@@ -65,8 +76,6 @@ class Gemma4ForCausalLM:
      def get_kv_cache_spec(cls, vllm_config):
          from vllm.v1.kv_cache_interface import FullAttentionSpec, SlidingWindowSpec
  
@@ -1626,7 +1631,7 @@ index 943e2269be3..6b0d4750836 100644
          if vllm_config.max_in_flight_tokens > 2 * cls.MAX_PREFILL_TOKENS:
              raise ValueError("Gemma4 QB2 supports at most 8192 batched tokens with async chunked prefill")
          config = vllm_config.model_config.hf_text_config
-@@ -101,38 +105,204 @@ class Gemma4ForCausalLM:
+@@ -101,38 +110,215 @@ class Gemma4ForCausalLM:
          # in-flight prefill tokens globally, in addition to the per-request tails.
          # The plugin separately adds one output page per request.
          tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
@@ -1805,7 +1810,15 @@ index 943e2269be3..6b0d4750836 100644
 +            print("KV_ALLOCATION_EVENT_DATA " + json.dumps({"probe":probe,"index":index,"count":len(chunks),"base64_zlib":chunk}),flush=True)
 +
 +    def _sample_pool_memory(self, phase):
-+        # Host allocator snapshots at operation boundaries: NOT a device peak.
++        # Sampled host allocator boundaries: never a device/lifetime peak.
++        self._pool_memory_attempts += 1
++        attempt = self._pool_memory_phase_attempts.get(phase, 0) + 1
++        self._pool_memory_phase_attempts[phase] = attempt
++        # Preserve the first boundary of each kind and every active explicit
++        # allocation-event probe. Trace allocation tracking is independent.
++        force = getattr(self, "_allocation_probe_active", None) is not None
++        if not force and (attempt - 1) % self._pool_memory_interval:
++            return
 +        started = time.perf_counter()
 +        view = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
 +        allocated = view.total_bytes_allocated_per_bank
@@ -1822,7 +1835,10 @@ index 943e2269be3..6b0d4750836 100644
 +                "trace_free_per_bank": trace_view.total_bytes_free_per_bank,
 +                "largest_contiguous_free_per_bank": view.largest_contiguous_bytes_free_per_bank,
 +                "observed_high_per_bank": high, "samples": self._pool_memory_samples,
-+                "query_host_s_total": self._pool_memory_host_s}), flush=True)
++                "query_host_s_total": self._pool_memory_host_s,
++                "boundary_attempts": self._pool_memory_attempts,
++                "sample_interval_per_phase": self._pool_memory_interval,
++                "scope": "sampled host boundaries, not device or lifetime peak"}), flush=True)
 +
 +    def _tables(self, cache, page_tables_per_layer, *, slots=None, audit_ranges=None):
          if cache is not self.cache:
@@ -1842,7 +1858,7 @@ index 943e2269be3..6b0d4750836 100644
              if key not in translated:
                  dest = torch.zeros_like(cache.page_tables[i])
                  rows, cols = source.shape
-@@ -143,7 +313,10 @@ class Gemma4ForCausalLM:
+@@ -143,7 +329,10 @@ class Gemma4ForCausalLM:
                      raise ValueError("Page table has fewer rows than prefill requests")
                  # Prefill rows are compact, then padded to the decode batch.
                  # Scatter only the live prefix into its assigned state slots.
@@ -1854,7 +1870,7 @@ index 943e2269be3..6b0d4750836 100644
                  translated[key] = dest
              result[i] = translated[key]
          return result
-@@ -185,32 +358,43 @@ class Gemma4ForCausalLM:
+@@ -185,32 +374,43 @@ class Gemma4ForCausalLM:
          page_tables_per_layer=None,
          start_pos=None,
          empty_slots=None,
@@ -1918,7 +1934,7 @@ index 943e2269be3..6b0d4750836 100644
  
      def decode_forward(
          self,
-@@ -227,6 +411,7 @@ class Gemma4ForCausalLM:
+@@ -227,6 +427,7 @@ class Gemma4ForCausalLM:
          reload_page_table=False,
          reload_sampling_params=True,
          reset_sampling_state=True,
@@ -1926,7 +1942,7 @@ index 943e2269be3..6b0d4750836 100644
          **kwargs,
      ):
          if "reset_batch" in kwargs:
-@@ -239,17 +424,20 @@ class Gemma4ForCausalLM:
+@@ -239,17 +440,20 @@ class Gemma4ForCausalLM:
              raise ValueError("Serving must use the cache allocated by vLLM")
          sample = sampling_params is not None
          if reload_inputs:
@@ -1954,7 +1970,7 @@ index 943e2269be3..6b0d4750836 100644
              self.generator._tables(kv_cache, tables)
          if sample and (reload_sampling_params or reset_sampling_state):
              params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
-@@ -290,11 +478,11 @@ class Gemma4ForCausalLM:
+@@ -290,11 +494,11 @@ class Gemma4ForCausalLM:
      def release_request(self, slot):
          key = self.prefill_slot_keys.pop(slot, None)
          if key is not None and self.cache is not None:
@@ -1970,7 +1986,7 @@ index 943e2269be3..6b0d4750836 100644
          self.entry = None
 diff --git a/models/demos/gemma4_31b_qb2/tt/history_bank.py b/models/demos/gemma4_31b_qb2/tt/history_bank.py
 new file mode 100644
-index 00000000000..d34bf78de37
+index 0000000..d34bf78
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/history_bank.py
 @@ -0,0 +1,237 @@
@@ -2212,7 +2228,7 @@ index 00000000000..d34bf78de37
 +        self.rewind = 0
 +        return self
 diff --git a/models/demos/gemma4_31b_qb2/tt/model.py b/models/demos/gemma4_31b_qb2/tt/model.py
-index 5bd8795283a..1ade965f26d 100644
+index 5bd8795..1ade965 100644
 --- a/models/demos/gemma4_31b_qb2/tt/model.py
 +++ b/models/demos/gemma4_31b_qb2/tt/model.py
 @@ -115,6 +115,10 @@ class Gemma4Model:
@@ -2345,7 +2361,7 @@ index 5bd8795283a..1ade965f26d 100644
              raise ValueError("Expected one cache pair per loaded layer")
 diff --git a/models/demos/gemma4_31b_qb2/tt/prefill_batch.py b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
 new file mode 100644
-index 00000000000..a435f1f65f1
+index 0000000..a435f1f
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
 @@ -0,0 +1,71 @@
@@ -2422,7 +2438,7 @@ index 00000000000..a435f1f65f1
 +            self._restore = None
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py b/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py
 new file mode 100644
-index 00000000000..694ab5cb709
+index 0000000..694ab5c
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py
 @@ -0,0 +1,62 @@
@@ -2490,7 +2506,7 @@ index 00000000000..694ab5cb709
 +                          num_devices=padded[2] // 32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
 new file mode 100644
-index 00000000000..2a11bd79924
+index 0000000..2a11bd7
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
 @@ -0,0 +1,51 @@
@@ -2547,7 +2563,7 @@ index 00000000000..2a11bd79924
 +                          num_devices=shape[0], memory_config=ttnn.DRAM_MEMORY_CONFIG)
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_position.py b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
 new file mode 100644
-index 00000000000..4965e837934
+index 0000000..4965e83
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
 @@ -0,0 +1,80 @@
@@ -2632,7 +2648,7 @@ index 00000000000..4965e837934
 +            scale=1.0, program_config=program_config, compute_kernel_config=layer.pref_compute,
 +        )
 diff --git a/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py b/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
-index 5e7b119c69f..0800f46a111 100644
+index 5e7b119..0800f46 100644
 --- a/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
 +++ b/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
 @@ -3,7 +3,7 @@
@@ -2673,7 +2689,7 @@ index 5e7b119c69f..0800f46a111 100644
          + 3 * a * 2048  # maxima and exp difference
 diff --git a/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
 new file mode 100644
-index 00000000000..c368606c2f0
+index 0000000..c368606
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
 @@ -0,0 +1,84 @@
@@ -2763,7 +2779,7 @@ index 00000000000..c368606c2f0
 +    assert not bank.leases and not state.prefill_history and not generator.traces
 diff --git a/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py
 new file mode 100644
-index 00000000000..27c3c672f2c
+index 0000000..27c3c67
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py
 @@ -0,0 +1,76 @@
@@ -2845,7 +2861,7 @@ index 00000000000..27c3c672f2c
 +    return rows
 diff --git a/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py
 new file mode 100644
-index 00000000000..a06ca73a754
+index 0000000..a06ca73
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py
 @@ -0,0 +1,50 @@
