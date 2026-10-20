@@ -472,6 +472,16 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     code_path="models/demos/k2_horizon_7b_qb2",
 )
 
+# XiaomiMiMo/MiMo-V2.6-Flash on Blackhole Galaxy: four TP=8 replicas, one per
+# mesh row (architectures TTMiMoV2ForCausalLM / TTMiMoV2OmniForCausalLM,
+# registered by vllm-tt-plugin).
+mimo_v2_6_flash_impl = ImplSpec(
+    impl_id="mimo_v2_6_flash",
+    impl_name="mimo-v2.6-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/mimo_v2_6_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -481,6 +491,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "mimo_v2_6_flash": mimo_v2_6_flash_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
