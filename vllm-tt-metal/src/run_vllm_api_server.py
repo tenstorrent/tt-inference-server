@@ -1360,6 +1360,10 @@ def main():
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
 
+    if model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_"):
+        from gemma_install_prefix_overlay import install_anchor_overlay
+        install_anchor_overlay(Path(sysconfig.get_paths()["purelib"]) / "vllm")
+
     # Step 3: Register TT models (after lookup, with correct impl_id)
     impl_id = model_spec.get("impl", {}).get("impl_id")
     if impl_id != QUETZAL_IMPL_ID:
