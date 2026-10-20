@@ -64,13 +64,14 @@ RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
 
 USER ${CONTAINER_APP_USERNAME}
 
-# tt-smi
+# tt-smi, in its own venv: Ubuntu 24.04's system Python refuses pip installs (PEP 668).
 RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
-    && pip3 install --upgrade pip \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && python3.12 -m venv ${HOME_DIR}/tt-smi-venv \
+    && ${HOME_DIR}/tt-smi-venv/bin/pip install git+https://github.com/tenstorrent/tt-smi"
+ENV PATH="${PATH}:${HOME_DIR}/tt-smi-venv/bin"
 
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
