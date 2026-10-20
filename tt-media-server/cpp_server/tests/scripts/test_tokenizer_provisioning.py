@@ -64,7 +64,7 @@ class TokenizerProvisioningTest(unittest.TestCase):
     def executable(path, content):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
-        path.chmod(0o755)
+        path.chmod(0o700)
 
     def run_script(self, script, *args):
         return subprocess.run(
