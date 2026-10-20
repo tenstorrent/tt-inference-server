@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
   "target_commit": null,
-  "patch_sha256": "a6a37c2ee29e963c4930328bfec5235746d17e9aead0abddee7938d1dabac930",
+  "patch_sha256": "91d7ee08ec847f5859eda6ca4967cfdcc926e3d50fbd651d79900630613343ea",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py": {
       "base": null,
@@ -45,7 +45,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "a9e231fd0484889b4e9de53cc88b9168f0cdeec35efca8aac4672a21dc094236"
+      "target": "c6b1091b11ff5c17fac5089cb96c48ac995bc2789ee72c54c32c6b095ed44918"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
@@ -68,7 +68,7 @@
       "target": "c14b8f9ba1a1018485f57602514d63c832c4f34336fb6ebe0c60febfe1475dfa"
     }
   },
-  "scope": "Exact reviewed finer host phase observer atop accepted phase source; math unchanged, default off. Alias manifest inherited byte-exact.",
+  "scope": "Accepted same-call QK RoPE table reuse, opt-in; finer timers and alias manifest inherited byte-exact.",
   "base_model_commit": "d0b0cd8ec041f3332a5dbd2260ffc17e4e44a71f",
-  "target_content_manifest_sha256": "9a1eeeac1474b8bcd60a72d24340a8ab1675fc82d28631303320b001be431570"
+  "target_content_manifest_sha256": "3b6eac69708b326bf3e4818958014f2dd29777d60a63b4a517c6bcc208860588"
 }
