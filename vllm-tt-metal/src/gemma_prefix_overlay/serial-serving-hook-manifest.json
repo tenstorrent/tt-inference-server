@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
   "target_commit": null,
-  "patch_sha256": "95e6bb658951896f841573d093b5ab28f464ec00ecc8dbe1180ce9ac82464af0",
+  "patch_sha256": "61aa37367093c7e935a38976e9f8eedf6eb076a06f640a0ff1a26593f89d9753",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -9,11 +9,11 @@
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "1adf16996ef6d1846201d766c1e0246671a5099dd1bb978da63b0dbc8f8479c4"
+      "target": "5c1364e7efa51adb4d2d0cbbe9e3d2cf18ae7e05d4399f6091de9654292be810"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "42fe7503cb634cab06e8b3431c1c115c1518e84410bae32c734dd6fa26b5e211"
+      "target": "e51bc06ce8094a6d2301d9269fc6726a54b040d70d49e991ae379e745177d7df"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
@@ -64,7 +64,7 @@
       "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
     }
   },
-  "scope": "clean source preparation only; paired same-source e2f cap1 sequential19 interval1 vs64 required; no runtime or quality acceptance",
+  "scope": "Accepted R9 twofile native delta composed with validated boundary64 adapter; anchor unchanged. Actual CI serving pending.",
   "base_model_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
   "target_content_manifest_sha256": "63ab3e443149e30444b0d3bd6ee2d478e836298164e8c8f98eb7e316cf92315c"
 }
