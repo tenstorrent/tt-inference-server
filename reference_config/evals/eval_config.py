@@ -11716,6 +11716,15 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -11778,6 +11787,15 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
