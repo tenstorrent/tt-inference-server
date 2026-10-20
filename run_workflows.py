@@ -366,14 +366,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "throughput"],
         default="full",
         help=(
             "Preset for --spec-decode (default: full). 'ci' is a short "
             "regression-friendly sweep (the 'coding' qualitative category "
             "plus speed_bench_throughput_32k at concurrency 1/16/64), "
             "'full' is every SPEED-Bench qualitative category plus the "
-            "whole throughput ISL x concurrency grid."
+            "whole throughput ISL x concurrency grid, 'throughput' is the "
+            "throughput grid alone. The SPEC_DECODE_ISLS (any of 1k, 2k, "
+            "8k, 16k, 32k) and SPEC_DECODE_CONCURRENCIES (e.g. '1,8,32') "
+            "env vars replace the preset's throughput ISLs / concurrencies."
         ),
     )
     parser.add_argument(
@@ -583,6 +586,13 @@ def parse_args() -> argparse.Namespace:
             "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
+    if args.spec_decode:
+        from llm_module.spec_decode.runs import build_runs
+
+        try:
+            build_runs(args.spec_decode_preset)
+        except ValueError as e:
+            parser.error(str(e))
     if args.serving_bench_suites and args.workflow != "serving_bench":
         parser.error(
             "--serving-bench-suites requires --workflow serving_bench "

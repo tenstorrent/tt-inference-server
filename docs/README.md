@@ -20,7 +20,8 @@ Directory of development docs for working on tt-inference-server.
 
 ## Benchmarking & Performance
 
-- [Benchmarking Tools](benchmarking_tools.md) - Comprehensive guide to performance benchmarking tools (vLLM, GenAI-Perf, AIPerf)
+- [Performance Benchmarks](../reference_config/benchmarking/README.md) - The `benchmarks` workflow: sweep, warmup, targets and grading, outputs, acceptance procedure
+- [Benchmarking Tools](benchmarking_tools.md) - The client tools (vLLM, AIPerf, GenAI-Perf, GuideLLM) and how their metrics differ
 
 ## Model Configuration
 

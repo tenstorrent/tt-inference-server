@@ -197,6 +197,33 @@ def test_mistral_7b_mmlu_pro_runs_single_turn():
     assert others == []
 
 
+@pytest.mark.parametrize("task_name", ["r1_aime24", "r1_math500", "r1_gpqa_diamond"])
+def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
+    """Every QwQ-32B r1 task sends the same per-request timeout, and it covers
+    a max_gen_toks=32768 generation at the measured P300X2 rate.
+
+    r1_gpqa_diamond used to carry no timeout, so it fell back to lm-eval's
+    1800 s default while its siblings sent 3600 s; Shield run 38323771398 lost
+    22/198 gpqa requests to client timeouts. A timeout below a full-length
+    generation cuts the response, which a like-for-like run must never do.
+    """
+    from reference_config.evals import eval_config
+
+    task = next(
+        t for t in _eval_config_map["Qwen/QwQ-32B"].tasks if t.task_name == task_name
+    )
+    command = _build_eval_test_command(
+        task, hf_model_repo="Qwen/QwQ-32B", model_id="QwQ-32B", max_context=40960
+    )
+    model_kwargs = _command_model_kwargs(command)
+    assert "timeout" in model_kwargs, f"{task_name} falls back to lm-eval's 1800 s"
+    timeout = int(model_kwargs["timeout"])
+    assert timeout == getattr(eval_config, "QWQ_R1_REQUEST_TIMEOUT_S", None)
+    # 32768 tokens at the p10 per-request rate (6.2 tok/s) is 5285 s; the
+    # constant doubles that for scheduler queueing under KV oversubscription.
+    assert timeout >= 2 * 32768 / 6.2
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])

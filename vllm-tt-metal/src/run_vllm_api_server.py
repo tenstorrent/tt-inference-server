@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+# Meta repos ship a second copy of the weights in original/ (Meta's own format, e.g.
+# 141 GB extra for Llama-3.1-70B) that nothing here loads. The host-side download
+# (workflows/setup_host.py) already skips it; keep the container download in line.
+HF_DOWNLOAD_IGNORE_PATTERNS = ["original/**"]
 QUETZAL_IMPL_ID = "quetzal"
 QUETZAL_PROVIDER_ENV = {
     "QUETZAL_VLLM": "1",
@@ -644,6 +648,19 @@ def _ensure_quetzal_metadata(model_spec: dict) -> Path:
     try:
         from transformers import AutoConfig, AutoTokenizer
 
+        # A checkpoint whose config.json names remote code (auto_map) resolves
+        # here only if its architecture is registered locally: quetzal vendors
+        # those classes byte-pinned (tt_quetzalcoatlus.hf_compat, #320/#323) and
+        # registers them with AutoConfig/AutoModel, so remote code is never
+        # trusted. A quetzal that predates the vendoring keeps today's
+        # behaviour (fails closed on such a config).
+        try:
+            from tt_quetzalcoatlus.hf_compat import register_vendored_architectures
+        except ImportError:
+            register_vendored_architectures = None
+        if register_vendored_architectures is not None:
+            register_vendored_architectures()
+
         AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
         AutoTokenizer.from_pretrained(
             path, local_files_only=True, trust_remote_code=False
@@ -706,6 +723,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
                 repo_id=model_spec["hf_model_repo"],
                 revision=revision,
                 cache_dir=cache_root / "weights" / "hub",
+                ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
             )
         )
         os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
@@ -730,7 +748,12 @@ def ensure_weights_available(model_spec: dict) -> Path:
     at_revision = f" at revision {revision}" if revision else ""
     logger.info(f"Downloading weights from {hf_repo}{at_revision} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path, revision=revision)
+        snapshot_download(
+            repo_id=hf_repo,
+            local_dir=weights_path,
+            revision=revision,
+            ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
+        )
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(

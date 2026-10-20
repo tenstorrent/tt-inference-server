@@ -13,6 +13,7 @@ orchestrator that ties them together is
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -31,15 +32,17 @@ SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = (
     "writing",
 )
 
+# The SPEED-Bench throughput subsets; SPEC_DECODE_ISLS picks from these.
 SPEED_BENCH_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k", "2k", "8k", "16k", "32k")
 
-THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 16, 64)
+THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 8, 16, 32, 64)
 
 # The 'ci' preset trims the sweep so a regression run stays short: the
-# 'coding' qualitative category plus a single throughput ISL across the full
-# concurrency sweep — 32k_maxcon-{1,16,64}.
+# 'coding' qualitative category plus a single throughput ISL at three
+# concurrencies — 32k_maxcon-{1,16,64}.
 CI_QUALITATIVE_CATEGORIES: Tuple[str, ...] = ("coding",)
 CI_THROUGHPUT_ISLS: Tuple[str, ...] = ("32k",)
+CI_THROUGHPUT_CONCURRENCIES: Tuple[int, ...] = (1, 16, 64)
 
 # Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
 # max(10, concurrency*2) == 10 for conc=1, so the count must be passed
@@ -47,6 +50,11 @@ CI_THROUGHPUT_ISLS: Tuple[str, ...] = ("32k",)
 # without replacement, so a count equal to the category size sends each prompt
 # exactly once.
 SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
+
+# Comma-separated env vars that replace the preset's throughput ISLs /
+# concurrencies (e.g. SPEC_DECODE_ISLS=1k,8k SPEC_DECODE_CONCURRENCIES=8,32).
+SPEC_DECODE_ISLS_ENV = "SPEC_DECODE_ISLS"
+SPEC_DECODE_CONCURRENCIES_ENV = "SPEC_DECODE_CONCURRENCIES"
 
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
@@ -105,7 +113,9 @@ def _qualitative_runs(categories: Tuple[str, ...]) -> List[SpecDecodeRun]:
     ]
 
 
-def _throughput_runs(isls: Tuple[str, ...]) -> List[SpecDecodeRun]:
+def _throughput_runs(
+    isls: Tuple[str, ...], concurrencies: Tuple[int, ...]
+) -> List[SpecDecodeRun]:
     return [
         SpecDecodeRun(
             public_dataset=f"speed_bench_throughput_{isl}",
@@ -114,38 +124,124 @@ def _throughput_runs(isls: Tuple[str, ...]) -> List[SpecDecodeRun]:
             max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
         )
         for isl in isls
-        for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
+        for concurrency in concurrencies
     ]
 
 
-SPEC_DECODE_SWEEP: List[SpecDecodeRun] = _qualitative_runs(
-    SPEED_BENCH_QUALITATIVE_CATEGORIES
-) + _throughput_runs(SPEED_BENCH_THROUGHPUT_ISLS)
+@dataclass(frozen=True)
+class _Preset:
+    qualitative_categories: Tuple[str, ...]
+    throughput_isls: Tuple[str, ...]
+    throughput_concurrencies: Tuple[int, ...]
 
-SPEC_DECODE_CI_SWEEP: List[SpecDecodeRun] = _qualitative_runs(
-    CI_QUALITATIVE_CATEGORIES
-) + _throughput_runs(CI_THROUGHPUT_ISLS)
+    def runs(self) -> List[SpecDecodeRun]:
+        return _qualitative_runs(self.qualitative_categories) + _throughput_runs(
+            self.throughput_isls, self.throughput_concurrencies
+        )
 
-SPEC_DECODE_PRESETS = {
-    "full": SPEC_DECODE_SWEEP,
-    "ci": SPEC_DECODE_CI_SWEEP,
+
+_PRESETS = {
+    "full": _Preset(
+        SPEED_BENCH_QUALITATIVE_CATEGORIES,
+        SPEED_BENCH_THROUGHPUT_ISLS,
+        THROUGHPUT_CONCURRENCY_SWEEP,
+    ),
+    "ci": _Preset(
+        CI_QUALITATIVE_CATEGORIES, CI_THROUGHPUT_ISLS, CI_THROUGHPUT_CONCURRENCIES
+    ),
+    "throughput": _Preset(
+        (), SPEED_BENCH_THROUGHPUT_ISLS, THROUGHPUT_CONCURRENCY_SWEEP
+    ),
 }
 
+SPEC_DECODE_PRESETS = {name: preset.runs() for name, preset in _PRESETS.items()}
+SPEC_DECODE_SWEEP: List[SpecDecodeRun] = SPEC_DECODE_PRESETS["full"]
+SPEC_DECODE_CI_SWEEP: List[SpecDecodeRun] = SPEC_DECODE_PRESETS["ci"]
+SPEC_DECODE_THROUGHPUT_SWEEP: List[SpecDecodeRun] = SPEC_DECODE_PRESETS["throughput"]
 
-def build_runs(preset: str = "full") -> List[SpecDecodeRun]:
+
+def parse_isls(isls: Optional[str]) -> Optional[Tuple[str, ...]]:
+    """Parse ``SPEC_DECODE_ISLS`` (e.g. ``"1k,8k"``) into bucket names.
+
+    Returns ``None`` when unset so the preset's ISLs apply. Buckets are the
+    SPEED-Bench throughput subsets and come back in canonical order.
+    """
+    if not isls:
+        return None
+    selected = {s.strip().lower() for s in isls.split(",") if s.strip()}
+    bad = sorted(selected - set(SPEED_BENCH_THROUGHPUT_ISLS))
+    if bad or not selected:
+        raise ValueError(
+            f"Unknown spec-decode ISL bucket(s): {bad or [isls]}. "
+            f"Available: {list(SPEED_BENCH_THROUGHPUT_ISLS)}"
+        )
+    return tuple(isl for isl in SPEED_BENCH_THROUGHPUT_ISLS if isl in selected)
+
+
+def parse_concurrencies(concurrencies: Optional[str]) -> Optional[Tuple[int, ...]]:
+    """Parse ``SPEC_DECODE_CONCURRENCIES`` (e.g. ``"1,8,32"``) into ints.
+
+    Returns ``None`` when unset so the preset's concurrencies apply. Any
+    positive integer is accepted; values come back sorted and de-duplicated.
+    """
+    if not concurrencies:
+        return None
+    try:
+        selected = {int(c) for c in concurrencies.split(",") if c.strip()}
+    except ValueError:
+        selected = set()
+    if not selected or min(selected) < 1:
+        raise ValueError(
+            f"Invalid spec-decode concurrencies: {concurrencies!r}. "
+            "Expected a comma-separated list of positive integers, e.g. '1,8,32'."
+        )
+    return tuple(sorted(selected))
+
+
+def build_runs(
+    preset: str = "full",
+    *,
+    isls: Optional[str] = None,
+    concurrencies: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+) -> List[SpecDecodeRun]:
     """Return the spec-decode sweep for ``preset``.
 
     ``full`` (default) runs every qualitative category plus the whole
     throughput ISL x concurrency grid. ``ci`` runs only the 'coding'
-    qualitative category plus the 32k throughput ISL across the
-    concurrency sweep (32k_maxcon-{1,16,64}).
+    qualitative category plus the 32k throughput ISL at concurrency
+    1/16/64. ``throughput`` runs the full throughput grid and no
+    qualitative categories.
+
+    ``isls`` / ``concurrencies`` (comma-separated; default to the
+    ``SPEC_DECODE_ISLS`` / ``SPEC_DECODE_CONCURRENCIES`` env vars) replace
+    the preset's throughput ISLs / concurrencies; qualitative runs are
+    unaffected.
+
+    ``max_concurrency`` (the server's user slots) caps the preset's
+    concurrencies when ``concurrencies`` is unset: points above it become
+    ``max_concurrency`` itself, so an 8-slot server sweeps 1/8 instead of
+    measuring rejected requests at 16/64.
     """
-    if preset not in SPEC_DECODE_PRESETS:
+    if preset not in _PRESETS:
         raise ValueError(
-            f"Unknown spec-decode preset: {preset}. "
-            f"Available: {sorted(SPEC_DECODE_PRESETS)}"
+            f"Unknown spec-decode preset: {preset}. Available: {sorted(_PRESETS)}"
         )
-    return list(SPEC_DECODE_PRESETS[preset])
+    if isls is None:
+        isls = os.environ.get(SPEC_DECODE_ISLS_ENV)
+    if concurrencies is None:
+        concurrencies = os.environ.get(SPEC_DECODE_CONCURRENCIES_ENV)
+    base = _PRESETS[preset]
+    selected = parse_concurrencies(concurrencies)
+    if selected is None:
+        selected = base.throughput_concurrencies
+        if max_concurrency:
+            selected = tuple(sorted({min(c, max_concurrency) for c in selected}))
+    return _Preset(
+        base.qualitative_categories,
+        parse_isls(isls) or base.throughput_isls,
+        selected,
+    ).runs()
 
 
 def summarize_runs(runs: List[SpecDecodeRun]) -> str:
@@ -165,7 +261,11 @@ __all__ = [
     "SPEC_DECODE_CI_SWEEP",
     "SPEC_DECODE_PRESETS",
     "SPEC_DECODE_SWEEP",
+    "SPEC_DECODE_THROUGHPUT_SWEEP",
+    "SPEED_BENCH_THROUGHPUT_ISLS",
     "SpecDecodeRun",
     "build_runs",
+    "parse_concurrencies",
+    "parse_isls",
     "summarize_runs",
 ]

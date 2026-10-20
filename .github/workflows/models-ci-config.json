@@ -72,11 +72,6 @@
                             "devices": [
                                 "P150"
                             ]
-                        },
-                        "release": {
-                            "devices": [
-                                "P150"
-                            ]
                         }
                     }
                 },
@@ -306,11 +301,6 @@
                                 "P300X2"
                             ]
                         },
-                        "release": {
-                            "devices": [
-                                "BH_GALAXY"
-                            ]
-                        },
                         "weekly": {
                             "devices": [
                                 "GALAXY",
@@ -372,11 +362,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "P300X2"
                     ]
@@ -465,11 +450,6 @@
                         "BH_GALAXY",
                         "P300X2",
                         "T3K"
-                    ]
-                },
-                "release": {
-                    "devices": [
-                        "BH_GALAXY"
                     ]
                 }
             }
@@ -590,12 +570,6 @@
                         "P300X2",
                         "BH_GALAXY"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2",
-                        "BH_GALAXY"
-                    ]
                 }
             }
         },
@@ -632,12 +606,6 @@
                         "P300X2",
                         "BH_GALAXY"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2",
-                        "BH_GALAXY"
-                    ]
                 }
             }
         },
@@ -650,11 +618,6 @@
                         "BH_GALAXY",
                         "P300X2",
                         "T3K"
-                    ]
-                },
-                "release": {
-                    "devices": [
-                        "BH_GALAXY"
                     ]
                 }
             }

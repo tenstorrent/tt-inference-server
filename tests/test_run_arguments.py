@@ -205,6 +205,30 @@ class TestArgumentParsing:
         assert args.limit_samples_mode == "ci-long"
         assert args.skip_system_sw_validation is True
 
+    def test_eval_shard_parses_and_composes_with_eval_tasks(self, base_args):
+        argv = (
+            ["run.py"] + base_args + ["--eval-tasks", "aime25", "--eval-shard", "1/3"]
+        )
+        with patch("sys.argv", argv):
+            args = parse_arguments()
+        assert args.eval_shard == "1/3"
+        assert args.eval_tasks == "aime25"
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--eval-shard", "3/3"],
+            ["--eval-shard", "0/1"],
+            ["--eval-shard", "x"],
+            ["--eval-shard", "0/2", "--eval-samples", '{"aime25": [0]}'],
+            ["--eval-shard", "0/2", "--limit-samples-mode", "ci-nightly"],
+        ],
+    )
+    def test_eval_shard_rejects_bad_values_and_subset_flags(self, base_args, extra):
+        with patch("sys.argv", ["run.py"] + base_args + extra):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
         [
@@ -1310,6 +1334,45 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_SERVICE"] == "image"
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "Qwen3-TTS-12Hz-1.7B-Base",
+            "Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            "Qwen3-TTS-12Hz-0.6B-Base",
+            "Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        ],
+    )
+    @pytest.mark.parametrize("device", ["N150", "P150"])
+    def test_qwen3_tts_uses_cpp_server(self, model, device):
+        # Qwen3-TTS is in the dev catalog only.
+        from workflows.model_spec import _MODEL_SPECS_DIR, load_templates_from_yaml
+
+        (model_spec,) = [
+            spec
+            for template in load_templates_from_yaml(
+                _MODEL_SPECS_DIR / "dev" / "audio_tts.yaml", env="dev"
+            )
+            for spec in template.expand_to_specs()
+            if spec.model_name == model and spec.device_type.name == device
+        ]
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "tts"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_qwen3_tts"
+        # The release (Base vs CustomVoice) is derived from the checkpoint id.
+        assert env_vars["HF_MODEL"] == f"Qwen/{model}"
+        assert env_vars["DEVICE_IDS"] == "(0)"
+        # Reproducible audio for the evals, and small /dev/shm queues.
+        assert env_vars["TTS_QWEN3_SEED"] == "0"
+        assert int(env_vars["TTS_TASK_QUEUE_CAPACITY"]) <= 64
+        assert int(env_vars["TTS_AUDIO_QUEUE_CAPACITY"]) <= 64
+        # The C++ parent throws on a non-LLM MODEL value.
+        assert "MODEL" not in env_vars
 
     def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
         """Whisper (uvicorn media server) must place HF_HOME on the cache_root
