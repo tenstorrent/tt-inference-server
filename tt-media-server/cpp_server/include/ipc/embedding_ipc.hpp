@@ -23,12 +23,13 @@ namespace tt::ipc::embedding {
 namespace ser = tt::ipc::serialization;
 
 constexpr size_t EMBEDDING_MAX_TASK_MSG_BYTES = 64 * 1024;
+constexpr size_t EMBEDDING_MAX_BYTES_PER_TOKEN = 16;
 constexpr size_t EMBEDDING_MAX_RESULT_MSG_BYTES = 20 * 1024;
 constexpr size_t EMBEDDING_MAX_ERROR_BYTES = 512;
 
 inline size_t maxTaskMessageBytes(size_t maxSeqLen) {
-  (void)maxSeqLen;
-  return EMBEDDING_MAX_TASK_MSG_BYTES;
+  return std::max(EMBEDDING_MAX_TASK_MSG_BYTES,
+                  maxSeqLen * EMBEDDING_MAX_BYTES_PER_TOKEN);
 }
 
 inline size_t maxInputBytesForTaskMsg(size_t maxTaskMsgBytes) {

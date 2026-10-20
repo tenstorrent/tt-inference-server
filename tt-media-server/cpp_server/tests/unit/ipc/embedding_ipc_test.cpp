@@ -127,5 +127,11 @@ TEST(EmbeddingIpcTest, TaskAndResultQueuesRoundTripAndClaimSignal) {
   resultOwner.remove();
 }
 
+TEST(EmbeddingIpcTest, MaxTaskMessageBytesScalesWithMaxSeqLen) {
+  EXPECT_EQ(maxTaskMessageBytes(512), EMBEDDING_MAX_TASK_MSG_BYTES);
+  EXPECT_EQ(maxTaskMessageBytes(8192), 8192u * EMBEDDING_MAX_BYTES_PER_TOKEN);
+  EXPECT_GT(maxInputBytesForTaskMsg(maxTaskMessageBytes(8192)), 100 * 1024u);
+}
+
 }  // namespace
 }  // namespace tt::ipc::embedding
