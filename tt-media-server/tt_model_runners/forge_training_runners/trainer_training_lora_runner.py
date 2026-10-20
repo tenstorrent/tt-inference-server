@@ -146,6 +146,11 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         return [request._output_model_path]
 
     def _setup_trainer(self, trainer, request: TrainingRequest) -> None:
+        # TODO(mmilosevicTT): Log from a trainer callback once setup() has one before the model loads.
+        self.logger.info(
+            "Downloading and preparing model weights for training.",
+            extra={"log_type": "info", "step": 0},
+        )
         try:
             trainer.setup(self._job_config(request))
         except Exception as exception:
