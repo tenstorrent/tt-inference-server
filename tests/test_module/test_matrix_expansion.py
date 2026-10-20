@@ -299,11 +299,13 @@ class TestVideoMatrixExpansion:
 
     def test_i2v_suites_include_i2v_param_test(self):
         # The I2V param sweep is a live test case; guard that every I2V suite
-        # still carries both the happy-path and the param sweep after expansion.
+        # still carries the create contract, the lifecycle and the param sweep
+        # after expansion.
         suite_map = self._suite_map()
         for suite_id in self.WAN_I2V_TARGETS:
             templates = [tc["template"] for tc in suite_map[suite_id]["test_cases"]]
             assert templates == [
+                "WanI2VCreateContractTest",
                 "VideoGenerationI2VTest",
                 "VideoGenerationI2VParamTest",
             ], f"{suite_id}: unexpected templates {templates}"

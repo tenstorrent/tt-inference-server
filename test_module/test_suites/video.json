@@ -62,9 +62,14 @@
             "num_of_devices": 1,
             "test_cases": [
                 {
+                    "template": "WanI2VCreateContractTest",
+                    "enabled": true,
+                    "description": "Wan2.2 I2V create contract: auth and request validation refusals"
+                },
+                {
                     "template": "VideoGenerationI2VTest",
                     "enabled": true,
-                    "description": "Wan2.2 I2V end-to-end happy path",
+                    "description": "Wan2.2 I2V end-to-end lifecycle: create, query, list, download, clip check",
                     "targets": {
                         "num_inference_steps": 40,
                         "poll_timeout": 1200,

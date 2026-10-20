@@ -2,11 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""End-to-end test for Wan2.2 Image-to-Video generation.
+"""End-to-end lifecycle test for Wan2.2 Image-to-Video generation.
 
 Uploads a fixture image as the conditioning frame, submits a job to
-``POST /v1/videos/generations/i2v``, polls until completion, and asserts
-the returned MP4 is a non-empty file.
+``POST /v1/videos/generations/i2v``, checks the job's metadata echoes the
+request and that ``GET /v1/videos/jobs`` lists it, polls until completion,
+downloads the MP4 and checks the clip (decodable, not black/flat/frozen,
+81 frames at the mesh's resolution). The lifecycle checks are ported from the
+MiniMax-H3 lifecycle test (zni/h3-ci-unified).
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
@@ -23,6 +26,7 @@ import aiohttp
 from report_module.schema import Block
 
 from .._test_common import BaseTest, HardwareRequirement, TestConfig
+from .._test_common.video_output_check import check_video_output
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -39,6 +43,7 @@ FIXTURE_IMAGE_PATH = (
 
 SUBMIT_PATH = "/v1/videos/generations/i2v"
 STATUS_PATH = "/v1/videos/generations/{job_id}"
+JOBS_PATH = "/v1/videos/jobs"
 DOWNLOAD_PATH = "/v1/videos/generations/{job_id}/download"
 
 DEFAULT_POLL_INTERVAL_SECONDS = 5
@@ -107,21 +112,89 @@ class VideoGenerationI2VTest(BaseTest):
             if not job_id:
                 return {"success": False, "reason": "submit_failed"}
 
+            # Checked before polling: an accepted job must be queryable and listed
+            # while it is still queued, not only once it has finished.
+            problems = [
+                problem
+                for problem in (
+                    await self._check_job_metadata(session, job_id, payload),
+                    await self._check_job_listed(session, job_id),
+                )
+                if problem
+            ]
+
             file_path = await self._poll_until_complete(session, job_id)
             if not file_path:
-                return {"success": False, "reason": "poll_failed", "job_id": job_id}
+                return {
+                    "success": False,
+                    "reason": "poll_failed",
+                    "job_id": job_id,
+                    "problems": problems,
+                }
 
             file_size = (
                 Path(file_path).stat().st_size if Path(file_path).exists() else 0
             )
-            success = file_size > 0
+            clip_problem = check_video_output(
+                file_path,
+                hf_model_repo=self.ctx.model_spec.hf_model_repo if self.ctx else "",
+                device_name=self.ctx.device.name if self.ctx else "",
+            )
+            if clip_problem:
+                problems.append(f"clip: {clip_problem}")
+            for problem in problems:
+                logger.error(f"❌ I2V job {job_id}: {problem}")
 
             return {
-                "success": success,
+                "success": not problems,
                 "job_id": job_id,
                 "file_path": file_path,
                 "file_size_bytes": file_size,
+                "problems": problems,
             }
+
+    async def _check_job_metadata(
+        self, session: aiohttp.ClientSession, job_id: str, payload: dict
+    ) -> str:
+        """The job's metadata must be this job and echo what was sent."""
+        url = f"{self.base_url}{STATUS_PATH.format(job_id=job_id)}"
+        async with session.get(url) as response:
+            if response.status != HTTP_OK:
+                return f"metadata query returned {response.status}"
+            try:
+                data = await response.json(content_type=None)
+            except json.JSONDecodeError as e:
+                return f"metadata is not JSON: {e}"
+        if not isinstance(data, dict):
+            return f"metadata is not an object: {data!r:.200}"
+        if data.get("id") != job_id or data.get("job_type") != "video":
+            return f"metadata is not this video job: id={data.get('id')!r} job_type={data.get('job_type')!r}"
+        echoed = data.get("request_parameters") or {}
+        mismatched = [
+            key
+            for key in ("prompt", "negative_prompt", "num_inference_steps", "seed")
+            if echoed.get(key) != payload[key]
+        ]
+        if mismatched:
+            return f"request_parameters do not echo {mismatched}"
+        return ""
+
+    async def _check_job_listed(
+        self, session: aiohttp.ClientSession, job_id: str
+    ) -> str:
+        """``GET /v1/videos/jobs`` must list the job."""
+        async with session.get(f"{self.base_url}{JOBS_PATH}") as response:
+            if response.status != HTTP_OK:
+                return f"jobs list returned {response.status}"
+            try:
+                jobs = await response.json(content_type=None)
+            except json.JSONDecodeError as e:
+                return f"jobs list is not JSON: {e}"
+        if not isinstance(jobs, list):
+            return f"jobs list is not a list: {jobs!r:.200}"
+        if not any(isinstance(job, dict) and job.get("id") == job_id for job in jobs):
+            return "job is missing from the jobs list"
+        return ""
 
     async def _submit_job(
         self, session: aiohttp.ClientSession, url: str, payload: dict

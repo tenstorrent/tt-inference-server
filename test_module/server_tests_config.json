@@ -1490,6 +1490,21 @@
         "mock_mode": false
       }
     },
+    "WanI2VCreateContractTest": {
+      "module": "test_module.load_param_tests.wan_i2v_create_contract_test",
+      "markers": [
+        "param",
+        "e2e",
+        "fast"
+      ],
+      "test_config": {
+        "test_timeout": 300,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
     "VideoGenerationI2VParamTest": {
       "module": "test_module.load_param_tests.video_generation_i2v_param_test",
       "markers": [
