@@ -17,21 +17,22 @@ index 0000000..6f3a905
 +  }
 +}
 diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
-index e9ae70b..af99a3d 100644
+index e9ae70b..5037978 100644
 --- a/models/demos/gemma4_31b_qb2/tt/decoder.py
 +++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
-@@ -15,7 +15,10 @@ The bounded ring supports forward decoding with complete live history, not
+@@ -15,7 +15,11 @@ The bounded ring supports forward decoding with complete live history, not
  arbitrary rollback into evicted tokens. Page-ID changes require live KV migration.
  """
  
 +import os
 +
++from models.demos.gemma4_31b_qb2.tt.prefill_phase_timing import profile_phase
  import ttnn
 +from models.demos.gemma4_31b_qb2.tt.history_bank import HistoryTail
  from models.demos.gemma4_31b_qb2.tt.sdpa_l1 import BLACKHOLE_L1_BYTES, full_sdpa_fp32_l1_end
  from models.demos.gpt_oss.tt.ccl import CCLManager
  
-@@ -71,6 +74,7 @@ class Decoder:
+@@ -71,6 +75,7 @@ class Decoder:
          self.activation_dtype = ttnn.bfloat16
          self.residual_dtype = ttnn.bfloat16
          self.norms_dtype = ttnn.bfloat16
@@ -39,7 +40,7 @@ index e9ae70b..af99a3d 100644
          self.PREFILL_CHUNK = 1024 if self.kind == "sliding_attention" else 6656
          if self.PREFILL_CHUNK <= 0 or self.PREFILL_CHUNK % self.PAGE_SIZE:
              raise ValueError("Compute chunks must contain a positive whole number of cache pages")
-@@ -324,6 +328,20 @@ class Decoder:
+@@ -324,6 +329,20 @@ class Decoder:
              shared_setup[table_key] = {name: getattr(self, name) for name in names}
          for name, value in shared_setup[table_key].items():
              setattr(self, name, value)
@@ -60,7 +61,7 @@ index e9ae70b..af99a3d 100644
          self.decode_sdpa_config = ttnn.SDPAProgramConfig(
              compute_with_storage_grid_size=ttnn.CoreCoord(*[8, 4]),
              q_chunk_size=0,
-@@ -365,10 +383,11 @@ class Decoder:
+@@ -365,10 +384,11 @@ class Decoder:
          # tile storage for this descriptor instead of allocating and releasing
          # a large unused template between persistent norm owners. The view's
          # values are intentionally never consumed by a numerical operation.
@@ -74,7 +75,7 @@ index e9ae70b..af99a3d 100644
          assert x.buffer_unique_id() == self.cos.buffer_unique_id()
          assert x.dtype == ttnn.bfloat16 and x.layout == ttnn.TILE_LAYOUT
          assert x.memory_config() == ttnn.DRAM_MEMORY_CONFIG
-@@ -385,14 +404,14 @@ class Decoder:
+@@ -385,14 +405,14 @@ class Decoder:
          # Query the native factory rather than duplicating worker/round
          # sizing. Its geometry does not depend on the norm weight's values.
          shapes = {}
@@ -91,11 +92,12 @@ index e9ae70b..af99a3d 100644
                  first_owner = probe
              del probe
          self.prefill_norm_stats_owners = {}
-@@ -474,15 +493,24 @@ class Decoder:
+@@ -474,15 +494,25 @@ class Decoder:
          """Residual ownership chosen once at entry to the entire layer stack."""
          return 1344 if sequence_length > 128 else 5376
  
 -    def _reduce(self, x, residual_width=None):
++    @profile_phase("reduction")
 +    def _reduce(self, x, residual_width=None, *, batch=1):
          residual_width = self.residual_width if residual_width is None else residual_width
          x = ttnn.to_memory_config(x, ttnn.DRAM_MEMORY_CONFIG)
@@ -117,7 +119,7 @@ index e9ae70b..af99a3d 100644
          y = ttnn.experimental.reduce_scatter_minimal_async(
              x,
              dim=3,
-@@ -494,17 +522,42 @@ class Decoder:
+@@ -494,17 +524,43 @@ class Decoder:
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
              num_workers_per_link=None,
          )
@@ -126,6 +128,7 @@ index e9ae70b..af99a3d 100644
          return ttnn.typecast(y, ttnn.bfloat16) if y.dtype != ttnn.bfloat16 else y
  
 -    def _pref_linear(self, x, name, activation=None):
++    @profile_phase("projection")
 +    def _pref_linear(self, x, name, activation=None, *, sequence_hint=None):
          import math
  
@@ -162,7 +165,7 @@ index e9ae70b..af99a3d 100644
              and weight.dtype == ttnn.bfloat4_b
              and x.dtype == ttnn.bfloat16
          )
-@@ -519,9 +572,9 @@ class Decoder:
+@@ -519,9 +575,9 @@ class Decoder:
          cap = (8 if name == "o" else 14) if self.sliding else (4 if name == "o" else 6)
          expected_input = ttnn.bfloat8_b if name == "o" and not self.sliding else ttnn.bfloat16
          if not wide_qkv and weight.dtype == ttnn.bfloat4_b and x.dtype == expected_input:
@@ -174,7 +177,7 @@ index e9ae70b..af99a3d 100644
                  cap = 32 if name == "o" else 28
          if wide_qkv:
              cap = 42
-@@ -538,7 +591,7 @@ class Decoder:
+@@ -538,7 +594,7 @@ class Decoder:
              fuse_batch=False,
              fused_activation=ttnn.UnaryWithParam(ttnn.UnaryOpType.GELU_TANH) if activation else None,
          )
@@ -183,7 +186,7 @@ index e9ae70b..af99a3d 100644
              x,
              weight,
              program_config=config,
-@@ -547,6 +600,8 @@ class Decoder:
+@@ -547,6 +603,8 @@ class Decoder:
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
          )
  
@@ -192,7 +195,7 @@ index e9ae70b..af99a3d 100644
      def _dlinear(self, x, name):
          weight = self.decode_weights[name]
          kdim, ndim = weight.shape[-2], weight.shape[-1]
-@@ -584,6 +639,10 @@ class Decoder:
+@@ -584,6 +642,10 @@ class Decoder:
              return self._dnorm(x, name)
          if x.shape[-1] == self.hidden_size:
              rows = x.padded_shape[-2]
@@ -203,11 +206,12 @@ index e9ae70b..af99a3d 100644
              mem = ttnn.create_sharded_memory_config(
                  (rows, 192),
                  ttnn.CoreGrid(x=7, y=4),
-@@ -641,16 +700,16 @@ class Decoder:
+@@ -641,16 +703,17 @@ class Decoder:
          n = self._resnorm(x, name, decode)
          return self._gather(n) if x.shape[-1] != self.hidden_size else n
  
 -    def _prefill_mlp(self, x):
++    @profile_phase("mlp")
 +    def _prefill_mlp(self, x, *, sequence_hint=None, batch=1):
          n = self._input_norm(x, "pre_feedforward_layernorm", False)
 -        gate = self._pref_linear(n, "gate", "gelu_tanh")
@@ -225,7 +229,7 @@ index e9ae70b..af99a3d 100644
          del local
          post = self._resnorm(reduced, "post_feedforward_layernorm", False)
          del reduced
-@@ -681,18 +740,24 @@ class Decoder:
+@@ -681,18 +744,24 @@ class Decoder:
              activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.MUL_UNARY_SFPU, self.layer_scalar)],
          )
  
@@ -253,7 +257,7 @@ index e9ae70b..af99a3d 100644
          for chunk in eligible:
              end = full_sdpa_fp32_l1_end(
                  rows=q.shape[2],
-@@ -704,6 +769,7 @@ class Decoder:
+@@ -704,6 +773,7 @@ class Decoder:
                  q_tile_bytes=tile_bytes[q.dtype],
                  kv_tile_bytes=tile_bytes[cache.dtype],
                  page_table_bytes=page_bytes,
@@ -261,7 +265,7 @@ index e9ae70b..af99a3d 100644
              )
              if end <= BLACKHOLE_L1_BYTES:
                  key = (q.shape[2], start, str(q.dtype), str(cache.dtype), page_bytes)
-@@ -716,6 +782,7 @@ class Decoder:
+@@ -716,10 +786,12 @@ class Decoder:
                      q_chunk=chunk,
                      k_chunk=128,
                      cb_region_end=end,
@@ -269,11 +273,17 @@ index e9ae70b..af99a3d 100644
                  )
                  return self.pref_sdpa_by_q[chunk]
          raise ValueError("No configured full-attention SDPA Q chunk fits Blackhole L1")
-@@ -730,9 +797,15 @@ class Decoder:
+ 
++    @profile_phase("concat_heads")
+     def _concat_heads(self, attn):
+         return ttnn.experimental.nlp_concat_heads(attn, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+ 
+@@ -730,9 +802,16 @@ class Decoder:
          result = self._apply_decode_rope(x, cos, sin)
          return ttnn.reshape(result, ttnn.Shape(list(x.shape)), ttnn.Shape(list(x.padded_shape)))
  
 -    def _prefill_qkv(self, x, start):
++    @profile_phase("qkv")
 +    def _prefill_qkv(self, x, start, *, batch=1, sequence_hint=None):
          tied = not self.sliding
 -        fused = self._pref_linear(self._input_norm(x, "input_layernorm", False), "qk" if tied else "qkv")
@@ -287,7 +297,7 @@ index e9ae70b..af99a3d 100644
          q, k, v = ttnn.experimental.nlp_create_qkv_heads(
              fused,
              num_heads=8,
-@@ -746,27 +819,323 @@ class Decoder:
+@@ -746,27 +825,324 @@ class Decoder:
              # Full attention derives rotated K from normalized V below.
              # The raw K output has no consumer after head creation.
              del k
@@ -618,6 +628,7 @@ index e9ae70b..af99a3d 100644
 +        result = ttnn.concat([ttnn.concat(part, dim=2) if len(part) > 1 else part[0] for part in parts], dim=2)
 +        return (result, tails) if return_history else result
 +
++    @profile_phase("decoder_prefill")
      def prefill_forward(
 -        self, x, *, page_table, kv_cache, consume_input=False, start_pos=0, history=None, return_history=False
 +        self, x, *, page_table, kv_cache, consume_input=False, start_pos=0, history=None,
@@ -625,7 +636,7 @@ index e9ae70b..af99a3d 100644
      ):
          """Prefill a page-aligned span, optionally retaining sliding history for a continuation."""
          if start_pos < 0 or start_pos % self.PAGE_SIZE:
-@@ -775,6 +1144,8 @@ class Decoder:
+@@ -775,6 +1151,8 @@ class Decoder:
              raise ValueError("Sliding continuation requires its preceding K/V history")
          next_history = None
          batch, one, seq, width = x.shape
@@ -634,7 +645,7 @@ index e9ae70b..af99a3d 100644
          assert one == 1 and width == self.prefill_input_width(seq) and (0 < seq <= self.max_context)
          assert page_table.shape[0] == batch and page_table.shape[1] * self.PAGE_SIZE >= start_pos + seq
          if consume_input:
-@@ -823,7 +1194,10 @@ class Decoder:
+@@ -823,7 +1201,10 @@ class Decoder:
                      q = ttnn.typecast(q, ttnn.bfloat8_b)
                  sdpa_config = self._prefill_sdpa_config(q, kv_cache[0], pt, start=absolute_start)
                  length = inp.shape[2]
@@ -646,7 +657,7 @@ index e9ae70b..af99a3d 100644
                  ttnn.experimental.paged_fill_cache(
                      kv_cache[0], ttnn.typecast(k, kv_cache[0].dtype), fill_pt, batch_idx=0
                  )
-@@ -849,7 +1223,8 @@ class Decoder:
+@@ -849,7 +1230,8 @@ class Decoder:
                          program_config=sdpa_config,
                          compute_kernel_config=self.pref_compute,
                      )
@@ -656,7 +667,7 @@ index e9ae70b..af99a3d 100644
                  elif self.sliding:
                      attn = ttnn.transformer.scaled_dot_product_attention(
                          q,
-@@ -862,27 +1237,41 @@ class Decoder:
+@@ -862,27 +1244,41 @@ class Decoder:
                          compute_kernel_config=self.pref_compute,
                      )
                  else:
@@ -2005,13 +2016,14 @@ index 943e226..f62c9dc 100644
          self.entry = None
 diff --git a/models/demos/gemma4_31b_qb2/tt/history_bank.py b/models/demos/gemma4_31b_qb2/tt/history_bank.py
 new file mode 100644
-index 0000000..d34bf78
+index 0000000..8db69d3
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/history_bank.py
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,240 @@
 +# SPDX-License-Identifier: Apache-2.0
 +"""Fixed BF16 backing for request-owned prefill histories (experimental)."""
 +import torch
++from models.demos.gemma4_31b_qb2.tt.prefill_phase_timing import profile_phase
 +import ttnn
 +
 +
@@ -2110,6 +2122,7 @@ index 0000000..d34bf78
 +        assert output.buffer_unique_id() == selected.buffer_unique_id()
 +        return output
 +
++    @profile_phase("bank_read_attention")
 +    def read_attention(self, roots, begin, length):
 +        if length not in self.read_indices or not 0 <= begin <= self.CAPACITY - length:
 +            raise ValueError("Expected a generated page-aligned attention history")
@@ -2121,6 +2134,7 @@ index 0000000..d34bf78
 +        self.normalization_counters["attention_reads"] += 1
 +        return result
 +
++    @profile_phase("bank_write_descriptor")
 +    def write_descriptor(self, roots, tail):
 +        height = int(tail.sources[0].shape[2])
 +        columns = torch.arange(self.CAPACITY, dtype=torch.int32)[None, :]
@@ -2247,10 +2261,18 @@ index 0000000..d34bf78
 +        self.rewind = 0
 +        return self
 diff --git a/models/demos/gemma4_31b_qb2/tt/model.py b/models/demos/gemma4_31b_qb2/tt/model.py
-index 5bd8795..1ade965 100644
+index 5bd8795..1168185 100644
 --- a/models/demos/gemma4_31b_qb2/tt/model.py
 +++ b/models/demos/gemma4_31b_qb2/tt/model.py
-@@ -115,6 +115,10 @@ class Gemma4Model:
+@@ -16,6 +16,7 @@ from loguru import logger
+ from safetensors import safe_open
+ from transformers import AutoConfig
+ 
++from models.demos.gemma4_31b_qb2.tt.prefill_phase_timing import profile_phase
+ import ttnn
+ from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
+ 
+@@ -115,6 +116,10 @@ class Gemma4Model:
          # All owners and their native views exist before cache allocation/tracing.
          for layer in self.layers:
              layer._prepare_prefill_norm_stats()
@@ -2261,7 +2283,23 @@ index 5bd8795..1ade965 100644
          logger.info("Gemma4 model loaded")
  
      def tensor(self, x, *, dim=None, dtype=None, layout=ttnn.TILE_LAYOUT):
-@@ -194,7 +198,8 @@ class Gemma4Model:
+@@ -132,6 +137,7 @@ class Gemma4Model:
+     def gather_hidden(self, x):
+         return self.layers[0]._gather(x)
+ 
++    @profile_phase("embedding")
+     def embed(self, tokens, *, sequence_length=None, batch=None):
+         x = ttnn.embedding(tokens, self.embedding, layout=ttnn.TILE_LAYOUT, dtype=self.activation_dtype)
+         # Prefill owns this newly allocated embedding. Scalar multiplication
+@@ -154,6 +160,7 @@ class Gemma4Model:
+             x = ttnn.to_memory_config(x, self.layers[0]._mem(5376, 28))
+         return x
+ 
++    @profile_phase("terminal")
+     def terminal(self, hidden):
+         if hidden.shape[-1] == 1344:
+             hidden = self.gather_hidden(hidden)
+@@ -194,7 +201,8 @@ class Gemma4Model:
          return logits
  
      def prefill_device(
@@ -2271,7 +2309,7 @@ index 5bd8795..1ade965 100644
      ):
          if len(kv_cache) != len(self.layers):
              raise ValueError("Expected one cache pair per loaded layer")
-@@ -210,6 +215,9 @@ class Gemma4Model:
+@@ -210,6 +218,9 @@ class Gemma4Model:
                  start_pos=start_pos,
                  history=histories[i] if histories is not None else None,
                  return_history=histories is not None,
@@ -2281,7 +2319,7 @@ index 5bd8795..1ade965 100644
              )
              if histories is not None:
                  x, histories[i] = x
-@@ -217,11 +225,95 @@ class Gemma4Model:
+@@ -217,11 +228,95 @@ class Gemma4Model:
              # An unaligned slice begin untilizes its entire input. Copy
              # the aligned final tile first, then select its logical row.
              tile_start = (sequence_length - 1) // 32 * 32
