@@ -24,9 +24,10 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
                      directory (MODEL_WEIGHTS_DIR, else $CACHE_ROOT/weights/$MODEL where
                      TIS downloads the weights repo), or in an HF snapshot under HF_HOME.
                      A TTQ split into parts is found by its NAME.manifest.
-  VLLM_API_KEY / JWT_SECRET / API_KEY / NO_AUTH  the bearer key, in that order: TIS's
-                     clients send VLLM_API_KEY if set, else the JWT of JWT_SECRET
-                     (utils/vllm_run_utils.py get_encoded_api_key); NO_AUTH=1 for none.
+  VLLM_API_KEY / API_KEY / JWT_SECRET / NO_AUTH  the bearer key, in that order: TIS's
+                     clients send a MEDIA server the literal VLLM_API_KEY or API_KEY
+                     (workflow_module/command_factory.py _resolve_auth_token), and the
+                     JWT of JWT_SECRET only to vLLM; NO_AUTH=1 for none.
   SERVICE_PORT (8000), SERVED_MODEL_NAME (zai-org/$MODEL), GLM_TT_MAX_TOKENS (163840),
   GLM_TT_HOST (0.0.0.0), GLM_TT_EXTRA_ARGS (appended to serve's arguments, split on spaces),
   TT_LAB_DIRTY_MARKER (default /var/lib/tenstorrent/glm-tt.dirty when that host directory is
@@ -98,15 +99,19 @@ def _truthy(value) -> bool:
 
 
 def resolve_api_key(env):
-    """(key or None, source): VLLM_API_KEY, the JWT of JWT_SECRET, API_KEY; or NO_AUTH."""
+    """(key or None, source): VLLM_API_KEY, API_KEY, the JWT of JWT_SECRET; or NO_AUTH.
+
+    TIS's clients send a MEDIA server the literal VLLM_API_KEY or API_KEY (Shield sets
+    API_KEY), and a JWT of JWT_SECRET only to vLLM servers.
+    """
     if _truthy(env.get("NO_AUTH")):
         return None, "NO_AUTH"
     if env.get("VLLM_API_KEY"):
         return env["VLLM_API_KEY"], "VLLM_API_KEY"
-    if env.get("JWT_SECRET"):
-        return tis_jwt(env["JWT_SECRET"]), "JWT_SECRET"
     if env.get("API_KEY"):
         return env["API_KEY"], "API_KEY"
+    if env.get("JWT_SECRET"):
+        return tis_jwt(env["JWT_SECRET"]), "JWT_SECRET"
     raise SetupError(
         "set JWT_SECRET, VLLM_API_KEY or API_KEY, or NO_AUTH=1 to serve without a key"
     )

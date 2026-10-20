@@ -46,8 +46,8 @@ def test_jwt_matches_tis_clients():
             {"VLLM_API_KEY": "v", "JWT_SECRET": "j", "API_KEY": "a"},
             ("v", "VLLM_API_KEY"),
         ),
-        ({"JWT_SECRET": "j", "API_KEY": "a"}, (None, "JWT_SECRET")),
-        ({"API_KEY": "a"}, ("a", "API_KEY")),
+        ({"JWT_SECRET": "j", "API_KEY": "a"}, ("a", "API_KEY")),
+        ({"JWT_SECRET": "j"}, (None, "JWT_SECRET")),
         ({"NO_AUTH": "true", "API_KEY": "a"}, (None, "NO_AUTH")),
     ],
 )
