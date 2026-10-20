@@ -45,6 +45,7 @@ namespace {
 
 volatile std::sig_atomic_t gShutdownRequested = 0;
 volatile std::sig_atomic_t gSignalCount = 0;
+volatile std::sig_atomic_t gFatalServiceError = 0;
 
 // Returns true if the port is available, false if already in use.
 bool probePort(const std::string& host, uint16_t port) {
@@ -186,6 +187,15 @@ int main(int argc, char* argv[]) {
     while (gShutdownRequested == 0) {
       std::this_thread::sleep_for(
           std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+      auto svc = tt::services::ServiceContainer::instance().configuredService();
+      if (svc && svc->hasFatalError()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        TT_LOG_CRITICAL(
+            "[Main] Configured service reported fatal worker error; "
+            "initiating server shutdown");
+        gFatalServiceError = 1;
+        gShutdownRequested = 1;
+      }
     }
     drogon::app().quit();
   });
@@ -488,7 +498,18 @@ int main(int argc, char* argv[]) {
     dynamoWorkerServer.reset();
   }
 
+  if (auto svc =
+          tt::services::ServiceContainer::instance().configuredService()) {
+    svc->stop();
+  }
+
   tt::telemetry::shutdown();
+
+  if (gFatalServiceError != 0) {
+    TT_LOG_CRITICAL(
+        "[Main] Server exiting with code 1 due to fatal worker error");
+    return 1;
+  }
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete (graceful)");

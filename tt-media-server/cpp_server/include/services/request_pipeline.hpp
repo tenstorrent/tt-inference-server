@@ -45,6 +45,7 @@ class IService {
   virtual void start() = 0;
   virtual void stop() = 0;
   virtual bool isModelReady() const = 0;
+  virtual bool hasFatalError() const { return false; }
   virtual SystemStatus getSystemStatus() const = 0;
   virtual std::string runnerInUse() const { return ""; }
 };
@@ -192,6 +193,10 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
   bool isModelReady() const override {
     return !workerFailed_.load(std::memory_order_acquire) && workerManager_ &&
            workerManager_->isReady();
+  }
+
+  bool hasFatalError() const override {
+    return workerFailed_.load(std::memory_order_acquire);
   }
 
   void submitRequestAsync(RequestType request, Callback onComplete) {
