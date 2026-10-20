@@ -388,6 +388,38 @@ Settings go in the test case's `test_config`; `TOOL_CALL_SCHEMA_<KEY>` overrides
 
 The run logs a `[tool-call-schema progress] N/M done` line every ~5% of cases. To run the suite directly with pytest, see [Running vLLM parameter tests](run_vllm_param_tests.md#tool-call-schema-suite).
 
+## MiniMax Provider Verifier
+
+> **Internal.** Runs as part of `spec_tests` (and so `release`) for MiniMax-M3 on `super_cluster`.
+
+[MiniMax-Provider-Verifier](https://github.com/MiniMax-AI/MiniMax-Provider-Verifier) is MiniMax's check for third-party M3 deployments. It is checked out at `MINIMAX_PROVIDER_VERIFIER_COMMIT` (`workflows/workflow_venvs.py`) into the `MINIMAX_PROVIDER_VERIFIER` venv, provisioned on first use, and its scripts run unmodified. Two spec tests wrap it:
+
+- `MiniMaxProviderVerifierTest` runs `scripts/batch_verify.py` over its `sample.jsonl` (102 requests) `loops` times (pass@10 upstream) and grades the mean of each metric against the README reference thresholds: Query-Success-Rate 100%, ToolCalls-Match-Rate ≥ 97% (README: ≈98% ±1), ToolCalls-Trigger-Similarity ≥ 98% (F1 against the official M3 run in the repository), ToolCalls-Schema-Accuracy ≥ 98%, Error-Only-Reasoning-Rate 0%, Language-Following-Success-Rate ≥ 40%, Scenario-Check-Pass-Rate 100%. A `targets` entry named by the metric key (e.g. `tool_calls_match_rate`) overrides a threshold. The block lists every metric, the per-loop values, and the cases that failed in the most loops.
+- `MiniMaxM3FormatCheckTest` runs the `m3_format_check` pytest suite (`m3_text_tests.py` and `m3_stream_tests.py`; image/video are left out because the served M3 is text-only) and fails on any failing case, like the vLLM parameter suites.
+
+A `SPEC_TESTS` `known_issues` entry in the model spec waives one verifier metric (`task_name: tool_calls_match_rate`), one format-check class (`task_name: m3_text_tests.TestUsageField`) or one case (`task_name: test_17_04_real_text_512k_xiyouji[stream]`).
+
+`--workflow spec_tests` (or `release`) runs them with the model's other spec tests. To run just these two against an endpoint, with the suite-template settings (`--set KEY=VALUE` overrides one; `--tests verifier` or `--tests format` picks one; `OPENAI_API_KEY` is sent as the bearer token):
+
+```bash
+python3 -m test_module.llm_tests.minimax_provider_verifier_test --server-url <endpoint> \
+  --output-dir <dir> [--set loops=1]
+```
+
+Settings go in the test case's `test_config`; `MINIMAX_VERIFIER_<KEY>` overrides one for a single run (e.g. `MINIMAX_VERIFIER_LOOPS=1` for a quick check):
+
+| Test | Key | Default | |
+|---|---|---|---|
+| verifier | `loops` | `10` | pass@N |
+| verifier | `max_workers` / `request_timeout` / `retries` | `10` / `1800` / `3` | `batch_verify.py` concurrency and per-request limits |
+| verifier | `stream` / `extra_body` | off / none | streaming requests; extra request fields (JSON object) |
+| verifier | `baseline_results` | official M3 loop 1 | baseline for Trigger-Similarity, relative to the checkout |
+| format check | `suites` / `deselect` | text + stream / none | pytest files to run; node ids to leave out |
+| format check | `workers` / `case_timeout` | `8` / suite default (1800 s) | pytest-xdist workers; per-case timeout |
+| format check | `skip_reasoning_split` / `max_tokens` | off / suite default (20480) | `M3_SKIP_REASONING_SPLIT`, `M3_MAX_TOKENS` |
+
+Each run keeps the verifier's outputs (per-loop results and summaries, the format suite's JUnit report and per-request logs) under `<output>/minimax_provider_verifier/`. `MINIMAX_PROVIDER_VERIFIER_DIR` / `MINIMAX_PROVIDER_VERIFIER_PYTHON` point both tests at an existing checkout and interpreter instead of the venv.
+
 ## Stress Tests
 
 > **Internal workflow.** `stress_tests` is used for release validation and CI. It requires a running inference server.

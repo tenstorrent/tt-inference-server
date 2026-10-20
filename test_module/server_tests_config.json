@@ -1594,6 +1594,43 @@
         "exclude_ref_schemas": false,
         "non_blocking": false
       }
+    },
+    "MiniMaxProviderVerifierTest": {
+      "module": "test_module.llm_tests.minimax_provider_verifier_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 14400,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "loops": 10,
+        "max_workers": 10,
+        "request_timeout": 1800,
+        "retries": 3,
+        "stream": false
+      }
+    },
+    "MiniMaxM3FormatCheckTest": {
+      "module": "test_module.llm_tests.minimax_provider_verifier_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 10800,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "workers": 8,
+        "skip_reasoning_split": false
+      }
     }
   },
   "_comment": "test_suites are loaded from test_suites/*.json files",

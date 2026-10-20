@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the MINIMAX_PROVIDER_VERIFIER workflow venv.
+# Used by: setup_minimax_provider_verifier() in workflows/workflow_venvs.py
+#
+# The union of the pinned verifier checkout's requirements.txt (verify.py and
+# scripts/) and m3_format_check/requirements.txt (the M3 format suite), with
+# the same lower bounds. Keep in step when MINIMAX_PROVIDER_VERIFIER_COMMIT
+# moves.
+
+-c constraints.txt
+
+jsonschema>=4.25.1
+loguru>=0.7.3
+megfile>=4.2.5
+numpy>=2.3.4
+openai>=2.7.1
+tqdm>=4.67.1
+httpx>=0.24.0
+pytest>=7.0.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.0.0

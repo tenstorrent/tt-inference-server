@@ -44,6 +44,16 @@ HARBOR_REF = "tt-inference-server"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
+# MiniMax's provider verifier (tool-call trigger/schema metrics + the M3
+# chat-completions format suite), run unmodified by
+# test_module/llm_tests/minimax_provider_verifier_test.py. The repository has
+# no release tags, so the pin is a commit (master, 2026-10-17).
+MINIMAX_PROVIDER_VERIFIER_REPO = (
+    "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
+)
+MINIMAX_PROVIDER_VERIFIER_COMMIT = "dea004e5872637e70a9db1518c48258e866f1c7e"
+MINIMAX_PROVIDER_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
+
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
@@ -233,6 +243,24 @@ def setup_evals_agentic(
         return False
 
     return _write_harbor_adapters_pth(venv_config, harbor_dir)
+
+
+def setup_minimax_provider_verifier(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for MINIMAX_PROVIDER_VERIFIER: check out the verifier at its pin.
+
+    Its scripts are run from the checkout (they locate ``sample.jsonl``, the
+    official baseline under ``output-dir/`` and the format-suite fixtures
+    relative to it), so nothing is installed from it; the venv's packages
+    come from requirements/minimax-provider-verifier.txt.
+    """
+    return checkout_pinned_repo(
+        venv_config.venv_path / MINIMAX_PROVIDER_VERIFIER_DIR_NAME,
+        MINIMAX_PROVIDER_VERIFIER_REPO,
+        MINIMAX_PROVIDER_VERIFIER_COMMIT,
+    )
 
 
 def _write_harbor_adapters_pth(
@@ -920,6 +948,13 @@ _venv_config_list = [
         requirements_file="spec-decode.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
+    ),
+    # 3.12: the verifier requires numpy>=2.3, which needs Python >= 3.11.
+    VenvConfig(
+        venv_type=WorkflowVenvType.MINIMAX_PROVIDER_VERIFIER,
+        requirements_file="minimax-provider-verifier.txt",
+        python_version="3.12",
+        setup_function=setup_minimax_provider_verifier,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,

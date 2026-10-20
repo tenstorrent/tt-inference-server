@@ -187,6 +187,18 @@
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
           }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax-Provider-Verifier pass@10 over sample.jsonl: tool-call match/trigger/schema, error-only reasoning, language following, scenario check vs the README thresholds",
+          "_comment": "MiniMax's own release check for third-party M3 deployments (https://github.com/MiniMax-AI/MiniMax-Provider-Verifier); thresholds are its README reference values (METRICS in minimax_provider_verifier_test.py), overridable per metric key in targets. Waive one metric with a SPEC_TESTS known_issues entry whose task_name is the metric key."
+        },
+        {
+          "template": "MiniMaxM3FormatCheckTest",
+          "enabled": true,
+          "description": "MiniMax-Provider-Verifier m3_format_check: M3 /v1/chat/completions contract (text + stream suites)",
+          "_comment": "Image/video suites are left out (the served M3 is text-only) and the m3_a_* files test the M3-a variant. Waive a class (m3_text_tests.TestUsageField) or one case by its pytest name with a SPEC_TESTS known_issues entry."
         }
       ]
     },
