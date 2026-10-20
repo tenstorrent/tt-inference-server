@@ -29,7 +29,9 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
   SERVICE_PORT (8000), SERVED_MODEL_NAME (zai-org/$MODEL), GLM_TT_MAX_TOKENS (163840),
   GLM_TT_HOST (0.0.0.0), GLM_TT_EXTRA_ARGS (appended to serve's arguments, split on spaces),
   TT_LAB_DIRTY_MARKER (default /var/lib/tenstorrent/glm-tt.dirty when that host directory is
-                     mounted, else $CACHE_ROOT/glm-tt.dirty; never under /tmp).
+                     mounted, else $CACHE_ROOT/glm-tt.dirty; never under /tmp). The
+                     $CACHE_ROOT fallback is advisory (CI shares that cache between hosts
+                     and resets the chips before each job): an old one is removed at start.
 The vLLM image's arguments ``--model M --tt-device D --service-port P --no-auth`` are
 accepted too, and ``glm-tt ARGS...`` / ``test-tt-kernels ARGS...`` run the binaries.
 
@@ -130,6 +132,29 @@ def _weight_file(path):
     return None
 
 
+def check_split_ttq(manifest):
+    """Raise SetupError unless every part a split TTQ's manifest lists is present at full size.
+
+    A missing or partial download then fails here, before glm-tt touches the chips (and so
+    before it could mark them dirty).
+    """
+    folder = os.path.dirname(manifest)
+    problems = []
+    with open(manifest) as handle:
+        for line in handle:
+            fields = line.split()
+            if len(fields) < 4 or fields[0] != "part":
+                continue
+            name, size = fields[1], int(fields[3])
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path):
+                problems.append(f"{name} is missing")
+            elif os.path.getsize(path) != size:
+                problems.append(f"{name} has {os.path.getsize(path)} of {size} bytes")
+    if problems:
+        raise SetupError(f"split TTQ {manifest} is incomplete: {'; '.join(problems)}")
+
+
 def find_weight(name, env):
     """The weight file's path, or None: absolute, in the weights directory, or in HF_HOME."""
     if name.startswith("/"):
@@ -197,6 +222,21 @@ def verify_package(home: Path):
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != digest:
             raise SetupError(f"package file {path} has sha256 {actual}, not {digest}")
+
+
+def marker_is_shared(marker, env, explicit=False, host_marker_dir=None):
+    """True for the fallback marker in CACHE_ROOT, which CI keeps on storage shared by hosts.
+
+    Such a marker cannot say which host's chips it is about, and CI resets the chips before
+    every job, so it is advisory: glm-tt's startup probe is the check that the chips work.
+    """
+    host_marker_dir = host_marker_dir or HOST_MARKER_DIR
+    cache = env.get("CACHE_ROOT", "/home/container_app_user/cache_root")
+    return (
+        not explicit
+        and not marker.startswith(f"{host_marker_dir}/")
+        and marker == f"{cache}/glm-tt.dirty"
+    )
 
 
 def dirty_marker(env, host_marker_dir=None):
@@ -382,6 +422,10 @@ def main(argv=None, environ=None):
                 "TT_LAB_LEGACY_KMD is set but glm-tt has no legacy KMD mode and ignores it"
             )
         serve, updates = serve_command(env, usage, chips)
+        ttq = serve[serve.index("--ttq") + 1] if "--ttq" in serve else ""
+        if ttq.endswith(".manifest"):
+            check_split_ttq(ttq)
+        explicit_marker = bool(env.get("TT_LAB_DIRTY_MARKER"))
         updates["TT_LAB_DIRTY_MARKER"] = dirty_marker(env)
     except SetupError as error:
         log(str(error))
@@ -396,7 +440,14 @@ def main(argv=None, environ=None):
         f"TT_LAB_ETH_GATHER={env['TT_LAB_ETH_GATHER']} "
         f"TT_LAB_DIRTY_MARKER={env['TT_LAB_DIRTY_MARKER']}"
     )
-    if os.path.exists(env["TT_LAB_DIRTY_MARKER"]):
+    marker = env["TT_LAB_DIRTY_MARKER"]
+    if os.path.exists(marker) and marker_is_shared(marker, env, explicit_marker):
+        log(
+            f"removing {marker}: on a shared cache it may be another host's, and this "
+            "host's chips are checked by glm-tt's startup probe instead"
+        )
+        os.remove(marker)
+    elif os.path.exists(marker):
         log(
             "the dirty marker exists: a previous run halted mid-command; serve will exit 3"
         )
