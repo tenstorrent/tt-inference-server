@@ -261,7 +261,9 @@ def _hf_download(tmp_path, glm_tt_status=0):
     for path in (weights / "glm-tt").rglob("*"):
         if path.is_file():
             path.chmod(0o644)
-    (weights / "w.ttq.manifest").write_text("glm-tt ttq split 1\n")
+    (weights / "w.ttq.manifest").write_text(
+        "glm-tt ttq split 1\nsize 1 sha256 x\npart w.ttq.00001-of-00001 0 1 sha256 x\n"
+    )
     (weights / "w.ttq.00001-of-00001").write_bytes(b"t")
     (weights / "v.gguf").write_bytes(b"v")
     return weights, record
@@ -311,3 +313,58 @@ def test_unexecutable_package_needs_checksums(tmp_path):
         run_glm_tt.runnable_home(home)
     (home / "bin" / "glm-tt").chmod(0o755)
     assert run_glm_tt.runnable_home(home) == home
+
+
+def test_main_refuses_an_incomplete_split_ttq_before_glm_tt(
+    tmp_path, galaxy_env, monkeypatch
+):
+    weights, record = _hf_download(tmp_path)
+    monkeypatch.setattr(run_glm_tt.tempfile, "tempdir", str(tmp_path))
+    galaxy_env.update(GLM_TT_TTQ="w.ttq", GLM_TT_VOCAB="v.gguf")
+    (weights / "w.ttq.00001-of-00001").write_bytes(b"")
+    assert run_glm_tt.main([], galaxy_env) == run_glm_tt.SETUP_FAILED
+    (weights / "w.ttq.00001-of-00001").unlink()
+    assert run_glm_tt.main([], galaxy_env) == run_glm_tt.SETUP_FAILED
+    assert not record.exists()
+    assert not (tmp_path / "cache" / "glm-tt.dirty").exists()
+
+
+def test_check_split_ttq_names_each_problem(tmp_path):
+    manifest = tmp_path / "w.ttq.manifest"
+    manifest.write_text(
+        "glm-tt ttq split 1\npart a 0 2 sha256 x\npart b 2 2 sha256 x\n"
+    )
+    (tmp_path / "a").write_bytes(b"a")
+    with pytest.raises(run_glm_tt.SetupError, match="a has 1 of 2 bytes; b is missing"):
+        run_glm_tt.check_split_ttq(str(manifest))
+    (tmp_path / "a").write_bytes(b"aa")
+    (tmp_path / "b").write_bytes(b"bb")
+    run_glm_tt.check_split_ttq(str(manifest))
+
+
+def test_main_removes_an_old_marker_on_the_shared_cache(tmp_path, galaxy_env):
+    home, record = _package(tmp_path)
+    galaxy_env["GLM_TT_HOME"] = str(home)
+    marker = tmp_path / "cache" / "glm-tt.dirty"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("group A failed\n")
+    assert run_glm_tt.main([], galaxy_env) == 0
+    assert record.exists()
+    assert not marker.exists()
+
+
+def test_main_keeps_a_host_marker(tmp_path, galaxy_env, monkeypatch):
+    host = tmp_path / "host-state"
+    host.mkdir()
+    monkeypatch.setattr(run_glm_tt, "HOST_MARKER_DIR", str(host))
+    home, _ = _package(tmp_path, glm_tt_status=3)
+    galaxy_env["GLM_TT_HOME"] = str(home)
+    (host / "glm-tt.dirty").write_text("group A failed\n")
+    assert run_glm_tt.main([], galaxy_env) == 3
+    assert (host / "glm-tt.dirty").exists()
+    explicit = tmp_path / "cache" / "glm-tt.dirty"
+    explicit.parent.mkdir(parents=True, exist_ok=True)
+    explicit.write_text("x")
+    assert (
+        run_glm_tt.marker_is_shared(str(explicit), galaxy_env, explicit=True) is False
+    )
