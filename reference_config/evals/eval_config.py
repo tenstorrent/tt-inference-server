@@ -578,6 +578,17 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# Per-request client timeout for DeepSeek-R1-Distill-Llama-70B r1_* tasks (same
+# lm-eval local-completions `timeout` as above). Derivation from Shield run
+# 39430476368 (P300X2 Quetzal, num_concurrent=32, max_gen_toks=32768, KV pool
+# 82,048 tokens = 1.25 full-length requests, so up to 20 of 32 in-flight requests
+# were observed waiting): per-request decode rate (server log generation
+# throughput / running, running >= 4) p10 4.5 tok/s, p50 8.1 tok/s. 32768 / 4.5 =
+# 7282 s, doubled for scheduler queue wait = 14564 s, rounded up to 4 h. At the
+# 1800 s default, r1_aime24 1/30 and r1_gpqa_diamond 3/198 requests exhausted
+# their retries as __INFERENCE_ERROR__: TimeoutError().
+R1_DISTILL_LLAMA_70B_REQUEST_TIMEOUT_S = 4 * 60 * 60
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -4718,6 +4729,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    "timeout": str(R1_DISTILL_LLAMA_70B_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
@@ -4744,6 +4756,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    "timeout": str(R1_DISTILL_LLAMA_70B_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
