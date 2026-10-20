@@ -17,7 +17,7 @@ index 0000000..6f3a905
 +  }
 +}
 diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
-index e9ae70b..5037978 100644
+index e9ae70b..73c408e 100644
 --- a/models/demos/gemma4_31b_qb2/tt/decoder.py
 +++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
 @@ -15,7 +15,11 @@ The bounded ring supports forward decoding with complete live history, not
@@ -278,13 +278,19 @@ index e9ae70b..5037978 100644
      def _concat_heads(self, attn):
          return ttnn.experimental.nlp_concat_heads(attn, memory_config=ttnn.DRAM_MEMORY_CONFIG)
  
-@@ -730,9 +802,16 @@ class Decoder:
+@@ -730,9 +802,22 @@ class Decoder:
          result = self._apply_decode_rope(x, cos, sin)
          return ttnn.reshape(result, ttnn.Shape(list(x.shape)), ttnn.Shape(list(x.padded_shape)))
  
 -    def _prefill_qkv(self, x, start):
 +    @profile_phase("qkv")
 +    def _prefill_qkv(self, x, start, *, batch=1, sequence_hint=None):
++        reuse_rope = os.environ.get("GEMMA_PREFILL_REUSE_QK_ROPE_TABLES", "0")
++        if reuse_rope not in ("0", "1"):
++            raise ValueError("GEMMA_PREFILL_REUSE_QK_ROPE_TABLES must be 0 or 1")
++        # Invocation-local, single-row only. Keep gathered table owners alive
++        # through both queued rotations; never retain them across layers/calls.
++        shared_rope_tables = {}
          tied = not self.sliding
 -        fused = self._pref_linear(self._input_norm(x, "input_layernorm", False), "qk" if tied else "qkv")
 +        fused = self._pref_linear(
@@ -297,7 +303,7 @@ index e9ae70b..5037978 100644
          q, k, v = ttnn.experimental.nlp_create_qkv_heads(
              fused,
              num_heads=8,
-@@ -746,27 +825,324 @@ class Decoder:
+@@ -746,27 +831,332 @@ class Decoder:
              # Full attention derives rotated K from normalized V below.
              # The raw K output has no consumer after head creation.
              del k
@@ -318,7 +324,15 @@ index e9ae70b..5037978 100644
 +        def rotate(value):
 +            def one(tensor, position):
 +                if self.runtime_positions is not None:
-+                    cos, sin = self.runtime_positions.rope_tables(self, position, sequence)
++                    if reuse_rope == "1" and batch == 1:
++                        key = (position, sequence)
++                        if key not in shared_rope_tables:
++                            shared_rope_tables[key] = self.runtime_positions.rope_tables(
++                                self, position, sequence
++                            )
++                        cos, sin = shared_rope_tables[key]
++                    else:
++                        cos, sin = self.runtime_positions.rope_tables(self, position, sequence)
 +                elif position == 0:
 +                    cos = ttnn.reshape(self.cos, rope_shape, rope_shape)
 +                    sin = ttnn.reshape(self.sin, rope_shape, rope_shape)
@@ -636,7 +650,7 @@ index e9ae70b..5037978 100644
      ):
          """Prefill a page-aligned span, optionally retaining sliding history for a continuation."""
          if start_pos < 0 or start_pos % self.PAGE_SIZE:
-@@ -775,6 +1151,8 @@ class Decoder:
+@@ -775,6 +1165,8 @@ class Decoder:
              raise ValueError("Sliding continuation requires its preceding K/V history")
          next_history = None
          batch, one, seq, width = x.shape
@@ -645,7 +659,7 @@ index e9ae70b..5037978 100644
          assert one == 1 and width == self.prefill_input_width(seq) and (0 < seq <= self.max_context)
          assert page_table.shape[0] == batch and page_table.shape[1] * self.PAGE_SIZE >= start_pos + seq
          if consume_input:
-@@ -823,7 +1201,10 @@ class Decoder:
+@@ -823,7 +1215,10 @@ class Decoder:
                      q = ttnn.typecast(q, ttnn.bfloat8_b)
                  sdpa_config = self._prefill_sdpa_config(q, kv_cache[0], pt, start=absolute_start)
                  length = inp.shape[2]
@@ -657,7 +671,7 @@ index e9ae70b..5037978 100644
                  ttnn.experimental.paged_fill_cache(
                      kv_cache[0], ttnn.typecast(k, kv_cache[0].dtype), fill_pt, batch_idx=0
                  )
-@@ -849,7 +1230,8 @@ class Decoder:
+@@ -849,7 +1244,8 @@ class Decoder:
                          program_config=sdpa_config,
                          compute_kernel_config=self.pref_compute,
                      )
@@ -667,7 +681,7 @@ index e9ae70b..5037978 100644
                  elif self.sliding:
                      attn = ttnn.transformer.scaled_dot_product_attention(
                          q,
-@@ -862,27 +1244,41 @@ class Decoder:
+@@ -862,27 +1258,41 @@ class Decoder:
                          compute_kernel_config=self.pref_compute,
                      )
                  else:
