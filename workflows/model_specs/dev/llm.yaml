@@ -7204,8 +7204,8 @@ templates:
   supported_modalities:
     - text
   # hot3-meas TTQ (245.7 GB) plus the vocabulary GGUF, read through the page cache from the host
-  # package; nothing is written to the host's disk.
-  min_disk_gb: 260
+  # package; the host's disk holds only logs and the cache volume.
+  min_disk_gb: 20
   min_ram_gb: 300
   uses_tensor_model_cache: false
   # glm-tt loads its weights and compiles nothing at run time, and /health answers 200 only once it serves.
@@ -7225,9 +7225,9 @@ templates:
       max_concurrency: 4
       max_context: 262144  # 256 * 1024
       default_impl: true
-      # Measured on a LoudBox (about 2.5 s after SIGTERM's drain); not yet measured with four
-      # groups releasing their chips. The timeout is a margin over the 8 s default drain.
-      docker_stop_timeout: 20
+      # docker stop took 9.1 s on a Galaxy (drain, then four groups release their chips); the
+      # timeout leaves room for the 8 s default drain on top of that teardown.
+      docker_stop_timeout: 30
       # The "chips need a reset" marker outlives the container here when the host has the
       # directory (writable by uid 1000); otherwise it goes to the cache volume.
       docker_host_state_dir: /var/lib/tenstorrent
