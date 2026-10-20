@@ -48,20 +48,22 @@ def _model_args(command):
 def test_task_set():
     assert list(TASKS) == [
         "gpqa_diamond_cot_zeroshot",
-        "aime25",
-        "r1_math500",
-        "mmlu_pro",
-        "livecodebench",
-        "humaneval_instruct",
-        "mbpp_instruct",
-        "leaderboard_ifeval",
-        "ruler",
-        "longbench2_generate",
+        "terminal_bench_2_1",
         "tau3_bench_banking",
     ]
-    assert TASKS["tau3_bench_banking"].workflow_venv_type == (
-        WorkflowVenvType.EVALS_AGENTIC
-    )
+    for name in ("terminal_bench_2_1", "tau3_bench_banking"):
+        assert TASKS[name].workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+
+
+def test_every_task_has_a_published_baseline():
+    published = {name: task.score.published_score for name, task in TASKS.items()}
+    assert published == {
+        "gpqa_diamond_cot_zeroshot": 91.2,
+        "terminal_bench_2_1": 84.3,
+        "tau3_bench_banking": 47.2,
+    }
+    for task in TASKS.values():
+        assert task.score.published_score_ref
 
 
 @pytest.mark.parametrize("name", LM_EVAL_TASKS)
@@ -70,15 +72,11 @@ def test_generation_fits_the_serve(name):
     assert task.model_kwargs["max_length"] == GLM53_FLASH_CONTEXT
     gen = task.gen_kwargs
     assert int(gen["max_gen_toks"]) < GLM53_FLASH_CONTEXT
-    if name != "ruler":
-        # Chat with the model card's sampling and a reasoning budget.
-        assert task.use_chat_api
-        assert gen["until"] == ["<|endoftext|>"]
-        assert (gen["temperature"], gen["top_p"]) == (1.0, 0.95)
-        assert int(gen["max_gen_toks"]) >= 16384
-    if name == "longbench2_generate":
-        longest = task.custom_dataset_kwargs["maximum_isl"]
-        assert longest + int(gen["max_gen_toks"]) <= GLM53_FLASH_CONTEXT
+    # Chat with the model card's sampling and a reasoning budget.
+    assert task.use_chat_api
+    assert gen["until"] == ["<|endoftext|>"]
+    assert (gen["temperature"], gen["top_p"]) == (1.0, 0.95)
+    assert int(gen["max_gen_toks"]) >= 16384
 
 
 @pytest.mark.parametrize("spec_id, concurrency", DEVICES.items())
@@ -99,43 +97,21 @@ def test_commands_run_as_many_requests_as_the_device_serves(
 
 
 def test_ci_sample_counts():
-    ci = {
-        name: TASKS[name].limit_samples_map.get(EvalLimitMode.CI_NIGHTLY)
-        for name in LM_EVAL_TASKS
-    }
-    assert ci == {
-        "gpqa_diamond_cot_zeroshot": 0.2,  # 40 of 198
-        "aime25": 0.5,  # 15 of 30
-        "r1_math500": 0.1,  # 50 of 500
-        "mmlu_pro": 0.02,  # about 240 of 12,032, per subject
-        "livecodebench": 30,  # of the 131-problem v6 window
-        "humaneval_instruct": 0.2,  # 33 of 164
-        "mbpp_instruct": 0.1,  # 50 of 500
-        "leaderboard_ifeval": 0.2,  # 108 of 541
-        "ruler": None,  # per length, by limit_factor
-        "longbench2_generate": 2,
-    }
-    ruler = TASKS["ruler"].custom_dataset_kwargs
-    assert ruler["max_seq_lengths"] == [4096, 32768, 131072]
-    assert ruler["num_samples_per_length"] * ruler["limit_factor"] == pytest.approx(1)
+    # All of GPQA Diamond: at 40 questions the noise was wider than the tolerance.
+    gpqa = TASKS["gpqa_diamond_cot_zeroshot"]
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.999
+    for name, count in (("terminal_bench_2_1", 5), ("tau3_bench_banking", 4)):
+        config = TASKS[name].agentic_eval_config
+        assert len(config.task_names_map[EvalLimitMode.CI_NIGHTLY]) == count
 
 
-def test_code_tasks_may_execute_code():
-    for name in ("livecodebench", "humaneval_instruct", "mbpp_instruct"):
-        assert TASKS[name].allow_code_execution
-    for name in ("gpqa_diamond_cot_zeroshot", "leaderboard_ifeval", "ruler"):
-        assert not TASKS[name].allow_code_execution
-
-
-def test_published_scores_are_cited():
-    published = {
-        name: task.score.published_score
-        for name, task in TASKS.items()
-        if task.score.published_score is not None
-    }
-    assert published == {"gpqa_diamond_cot_zeroshot": 91.2, "tau3_bench_banking": 47.2}
-    for name in published:
-        assert "artificialanalysis.ai" in TASKS[name].score.published_score_ref
+def test_agentic_trials_fit_the_galaxy():
+    for name in ("terminal_bench_2_1", "tau3_bench_banking"):
+        assert TASKS[name].agentic_eval_config.n_concurrent_trials <= 4
+    model_info = TASKS["terminal_bench_2_1"].agentic_eval_config.agent_kwargs[
+        "model_info"
+    ]
+    assert model_info["max_input_tokens"] <= GLM53_FLASH_CONTEXT
 
 
 def test_tau3_calls_the_served_model():
@@ -144,4 +120,3 @@ def test_tau3_calls_the_served_model():
     assert config.verifier_env["TAU2_NL_ASSERTIONS_MODEL"] == (
         "openai/zai-org/GLM-5.3-Flash"
     )
-    assert config.n_concurrent_trials <= 4
