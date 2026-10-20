@@ -90,3 +90,10 @@ def test_carried_aiperf_patch_is_present() -> None:
     names = [p.name for p, _ in patches]
     assert "0001-wait-for-all-service-replicas.patch" in names
     assert all(target == Path("utils") / "aiperf" for _, target in patches)
+
+
+def test_carried_harbor_patch_is_present() -> None:
+    patches = wv._harbor_patches()
+    names = [p.name for p, _ in patches]
+    assert "0001-egress-sidecar-sniffing-read-timeout.patch" in names
+    assert all(target == Path(".") for _, target in patches)
