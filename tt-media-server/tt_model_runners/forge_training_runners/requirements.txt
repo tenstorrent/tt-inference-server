@@ -1,17 +1,12 @@
-# Worker venv of the tt-crank training image (Dockerfile.crank).
-# tt-crank pins torch 2.10 while tt-forge pins torch 2.11, so this replaces
-# forge_runners/requirements.txt rather than extending it.
+# Dockerfile.crank worker venv; separate from forge_runners (tt-crank pins torch 2.10, tt-forge 2.11).
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Training recipes reused by trainer runners. setup_env.sh next to this file does not
-# pip-install this line: it checks tt-blacksmith out at this ref and builds the venv
-# with its `env/activate --crank` (tt-crank wheel, blacksmith's pinned requirements,
-# blacksmith itself), then installs the rest of this file on top. So only what
-# blacksmith's env leaves out belongs below.
+# blacksmith declares no dependencies; these are the ones the trainer imports.
 blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@ce5b882e50c5925fe8722006bbc6ac2e861fa25a
+transformers==5.12.1 # version required by tt-crank
+datasets
+peft
 
-# pyarrow 26 fails to import without NumPy 2 (undeclared in its metadata), but
-# tt-crank pins numpy<2.
-pyarrow<26
+pyarrow<26 # pyarrow 26 needs NumPy 2, tt-crank pins numpy<2
 pyyaml

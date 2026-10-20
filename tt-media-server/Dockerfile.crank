@@ -29,8 +29,6 @@ ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
-    # tt-blacksmith's tt-crank wheel download (needs `gh auth token`, gh >= 2.17)
-    gh \
     libgl1 \
     libsndfile1 \
     wget \
@@ -92,11 +90,23 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # Remove private submodule source — cpp_server is not used in the crank image
 RUN rm -rf ${APP_DIR}/server/cpp_server
 USER root
-ARG BLACKSMITH_HOME=${HOME_DIR}/tt-blacksmith
+# tt-crank is frozen at tt-mlir 240e14d (tt_crank-0.1.0.dev20261020+g240e14d). Its wheel
+# exists only as the ttcrank-wheel artifact of tt-mlir's nightly run, so the download
+# needs a GitHub token and stops working once the artifact expires (2027-01-18).
+# The wheel does not bundle the SFPI toolchain tt-metal's kernel JIT needs, hence
+# tt-crank-install-sfpi.
+ARG TT_CRANK_ARTIFACT_ID=12240412299
 RUN --mount=type=secret,id=gh_token \
     cd ${APP_DIR}/server \
-    && GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
-        bash tt_model_runners/forge_training_runners/setup_env.sh "${BLACKSMITH_HOME}" \
+    && curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/gh_token)" -o /tmp/tt-crank.zip \
+        "https://api.github.com/repos/tenstorrent/tt-mlir/actions/artifacts/${TT_CRANK_ARTIFACT_ID}/zip" \
+    && unzip -q /tmp/tt-crank.zip -d /tmp/tt-crank \
+    && python3.12 -m venv venv-worker \
+    && venv-worker/bin/pip install --no-cache-dir /tmp/tt-crank/tt_crank-*.whl \
+        -r requirements.txt -r tt_model_runners/forge_training_runners/requirements.txt \
+    && venv-worker/bin/pip check \
+    && venv-worker/bin/tt-crank-install-sfpi \
+    && rm -rf /tmp/tt-crank /tmp/tt-crank.zip \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
