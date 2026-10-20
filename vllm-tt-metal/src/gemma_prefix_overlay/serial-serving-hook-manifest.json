@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": "d0b0cd8ec041f3332a5dbd2260ffc17e4e44a71f",
-  "patch_sha256": "2ccee216ce9e247d0531378bb7b3e58583919834866aabdc1aa58ed77d345fef",
+  "target_commit": null,
+  "patch_sha256": "6a0544bab5696a36ed3e78deadebcef483db7ff106ce81ceee0ee67af390d0da",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py": {
       "base": null,
@@ -33,7 +33,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
-      "target": "d90827cf2c2ddb920252190b5dd21269f8aab1c4a654d2a3853d2361d19abc2d"
+      "target": "3ffb49ec73348797f15657607d6e1dd332dff144a0ed035874ec73ca715337e6"
     },
     "models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py": {
       "base": null,
@@ -64,5 +64,7 @@
       "target": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
     }
   },
-  "scope": "Reviewed R13 preparation only; native result/serving acceptance pending. Same source cap1/cap8, no scheduler or anchor change."
+  "scope": "Unexecuted source composition only; exact reviewed observation adapter on R13, no arithmetic/scheduler/anchor change",
+  "base_model_commit": "d0b0cd8ec041f3332a5dbd2260ffc17e4e44a71f",
+  "target_content_manifest_sha256": "9486ba3c73ee453624e454b4967cf173e4550691980a8fa16ebaf6cc03016058"
 }
