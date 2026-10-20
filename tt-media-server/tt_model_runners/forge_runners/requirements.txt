@@ -6,7 +6,7 @@
 # `env/activate --crank` (tt-crank wheel, blacksmith's pinned requirements, blacksmith
 # itself), then installs the rest of this file on top. So only what blacksmith's
 # env leaves out belongs below.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@ce5b882e50c5925fe8722006bbc6ac2e861fa25a
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@7fe2df4b096527fd81329d609e3a8613d4e9643f
 
 # pyarrow 26 fails to import without NumPy 2 (undeclared in its metadata), but
 # tt-crank pins numpy<2.
