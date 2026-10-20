@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
   "target_commit": null,
-  "patch_sha256": "6a0544bab5696a36ed3e78deadebcef483db7ff106ce81ceee0ee67af390d0da",
+  "patch_sha256": "42a2340f23bf698baf7a7ab81dbdc74829e52cdc9f520527a0131e269a6094bd",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py": {
       "base": null,
@@ -33,7 +33,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
-      "target": "3ffb49ec73348797f15657607d6e1dd332dff144a0ed035874ec73ca715337e6"
+      "target": "59baa3f159b17e2e91ea3c0eeafce27a38705cc5ab99212b7ee93e96481dfb97"
     },
     "models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py": {
       "base": null,
@@ -49,7 +49,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "55b63150519a1bf2cea75ab4ac8f11aaa51666b393653f7e3929cf24520bd020"
+      "target": "f6bed9d223949b7aff7b4c8dd0950f2af346c83a0bb3170a37935a468ad5840a"
     },
     "models/demos/gemma4_31b_qb2/tt/runtime_position.py": {
       "base": null,
@@ -62,9 +62,13 @@
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
       "target": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
+    },
+    "models/demos/gemma4_31b_qb2/tt/prefill_phase_timing.py": {
+      "base": null,
+      "target": "c14b8f9ba1a1018485f57602514d63c832c4f34336fb6ebe0c60febfe1475dfa"
     }
   },
-  "scope": "Unexecuted source composition only; exact reviewed observation adapter on R13, no arithmetic/scheduler/anchor change",
+  "scope": "Exact reviewed R3 host phase observer atop R13 observation64; math unchanged, default off. Alias manifest inherited byte-exact.",
   "base_model_commit": "d0b0cd8ec041f3332a5dbd2260ffc17e4e44a71f",
-  "target_content_manifest_sha256": "9486ba3c73ee453624e454b4967cf173e4550691980a8fa16ebaf6cc03016058"
+  "target_content_manifest_sha256": "8804a056261cfe32f582704cdea624ce8fd428be4d054614b5ec13642e983066"
 }
