@@ -1125,6 +1125,23 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "IFM/K2-Horizon-MoVA-36B-A4B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }

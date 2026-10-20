@@ -11932,6 +11932,67 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # IFM/K2-Horizon-MoVA-36B-A4B (impl=quetzal, P300X2, ctx 131072). Reasoning
+    # model, sibling of K2-Horizon-7B: the card asks for reasoning_effort=high
+    # (the chat template default), temperature 1.0, top_p 0.95, up to 32768
+    # output tokens. The card's Benchmark Results table publishes, for this
+    # checkpoint, tau3-Banking 26.8, Terminal-Bench 2.1 58.6, SciCode 38.9,
+    # HLE (no tools) 25.2, GPQA Diamond 80.8, CritPt 2.1, AA-LCR 66.3,
+    # AA-Omniscience accuracy 18.8 / non-hallucination 69.2, laid out in the
+    # Artificial Analysis Intelligence Index categories. GPQA Diamond is the one
+    # with an lm-eval task here, cited as the K2-Horizon-7B and gemma-4 rows cite
+    # their cards' GPQA Diamond. HLE's card number is the LLM-judge full set
+    # (k2_hle_text_mc is a text-MC subset, not comparable); the AA-* rows,
+    # tau3-Banking, SciCode and CritPt have no TTIS task. GPU reference TBD (36B
+    # bf16 is above the single-A100 Colab sweep).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=80.8,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # timeout covers a full 32768-token generation at the measured
+                # ~6.2 tok/s per request (local spec_tests, ~160 ms/token):
+                # 32768 / 6.2 = 5285 s, doubled for scheduler queueing at 32
+                # concurrent users, rounded up to 4 h.
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,
+                },
+                # Model-card sampling (temperature 1.0, top_p 0.95, no top_k) and
+                # output budget (32768). stream=false is required by lm-eval's
+                # chat-completions parser.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
