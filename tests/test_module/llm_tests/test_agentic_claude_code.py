@@ -77,6 +77,7 @@ def test_endpoint_is_gateway_root_with_bearer_token(tmp_path, monkeypatch):
     assert env["ANTHROPIC_AUTH_TOKEN"] == "jwt-token"
     assert "OPENAI_BASE_URL" not in env
     assert env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "262144"
+    assert env["API_FORCE_IDLE_TIMEOUT"] == "0"
     assert agent["kwargs"]["reasoning_effort"] == "xhigh"
     assert agent["kwargs"]["version"] == CLAUDE_CODE_AGENT_KWARGS["version"]
     overlay = json.loads(

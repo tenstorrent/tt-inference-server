@@ -344,6 +344,9 @@ CLAUDE_CODE_AGENT_ENV: Dict[str, str] = {
     "API_TIMEOUT_MS": str(60 * 60 * 1000),
     "CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS": str(30 * 60 * 1000),
     "CLAUDE_STREAM_IDLE_TIMEOUT_MS": str(15 * 60 * 1000),
+    # Off, the fetch keeps Bun's own 300 s idle timeout, which aborts an open
+    # tool_use with "The operation timed out." before the idle watchdog above.
+    "API_FORCE_IDLE_TIMEOUT": "0",
     "DISABLE_AUTOUPDATER": "1",
 }
 
