@@ -368,3 +368,26 @@ def test_main_keeps_a_host_marker(tmp_path, galaxy_env, monkeypatch):
     assert (
         run_glm_tt.marker_is_shared(str(explicit), galaxy_env, explicit=True) is False
     )
+
+
+def test_device_report_names_identity_groups_and_hugepages(tmp_path):
+    for number, kind in ((0, "DMA-FQ"), (1, "identity"), (2, "DMA-FQ")):
+        group = (
+            tmp_path
+            / "class"
+            / "tenstorrent"
+            / f"tenstorrent!{number}"
+            / "device"
+            / "iommu_group"
+        )
+        group.mkdir(parents=True)
+        (group / "type").write_text(kind + "\n")
+    pages = tmp_path / "kernel" / "mm" / "hugepages" / "hugepages-1048576kB"
+    pages.mkdir(parents=True)
+    (pages / "free_hugepages").write_text("30\n")
+    (pages / "nr_hugepages").write_text("32\n")
+    chips = [f"/dev/tenstorrent/{n}" for n in (0, 1, 2, 3)]
+    assert run_glm_tt.device_report(chips, str(tmp_path)) == (
+        "IOMMU groups by type: DMA-FQ: [0, 2]; identity: [1]; unknown: [3]; "
+        "1 GiB hugepages 30 of 32 free"
+    )

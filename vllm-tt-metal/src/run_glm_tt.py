@@ -386,6 +386,39 @@ def run_serve(command, env):
     return 128 - status if status < 0 else status
 
 
+def device_report(chips, sys_root="/sys"):
+    """One line on the host DMA setup: each chip's IOMMU group type and the free 1 GiB pages.
+
+    glm-tt pins ordinary host memory for NOC DMA, which needs the IOMMU to translate (group
+    type DMA or DMA-FQ); a chip in an identity (passthrough) group fails to pin.
+    """
+    types = {}
+    for chip in chips:
+        number = chip.rsplit("/", 1)[-1]
+        group = Path(
+            sys_root,
+            "class",
+            "tenstorrent",
+            f"tenstorrent!{number}",
+            "device",
+            "iommu_group",
+        )
+        try:
+            kind = (group / "type").read_text().strip()
+        except OSError:
+            kind = "unknown"
+        types.setdefault(kind, []).append(int(number))
+    pages = Path(sys_root, "kernel", "mm", "hugepages", "hugepages-1048576kB")
+    try:
+        huge = f"{(pages / 'free_hugepages').read_text().strip()} of {(pages / 'nr_hugepages').read_text().strip()} free"
+    except OSError:
+        huge = "none"
+    groups = "; ".join(
+        f"{kind}: {sorted(numbers)}" for kind, numbers in sorted(types.items())
+    )
+    return f"IOMMU groups by type: {groups or 'no chips'}; 1 GiB hugepages {huge}"
+
+
 def main(argv=None, environ=None):
     argv = sys.argv[1:] if argv is None else argv
     env = dict(os.environ if environ is None else environ)
@@ -416,7 +449,9 @@ def main(argv=None, environ=None):
         usage = subprocess.run(
             glm_tt, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         ).stdout
-        chips = len(glob.glob("/dev/tenstorrent/[0-9]*"))
+        chip_paths = sorted(glob.glob("/dev/tenstorrent/[0-9]*"))
+        chips = len(chip_paths)
+        log(device_report(chip_paths))
         if env.get("TT_LAB_LEGACY_KMD"):
             log(
                 "TT_LAB_LEGACY_KMD is set but glm-tt has no legacy KMD mode and ignores it"
