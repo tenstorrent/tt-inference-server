@@ -2678,8 +2678,8 @@ _eval_config_list = [
     # scores only for the RL checkpoint, so published scores cite that card.
     # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
     # (the chat template only disables it on enable_thinking=false).
-    # No ModelSpec yet, so this config is not dispatched (see EVAL_CONFIGS);
-    # concurrencies are provisional until the spec sets max_concurrency.
+    # Only a GPU ModelSpec exists (dev catalog); concurrencies are provisional
+    # until a TT spec sets max_concurrency.
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
         tasks=[
@@ -2706,11 +2706,11 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 256 * 1024,
+                    "max_length": 1024 * 1024,
                     "timeout": 7200,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 128 * 1024,
+                    "max_gen_toks": 400 * 1024,
                     # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
                     "until": ["<|im_end|>"],
                     "do_sample": "true",
@@ -2720,6 +2720,52 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep for MiMo's 1M window (max_position_embeddings).
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=32,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (65536) before hitting the
+                # 1048576 window.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 64K gen)
+                    "pretrained": "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -2740,8 +2786,8 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=32,
-                    n_attempts=1,
+                    n_concurrent_trials=28,
+                    n_attempts=3,
                     n_tasks=89,
                     override_cpus=8,
                     override_memory_mb=32 * 1024,
@@ -2750,12 +2796,12 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 500 * 1024,
-                            "max_output_tokens": 64 * 1024,
+                            "max_input_tokens": 896 * 1024,
+                            "max_output_tokens": 128 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 64 * 1024,
+                            "max_tokens": 128 * 1024,
                             "timeout": 60 * 60,
                         },
                     },
@@ -2797,8 +2843,8 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=16,
-                    n_attempts=1,
+                    n_concurrent_trials=14,
+                    n_attempts=3,
                     n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
@@ -2857,8 +2903,8 @@ _eval_config_list = [
                     agent="mini-swe-agent",
                     # Tasks block agent egress; let the agent reach the server.
                     allow_agent_endpoint=True,
-                    n_concurrent_trials=16,
-                    n_attempts=1,
+                    n_concurrent_trials=28,
+                    n_attempts=3,
                     n_tasks=None,
                     # None keeps each task's own 3h agent timeout.
                     agent_timeout_sec=None,
@@ -2866,7 +2912,7 @@ _eval_config_list = [
                         # The leaderboard's published job (2026-06-06) ran an
                         # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
                         "version": "2.3.0",
-                        "max_tokens": 64 * 1024,
+                        "max_tokens": 128 * 1024,
                         "config": {
                             "model": {
                                 "model_kwargs": {
