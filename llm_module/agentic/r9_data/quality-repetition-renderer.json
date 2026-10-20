@@ -1,0 +1,20 @@
+[
+  {
+    "actor": 0,
+    "turn": 0,
+    "response_id": "chatcmpl-b170f450eca126a7",
+    "original": 13711,
+    "reconstructed": 13711,
+    "exact": true,
+    "token_ids_sha256": "178d17b9a3c3071b323dc44b1a81cf78b9e4ed7d8cd62e968ca59d3f49c132b1"
+  },
+  {
+    "actor": 1,
+    "turn": 0,
+    "response_id": "chatcmpl-a79346e09b9b8b8f",
+    "original": 2628,
+    "reconstructed": 2628,
+    "exact": true,
+    "token_ids_sha256": "efa8045b442eb197e5dbc3b28783add97a630c2769ddaa2e9a652a9eb128d668"
+  }
+]
