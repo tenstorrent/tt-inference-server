@@ -2,32 +2,26 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-# tt-crank image for the trainer runners; Dockerfile.forge stays the tt-forge image.
-# Keep the shared steps in sync with Dockerfile.forge. The tt-crank wheel needs
-# glibc 2.38 and GLIBCXX_3.4.32, hence Ubuntu 24.04, and its download needs a GitHub token:
+# tt-crank image for the trainer runners; shared steps mirror Dockerfile.forge.
+# Ubuntu 24.04 because the tt-crank wheel needs glibc 2.38 / GLIBCXX_3.4.32. Build with:
 #   docker build --secret id=gh_token,env=GH_TOKEN -f tt-media-server/Dockerfile.crank .
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-# connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
-
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
+ARG HOME_DIR=/home/container_app_user
 
 ENV ENVIRONMENT=development
-
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
-ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ENV LOGURU_LEVEL=INFO
-ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
+ENV TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
-# extra system deps. Python 3.12 and cmake come with the 24.04 base image.
 RUN apt-get update && apt-get install -y \
-    # required
     gosu \
     libgl1 \
     libsndfile1 \
@@ -61,40 +55,34 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# user setup. Ubuntu 24.04 images ship an `ubuntu` user holding UID 1000.
+# Ubuntu 24.04 images ship an `ubuntu` user holding UID 1000.
 RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
     && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
+    && mkdir -p ${HOME_DIR}/logs /run/sshd \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
 USER ${CONTAINER_APP_USERNAME}
 
-# install tt-smi
+# tt-smi
 RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
-    && rustup update \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
-WORKDIR ${HOME_DIR}
-
-# install inference server requirements
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
-# Remove private submodule source — cpp_server is not used in the crank image
+# cpp_server is a private submodule the crank image does not use
 RUN rm -rf ${APP_DIR}/server/cpp_server
+
+# Worker venv. tt-crank is frozen at tt-mlir 240e14d; its wheel is only available as a
+# tt-mlir Actions artifact (needs a GitHub token, expires 2027-01-18). The wheel lacks
+# the SFPI toolchain tt-metal's kernel JIT needs, hence tt-crank-install-sfpi (root).
 USER root
-# tt-crank is frozen at tt-mlir 240e14d (tt_crank-0.1.0.dev20261020+g240e14d). Its wheel
-# exists only as the ttcrank-wheel artifact of tt-mlir's nightly run, so the download
-# needs a GitHub token and stops working once the artifact expires (2027-01-18).
-# The wheel does not bundle the SFPI toolchain tt-metal's kernel JIT needs, hence
-# tt-crank-install-sfpi.
 ARG TT_CRANK_ARTIFACT_ID=12240412299
 RUN --mount=type=secret,id=gh_token \
     cd ${APP_DIR}/server \
@@ -119,7 +107,6 @@ COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
 RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
     "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
 
-# spinup inference server
 WORKDIR "${APP_DIR}"
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]
