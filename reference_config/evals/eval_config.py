@@ -10299,6 +10299,75 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-20; same family as llm-jp/llm-jp-4-8b-thinking above);
+    # Llama-shaped 33B thinking checkpoint at 9e692862, ctx 65536, concurrency 32. Tasks, prompting, timeouts and gen_kwargs
+    # copied verbatim from llm-jp/llm-jp-4-8b-thinking (the Qwen/QwQ-32B r1 thinking profile; r1_aime24 omitted). The card
+    # publishes only LLM-as-judge scores (MT-Bench JA/EN, AnswerCarefully, llm-jp-instructions), none for these tasks:
+    # every gpu_reference_score is a full-sample GPU run at this revision / max_context / concurrency (issue #5353), TBD.
+    # Output is Harmony-format and served with NO reasoning parser (vLLM's openai_gptoss parser assumes the o200k
+    # Harmony ids; upstream uses the out-of-tree llm-jp-vllm plugin), so the graded text carries the analysis and final
+    # channels on both the GPU and the TT side.
+    EvalConfig(
+        hf_model_repo="llm-jp/llm-jp-4-33b-thinking",
+        tasks=[
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="BAAI/bge-large-en-v1.5",
         tasks=[
