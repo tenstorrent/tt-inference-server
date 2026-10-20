@@ -14,7 +14,8 @@ package without exec bits (a Hugging Face download) is verified against its SHA2
 and copied to a temporary directory to run.
 
 Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's env_vars):
-  GLM_TT_HOME        the package (default glm-tt/ in the weights directory, else
+  GLM_TT_PACKAGE     the package's folder in the weights directory (default glm-tt)
+  GLM_TT_HOME        the package (default GLM_TT_PACKAGE in the weights directory, else
                      /home/container_app_user/glm-tt)
   DEVICE             p150x8 (LoudBox, one user) or blackhole_galaxy (Galaxy: --groups 4,
                      one user per 8-chip group, and TT_LAB_GLM_ROUND=auto); bh_galaxy too.
@@ -171,12 +172,18 @@ def find_weight(name, env):
 
 
 def package_home(env) -> Path:
-    """GLM_TT_HOME, else glm-tt/ in the weights directory when present, else the default."""
+    """GLM_TT_HOME, else GLM_TT_PACKAGE (default glm-tt) in the weights directory when present,
+    else the default.
+
+    A weights repo keeps each build in its own folder (glm-tt-<commit>) so that a cached
+    download, which is complete while the old folder is there, still fetches a new build.
+    """
     if env.get("GLM_TT_HOME"):
         return Path(env["GLM_TT_HOME"])
     directory = weights_dir(env)
-    if directory and (Path(directory) / "glm-tt/bin/glm-tt").is_file():
-        return Path(directory) / "glm-tt"
+    name = env.get("GLM_TT_PACKAGE") or "glm-tt"
+    if directory and (Path(directory) / name / "bin" / "glm-tt").is_file():
+        return Path(directory) / name
     return Path(DEFAULT_HOME)
 
 
