@@ -61,7 +61,7 @@
           "Completions"
         ],
         "summary": "Create token completion",
-        "description": "Non-streaming completions from raw text or token IDs, without a chat template. Batched prompts execute sequentially and retain input order. Supports n=1; use repeated prompts for multiple samples. Behavior logprobs are unavailable and returned as null. Unsupported generation constraints are rejected.",
+        "description": "Non-streaming completions from raw text or token IDs, without a chat template. Batched prompts execute sequentially and retain input order. Supports n=1; use repeated prompts for multiple samples. Behavior logprobs are unavailable and returned as null. Seeds and unsupported generation constraints are rejected.",
         "operationId": "createCompletion",
         "security": [
           {
@@ -725,11 +725,6 @@
             ],
             "default": -1,
             "description": "Llama-3.2-1B supports at most 32 candidates; -1 uses its default candidate set."
-          },
-          "seed": {
-            "type": "integer",
-            "minimum": -2147483648,
-            "maximum": 2147483647
           },
           "stop_token_ids": {
             "type": "array",

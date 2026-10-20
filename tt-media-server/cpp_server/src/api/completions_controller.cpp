@@ -81,12 +81,12 @@ void LLMController::completions(
   }
   auto batch = std::make_shared<CompletionBatch>();
   try {
-    // The shared chat parser does not read these fields. Reject them here
-    // instead of silently sampling a different distribution than requested.
-    for (const char* field :
-         {"allowed_token_ids", "prompt_logprobs", "truncate_prompt_tokens",
-          "best_of", "logit_bias", "guided_json", "guided_regex",
-          "guided_choice", "guided_grammar", "structured_outputs"}) {
+    // Reject options this endpoint cannot honor, including seeds unsupported
+    // by the existing engine, rather than silently ignoring them.
+    for (const char* field : {"seed", "allowed_token_ids", "prompt_logprobs",
+                              "truncate_prompt_tokens", "best_of", "logit_bias",
+                              "guided_json", "guided_regex", "guided_choice",
+                              "guided_grammar", "structured_outputs"}) {
       if (json->isMember(field) && !(*json)[field].isNull()) {
         throw std::invalid_argument(std::string(field) +
                                     " is not supported for completions");

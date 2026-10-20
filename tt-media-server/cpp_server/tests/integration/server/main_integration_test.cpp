@@ -621,17 +621,16 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
 }
 
-TEST_F(MainIntegrationTest, CompletionsPreservePromptSeedAndEveryOutputToken) {
+TEST_F(MainIntegrationTest, CompletionsPreservePromptAndEveryOutputToken) {
   auto future = std::async(std::launch::async, [] {
     return tt::test::sendAndReceive(
         server->host(), server->port(),
-        R"({"prompt":[11,22,33],"max_tokens":3,"seed":0,"return_token_ids":true,"logprobs":0,"stop_token_ids":[128009]})",
+        R"({"prompt":[11,22,33],"max_tokens":3,"return_token_ids":true,"logprobs":0,"stop_token_ids":[128009]})",
         "your-secret-key", 2000, "/v1/completions");
   });
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_EQ(seq->getTokenIds(), (std::vector<uint32_t>{11, 22, 33}));
-  EXPECT_EQ(seq->getSamplingParams().seed, 0);
   tt::test::WorkerResponse(seq->taskId)
       .token(0)
       .token(42)
@@ -689,6 +688,8 @@ TEST_F(MainIntegrationTest, CompletionsRejectInvalidOrUnsupportedRequests) {
         R"({"prompt":[1.5]})",
         R"({"prompt":[1],"max_tokens":0})",
         R"({"prompt":[1],"stream":true})",
+        R"({"prompt":[1],"seed":0})",
+        R"({"prompt":[1],"seed":123})",
         R"({"prompt":[1],"logprobs":5})",
         R"({"prompt":[1],"top_p":0})",
         R"({"prompt":[1],"stop":["foo"]})",
