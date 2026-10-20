@@ -39,7 +39,7 @@ struct WorkerManagerOptions {
   /** When true and numWorkers > 1, worker 0 warms up alone first so it can
    * populate shared on-disk caches before the remaining workers warm up in
    * parallel. */
-  bool sequentialLeadWorkerWarmup = true;
+  bool sequentialLeadWorkerWarmup = false;
   /** Maximum time (ms) allowed for a warmup phase (0 = use service default). */
   unsigned warmupTimeoutMs = 0;
 };

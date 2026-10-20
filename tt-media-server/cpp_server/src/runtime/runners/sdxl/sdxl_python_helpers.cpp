@@ -19,6 +19,8 @@ namespace {
 constexpr const char* HELPER_SOURCE = R"PY(
 """C++-owned SDXL helpers, loaded into sys.modules['_tt_cpp_sdxl_helpers']."""
 
+import fcntl
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -116,6 +118,33 @@ def _triggers_from_safetensors_repo(repo_id):
         return []
 
 
+def resolve_model_path(repo_or_path):
+    p = Path(repo_or_path)
+    if p.exists():
+        return str(p.resolve())
+    from huggingface_hub import snapshot_download
+    try:
+        return snapshot_download(repo_id=repo_or_path, local_files_only=True)
+    except Exception:
+        pass
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", repo_or_path)
+    lock_dir = Path(os.environ.get("HF_HOME") or "/tmp")
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        lock_dir = Path("/tmp")
+    lock_path = lock_dir / f".tt_sdxl_hf_{safe_name}.lock"
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            try:
+                return snapshot_download(repo_id=repo_or_path, local_files_only=True)
+            except Exception:
+                return snapshot_download(repo_id=repo_or_path)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def resolve_lora_path(lora_ref):
     p = Path(lora_ref)
     if p.is_file():
@@ -187,6 +216,16 @@ void PythonHelpers::ensureSysPath() {
   };
   prepend("TT_METAL_HOME");
   prepend("TT_PYTHON_PATH");
+}
+
+std::string PythonHelpers::resolveModelPath(const std::string& repoOrPath) {
+  try {
+    return helpers().attr("resolve_model_path")(repoOrPath).cast<std::string>();
+  } catch (const py::error_already_set& e) {
+    TT_LOG_WARN("[SDXL] resolve_model_path failed for {}: {}", repoOrPath,
+                e.what());
+    return repoOrPath;
+  }
 }
 
 std::string PythonHelpers::resolveLoraPath(const std::string& loraRef) {

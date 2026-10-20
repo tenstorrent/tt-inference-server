@@ -7,6 +7,8 @@
 
 #include <string>
 
+#include "runtime/runners/sdxl/sdxl_python_helpers.hpp"
+
 namespace tt::runners::sdxl {
 
 namespace {
@@ -21,9 +23,9 @@ SDXLGenerateRunner::SDXLGenerateRunner(const config::ImageConfig& config)
 
 py::object SDXLGenerateRunner::loadDiffusersPipeline() {
   py::module_ diffusers = py::module_::import("diffusers");
-  std::string repo = config_.model_weights_path.empty()
-                         ? std::string(SDXL_BASE_REPO)
-                         : config_.model_weights_path;
+  std::string repo = PythonHelpers::resolveModelPath(
+      config_.model_weights_path.empty() ? std::string(SDXL_BASE_REPO)
+                                         : config_.model_weights_path);
   py::dict kwargs;
   kwargs["torch_dtype"] = torch_module().attr("float32");
   kwargs["use_safetensors"] = py::bool_(true);
