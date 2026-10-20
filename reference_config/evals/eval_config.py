@@ -1636,309 +1636,68 @@ _eval_config_list = [
                 },
                 gen_kwargs=_glm53_flash_gen_kwargs(163840),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 40 questions
+                    # All 198: at n=40 the noise (SE 4.5 points) was wider than the 5% tolerance.
+                    EvalLimitMode.CI_NIGHTLY: 0.999,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
                 wall_clock_timeout_seconds=6 * 3600,
             ),
             EvalTask(
-                # Competition math, integer answers (AIME 2025, 30 problems).
-                task_name="aime25",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(163840),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,  # 15 problems
-                    EvalLimitMode.SMOKE_TEST: 0.05,
-                },
-                wall_clock_timeout_seconds=4 * 3600,
-            ),
-            EvalTask(
-                # Math word problems across seven subjects, final-answer match (MATH-500).
-                task_name="r1_math500",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(65536),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.1,  # 50 problems
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-                wall_clock_timeout_seconds=3 * 3600,
-            ),
-            EvalTask(
-                # Knowledge and reasoning across 14 subjects, 5-shot chain of thought, generative
-                # (MMLU-Pro, 12,032 questions; the limit applies per subject).
-                task_name="mmlu_pro",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                num_fewshot=5,
-                max_concurrent=4,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(32768),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.02,  # about 240 questions
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-                wall_clock_timeout_seconds=4 * 3600,
-            ),
-            EvalTask(
-                # Competitive programming, generated code run against tests (LiveCodeBench v6
-                # window, 131 problems; scoring executes the generated code on the eval host).
-                task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                allow_code_execution=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["acc,none"],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(65536),
-                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 30,  # the first 30 of the v6 window
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-                wall_clock_timeout_seconds=4 * 3600,
-            ),
-            EvalTask(
-                # Python function completion from a docstring, run against unit tests (HumanEval, 164).
-                task_name="humaneval_instruct",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                allow_code_execution=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "pass@1,create_test",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(32768),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 33 problems
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-                wall_clock_timeout_seconds=2 * 3600,
-            ),
-            EvalTask(
-                # Short Python programs from a description, run against tests (MBPP, 500).
-                task_name="mbpp_instruct",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                allow_code_execution=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "pass_at_1,extract_code",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(32768),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.1,  # 50 problems
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-                wall_clock_timeout_seconds=2 * 3600,
-            ),
-            EvalTask(
-                # Verifiable instruction following: format, length and content constraints (IFEval, 541).
-                task_name="leaderboard_ifeval",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "prompt_level_strict_acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(16384),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 108 prompts
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-                wall_clock_timeout_seconds=3 * 3600,
-            ),
-            EvalTask(
-                # Long-context retrieval, multi-hop tracing and aggregation over synthetic
-                # haystacks at 4K, 32K and 128K tokens (RULER). Completions API without the chat
-                # template, so the short answer comes without reasoning; greedy.
-                task_name="ruler",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=False,
-                apply_chat_template=False,
+                # Agentic shell tasks in containers, terminus-2 agent (89 tasks). Z.ai's model card and
+                # Artificial Analysis both report 84.3. CI runs GLM-5.2's five tasks, too few for a
+                # tight check, so it stays advisory.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 priority="should",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash (Terminal Bench 2.1; Artificial Analysis also 84.3)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": [
-                            "4096,none",
-                            "32768,none",
-                            "131072,none",
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # One trial per group of the Galaxy row.
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    # The model card's Terminal-Bench settings: temperature 1.0, top_p 1, 64K new tokens.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": GLM53_FLASH_CONTEXT,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 1.0,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
                         ],
-                        "unit": "percent",
                     },
                 ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 256,
-                    "do_sample": "false",
-                },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: None,
-                    EvalLimitMode.SMOKE_TEST: None,  # per-length limit below
-                },
-                custom_dataset_kwargs={
-                    "max_seq_lengths": [4096, 32768, 131072],
-                    "pretrained": "zai-org/GLM-5.3-Flash",
-                    "num_samples_per_length": 50,
-                    # CI and smoke: 1 sample per length per subtask.
-                    "limit_factor": 0.02,
-                },
-                wall_clock_timeout_seconds=4 * 3600,
-            ),
-            EvalTask(
-                # Long-document understanding, generate then answer (LongBench v2), on prompts
-                # of 32K to 128K tokens.
-                task_name="longbench2_generate",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
-                use_chat_api=True,
-                priority="should",
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="TBD",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["exact_match,none"],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": GLM53_FLASH_CONTEXT,
-                    "timeout": 7200,
-                },
-                gen_kwargs=_glm53_flash_gen_kwargs(65536),
-                custom_dataset_kwargs={
-                    "minimum_isl": 32 * 1024,
-                    # Prompt plus max_gen_toks stays within the 262144-position serve.
-                    "maximum_isl": 128 * 1024,
-                    "pretrained": "zai-org/GLM-5.3-Flash",
-                    "tokenizer_num_proc": 8,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 2,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
-                wall_clock_timeout_seconds=3 * 3600,
             ),
             EvalTask(
                 # Multi-turn customer-service agent with tools and a simulated user (tau3-bench
