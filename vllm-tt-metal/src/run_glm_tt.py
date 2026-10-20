@@ -3,22 +3,26 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Launch tt-lab's prebuilt ``glm-tt serve`` from a host package (impl tt_lab_glm).
+"""Launch tt-lab's prebuilt ``glm-tt serve`` (impl tt_lab_glm).
 
-The device spec mounts the package and the weights read-only (docker_host_packages) and
-makes this script the container's entrypoint (docker_entrypoint), so any image with a
-python3 can serve GLM-5.3-Flash. Standard library only: the image's venv is not needed.
+The device spec makes this script the container's entrypoint (docker_entrypoint), so any
+image with a python3 can serve GLM-5.3-Flash. Standard library only: the image's venv is
+not needed. The package (``glm-tt/`` in the weights repo, or a host package mounted
+read-only) holds ``bin/glm-tt`` and ``runtime/`` (its own loader and C/C++ libraries, so
+the image's libraries are irrelevant), optionally ``SOURCE`` and ``SHA256SUMS``. A
+package without exec bits (a Hugging Face download) is verified against its SHA256SUMS
+and copied to a temporary directory to run.
 
-The package holds ``bin/glm-tt`` and ``runtime/`` (its own loader and C/C++ libraries,
-so the image's libraries are irrelevant), optionally ``SOURCE`` and ``SHA256SUMS``.
-
-Environment (run_docker_server.py sets MODEL, DEVICE and the spec's env_vars):
-  GLM_TT_HOME        the package (default /home/container_app_user/glm-tt)
+Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's env_vars):
+  GLM_TT_HOME        the package (default glm-tt/ in the weights directory, else
+                     /home/container_app_user/glm-tt)
   DEVICE             p150x8 (LoudBox, one user) or blackhole_galaxy (Galaxy: --groups 4,
                      one user per 8-chip group, and TT_LAB_GLM_ROUND=auto); bh_galaxy too.
                      TT_LAB_ETH_GATHER=1 on both unless set.
-  GLM_TT_TTQ, GLM_TT_VOCAB  the weights: absolute paths, or names in MODEL_WEIGHTS_DIR, or
-                     else in an HF snapshot under HF_HOME
+  GLM_TT_TTQ, GLM_TT_VOCAB  the weights: absolute paths, or names in the weights
+                     directory (MODEL_WEIGHTS_DIR, else $CACHE_ROOT/weights/$MODEL where
+                     TIS downloads the weights repo), or in an HF snapshot under HF_HOME.
+                     A TTQ split into parts is found by its NAME.manifest.
   VLLM_API_KEY / JWT_SECRET / API_KEY / NO_AUTH  the bearer key, in that order: TIS's
                      clients send VLLM_API_KEY if set, else the JWT of JWT_SECRET
                      (utils/vllm_run_utils.py get_encoded_api_key); NO_AUTH=1 for none.
@@ -40,9 +44,11 @@ import hashlib
 import hmac
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 DEFAULT_HOME = "/home/container_app_user/glm-tt"
@@ -103,19 +109,76 @@ def resolve_api_key(env):
     )
 
 
-def find_weight(name, env):
-    """The weight file's path, or None: absolute, in MODEL_WEIGHTS_DIR, or in HF_HOME."""
-    if name.startswith("/"):
-        return name if os.path.isfile(name) else None
+def weights_dir(env):
+    """MODEL_WEIGHTS_DIR, else $CACHE_ROOT/weights/$MODEL (TIS's download of the weights
+    repo into the persistent volume) when it exists, else None."""
     if env.get("MODEL_WEIGHTS_DIR"):
-        path = os.path.join(env["MODEL_WEIGHTS_DIR"], name)
-        return path if os.path.isfile(path) else None
-    hf_home = env.get("HF_HOME", "/nonexistent")
-    for snapshot in sorted(glob.glob(f"{hf_home}/hub/models--*/snapshots/*")):
-        path = os.path.join(snapshot, name)
-        if os.path.isfile(path):
+        return env["MODEL_WEIGHTS_DIR"]
+    if env.get("CACHE_ROOT") and env.get("MODEL"):
+        path = os.path.join(env["CACHE_ROOT"], "weights", env["MODEL"])
+        if os.path.isdir(path):
             return path
     return None
+
+
+def _weight_file(path):
+    """path if it is a file, its split TTQ's manifest if that is, else None."""
+    if os.path.isfile(path):
+        return path
+    if os.path.isfile(f"{path}.manifest"):
+        return f"{path}.manifest"
+    return None
+
+
+def find_weight(name, env):
+    """The weight file's path, or None: absolute, in the weights directory, or in HF_HOME."""
+    if name.startswith("/"):
+        return _weight_file(name)
+    directory = weights_dir(env)
+    if directory:
+        return _weight_file(os.path.join(directory, name))
+    hf_home = env.get("HF_HOME", "/nonexistent")
+    for snapshot in sorted(glob.glob(f"{hf_home}/hub/models--*/snapshots/*")):
+        path = _weight_file(os.path.join(snapshot, name))
+        if path:
+            return path
+    return None
+
+
+def package_home(env) -> Path:
+    """GLM_TT_HOME, else glm-tt/ in the weights directory when present, else the default."""
+    if env.get("GLM_TT_HOME"):
+        return Path(env["GLM_TT_HOME"])
+    directory = weights_dir(env)
+    if directory and (Path(directory) / "glm-tt/bin/glm-tt").is_file():
+        return Path(directory) / "glm-tt"
+    return Path(DEFAULT_HOME)
+
+
+def runnable_home(home: Path, staging_root=None) -> Path:
+    """home if its loader and binaries can execute; else a verified, executable copy.
+
+    A Hugging Face download keeps no exec bits and the weights mount may be read-only, so
+    bin/ and runtime/ are checked against SHA256SUMS and copied to a temporary directory.
+    """
+    executables = [home / "runtime/ld-linux-x86-64.so.2", home / "bin/glm-tt"]
+    if all(os.access(path, os.X_OK) for path in executables):
+        return home
+    if not (home / "SHA256SUMS").is_file():
+        raise SetupError(
+            f"{home} is not executable and has no SHA256SUMS to verify a copy against"
+        )
+    verify_package(home)
+    staged = Path(tempfile.mkdtemp(prefix="glm-tt-", dir=staging_root))
+    for name in ("bin", "runtime"):
+        shutil.copytree(home / name, staged / name)
+        for path in (staged / name).iterdir():
+            path.chmod(0o755)
+    for name in ("SOURCE", "SHA256SUMS"):
+        if (home / name).is_file():
+            shutil.copy(home / name, staged / name)
+    log(f"{home} is not executable; running a verified copy in {staged}")
+    return staged
 
 
 def verify_package(home: Path):
@@ -286,22 +349,28 @@ def run_serve(command, env):
 def main(argv=None, environ=None):
     argv = sys.argv[1:] if argv is None else argv
     env = dict(os.environ if environ is None else environ)
-    home = Path(env.get("GLM_TT_HOME") or DEFAULT_HOME)
-    loader = [
-        str(home / "runtime/ld-linux-x86-64.so.2"),
-        "--library-path",
-        str(home / "runtime"),
-    ]
-    if argv and argv[0] in ("glm-tt", "test-tt-kernels"):
-        os.execv(loader[0], loader + [str(home / "bin" / argv[0])] + argv[1:])
-    glm_tt = loader + [str(home / "bin/glm-tt")]
     try:
-        parse_vllm_args(argv, env)
+        passthrough = bool(argv) and argv[0] in ("glm-tt", "test-tt-kernels")
+        if not passthrough:
+            parse_vllm_args(argv, env)
+        home = package_home(env)
         if not (home / "bin/glm-tt").is_file():
             raise SetupError(
-                f"no glm-tt in {home}/bin (mount the package at GLM_TT_HOME)"
+                f"no glm-tt in {home}/bin (put the package at GLM_TT_HOME or glm-tt/ in "
+                f"the weights directory)"
             )
-        verify_package(home)
+        verified = home
+        home = runnable_home(home)
+        loader = [
+            str(home / "runtime/ld-linux-x86-64.so.2"),
+            "--library-path",
+            str(home / "runtime"),
+        ]
+        if passthrough:
+            os.execv(loader[0], loader + [str(home / "bin" / argv[0])] + argv[1:])
+        glm_tt = loader + [str(home / "bin/glm-tt")]
+        if verified == home:
+            verify_package(home)
         if (home / "SOURCE").is_file():
             sys.stderr.write((home / "SOURCE").read_text())
         usage = subprocess.run(

@@ -250,3 +250,64 @@ def test_main_refuses_a_tampered_package(tmp_path, galaxy_env):
 def test_main_needs_the_package(tmp_path, galaxy_env):
     galaxy_env["GLM_TT_HOME"] = str(tmp_path / "absent")
     assert run_glm_tt.main([], galaxy_env) == run_glm_tt.SETUP_FAILED
+
+
+def _hf_download(tmp_path, glm_tt_status=0):
+    """TIS's download of the weights repo: $CACHE_ROOT/weights/$MODEL, no exec bits."""
+    weights = tmp_path / "cache" / "weights" / "GLM-5.3-Flash"
+    weights.mkdir(parents=True)
+    home, record = _package(tmp_path, glm_tt_status)
+    home.rename(weights / "glm-tt")
+    for path in (weights / "glm-tt").rglob("*"):
+        if path.is_file():
+            path.chmod(0o644)
+    (weights / "w.ttq.manifest").write_text("glm-tt ttq split 1\n")
+    (weights / "w.ttq.00001-of-00001").write_bytes(b"t")
+    (weights / "v.gguf").write_bytes(b"v")
+    return weights, record
+
+
+def test_split_ttq_is_found_by_its_manifest(tmp_path):
+    (tmp_path / "w.ttq.manifest").write_text("glm-tt ttq split 1\n")
+    env = {"MODEL_WEIGHTS_DIR": str(tmp_path)}
+    assert run_glm_tt.find_weight("w.ttq", env) == f"{tmp_path}/w.ttq.manifest"
+    (tmp_path / "w.ttq").write_bytes(b"t")
+    assert run_glm_tt.find_weight("w.ttq", env) == f"{tmp_path}/w.ttq"
+    assert run_glm_tt.find_weight("absent.ttq", env) is None
+
+
+def test_main_serves_a_downloaded_weights_repo(tmp_path, galaxy_env, monkeypatch):
+    weights, record = _hf_download(tmp_path)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    monkeypatch.setattr(run_glm_tt.tempfile, "tempdir", str(staging))
+    galaxy_env.update(GLM_TT_TTQ="w.ttq", GLM_TT_VOCAB="v.gguf")
+    assert run_glm_tt.main([], galaxy_env) == 0
+    argv = json.loads(record.read_text())["argv"]
+    assert argv[argv.index("--ttq") + 1] == f"{weights}/w.ttq.manifest"
+    assert argv[argv.index("-m") + 1] == f"{weights}/v.gguf"
+    (staged,) = staging.iterdir()
+    assert (staged / "bin" / "glm-tt").stat().st_mode & 0o111
+    assert not (weights / "glm-tt" / "bin" / "glm-tt").stat().st_mode & 0o111
+
+
+def test_main_refuses_a_tampered_download_before_running_it(
+    tmp_path, galaxy_env, monkeypatch
+):
+    weights, record = _hf_download(tmp_path)
+    (weights / "glm-tt" / "bin" / "glm-tt").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(run_glm_tt.tempfile, "tempdir", str(tmp_path))
+    galaxy_env.update(GLM_TT_TTQ="w.ttq", GLM_TT_VOCAB="v.gguf")
+    assert run_glm_tt.main([], galaxy_env) == run_glm_tt.SETUP_FAILED
+    assert not record.exists()
+    assert not list(tmp_path.glob("glm-tt-*"))
+
+
+def test_unexecutable_package_needs_checksums(tmp_path):
+    home, _ = _package(tmp_path)
+    (home / "SHA256SUMS").unlink()
+    (home / "bin" / "glm-tt").chmod(0o644)
+    with pytest.raises(run_glm_tt.SetupError, match="no SHA256SUMS"):
+        run_glm_tt.runnable_home(home)
+    (home / "bin" / "glm-tt").chmod(0o755)
+    assert run_glm_tt.runnable_home(home) == home
