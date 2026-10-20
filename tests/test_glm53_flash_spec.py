@@ -47,7 +47,9 @@ def test_glm_galaxy_catalog_row():
     assert not host_packages_provide_weights(spec)
     assert spec.min_disk_gb >= 250
     files = spec.metadata["checkpoint_files"]
-    assert "glm-tt/bin/glm-tt" in files
+    package = spec.env_vars["GLM_TT_PACKAGE"]
+    assert package.startswith("glm-tt-")
+    assert f"{package}/bin/glm-tt" in files
     assert f"{spec.env_vars['GLM_TT_TTQ']}.manifest" in files
     assert spec.env_vars["GLM_TT_VOCAB"] in files
     assert "GLM_TT_HOME" not in spec.env_vars

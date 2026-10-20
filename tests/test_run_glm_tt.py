@@ -391,3 +391,15 @@ def test_device_report_names_identity_groups_and_hugepages(tmp_path):
         "IOMMU groups by type: DMA-FQ: [0, 2]; identity: [1]; unknown: [3]; "
         "1 GiB hugepages 30 of 32 free"
     )
+
+
+def test_package_folder_is_named_by_glm_tt_package(tmp_path):
+    for name in ("glm-tt", "glm-tt-abc"):
+        (tmp_path / name / "bin").mkdir(parents=True)
+        (tmp_path / name / "bin" / "glm-tt").write_bytes(b"x")
+    env = {"MODEL_WEIGHTS_DIR": str(tmp_path)}
+    assert run_glm_tt.package_home(env) == tmp_path / "glm-tt"
+    env["GLM_TT_PACKAGE"] = "glm-tt-abc"
+    assert run_glm_tt.package_home(env) == tmp_path / "glm-tt-abc"
+    env["GLM_TT_PACKAGE"] = "glm-tt-missing"
+    assert run_glm_tt.package_home(env) == Path(run_glm_tt.DEFAULT_HOME)
