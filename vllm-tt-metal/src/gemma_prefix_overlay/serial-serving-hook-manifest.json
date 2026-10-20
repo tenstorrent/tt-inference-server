@@ -66,5 +66,6 @@
   },
   "scope": "Accepted R9 twofile native delta composed with validated boundary64 adapter; anchor unchanged. Actual CI serving pending.",
   "base_model_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
-  "target_content_manifest_sha256": "63ab3e443149e30444b0d3bd6ee2d478e836298164e8c8f98eb7e316cf92315c"
+  "target_content_manifest_sha256": "66487a96a07343e032004cda40e6f01a5106e90045b800b4a848eaa05855a8df",
+  "native_acceptance_sha256": "04271b98980953ee6ba480c28381b710450412fbd2ff41b5bb9a453c4260c82a"
 }
