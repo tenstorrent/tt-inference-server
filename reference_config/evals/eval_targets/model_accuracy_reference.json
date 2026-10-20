@@ -311,6 +311,7 @@
     },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        "_comment": "Placeholder: clip_valid_range is copied from Wan2.2-T2V; replace with the range from the Wan2.2 I2V GPU reference dataset.",
         "num_inference_steps": 40,
         "accuracy": {
             "5": {

@@ -198,6 +198,7 @@ class TestVideoMatrixExpansion:
         "wan-i2v-p150x4",
         "wan-i2v-p150x8",
         "wan-i2v-p300x2",
+        "wan-i2v-blackhole_galaxy",
         "mochi-t3k",
         "mochi-galaxy",
         "mochi-p150x4",
@@ -267,6 +268,12 @@ class TestVideoMatrixExpansion:
         "wan-i2v-p300x2": {
             "num_inference_steps": 40,
             "poll_timeout": 800,
+            "poll_interval": 5,
+        },
+        # No measured BH Galaxy time yet, so it keeps the suite default.
+        "wan-i2v-blackhole_galaxy": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1200,
             "poll_interval": 5,
         },
     }

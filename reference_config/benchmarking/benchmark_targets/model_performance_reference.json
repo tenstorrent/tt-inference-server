@@ -6454,6 +6454,22 @@
         ]
     },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Placeholder: no measured BH Galaxy run yet. Null targets report NA (no gate); fill from the first measured benchmark.",
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "end_to_end_latency_ms": null,
+                        "inference_steps_per_second": null,
+                        "tput_user": null
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "max_concurrency": 1,
