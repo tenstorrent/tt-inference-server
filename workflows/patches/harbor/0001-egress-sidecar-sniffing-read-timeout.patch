@@ -1,0 +1,14 @@
+diff --git a/src/harbor/environments/docker/harbor-docker-egress-control-sidecar/gost.yaml b/src/harbor/environments/docker/harbor-docker-egress-control-sidecar/gost.yaml
+--- a/src/harbor/environments/docker/harbor-docker-egress-control-sidecar/gost.yaml
++++ b/src/harbor/environments/docker/harbor-docker-egress-control-sidecar/gost.yaml
+@@ -12,6 +12,10 @@ services:
+       metadata:
+         sniffing: true
+         sniffing.timeout: 5s
+         sniffing.fallback: true
++        # Sniffed HTTP waits at most readTimeout (gost default 15s) for the
++        # response headers. A non-streaming LLM completion sends none until it
++        # finishes, so a shorter value drops every long reasoning turn.
++        readTimeout: 2h
+     listener:
+       type: red

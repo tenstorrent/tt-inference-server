@@ -44,6 +44,9 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # is stable.
 HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
 HARBOR_REF = "tt-inference-server"
+# Patches carried on top of HARBOR_REF until they land on the fork; files apply
+# to the repository root in sorted order after every checkout.
+_HARBOR_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "harbor"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
@@ -334,6 +337,8 @@ def setup_evals_agentic(
     harbor_dir = venv_config.venv_path / "harbor"
     if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
         return False
+    if not _apply_patches(harbor_dir, _harbor_patches(), "Harbor", logger):
+        return False
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
@@ -447,9 +452,23 @@ def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
     return result.returncode == 0
 
 
+def _harbor_patches() -> list[tuple[Path, Path]]:
+    """(patch file, target path relative to the checkout) for every carried patch."""
+    return [(p, Path(".")) for p in sorted(_HARBOR_PATCH_DIR.glob("*.patch"))]
+
+
 def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
-    """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
-    for patch, target in _inferencex_patches():
+    return _apply_patches(repo_dir, _inferencex_patches(), "InferenceX", logger)
+
+
+def _apply_patches(
+    repo_dir: Path,
+    patches: list[tuple[Path, Path]],
+    repo_name: str,
+    logger: logging.Logger,
+) -> bool:
+    """Apply carried patches to a fresh checkout; already-applied ones are skipped."""
+    for patch, target in patches:
         target_dir = repo_dir / target
         # An unpopulated submodule is an empty directory inside the superproject;
         # `git apply` run there ignores every path in the patch and reports
@@ -462,10 +481,11 @@ def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
             continue
         if not _patch_check(target_dir, patch):
             logger.error(
-                "Patch %s does not apply to %s at this InferenceX ref; drop or "
+                "Patch %s does not apply to %s at this %s ref; drop or "
                 "refresh it against the pinned revision.",
                 patch.name,
                 target,
+                repo_name,
             )
             return False
         if (
