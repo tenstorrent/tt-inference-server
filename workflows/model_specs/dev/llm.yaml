@@ -7710,6 +7710,14 @@ templates:
       max_concurrency: 4
       max_context: 262144  # 256 * 1024
       default_impl: true
+      # CI's Galaxies (bh-galaxy runners) are cabled as 2 x 4 ladders per board with cube links
+      # in only two columns, so the four Ethernet cube groups (TT_LAB_GLM_ROUND=auto,
+      # TT_LAB_ETH_GATHER=1, the launcher's Galaxy defaults) do not form there. PCIe rounds and
+      # host-side prefill gathers need no cube: the same tokens, about 100 instead of 155 t/s
+      # per user. Delete these two on a Galaxy whose 3-cube groups are complete.
+      env_vars:
+        TT_LAB_GLM_ROUND: pcie
+        TT_LAB_ETH_GATHER: "0"
       # docker stop took 9.1 s on a Galaxy (drain, then four groups release their chips); the
       # timeout leaves room for the 8 s default drain on top of that teardown.
       docker_stop_timeout: 30
