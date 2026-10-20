@@ -107,6 +107,29 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 }
 
 
+# One deployment per Qwen3-TTS release; the C++ server derives it from HF_MODEL.
+_CPP_TTS_RUNNER_BY_MODEL_NAME = {
+    "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-1.7B-VoiceDesign": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-CustomVoice": "tt_qwen3_tts",
+}
+
+# device.name.lower() -> DEVICE_IDS (one worker per chip).
+_CPP_TTS_DEVICE_IDS = {
+    "n150": "(0)",
+    "p150": "(0)",
+}
+
+# Reseeded before every request; the TTS evals rely on reproducible audio.
+_CPP_TTS_SEED = "0"
+# Kept small: the server's default queue sizes reserve ~2.5 GB of /dev/shm.
+_CPP_TTS_TASK_QUEUE_CAPACITY = "16"
+_CPP_TTS_AUDIO_QUEUE_CAPACITY = "64"
+_CPP_TTS_CANCEL_QUEUE_CAPACITY = "64"
+
+
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
     if model_spec.inference_engine != InferenceEngine.MEDIA.value:
@@ -116,6 +139,8 @@ def _is_cpp_media_spec(model_spec) -> bool:
         return device in _CPP_SDXL_DEVICE_DEFAULTS
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return device in _CPP_EMBEDDING_DEVICE_IDS
+    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_TTS_DEVICE_IDS
     return False
 
 
@@ -183,10 +208,39 @@ def _get_cpp_embedding_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_tts_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server TTS (Qwen3-TTS) service needs."""
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_TTS_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    device_ids = _CPP_TTS_DEVICE_IDS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "tts",
+        "MODEL_RUNNER_TYPE": runner,
+        "HF_MODEL": model_spec.hf_model_repo,
+        "DEVICE_IDS": device_ids,
+        "TTS_QWEN3_SEED": _CPP_TTS_SEED,
+        "TTS_TASK_QUEUE_CAPACITY": _CPP_TTS_TASK_QUEUE_CAPACITY,
+        "TTS_AUDIO_QUEUE_CAPACITY": _CPP_TTS_AUDIO_QUEUE_CAPACITY,
+        "TTS_CANCEL_QUEUE_CAPACITY": _CPP_TTS_CANCEL_QUEUE_CAPACITY,
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=tts, "
+        f"MODEL_RUNNER_TYPE={runner}, HF_MODEL={model_spec.hf_model_repo}, "
+        f"DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def _get_cpp_server_docker_env_vars(model_spec):
     """Dispatch to the per-service env-var builder for the cpp_server backend."""
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return _get_cpp_embedding_server_docker_env_vars(model_spec)
+    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_tts_server_docker_env_vars(model_spec)
     return _get_cpp_image_server_docker_env_vars(model_spec)
 
 
@@ -455,6 +509,9 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         if value is True:
             cli_args.append(flag)
         elif isinstance(value, (dict, list)):
+            # One JSON token. Whether a list must be split into one token per
+            # item depends on the flag's nargs, which only vLLM knows; the
+            # container entrypoint does that split (run_vllm_api_server.py).
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]
@@ -474,6 +531,16 @@ def _resolve_training_store_root(setup_config) -> str:
     if setup_config and setup_config.host_model_volume_root:
         return str(setup_config.cache_root)
     return _EPHEMERAL_TRAINING_STORE_ROOT
+
+
+def _docker_ipc_args(model_spec) -> List[str]:
+    """IPC namespace for the container: the host's by default; a private one with its own
+    /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec)."""
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    shm_size = getattr(device_spec, "docker_shm_size", None)
+    if shm_size:
+        return ["--ipc", "private", "--shm-size", str(shm_size)]
+    return ["--ipc", "host"]
 
 
 def generate_docker_run_command(
@@ -524,7 +591,7 @@ def generate_docker_run_command(
         "--name", container_name,
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--ipc", "host",
+        *_docker_ipc_args(model_spec),
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]

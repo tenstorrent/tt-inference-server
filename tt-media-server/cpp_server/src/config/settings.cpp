@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config/defaults.hpp"
+#include "config/qwen3_tts.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
 #include "utils/logger.hpp"
@@ -634,6 +635,108 @@ const EmbeddingDeviceEntry& deviceEntryOrThrow(const EmbeddingModelEntry& model,
       "set.");
 }
 
+bool envIsSet(const char* name) {
+  const char* v = std::getenv(name);
+  return v != nullptr && *v != '\0';
+}
+
+/** A rate Qwen3-TTS fixes at 24 kHz: defaulted to it, refused otherwise. */
+uint32_t qwen3FixedRate(const char* envName) {
+  const auto rate = static_cast<uint32_t>(
+      envUlong(envName, defaults::TTS_QWEN3_SAMPLE_RATE_HZ));
+  if (rate != defaults::TTS_QWEN3_SAMPLE_RATE_HZ) {
+    throw std::runtime_error(
+        std::string("[Config] ") + envName + "=" + std::to_string(rate) +
+        " is not supported by tt_qwen3_tts, whose codec works at " +
+        std::to_string(defaults::TTS_QWEN3_SAMPLE_RATE_HZ) + " Hz; unset it");
+  }
+  return rate;
+}
+
+/** The Qwen3-TTS half of ttsEngineConfig(). */
+void applyQwen3TtsConfig(TtsConfig& cfg) {
+  namespace qwen3 = tt::config::qwen3_tts;
+
+  // The codec is 24 kHz mono; any other TTS_* rate would mislabel the audio.
+  cfg.voiceSampleRateHz = qwen3FixedRate("TTS_VOICE_SAMPLE_RATE_HZ");
+  cfg.audioSampleRateHz = qwen3FixedRate("TTS_AUDIO_SAMPLE_RATE_HZ");
+  if (cfg.voiceChannels != 1 || cfg.audioChannels != 1) {
+    throw std::runtime_error(
+        "[Config] tt_qwen3_tts is mono; unset TTS_VOICE_CHANNELS / "
+        "TTS_AUDIO_CHANNELS");
+  }
+
+  // Batch 1: capacity scales with DEVICE_IDS groups; TTS_MAX_USERS overrides.
+  if (cfg.maxBatchSize != 1) {
+    TT_LOG_WARN(
+        "[Config] TTS_MAX_BATCH_SIZE={} ignored: tt_qwen3_tts runs batch 1",
+        cfg.maxBatchSize);
+    cfg.maxBatchSize = 1;
+  }
+  if (!envIsSet("TTS_MAX_USERS")) {
+    cfg.maxUsers = std::max<size_t>(numWorkers(), 1);
+  }
+
+  const std::string ckptDir = envString("QWEN3_TTS_CKPT", "");
+  const std::string hfModel = envString("HF_MODEL", "");
+  const std::string configPath = qwen3::findCheckpointConfig(
+      ckptDir, hfModel, qwen3::huggingFaceHubCacheDir());
+  const auto checkpoint = qwen3::readCheckpointConfig(configPath);
+
+  const auto resolved = qwen3::resolveRelease(
+      {.explicitRelease = envString("TTS_QWEN3_RELEASE", ""),
+       .explicitSize = envString("TTS_QWEN3_MODEL_SIZE", ""),
+       .ckptDir = ckptDir,
+       .hfModel = hfModel,
+       .checkpoint = checkpoint});
+  cfg.qwen3.emplace();
+  cfg.qwen3->release = resolved.release;
+  cfg.qwen3->modelSize = resolved.size;
+  cfg.qwen3->checkpointDir = ckptDir;
+  cfg.qwen3->hfModel = hfModel;
+  if (checkpoint) {
+    cfg.qwen3->speakers = checkpoint->speakers;
+    cfg.qwen3->languages = checkpoint->languages;
+  }
+
+  cfg.qwen3->maxFrames = static_cast<uint32_t>(
+      envUlong("TTS_QWEN3_MAX_FRAMES", defaults::TTS_QWEN3_MAX_FRAMES));
+  if (cfg.qwen3->maxFrames == 0) {
+    throw std::runtime_error("[Config] TTS_QWEN3_MAX_FRAMES must be >= 1");
+  }
+  if (const std::string seed = envString("TTS_QWEN3_SEED", ""); !seed.empty()) {
+    try {
+      size_t used = 0;
+      cfg.qwen3->seed = std::stoull(seed, &used);
+      if (used != seed.size()) throw std::invalid_argument(seed);
+    } catch (const std::exception&) {
+      throw std::runtime_error("[Config] TTS_QWEN3_SEED='" + seed +
+                               "' is not a non-negative integer");
+    }
+  }
+  cfg.qwen3->maxReferenceSeconds = static_cast<uint32_t>(
+      envUlong("TTS_QWEN3_MAX_REFERENCE_SECONDS",
+               defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS));
+  if (cfg.qwen3->maxReferenceSeconds == 0 ||
+      cfg.qwen3->maxReferenceSeconds >
+          defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT) {
+    throw std::runtime_error(
+        "[Config] TTS_QWEN3_MAX_REFERENCE_SECONDS must be in [1, " +
+        std::to_string(defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT) +
+        "] (a longer clip does not fit one TTS task message)");
+  }
+
+  TT_LOG_INFO(
+      "[Config] Qwen3-TTS release={} size={} checkpoint={} speakers={} "
+      "languages={} max_frames={} seed={} max_users={}",
+      toString(cfg.qwen3->release), toString(cfg.qwen3->modelSize),
+      configPath.empty() ? "(not on local disk yet)" : configPath,
+      cfg.qwen3->speakers.size(), cfg.qwen3->languages.size(),
+      cfg.qwen3->maxFrames,
+      cfg.qwen3->seed ? std::to_string(*cfg.qwen3->seed) : "unseeded",
+      cfg.maxUsers);
+}
+
 }  // namespace
 
 ImageConfig imageEngineConfig() {
@@ -673,10 +776,14 @@ TtsConfig ttsEngineConfig() {
       cfg.runner_type = ModelRunnerType::TT_TTS;
     } else if (runner == "mock_tts") {
       cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
+    } else if (runner == "tt_qwen3_tts") {
+      cfg.runner_type = ModelRunnerType::TT_QWEN3_TTS;
     } else {
-      throw std::runtime_error("[Config] Unknown TTS MODEL_RUNNER_TYPE='" +
-                               runner + "'; expected one of: tt_tts, mock_tts");
+      throw std::runtime_error(
+          "[Config] Unknown TTS MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_tts, mock_tts, tt_qwen3_tts");
     }
+    const bool isQwen3 = cfg.runner_type == ModelRunnerType::TT_QWEN3_TTS;
 
     cfg.maxBatchSize = static_cast<size_t>(
         envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
@@ -749,6 +856,9 @@ TtsConfig ttsEngineConfig() {
         envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
                   defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
 
+    if (isQwen3) {
+      applyQwen3TtsConfig(cfg);
+    }
     return cfg;
   }();
   return cached;
@@ -787,6 +897,8 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
     }
     case ModelService::TTS: {
       auto cfg = ttsEngineConfig();
+      cfg.workerId = workerIndex;
+      cfg.visibleDevices = visibleDevicesForWorker(workerIndex);
       return cfg;
     }
     case ModelService::EMBEDDING: {

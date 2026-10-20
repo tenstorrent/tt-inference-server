@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+# Meta repos ship a second copy of the weights in original/ (Meta's own format, e.g.
+# 141 GB extra for Llama-3.1-70B) that nothing here loads. The host-side download
+# (workflows/setup_host.py) already skips it; keep the container download in line.
+HF_DOWNLOAD_IGNORE_PATTERNS = ["original/**"]
 QUETZAL_IMPL_ID = "quetzal"
 QUETZAL_PROVIDER_ENV = {
     "QUETZAL_VLLM": "1",
@@ -644,6 +648,19 @@ def _ensure_quetzal_metadata(model_spec: dict) -> Path:
     try:
         from transformers import AutoConfig, AutoTokenizer
 
+        # A checkpoint whose config.json names remote code (auto_map) resolves
+        # here only if its architecture is registered locally: quetzal vendors
+        # those classes byte-pinned (tt_quetzalcoatlus.hf_compat, #320/#323) and
+        # registers them with AutoConfig/AutoModel, so remote code is never
+        # trusted. A quetzal that predates the vendoring keeps today's
+        # behaviour (fails closed on such a config).
+        try:
+            from tt_quetzalcoatlus.hf_compat import register_vendored_architectures
+        except ImportError:
+            register_vendored_architectures = None
+        if register_vendored_architectures is not None:
+            register_vendored_architectures()
+
         AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
         AutoTokenizer.from_pretrained(
             path, local_files_only=True, trust_remote_code=False
@@ -706,6 +723,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
                 repo_id=model_spec["hf_model_repo"],
                 revision=revision,
                 cache_dir=cache_root / "weights" / "hub",
+                ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
             )
         )
         os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
@@ -730,7 +748,12 @@ def ensure_weights_available(model_spec: dict) -> Path:
     at_revision = f" at revision {revision}" if revision else ""
     logger.info(f"Downloading weights from {hf_repo}{at_revision} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path, revision=revision)
+        snapshot_download(
+            repo_id=hf_repo,
+            local_dir=weights_path,
+            revision=revision,
+            ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
+        )
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
@@ -1078,17 +1101,57 @@ def _normalize_vllm_arg_name(arg_name: str) -> str:
     return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
 
 
-def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
+def _vllm_multi_value_arg_names() -> set[str]:
+    """Normalized names of the vLLM serve flags that take one argv token per value (nargs='+').
+
+    Lists reach this entrypoint as one JSON token, from the model spec and from
+    --vllm-override-args alike, because only vLLM knows which flags read several
+    tokens. --served-model-name reads ["a", "b"] as a single model named ["a", "b"],
+    while --allowed-origins (nargs=None, type=json.loads) only parses the JSON form.
+    """
+    from vllm.entrypoints.openai.cli_args import make_arg_parser
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+
+    parser = make_arg_parser(FlexibleArgumentParser())
+    return {action.dest for action in parser._actions if action.nargs == "+"}
+
+
+def _multi_value_tokens(value) -> list[str]:
+    # Dict items stay JSON: --lora-modules parses each token as JSON or name=path.
+    return [json.dumps(item) if isinstance(item, dict) else str(item) for item in value]
+
+
+def _append_vllm_arg(
+    argv: list[str], arg_name: str, value, multi_value_arg_names: set[str]
+) -> None:
     if value is None:
         return
     if isinstance(value, bool):
         if value:
             argv.append(arg_name)
         return
+    if (
+        isinstance(value, list)
+        and _normalize_vllm_arg_name(arg_name) in multi_value_arg_names
+    ):
+        if value:
+            argv.append(arg_name)
+            argv.extend(_multi_value_tokens(value))
+        return
     if isinstance(value, (dict, list)):
         argv.extend([arg_name, json.dumps(value)])
         return
     argv.extend([arg_name, str(value)])
+
+
+def _split_json_list_value(value: str) -> Optional[list]:
+    if not value.startswith("["):
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, list) else None
 
 
 def _extract_cli_arg_value(argv: list[str], arg_name: str) -> Optional[str]:
@@ -1135,6 +1198,7 @@ def format_vllm_serve_command(argv) -> str:
 def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
+    multi_value_arg_names = _vllm_multi_value_arg_names()
     remaining_default_vllm_args = dict(default_vllm_args)
     default_arg_name_by_normalized_name = {
         _normalize_vllm_arg_name(arg_name): arg_name
@@ -1166,26 +1230,38 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
         if overridden_default_arg_name is not None:
             remaining_default_vllm_args.pop(overridden_default_arg_name, None)
 
+        is_multi_value = _normalize_vllm_arg_name(cli_arg_name) in multi_value_arg_names
+
         if separator:
-            vllm_argv.append(f"{cli_arg_name}={inline_value}")
+            items = _split_json_list_value(inline_value) if is_multi_value else None
+            if items is None:
+                vllm_argv.append(f"{cli_arg_name}={inline_value}")
+            elif items:
+                vllm_argv.append(cli_arg_name)
+                vllm_argv.extend(_multi_value_tokens(items))
             index += 1
             continue
 
-        vllm_argv.append(cli_arg_name)
         next_token_is_value = index + 1 < len(input_vllm_argv) and not input_vllm_argv[
             index + 1
         ].startswith("--")
         if next_token_is_value:
             value = input_vllm_argv[index + 1]
-            vllm_argv.append(value)
+            items = _split_json_list_value(value) if is_multi_value else None
+            if items is None:
+                vllm_argv.extend([cli_arg_name, value])
+            elif items:
+                vllm_argv.append(cli_arg_name)
+                vllm_argv.extend(_multi_value_tokens(items))
             index += 2
             continue
 
+        vllm_argv.append(cli_arg_name)
         index += 1
 
     for key, value in remaining_default_vllm_args.items():
         cli_arg_name = f"--{key}"
-        _append_vllm_arg(vllm_argv, cli_arg_name, value)
+        _append_vllm_arg(vllm_argv, cli_arg_name, value, multi_value_arg_names)
 
     # finally set sys.argv to the vllm server args
     sys.argv = vllm_argv
