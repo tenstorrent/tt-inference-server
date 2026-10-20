@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
   "target_commit": null,
-  "patch_sha256": "a6a37c2ee29e963c4930328bfec5235746d17e9aead0abddee7938d1dabac930",
+  "patch_sha256": "34612b1fbc648a2034106dc9f6c9426b52ee31952e286cc9f9e9c9010f760f63",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py": {
       "base": null,
@@ -37,7 +37,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py": {
       "base": null,
-      "target": "4c78fa1869fe906f7146b17647cc3534be74d1ccebafb8ae5f89721639c63e90"
+      "target": "44398595dc7dbeb4dae44da43329e459284b0bd9b3f4c6cfd8cdc39dc6bf1fc7"
     },
     "models/demos/gemma4_31b_qb2/tt/model.py": {
       "base": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
@@ -49,7 +49,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "f6bed9d223949b7aff7b4c8dd0950f2af346c83a0bb3170a37935a468ad5840a"
+      "target": "861870360353759d5cc9c86fab8620b9b3ccc55b37a51a478bb05d85a925b093"
     },
     "models/demos/gemma4_31b_qb2/tt/runtime_position.py": {
       "base": null,
@@ -68,7 +68,7 @@
       "target": "c14b8f9ba1a1018485f57602514d63c832c4f34336fb6ebe0c60febfe1475dfa"
     }
   },
-  "scope": "Exact reviewed finer host phase observer atop accepted phase source; math unchanged, default off. Alias manifest inherited byte-exact.",
+  "scope": "Accepted paired K/V page controls, opt-in; finer timers and alias manifest inherited byte-exact.",
   "base_model_commit": "d0b0cd8ec041f3332a5dbd2260ffc17e4e44a71f",
-  "target_content_manifest_sha256": "9a1eeeac1474b8bcd60a72d24340a8ab1675fc82d28631303320b001be431570"
+  "target_content_manifest_sha256": "a698753255e18ad243a3a018bbc656d13b867564a2cd31bcc2e300c5c5a1420f"
 }

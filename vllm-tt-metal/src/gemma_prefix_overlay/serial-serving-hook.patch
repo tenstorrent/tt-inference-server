@@ -727,7 +727,7 @@ index e9ae70b..5037978 100644
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058ec..883eab9 100644
+index f2058ec..b7bc101 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,20 +6,24 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -842,7 +842,7 @@ index f2058ec..883eab9 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -327,7 +386,190 @@ class Gemma4Generator:
+@@ -327,7 +386,208 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -866,12 +866,30 @@ index f2058ec..883eab9 100644
 +            pages = page_tables[i][slot, first : start // Decoder.PAGE_SIZE].tolist()
 +            if not pages or any(p <= 0 or p >= state.kv[i][0].shape[0] for p in pages):
 +                raise ValueError(f"Missing sliding prefix pages for layer {i} at position {start}: {pages}")
++            paired = os.environ.get("GEMMA_PREFILL_PAIRED_PAGE_CONTROLS", "0")
++            if paired not in ("0", "1"):
++                raise ValueError("GEMMA_PREFILL_PAIRED_PAGE_CONTROLS must be 0 or 1")
 +            pair = []
-+            for cache in state.kv[i]:
-+                parts = [self.runtime_page_selector.select(cache, p) if self.runtime_page_selector is not None
-+                         else cache[p : p + 1, :, :, :] for p in pages]
-+                tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
-+                pair.append(ttnn.typecast(tail, ttnn.bfloat16))
++            if paired == "1" and self.runtime_page_selector is not None:
++                parts_by_cache = [[], []]
++                for page in pages:
++                    selected = self.runtime_page_selector.select_pair(*state.kv[i], page)
++                    parts_by_cache[0].append(selected[0])
++                    parts_by_cache[1].append(selected[1])
++                    del selected
++                for parts in parts_by_cache:
++                    tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
++                    pair.append(ttnn.typecast(tail, ttnn.bfloat16))
++                    # No future read of these selections exists after the queued
++                    # concat/cast; release both lists before returning history.
++                    parts.clear()
++                    del tail
++            else:
++                for cache in state.kv[i]:
++                    parts = [self.runtime_page_selector.select(cache, p) if self.runtime_page_selector is not None
++                             else cache[p : p + 1, :, :, :] for p in pages]
++                    tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
++                    pair.append(ttnn.typecast(tail, ttnn.bfloat16))
 +            histories.append(tuple(pair))
 +        return histories
 +
@@ -1034,7 +1052,7 @@ index f2058ec..883eab9 100644
          self,
          tokens,
          *,
-@@ -339,6 +581,7 @@ class Gemma4Generator:
+@@ -339,6 +599,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1042,7 +1060,7 @@ index f2058ec..883eab9 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +600,24 @@ class Gemma4Generator:
+@@ -357,16 +618,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1071,7 +1089,7 @@ index f2058ec..883eab9 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +625,289 @@ class Gemma4Generator:
+@@ -374,30 +643,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1371,7 +1389,7 @@ index f2058ec..883eab9 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -408,10 +918,26 @@ class Gemma4Generator:
+@@ -408,10 +936,26 @@ class Gemma4Generator:
                          # sentinel. These read-only rows may be shared; mutable
                          # persistent decode tables retain independent storage.
                          row_table = row_table.masked_fill(row_table == 0, -1)
@@ -1400,7 +1418,7 @@ index f2058ec..883eab9 100644
                  tt_ids,
                  sequence_length=chunk_length,
                  page_tables=tables,
-@@ -419,15 +945,23 @@ class Gemma4Generator:
+@@ -419,15 +963,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1427,7 +1445,7 @@ index f2058ec..883eab9 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -484,61 +1018,110 @@ class Gemma4Generator:
+@@ -484,61 +1036,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1574,7 +1592,7 @@ index f2058ec..883eab9 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1307,8 @@ class Gemma4Generator:
+@@ -724,6 +1325,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1583,7 +1601,7 @@ index f2058ec..883eab9 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1318,14 @@ class Gemma4Generator:
+@@ -733,7 +1336,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):
@@ -2640,10 +2658,10 @@ index 0000000..694ab5c
 +                          num_devices=padded[2] // 32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
 new file mode 100644
-index 0000000..2a11bd7
+index 0000000..7ffc8d0
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,70 @@
 +"""Ordered-CQ0 raw tiled page selection using existing tensor-start slice.
 +
 +Setup owns padded controls. No cache writes, quantization, or trace-policy change.
@@ -2695,6 +2713,25 @@ index 0000000..2a11bd7
 +        self._refresh(self.ends, (page + 1, 4, 128, 256))
 +        return ttnn.slice(cache, self.starts, self.ends, slice_dim=0,
 +                          num_devices=shape[0], memory_config=ttnn.DRAM_MEMORY_CONFIG)
++
++    def select_pair(self, first, second, page):
++        """Select the same page from K/V with one ordered control refresh."""
++        self._assert_queue()
++        shape = tuple(first.shape)
++        for cache in (first, second):
++            if (tuple(cache.shape) != shape or len(shape) != 4
++                    or shape[1:] != (4, 128, 256)
++                    or tuple(cache.padded_shape) != shape
++                    or cache.dtype != ttnn.bfloat8_b or cache.layout != ttnn.TILE_LAYOUT
++                    or cache.memory_config() != ttnn.DRAM_MEMORY_CONFIG):
++                raise ValueError("Expected matching original BF8 sliding K/V caches")
++        if type(page) is not int or not 0 <= page < shape[0]:
++            raise ValueError("Physical page index outside cache")
++        self._refresh(self.starts, (page, 0, 0, 0))
++        self._refresh(self.ends, (page + 1, 4, 128, 256))
++        return tuple(ttnn.slice(cache, self.starts, self.ends, slice_dim=0,
++                                num_devices=shape[0], memory_config=ttnn.DRAM_MEMORY_CONFIG)
++                     for cache in (first, second))
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_position.py b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
 new file mode 100644
 index 0000000..4965e83
