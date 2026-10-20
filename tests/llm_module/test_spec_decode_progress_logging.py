@@ -5,6 +5,7 @@
 """Progress logging for the spec-decode sweep: per-run heartbeat, aiperf.log
 tail on failure, and the health wait's /v1/models fallback."""
 
+import json
 import logging
 import time
 
@@ -20,6 +21,98 @@ def test_heartbeat_logs_while_block_runs(caplog):
     with driver_mod._heartbeat("run-a", time.monotonic(), interval_s=0.05):
         time.sleep(0.3)
     assert any("run-a still running" in r.getMessage() for r in caplog.records)
+
+
+def test_heartbeat_logs_progress_status(caplog):
+    caplog.set_level(logging.INFO)
+    with driver_mod._heartbeat(
+        "run-a", time.monotonic(), interval_s=0.05, progress=lambda e: "3/8 done"
+    ):
+        time.sleep(0.3)
+    assert any("run-a 3/8 done" in r.getMessage() for r in caplog.records)
+
+
+def _raw_line(phase="profiling", error=None, status=200):
+    record = {"metadata": {"benchmark_phase": phase}, "status": status}
+    if error:
+        record["error"] = error
+    return json.dumps(record) + "\n"
+
+
+def _progress(tmp_path, total=8, before=None):
+    return driver_mod._RunProgress(
+        artifact_dir=tmp_path,
+        total=total,
+        metrics_urls=("http://w:8000/metrics",),
+        before=before or {},
+    )
+
+
+def test_progress_counts_raw_records_incrementally(tmp_path, monkeypatch):
+    monkeypatch.setattr(requests, "get", _refuse)
+    raw = tmp_path / "raw_records" / "raw_records_processor_0.jsonl"
+    raw.parent.mkdir()
+    raw.write_text(_raw_line() + _raw_line(phase="warmup") + _raw_line(status=500))
+    progress = _progress(tmp_path)
+    assert progress(10.0).startswith("[#####---------------] 2/8 (25%), 1 errors")
+    # A partial trailing line waits for the next beat.
+    with raw.open("a") as fh:
+        fh.write(_raw_line(error={"message": "x"}) + _raw_line().rstrip("\n"))
+    status = progress(20.0)
+    assert "3/8 (38%), 2 errors" in status and "ETA ~33s" in status
+    with raw.open("a") as fh:
+        fh.write("\n")
+    assert "4/8 (50%)" in progress(30.0)
+
+
+def test_progress_without_total_counts_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(requests, "get", _refuse)
+    assert _progress(tmp_path, total=None)(5.0) == "0 requests done"
+
+
+def _refuse(url, timeout=None):
+    raise requests.ConnectionError("refused")
+
+
+class _MetricsResp:
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+def test_progress_reads_server_gauges_rate_and_acceptance(tmp_path, monkeypatch):
+    scrapes = iter(
+        [
+            'vllm:num_requests_running{engine="0"} 4\n'
+            'vllm:num_requests_waiting{engine="0"} 2\n'
+            "vllm:generation_tokens_total 1000\n"
+            "vllm:spec_decode_num_accepted_tokens_total 130\n"
+            "vllm:spec_decode_num_draft_tokens_total 200\n",
+            'vllm:num_requests_running{engine="0"} 1\n'
+            'vllm:num_requests_waiting{engine="0"} 0\n'
+            "vllm:generation_tokens_total 1600\n"
+            "vllm:spec_decode_num_accepted_tokens_total 190\n"
+            "vllm:spec_decode_num_draft_tokens_total 300\n",
+        ]
+    )
+    monkeypatch.setattr(
+        requests, "get", lambda url, timeout=None: _MetricsResp(next(scrapes))
+    )
+    before = {
+        "vllm:spec_decode_num_accepted_tokens_total": 100.0,
+        "vllm:spec_decode_num_draft_tokens_total": 100.0,
+    }
+    progress = _progress(tmp_path, before=before)
+    first = progress(30.0)
+    assert "server: 4 running, 2 waiting" in first
+    assert "gen tok/s" not in first  # no rate before a second scrape
+    assert "acceptance 30.0%" in first
+    second = progress(60.0)
+    assert "server: 1 running, 0 waiting" in second
+    assert "20.0 gen tok/s" in second
+    assert "acceptance 45.0%" in second
 
 
 def test_aiperf_log_tail_is_logged(tmp_path, caplog):
