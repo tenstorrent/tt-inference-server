@@ -117,9 +117,23 @@ void startWorker(int workerId) {
     worker.stop();
   });
 
-  worker.start();
+  int exitCode = 0;
+  try {
+    worker.start();
+  } catch (const std::exception& e) {
+    TT_LOG_CRITICAL("[Main] Worker {} exiting after fatal error: {}", workerId,
+                    e.what());
+    exitCode = 1;
+  } catch (...) {
+    TT_LOG_CRITICAL("[Main] Worker {} exiting after unknown fatal error",
+                    workerId);
+    exitCode = 1;
+  }
   workerShutdown.store(true);
   if (shutdownMonitor.joinable()) shutdownMonitor.join();
+  if (exitCode != 0) {
+    std::exit(exitCode);
+  }
   return;
 }
 

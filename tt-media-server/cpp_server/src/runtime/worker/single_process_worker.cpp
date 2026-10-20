@@ -169,6 +169,7 @@ void SingleProcessWorker::start() {
         TT_LOG_ERROR(
             "[SingleProcessWorker] Worker {} failed to signal warmup: {}",
             worker_id, e.what());
+        throw;
       }
     });
     if (tt::config::isImageService() || tt::config::isEmbeddingService()) {

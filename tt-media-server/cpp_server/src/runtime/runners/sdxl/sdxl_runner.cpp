@@ -34,11 +34,33 @@ void setupRunnerEnvironment(const config::ImageConfig& config) {
   setenv("TORCH_NUM_THREADS", "1", 0);
   if (!config.visible_devices.empty()) {
     setenv("TT_VISIBLE_DEVICES", config.visible_devices.c_str(), 1);
+    if (const char* metalHome = std::getenv("TT_METAL_HOME");
+        metalHome && *metalHome) {
+      std::string deviceSuffix = config.visible_devices;
+      std::replace(deviceSuffix.begin(), deviceSuffix.end(), ',', '_');
+      std::string metalCache =
+          std::string(metalHome) + "/built/" + deviceSuffix;
+      setenv("TT_METAL_CACHE", metalCache.c_str(), 0);
+    }
   }
-  if (config.device == "bh-galaxy") {
+  if (config.device == "bh-galaxy" || config.device == "blackhole_galaxy") {
     setenv("TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE", "10,9", 1);
-  } else if (config.device == "galaxy") {
+  } else if (config.device == "galaxy" || config.is_galaxy) {
     setenv("TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE", "7,7", 1);
+  }
+}
+
+void applyTorchThreadLimits(const py::module_& torch) {
+  int numThreads = 1;
+  if (const char* env = std::getenv("TORCH_NUM_THREADS"); env && *env) {
+    const int parsed = std::atoi(env);
+    if (parsed > 0) numThreads = parsed;
+  }
+  if (torch.attr("get_num_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_threads")(numThreads);
+  }
+  if (torch.attr("get_num_interop_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_interop_threads")(numThreads);
   }
 }
 
@@ -90,6 +112,7 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
     PythonHelpers::ensureSysPath();
     PythonHelpers::helpers();
     torch_module() = importTorch();
+    applyTorchThreadLimits(torch_module());
     ttnn_module() = importTtnn();
   } catch (const py::error_already_set& e) {
     throw std::runtime_error(std::string("[SDXL] Failed to import Python deps "

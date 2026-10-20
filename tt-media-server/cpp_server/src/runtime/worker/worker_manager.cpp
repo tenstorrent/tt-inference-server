@@ -74,7 +74,7 @@ void populateCommonWorkerEnv(tt::worker::WorkerConfig& cfg, int workerId) {
   cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] = visibleDevices;
 
-  if (tt::config::isEmbeddingService()) {
+  if (tt::config::isEmbeddingService() || tt::config::isImageService()) {
     cfg.env_vars["OMP_NUM_THREADS"] = "2";
     cfg.env_vars["MKL_NUM_THREADS"] = "2";
     cfg.env_vars["TORCH_NUM_THREADS"] = "1";
@@ -209,13 +209,18 @@ bool WorkerManager::isReady() const {
   }
   std::lock_guard<std::mutex> wLock(workersMutex);
   std::lock_guard<std::mutex> mLock(warmedMutex);
+  bool anyReady = false;
   for (const auto& w : workers) {
-    if (w && w->is_alive.load(std::memory_order_acquire) &&
+    if (!w) continue;
+    if (w->pid > 0 && !w->is_alive.load(std::memory_order_acquire)) {
+      return false;
+    }
+    if (w->is_alive.load(std::memory_order_acquire) &&
         warmedWorkerIds.contains(w->worker_id)) {
-      return true;
+      anyReady = true;
     }
   }
-  return false;
+  return anyReady;
 }
 
 std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
@@ -239,6 +244,35 @@ SingleProcessWorker* WorkerManager::worker(size_t idx) {
   return workers[idx].get();
 }
 
+void WorkerManager::notifyWorkerDeath(size_t workerIdx, pid_t pid) {
+  WorkerDeathCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(deathCallbackMutex);
+    callback = deathCallback;
+  }
+  if (callback) {
+    try {
+      callback(workerIdx, pid);
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[WorkerManager] Worker death callback threw: {}", e.what());
+    } catch (...) {
+      TT_LOG_ERROR(
+          "[WorkerManager] Worker death callback threw a non-std exception");
+    }
+  }
+}
+
+void WorkerManager::stopSpawnedWorkers() {
+  for (size_t i = 0; i < workerCount; ++i) {
+    SingleProcessWorker* w = worker(i);
+    if (!w || w->pid <= 0) continue;
+    w->stop();
+    if (w->is_alive.exchange(false, std::memory_order_acq_rel)) {
+      notifyWorkerDeath(i, w->pid);
+    }
+  }
+}
+
 bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   SingleProcessWorker* w = nullptr;
   {
@@ -251,22 +285,7 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   }
   auto result = pollProcessLiveness(w->pid, w->is_alive, workerIdx);
   if (result.transitionedToDead) {
-    WorkerDeathCallback callback;
-    {
-      std::lock_guard<std::mutex> lock(deathCallbackMutex);
-      callback = deathCallback;
-    }
-    if (callback) {
-      try {
-        callback(workerIdx, w->pid);
-      } catch (const std::exception& e) {
-        TT_LOG_ERROR("[WorkerManager] Worker death callback threw: {}",
-                     e.what());
-      } catch (...) {
-        TT_LOG_ERROR(
-            "[WorkerManager] Worker death callback threw a non-std exception");
-      }
-    }
+    notifyWorkerDeath(workerIdx, w->pid);
   }
   return result.stillAlive;
 }
@@ -322,7 +341,6 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
                                        unsigned timeoutMs) {
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-  bool anyWarmedHere = false;
 
   while (!pending.empty() &&
          !warmupShouldStop.load(std::memory_order_acquire)) {
@@ -336,7 +354,6 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
       ready.store(true, std::memory_order_release);
       warmupReceived.store(true, std::memory_order_release);
       warmupCv.notify_all();
-      anyWarmedHere = true;
       std::erase(pending, static_cast<size_t>(wid));
     }
 
@@ -344,18 +361,18 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
     stillPending.reserve(pending.size());
     for (size_t idx : pending) {
       if (isWorkerWarmed(static_cast<int>(idx))) {
-        anyWarmedHere = true;
         continue;
       }
       if (!checkWorkerAlive(idx)) {
         TT_LOG_ERROR("[WorkerManager] Worker {} exited during warmup", idx);
-        continue;
+        ready.store(false, std::memory_order_release);
+        return false;
       }
       stillPending.push_back(idx);
     }
     pending = std::move(stillPending);
     if (pending.empty()) {
-      break;
+      return true;
     }
 
     if (std::chrono::steady_clock::now() >= deadline) {
@@ -367,15 +384,18 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
         SingleProcessWorker* w = worker(idx);
         if (w) {
           w->stop();
-          w->is_alive.store(false, std::memory_order_release);
+          if (w->is_alive.exchange(false, std::memory_order_acq_rel)) {
+            notifyWorkerDeath(idx, w->pid);
+          }
         }
       }
-      break;
+      ready.store(false, std::memory_order_release);
+      return false;
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
-  return anyWarmedHere;
+  return pending.empty();
 }
 
 void WorkerManager::runWarmupCoordinator(size_t firstUncoordinatedIdx,
@@ -383,26 +403,18 @@ void WorkerManager::runWarmupCoordinator(size_t firstUncoordinatedIdx,
   try {
     if (firstUncoordinatedIdx == 1 && workerCount > 1) {
       // Leader-first warmup: worker 0 was already spawned on start().
-      size_t nextIdx = 1;
-      bool haveLeader = awaitWorkersWarmup({0}, timeoutMs);
-      while (!haveLeader && nextIdx < workerCount &&
-             !warmupShouldStop.load(std::memory_order_acquire)) {
-        const size_t candidateIdx = nextIdx++;
-        SingleProcessWorker* candidate = worker(candidateIdx);
-        if (!candidate) continue;
-        pid_t pid = startWorker(*candidate);
-        TT_LOG_INFO(
-            "[WorkerManager] Spawned fallback leader worker {} with PID {}",
-            candidateIdx, pid);
-        haveLeader = awaitWorkersWarmup({candidateIdx}, timeoutMs);
-      }
-
-      if (warmupShouldStop.load(std::memory_order_acquire)) {
+      if (!awaitWorkersWarmup({0}, timeoutMs) ||
+          warmupShouldStop.load(std::memory_order_acquire)) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Leader worker 0 failed warmup; aborting remaining "
+            "worker startup");
+        stopSpawnedWorkers();
+        ready.store(false, std::memory_order_release);
         return;
       }
 
       std::vector<size_t> remaining;
-      for (size_t i = nextIdx; i < workerCount; ++i) {
+      for (size_t i = 1; i < workerCount; ++i) {
         if (warmupShouldStop.load(std::memory_order_acquire)) return;
         SingleProcessWorker* w = worker(i);
         if (!w) continue;
@@ -410,8 +422,14 @@ void WorkerManager::runWarmupCoordinator(size_t firstUncoordinatedIdx,
         TT_LOG_INFO("[WorkerManager] Spawned worker {} with PID {}", i, pid);
         remaining.push_back(i);
       }
-      if (!remaining.empty()) {
-        awaitWorkersWarmup(std::move(remaining), timeoutMs);
+      if (!remaining.empty() &&
+          !awaitWorkersWarmup(std::move(remaining), timeoutMs)) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Worker warmup failed; stopping all spawned "
+            "workers");
+        stopSpawnedWorkers();
+        ready.store(false, std::memory_order_release);
+        return;
       }
     } else {
       std::vector<size_t> all;
@@ -419,7 +437,14 @@ void WorkerManager::runWarmupCoordinator(size_t firstUncoordinatedIdx,
       for (size_t i = 0; i < workerCount; ++i) {
         all.push_back(i);
       }
-      awaitWorkersWarmup(std::move(all), timeoutMs);
+      if (!awaitWorkersWarmup(std::move(all), timeoutMs)) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Worker warmup failed; stopping all spawned "
+            "workers");
+        stopSpawnedWorkers();
+        ready.store(false, std::memory_order_release);
+        return;
+      }
     }
 
     // Keep draining any late warmup signals until stop() is called so that
@@ -471,7 +496,9 @@ void WorkerManager::startLivenessChecker() {
 
       for (size_t i = 0; i < workerCount; ++i) {
         SingleProcessWorker* w = worker(i);
-        if (!w || w->pid <= 0) continue;
+        if (!w || w->pid <= 0 || !w->is_alive.load(std::memory_order_acquire)) {
+          continue;
+        }
         bool alive = checkWorkerAlive(i);
         if (!alive) {
           TT_LOG_ERROR(

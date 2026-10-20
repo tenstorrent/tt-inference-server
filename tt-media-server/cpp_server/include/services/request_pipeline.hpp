@@ -122,6 +122,12 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
     if (running_.exchange(true, std::memory_order_acq_rel)) return;
     if (!workerManager_ || !queueSet_) return;
 
+    {
+      std::lock_guard<std::mutex> lock(failureMutex_);
+      failureReason_.clear();
+    }
+    workerFailed_.store(false, std::memory_order_release);
+
     workerManager_->setWorkerDeathCallback(
         [this](size_t workerIdx, pid_t /*pid*/) { onWorkerDied(workerIdx); });
 
@@ -184,7 +190,8 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
   }
 
   bool isModelReady() const override {
-    return workerManager_ && workerManager_->isReady();
+    return !workerFailed_.load(std::memory_order_acquire) && workerManager_ &&
+           workerManager_->isReady();
   }
 
   void submitRequestAsync(RequestType request, Callback onComplete) {
@@ -235,6 +242,10 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
 
   void produceResponseAsync(RequestType request, Callback onComplete) {
     const uint32_t taskId = request.task_id;
+    if (workerFailed_.load(std::memory_order_acquire)) {
+      onComplete(makeErrorResponse(taskId, failureReason()));
+      return;
+    }
     if (std::string err = validateRequest(request); !err.empty()) {
       onComplete(makeErrorResponse(taskId, std::move(err)));
       return;
@@ -284,6 +295,11 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
         cb(makeErrorResponse(
             taskId, std::string("Failed to enqueue task: ") + e.what()));
       }
+      return;
+    }
+
+    if (workerFailed_.load(std::memory_order_acquire)) {
+      drainPending(failureReason());
     }
   }
 
@@ -383,46 +399,24 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
       }
     }
 
-    std::vector<std::pair<uint32_t, Callback>> orphaned;
+    const std::string reason = "Worker process " + std::to_string(workerIdx) +
+                               " exited while processing request";
     {
-      std::lock_guard<std::mutex> lock(pendingMutex_);
-      for (auto it = pendingResults_.begin(); it != pendingResults_.end();) {
-        if (it->second.claimedByWorker == static_cast<int>(workerIdx)) {
-          orphaned.emplace_back(it->first, std::move(it->second.onComplete));
-          it = pendingResults_.erase(it);
-          inFlight_.fetch_sub(1, std::memory_order_relaxed);
-        } else {
-          ++it;
-        }
+      std::lock_guard<std::mutex> lock(failureMutex_);
+      if (failureReason_.empty()) {
+        failureReason_ = reason;
       }
     }
+    workerFailed_.store(true, std::memory_order_release);
+    drainPending(reason);
+  }
 
-    for (auto& [taskId, cb] : orphaned) {
-      cleanupTask(taskId);
-      if (cb) {
-        cb(makeErrorResponse(taskId, "Worker process " +
-                                         std::to_string(workerIdx) +
-                                         " exited while processing request"));
-      }
+  std::string failureReason() const {
+    std::lock_guard<std::mutex> lock(failureMutex_);
+    if (!failureReason_.empty()) {
+      return failureReason_;
     }
-
-    if (running_.load(std::memory_order_acquire) && workerManager_ &&
-        workerManager_->isReady()) {
-      return;
-    }
-
-    if (workerManager_) {
-      bool anyAliveAndReady = false;
-      for (const auto& info : workerManager_->getWorkerInfo()) {
-        if (info.is_alive && info.is_ready) {
-          anyAliveAndReady = true;
-          break;
-        }
-      }
-      if (!anyAliveAndReady && !orphaned.empty()) {
-        drainPending("No workers available");
-      }
-    }
+    return "Worker process exited";
   }
 
   void drainPending(const std::string& error) {
@@ -452,6 +446,9 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
   std::unordered_map<uint32_t, PendingEntry> pendingResults_;
   std::atomic<size_t> inFlight_{0};
   std::atomic<bool> running_{false};
+  std::atomic<bool> workerFailed_{false};
+  mutable std::mutex failureMutex_;
+  std::string failureReason_;
 };
 
 /** Streaming services: many chunks per request via callback. */

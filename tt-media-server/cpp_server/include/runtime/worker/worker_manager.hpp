@@ -87,6 +87,8 @@ class WorkerManager {
 
  private:
   bool isWorkerWarmed(int workerId) const;
+  void notifyWorkerDeath(size_t workerIdx, pid_t pid);
+  void stopSpawnedWorkers();
   void runWarmupCoordinator(size_t firstUncoordinatedIdx, unsigned timeoutMs);
   bool awaitWorkersWarmup(std::vector<size_t> pending, unsigned timeoutMs);
 

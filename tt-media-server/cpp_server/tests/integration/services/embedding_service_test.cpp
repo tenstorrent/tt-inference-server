@@ -241,9 +241,10 @@ TEST_F(EmbeddingServiceTest, RejectedRequestsAllGetErrorCallbacks) {
 }
 
 // A worker crash mid-batch (poison prompt) fails that request with an error —
-// exactly once, no hang — and the service keeps serving on the remaining
-// workers afterwards.
-TEST_F(EmbeddingServiceTest, WorkerCrashFailsBatchAndServiceRecovers) {
+// exactly once, no hang — marks the service not-ready, and immediately rejects
+// subsequent requests with an error instead of hanging.
+TEST_F(EmbeddingServiceTest,
+       WorkerCrashFailsBatchAndRejectsSubsequentRequests) {
   EmbeddingService service;
   startAndAwaitReady(service, K_WORKERS);
 
@@ -257,36 +258,46 @@ TEST_F(EmbeddingServiceTest, WorkerCrashFailsBatchAndServiceRecovers) {
 
   EXPECT_TRUE(
       waitFor([&] { return aliveWorkerCount(service) == K_WORKERS - 1; }, 10));
+  EXPECT_FALSE(service.isModelReady());
+
   CallbackRecorder followUp(1);
   service.submitRequestAsync(makeRequest(2, "after the crash"),
                              followUp.slot(0));
-  ASSERT_TRUE(followUp.awaitAll(30));
-  EXPECT_EQ(followUp.successCount(), 1u);
+  ASSERT_TRUE(followUp.awaitAll(10));
+  EXPECT_TRUE(followUp.allDeliveredExactlyOnce());
+  EXPECT_EQ(followUp.successCount(), 0u);
+  EXPECT_FALSE(followUp.errorAt(0).empty());
   service.stop();
 }
 
-// Workers 0 and 1 fail warmup; startup completes on the remaining 30 and the
-// service serves normally.
-TEST_F(EmbeddingServiceTest, PartialWarmupFailureStartsWithRemainingWorkers) {
-  ::setenv(tt::runners::EMBEDDING_MOCK_FAIL_WARMUP_ENV, "0,1", 1);
+// Even if only a subset of workers (e.g. non-leader worker 1) fail warmup,
+// warmup aborts immediately, stops all spawned workers, marks the service
+// not-ready, and immediately fails submitted requests with an error.
+TEST_F(EmbeddingServiceTest,
+       PartialWarmupFailureFailsServiceAndRejectsRequests) {
+  ::setenv(tt::runners::EMBEDDING_MOCK_FAIL_WARMUP_ENV, "1", 1);
   EmbeddingService service;
-  startAndAwaitReady(service, K_WORKERS - 2);
+  service.start();
 
-  EXPECT_TRUE(service.isModelReady());
-  EXPECT_EQ(readyWorkerCount(service), K_WORKERS - 2);
+  ASSERT_TRUE(waitFor([&] { return aliveWorkerCount(service) == 0; },
+                      K_READY_TIMEOUT_S));
+  EXPECT_FALSE(service.isModelReady());
+  EXPECT_EQ(readyWorkerCount(service), 0u);
 
   CallbackRecorder recorder(1);
-  service.submitRequestAsync(makeRequest(1, "degraded but alive"),
-                             recorder.slot(0));
-  ASSERT_TRUE(recorder.awaitAll(30));
-  EXPECT_EQ(recorder.successCount(), 1u);
+  service.submitRequestAsync(makeRequest(1, "warmup failed"), recorder.slot(0));
+  ASSERT_TRUE(recorder.awaitAll(10));
+  EXPECT_TRUE(recorder.allDeliveredExactlyOnce());
+  EXPECT_EQ(recorder.successCount(), 0u);
+  EXPECT_FALSE(recorder.errorAt(0).empty());
   service.stop();
 }
 
-// Total warmup failure: pins CURRENT behavior — the service stays alive and
-// not-ready with zero workers; a request submitted in that state has no
-// consumer and is completed-with-error only by stop()'s drain.
-TEST_F(EmbeddingServiceTest, TotalWarmupFailureLeavesServiceAliveNotReady) {
+// Total warmup failure: the service stays not-ready with zero alive workers,
+// and a request submitted in that state immediately receives an error callback
+// without hanging until stop().
+TEST_F(EmbeddingServiceTest,
+       TotalWarmupFailureImmediatelyFailsSubmittedRequests) {
   ::setenv(tt::runners::EMBEDDING_MOCK_FAIL_WARMUP_ENV, "all", 1);
   EmbeddingService service;
   service.start();
@@ -300,12 +311,12 @@ TEST_F(EmbeddingServiceTest, TotalWarmupFailureLeavesServiceAliveNotReady) {
   CallbackRecorder recorder(1);
   service.submitRequestAsync(makeRequest(1, "no one will serve me"),
                              recorder.slot(0));
-  EXPECT_FALSE(recorder.awaitAll(2));  // no consumer: must NOT complete yet
-
-  service.stop();
   ASSERT_TRUE(recorder.awaitAll(10));
   EXPECT_TRUE(recorder.allDeliveredExactlyOnce());
+  EXPECT_EQ(recorder.successCount(), 0u);
   EXPECT_FALSE(recorder.errorAt(0).empty());
+
+  service.stop();
 }
 
 // stop() with a flood in flight: every callback fires exactly once — served
@@ -382,7 +393,11 @@ int main(int argc, char** argv) {
     int workerId = std::stoi(argv[2]);
     auto cfg = tt::worker::makeWorkerConfigForProcess(workerId);
     tt::worker::SingleProcessWorker worker(cfg);
-    worker.start();
+    try {
+      worker.start();
+    } catch (...) {
+      return 1;
+    }
     return 0;
   }
 
