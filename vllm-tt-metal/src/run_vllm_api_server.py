@@ -851,13 +851,19 @@ def model_setup(model_spec_json):
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
-    model_path_env = model_spec_json.get("metadata", {}).get("model_path_env")
-    if model_path_env:
-        if not isinstance(model_path_env, str) or not re.fullmatch(
-            r"[A-Z][A-Z0-9_]*", model_path_env
-        ):
-            raise ValueError("model_path_env must be an environment variable name")
-        dynamic_env_vars[model_path_env] = str(weights_dir)
+    # metadata names env vars the model reads its checkpoint / TT cache from
+    metadata = model_spec_json.get("metadata", {})
+    for key, value in (
+        ("model_path_env", weights_dir),
+        ("tt_cache_env", os.getenv("TT_CACHE_PATH")),
+    ):
+        env_name = metadata.get(key)
+        if env_name:
+            if not isinstance(env_name, str) or not re.fullmatch(
+                r"[A-Z][A-Z0-9_]*", env_name
+            ):
+                raise ValueError(f"{key} must be an environment variable name")
+            dynamic_env_vars[env_name] = str(value)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
