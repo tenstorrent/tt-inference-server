@@ -381,3 +381,9 @@ recover after crashes.
 | `RESULT_QUEUE_CAPACITY`          | `65536`              | Capacity (messages) of the result queue.                             |
 | `CANCEL_QUEUE_CAPACITY`          | `1024`               | Capacity (messages) of the cancel queue.                             |
 | `MEMORY_QUEUE_CAPACITY`          | `128`                | Capacity (messages) of each memory queue.                            |
+
+A TTS deployment (`MODEL_SERVICE=tts`) uses its own task, audio and cancel
+queues in place of `TT_TASK_QUEUE` / `TT_RESULT_QUEUE` / `TT_CANCEL_QUEUE`. Their
+names are fixed (`/dev/shm/tt_tts_*`) and their sizes come from
+`TTS_TASK_QUEUE_CAPACITY`, `TTS_AUDIO_QUEUE_CAPACITY` and
+`TTS_CANCEL_QUEUE_CAPACITY`, whose defaults reserve about 2.5 GB for one worker. See [`docs/QWEN3_TTS.md`](docs/QWEN3_TTS.md#shared-memory).
