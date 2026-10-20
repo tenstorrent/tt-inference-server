@@ -7262,7 +7262,7 @@ templates:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
     # launcher takes a split TTQ by its manifest and the package from glm-tt/.
     # The repo keeps each glm-tt build in its own folder, so a cached download fetches a new one.
-    GLM_TT_PACKAGE: glm-tt-cec70326
+    GLM_TT_PACKAGE: glm-tt-2a3e893
     GLM_TT_TTQ: glm53-flash-hot3-meas.ttq
     GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "163840"
@@ -7280,9 +7280,9 @@ templates:
         - glm53-flash-hot3-meas.ttq.00005-of-00006
         - glm53-flash-hot3-meas.ttq.00006-of-00006
         - GLM-5.3-Flash-vocab.gguf
-        - glm-tt-cec70326/SHA256SUMS
-        - glm-tt-cec70326/bin/glm-tt
-        - glm-tt-cec70326/runtime/ld-linux-x86-64.so.2
+        - glm-tt-2a3e893/SHA256SUMS
+        - glm-tt-2a3e893/bin/glm-tt
+        - glm-tt-2a3e893/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.
