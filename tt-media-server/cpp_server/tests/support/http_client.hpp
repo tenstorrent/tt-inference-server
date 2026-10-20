@@ -18,10 +18,11 @@ namespace tt::test {
 
 // Blocking HTTP POST to /v1/chat/completions. Returns the full response bytes
 // (status line + headers + body). Throws on connect failure.
-inline std::string sendAndReceive(
-    const char* host, uint16_t port, const std::string& body,
-    const std::string& apiKey = "your-secret-key", int idleTimeoutMs = 250,
-    const std::string& path = "/v1/chat/completions") {
+inline std::string sendAndReceive(const char* host, uint16_t port,
+                                  const std::string& body,
+                                  const std::string& apiKey = "your-secret-key",
+                                  int idleTimeoutMs = 250,
+                                  const std::string& path = "/v1/chat/completions") {
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
@@ -32,20 +33,20 @@ inline std::string sendAndReceive(
     throw std::runtime_error("sendAndReceive: connect failed");
   }
 
-  const std::string req = "POST " + path +
-                          " HTTP/1.1\r\n"
-                          "Host: " +
-                          std::string(host) + ":" + std::to_string(port) +
-                          "\r\n"
-                          "Content-Type: application/json\r\n"
-                          "Authorization: Bearer " +
-                          apiKey +
-                          "\r\n"
-                          "Content-Length: " +
-                          std::to_string(body.size()) +
-                          "\r\n"
-                          "\r\n" +
-                          body;
+  const std::string req =
+      "POST " + path + " HTTP/1.1\r\n"
+      "Host: " +
+      std::string(host) + ":" + std::to_string(port) +
+      "\r\n"
+      "Content-Type: application/json\r\n"
+      "Authorization: Bearer " +
+      apiKey +
+      "\r\n"
+      "Content-Length: " +
+      std::to_string(body.size()) +
+      "\r\n"
+      "\r\n" +
+      body;
   ::send(sock, req.c_str(), req.size(), 0);
 
   // Idle-timeout-based read termination: keep recv'ing until we go quiet
