@@ -2,11 +2,43 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
-# The worker venv runs on tt-crank, whose wheel download needs a GitHub token:
-# docker build --secret id=gh_token,env=GH_TOKEN ...
+# WORKER_ENV picks the worker stack:
+#   forge (default): tt-forge, for the forge runners.
+#     docker build -f tt-media-server/Dockerfile.forge .
+#   crank: tt-crank, for the trainer runners. The tt-crank wheel needs glibc 2.38 and
+#     GLIBCXX_3.4.32, hence Ubuntu 24.04, and its download needs a GitHub token:
+#     docker build --build-arg WORKER_ENV=crank --secret id=gh_token,env=GH_TOKEN -f tt-media-server/Dockerfile.forge .
+ARG WORKER_ENV=forge
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS base-forge
+ENV TT_METAL_WHEEL_PACKAGE=pjrt_plugin_tt
+
+# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
+    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+# Install Python 3.12 which is required for forge
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update -qq && \
+    apt-get install -y -qq python3.12 python3.12-dev python3.12-venv
+
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest AS base-crank
+ENV TT_METAL_WHEEL_PACKAGE=tt_crank
+
+# gh: tt-blacksmith's tt-crank wheel download (needs `gh auth token`, gh >= 2.17)
+RUN apt-get update && apt-get install -y \
+    gh \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu 24.04 images ship an `ubuntu` user holding UID 1000.
+RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi
+
+FROM base-${WORKER_ENV}
+ARG WORKER_ENV
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -29,21 +61,10 @@ ENV CONFIG=Release
 ENV LOGURU_LEVEL=INFO
 ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 
-# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
-    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
-
-# Ubuntu 22.04's gh (2.4) lacks `gh auth token`, which tt-blacksmith's tt-crank wheel download uses.
-RUN wget -qO /usr/share/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-
-
 # extra system deps
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
-    gh \
     libgl1 \
     libsndfile1 \
     wget \
@@ -73,22 +94,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Install Python 3.12 which is required for forge
-RUN add-apt-repository ppa:deadsnakes/ppa -y && \
-    apt-get update -qq && \
-    apt-get install -y -qq python3.12 python3.12-dev python3.12-venv
-
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
-    chmod +x cmake.sh && \
-    ./cmake.sh --skip-license --prefix=/usr/local && \
-    rm cmake.sh && \
-    cmake --version
-
-# build tt-metal
-RUN pip3 install --upgrade setuptools wheel \
-    && pip3 install cmake \
-    && pip3 install cmake --upgrade \
-    && hash -r
+# The 24.04 base image already ships cmake.
+RUN if [ "${WORKER_ENV}" = forge ]; then \
+        curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh \
+        && chmod +x cmake.sh \
+        && ./cmake.sh --skip-license --prefix=/usr/local \
+        && rm cmake.sh \
+        && cmake --version \
+        && pip3 install --upgrade setuptools wheel \
+        && pip3 install cmake \
+        && pip3 install cmake --upgrade \
+        && hash -r; \
+    fi
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -118,12 +135,19 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # Remove private submodule source — cpp_server is not used in the forge image
 RUN rm -rf ${APP_DIR}/server/cpp_server
 USER root
+# The gh_token secret is only read by the crank build (tt-crank wheel download).
+ARG BLACKSMITH_HOME=${HOME_DIR}/tt-blacksmith
 RUN --mount=type=secret,id=gh_token \
-    GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
-    /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
+    cd ${APP_DIR}/server \
+    && if [ "${WORKER_ENV}" = crank ]; then \
+        GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)" \
+            bash tt_model_runners/forge_training_runners/setup_env.sh "${BLACKSMITH_HOME}"; \
+    else \
+        /bin/bash -c "source tt_model_runners/forge_runners/setup_env.sh"; \
+    fi \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
-ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/${TT_METAL_WHEEL_PACKAGE}/tt-metal"
 ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
 # Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version
