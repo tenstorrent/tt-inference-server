@@ -3107,6 +3107,9 @@ templates:
       # Above 128K the decode RoPE comes from the host instead of device tables.
       max_context: 1048576  # 1024 * 1024
       default_impl: true
+      # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
+      # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
+      tensor_cache_timeout: 10800.0
       env_vars:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3131,6 +3134,12 @@ templates:
         tool-call-parser: mimo
   status: EXPERIMENTAL
   has_builtin_warmup: true
+  # The repo name has no "<N>B", so the param-count defaults do not apply (and would assume fp16
+  # weights: 309B x 2.5 = 772 GB of RAM). Disk: the 178 GB checkpoint plus the ~186 GB TTNN cache.
+  # RAM: the cache conversion holds one MoE layer at a time (256 dequantized experts, ~13 GB in bf16,
+  # plus their device-layout copies).
+  min_disk_gb: 450
+  min_ram_gb: 128
   metadata:
     XiaomiMiMo/MiMo-V2.6-Flash-MOPD:
       reasoning_parser_name: mimo
