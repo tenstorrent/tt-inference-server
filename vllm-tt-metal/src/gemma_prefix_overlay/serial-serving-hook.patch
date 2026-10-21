@@ -5,11 +5,11 @@
 +  "research_only": true,
 +  "upstream_supported_width_changing_view": false,
 +  "files": {
-+    "sdpa_l1.py": "473d098d7cdf97e81e323c0c93b9308b3b77173f257c32a8d4646252f0c75710",
-+    "generator_vllm.py": "e93d40c99bacc8ff05cb77d6181c0ace9329b911d9e45e8b74a62ae43a9f8fd4",
-+    "model.py": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
-+    "decoder.py": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-+    "generator.py": "7598886c36e3df61adac78cbe55f0a5e98be7b27307415ed6d423d449855c7e5",
++    "sdpa_l1.py": "9733c30a68c50fcfe37b01e2529976fe0fd7ae60275398e10d6701ca7dde6170",
++    "generator_vllm.py": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
++    "model.py": "27fc5fe7da825668949d2fb1a98009064061995c0be8f8cefe69d26076db8d88",
++    "decoder.py": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae",
++    "generator.py": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
 +    "__init__.py": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
 +  }
 +}
@@ -967,7 +967,7 @@
                      or tensor.layout != ttnn.TILE_LAYOUT
                      or tensor.device() != self.mesh
                      or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
-@@ -327,7 +387,190 @@
+@@ -327,7 +387,191 @@
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -1011,17 +1011,18 @@
 +        if os.environ.get("TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE", "0") != "0":
 +            raise RuntimeError("Program-cache allocations must remain tracked")
 +        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-+        c32_profile = pool_profile == "c32a24_f262144"
++        c32_profiles = {"c32a24_f262144": (24, "262144"), "c32a20_f327680": (20, "327680")}
++        c32_profile = pool_profile in c32_profiles
 +        expected_batch = 32 if c32_profile else 16
-+        expected_history = 24 if c32_profile else 16
++        expected_history = c32_profiles[pool_profile][0] if c32_profile else 16
 +        if c32_profile and (
-+                getattr(state, "serving_admission_limit", None) != 24
-+                or os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != "262144"
++                getattr(state, "serving_admission_limit", None) != expected_history
++                or os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != c32_profiles[pool_profile][1]
 +                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV") != "1"
 +                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_DOWN") != "1"
 +                or os.environ.get("GEMMA_REPETITION_PRECISION_POLICY") != "bf8"
 +                or os.environ.get("GEMMA_EXPERIMENT_KV_DTYPE") != "bf8kv"):
-+            raise RuntimeError("C32/A24 preparation requires explicit admission and joint BF8/BF8KV profile")
++            raise RuntimeError("C32 declared preparation requires explicit admission and joint BF8/BF8KV profile")
 +        if (os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1") != "1"
 +                or state.batch != expected_batch or state.capacity != 262144
 +                or len(self.model.layers) != 60 or state.history_bank is None
@@ -1030,7 +1031,7 @@
 +                or self._serving_prefill_prepared_state is not None):
 +            raise RuntimeError("Experimental preparation requires fresh full60 declared-width serial state")
 +        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-+        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832}
++        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832, "c32a20_f327680": 4164}
 +        if pool_profile not in pool_rows:
 +            raise RuntimeError("Unsupported serial prepared alias pool profile")
 +        if pool_profile == "f311296" and (
@@ -1159,7 +1160,7 @@
          self,
          tokens,
          *,
-@@ -339,6 +582,7 @@
+@@ -339,6 +583,7 @@
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1167,7 +1168,7 @@
          **kwargs,
      ):
          state = kv_cache
-@@ -357,13 +601,255 @@
+@@ -357,13 +602,255 @@
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1426,7 +1427,7 @@
              self._retire_traces()
          self._tables(state, page_table)
          outputs = []
-@@ -374,30 +860,55 @@
+@@ -374,30 +861,55 @@
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1492,7 +1493,7 @@
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +922,22 @@
+@@ -411,6 +923,22 @@
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1515,7 +1516,7 @@
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +946,23 @@
+@@ -419,15 +947,23 @@
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1541,7 +1542,7 @@
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -466,6 +1001,16 @@
+@@ -466,6 +1002,16 @@
          del merged
          ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
          self.counters["sampling_replays"] += 1
@@ -1558,7 +1559,7 @@
          return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
  
      def _sample_step(self, entry):
-@@ -484,61 +1029,110 @@
+@@ -484,61 +1030,110 @@
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1705,7 +1706,7 @@
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1318,8 @@
+@@ -724,6 +1319,8 @@
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1714,7 +1715,7 @@
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1329,14 @@
+@@ -733,7 +1330,14 @@
          self.traces.clear()
  
      def close(self):
@@ -1781,8 +1782,8 @@
 +        self._pool_memory_phase_attempts = {}
 +
 +    def configure_admission_limit(self, limit):
-+        if type(limit) is not int or (self.max_batch_size, limit) != (32, 24):
-+            raise ValueError("Experimental serving admission requires C32/A24")
++        if type(limit) is not int or (self.max_batch_size, limit) not in ((32, 20), (32, 24)):
++            raise ValueError("Experimental serving admission requires C32/A20 or A24")
 +        if self.cache is not None or self.entry is not None or self.prefill_slot_keys:
 +            raise RuntimeError("Admission must be configured before KV allocation or requests")
 +        self.admitted_request_limit = limit
@@ -1807,8 +1808,8 @@
 +        admitted = kwargs.get("admitted_request_limit", max_num_seqs)
 +        if type(admitted) is not int or not 1 <= admitted <= max_num_seqs:
 +            raise ValueError("Invalid shared admission for pool sizing")
-+        if admitted != max_num_seqs and (max_num_seqs, admitted) != (32, 24):
-+            raise ValueError("Only C32/A24 supports a reduced tail reserve")
++        if admitted != max_num_seqs and (max_num_seqs, admitted) not in ((32, 20), (32, 24)):
++            raise ValueError("Only C32/A20 or A24 supports a reduced tail reserve")
 +        tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * admitted
 +        pool_tokens = int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))
 +        if pool_tokens < 262144 or pool_tokens % Decoder.PAGE_SIZE:

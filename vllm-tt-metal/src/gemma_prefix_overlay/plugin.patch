@@ -15,8 +15,8 @@
 +        return physical
 +    if type(value) is not int or not 1 <= value <= physical:
 +        raise ValueError("Gemma admission must be an integer in 1..physical width")
-+    if physical != 32 or value != 24 or vllm_config.parallel_config.data_parallel_size != 1 or get_tt_data_parallel_size(vllm_config) != 1 or uses_tt_lane_coordinator(vllm_config):
-+        raise ValueError("Experimental Gemma admission supports only C32/A24, DP1, no lanes")
++    if physical != 32 or value not in (20, 24) or vllm_config.parallel_config.data_parallel_size != 1 or get_tt_data_parallel_size(vllm_config) != 1 or uses_tt_lane_coordinator(vllm_config):
++        raise ValueError("Experimental Gemma admission supports only C32/A20 or A24, DP1, no lanes")
 +    return value
  
  

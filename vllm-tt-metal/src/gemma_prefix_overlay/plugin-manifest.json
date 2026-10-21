@@ -1,11 +1,11 @@
 {
   "base_commit": "pinned original image source",
-  "target_commit": "experimental-c32-a24-v1",
-  "patch_sha256": "1156139ace69eafc2fea5a10adb36b4c62589c414a1fb60e7966f5422f271990",
+  "target_commit": "experimental-c32-a20-v1",
+  "patch_sha256": "a2c573f45dce7dbb03c26c59af64b1019244276fef964e835187cfc3ffcf635d",
   "files": {
     "src/vllm_tt_plugin/config.py": {
       "base": "5108a8dd4e532d3f289f5a8a3e3f06e29b52f0e8ab266e2e6bd02368e2c67e9b",
-      "target": "571b036abac9e06a9f816ac700f5190aba93d361e4cf0c54ce3c2d5bb38ca91b"
+      "target": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b"
     },
     "src/vllm_tt_plugin/model_runner.py": {
       "base": "4c369a1180ece55ab0e07912f1e9155eace23a2104b35bbd00f3adfc520a20c8",
@@ -20,5 +20,5 @@
       "target": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341"
     }
   },
-  "scope": "PhysicalC32 shared admission24/history24/tail24; original algorithms/observers retained; unaccepted candidate"
+  "scope": "Explicit C32/A20 or acceptedA24 admission/history/tail; A20F327 profile; algorithms/observers unchanged"
 }
