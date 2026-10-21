@@ -222,6 +222,8 @@ def setup_evals_agentic(
 
     from llm_module.agentic.agent_dependencies import patch_mini_dependencies
     logger.info("HARBOR_AGENT_DEPENDENCY_PATCH %s", patch_mini_dependencies(harbor_dir))
+    from llm_module.agentic.terminal_response_retention import patch_harbor
+    logger.info("HARBOR_TERMINAL_RETENTION_PATCH %s", patch_harbor(harbor_dir))
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
