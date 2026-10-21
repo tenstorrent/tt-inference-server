@@ -7339,7 +7339,7 @@ templates:
   env_vars:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container). The repo
     # keeps each tt-lab build in its own folder, so a cached download fetches a new one.
-    QWEN_TT_PACKAGE: tt-lab-7a61e6cd  # TODO: the package built for the release
+    QWEN_TT_PACKAGE: tt-lab-9397b48f  # TODO: the package built for the release
     QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
   metadata:
@@ -7350,8 +7350,8 @@ templates:
       checkpoint_files:
         - Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
         - Qwen3.8-27B-vocab.gguf
-        - tt-lab-7a61e6cd/SHA256SUMS
-        - tt-lab-7a61e6cd/bin/tt-lab
-        - tt-lab-7a61e6cd/runtime/ld-linux-x86-64.so.2
+        - tt-lab-9397b48f/SHA256SUMS
+        - tt-lab-9397b48f/bin/tt-lab
+        - tt-lab-9397b48f/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
