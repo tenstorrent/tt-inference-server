@@ -4,81 +4,82 @@
 
 """Parameter-sweep test for the Wan2.2 image-to-video endpoint.
 
-Sends several payload variations (different seeds, num_inference_steps,
-prompts, frame positions) at ``POST /v1/videos/generations/i2v`` and
-verifies:
+Generates one clip per request variant (seed, prompt, step count, negative
+prompt, conditioning frame position), one after another, and checks that each
+parameter took effect in the video itself, not only that the request was
+accepted:
 
-* identical payloads are accepted consistently,
-* differing parameters yield distinct job IDs (each request is unique),
-* every submission returns 202 Accepted.
+* every job completes, echoes its request, and its clip passes the output check
+  (decodable, not black/flat/frozen, 81 frames at the deployment's resolution);
+* a different seed, a different prompt and fewer steps each change the clip;
+* fewer steps finish faster.
 
-Mirrors :mod:`test_module.load_param_tests.video_generation_param_test` but
-targets the I2V endpoint and includes a fixed conditioning frame in each
-request.
+Three behaviours are recorded but not yet gated, until real clips show where
+their thresholds belong: whether an identical request reproduces the clip,
+whether dropping the negative prompt changes it, and whether the conditioning
+image lands at the requested frame.
+
+The variants run sequentially, so per-job times are not inflated by queueing,
+and at a reduced step count: the sweep checks that parameters take effect, not
+quality. Nothing is left queued when it finishes.
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
 
-import asyncio
 import base64
-import copy
-import json
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
 from report_module.schema import Block
 
-from workflow_module.target_pack import get_target_pack
-
-from .._test_common import BaseTest, HardwareRequirement, TestConfig
+from .._test_common import TestConfig
+from .._test_common.video_output_check import (
+    check_video_output,
+    deployment_resolution,
+    frame_distances_to_image,
+    mean_frame_difference,
+)
+from .video_generation_i2v_test import (
+    _HEADERS,
+    FIXTURE_IMAGE_PATH,
+    SUBMIT_PATH,
+    VideoGenerationI2VTest,
+)
 
 if TYPE_CHECKING:
     from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-# Constants
-ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
+DEFAULT_NUM_INFERENCE_STEPS = 20
+MIN_VIDEO_INFERENCE_STEPS = 4
+DEFAULT_POLL_INTERVAL_SECONDS = 1
+DEFAULT_POLL_TIMEOUT_SECONDS = 1200
+# Mean absolute pixel difference (0-255) between sampled frames. Clips from a
+# changed seed or prompt differ by far more; re-encodes of one clip by ~0.
+DIFFERS_THRESHOLD = 1.0
+CONDITIONING_FRAME_POS = 4
 
-# Fixture is sourced from the test_fixtures datasets directory, which is
-# the canonical location used by other v2 vision tests as well
-# (see e.g. video_generation_i2v_test.py).
-FIXTURE_IMAGE_PATH = (
-    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
+BASE_PROMPT = (
+    "A tranquil sunrise over rolling hills, soft golden light, cinematic camera pan"
 )
-
-HTTP_ACCEPTED = 202
-DEFAULT_NUM_INFERENCE_STEPS = 40
-WARMUP_AND_MEASURE_ITERATIONS = 2
-
-HEADERS = {
-    "accept": "application/json",
-    "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
-}
-
-
-def _load_fixture_image_base64() -> str:
-    """Read the repo-checked-in fixture image and return it base64-encoded."""
-    if not FIXTURE_IMAGE_PATH.exists():
-        raise FileNotFoundError(
-            f"I2V fixture image missing at {FIXTURE_IMAGE_PATH}. "
-            "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
-        )
-    return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
+ALT_PROMPT = (
+    "A serene ocean wave crashing on a tropical beach at dawn, "
+    "crystal clear water, 4K quality"
+)
+NEGATIVE_PROMPT = "blurry, low quality, distorted, shaky"
 
 
 def _build_payload(
     *,
-    prompt: str,
-    num_inference_steps: int,
-    seed: int,
     image_b64: str,
+    num_inference_steps: int,
+    prompt: str = BASE_PROMPT,
+    seed: int = 42,
     frame_pos: int = 0,
-    negative_prompt: str | None = "blurry, low quality, distorted, shaky",
+    negative_prompt: str | None = NEGATIVE_PROMPT,
 ) -> dict:
     """Build an I2V request body with the conditioning frame attached."""
     payload = {
@@ -92,258 +93,172 @@ def _build_payload(
     return payload
 
 
-class VideoGenerationI2VParamTest(BaseTest):
-    """Parameter-sweep happy-path coverage for the I2V endpoint."""
+def build_variants(image_b64: str, steps: int) -> dict[str, dict]:
+    """The sweep's requests, by name; ``default`` is the base the others change."""
+    fewer_steps = max(MIN_VIDEO_INFERENCE_STEPS, steps // 2)
+    common = {"image_b64": image_b64, "num_inference_steps": steps}
+    return {
+        "default": _build_payload(**common),
+        "duplicate_default": _build_payload(**common),
+        "seed_123": _build_payload(**common, seed=123),
+        "different_prompt": _build_payload(**common, prompt=ALT_PROMPT),
+        "fewer_steps": _build_payload(
+            image_b64=image_b64, num_inference_steps=fewer_steps
+        ),
+        "no_negative_prompt": _build_payload(**common, negative_prompt=None),
+        "frame_pos_4": _build_payload(**common, frame_pos=CONDITIONING_FRAME_POS),
+    }
+
+
+def _check(name: str, passed: bool, detail: str, *, gated: bool = True) -> dict:
+    return {"check": name, "passed": bool(passed), "gated": gated, "detail": detail}
+
+
+def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
+    """Grade the sweep from each variant's job record.
+
+    A job record has ``elapsed`` and ``video_path`` once its clip downloaded and
+    passed the output check, and ``problem`` otherwise.
+    """
+    checks = [
+        _check(
+            f"{name}_completed",
+            not job.get("problem"),
+            job.get("problem") or f"{job['elapsed']:.1f} s",
+        )
+        for name, job in jobs.items()
+    ]
+    done = {name: job for name, job in jobs.items() if not job.get("problem")}
+    if "default" not in done:
+        return checks
+    base = done["default"]["video_path"]
+
+    def differs(name: str, *, gated: bool = True) -> None:
+        if name not in done:
+            return
+        diff = mean_frame_difference(base, done[name]["video_path"])
+        checks.append(
+            _check(
+                f"{name}_differs_from_default",
+                diff > DIFFERS_THRESHOLD,
+                f"mean frame difference {diff:.2f} (> {DIFFERS_THRESHOLD})",
+                gated=gated,
+            )
+        )
+
+    differs("seed_123")
+    differs("different_prompt")
+    differs("fewer_steps")
+    differs("no_negative_prompt", gated=False)
+
+    if "fewer_steps" in done:
+        fast, slow = done["fewer_steps"]["elapsed"], done["default"]["elapsed"]
+        checks.append(
+            _check(
+                "fewer_steps_is_faster",
+                fast < slow,
+                f"{fast:.1f} s vs {slow:.1f} s",
+            )
+        )
+
+    if "duplicate_default" in done:
+        diff = mean_frame_difference(base, done["duplicate_default"]["video_path"])
+        checks.append(
+            _check(
+                "identical_request_reproduces_clip",
+                diff <= DIFFERS_THRESHOLD,
+                f"mean frame difference {diff:.2f} (<= {DIFFERS_THRESHOLD})",
+                gated=False,
+            )
+        )
+
+    if "frame_pos_4" in done:
+        indices = [0, CONDITIONING_FRAME_POS]
+        moved = frame_distances_to_image(
+            done["frame_pos_4"]["video_path"], image_bytes, indices
+        )
+        at_start = frame_distances_to_image(base, image_bytes, indices)
+        checks.append(
+            _check(
+                "conditioning_lands_at_frame_pos",
+                moved[CONDITIONING_FRAME_POS] < moved[0],
+                f"frame_pos={CONDITIONING_FRAME_POS} clip: frame 0 is "
+                f"{moved[0]:.1f} from the image, frame {CONDITIONING_FRAME_POS} "
+                f"{moved[CONDITIONING_FRAME_POS]:.1f}; frame_pos=0 clip: frame 0 "
+                f"{at_start[0]:.1f}, frame {CONDITIONING_FRAME_POS} "
+                f"{at_start[CONDITIONING_FRAME_POS]:.1f}",
+                gated=False,
+            )
+        )
+    return checks
+
+
+class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
+    """Parameter sweep for the I2V endpoint, graded on the generated clips."""
 
     KIND = "video_generation_i2v_param"
-    TASK_TYPE = "video"
-    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
-        self.url = f"{self.base_url}/v1/videos/generations/i2v"
-        logger.info(f"Testing I2V parameters at {self.url}")
-
-        model_name = self.config.get("model", "test-model")
-        default_steps = self._get_num_inference_steps_from_reference(
-            model_name, DEFAULT_NUM_INFERENCE_STEPS
+        self.poll_timeout = self.targets.get(
+            "poll_timeout", DEFAULT_POLL_TIMEOUT_SECONDS
         )
-        logger.info(f"Using num_inference_steps={default_steps} for model={model_name}")
-
-        image_b64 = _load_fixture_image_base64()
-        base_prompt = (
-            "A tranquil sunrise over rolling hills, soft golden light, "
-            "cinematic camera pan"
+        self.poll_interval = self.targets.get(
+            "poll_interval", DEFAULT_POLL_INTERVAL_SECONDS
         )
-        alt_prompt = (
-            "A serene ocean wave crashing on a tropical beach at dawn, "
-            "crystal clear water, 4K quality"
-        )
+        steps = self.targets.get("num_inference_steps", DEFAULT_NUM_INFERENCE_STEPS)
+        image_bytes = FIXTURE_IMAGE_PATH.read_bytes()
+        variants = build_variants(base64.b64encode(image_bytes).decode("ascii"), steps)
+        submit_url = f"{self.base_url}{SUBMIT_PATH}"
+        logger.info(f"I2V parameter sweep: {len(variants)} clips at {steps} steps")
 
-        # Variations probe the same parameter axes covered by the T2V param
-        # test, plus an I2V-only frame_pos variation.
-        default_payload = _build_payload(
-            prompt=base_prompt,
-            num_inference_steps=default_steps,
-            seed=42,
-            image_b64=image_b64,
-        )
-        payloads = [
-            {"name": "default_payload", "payload": default_payload},
-            {
-                "name": "duplicate_default",
-                "payload": copy.deepcopy(default_payload),
-            },
-            {
-                "name": "inference_steps_15_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=15,
-                    seed=42,
-                    image_b64=image_b64,
-                ),
-            },
-            {
-                "name": "seed_123_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=default_steps,
-                    seed=123,
-                    image_b64=image_b64,
-                ),
-            },
-            {
-                "name": "no_negative_prompt_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=default_steps,
-                    seed=42,
-                    image_b64=image_b64,
-                    negative_prompt=None,
-                ),
-            },
-            {
-                "name": "different_prompt_payload",
-                "payload": _build_payload(
-                    prompt=alt_prompt,
-                    num_inference_steps=default_steps,
-                    seed=42,
-                    image_b64=image_b64,
-                ),
-            },
-            {
-                "name": "frame_pos_4_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=default_steps,
-                    seed=42,
-                    image_b64=image_b64,
-                    frame_pos=4,
-                ),
-            },
-        ]
+        jobs: dict[str, dict] = {}
+        # Per request, not per session: the session outlives several clips.
+        timeout = aiohttp.ClientTimeout(total=None, sock_read=self.poll_timeout)
+        async with aiohttp.ClientSession(headers=_HEADERS, timeout=timeout) as session:
+            for name, payload in variants.items():
+                jobs[name] = await self._generate(session, submit_url, name, payload)
 
-        response_data_list = await self._test_concurrent_i2v_generation(payloads)
+        checks = evaluate_sweep(jobs, image_bytes)
+        for check in checks:
+            mark = "✅" if check["passed"] else ("❌" if check["gated"] else "⚠️")
+            logger.info(f"{mark} {check['check']}: {check['detail']}")
+        success = all(check["passed"] for check in checks if check["gated"])
+        return {
+            "success": success,
+            "num_inference_steps": steps,
+            "checks": checks,
+            "jobs": {
+                name: {k: v for k, v in job.items() if k != "video_path"}
+                for name, job in jobs.items()
+            },
+        }
 
-        logger.info(f"\n📊 Received {len(response_data_list)} responses")
-        results = self._summarize_results(payloads, response_data_list)
-
-        all_succeeded = all(r["status"] == HTTP_ACCEPTED for r in response_data_list)
-        param_tests_diff = [
-            results["tests"][p["name"]]["differs_from_base"] for p in payloads[2:]
-        ]
-        success = all_succeeded and all(param_tests_diff)
-        results["success"] = success
-
-        logger.info(
-            f"\n{'✅' if success else '❌'} Test {'PASSED' if success else 'FAILED'}"
-        )
-        return results
-
-    def _summarize_results(
-        self, payloads: list[dict], response_data_list: list[dict]
+    async def _generate(
+        self, session: aiohttp.ClientSession, url: str, name: str, payload: dict
     ) -> dict:
-        """Build the result dict from the measurement-iteration responses."""
-        results = {"num_responses": len(response_data_list), "tests": {}}
-
-        # Identical payloads must both succeed; we don't require identical job
-        # IDs because the server mints unique IDs per submission.
-        base_match = (
-            response_data_list[0]["status"] == HTTP_ACCEPTED
-            and response_data_list[1]["status"] == HTTP_ACCEPTED
+        """Run one variant to a checked clip; the record says how far it got."""
+        start = time.monotonic()
+        job_id = await self._submit_job(session, url, payload)
+        if not job_id:
+            return {"problem": "submit failed"}
+        problem = await self._check_job_metadata(session, job_id, payload)
+        file_path = await self._poll_until_complete(session, job_id)
+        elapsed = time.monotonic() - start
+        record = {"job_id": job_id, "elapsed": elapsed}
+        if problem:
+            return {**record, "problem": problem}
+        if not file_path:
+            return {**record, "problem": "job did not complete"}
+        clip_problem = check_video_output(
+            file_path,
+            hf_model_repo=self.ctx.model_spec.hf_model_repo if self.ctx else "",
+            device_name=self.ctx.device.name if self.ctx else "",
+            resolution=deployment_resolution(self.ctx.model_spec) if self.ctx else None,
         )
-        results["same_requests_match"] = base_match
-        logger.info(f"✅ Same requests both accepted: {base_match}")
-
-        for i in range(2, len(response_data_list)):
-            test_name = payloads[i]["name"]
-            differs_from_base = (
-                response_data_list[0]["job_id"] != response_data_list[i]["job_id"]
-            )
-            results["tests"][test_name] = {
-                "differs_from_base": differs_from_base,
-                "status": response_data_list[i]["status"],
-                "duration": response_data_list[i]["duration"],
-            }
-            logger.info(
-                f"  {test_name}: differs={differs_from_base}, "
-                f"status={response_data_list[i]['status']}, "
-                f"duration={response_data_list[i]['duration']:.2f}s"
-            )
-
-        return results
-
-    async def _test_concurrent_i2v_generation(self, payloads: list[dict]) -> list[dict]:
-        """Submit all payloads concurrently in a warm-up + measurement pair."""
-
-        async def timed_request(session, index, test_config):
-            test_name = test_config["name"]
-            request_payload = test_config["payload"]
-            logger.info(f"Starting request {index}: {test_name}")
-            start = time.perf_counter()
-            try:
-                async with session.post(
-                    self.url, json=request_payload, headers=HEADERS
-                ) as response:
-                    duration = time.perf_counter() - start
-                    if response.status == HTTP_ACCEPTED:
-                        data = await response.json()
-                        job_id = data.get("id")
-                    else:
-                        logger.warning(
-                            f"[{index}] {test_name} - Status {response.status}"
-                        )
-                        data = {
-                            "error": f"Status {response.status}",
-                            "status": response.status,
-                        }
-                        job_id = None
-
-                    logger.info(
-                        f"[{index}] {test_name} - Status: {response.status}, "
-                        f"Job ID: {job_id}, Time: {duration:.2f}s"
-                    )
-                    return {
-                        "index": index,
-                        "name": test_name,
-                        "duration": duration,
-                        "data": data,
-                        "job_id": job_id,
-                        "status": response.status,
-                    }
-
-            except Exception as e:
-                duration = time.perf_counter() - start
-                logger.error(
-                    f"[{index}] {test_name} - Error after {duration:.2f}s: {e}"
-                )
-                return {
-                    "index": index,
-                    "name": test_name,
-                    "duration": duration,
-                    "data": None,
-                    "job_id": None,
-                    "error": str(e),
-                    "status": 0,
-                }
-
-        batch_size = len(payloads)
-        response_data_list: list[dict] = []
-
-        for iteration in range(WARMUP_AND_MEASURE_ITERATIONS):
-            session_timeout = aiohttp.ClientTimeout(total=2000)
-            async with aiohttp.ClientSession(
-                headers=HEADERS, timeout=session_timeout
-            ) as session:
-                tasks = [
-                    timed_request(session, i + 1, payloads[i])
-                    for i in range(batch_size)
-                ]
-                results = await asyncio.gather(*tasks)
-
-                if iteration == 0:
-                    logger.info("🔥 Warm up run done.")
-                    continue
-
-                response_data_list = results
-                durations = [r["duration"] for r in results]
-                logger.info(f"\n🚀 Per-request durations: {durations}")
-                logger.info(
-                    f"\n🚀 Max time for {batch_size} concurrent requests: "
-                    f"{max(durations):.2f}s"
-                )
-                logger.info(
-                    f"\n🚀 Avg time for {batch_size} concurrent requests: "
-                    f"{sum(durations) / batch_size:.2f}s"
-                )
-
-        return sorted(response_data_list, key=lambda x: x["index"])
-
-    def _load_accuracy_reference(self) -> dict:
-        """Load accuracy reference data from JSON file."""
-        logger.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
-        try:
-            with open(ACCURACY_REFERENCE_PATH, "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            logger.warning(
-                f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}, "
-                "using defaults"
-            )
-            return {}
-        except json.JSONDecodeError as e:
-            logger.warning(
-                f"Invalid JSON in accuracy reference file: {e}, using defaults"
-            )
-            return {}
-
-    def _get_num_inference_steps_from_reference(
-        self, model_name: str, default: int
-    ) -> int:
-        """Get num_inference_steps from reference data for a given model."""
-        reference_data = self._load_accuracy_reference()
-        if model_name in reference_data:
-            return reference_data[model_name].get("num_inference_steps", default)
-        return default
+        if clip_problem:
+            return {**record, "problem": f"clip: {clip_problem}"}
+        logger.info(f"{name}: clip ready in {elapsed:.1f} s")
+        return {**record, "video_path": file_path}
 
 
 def run_video_generation_i2v_param(
@@ -352,9 +267,9 @@ def run_video_generation_i2v_param(
     """Run :class:`VideoGenerationI2VParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
-            "timeout": 1800,
-            "retry_attempts": 1,
-            "retry_delay": 10,
+            "timeout": 7200,
+            "retry_attempts": 0,
+            "retry_delay": 0,
             "break_on_failure": False,
         }
     )
