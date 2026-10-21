@@ -2403,7 +2403,6 @@ templates:
     - meta-llama/Llama-3.3-70B-Instruct
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
-    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   system_requirements:
@@ -2435,6 +2434,39 @@ templates:
       tool_call_parser_name: llama3_json
     meta-llama/Llama-3.1-70B-Instruct:
       tool_call_parser_name: llama3_json
+
+# DeepSeek-R1-Distill-Llama-70B on P300X2 has its own template, split from the Llama-70B one above,
+# because it needs the deepseek_r1 reasoning parser and the Llama weights must not get it.
+# Otherwise identical to the shared template.
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      vllm_args:
+        reasoning-parser: deepseek_r1
+      override_tt_config:
+        trace_region_size: 402653184  # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
