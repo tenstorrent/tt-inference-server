@@ -7393,5 +7393,17 @@ templates:
       trace_region_size: 134217728
       l1_small_size: 16384
       kv_cache_usable_tokens: 80000
+    known_issues:
+    - workflow_type: SPEC_TESTS
+      task_name: test_non_uniform_seeding
+      reason: 'Observed HTTP latency: test_non_uniform_seeding asks for 10 random colors with max_tokens
+        50 and temperature 0.9; its seed-1 request reaches the harness fixed 30 s read timeout. The other
+        21/22 cases pass, including seed reproducibility and logprobs. On QuietBox0, image aba10990 (linux/amd64
+        manifest 9c52ccc3), package 20313188/fecf0e83, the server measures median single-stream decode
+        throughput 9.9 tok/s (approximately 101 ms/token; 81 zero-prefill windows). This throughput alone
+        does not explain a 50-token request exceeding 30 s; no determinism result was obtained for seed
+        1. User decision 2026-10-20 via coordinator: record this 30 s ReadTimeout as a latency known_issue
+        in the #467 form. No timeout, generation default, numerical gate or other test is changed. This
+        function is not parametrized, so the entry names exactly one case.'
     max_tokens_all_users_override: 80000
   status: EXPERIMENTAL
