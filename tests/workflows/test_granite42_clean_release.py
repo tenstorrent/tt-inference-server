@@ -66,6 +66,7 @@ def test_standard_harbor_config_preserves_cohort_and_enables_thinking(tmp_path, 
     assert len(generated["datasets"][0]["task_names"]) == 10
     assert generated["datasets"][0]["n_tasks"] == 10
     assert generated["n_concurrent_trials"] == 10
+    assert generated["agents"][0]["override_timeout_sec"] == 6 * 60 * 60
     agent = generated["agents"][0]
     kwargs = agent["kwargs"]
     holder = (
@@ -101,6 +102,7 @@ def test_granite_gpqa_matches_other_dense_reasoning_models():
     gpqa = _eval_config_map[MODEL].tasks[0]
     assert gpqa.task_name == "r1_gpqa_diamond"
     assert gpqa.max_concurrent == 10
+    assert gpqa.model_kwargs["timeout"] == 7200
     assert gpqa.use_chat_api and gpqa.thinking
     assert gpqa.score.score_func_kwargs["result_keys"] == ["exact_match,none"]
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10

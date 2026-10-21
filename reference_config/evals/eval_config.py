@@ -609,7 +609,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                model_kwargs={"max_length": 131072, "timeout": 3600},
+                model_kwargs={"max_length": 131072, "timeout": 7200},
                 gen_kwargs={
                     "max_gen_toks": 32768,
                     "temperature": 1.0,
@@ -652,9 +652,7 @@ _eval_config_list = [
                     agent=agent,
                     n_concurrent_trials=10,
                     n_attempts=1,
-                    agent_timeout_sec=45 * 60
-                    if name == "terminal_bench_2_1"
-                    else 2 * 60 * 60,
+                    agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
