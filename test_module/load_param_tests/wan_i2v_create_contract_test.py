@@ -6,8 +6,9 @@
 
 Every case is a request the server must refuse: bad auth, or a body that breaks
 ``VideoI2VGenerateRequest`` (tt-media-server domain/video_i2v_generate_request.py),
-plus the text-only route an I2V deployment refuses. None of them should create a
-job, so the suite runs in seconds and holds no device time. Ported from the
+an image over the size limits (JSON and multipart upload), plus the text-only
+route an I2V deployment refuses. None of them should create a job, so the suite
+runs in seconds and holds no device time. Ported from the
 MiniMax-H3 create-contract suite (zni/h3-ci-unified).
 """
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -25,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import aiohttp
 
 from .._test_common import BaseTest, HardwareRequirement, TestConfig
+from .._test_common.large_images import over_limit_image
 
 if TYPE_CHECKING:
     from report_module.schema import Block
@@ -35,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 I2V_CREATE_PATH = "/v1/videos/generations/i2v"
 T2V_CREATE_PATH = "/v1/videos/generations"
+I2V_UPLOAD_PATH = "/v1/videos/generations/i2v/upload"
+# Responses longer than this are cut in the report: a 422 echoes its input,
+# which for the over-limit image is ~17M characters.
+MAX_REPORTED_RESPONSE_CHARS = 2000
 # Server-side bounds (tt-media-server config/constants.py); a unit test checks
 # these against that file so the cases cannot drift from what the server enforces.
 WAN22_NUM_FRAMES = 81
@@ -59,6 +66,8 @@ class RequestCase:
     path: str = I2V_CREATE_PATH
     # A route refusal: the 422 carries a string detail, not a list of field errors.
     expects_refusal: bool = False
+    # Sent as a multipart image file (with ``payload`` as form fields) instead of JSON.
+    upload: bytes | None = None
 
 
 def _image(frame_pos: int = 0, image: str = TINY_PNG_BASE64) -> dict[str, Any]:
@@ -109,6 +118,25 @@ def cases() -> list[RequestCase]:
             "num_inference_steps_above_maximum",
             {**valid, "num_inference_steps": MAX_VIDEO_INFERENCE_STEPS + 1},
         ),
+        # Size limits, with an image bigger than both (~13 MB, 5760x3240): the JSON
+        # API caps an image at 10M base64 characters (422), the upload endpoint at
+        # 10 MiB (413, before the body is read into memory).
+        RequestCase(
+            "image_over_base64_limit",
+            {
+                **valid,
+                "image_prompts": [
+                    _image(image=base64.b64encode(over_limit_image()).decode("ascii"))
+                ],
+            },
+        ),
+        RequestCase(
+            "upload_over_size_limit",
+            {"prompt": PROMPT},
+            (413,),
+            path=I2V_UPLOAD_PATH,
+            upload=over_limit_image(),
+        ),
         # The deployment gate runs before body validation, so an empty body tells a
         # refused route (string detail) from a served one (list of field errors).
         RequestCase(
@@ -125,8 +153,10 @@ def resolve_api_key() -> str:
     return os.getenv("API_KEY") or DEFAULT_API_KEY
 
 
-def _headers(api_key: str, auth_mode: str) -> dict[str, str]:
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+def _headers(api_key: str, auth_mode: str, *, json_body: bool = True) -> dict[str, str]:
+    headers = {"Accept": "application/json"}
+    if json_body:
+        headers["Content-Type"] = "application/json"
     if auth_mode == "valid":
         headers["Authorization"] = f"Bearer {api_key}"
     elif auth_mode == "invalid":
@@ -143,10 +173,19 @@ async def run_case(
         "endpoint_url": url,
         "expected_status": list(case.expected_statuses),
     }
+    if case.upload is None:
+        body = {"json": case.payload}
+    else:
+        form = aiohttp.FormData()
+        for key, value in case.payload.items():
+            form.add_field(key, str(value))
+        form.add_field(
+            "image", case.upload, filename="image.jpg", content_type="image/jpeg"
+        )
+        body = {"data": form}
+    headers = _headers(api_key, case.auth_mode, json_body=case.upload is None)
     try:
-        async with session.post(
-            url, headers=_headers(api_key, case.auth_mode), json=case.payload
-        ) as response:
+        async with session.post(url, headers=headers, **body) as response:
             text = await response.text()
             status = response.status
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
@@ -178,7 +217,9 @@ async def run_case(
         "passed": not message,
         "actual_status": status,
         "message": message,
-        "response": data,
+        "response": data
+        if len(text) <= MAX_REPORTED_RESPONSE_CHARS
+        else f"{text[:MAX_REPORTED_RESPONSE_CHARS]}... ({len(text)} chars)",
     }
 
 

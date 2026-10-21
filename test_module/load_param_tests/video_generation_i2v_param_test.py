@@ -5,19 +5,21 @@
 """Parameter-sweep test for the Wan2.2 image-to-video endpoint.
 
 Generates one clip per request variant (seed, prompt, step count, negative
-prompt, conditioning frame position), one after another, and checks that each
-parameter took effect in the video itself, not only that the request was
-accepted:
+prompt, conditioning frame position, an image at the size limit), one after
+another, and checks that each parameter took effect in the video itself, not
+only that the request was accepted:
 
 * every job completes, echoes its request, and its clip passes the output check
-  (decodable, not black/flat/frozen, 81 frames at the deployment's resolution);
+  (decodable, not black/flat/frozen, 81 frames at the deployment's resolution),
+  including the one conditioned on a 5760x3240, ~7 MB image;
 * a different seed, a different prompt and fewer steps each change the clip;
 * fewer steps finish faster.
 
-Three behaviours are recorded but not yet gated, until real clips show where
+Four behaviours are recorded but not yet gated, until real clips show where
 their thresholds belong: whether an identical request reproduces the clip,
-whether dropping the negative prompt changes it, and whether the conditioning
-image lands at the requested frame.
+whether dropping the negative prompt changes it, whether the conditioning
+image lands at the requested frame, and whether the large-image clip starts
+from its image.
 
 The variants run sequentially, so per-job times are not inflated by queueing,
 and at a reduced step count: the sweep checks that parameters take effect, not
@@ -35,6 +37,7 @@ import aiohttp
 from report_module.schema import Block
 
 from .._test_common import TestConfig
+from .._test_common.large_images import near_limit_image
 from .._test_common.video_output_check import (
     check_video_output,
     deployment_resolution,
@@ -62,6 +65,9 @@ DEFAULT_POLL_TIMEOUT_SECONDS = 1200
 # changed seed or prompt differ by far more; re-encodes of one clip by ~0.
 DIFFERS_THRESHOLD = 1.0
 CONDITIONING_FRAME_POS = 4
+# Frame 0 of a clip conditioned at frame 0 measured 4.4-4.8 from its image on BH
+# Galaxy; the grainy large image is allowed more before the check reports it.
+LARGE_IMAGE_START_SLACK = 15.0
 
 BASE_PROMPT = (
     "A tranquil sunrise over rolling hills, soft golden light, cinematic camera pan"
@@ -94,10 +100,25 @@ def _build_payload(
     return payload
 
 
-def build_variants(image_b64: str, steps: int) -> dict[str, dict]:
-    """The sweep's requests, by name; ``default`` is the base the others change."""
+def build_variants(
+    image_b64: str, steps: int, large_image_b64: str | None = None
+) -> dict[str, dict]:
+    """The sweep's requests, by name; ``default`` is the base the others change.
+
+    ``large_image`` swaps in an image just under the server's size limit
+    (5760x3240, ~7 MB), the largest a request may carry.
+    """
     fewer_steps = max(MIN_VIDEO_INFERENCE_STEPS, steps // 2)
     common = {"image_b64": image_b64, "num_inference_steps": steps}
+    large = (
+        {
+            "large_image": _build_payload(
+                image_b64=large_image_b64, num_inference_steps=steps
+            )
+        }
+        if large_image_b64
+        else {}
+    )
     return {
         "default": _build_payload(**common),
         "duplicate_default": _build_payload(**common),
@@ -108,6 +129,7 @@ def build_variants(image_b64: str, steps: int) -> dict[str, dict]:
         ),
         "no_negative_prompt": _build_payload(**common, negative_prompt=None),
         "frame_pos_4": _build_payload(**common, frame_pos=CONDITIONING_FRAME_POS),
+        **large,
     }
 
 
@@ -124,7 +146,9 @@ def _check(
     }
 
 
-def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
+def evaluate_sweep(
+    jobs: dict[str, dict], image_bytes: bytes, large_image_bytes: bytes | None = None
+) -> list[dict]:
     """Grade the sweep from each variant's job record.
 
     A job record has ``elapsed`` and ``video_path`` once its clip downloaded and
@@ -203,6 +227,22 @@ def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
                 clips=("default", "frame_pos_4"),
             )
         )
+
+    if "large_image" in done and large_image_bytes:
+        start = frame_distances_to_image(
+            done["large_image"]["video_path"], large_image_bytes, [0]
+        )[0]
+        reference = frame_distances_to_image(base, image_bytes, [0])[0]
+        checks.append(
+            _check(
+                "large_image_starts_from_its_image",
+                start <= max(2 * reference, LARGE_IMAGE_START_SLACK),
+                f"frame 0 is {start:.1f} from the large image "
+                f"(default clip: {reference:.1f} from its image)",
+                gated=False,
+                clips=("large_image",),
+            )
+        )
     return checks
 
 
@@ -220,7 +260,12 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
         )
         steps = self.targets.get("num_inference_steps", DEFAULT_NUM_INFERENCE_STEPS)
         image_bytes = FIXTURE_IMAGE_PATH.read_bytes()
-        variants = build_variants(base64.b64encode(image_bytes).decode("ascii"), steps)
+        large_image_bytes = near_limit_image()
+        variants = build_variants(
+            base64.b64encode(image_bytes).decode("ascii"),
+            steps,
+            base64.b64encode(large_image_bytes).decode("ascii"),
+        )
         submit_url = f"{self.base_url}{SUBMIT_PATH}"
         logger.info(f"I2V parameter sweep: {len(variants)} clips at {steps} steps")
 
@@ -231,7 +276,7 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
             for name, payload in variants.items():
                 jobs[name] = await self._generate(session, submit_url, name, payload)
 
-        checks = evaluate_sweep(jobs, image_bytes)
+        checks = evaluate_sweep(jobs, image_bytes, large_image_bytes)
         for check in checks:
             mark = "✅" if check["passed"] else ("❌" if check["gated"] else "⚠️")
             logger.info(f"{mark} {check['check']}: {check['detail']}")
