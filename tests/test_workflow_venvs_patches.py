@@ -98,4 +98,5 @@ def test_carried_harbor_patch_is_present() -> None:
     assert "0001-egress-sidecar-sniffing-read-timeout.patch" in names
     assert "0002-mini-swe-agent-install-mcp.patch" in names
     assert "0003-docker-image-pull-retries.patch" in names
+    assert "0004-docker-egress-probe-reads-local-kernel.patch" in names
     assert all(target == Path(".") for _, target in patches)
