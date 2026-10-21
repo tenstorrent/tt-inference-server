@@ -820,7 +820,7 @@ index e9ae70b..8f74be5 100644
          )
  
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058ec..3946f81 100644
+index f2058ec..f3969b0 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -958,7 +958,7 @@ index f2058ec..3946f81 100644
                      or tensor.layout != ttnn.TILE_LAYOUT
                      or tensor.device() != self.mesh
                      or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
-@@ -327,7 +382,161 @@ class Gemma4Generator:
+@@ -327,7 +382,168 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -1008,9 +1008,16 @@ index f2058ec..3946f81 100644
 +                or self._serving_prefill_prepared_state is not None):
 +            raise RuntimeError("Experimental preparation requires fresh full60 C16 serial state")
 +        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-+        if pool_profile not in ("f606208", "f262144"):
++        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824}
++        if pool_profile not in pool_rows:
 +            raise RuntimeError("Unsupported serial prepared alias pool profile")
-+        wide_rows = 6128 if pool_profile == "f606208" else 3440
++        if pool_profile == "f311296" and (
++                os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != "311296"
++                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV") != "1"
++                or os.environ.get("GEMMA_REPETITION_PRECISION_POLICY") != "bf8"
++                or os.environ.get("GEMMA_EXPERIMENT_KV_DTYPE") != "bf8kv"):
++            raise RuntimeError("F311296 preparation requires declared shared BF8/BF8KV source")
++        wide_rows = pool_rows[pool_profile]
 +        if any(int(pair[0].shape[0]) != (wide_rows if layer.sliding else 2 * wide_rows)
 +               for layer, pair in zip(self.model.layers, state.kv)):
 +            raise RuntimeError("Experimental preparation requires the declared alias pool")
@@ -1121,7 +1128,7 @@ index f2058ec..3946f81 100644
          self,
          tokens,
          *,
-@@ -339,6 +548,7 @@ class Gemma4Generator:
+@@ -339,6 +555,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1129,7 +1136,7 @@ index f2058ec..3946f81 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +567,24 @@ class Gemma4Generator:
+@@ -357,16 +574,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1158,7 +1165,7 @@ index f2058ec..3946f81 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +592,289 @@ class Gemma4Generator:
+@@ -374,30 +599,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1457,7 +1464,7 @@ index f2058ec..3946f81 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +888,22 @@ class Gemma4Generator:
+@@ -411,6 +895,22 @@ class Gemma4Generator:
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1480,7 +1487,7 @@ index f2058ec..3946f81 100644
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +912,23 @@ class Gemma4Generator:
+@@ -419,15 +919,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1506,7 +1513,7 @@ index f2058ec..3946f81 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -466,6 +967,16 @@ class Gemma4Generator:
+@@ -466,6 +974,16 @@ class Gemma4Generator:
          del merged
          ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
          self.counters["sampling_replays"] += 1
@@ -1523,7 +1530,7 @@ index f2058ec..3946f81 100644
          return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
  
      def _sample_step(self, entry):
-@@ -484,61 +995,110 @@ class Gemma4Generator:
+@@ -484,61 +1002,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1670,7 +1677,7 @@ index f2058ec..3946f81 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1284,8 @@ class Gemma4Generator:
+@@ -724,6 +1291,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1679,7 +1686,7 @@ index f2058ec..3946f81 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1295,14 @@ class Gemma4Generator:
+@@ -733,7 +1302,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):
