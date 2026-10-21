@@ -1,6 +1,3 @@
-diff --git a/models/demos/gemma4_31b_qb2/tt/alias-manifest.json b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
-new file mode 100644
-index 0000000..6f3a905
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/alias-manifest.json
 @@ -0,0 +1,12 @@
@@ -16,11 +13,9 @@ index 0000000..6f3a905
 +    "__init__.py": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
 +  }
 +}
-diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
-index e9ae70b..281b95e 100644
 --- a/models/demos/gemma4_31b_qb2/tt/decoder.py
 +++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
-@@ -15,7 +15,11 @@ The bounded ring supports forward decoding with complete live history, not
+@@ -15,7 +15,11 @@
  arbitrary rollback into evicted tokens. Page-ID changes require live KV migration.
  """
  
@@ -32,7 +27,7 @@ index e9ae70b..281b95e 100644
  from models.demos.gemma4_31b_qb2.tt.sdpa_l1 import BLACKHOLE_L1_BYTES, full_sdpa_fp32_l1_end
  from models.demos.gpt_oss.tt.ccl import CCLManager
  
-@@ -67,10 +71,12 @@ class Decoder:
+@@ -67,10 +71,12 @@
          assert c.max_position_embeddings == 262144 and c.sliding_window == 1024
          self = cls()
          self.device = mesh_device
@@ -45,7 +40,7 @@ index e9ae70b..281b95e 100644
          self.PREFILL_CHUNK = 1024 if self.kind == "sliding_attention" else 6656
          if self.PREFILL_CHUNK <= 0 or self.PREFILL_CHUNK % self.PAGE_SIZE:
              raise ValueError("Compute chunks must contain a positive whole number of cache pages")
-@@ -182,9 +188,16 @@ class Decoder:
+@@ -182,9 +188,16 @@
                  memory_config=memory_config,
              )
  
@@ -63,7 +58,7 @@ index e9ae70b..281b95e 100644
              )
  
          q, k = (sd["self_attn.q_proj.weight"], sd["self_attn.k_proj.weight"])
-@@ -197,17 +210,17 @@ class Decoder:
+@@ -197,17 +210,17 @@
  
          self.qkv = tensor(
              packed(q, k, v),
@@ -84,7 +79,7 @@ index e9ae70b..281b95e 100644
              dim=1,
              decode_only="gate_up",
          )
-@@ -293,6 +306,28 @@ class Decoder:
+@@ -293,6 +306,28 @@
              if weight.memory_config().is_sharded():
                  assert weight.memory_config() == mem
                  assert weight.buffer_unique_id() == self.decode_weights[name].buffer_unique_id()
@@ -113,7 +108,7 @@ index e9ae70b..281b95e 100644
          # Separate prefill gate/up weights are already resident. Decode
          # owns its DRAM-sharded packed copy; retain no unused duplicate.
          del self.gate_up
-@@ -324,6 +359,20 @@ class Decoder:
+@@ -324,6 +359,20 @@
              shared_setup[table_key] = {name: getattr(self, name) for name in names}
          for name, value in shared_setup[table_key].items():
              setattr(self, name, value)
@@ -134,7 +129,7 @@ index e9ae70b..281b95e 100644
          self.decode_sdpa_config = ttnn.SDPAProgramConfig(
              compute_with_storage_grid_size=ttnn.CoreCoord(*[8, 4]),
              q_chunk_size=0,
-@@ -365,10 +414,11 @@ class Decoder:
+@@ -365,10 +414,11 @@
          # tile storage for this descriptor instead of allocating and releasing
          # a large unused template between persistent norm owners. The view's
          # values are intentionally never consumed by a numerical operation.
@@ -148,7 +143,7 @@ index e9ae70b..281b95e 100644
          assert x.buffer_unique_id() == self.cos.buffer_unique_id()
          assert x.dtype == ttnn.bfloat16 and x.layout == ttnn.TILE_LAYOUT
          assert x.memory_config() == ttnn.DRAM_MEMORY_CONFIG
-@@ -385,14 +435,14 @@ class Decoder:
+@@ -385,14 +435,14 @@
          # Query the native factory rather than duplicating worker/round
          # sizing. Its geometry does not depend on the norm weight's values.
          shapes = {}
@@ -165,7 +160,7 @@ index e9ae70b..281b95e 100644
                  first_owner = probe
              del probe
          self.prefill_norm_stats_owners = {}
-@@ -474,15 +524,24 @@ class Decoder:
+@@ -474,15 +524,24 @@
          """Residual ownership chosen once at entry to the entire layer stack."""
          return 1344 if sequence_length > 128 else 5376
  
@@ -191,7 +186,7 @@ index e9ae70b..281b95e 100644
          y = ttnn.experimental.reduce_scatter_minimal_async(
              x,
              dim=3,
-@@ -494,17 +553,42 @@ class Decoder:
+@@ -494,17 +553,42 @@
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
              num_workers_per_link=None,
          )
@@ -236,7 +231,7 @@ index e9ae70b..281b95e 100644
              and weight.dtype == ttnn.bfloat4_b
              and x.dtype == ttnn.bfloat16
          )
-@@ -519,15 +603,25 @@ class Decoder:
+@@ -519,15 +603,25 @@
          cap = (8 if name == "o" else 14) if self.sliding else (4 if name == "o" else 6)
          expected_input = ttnn.bfloat8_b if name == "o" and not self.sliding else ttnn.bfloat16
          if not wide_qkv and weight.dtype == ttnn.bfloat4_b and x.dtype == expected_input:
@@ -264,7 +259,7 @@ index e9ae70b..281b95e 100644
              compute_with_storage_grid_size=(gx, gy),
              in0_block_w=block,
              per_core_M=pm,
-@@ -538,7 +632,7 @@ class Decoder:
+@@ -538,7 +632,7 @@
              fuse_batch=False,
              fused_activation=ttnn.UnaryWithParam(ttnn.UnaryOpType.GELU_TANH) if activation else None,
          )
@@ -273,16 +268,16 @@ index e9ae70b..281b95e 100644
              x,
              weight,
              program_config=config,
-@@ -547,6 +641,8 @@ class Decoder:
+@@ -546,6 +640,8 @@
+             dtype=ttnn.bfloat16,
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
          )
- 
-+        return ttnn.reshape(result, [1, 1, packed_rows, result.shape[-1]]) if native_batch else result
 +
++        return ttnn.reshape(result, [1, 1, packed_rows, result.shape[-1]]) if native_batch else result
+ 
      def _dlinear(self, x, name):
          weight = self.decode_weights[name]
-         kdim, ndim = weight.shape[-2], weight.shape[-1]
-@@ -584,6 +680,10 @@ class Decoder:
+@@ -584,6 +680,10 @@
              return self._dnorm(x, name)
          if x.shape[-1] == self.hidden_size:
              rows = x.padded_shape[-2]
@@ -293,7 +288,7 @@ index e9ae70b..281b95e 100644
              mem = ttnn.create_sharded_memory_config(
                  (rows, 192),
                  ttnn.CoreGrid(x=7, y=4),
-@@ -641,16 +741,16 @@ class Decoder:
+@@ -641,16 +741,16 @@
          n = self._resnorm(x, name, decode)
          return self._gather(n) if x.shape[-1] != self.hidden_size else n
  
@@ -315,7 +310,7 @@ index e9ae70b..281b95e 100644
          del local
          post = self._resnorm(reduced, "post_feedforward_layernorm", False)
          del reduced
-@@ -681,18 +781,24 @@ class Decoder:
+@@ -681,18 +781,24 @@
              activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.MUL_UNARY_SFPU, self.layer_scalar)],
          )
  
@@ -343,7 +338,7 @@ index e9ae70b..281b95e 100644
          for chunk in eligible:
              end = full_sdpa_fp32_l1_end(
                  rows=q.shape[2],
-@@ -704,6 +810,7 @@ class Decoder:
+@@ -704,6 +810,7 @@
                  q_tile_bytes=tile_bytes[q.dtype],
                  kv_tile_bytes=tile_bytes[cache.dtype],
                  page_table_bytes=page_bytes,
@@ -351,7 +346,7 @@ index e9ae70b..281b95e 100644
              )
              if end <= BLACKHOLE_L1_BYTES:
                  key = (q.shape[2], start, str(q.dtype), str(cache.dtype), page_bytes)
-@@ -716,6 +823,7 @@ class Decoder:
+@@ -716,6 +823,7 @@
                      q_chunk=chunk,
                      k_chunk=128,
                      cb_region_end=end,
@@ -359,7 +354,7 @@ index e9ae70b..281b95e 100644
                  )
                  return self.pref_sdpa_by_q[chunk]
          raise ValueError("No configured full-attention SDPA Q chunk fits Blackhole L1")
-@@ -730,9 +838,15 @@ class Decoder:
+@@ -730,9 +838,15 @@
          result = self._apply_decode_rope(x, cos, sin)
          return ttnn.reshape(result, ttnn.Shape(list(x.shape)), ttnn.Shape(list(x.padded_shape)))
  
@@ -377,7 +372,7 @@ index e9ae70b..281b95e 100644
          q, k, v = ttnn.experimental.nlp_create_qkv_heads(
              fused,
              num_heads=8,
-@@ -746,27 +860,323 @@ class Decoder:
+@@ -746,27 +860,323 @@
              # Full attention derives rotated K from normalized V below.
              # The raw K output has no consumer after head creation.
              del k
@@ -715,7 +710,7 @@ index e9ae70b..281b95e 100644
      ):
          """Prefill a page-aligned span, optionally retaining sliding history for a continuation."""
          if start_pos < 0 or start_pos % self.PAGE_SIZE:
-@@ -775,6 +1185,8 @@ class Decoder:
+@@ -775,6 +1185,8 @@
              raise ValueError("Sliding continuation requires its preceding K/V history")
          next_history = None
          batch, one, seq, width = x.shape
@@ -724,7 +719,7 @@ index e9ae70b..281b95e 100644
          assert one == 1 and width == self.prefill_input_width(seq) and (0 < seq <= self.max_context)
          assert page_table.shape[0] == batch and page_table.shape[1] * self.PAGE_SIZE >= start_pos + seq
          if consume_input:
-@@ -823,7 +1235,10 @@ class Decoder:
+@@ -823,7 +1235,10 @@
                      q = ttnn.typecast(q, ttnn.bfloat8_b)
                  sdpa_config = self._prefill_sdpa_config(q, kv_cache[0], pt, start=absolute_start)
                  length = inp.shape[2]
@@ -736,7 +731,7 @@ index e9ae70b..281b95e 100644
                  ttnn.experimental.paged_fill_cache(
                      kv_cache[0], ttnn.typecast(k, kv_cache[0].dtype), fill_pt, batch_idx=0
                  )
-@@ -849,7 +1264,8 @@ class Decoder:
+@@ -849,7 +1264,8 @@
                          program_config=sdpa_config,
                          compute_kernel_config=self.pref_compute,
                      )
@@ -746,7 +741,7 @@ index e9ae70b..281b95e 100644
                  elif self.sliding:
                      attn = ttnn.transformer.scaled_dot_product_attention(
                          q,
-@@ -862,27 +1278,41 @@ class Decoder:
+@@ -862,27 +1278,41 @@
                          compute_kernel_config=self.pref_compute,
                      )
                  else:
@@ -805,7 +800,7 @@ index e9ae70b..281b95e 100644
                      previous_kv = (k, v)
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
-@@ -1017,7 +1447,8 @@ class Decoder:
+@@ -1017,7 +1447,8 @@
          v = ttnn.to_memory_config(v, vmem)
          bounded = cyclic_cache and self.sliding and page_table.padded_shape[1] > kv_cache[0].shape[0]
          modulo = {"cache_position_modulo": self.SLIDING_WINDOW_PAGES * self.PAGE_SIZE} if bounded else {}
@@ -815,7 +810,7 @@ index e9ae70b..281b95e 100644
              # Fused update still enforces logical pages <= physical pages.
              # Native separate updates support a bounded pool explicitly. The
              # documented cyclic table repeats its first nine private pages.
-@@ -1128,12 +1559,12 @@ class Decoder:
+@@ -1128,12 +1559,12 @@
              (
                  ttnn.zeros(
                      shape,
@@ -830,11 +825,9 @@ index e9ae70b..281b95e 100644
              )
          )
  
-diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058ec..a79c5d8 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
-@@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
+@@ -6,7 +6,9 @@
  token; position advances in the model trace. Host sampling is opt-in compatibility.
  """
  
@@ -844,7 +837,7 @@ index f2058ec..a79c5d8 100644
  import time
  from dataclasses import dataclass, field
  from types import SimpleNamespace
-@@ -14,12 +16,13 @@ from types import SimpleNamespace
+@@ -14,12 +16,13 @@
  import torch
  from loguru import logger
  from transformers import AutoTokenizer, GenerationConfig
@@ -859,7 +852,7 @@ index f2058ec..a79c5d8 100644
  
  
  @dataclass
-@@ -36,6 +39,17 @@ class CacheState:
+@@ -36,6 +39,17 @@
      # Standalone mode retains the stricter private cyclic-cache contract.
      vllm_owned: bool = False
      prefill_history: dict = field(default_factory=dict)
@@ -877,7 +870,7 @@ index f2058ec..a79c5d8 100644
  
  
  class Gemma4Generator:
-@@ -49,7 +63,18 @@ class Gemma4Generator:
+@@ -49,7 +63,18 @@
          self.initial_capacity = max_seq_len
          self.states = {}
          self.traces = {}
@@ -896,7 +889,7 @@ index f2058ec..a79c5d8 100644
          self.counters = {
              k: 0
              for k in (
-@@ -84,6 +109,7 @@ class Gemma4Generator:
+@@ -84,6 +109,7 @@
          if not 1 <= batch <= 32 or not 1 <= capacity <= self.max_seq_len:
              raise ValueError("Expected batch1..32 and context1..262144")
          self._retire_traces()
@@ -904,7 +897,7 @@ index f2058ec..a79c5d8 100644
          # All accepted decode SDPA chunks are64/128: one128-token page covers
          # the rounded read window. No power-of-two capacity restriction.
          pages = (capacity + 127) // 128
-@@ -105,7 +131,36 @@ class Gemma4Generator:
+@@ -105,7 +131,41 @@
              kind: list(range(batch * pools[kind] + max(2, batch) - batch, batch * pools[kind] + max(2, batch)))
              for kind in pools
          }
@@ -913,15 +906,20 @@ index f2058ec..a79c5d8 100644
 +        self.setup_history_bank(state)
 +        return state
 +
-+    def setup_history_bank(self, state):
++    def setup_history_bank(self, state, *, capacity=None):
 +        """Explicit setup before first capture; experiment remains default off."""
 +        if os.environ.get("GEMMA_PREFILL_HISTORY_BANK", "0") != "1":
 +            return
++        capacity = state.batch if capacity is None else capacity
++        if type(capacity) is not int or not 1 <= capacity <= state.batch:
++            raise ValueError("History capacity must be an integer in 1..physical width")
 +        if state.history_bank is not None:
++            if len(state.history_bank.roots) != capacity:
++                raise RuntimeError("History capacity cannot change after allocation")
 +            return
 +        if self.traces or state.prefill_history:
 +            raise RuntimeError("History bank setup must precede capture and requests")
-+        state.history_bank = HistoryBank(self.model, state.batch)
++        state.history_bank = HistoryBank(self.model, capacity)
 +
 +    def _bank_history(self, state, key, start, aligned_start, tables, slot, retain):
 +        previous = state.prefill_history.pop(key, None)
@@ -942,7 +940,7 @@ index f2058ec..a79c5d8 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -182,11 +237,11 @@ class Gemma4Generator:
+@@ -182,11 +242,11 @@
          for layer, pair in zip(self.model.layers, state.kv):
              if len(pair) != 2:
                  raise ValueError("Each layer requires exactly two K/V tensors")
@@ -956,7 +954,7 @@ index f2058ec..a79c5d8 100644
                      or tensor.layout != ttnn.TILE_LAYOUT
                      or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
                      or tensor.device() != self.mesh
-@@ -228,10 +283,10 @@ class Gemma4Generator:
+@@ -228,10 +288,10 @@
                  raise ValueError("Invalid serving table geometry")
              if len(pair) != 2 or pair[0].buffer_unique_id() == pair[1].buffer_unique_id():
                  raise ValueError("Serving K and V must have separate storage")
@@ -969,7 +967,7 @@ index f2058ec..a79c5d8 100644
                      or tensor.layout != ttnn.TILE_LAYOUT
                      or tensor.device() != self.mesh
                      or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
-@@ -327,7 +382,175 @@ class Gemma4Generator:
+@@ -327,7 +387,190 @@
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -1012,14 +1010,27 @@ index f2058ec..a79c5d8 100644
 +            raise RuntimeError("Serial prepared retention requires all fixed-owner controls and tracking")
 +        if os.environ.get("TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE", "0") != "0":
 +            raise RuntimeError("Program-cache allocations must remain tracked")
++        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
++        c32_profile = pool_profile == "c32a24_f262144"
++        expected_batch = 32 if c32_profile else 16
++        expected_history = 24 if c32_profile else 16
++        if c32_profile and (
++                getattr(state, "serving_admission_limit", None) != 24
++                or os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != "262144"
++                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV") != "1"
++                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_DOWN") != "1"
++                or os.environ.get("GEMMA_REPETITION_PRECISION_POLICY") != "bf8"
++                or os.environ.get("GEMMA_EXPERIMENT_KV_DTYPE") != "bf8kv"):
++            raise RuntimeError("C32/A24 preparation requires explicit admission and joint BF8/BF8KV profile")
 +        if (os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1") != "1"
-+                or state.batch != 16 or state.capacity != 262144
++                or state.batch != expected_batch or state.capacity != 262144
 +                or len(self.model.layers) != 60 or state.history_bank is None
 +                or self.traces or state.prefill_history or state.history_bank.leases
++                or len(state.history_bank.roots) != expected_history
 +                or self._serving_prefill_prepared_state is not None):
-+            raise RuntimeError("Experimental preparation requires fresh full60 C16 serial state")
++            raise RuntimeError("Experimental preparation requires fresh full60 declared-width serial state")
 +        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-+        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464}
++        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832}
 +        if pool_profile not in pool_rows:
 +            raise RuntimeError("Unsupported serial prepared alias pool profile")
 +        if pool_profile == "f311296" and (
@@ -1131,6 +1142,8 @@ index f2058ec..a79c5d8 100644
 +        keys = kwargs.get("history_keys")
 +        if bank is not None and keys is not None and (len(keys) != len(kwargs.get("prompt_lens", ())) or len(set(keys)) != len(keys)):
 +            raise ValueError("Expected distinct stable history keys, one per prefill row")
++        if bank is not None and keys is not None and len(set(bank.leases) | set(keys)) > len(bank.roots):
++            raise RuntimeError("Live plus incoming history owners exceed configured capacity")
 +        try:
 +            maximum = int(os.environ.get("GEMMA_BATCH_PREFILL_MAX_BATCH", "1"))
 +            if maximum > 1 and len(kwargs.get("prompt_lens", ())) > 1 and not kwargs.get("return_all_logits", False):
@@ -1146,7 +1159,7 @@ index f2058ec..a79c5d8 100644
          self,
          tokens,
          *,
-@@ -339,6 +562,7 @@ class Gemma4Generator:
+@@ -339,6 +582,7 @@
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1154,7 +1167,7 @@ index f2058ec..a79c5d8 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +581,24 @@ class Gemma4Generator:
+@@ -357,13 +601,255 @@
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1176,29 +1189,26 @@ index f2058ec..a79c5d8 100644
 +            # Request histories allocate persistent K/V tails even for a seen
 +            # signature. Unseen signatures can also allocate native cached state.
 +            # Both must be created before the next trace capture.
-             self._retire_traces()
-         self._tables(state, page_table)
--        outputs = []
++            self._retire_traces()
++        self._tables(state, page_table)
 +        jobs = []
-         for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
-             if not 0 < length <= state.capacity or length > tokens.shape[1]:
-                 raise ValueError("Invalid logical prompt length")
-@@ -374,30 +606,289 @@ class Gemma4Generator:
-             aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
-             chunk_length = length - aligned_start
-             histories = None
--            if history_keys is not None:
++        for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
++            if not 0 < length <= state.capacity or length > tokens.shape[1]:
++                raise ValueError("Invalid logical prompt length")
++            start = starts[row]
++            aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
++            chunk_length = length - aligned_start
++            histories = None
 +            if history_keys is not None and state.history_bank is not None:
 +                histories = self._bank_history(
 +                    state, history_keys[row], start, aligned_start, page_table, slot,
 +                    retain_prefill_history is None or retain_prefill_history[row],
 +                )
 +            elif history_keys is not None:
-                 key = history_keys[row]
-                 if start == 0:
-                     histories = [None] * len(self.model.layers)
-                 else:
--                    previous = state.prefill_history[key]
++                key = history_keys[row]
++                if start == 0:
++                    histories = [None] * len(self.model.layers)
++                else:
 +                    previous = state.prefill_history.get(key)
 +                    if previous is None:
 +                        if not state.vllm_owned or start != aligned_start:
@@ -1212,15 +1222,12 @@ index f2058ec..a79c5d8 100644
 +                                )[0],
 +                            ),
 +                        }
-                     if previous["end"] != start:
--                        raise ValueError("Prefill history does not match the scheduler continuation")
++                    if previous["end"] != start:
 +                        raise ValueError(
 +                            "Prefill history does not match the scheduler continuation: "
 +                            f"key={key}, saved_end={previous['end']}, start={start}"
 +                        )
-                     rewind = start - aligned_start
--                    histories = []
--                    for tail in previous["layers"]:
++                    rewind = start - aligned_start
 +                    # Never leave a partially consumed list under its old end
 +                    # position if a later device operation raises. Successful
 +                    # prefill publishes the completed history below.
@@ -1231,12 +1238,10 @@ index f2058ec..a79c5d8 100644
 +                    # so use normal reference release, never forced deallocation.
 +                    histories = previous["layers"]
 +                    for index, tail in enumerate(histories):
-                         if tail is None:
--                            histories.append(None)
-                             continue
-                         valid = tail[0].shape[2] - rewind
-                         if valid == 0:
--                            histories.append(None)
++                        if tail is None:
++                            continue
++                        valid = tail[0].shape[2] - rewind
++                        if valid == 0:
 +                            histories[index] = None
 +                        else:
 +                            begin = max(0, valid - 1024)
@@ -1418,26 +1423,25 @@ index f2058ec..a79c5d8 100644
 +            # Request histories allocate persistent K/V tails even for a seen
 +            # signature. Unseen signatures can also allocate native cached state.
 +            # Both must be created before the next trace capture.
-+            self._retire_traces()
-+        self._tables(state, page_table)
-+        outputs = []
-+        for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
-+            if not 0 < length <= state.capacity or length > tokens.shape[1]:
-+                raise ValueError("Invalid logical prompt length")
-+            start = starts[row]
-+            aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
-+            chunk_length = length - aligned_start
-+            histories = None
+             self._retire_traces()
+         self._tables(state, page_table)
+         outputs = []
+@@ -374,30 +860,55 @@
+             aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
+             chunk_length = length - aligned_start
+             histories = None
+-            if history_keys is not None:
 +            if history_keys is not None and state.history_bank is not None:
 +                histories = self._bank_history(
 +                    state, history_keys[row], start, aligned_start, page_table, slot,
 +                    retain_prefill_history is None or retain_prefill_history[row],
 +                )
 +            elif history_keys is not None:
-+                key = history_keys[row]
-+                if start == 0:
-+                    histories = [None] * len(self.model.layers)
-+                else:
+                 key = history_keys[row]
+                 if start == 0:
+                     histories = [None] * len(self.model.layers)
+                 else:
+-                    previous = state.prefill_history[key]
 +                    previous = state.prefill_history.get(key)
 +                    if previous is None:
 +                        if not state.vllm_owned or start != aligned_start:
@@ -1446,12 +1450,15 @@ index f2058ec..a79c5d8 100644
 +                            "end": start,
 +                            "layers": self._restore_prefill_history(state, page_table, slot, start),
 +                        }
-+                    if previous["end"] != start:
+                     if previous["end"] != start:
+-                        raise ValueError("Prefill history does not match the scheduler continuation")
 +                        raise ValueError(
 +                            "Prefill history does not match the scheduler continuation: "
 +                            f"key={key}, saved_end={previous['end']}, start={start}"
 +                        )
-+                    rewind = start - aligned_start
+                     rewind = start - aligned_start
+-                    histories = []
+-                    for tail in previous["layers"]:
 +                    # Never leave a partially consumed list under its old end
 +                    # position if a later device operation raises. Successful
 +                    # prefill publishes the completed history below.
@@ -1462,12 +1469,15 @@ index f2058ec..a79c5d8 100644
 +                    # so use normal reference release, never forced deallocation.
 +                    histories = previous["layers"]
 +                    for index, tail in enumerate(histories):
-+                        if tail is None:
+                         if tail is None:
+-                            histories.append(None)
                              continue
+                         valid = tail[0].shape[2] - rewind
+                         if valid == 0:
+-                            histories.append(None)
+-                            continue
 -                        begin = max(0, valid - 1024)
 -                        histories.append(tuple(t[:, :, begin:valid, :] for t in tail))
-+                        valid = tail[0].shape[2] - rewind
-+                        if valid == 0:
 +                            histories[index] = None
 +                        else:
 +                            begin = max(0, valid - 1024)
@@ -1482,7 +1492,7 @@ index f2058ec..a79c5d8 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +902,22 @@ class Gemma4Generator:
+@@ -411,6 +922,22 @@
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1505,7 +1515,7 @@ index f2058ec..a79c5d8 100644
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +926,23 @@ class Gemma4Generator:
+@@ -419,15 +946,23 @@
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1531,7 +1541,7 @@ index f2058ec..a79c5d8 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -466,6 +981,16 @@ class Gemma4Generator:
+@@ -466,6 +1001,16 @@
          del merged
          ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
          self.counters["sampling_replays"] += 1
@@ -1548,7 +1558,7 @@ index f2058ec..a79c5d8 100644
          return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
  
      def _sample_step(self, entry):
-@@ -484,61 +1009,110 @@ class Gemma4Generator:
+@@ -484,61 +1029,110 @@
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1695,7 +1705,7 @@ index f2058ec..a79c5d8 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1298,8 @@ class Gemma4Generator:
+@@ -724,6 +1318,8 @@
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1704,7 +1714,7 @@ index f2058ec..a79c5d8 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1309,14 @@ class Gemma4Generator:
+@@ -733,7 +1329,14 @@
          self.traces.clear()
  
      def close(self):
@@ -1719,8 +1729,6 @@ index f2058ec..a79c5d8 100644
  
  
  def build_generator(mesh_device, *, checkpoint=None, layer_indices=None, max_seq_len=2048):
-diff --git a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-index 943e226..0eacf8d 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 @@ -2,9 +2,14 @@
@@ -1738,7 +1746,7 @@ index 943e226..0eacf8d 100644
  from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
  from models.demos.gemma4_31b_qb2.tt.generator import CacheState, build_generator
  
-@@ -13,7 +18,7 @@ class Gemma4ForCausalLM:
+@@ -13,7 +18,7 @@
      _router = ttnn.FabricRouterConfig()
      _router.max_packet_payload_size_bytes = 8192
      model_capabilities = {
@@ -1747,15 +1755,21 @@ index 943e226..0eacf8d 100644
          "supports_async_decode": True,
          "supports_sample_on_device": True,
          "supports_device_penalties": False,
-@@ -24,6 +29,7 @@ class Gemma4ForCausalLM:
+@@ -24,6 +29,8 @@
              "router_config": _router,
          },
      }
++    supports_explicit_admission_limit = True
 +    supports_prefill_history_finality = True
      decode_input_update_contract = 1
      MAX_PREFILL_TOKENS = 8192
  
-@@ -38,6 +44,12 @@ class Gemma4ForCausalLM:
+@@ -34,10 +41,24 @@
+         self.generator = generator
+         self.mesh = generator.mesh
+         self.max_batch_size = max_batch_size
++        self.admitted_request_limit = max_batch_size
+         self.max_seq_len = max_seq_len
          self.entry = None
          self.cache = None
          self.prefill_slot_keys = {}
@@ -1765,10 +1779,17 @@ index 943e226..0eacf8d 100644
 +            raise ValueError("GEMMA_POOL_MEMORY_SAMPLE_INTERVAL must be in 1..65536")
 +        self._pool_memory_attempts = 0
 +        self._pool_memory_phase_attempts = {}
++
++    def configure_admission_limit(self, limit):
++        if type(limit) is not int or (self.max_batch_size, limit) != (32, 24):
++            raise ValueError("Experimental serving admission requires C32/A24")
++        if self.cache is not None or self.entry is not None or self.prefill_slot_keys:
++            raise RuntimeError("Admission must be configured before KV allocation or requests")
++        self.admitted_request_limit = limit
  
      def embed_input_ids(self, input_ids):
          raise RuntimeError("Use the TT prefill_forward/decode_forward interface")
-@@ -65,8 +77,6 @@ class Gemma4ForCausalLM:
+@@ -65,8 +86,6 @@
      def get_kv_cache_spec(cls, vllm_config):
          from vllm.v1.kv_cache_interface import FullAttentionSpec, SlidingWindowSpec
  
@@ -1777,11 +1798,18 @@ index 943e226..0eacf8d 100644
          if vllm_config.max_in_flight_tokens > 2 * cls.MAX_PREFILL_TOKENS:
              raise ValueError("Gemma4 QB2 supports at most 8192 batched tokens with async chunked prefill")
          config = vllm_config.model_config.hf_text_config
-@@ -101,38 +111,217 @@ class Gemma4ForCausalLM:
+@@ -100,39 +119,224 @@
+         # Each window can straddle nine pages. Reserve both async batches of
          # in-flight prefill tokens globally, in addition to the per-request tails.
          # The plugin separately adds one output page per request.
-         tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
+-        tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
 -        return 262144 + 5 * (tails + 2 * cls.MAX_PREFILL_TOKENS)
++        admitted = kwargs.get("admitted_request_limit", max_num_seqs)
++        if type(admitted) is not int or not 1 <= admitted <= max_num_seqs:
++            raise ValueError("Invalid shared admission for pool sizing")
++        if admitted != max_num_seqs and (max_num_seqs, admitted) != (32, 24):
++            raise ValueError("Only C32/A24 supports a reduced tail reserve")
++        tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * admitted
 +        pool_tokens = int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))
 +        if pool_tokens < 262144 or pool_tokens % Decoder.PAGE_SIZE:
 +            raise ValueError("Experimental pool must preserve context and page alignment")
@@ -1843,9 +1871,10 @@ index 943e226..0eacf8d 100644
          self.cache = CacheState(
              kv, tables, self.max_batch_size, self.max_seq_len, scratch_pages=scratch, vllm_owned=True
          )
++        self.cache.serving_admission_limit = self.admitted_request_limit
 +        after = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
 +        print("KV_POOL_MEMORY " + json.dumps({"phase":"after","banks":after.num_banks,"allocated_per_bank":after.total_bytes_allocated_per_bank,"free_per_bank":after.total_bytes_free_per_bank,"unique_pools":len(pools),"pool_full_tokens":int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))}), flush=True)
-+        self.generator.setup_history_bank(self.cache)
++        self.generator.setup_history_bank(self.cache, capacity=self.admitted_request_limit)
 +        self.generator.prepare_serving_prefill(self.cache)
          return self.cache
  
@@ -2006,7 +2035,7 @@ index 943e226..0eacf8d 100644
              if key not in translated:
                  dest = torch.zeros_like(cache.page_tables[i])
                  rows, cols = source.shape
-@@ -143,7 +332,10 @@ class Gemma4ForCausalLM:
+@@ -143,7 +347,10 @@
                      raise ValueError("Page table has fewer rows than prefill requests")
                  # Prefill rows are compact, then padded to the decode batch.
                  # Scatter only the live prefix into its assigned state slots.
@@ -2018,7 +2047,7 @@ index 943e226..0eacf8d 100644
                  translated[key] = dest
              result[i] = translated[key]
          return result
-@@ -185,32 +377,43 @@ class Gemma4ForCausalLM:
+@@ -185,32 +392,43 @@
          page_tables_per_layer=None,
          start_pos=None,
          empty_slots=None,
@@ -2082,7 +2111,7 @@ index 943e226..0eacf8d 100644
  
      def decode_forward(
          self,
-@@ -227,6 +430,7 @@ class Gemma4ForCausalLM:
+@@ -227,6 +445,7 @@
          reload_page_table=False,
          reload_sampling_params=True,
          reset_sampling_state=True,
@@ -2090,7 +2119,7 @@ index 943e226..0eacf8d 100644
          **kwargs,
      ):
          if "reset_batch" in kwargs:
-@@ -239,17 +443,20 @@ class Gemma4ForCausalLM:
+@@ -239,17 +458,20 @@
              raise ValueError("Serving must use the cache allocated by vLLM")
          sample = sampling_params is not None
          if reload_inputs:
@@ -2118,7 +2147,7 @@ index 943e226..0eacf8d 100644
              self.generator._tables(kv_cache, tables)
          if sample and (reload_sampling_params or reset_sampling_state):
              params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
-@@ -290,11 +497,11 @@ class Gemma4ForCausalLM:
+@@ -290,11 +512,11 @@
      def release_request(self, slot):
          key = self.prefill_slot_keys.pop(slot, None)
          if key is not None and self.cache is not None:
@@ -2132,9 +2161,6 @@ index 943e226..0eacf8d 100644
          self.prefill_slot_keys.clear()
          self.generator.close()
          self.entry = None
-diff --git a/models/demos/gemma4_31b_qb2/tt/history_bank.py b/models/demos/gemma4_31b_qb2/tt/history_bank.py
-new file mode 100644
-index 0000000..d34bf78
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/history_bank.py
 @@ -0,0 +1,237 @@
@@ -2375,9 +2401,6 @@ index 0000000..d34bf78
 +        self.restore = None
 +        self.rewind = 0
 +        return self
-diff --git a/models/demos/gemma4_31b_qb2/tt/kv_precision.py b/models/demos/gemma4_31b_qb2/tt/kv_precision.py
-new file mode 100644
-index 0000000..8b67633
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/kv_precision.py
 @@ -0,0 +1,17 @@
@@ -2398,11 +2421,9 @@ index 0000000..8b67633
 +    if dtype==ttnn.bfloat8_b:return 1088
 +    if dtype==ttnn.bfloat4_b:return 576
 +    raise ValueError("Unsupported KV cache dtype")
-diff --git a/models/demos/gemma4_31b_qb2/tt/model.py b/models/demos/gemma4_31b_qb2/tt/model.py
-index 5bd8795..1ade965 100644
 --- a/models/demos/gemma4_31b_qb2/tt/model.py
 +++ b/models/demos/gemma4_31b_qb2/tt/model.py
-@@ -115,6 +115,10 @@ class Gemma4Model:
+@@ -115,6 +115,10 @@
          # All owners and their native views exist before cache allocation/tracing.
          for layer in self.layers:
              layer._prepare_prefill_norm_stats()
@@ -2413,7 +2434,7 @@ index 5bd8795..1ade965 100644
          logger.info("Gemma4 model loaded")
  
      def tensor(self, x, *, dim=None, dtype=None, layout=ttnn.TILE_LAYOUT):
-@@ -194,7 +198,8 @@ class Gemma4Model:
+@@ -194,7 +198,8 @@
          return logits
  
      def prefill_device(
@@ -2423,7 +2444,7 @@ index 5bd8795..1ade965 100644
      ):
          if len(kv_cache) != len(self.layers):
              raise ValueError("Expected one cache pair per loaded layer")
-@@ -210,6 +215,9 @@ class Gemma4Model:
+@@ -210,6 +215,9 @@
                  start_pos=start_pos,
                  history=histories[i] if histories is not None else None,
                  return_history=histories is not None,
@@ -2433,7 +2454,7 @@ index 5bd8795..1ade965 100644
              )
              if histories is not None:
                  x, histories[i] = x
-@@ -217,11 +225,95 @@ class Gemma4Model:
+@@ -217,10 +225,94 @@
              # An unaligned slice begin untilizes its entire input. Copy
              # the aligned final tile first, then select its logical row.
              tile_start = (sequence_length - 1) // 32 * 32
@@ -2443,7 +2464,7 @@ index 5bd8795..1ade965 100644
              last_row = sequence_length - 1 - tile_start
              x = x[:, :, last_row : last_row + 1, :]
          return self.terminal(x)
- 
++
 +    def prefill_batched_device(
 +        self,
 +        tokens,
@@ -2526,13 +2547,9 @@ index 5bd8795..1ade965 100644
 +                    if self.runtime_final_tile is not None else x[:, :, tile_start : tile_start + 32, :])
 +            last.append(tile[:, :, index - tile_start : index - tile_start + 1, :])
 +        return self.terminal(ttnn.concat(last, dim=2))
-+
+ 
      def decode_device(self, tokens, positions, *, page_tables, kv_cache, batch, rope_positions=None):
          if len(kv_cache) != len(self.layers):
-             raise ValueError("Expected one cache pair per loaded layer")
-diff --git a/models/demos/gemma4_31b_qb2/tt/prefill_batch.py b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
-new file mode 100644
-index 0000000..a435f1f
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/prefill_batch.py
 @@ -0,0 +1,71 @@
@@ -2607,9 +2624,6 @@ index 0000000..a435f1f
 +        self._pending.discard(index)
 +        if not self._pending:
 +            self._restore = None
-diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py b/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py
-new file mode 100644
-index 0000000..694ab5c
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_final_tile.py
 @@ -0,0 +1,62 @@
@@ -2675,9 +2689,6 @@ index 0000000..694ab5c
 +        self._refresh(self.ends, (1, 1, tile_start + 32, logical[-1]))
 +        return ttnn.slice(hidden, self.starts, self.ends, slice_dim=2,
 +                          num_devices=padded[2] // 32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
-diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
-new file mode 100644
-index 0000000..fdb7bcf
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
 @@ -0,0 +1,53 @@
@@ -2734,9 +2745,6 @@ index 0000000..fdb7bcf
 +        self._refresh(self.ends, (page + 1, 4, 128, 256))
 +        return ttnn.slice(cache, self.starts, self.ends, slice_dim=0,
 +                          num_devices=shape[0], memory_config=ttnn.DRAM_MEMORY_CONFIG)
-diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_position.py b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
-new file mode 100644
-index 0000000..8192ce7
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
 @@ -0,0 +1,85 @@
@@ -2825,8 +2833,6 @@ index 0000000..8192ce7
 +            query, keys, values, page_table, chunk_start_idx_tensor=self.start,
 +            scale=1.0, program_config=program_config, compute_kernel_config=layer.pref_compute,
 +        )
-diff --git a/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py b/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
-index 5e7b119..0800f46 100644
 --- a/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
 +++ b/models/demos/gemma4_31b_qb2/tt/sdpa_l1.py
 @@ -3,7 +3,7 @@
@@ -2838,7 +2844,7 @@ index 5e7b119..0800f46 100644
  The model's logical context and outer prefill chunks are independent of this
  per-core compute-Q admission check. See doc/datatype_sweep/autofix_canonical.
  """
-@@ -13,7 +13,7 @@ BLACKHOLE_CB_BASE = 111616
+@@ -13,7 +13,7 @@
  
  
  def full_sdpa_fp32_l1_end(
@@ -2847,7 +2853,7 @@ index 5e7b119..0800f46 100644
  ):
      assert rows % q_chunk == q_chunk % 32 == k_chunk % 32 == head_dim % 32 == 0
      chunks = rows // q_chunk
-@@ -23,12 +23,16 @@ def full_sdpa_fp32_l1_end(
+@@ -23,12 +23,16 @@
      q_buffers = 2 if max_chunks_per_core > 1 else 1
      a, b, d = q_chunk // 32, k_chunk // 32, head_dim // 32
      scalar_tile_bytes = 4096 if q_tile_bytes == 4096 else 2048
@@ -2865,9 +2871,6 @@ index 5e7b119..0800f46 100644
          + a * b * 4096  # FP32 QK
          + 2 * a * d * 2048  # BF16 output intermediates
          + 3 * a * 2048  # maxima and exp difference
-diff --git a/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
-new file mode 100644
-index 0000000..a966c53
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
 @@ -0,0 +1,88 @@
@@ -2959,9 +2962,6 @@ index 0000000..a966c53
 +        del result
 +    memory('representative_compute_complete')
 +    assert not bank.leases and not state.prefill_history and not generator.traces
-diff --git a/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py
-new file mode 100644
-index 0000000..27c3c67
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_staging_preparation.py
 @@ -0,0 +1,76 @@
@@ -3041,9 +3041,6 @@ index 0000000..27c3c67
 +                largest_free_per_bank=mem.largest_contiguous_bytes_free_per_bank)
 +            rows.append(item);record(item)
 +    return rows
-diff --git a/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py
-new file mode 100644
-index 0000000..a06ca73
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py
 @@ -0,0 +1,50 @@

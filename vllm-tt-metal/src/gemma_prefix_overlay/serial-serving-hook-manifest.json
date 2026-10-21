@@ -1,11 +1,15 @@
 {
-  "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": null,
-  "patch_sha256": "d12a4343d6ed9f5560b05ee9b002d865d69d4bc74aa957e08ce57635298ad563",
+  "base_commit": "pinned original image source",
+  "target_commit": "experimental-c32-a24-v1",
+  "patch_sha256": "aa1202889084680c04dc40fa8e1f0cc897c0ce23e0f9746fde32d5df78df3465",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
       "target": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159"
+    },
+    "models/demos/gemma4_31b_qb2/tt/alias-manifest.json": {
+      "base": null,
+      "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
@@ -13,15 +17,19 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "cf607632e3bd85f908ddce7c087d35d82e4e59ceef6b8b94685941e0ec70a670"
+      "target": "47e1b7f4428e0330ae2f050a26caeb541666da42dedba2c445d3f0dcea97c6c1"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
-      "target": "832a2ae8909c7860a049a07e554b6fb3791316334cf8952006ca82d48830894c"
+      "target": "1e0e48bba896c5332b13ee50c8d3b950f4314035a6449e151da66f8511a9f68a"
     },
     "models/demos/gemma4_31b_qb2/tt/history_bank.py": {
       "base": null,
       "target": "87767c5e02811e25ec069d30940241a512ca5022d5a34576e1f4e104cdbe44d9"
+    },
+    "models/demos/gemma4_31b_qb2/tt/kv_precision.py": {
+      "base": null,
+      "target": "a2b1fa5d3566d2be6f10cbb0f803f4e4eb8096b955dce8b4fe698bc753150c72"
     },
     "models/demos/gemma4_31b_qb2/tt/model.py": {
       "base": "f7a4035f61b5e9744d474214879fc50604d3d1e1e50ac3240ac1dfbf7f199797",
@@ -58,18 +66,7 @@
     "models/demos/gemma4_31b_qb2/tt/serial_terminal_preparation.py": {
       "base": null,
       "target": "639590e24385ab0d8595493fc4605a87121bbb2c3f594d34513ad99af8ed4e03"
-    },
-    "models/demos/gemma4_31b_qb2/tt/alias-manifest.json": {
-      "base": null,
-      "target": "368be0705d7233f05ef011aa00c5fb74c0931e3ae48b589657adae465123fad1"
-    },
-    "models/demos/gemma4_31b_qb2/tt/kv_precision.py": {
-      "base": null,
-      "target": "a2b1fa5d3566d2be6f10cbb0f803f4e4eb8096b955dce8b4fe698bc753150c72"
     }
   },
-  "scope": "Joint BF8QKV+down andexplicitF3934464profile; preserved accepted observer64adapter; runtimeoperationtriplet separatelypinned",
-  "base_model_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
-  "target_content_manifest_sha256": "66487a96a07343e032004cda40e6f01a5106e90045b800b4a848eaa05855a8df",
-  "native_acceptance_sha256": "04271b98980953ee6ba480c28381b710450412fbd2ff41b5bb9a453c4260c82a"
+  "scope": "PhysicalC32 shared admission24/history24/tail24; original algorithms/observers retained; unaccepted candidate"
 }

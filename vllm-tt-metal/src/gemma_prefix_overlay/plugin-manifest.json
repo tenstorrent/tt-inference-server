@@ -1,13 +1,24 @@
 {
-  "base_commit": "c62035d8f16eb591b258a7d5f2b329495829a74c",
-  "target_commit": "validated-final-history-observed-runner-and-reviewed-eligible-clock",
-  "patch_sha256": "e84a379939e6db680bfcbb0f5d3da6fa7dd0a0e4a6301354ee37df84250add6a",
+  "base_commit": "pinned original image source",
+  "target_commit": "experimental-c32-a24-v1",
+  "patch_sha256": "1156139ace69eafc2fea5a10adb36b4c62589c414a1fb60e7966f5422f271990",
   "files": {
+    "src/vllm_tt_plugin/config.py": {
+      "base": "5108a8dd4e532d3f289f5a8a3e3f06e29b52f0e8ab266e2e6bd02368e2c67e9b",
+      "target": "571b036abac9e06a9f816ac700f5190aba93d361e4cf0c54ce3c2d5bb38ca91b"
+    },
     "src/vllm_tt_plugin/model_runner.py": {
       "base": "4c369a1180ece55ab0e07912f1e9155eace23a2104b35bbd00f3adfc520a20c8",
-      "target": "faa5b518490cf02cd0b3a4c4bdd170d9d9dd17d558f3cc2b0f7796f7b11ca16a"
+      "target": "a6361da1a1493016f972bef7551030e7d8c6d3ba9a6bb0159007ccbf018f9c1e"
+    },
+    "src/vllm_tt_plugin/scheduler.py": {
+      "base": "42c7b4f5f6a80fb411dc2cd4a979a350e4b11ab83f61c5e81ff07c858feda34a",
+      "target": "638f1ae2b5b0b9cda34d87665c948bafa526ecebaaa5027f3989a62150704ca5"
+    },
+    "src/vllm_tt_plugin/worker.py": {
+      "base": "528e40aba4ddf9bb173bd225509619d71d56865c4a5c8700035ac1410e19395a",
+      "target": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341"
     }
   },
-  "evidence_source": "/home/mvasiljev/build/gemma-batched-prefill",
-  "scope": "Validated stable slots, final-prefill history lease release and entry observations only; original scheduler unchanged. No formation."
+  "scope": "PhysicalC32 shared admission24/history24/tail24; original algorithms/observers retained; unaccepted candidate"
 }

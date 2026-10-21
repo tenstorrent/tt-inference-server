@@ -1,4 +1,26 @@
-diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runner.py
+--- a/src/vllm_tt_plugin/config.py
++++ b/src/vllm_tt_plugin/config.py
+@@ -357,6 +357,20 @@
+     the TT model should always size itself to the visible engine-local batch.
+     """
+     return int(vllm_config.scheduler_config.max_num_seqs)
++
++
++def get_tt_admitted_request_limit(vllm_config: "VllmConfig") -> int:
++    """Explicit Gemma experimental admission; physical wire/model width stays C."""
++    physical = get_tt_max_batch_size(vllm_config)
++    additional = getattr(vllm_config, "additional_config", None) or {}
++    value = additional.get("gemma_admitted_request_limit")
++    if value is None:
++        return physical
++    if type(value) is not int or not 1 <= value <= physical:
++        raise ValueError("Gemma admission must be an integer in 1..physical width")
++    if physical != 32 or value != 24 or vllm_config.parallel_config.data_parallel_size != 1 or get_tt_data_parallel_size(vllm_config) != 1 or uses_tt_lane_coordinator(vllm_config):
++        raise ValueError("Experimental Gemma admission supports only C32/A24, DP1, no lanes")
++    return value
+ 
+ 
+ def get_tt_per_lane_max_num_seqs(vllm_config: "VllmConfig") -> int:
 --- a/src/vllm_tt_plugin/model_runner.py
 +++ b/src/vllm_tt_plugin/model_runner.py
 @@ -3,6 +3,7 @@
@@ -9,7 +31,50 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
  import threading
  import time
  from collections import deque
-@@ -1189,11 +1190,14 @@
+@@ -41,6 +42,7 @@
+     TTDecodeSubmission,
+ )
+ from vllm_tt_plugin.config import (
++    get_tt_admitted_request_limit,
+     get_tt_data_parallel_size,
+     get_tt_max_batch_size,
+     get_tt_output_tokens_per_step,
+@@ -376,6 +378,7 @@
+         self.async_decode = TTAsyncDecodeController(self)
+         self.tt_data_parallel_size = get_tt_data_parallel_size(vllm_config)
+         self.tt_max_batch_size = get_tt_max_batch_size(vllm_config)
++        self.tt_admitted_request_limit = get_tt_admitted_request_limit(vllm_config)
+         self.tt_per_lane_max_num_seqs = get_tt_per_lane_max_num_seqs(vllm_config)
+ 
+         # req_id -> device slot holding its per-slot state (GDN recurrent/conv, seed
+@@ -487,6 +490,12 @@
+         self.model = loader.load_model(
+             vllm_config=self.vllm_config, model_config=self.model_config
+         )
++        if self.tt_admitted_request_limit != self.tt_max_batch_size:
++            configure = getattr(self.model, "configure_admission_limit", None)
++            if not callable(configure):
++                raise RuntimeError("Explicit admission requires a supporting model")
++            configure(self.tt_admitted_request_limit)
++            logger.info("GEMMA_ADMISSION_CONFIG physical=%d admitted=%d model_hook=true", self.tt_max_batch_size, self.tt_admitted_request_limit)
+         if self.supports_device_grammar:
+             activate = getattr(self.model, "enable_device_grammar", None)
+             if callable(activate):
+@@ -973,6 +982,13 @@
+         # Only after the model released by slot: the release calls above read
+         # the request's slot from the ownership map before it is dropped.
+         self._release_dead_state_slots(scheduler_output)
++        if self.tt_admitted_request_limit != self.tt_max_batch_size:
++            owners = set(self._req_state_slot) | set(scheduler_output.num_scheduled_tokens)
++            if len(owners) > getattr(self, "_gemma_admission_highwater", 0):
++                self._gemma_admission_highwater = len(owners)
++                logger.info("GEMMA_ADMISSION_HIGHWATER owners=%d admitted=%d physical=%d", len(owners), self.tt_admitted_request_limit, self.tt_max_batch_size)
++            if len(owners) > self.tt_admitted_request_limit:
++                raise RuntimeError("Gemma live plus scheduled request ownership exceeds admission")
+ 
+         # Remove the unscheduled requests from the persistent batch.
+         # NOTE(woosuk): The unscheduled requests are either preempted requests
+@@ -1189,11 +1205,14 @@
              self._req_state_slot.pop(req_id, None)
  
      def _alloc_prefill_state_slots(self, row_req_ids: list[str]) -> list[int]:
@@ -29,7 +94,7 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
          against ``max_num_seqs``, which is ``n_slots``. Getting here means the map has
          stopped describing the device, and nothing on the host can recover it, so fail
          rather than guess and return plausible, wrong text.
-@@ -1205,13 +1209,19 @@
+@@ -1205,13 +1224,19 @@
                  "slots; admission is the scheduler's job, not this function's"
              )
          prefilling = set(row_req_ids)
@@ -52,7 +117,7 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
              if row not in held:
                  slot = row
              else:
-@@ -3318,6 +3328,11 @@
+@@ -3318,6 +3343,11 @@
          if model_input.block_tables_per_layer is not None:
              kwargs["page_tables_per_layer"] = model_input.block_tables_per_layer
          kwargs.update(model_input.multi_modal_kwargs)
@@ -64,7 +129,7 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
          if model_input.perform_device_sampling:
              sampling_params = model_input.tt_sampling_params
              sampling_param_dict = {
-@@ -3354,7 +3369,25 @@
+@@ -3354,7 +3384,25 @@
                  self.requests[req_id].mrope_position_delta = rope_deltas[i].item()
              self.async_decode.note_prefill_submitted()
              return tt_out
@@ -90,3 +155,47 @@ diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runne
          self.async_decode.note_prefill_submitted()
          return tt_out
  
+--- a/src/vllm_tt_plugin/scheduler.py
++++ b/src/vllm_tt_plugin/scheduler.py
+@@ -15,6 +15,7 @@
+ from vllm.v1.request import Request, RequestStatus
+ 
+ from vllm_tt_plugin.config import (
++    get_tt_admitted_request_limit,
+     get_tt_adaptive_block_max_prompt_tokens,
+     get_tt_block_kv_extent_tokens,
+     get_tt_decode_interleave_config,
+@@ -297,6 +298,8 @@
+ 
+     def __init__(self, *args, **kwargs):
+         super().__init__(*args, **kwargs)
++        self.max_num_running_reqs = min(self.max_num_running_reqs, get_tt_admitted_request_limit(self.vllm_config))
++        logger.info("GEMMA_SCHEDULER_ADMISSION max_running=%d physical=%d", self.max_num_running_reqs, self.scheduler_config.max_num_seqs)
+         self._forced_mode = TTSchedulingMode.DEFAULT
+         # Read only in DEFAULT mode. A lane coordinator sets a forced mode
+         # before every one of its lanes' schedule() calls and owns the one
+--- a/src/vllm_tt_plugin/worker.py
++++ b/src/vllm_tt_plugin/worker.py
+@@ -33,6 +33,7 @@
+ from vllm.v1.worker.worker_base import CompilationTimes, WorkerBase
+ 
+ from vllm_tt_plugin.config import (
++    get_tt_admitted_request_limit,
+     get_tt_config,
+     get_tt_data_parallel_size,
+     get_tt_output_tokens_per_step,
+@@ -593,7 +594,14 @@
+         # engine) or single-process lane mode. This matches the padding term
+         # below, which also uses ``get_tt_per_lane_max_num_seqs``, and keeps the
+         # KV shape identical across both modes.
++        admission_kwargs = {}
++        admitted = get_tt_admitted_request_limit(vllm_config)
++        if admitted != get_tt_per_lane_max_num_seqs(vllm_config):
++            if not getattr(model_class, "supports_explicit_admission_limit", False):
++                raise RuntimeError("Reduced admission pool requires supporting Gemma model")
++            admission_kwargs["admitted_request_limit"] = admitted
+         max_tokens_all_users = model_class.get_max_tokens_all_users(
++            **admission_kwargs,
+             model_name=model_config.model,
+             num_devices=num_devices,
+             tt_data_parallel=tt_data_parallel,

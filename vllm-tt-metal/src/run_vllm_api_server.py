@@ -1368,6 +1368,10 @@ def main():
         from gemma_install_prefix_overlay import install_anchor_overlay
         install_anchor_overlay(Path(sysconfig.get_paths()["purelib"]) / "vllm")
 
+    if model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_"):
+        from gemma_install_prefix_overlay import install_prefix_overlay
+        install_prefix_overlay(Path("/home/container_app_user/tt-metal"))
+
     # Step 3: Register TT models (after lookup, with correct impl_id)
     impl_id = model_spec.get("impl", {}).get("impl_id")
     if impl_id != QUETZAL_IMPL_ID:
@@ -1384,10 +1388,6 @@ def main():
     inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
     configure_quetzal_provider(model_spec)
-
-    if model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_"):
-        from gemma_install_prefix_overlay import install_prefix_overlay
-        install_prefix_overlay(Path("/home/container_app_user/tt-metal"))
 
     # This proof branch records one completed-request timing line in the
     # existing Docker server log. Register a tiny vLLM stat-logger plugin in

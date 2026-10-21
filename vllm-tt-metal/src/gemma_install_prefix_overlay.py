@@ -47,6 +47,16 @@ def _install(repo, manifest_name, patch_name, marker):
 
 
 def install_prefix_overlay(metal):
+    import sys, sysconfig
+    upstream = Path(sysconfig.get_paths()["purelib"]) / "vllm/v1/core/sched/scheduler.py"
+    actual_upstream = hashlib.sha256(upstream.read_bytes()).hexdigest()
+    if actual_upstream != 'abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983':
+        raise RuntimeError("Unaudited upstream scheduler source: " + actual_upstream)
+    logging.getLogger(__name__).info("GEMMA_ADMISSION_UPSTREAM_SHA256 %s", actual_upstream)
+    forbidden = ["vllm_tt_plugin." + n for n in ("config", "scheduler", "model_runner", "worker")]
+    loaded = [n for n in forbidden if n in sys.modules]
+    if loaded:
+        raise RuntimeError("C32 admission installation must precede plugin imports: " + repr(loaded))
     _install(metal, "serial-serving-hook-manifest.json", "serial-serving-hook.patch", "GEMMA_SERIAL_SERVING_HOOK_MODEL")
     _install(
         metal.parent / "vllm-tt-plugin",
