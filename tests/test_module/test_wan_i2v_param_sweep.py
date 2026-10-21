@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from test_module._test_common import TestConfig as _TestConfig
+from test_module._test_common.large_images import near_limit_image
 from test_module.load_param_tests import video_generation_i2v_param_test as sweep
 from tests.test_module.video_clips import moving_frames, write_clip
 
@@ -26,12 +27,14 @@ test_utils = pytest.importorskip("aiohttp.test_utils")
 IMAGE_BYTES = sweep.FIXTURE_IMAGE_PATH.read_bytes()
 
 
-def _clip(path, *, offset=0, image_at=0, size=(64, 48), frames=24):
+def _clip(path, *, offset=0, image_at=0, size=(64, 48), frames=24, image_bytes=None):
     """A moving clip whose frame ``image_at`` is the conditioning image."""
     width, height = size
     clip = moving_frames(frames, width, height)
     clip = [np.roll(frame, offset * 8, axis=1) for frame in clip]
-    image = Image.open(io.BytesIO(IMAGE_BYTES)).convert("RGB").resize(size)
+    image = (
+        Image.open(io.BytesIO(image_bytes or IMAGE_BYTES)).convert("RGB").resize(size)
+    )
     clip[image_at] = np.asarray(image)
     return str(write_clip(path, clip))
 
@@ -169,7 +172,8 @@ class _SweepServer:
 
 def _run_sweep(pick, output_path=None) -> dict:
     async def body():
-        app = web.Application()
+        # The large-image variant posts ~9.4M characters; aiohttp's default is 1 MiB.
+        app = web.Application(client_max_size=64 * 1024 * 1024)
         app.add_routes(_SweepServer(pick).routes())
         async with test_utils.TestServer(app) as server:
             ctx = SimpleNamespace(
@@ -203,11 +207,14 @@ def wan_clips(tmp_path_factory):
         "c": make("c", offset=5),
         "d": make("d", offset=7),
         "image_at_4": make("e", offset=9, image_at=4),
+        "large": make("f", offset=11, image_bytes=near_limit_image()),
     }
 
 
 def test_sweep_passes_when_every_parameter_changes_the_clip(wan_clips, tmp_path):
     def pick(body):
+        if len(body["image_prompts"][0]["image"]) > 1_000_000:
+            return wan_clips["large"]
         if body["image_prompts"][0]["frame_pos"] == 4:
             return wan_clips["image_at_4"]
         if body["seed"] == 123:
@@ -224,7 +231,10 @@ def test_sweep_passes_when_every_parameter_changes_the_clip(wan_clips, tmp_path)
     saved_dir = tmp_path / "videos/failed/spec_tests/param_sweep"
     saved = {p.name for p in saved_dir.iterdir()} if saved_dir.exists() else set()
     assert saved <= {"default.mp4", "no_negative_prompt.mp4"}
-    assert set(result["jobs"]) == set(sweep.build_variants("x", 20))
+    assert set(result["jobs"]) == set(sweep.build_variants("x", 20, "large"))
+    checks = {c["check"]: c for c in result["checks"]}
+    assert checks["large_image_completed"]["passed"]
+    assert checks["large_image_starts_from_its_image"]["passed"]
 
 
 def test_sweep_fails_when_the_server_ignores_the_parameters(wan_clips, tmp_path):

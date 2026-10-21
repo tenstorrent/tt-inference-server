@@ -18,6 +18,10 @@ from types import SimpleNamespace
 import pytest
 
 from test_module._test_common import TestConfig as _TestConfig
+from test_module._test_common.large_images import (
+    MAX_BASE64_IMAGE_LEN,
+    MAX_UPLOAD_BYTES,
+)
 from test_module.load_param_tests import wan_i2v_create_contract_test as contract
 from test_module.load_param_tests.video_generation_i2v_test import (
     VideoGenerationI2VTest,
@@ -52,6 +56,28 @@ def test_contract_bounds_match_the_server():
     assert contract.MAX_VIDEO_INFERENCE_STEPS == server["MAX_VIDEO_INFERENCE_STEPS"]
 
 
+def test_image_size_limits_match_the_server():
+    request = _module_constants(MEDIA_SERVER / "domain/video_i2v_generate_request.py")
+    assert MAX_BASE64_IMAGE_LEN == request["MAX_BASE64_IMAGE_LEN"]
+    api = (MEDIA_SERVER / "open_ai_api/video.py").read_text()
+    upload = re.search(r"^_MAX_UPLOAD_BYTES = (.+)$", api, re.MULTILINE).group(1)
+    assert MAX_UPLOAD_BYTES == eval(
+        upload, {"__builtins__": {}}
+    )  # e.g. 10 * 1024 * 1024
+
+
+def test_reported_responses_are_capped():
+    # The over-limit case's 422 echoes a ~17M-character image.
+    result = _run_contract()
+    [over] = [
+        r
+        for r in result["detailed_test_results"]
+        if r["check"] == "image_over_base64_limit"
+    ]
+    assert over["passed"]
+    assert len(str(over["response"])) < contract.MAX_REPORTED_RESPONSE_CHARS + 100
+
+
 def test_default_api_key_matches_the_server():
     checker = (MEDIA_SERVER / "security/api_key_checker.py").read_text()
     default = re.search(r'os\.getenv\("API_KEY", "([^"]+)"\)', checker).group(1)
@@ -71,7 +97,8 @@ def test_case_names_are_unique():
 
 async def _with_server(routes, body):
     """Run ``body(base_url)`` against an aiohttp app serving ``routes``."""
-    app = web.Application()
+    # The real server has no body limit; the over-limit image case sends ~17 MB.
+    app = web.Application(client_max_size=64 * 1024 * 1024)
     app.add_routes(routes)
     async with test_utils.TestServer(app) as server:
         return await body(str(server.make_url("")).rstrip("/"))
@@ -95,7 +122,18 @@ def _contract_routes(*, accept_everything: bool = False, refuse_t2v: bool = True
         body = await request.json()
         if accept_everything or body == contract.valid_payload():
             return web.json_response({"id": str(uuid.uuid4())}, status=202)
-        return web.json_response({"detail": [{"msg": "invalid"}]}, status=422)
+        # Like FastAPI, a 422 echoes the input that failed.
+        return web.json_response(
+            {"detail": [{"msg": "invalid", "input": body}]}, status=422
+        )
+
+    async def upload(request):
+        if (error := _auth_error(request)) is not None:
+            return error
+        form = await request.post()
+        if len(form["image"].file.read()) > MAX_UPLOAD_BYTES:
+            return web.json_response({"detail": "Image exceeds cap"}, status=413)
+        return web.json_response({"id": str(uuid.uuid4())}, status=202)
 
     async def t2v(request):
         if refuse_t2v:
@@ -107,6 +145,7 @@ def _contract_routes(*, accept_everything: bool = False, refuse_t2v: bool = True
     return [
         web.post(contract.I2V_CREATE_PATH, i2v),
         web.post(contract.T2V_CREATE_PATH, t2v),
+        web.post(contract.I2V_UPLOAD_PATH, upload),
     ]
 
 
