@@ -1210,6 +1210,62 @@ def test_pinned_download_and_model_path_env_are_implementation_independent(
     assert module.snapshot_download.call_args.kwargs["revision"] == "a" * 40
 
 
+def test_tt_cache_env_points_at_tt_cache_path(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.setenv("CUSTOM_TT_CACHE", "/stale")
+    spec = _weights_spec()
+    spec.update(metadata={"tt_cache_env": "CUSTOM_TT_CACHE"})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    module.model_setup(spec)
+    assert os.environ["CUSTOM_TT_CACHE"] == str(tmp_path / "tt-cache")
+
+
+def test_tt_cache_env_rejects_non_env_var_names(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    spec = _weights_spec()
+    spec.update(metadata={"tt_cache_env": "not-an-env-var"})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    with pytest.raises(ValueError, match="tt_cache_env"):
+        module.model_setup(spec)
+
+
+def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash"
+    )
+    (spec,) = template.expand_to_specs()
+    vllm_args = spec.device_model_spec.vllm_args
+    assert spec.device_type.name == "BLACKHOLE_GALAXY"
+    assert vllm_args["data_parallel_size"] == 4
+    assert vllm_args["max_num_seqs"] == 4
+    assert vllm_args["max_num_batched_tokens"] == 2048
+    assert spec.device_model_spec.env_vars["MESH_DEVICE"] == "(4, 8)"
+    tt_config = json.loads(vllm_args["additional_config"])["tt"]
+    assert tt_config["trace_region_size"] == 1000000000
+    assert tt_config["sample_on_device_mode"] == "decode_only"
+    assert tt_config["prefill_gather_ms"] == 200
+    assert spec.metadata["model_path_env"] == "MIMO_MODEL_PATH"
+    assert spec.metadata["tt_cache_env"] == "MIMO_TT_CACHE"
+
+
 def _llama_qb2_spec():
     template = next(
         t

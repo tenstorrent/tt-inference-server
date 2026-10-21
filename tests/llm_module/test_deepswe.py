@@ -8,6 +8,17 @@ from unittest.mock import patch
 from llm_module.agentic import deepswe, local_datasets
 from llm_module.agentic.deepswe import DEEPSWE_COMMIT, DEEPSWE_DATASET
 from llm_module.agentic.local_datasets import prepare_local_dataset
+from reference_config.evals.eval_config import (
+    ALL_EVAL_CONFIGS,
+    DEEPSWE_TEST_WORKER_ENV,
+)
+
+
+def _harbor_configs():
+    for eval_config in ALL_EVAL_CONFIGS.values():
+        for task in eval_config.tasks:
+            if task.agentic_eval_config is not None:
+                yield task.agentic_eval_config
 
 
 def _fake_git(calls):
@@ -45,3 +56,20 @@ def test_checks_out_the_pinned_commit_once_then_reuses_it(tmp_path):
     assert ["--quiet", DEEPSWE_COMMIT] == calls[1][-2:]
     assert len(calls) == n_calls
     assert not list(first.parent.parent.glob("*.tmp-*"))
+
+
+def test_deepswe_caps_test_workers_for_agent_and_verifier():
+    deepswe_configs = [c for c in _harbor_configs() if c.dataset == DEEPSWE_DATASET]
+
+    assert deepswe_configs
+    for config in deepswe_configs:
+        assert config.environment_env.items() >= DEEPSWE_TEST_WORKER_ENV.items()
+        assert config.verifier_env.items() >= DEEPSWE_TEST_WORKER_ENV.items()
+
+
+def test_test_worker_cap_is_deepswe_only():
+    for config in _harbor_configs():
+        if config.dataset == DEEPSWE_DATASET:
+            continue
+        env = {**config.environment_env, **config.verifier_env}
+        assert not env.keys() & DEEPSWE_TEST_WORKER_ENV.keys(), config.dataset

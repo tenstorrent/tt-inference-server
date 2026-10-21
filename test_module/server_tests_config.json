@@ -67,6 +67,7 @@
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
       "zai-org/GLM-5.3",
+      "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
       "deepcogito/cogito-v1-preview-llama-3B",
       "arcee-ai/Arcee-Spark",
       "Qwen/Qwen2.5-7B-Instruct",
@@ -638,6 +639,16 @@
       "category": "LLM",
       "compatible_devices": [
         "super_cluster"
+      ]
+    },
+    "mimo_v2_6_flash": {
+      "id_name": "mimo-v2.6-flash",
+      "weights": [
+        "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "blackhole_galaxy"
       ]
     },
     "Qwen/Qwen3.8-27B": {
