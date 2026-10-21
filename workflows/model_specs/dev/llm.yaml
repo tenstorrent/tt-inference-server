@@ -7287,3 +7287,71 @@ templates:
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
+
+# Qwen3.8-27B on tt-lab's own engine (impl tt_lab_qwen27b): one `tt-lab serve` process, its own
+# OpenAI-compatible server, no vLLM. Same shape as the GLM row above: tt-lab is a prebuilt binary
+# that ships with its own loader and C/C++ libraries, so the stock image runs it, and
+# docker_entrypoint replaces the image's entrypoint with vllm-tt-metal/src/run_qwen_tt.py, which maps
+# DEVICE, the weights and the bearer key (VLLM_API_KEY, else API_KEY, else the JWT of JWT_SECRET)
+# onto serve on port 8000; the key reaches serve in TT_LAB_API_KEY, not argv. hf_weights_repo holds
+# the prequantized TTQ, a vocabulary-only GGUF (serve reads only the tokenizer and chat template
+# from it) and the tt-lab package folder (bin/, runtime/, licenses, SHA256SUMS).
+# 8 users at once, each with the full 131072-position context, on one group of eight chips.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: tt_lab_qwen27b
+  inference_engine: MEDIA
+  model_type: LLM
+  supported_modalities:
+    - text
+  hf_weights_repo: tenstorrent/Qwen3.8-27B-TTQ  # TODO-confirm: the repo the weights are published to
+  min_disk_gb: 25  # TODO: measure (18.4 GB TTQ, 11 MB vocabulary GGUF, the package)
+  min_ram_gb: 64  # TODO: measure
+  uses_tensor_model_cache: false
+  has_builtin_warmup: true
+  system_requirements:
+    firmware:
+      specifier: ">=19.8.1"  # TODO: copied from the GLM row; confirm for Qwen
+      mode: STRICT
+    kmd:
+      specifier: ">=2.8.0"  # TODO: copied from the GLM row; confirm for Qwen
+      mode: STRICT
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 8
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      docker_stop_timeout: 20  # TODO: measure serve's exit time
+      docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_qwen_tt.py
+    - device: BLACKHOLE_GALAXY
+      # One 8-chip group of the Galaxy; the other 24 chips stay idle.
+      max_concurrency: 8
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      docker_stop_timeout: 30  # TODO: measure on a Galaxy
+      docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_qwen_tt.py
+  env_vars:
+    # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container). The repo
+    # keeps each tt-lab build in its own folder, so a cached download fetches a new one.
+    QWEN_TT_PACKAGE: tt-lab-73b043c0  # TODO: the package built for the release
+    QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
+    QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+      # The repo has no safetensors: complete when these are present (see setup_host).
+      checkpoint_files:
+        - Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
+        - Qwen3.8-27B-vocab.gguf
+        - tt-lab-73b043c0/SHA256SUMS
+        - tt-lab-73b043c0/bin/tt-lab
+        - tt-lab-73b043c0/runtime/ld-linux-x86-64.so.2
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af

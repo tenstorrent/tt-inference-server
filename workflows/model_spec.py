@@ -471,6 +471,15 @@ tt_lab_glm_impl = ImplSpec(
     code_path="src/glm.cpp",
 )
 
+# tt-lab's standalone Qwen3.8-27B engine (not TT-NN): the `tt-lab serve` binary, its own OpenAI
+# server, run from the stock image by vllm-tt-metal/src/run_qwen_tt.py.
+tt_lab_qwen27b_impl = ImplSpec(
+    impl_id="tt_lab_qwen27b",
+    impl_name="tt-lab-qwen27b",
+    repo_url="https://github.com/tenstorrent/tt-lab",
+    code_path="src/serve.cpp",
+)
+
 # IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
 # models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
 # the tt-model-bringup pipeline.
@@ -508,6 +517,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
     "tt_lab_glm": tt_lab_glm_impl,
+    "tt_lab_qwen27b": tt_lab_qwen27b_impl,
 }
 
 

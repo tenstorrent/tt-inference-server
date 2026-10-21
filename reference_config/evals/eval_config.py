@@ -11205,6 +11205,41 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # AIME 2025 (30 problems). Published reference: Artificial Analysis. The harness has no tasks for
+            # IFBench (79.5), AA-LCR (82.0), HLE (33.9) or SciCode (46.6), so those references are not listed.
+            # TODO: confirm aime25 is the AIME the 96.67 reference measures.
+            EvalTask(
+                task_name="aime25",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=96.67,
+                    published_score_ref="Artificial Analysis AIME 2025, Qwen3.8-27B (https://artificialanalysis.ai/evaluations/aime-2025)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
             EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
