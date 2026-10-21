@@ -1,0 +1,24 @@
+{
+  "status": "source proposal only, uncompiled/unexecuted",
+  "original_sha256": "ee6af40c79d5e2a60c970d896c10bdd25919a50578030d72ca7750d0a61cca06",
+  "candidate_sha256": "cde44dc74ae1bf2f92d18fd263b298384bcf7df6b2e0c6eff3308be58342024e",
+  "replacements": 2,
+  "native_runtime_unchanged": true,
+  "observed_cases": {
+    "down": {
+      "logical_N_tiles": 168,
+      "old_stride": 21,
+      "physical_stride": 22
+    },
+    "sliding_qkv": {
+      "logical_N_tiles": 128,
+      "old_stride": 16,
+      "physical_stride": 16
+    }
+  },
+  "requirements": [
+    "separate pinned runtime build",
+    "both original-owner down and QKV native regressions",
+    "transpose/padded-tail/bank-layout review"
+  ]
+}
