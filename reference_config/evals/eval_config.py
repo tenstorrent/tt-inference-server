@@ -8580,12 +8580,13 @@ _eval_config_list = [
             ),
             EvalTask(
                 # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
-                # CI runs the 10-task list validated for the K2-Horizon-7B QB2 runs
-                # (oracle-checked; qemu-startup excluded, its verifier cannot run).
+                # CI runs 5 tasks from the oracle-checked K2-Horizon-7B QB2 list: the two
+                # this model solved in release run 38773036733 (fix-git,
+                # nginx-request-logging) and three it attempted to completion there.
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # Card 51.7 on the full set; this 10-task CI subset is not comparable: reported, not gated.
+                    # Card 51.7 on the full set; this 5-task CI subset is not comparable: reported, not gated.
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
@@ -8599,8 +8600,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    # 10 tasks at 5 concurrent = two waves of <= 3 h: <= ~7.5 h with
-                    # setup and per-task overhead, inside the 1080-minute job.
+                    # 5 tasks at 5 concurrent = one wave of <= 3 h plus setup.
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
@@ -8625,16 +8625,11 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
                             "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/nginx-request-logging",
-                            "terminal-bench/fix-git",
-                            "terminal-bench/overfull-hbox",
-                            "terminal-bench/crack-7z-hash",
-                            "terminal-bench/db-wal-recovery",
-                            "terminal-bench/largest-eigenval",
                         ],
                     },
                 ),
@@ -8642,11 +8637,11 @@ _eval_config_list = [
             ),
             EvalTask(
                 # SWE-bench Verified with mini-swe-agent: the model card reports 76.0.
-                # CI runs the 10-instance list validated for the K2-Horizon-7B QB2 runs.
+                # CI runs the 5-instance list shared with the Qwen3.x / Gemma 4 rows.
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # Card 76.0 on the full set; this 10-task CI subset is not comparable: reported, not gated.
+                    # Card 76.0 on the full set; this 5-task CI subset is not comparable: reported, not gated.
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
@@ -8660,7 +8655,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    # 10 instances at 5 concurrent = two waves of <= 3 h.
+                    # 5 instances at 5 concurrent = one wave of <= 3 h.
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
@@ -8685,11 +8680,6 @@ _eval_config_list = [
                             "matplotlib__matplotlib-25332",
                             "sympy__sympy-13551",
                             "scikit-learn__scikit-learn-14629",
-                            "astropy__astropy-14598",
-                            "matplotlib__matplotlib-25122",
-                            "pydata__xarray-4075",
-                            "pytest-dev__pytest-7571",
-                            "sphinx-doc__sphinx-8265",
                         ],
                     },
                 ),
