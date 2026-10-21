@@ -11739,7 +11739,9 @@ _eval_config_list = [
                     n_tasks=89,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
                     # host-sampled as for the evals above.
                     # 32K output is the card's minimum reasoning budget; 128K input
@@ -11808,7 +11810,9 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
