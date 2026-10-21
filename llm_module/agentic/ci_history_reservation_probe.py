@@ -64,6 +64,28 @@ def check_batch_generation(response, prompts, cap):
     return rows
 
 
+def check_gate_live(records, gate_trigger, future_done):
+    """Reject a historical first chunk after observed completion or cleanup."""
+    if future_done:
+        raise RuntimeError('Gate completed before batch submission')
+    key=gate_trigger['value']['rows'][0]['key']
+    states=[r for r in records if r['tag']=='GEMMA_HISTORY_RESERVATION_STATE']
+    if not states:
+        raise RuntimeError('No current gate state observed')
+    gate_rows=[row for record in states for row in record['value']['rows'] if row['key']==key]
+    if any(not row['retain'] or row['end']>=65536 for row in gate_rows):
+        raise RuntimeError('Terminal gate row observed before batch submission')
+    if any(key in record['value']['cleanup'] for record in states):
+        raise RuntimeError('Gate cleanup observed before batch submission')
+    latest=states[-1]
+    if key not in latest['value']['retained']:
+        raise RuntimeError('First gate chunk is stale: latest state no longer retains gate')
+    if not gate_rows:
+        raise RuntimeError('No retained gate row observed')
+    return dict(gate_key=key,future_done=False,latest_state=latest,
+                latest_gate_end=gate_rows[-1]['end'],terminal_gate_observed=False)
+
+
 def check_gated_lifecycle(records, gate_trigger, response_id):
     gate_key=gate_trigger['value']['rows'][0]['key']
     states=[record['value']for record in records if record['tag']=='GEMMA_HISTORY_RESERVATION_STATE']
@@ -127,6 +149,7 @@ def execute_reservation(server, root):
                 stop=time.monotonic()+120
                 while time.monotonic()<stop:
                     records=gate_reader.poll()
+                    if gate_future.done():raise RuntimeError('Gate completed before first retained chunk was observed')
                     states=[r for r in records if r['tag']=='GEMMA_HISTORY_RESERVATION_STATE']
                     for record in states:
                         state=record['value']
@@ -134,17 +157,23 @@ def execute_reservation(server, root):
                             row=state['rows'][0]
                             if row['start']==0 and row['end']==8192 and row['retain'] and state['retained']==[row['key']]:
                                 gate_trigger=record
-                    if gate_trigger is not None:break
-                    if gate_future.done():raise RuntimeError('Gate completed before first retained chunk was observed')
+                    if gate_trigger is not None:
+                        first_live=check_gate_live(gate_reader.records,gate_trigger,gate_future.done())
+                        break
                     time.sleep(.01)
                 if gate_trigger is None:raise RuntimeError('No first full-budget gate chunk observed')
-                save(root/'gate-trigger.json',dict(trigger=gate_trigger,log_start_offset=gate_reader.offset,
-                    batch_submit_wall_s=time.time()))
                 prompts=[tokens(129,71)] + [seed+tokens(13068,offset)[1:]for offset in (31,47,63)]
                 assert list(map(len,prompts))==[129,17164,17164,17164]
                 batch_body=body(prompts,'reservation-shared-seed',64)
                 directory=root/'ordered-partial-batch';directory.mkdir()
                 wire=Wire(directory,server.url_with_port,server.auth_token);wire.deadline=deadline
+                gate_reader.poll()
+                submit_live=check_gate_live(gate_reader.records,gate_trigger,gate_future.done())
+                save(root/'gate-trigger.json',dict(trigger=gate_trigger,log_start_offset=gate_reader.offset,
+                    first_live=first_live,submit_live=submit_live,batch_submit_wall_s=time.time()))
+                # The socket submission cannot be atomic with server execution;
+                # recheck completion after persistence and retain exact STATE gates.
+                if gate_future.done():raise RuntimeError('Gate completed immediately before batch wire submission')
                 result,raw=wire.call('/v1/completions',batch_body,'ordered-partial-batch')
                 batch_rows=check_batch_generation(result,prompts,64)
                 save(directory/'result.json',dict(response_id=result['id'],usage=result['usage'],choices=batch_rows,raw=str(raw)))
