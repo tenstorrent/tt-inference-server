@@ -8898,7 +8898,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    # Dedicated unscored formation diagnostic branch only.
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -8907,14 +8906,13 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=None,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
-                        "gemma_formation_probe": "v1",
                         "parser_name": "json",
                         "temperature": 1.0,
                         "max_turns": 50,
@@ -8927,13 +8925,7 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: ['terminal-bench/adaptive-rejection-sampler', 'terminal-bench/bn-fit-modify', 'terminal-bench/break-filter-js-from-html', 'terminal-bench/build-pmars', 'terminal-bench/caffe-cifar-10', 'terminal-bench/cancel-async-tasks', 'terminal-bench/chess-best-move', 'terminal-bench/circuit-fibsqrt', 'terminal-bench/cobol-modernization', 'terminal-bench/compile-compcert', 'terminal-bench/configure-git-webserver', 'terminal-bench/count-dataset-tokens', 'terminal-bench/distribution-search', 'terminal-bench/feal-differential-cryptanalysis', 'terminal-bench/financial-document-processor', 'terminal-bench/git-leak-recovery', 'terminal-bench/git-multibranch', 'terminal-bench/headless-terminal', 'terminal-bench/kv-store-grpc', 'terminal-bench/merge-diff-arc-agi-task', 'terminal-bench/model-extraction-relu-logits', 'terminal-bench/mteb-leaderboard', 'terminal-bench/mteb-retrieve', 'terminal-bench/password-recovery', 'terminal-bench/path-tracing-reverse', 'terminal-bench/qemu-startup', 'terminal-bench/query-optimize', 'terminal-bench/regex-log', 'terminal-bench/sparql-university', 'terminal-bench/sqlite-db-truncate', 'terminal-bench/sqlite-with-gcov', 'terminal-bench/video-processing'],
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
