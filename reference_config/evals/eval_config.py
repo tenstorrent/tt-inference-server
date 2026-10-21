@@ -595,6 +595,161 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
 _eval_config_list = [
+    # Fixed Granite release cohorts; published scores are context, not GPU controls.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=10,
+                use_chat_api=True,
+                num_fewshot=0,
+                seed=42,
+                score=EvalTaskScore(
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        )
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"max_length": 131072, "timeout": 7200},
+                gen_kwargs={
+                    "max_gen_toks": 32768,
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "do_sample": True,
+                    "stream": False,
+                    "until": [],
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+                capture_reasoning=True,
+            )
+        ]
+        + [
+            EvalTask(
+                task_name=name,
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=target,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=ci_target,
+                            ref="User-approved published full-set acceptance target for the fixed CI subset; not measured subset GPU control",
+                            tolerance=0.0,
+                        )
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset=dataset.split("@", 1)[0],
+                    agent=agent,
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs=kwargs,
+                    task_names_map={EvalLimitMode.CI_NIGHTLY: names},
+                    dataset_ref=dataset.split("@", 1)[1] if "@" in dataset else None,
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
+                    }
+                    if name == "swe_bench_verified"
+                    else {},
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+            )
+            for name, dataset, agent, target, ci_target, kwargs, names in [
+                (
+                    "terminal_bench_2_1",
+                    "terminal-bench/terminal-bench-2-1@sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+                    "terminus-2",
+                    29.24,
+                    20.0,
+                    {
+                        "temperature": 1.0,
+                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
+                        "model_info": {
+                            "max_input_tokens": 98304,
+                            "max_output_tokens": 32768,
+                        },
+                    },
+                    [
+                        "terminal-bench/break-filter-js-from-html",
+                        "terminal-bench/cobol-modernization",
+                        "terminal-bench/compile-compcert",
+                        "terminal-bench/feal-differential-cryptanalysis",
+                        "terminal-bench/qemu-startup",
+                        "terminal-bench/caffe-cifar-10",
+                        "terminal-bench/password-recovery",
+                        "terminal-bench/portfolio-optimization",
+                        "terminal-bench/hf-model-inference",
+                        "terminal-bench/financial-document-processor",
+                    ],
+                ),
+                (
+                    "swe_bench_verified",
+                    "swebench-verified",
+                    "mini-swe-agent",
+                    57.0,
+                    50.0,
+                    {
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "config": {
+                            "environment": {
+                                "env": {
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/root/.local/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                }
+                            },
+                            "model": {
+                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                            },
+                        },
+                        "max_tokens": 32768,
+                    },
+                    [
+                        "django__django-11299",
+                        "astropy__astropy-14096",
+                        "matplotlib__matplotlib-25332",
+                        "sympy__sympy-13551",
+                        "scikit-learn__scikit-learn-14629",
+                        "django__django-15098",
+                        "sphinx-doc__sphinx-8593",
+                        "sympy__sympy-13852",
+                        "pydata__xarray-3095",
+                        "django__django-15695",
+                    ],
+                ),
+            ]
+        ],
+    ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="microsoft/phi-1",
