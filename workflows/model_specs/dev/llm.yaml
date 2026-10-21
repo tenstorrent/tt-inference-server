@@ -3118,9 +3118,18 @@ templates:
         trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
         l1_small_size: 65536
         dispatch_core_axis: col
-        # sample_on_device_mode: decode_only and prefill_gather_ms: 200 /
-        # prefill_gather_quiet_ms: 25 need vllm-tt-plugin#235; add them once the
-        # plugin branch has it.
+        # Decode samples on device inside the decode trace and its steps overlap
+        # (the c=16 point above); without it every step reloads its inputs and
+        # samples on the host (CI: 484 tok/s, TPOT 29.9 ms). Rows the device
+        # sampler cannot take still sample on host: with the model's greedy-only
+        # sampler any temperature > 0 row, with DeviceSampler (tt-metal
+        # mimo-v2.6/device-sampling + vllm-tt-plugin mimo-v2.6-flash/device-top-p)
+        # only seeded, logprob and pure-temperature rows. Needs vllm-tt-plugin#235.
+        sample_on_device_mode: decode_only
+        # A lane's first chunks gather into one traced prefill batch: wait up to
+        # 200 ms for the wave's other arrivals, ending 25 ms after the last one.
+        prefill_gather_ms: 200
+        prefill_gather_quiet_ms: 25
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 4  # per lane

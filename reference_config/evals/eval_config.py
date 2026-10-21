@@ -2683,7 +2683,11 @@ _eval_config_list = [
                 ),
                 model_kwargs={
                     "max_length": 1024 * 1024,
-                    "timeout": 7200,
+                    # A request may stream max_gen_toks (400K): ~1.5 h at the
+                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
+                    # at 30 ms/token. At 7200 s three CI streams were cut short
+                    # and lm_eval failed the task.
+                    "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
                     "max_gen_toks": 400 * 1024,
@@ -2720,7 +2724,12 @@ _eval_config_list = [
                 ),
                 model_kwargs={
                     "max_length": 1048576,
-                    "timeout": 7200,
+                    # A request's time includes its queue on the server: a
+                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
+                    # concurrent 256K-900K prompts each lane prefills a few in
+                    # turn (~45 min for a 900K prompt) before decoding up to 64K
+                    # tokens. At 7200 s three CI requests were cut short.
+                    "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
                     "max_gen_toks": 64 * 1024,
