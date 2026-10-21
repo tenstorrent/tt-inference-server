@@ -586,7 +586,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=5,
+                max_concurrent=10,
                 use_chat_api=True,
                 num_fewshot=0,
                 seed=42,
@@ -650,7 +650,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset.split("@", 1)[0],
                     agent=agent,
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=10,
                     n_attempts=1,
                     agent_timeout_sec=45 * 60
                     if name == "terminal_bench_2_1"
