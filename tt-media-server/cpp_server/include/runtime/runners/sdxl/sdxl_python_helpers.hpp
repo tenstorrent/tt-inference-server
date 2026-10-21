@@ -24,13 +24,6 @@ class PythonHelpers {
   /** Insert TT_PYTHON_PATH and TT_METAL_HOME into `sys.path` if missing. */
   static void ensureSysPath();
 
-  /**
-   * Ensure a HuggingFace model repo or local path is downloaded to the local
-   * cache and return its local directory path. Coordinated across worker
-   * processes with `flock` so only one worker downloads on a cold cache.
-   */
-  static std::string resolveModelPath(const std::string& repoOrPath);
-
   /** HF repo id or local path -> local file path. Throws on failure. */
   static std::string resolveLoraPath(const std::string& loraRef);
 

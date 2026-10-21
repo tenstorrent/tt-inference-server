@@ -19,8 +19,6 @@ namespace {
 constexpr const char* HELPER_SOURCE = R"PY(
 """C++-owned SDXL helpers, loaded into sys.modules['_tt_cpp_sdxl_helpers']."""
 
-import fcntl
-import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -118,40 +116,6 @@ def _triggers_from_safetensors_repo(repo_id):
         return []
 
 
-def resolve_model_path(repo_or_path):
-    # Local dir, else one worker downloads under a lock and records the result;
-    # followers trust only that marker, since a partial hub snapshot also
-    # satisfies snapshot_download(local_files_only=True).
-    p = Path(repo_or_path)
-    if p.exists():
-        return str(p.resolve())
-    from huggingface_hub import snapshot_download
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", repo_or_path)
-    lock_dir = Path(os.environ.get("HF_HOME") or "/tmp")
-    try:
-        lock_dir.mkdir(parents=True, exist_ok=True)
-        (lock_dir / f".probe.{os.getpid()}").touch()
-        (lock_dir / f".probe.{os.getpid()}").unlink()
-    except Exception:
-        lock_dir = Path("/tmp")
-    done_path = lock_dir / f".tt_sdxl_hf_{safe_name}.complete"
-    with open(lock_dir / f".tt_sdxl_hf_{safe_name}.lock", "w") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            recorded = done_path.read_text().strip() if done_path.exists() else ""
-            if recorded and Path(recorded).is_dir():
-                return recorded
-            try:
-                local = snapshot_download(repo_id=repo_or_path)
-            except Exception:
-                # Hub unreachable: use the cache unverified, without a marker.
-                return snapshot_download(repo_id=repo_or_path, local_files_only=True)
-            done_path.write_text(local)
-            return local
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-
 def resolve_lora_path(lora_ref):
     p = Path(lora_ref)
     if p.is_file():
@@ -223,16 +187,6 @@ void PythonHelpers::ensureSysPath() {
   };
   prepend("TT_METAL_HOME");
   prepend("TT_PYTHON_PATH");
-}
-
-std::string PythonHelpers::resolveModelPath(const std::string& repoOrPath) {
-  try {
-    return helpers().attr("resolve_model_path")(repoOrPath).cast<std::string>();
-  } catch (const py::error_already_set& e) {
-    TT_LOG_WARN("[SDXL] resolve_model_path failed for {}: {}", repoOrPath,
-                e.what());
-    return repoOrPath;
-  }
 }
 
 std::string PythonHelpers::resolveLoraPath(const std::string& loraRef) {
