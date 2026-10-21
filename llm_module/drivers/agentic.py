@@ -245,6 +245,7 @@ def build_harbor_config(
         progress_log_interval_sec=cfg.progress_log_interval_sec,
         enforce_agent_deadline=cfg.enforce_agent_deadline,
         allow_agent_endpoint=getattr(cfg, "allow_agent_endpoint", False),
+        prepull_images=list(getattr(cfg, "prepull_images", [])),
         venv_python=venv_python,
     )
 
