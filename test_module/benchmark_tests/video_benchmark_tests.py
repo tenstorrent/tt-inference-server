@@ -43,7 +43,9 @@ from ..test_status import VideoGenerationTestStatus
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
+# The clip's wall time is only known to one poll interval, so keep it well under
+# the latency targets (39 s for a 480p clip).
+DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 1
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 # Keyed by full HF repo id.
 VIDEO_INFERENCE_STEPS = {
