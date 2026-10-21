@@ -7209,7 +7209,8 @@ templates:
         tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
         block_size: 32
         max_num_seqs: 16
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_xml
         reasoning_parser: qwen3
