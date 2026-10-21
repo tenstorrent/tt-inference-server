@@ -1109,10 +1109,30 @@ def _vllm_multi_value_arg_names() -> set[str]:
     tokens. --served-model-name reads ["a", "b"] as a single model named ["a", "b"],
     while --allowed-origins (nargs=None, type=json.loads) only parses the JSON form.
     """
+    import importlib
+
     from vllm.entrypoints.openai.cli_args import make_arg_parser
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-    parser = make_arg_parser(FlexibleArgumentParser())
+    # Building the serve parser runs vLLM's general plugins (EngineArgs.add_cli_args
+    # calls load_general_plugins()). A plugin may refuse to register before the
+    # model and context are on argv (Quetzal does), and that refusal would end
+    # the server here. Only flag shapes are read, so suppress plugin loading for
+    # this one parser and restore it; vLLM loads the plugins itself at startup.
+    suppressed = []
+    for module_name in ("vllm.plugins", "vllm.engine.arg_utils"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        if hasattr(module, "load_general_plugins"):
+            suppressed.append((module, module.load_general_plugins))
+            module.load_general_plugins = lambda: None
+    try:
+        parser = make_arg_parser(FlexibleArgumentParser())
+    finally:
+        for module, original in suppressed:
+            module.load_general_plugins = original
     return {action.dest for action in parser._actions if action.nargs == "+"}
 
 
