@@ -16,22 +16,6 @@
 
 namespace tt::runners {
 
-namespace {
-
-// Per-batch INFO lines are sampled so that a Galaxy BGE-large deployment
-// (microsecond batches, >1M tok/s) is not slowed or flooded by logging, while a
-// CI log still shows what batch sizes the worker actually formed: every batch
-// during the first kInfoFirstBatches, then every kInfoEveryBatches-th one.
-constexpr uint64_t kInfoFirstBatches = 20;
-constexpr uint64_t kInfoEveryBatches = 50;
-
-bool isSampledBatch(uint64_t batchNumber) {
-  return batchNumber <= kInfoFirstBatches ||
-         batchNumber % kInfoEveryBatches == 0;
-}
-
-}  // namespace
-
 EmbeddingIpcRunner::EmbeddingIpcRunner(config::EmbeddingConfig cfg,
                                        int workerId)
     : config(std::move(cfg)), workerIndex(workerId) {
@@ -129,26 +113,19 @@ void EmbeddingIpcRunner::run() {
           batch[i].task_id, i == 0 ? batchSize : 0, i == 0 ? collectMs : 0.0f));
     }
 
-    ++batchNumber;
-    const bool sampled = isSampledBatch(batchNumber);
-    const auto runStart = std::chrono::steady_clock::now();
-
     std::vector<domain::EmbeddingResponse> responses;
     try {
       responses = runner->run(batch);
-      const float runMs = std::chrono::duration<float, std::milli>(
-                              std::chrono::steady_clock::now() - runStart)
-                              .count();
-      if (sampled) {
+      // Sampled (first 20, then every 50th): Galaxy forms thousands of
+      // microsecond batches per second, which INFO-per-batch would distort.
+      if (++batchNumber <= 20 || batchNumber % 50 == 0) {
         TT_LOG_INFO(
             "[EmbeddingIpcRunner] Worker {} batch #{}: {}/{} request(s), "
             "collected in {:.1f}ms, run {:.0f}ms",
-            workerIndex, batchNumber, batchSize, maxBatch, collectMs, runMs);
-      } else {
-        TT_LOG_DEBUG(
-            "[EmbeddingIpcRunner] Worker {} batch #{}: {}/{} request(s), "
-            "collected in {:.1f}ms, run {:.0f}ms",
-            workerIndex, batchNumber, batchSize, maxBatch, collectMs, runMs);
+            workerIndex, batchNumber, batchSize, maxBatch, collectMs,
+            std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - collectEnd)
+                .count());
       }
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[EmbeddingIpcRunner] Worker {} batch failed: {}",

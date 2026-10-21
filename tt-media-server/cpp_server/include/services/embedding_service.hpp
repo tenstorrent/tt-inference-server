@@ -69,11 +69,6 @@ class EmbeddingService
       std::vector<double> samplesMs;
     };
 
-    /** Emit a summary line every this many batches while serving, not only
-     * at shutdown, so a CI log captured mid-run still shows the batch-size
-     * histogram and per-phase timings. */
-    static constexpr uint64_t kSummaryEveryBatches = 50;
-
     std::mutex mutex;
     Phase phases[5] = {{"queue_wait", {}},
                        {"batch_collect", {}},
@@ -81,13 +76,10 @@ class EmbeddingService
                        {"shm_round_trip", {}},
                        {"completion", {}}};
     std::map<size_t, uint64_t> batchSizeCounts;
-    uint64_t batchesSinceSummary = 0;
 
-    /** Returns true when a periodic summary is due. */
-    bool record(size_t batchSize, double queueWaitMs, double collectMs,
+    void record(size_t batchSize, double queueWaitMs, double collectMs,
                 double enqueueMs, double shmRoundTripMs, double completeMs);
-    /** Logs and resets the window; `reason` tags the line ("periodic"/"final"). */
-    void logSummary(const char* reason);
+    void logSummary();
   };
 
   config::EmbeddingConfig config_;

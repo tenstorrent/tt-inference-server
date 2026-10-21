@@ -542,28 +542,15 @@ _DEFAULT_CPP_MEDIA_SHM_SIZE = "8g"
 
 
 def _media_pre_downloaded_weights_path(setup_config, model_spec):
-    """Container path of weights run.py already fetched for a MEDIA model, or None.
+    """Container path of the weights run.py already fetched, or None.
 
-    The C++ SDXL runners only load from disk when MODEL_WEIGHTS_PATH points at
-    a directory; otherwise every worker resolves the HF repo id through the hub
-    cache, which on a cold cache means 32 Galaxy workers contending for one
-    download. vLLM has a built-in "look in cache_root/weights/<model>"
-    convention and the Python media server downloads once in the parent
-    process before forking; the C++ server has neither, so export the path
-    explicitly whenever the host side has the weights:
-
-    * read-only mount (--host-weights-dir / --host-hf-cache / pinned revision):
-      the same directory MODEL_WEIGHTS_DIR already points at;
-    * --host-volume HF download: cache_root/weights/<model_name>, which is the
-      directory check_setup() validated before the container was launched.
-    """
+    Without MODEL_WEIGHTS_PATH every cpp_server SDXL worker resolves the HF repo
+    id itself (32 Galaxy workers racing one cold download)."""
     if setup_config is None or not setup_config.container_model_weights_path:
         return None
     if setup_config.host_model_weights_mount_dir:
         return str(setup_config.container_model_weights_path)
     if not setup_config.host_model_volume_root:
-        return None
-    if model_spec.model_type == ModelType.TRAINING:
         return None
     host_weights_dir = (
         Path(setup_config.host_model_volume_root) / "weights" / model_spec.model_name
@@ -744,10 +731,6 @@ def generate_docker_run_command(
             )
             if sdxl_weights_path:
                 docker_env_vars["MODEL_WEIGHTS_PATH"] = sdxl_weights_path
-                logger.info(
-                    f"cpp_server SDXL workers will load pre-downloaded weights "
-                    f"from MODEL_WEIGHTS_PATH={sdxl_weights_path}"
-                )
         api_key = os.getenv("API_KEY")
         if runtime_config.no_auth:
             docker_env_vars["NO_AUTH"] = "1"
