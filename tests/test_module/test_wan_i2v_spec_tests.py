@@ -201,7 +201,10 @@ class _FakeVideoServer:
 
 
 def _run_lifecycle(
-    server: _FakeVideoServer, device: str = "T3K", env_vars: dict | None = None
+    server: _FakeVideoServer,
+    device: str = "T3K",
+    env_vars: dict | None = None,
+    output_path=None,
 ) -> dict:
     async def body(url):
         ctx = SimpleNamespace(
@@ -212,6 +215,7 @@ def _run_lifecycle(
                 env_vars=env_vars or {},
             ),
             device=SimpleNamespace(name=device),
+            output_path=output_path,
         )
         test = VideoGenerationI2VTest(
             _TestConfig.create_default(),
@@ -251,9 +255,11 @@ def test_lifecycle_fails_when_metadata_does_not_echo_the_request(wan_t3k_clip):
 def test_lifecycle_fails_on_a_frozen_clip(tmp_path):
     pytest.importorskip("imageio_ffmpeg")
     clip = write_clip(tmp_path / "frozen.mp4", [gradient(832, 480)] * 81)
-    result = _run_lifecycle(_FakeVideoServer(clip))
+    result = _run_lifecycle(_FakeVideoServer(clip), output_path=tmp_path / "out")
     assert not result["success"]
     assert any(problem.startswith("clip: frozen") for problem in result["problems"])
+    saved = list((tmp_path / "out/videos/failed/spec_tests").iterdir())
+    assert [p.name for p in saved] == [f"lifecycle_{result['job_id']}.mp4"]
 
 
 def test_lifecycle_fails_on_the_wrong_resolution_for_the_mesh(wan_t3k_clip):

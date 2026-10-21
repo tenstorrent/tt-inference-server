@@ -37,6 +37,7 @@ from .._test_common.video_output_check import (
     check_video_output,
     deployment_resolution,
     expected_video_shape,
+    save_clip,
 )
 from ..context import MediaContext, require_health
 from ..test_status import VideoGenerationTestStatus
@@ -242,6 +243,11 @@ def _run_video_generation_benchmark(
                     f"❌ Video output check failed for job {job_id}: {problem}"
                 )
                 status = False
+                save_clip(
+                    video_path,
+                    getattr(ctx, "output_path", None),
+                    "failed/benchmarks",
+                )
 
         inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
         status_list.append(

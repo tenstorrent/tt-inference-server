@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import logging
+import shutil
 from pathlib import Path
 
 from .video_quality_metrics import (
@@ -15,6 +17,8 @@ from .video_quality_metrics import (
     sample_video_frames,
     structural_frame_metrics,
 )
+
+logger = logging.getLogger(__name__)
 
 # Wan2.2 serves one shape per mesh (tt-media-server config/constants.py
 # WAN22_NUM_FRAMES and wan22_target_resolution; VideoManager encodes at 16 fps):
@@ -147,8 +151,36 @@ def frame_distances_to_image(
     return distances
 
 
+def save_clip(
+    video_path: str | Path | None,
+    output_path: str | Path | None,
+    folder: str,
+    name: str | None = None,
+) -> Path | None:
+    """Copy a clip to ``<output_path>/videos/<folder>/`` so the run keeps it.
+
+    Shield uploads workflow_logs/, which holds the run's output path; clips
+    downloaded to /tmp are gone when the job ends. Never raises: losing a copy
+    must not fail the test that made the clip.
+    """
+    if not video_path or not output_path:
+        return None
+    destination = (
+        Path(output_path) / "videos" / folder / (name or Path(video_path).name)
+    )
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(video_path, destination)
+    except OSError as e:
+        logger.warning(f"Could not save clip {video_path} to {destination}: {e}")
+        return None
+    logger.info(f"Saved clip for upload: {destination}")
+    return destination
+
+
 __all__ = [
     "check_video_output",
+    "save_clip",
     "deployment_resolution",
     "expected_video_shape",
     "frame_distances_to_image",

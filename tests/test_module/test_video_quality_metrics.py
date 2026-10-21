@@ -12,6 +12,7 @@ from test_module._test_common.video_quality_metrics import (
     sample_video_frames,
     structural_frame_metrics,
 )
+from test_module._test_common.video_output_check import save_clip
 from tests.test_module.video_clips import (
     black_frames,
     gradient,
@@ -57,3 +58,20 @@ def test_undecodable_file_raises_value_error(tmp_path):
     junk.write_bytes(b"not a video")
     with pytest.raises(ValueError):
         sample_video_frames(junk)
+
+
+def test_save_clip_copies_into_the_run_output(tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"mp4")
+    saved = save_clip(clip, tmp_path / "out", "failed/x", "named.mp4")
+    assert saved == tmp_path / "out/videos/failed/x/named.mp4"
+    assert saved.read_bytes() == b"mp4"
+
+
+def test_save_clip_without_an_output_path_or_clip_is_a_no_op(tmp_path):
+    assert save_clip(tmp_path / "missing.mp4", None, "x") is None
+    assert save_clip(None, tmp_path, "x") is None
+
+
+def test_save_clip_never_raises(tmp_path):
+    assert save_clip(tmp_path / "missing.mp4", tmp_path / "out", "x") is None

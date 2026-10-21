@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from report_module.schema import Block
 
 from .._test_common import ReportCheckTypes, block_id
+from .._test_common.video_output_check import save_clip
 from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -140,6 +142,22 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     return combined_results
 
 
+def _save_eval_clips(ctx: MediaContext, videos: list[dict]) -> None:
+    """Keep every eval clip, with its prompt, in the uploaded run output.
+
+    These are the clips the quality score is about, so they are worth looking at
+    (and comparing with the GPU reference) on every run.
+    """
+    index = []
+    for i, video in enumerate(videos):
+        name = f"{i:02d}_{video.get('job_id') or 'clip'}.mp4"
+        if save_clip(video.get("video_path"), ctx.output_path, "evals", name):
+            index.append({"file": name, "prompt": video.get("prompt")})
+    if index:
+        index_path = Path(ctx.output_path) / "videos" / "evals" / "index.json"
+        index_path.write_text(json.dumps(index, indent=2))
+
+
 def run_video_eval(ctx: MediaContext) -> Block:
     """Run evaluations for a video model (Mochi, WAN, etc.)."""
     logger.info(
@@ -152,6 +170,8 @@ def run_video_eval(ctx: MediaContext) -> Block:
     except Exception as e:
         logger.error(f"Eval execution encountered an error: {e}")
         raise
+
+    _save_eval_clips(ctx, (eval_result or {}).get("videos", []))
 
     logger.info("Generating eval report...")
     task = ctx.all_params.tasks[0]

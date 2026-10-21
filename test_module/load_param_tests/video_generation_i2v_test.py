@@ -29,6 +29,7 @@ from .._test_common import BaseTest, HardwareRequirement, TestConfig
 from .._test_common.video_output_check import (
     check_video_output,
     deployment_resolution,
+    save_clip,
 )
 
 if TYPE_CHECKING:
@@ -148,6 +149,12 @@ class VideoGenerationI2VTest(BaseTest):
             )
             if clip_problem:
                 problems.append(f"clip: {clip_problem}")
+                save_clip(
+                    file_path,
+                    getattr(self.ctx, "output_path", None),
+                    "failed/spec_tests",
+                    f"lifecycle_{job_id}.mp4",
+                )
             for problem in problems:
                 logger.error(f"❌ I2V job {job_id}: {problem}")
 

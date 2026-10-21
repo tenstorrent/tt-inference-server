@@ -40,6 +40,7 @@ from .._test_common.video_output_check import (
     deployment_resolution,
     frame_distances_to_image,
     mean_frame_difference,
+    save_clip,
 )
 from .video_generation_i2v_test import (
     _HEADERS,
@@ -110,8 +111,17 @@ def build_variants(image_b64: str, steps: int) -> dict[str, dict]:
     }
 
 
-def _check(name: str, passed: bool, detail: str, *, gated: bool = True) -> dict:
-    return {"check": name, "passed": bool(passed), "gated": gated, "detail": detail}
+def _check(
+    name: str, passed: bool, detail: str, *, gated: bool = True, clips=()
+) -> dict:
+    """One graded result; ``clips`` names the variants it compared."""
+    return {
+        "check": name,
+        "passed": bool(passed),
+        "gated": gated,
+        "detail": detail,
+        "clips": list(clips),
+    }
 
 
 def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
@@ -143,6 +153,7 @@ def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
                 diff > DIFFERS_THRESHOLD,
                 f"mean frame difference {diff:.2f} (> {DIFFERS_THRESHOLD})",
                 gated=gated,
+                clips=("default", name),
             )
         )
 
@@ -169,6 +180,7 @@ def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
                 diff <= DIFFERS_THRESHOLD,
                 f"mean frame difference {diff:.2f} (<= {DIFFERS_THRESHOLD})",
                 gated=False,
+                clips=("default", "duplicate_default"),
             )
         )
 
@@ -188,6 +200,7 @@ def evaluate_sweep(jobs: dict[str, dict], image_bytes: bytes) -> list[dict]:
                 f"{at_start[0]:.1f}, frame {CONDITIONING_FRAME_POS} "
                 f"{at_start[CONDITIONING_FRAME_POS]:.1f}",
                 gated=False,
+                clips=("default", "frame_pos_4"),
             )
         )
     return checks
@@ -223,6 +236,7 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
             mark = "✅" if check["passed"] else ("❌" if check["gated"] else "⚠️")
             logger.info(f"{mark} {check['check']}: {check['detail']}")
         success = all(check["passed"] for check in checks if check["gated"])
+        self._save_clips_behind_failures(checks, jobs)
         return {
             "success": success,
             "num_inference_steps": steps,
@@ -232,6 +246,17 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
                 for name, job in jobs.items()
             },
         }
+
+    def _save_clips_behind_failures(self, checks: list[dict], jobs: dict) -> None:
+        """Keep the clips a failing check compared, gated or not, for a look."""
+        names = {name for c in checks if not c["passed"] for name in c["clips"]}
+        for name in sorted(names):
+            save_clip(
+                jobs[name].get("video_path"),
+                getattr(self.ctx, "output_path", None),
+                "failed/spec_tests/param_sweep",
+                f"{name}.mp4",
+            )
 
     async def _generate(
         self, session: aiohttp.ClientSession, url: str, name: str, payload: dict
@@ -256,6 +281,12 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
             resolution=deployment_resolution(self.ctx.model_spec) if self.ctx else None,
         )
         if clip_problem:
+            save_clip(
+                file_path,
+                getattr(self.ctx, "output_path", None),
+                "failed/spec_tests/param_sweep",
+                f"{name}.mp4",
+            )
             return {**record, "problem": f"clip: {clip_problem}"}
         logger.info(f"{name}: clip ready in {elapsed:.1f} s")
         return {**record, "video_path": file_path}

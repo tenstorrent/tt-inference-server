@@ -143,6 +143,8 @@ class VideoGenerationEvalsTest(BaseTest):
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
+            # {prompt, video_path, job_id} per clip, so the caller can keep them.
+            "videos": videos_info,
         }
 
         self.eval_results = results
