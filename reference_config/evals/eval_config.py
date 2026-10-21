@@ -2897,6 +2897,9 @@ _eval_config_list = [
                     agent="mini-swe-agent",
                     # Tasks block agent egress; let the agent reach the server.
                     allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=None,
