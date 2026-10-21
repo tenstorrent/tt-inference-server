@@ -167,7 +167,7 @@ class _SweepServer:
             return web.Response(body=f.read(), content_type="video/mp4")
 
 
-def _run_sweep(pick) -> dict:
+def _run_sweep(pick, output_path=None) -> dict:
     async def body():
         app = web.Application()
         app.add_routes(_SweepServer(pick).routes())
@@ -179,6 +179,7 @@ def _run_sweep(pick) -> dict:
                     hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers", env_vars={}
                 ),
                 device=SimpleNamespace(name="T3K"),
+                output_path=output_path,
             )
             test = sweep.VideoGenerationI2VParamTest(
                 _TestConfig.create_default(), {"poll_interval": 0}, ctx=ctx
@@ -205,7 +206,7 @@ def wan_clips(tmp_path_factory):
     }
 
 
-def test_sweep_passes_when_every_parameter_changes_the_clip(wan_clips):
+def test_sweep_passes_when_every_parameter_changes_the_clip(wan_clips, tmp_path):
     def pick(body):
         if body["image_prompts"][0]["frame_pos"] == 4:
             return wan_clips["image_at_4"]
@@ -217,14 +218,24 @@ def test_sweep_passes_when_every_parameter_changes_the_clip(wan_clips):
             return wan_clips["d"]
         return wan_clips["a"]
 
-    result = _run_sweep(pick)
+    result = _run_sweep(pick, output_path=tmp_path)
     assert result["success"], [c for c in result["checks"] if not c["passed"]]
+    # Only no_negative_prompt (ungated) can fail here, so at most its pair is kept.
+    saved_dir = tmp_path / "videos/failed/spec_tests/param_sweep"
+    saved = {p.name for p in saved_dir.iterdir()} if saved_dir.exists() else set()
+    assert saved <= {"default.mp4", "no_negative_prompt.mp4"}
     assert set(result["jobs"]) == set(sweep.build_variants("x", 20))
 
 
-def test_sweep_fails_when_the_server_ignores_the_parameters(wan_clips):
-    result = _run_sweep(lambda body: wan_clips["a"])
+def test_sweep_fails_when_the_server_ignores_the_parameters(wan_clips, tmp_path):
+    result = _run_sweep(lambda body: wan_clips["a"], output_path=tmp_path)
     assert not result["success"]
+    # The clips behind the failing checks are kept for upload, and only those.
+    saved = {
+        p.name for p in (tmp_path / "videos/failed/spec_tests/param_sweep").iterdir()
+    }
+    assert {"default.mp4", "seed_123.mp4", "different_prompt.mp4"} <= saved
+    assert "duplicate_default.mp4" not in saved
     failed = {c["check"] for c in result["checks"] if c["gated"] and not c["passed"]}
     assert "seed_123_differs_from_default" in failed
     assert "different_prompt_differs_from_default" in failed

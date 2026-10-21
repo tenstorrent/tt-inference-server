@@ -205,3 +205,22 @@ def test_failed_output_check_marks_the_generation_failed(
     ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
     [result] = mod._run_video_generation_benchmark(ctx, num_calls=1)
     assert result.status is expected_status
+
+
+def test_only_a_failed_benchmark_clip_is_kept(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        mod, "_generate_video", lambda *a, **k: (True, 10.0, "job-1", str(clip))
+    )
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.output_path = str(tmp_path / "out")
+    kept = tmp_path / "out/videos/failed/benchmarks/clip.mp4"
+
+    monkeypatch.setattr(mod, "_check_video_output", lambda ctx, path: None)
+    mod._run_video_generation_benchmark(ctx, num_calls=1)
+    assert not kept.exists()
+
+    monkeypatch.setattr(mod, "_check_video_output", lambda ctx, path: "black")
+    mod._run_video_generation_benchmark(ctx, num_calls=1)
+    assert kept.read_bytes() == b"mp4"
