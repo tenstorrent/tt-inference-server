@@ -594,12 +594,6 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
-# Custom lm-eval task definitions for the meta-models/Muse-Glimmer-30B model-card evals
-# that the pinned lm-eval fork does not ship (AIME 2026). Absolute, as above.
-_MUSE_GLIMMER_LM_EVAL_TASKS = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "muse_glimmer_30b"
-)
-
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -8532,52 +8526,7 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row. AIME 2026 is ungated (no GPU reference yet);
-            # the CI agentic subsets gate on a 1-of-5 floor.
-            # The chat API lets the server render the native template and the muse_glimmer reasoning
-            # parser separate thinking from the answer. lm-eval timeout == wall bound: never retry a request.
-            EvalTask(
-                # MathArena AIME 2026, one pass over all 30 problems (+/-4 pts).
-                task_name="muse_aime_2026",
-                include_path=_MUSE_GLIMMER_LM_EVAL_TASKS,
-                score=EvalTaskScore(
-                    # Card 94.7 (Artificial Analysis, not like-for-like): reported, not gated.
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["exact_match,none"],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                use_chat_api=True,
-                max_concurrent=16,
-                # 5 h bound: 30 problems at 16 slots is two waves, and a 64K
-                # solution at ~8 tok/s per user takes ~2.2 h.
-                wall_clock_timeout_seconds=18000,
-                model_kwargs={
-                    "max_length": 131072,
-                    "timeout": 18000,  # == wall bound: never retry a request
-                },
-                # 64K budget: AIME solutions at high reasoning regularly exceed 32K.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 65536,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_p": 0.95,
-                    "top_k": 64,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 30,
-                    EvalLimitMode.CI_LONG: 30,
-                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
-                },
-            ),
+            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row: the CI agentic subsets gate on a 1-of-5 floor.
             EvalTask(
                 # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
                 # CI runs 5 tasks from the oracle-checked K2-Horizon-7B QB2 list: the two
