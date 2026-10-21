@@ -3069,6 +3069,95 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
+# GPU reference spec (bring-your-own vLLM server; see docs/gpu_workflows.md).
+# The Blackhole Galaxy entry is the mimo_v2_6_flash one below.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 1048576  # 1024 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
+# MiMo-V2.6-Flash-MOPD on Blackhole Galaxy (tt-metal models/experimental/mimo_v2_6_flash,
+# tenstorrent/vllm-tt-plugin#216). Dev specs omit tt_metal_commit/vllm_commit: pass an
+# image built from tt-metal mimo-v2.6/* and vllm-tt-plugin mimo-v2.6-flash/* via
+# --override-docker-image. The vLLM adapter (tt/generator_vllm.py) lands with
+# tt-metal#61678. Launch settings follow that PR's doc/vllm_integration/README.md.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: mimo_v2_6_flash
+  inference_engine: VLLM
+  device_model_specs:
+    # DP=4 lane-DP: the model declares folds_dp_into_lanes, so the plugin runs
+    # --data-parallel-size 4 as four in-process lanes, one TP=8 replica per mesh row.
+    - device: BLACKHOLE_GALAXY
+      # 4 lanes x 4 users. The fast decode path (streaming MoE, compact SWA
+      # attention, slot-parity-independent layer 0) serves at most 4 users per
+      # replica; c=16 is the measured point (~1000 tok/s, TPOT ~13 ms).
+      max_concurrency: 16
+      # Full 1M window: LongBench v2 sends up to 900K-token prompts. Each lane's
+      # KV pool is capped by MIMO_KV_GB_PER_CHIP (6 GB -> ~1.27M tokens), so a
+      # lane holds one 1M request or several shorter ones, not four 1M requests.
+      # Above 128K the decode RoPE comes from the host instead of device tables.
+      max_context: 1048576  # 1024 * 1024
+      default_impl: true
+      # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
+      # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
+      tensor_cache_timeout: 10800.0
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+      override_tt_config:
+        trace_mode: decode_only
+        trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
+        l1_small_size: 65536
+        dispatch_core_axis: col
+        # Decode samples on device inside the decode trace and its steps overlap
+        # (the c=16 point above); without it every step reloads its inputs and
+        # samples on the host (CI: 484 tok/s, TPOT 29.9 ms). Rows the device
+        # sampler cannot take still sample on host: with the model's greedy-only
+        # sampler any temperature > 0 row, with DeviceSampler (tt-metal
+        # mimo-v2.6/device-sampling + vllm-tt-plugin mimo-v2.6-flash/device-top-p)
+        # only seeded, logprob and pure-temperature rows. Needs vllm-tt-plugin#235.
+        sample_on_device_mode: decode_only
+        # A lane's first chunks gather into one traced prefill batch: wait up to
+        # 200 ms for the wave's other arrivals, ending 25 ms after the last one.
+        prefill_gather_ms: 200
+        prefill_gather_quiet_ms: 25
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 4  # per lane
+        block_size: 64  # required by the model
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        enable-prefix-caching: true
+        trust-remote-code: true
+        reasoning-parser: mimo
+        enable-auto-tool-choice: true
+        tool-call-parser: mimo
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  # The repo name has no "<N>B", so the param-count defaults do not apply (and would assume fp16
+  # weights: 309B x 2.5 = 772 GB of RAM). Disk: the 178 GB checkpoint plus the ~186 GB TTNN cache.
+  # RAM: the cache conversion holds one MoE layer at a time (256 dequantized experts, ~13 GB in bf16,
+  # plus their device-layout copies).
+  min_disk_gb: 450
+  min_ram_gb: 128
+  metadata:
+    XiaomiMiMo/MiMo-V2.6-Flash-MOPD:
+      reasoning_parser_name: mimo
+      tool_call_parser_name: mimo
+      # The adapter reads the checkpoint from MIMO_MODEL_PATH and keeps its
+      # converted TTNN weights (~186 GB) under MIMO_TT_CACHE.
+      model_path_env: MIMO_MODEL_PATH
+      tt_cache_env: MIMO_TT_CACHE
+
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;

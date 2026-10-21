@@ -312,6 +312,12 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
+    # environment is docker and the image is not already local, e.g. the base
+    # image every trial's environment build starts FROM: concurrent trials
+    # otherwise each pull it inside their build, and on a slow registry link
+    # every build fails together.
+    prepull_images: List[str] = field(default_factory=list)
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
@@ -2648,15 +2654,15 @@ _eval_config_list = [
     # scores only for the RL checkpoint, so published scores cite that card.
     # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
     # (the chat template only disables it on enable_thinking=false).
-    # No ModelSpec yet, so this config is not dispatched (see EVAL_CONFIGS);
-    # concurrencies are provisional until the spec sets max_concurrency.
+    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 and
+    # one attempt match the Blackhole Galaxy spec (4 lanes x 4 users).
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=32,
+                max_concurrent=16,
                 use_chat_api=True,
                 # Thinking is on, so the answer can arrive in reasoning_content.
                 capture_reasoning=True,
@@ -2665,8 +2671,8 @@ _eval_config_list = [
                     # Diamond; the GPU reference is the only anchor.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=85.35,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2676,11 +2682,15 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 256 * 1024,
-                    "timeout": 7200,
+                    "max_length": 1024 * 1024,
+                    # A request may stream max_gen_toks (400K): ~1.5 h at the
+                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
+                    # at 30 ms/token. At 7200 s three CI streams were cut short
+                    # and lm_eval failed the task.
+                    "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 128 * 1024,
+                    "max_gen_toks": 400 * 1024,
                     # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
                     "until": ["<|im_end|>"],
                     "do_sample": "true",
@@ -2693,14 +2703,65 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep for MiMo's 1M window (max_position_embeddings).
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=66.15,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    # A request's time includes its queue on the server: a
+                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
+                    # concurrent 256K-900K prompts each lane prefills a few in
+                    # turn (~45 min for a 900K prompt) before decoding up to 64K
+                    # tokens. At 7200 s three CI requests were cut short.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (65536) before hitting the
+                # 1048576 window.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 64K gen)
+                    "pretrained": "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=87.6,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266196347",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2710,7 +2771,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=32,
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=8,
@@ -2720,12 +2781,12 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 500 * 1024,
-                            "max_output_tokens": 64 * 1024,
+                            "max_input_tokens": 896 * 1024,
+                            "max_output_tokens": 128 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 64 * 1024,
+                            "max_tokens": 128 * 1024,
                             "timeout": 60 * 60,
                         },
                     },
@@ -2751,8 +2812,8 @@ _eval_config_list = [
                     # anchor until a published score is confirmed.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=48.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266198959",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2789,6 +2850,9 @@ _eval_config_list = [
                     environment_env={
                         "TAU2_USER_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
                     },
+                    # Every trial's environment builds FROM it; on the Galaxy
+                    # runner the four CI trials' concurrent pulls all failed.
+                    prepull_images=["python:3.12-slim"],
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
                     },
@@ -2811,8 +2875,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=67.9,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=56.05,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6288668031",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2836,7 +2900,7 @@ _eval_config_list = [
                         # The leaderboard's published job (2026-06-06) ran an
                         # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
                         "version": "2.3.0",
-                        "max_tokens": 64 * 1024,
+                        "max_tokens": 128 * 1024,
                         "config": {
                             "model": {
                                 "model_kwargs": {
