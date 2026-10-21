@@ -414,7 +414,7 @@ def run(config: HarborRunConfig) -> int:
         cmd,
         cwd=None,
         env=process_env,
-        probe=make_terminal_bench_probe(job_dir),
+        probe=make_terminal_bench_probe(job_dir, emit_completed_outcomes=True),
         label=config.task_name,
         per_task_budget_s=per_task_budget,
         concurrency=config.n_concurrent_trials,
