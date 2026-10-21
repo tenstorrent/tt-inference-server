@@ -584,7 +584,7 @@ _eval_config_list = [
         hf_model_repo="ibm-granite/granite-4.2-30b",
         tasks=[
             EvalTask(
-                task_name="gpqa_diamond_cot_zeroshot",
+                task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=5,
                 use_chat_api=True,
@@ -605,7 +605,7 @@ _eval_config_list = [
                     },
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["exact_match,flexible-extract"],
+                        "result_keys": ["exact_match,none"],
                         "unit": "percent",
                     },
                 ),
