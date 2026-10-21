@@ -112,7 +112,11 @@ def run_probe(server, context):
     wire = Wire(root, server.url_with_port, server.auth_token)
     wire.deadline = time.monotonic() + 2700
     try:
-        return execute(wire, root, Path(__file__).parent / 'r9_data')
+        summary, summary_path = execute(wire, root, Path(__file__).parent / 'r9_data')
+        from .ci_returning_pressure import execute_pressure
+        execute_pressure(server, Path(context.output_dir) / 'UNSCORED-f393-pressure',
+                         Path(__file__).parent / 'r9_data/pressure-prefixes.json')
+        return summary, summary_path
     except BaseException as error:
         save(root / 'failure.json', dict(error_type=type(error).__name__, error=str(error),
                                         scope='All completed and partial Wire evidence retained; no retries.'))
