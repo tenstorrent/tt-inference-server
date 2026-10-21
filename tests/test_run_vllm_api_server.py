@@ -77,7 +77,7 @@ _MOCK_VLLM_SERVE_FLAGS = (
 )
 
 
-def _install_mock_vllm_serve_parser(monkeypatch, vllm):
+def _install_mock_vllm_serve_parser(monkeypatch, vllm, namespace="openai"):
     parser = types.SimpleNamespace(
         _actions=[
             types.SimpleNamespace(dest=dest, nargs=nargs)
@@ -87,9 +87,9 @@ def _install_mock_vllm_serve_parser(monkeypatch, vllm):
     vllm.__path__ = []
     entrypoints = types.ModuleType("vllm.entrypoints")
     entrypoints.__path__ = []
-    openai = types.ModuleType("vllm.entrypoints.openai")
-    openai.__path__ = []
-    cli_args = types.ModuleType("vllm.entrypoints.openai.cli_args")
+    frontend = types.ModuleType(f"vllm.entrypoints.{namespace}")
+    frontend.__path__ = []
+    cli_args = types.ModuleType(f"{frontend.__name__}.cli_args")
     cli_args.make_arg_parser = MagicMock(return_value=parser)
     utils = types.ModuleType("vllm.utils")
     utils.__path__ = []
@@ -97,12 +97,13 @@ def _install_mock_vllm_serve_parser(monkeypatch, vllm):
     argparse_utils.FlexibleArgumentParser = MagicMock()
     for name, module in (
         ("vllm.entrypoints", entrypoints),
-        ("vllm.entrypoints.openai", openai),
-        ("vllm.entrypoints.openai.cli_args", cli_args),
+        (frontend.__name__, frontend),
+        (cli_args.__name__, cli_args),
         ("vllm.utils", utils),
         ("vllm.utils.argparse_utils", argparse_utils),
     ):
         monkeypatch.setitem(sys.modules, name, module)
+    return cli_args
 
 
 @pytest.fixture
@@ -668,6 +669,70 @@ def _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, default
     return sys.argv[1:]
 
 
+@pytest.fixture(params=["openai", "launchers"])
+def vllm_cli_args(monkeypatch, run_vllm_api_server_module, request):
+    monkeypatch.delitem(sys.modules, "vllm.entrypoints.openai.cli_args")
+    return _install_mock_vllm_serve_parser(
+        monkeypatch, sys.modules["vllm"], namespace=request.param
+    )
+
+
+def test_set_vllm_sys_argv_supports_vllm_parser_locations(
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
+):
+    origins = '["https://example.com"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", '["model", "alias"]', "--allowed-origins", origins],
+        {"cudagraph_capture_sizes": [1, 2, 4]},
+    ) == [
+        "--served-model-name",
+        "model",
+        "alias",
+        "--allowed-origins",
+        origins,
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+    ]
+    vllm_cli_args.make_arg_parser.assert_called_once()
+
+
+def test_multi_value_arg_names_falls_back_when_launchers_has_no_cli_args(
+    monkeypatch, run_vllm_api_server_module
+):
+    launchers = types.ModuleType("vllm.entrypoints.launchers")
+    launchers.__path__ = []
+    monkeypatch.setitem(sys.modules, launchers.__name__, launchers)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert "served_model_name" in names
+    assert "allowed_origins" not in names
+
+
+def test_multi_value_arg_names_preserves_missing_dependency_error(
+    monkeypatch, run_vllm_api_server_module
+):
+    real_import = builtins.__import__
+    missing_dependency = ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    def import_with_missing_dependency(name, *args, **kwargs):
+        if name == "vllm.entrypoints.launchers.cli_args":
+            raise missing_dependency
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_with_missing_dependency)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert exc_info.value is missing_dependency
+    sys.modules["vllm.entrypoints.openai.cli_args"].make_arg_parser.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "passthrough",
     [
@@ -687,7 +752,7 @@ def test_set_vllm_sys_argv_splits_json_list_for_multi_value_flag(
 
 
 def test_multi_value_arg_names_does_not_load_vllm_general_plugins(
-    monkeypatch, run_vllm_api_server_module
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
 ):
     # vLLM's EngineArgs.add_cli_args runs load_general_plugins() while the serve
     # parser is built. A plugin that refuses before model/context are on argv
@@ -711,7 +776,7 @@ def test_multi_value_arg_names_does_not_load_vllm_general_plugins(
         ("vllm.engine.arg_utils", arg_utils),
     ):
         monkeypatch.setitem(sys.modules, name, module)
-    cli_args = sys.modules["vllm.entrypoints.openai.cli_args"]
+    cli_args = vllm_cli_args
     parser = cli_args.make_arg_parser.return_value
 
     def make_arg_parser(_parser):
