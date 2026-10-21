@@ -490,6 +490,14 @@ mimo_v2_6_flash_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/mimo_v2_6_flash",
 )
+# The same model with MTP speculative decoding (MIMO_SPEC_DECODE=mtp, the plugin's
+# model-owned drafter contract); a separate impl so run reports name it.
+mimo_v2_6_flash_mtp_impl = ImplSpec(
+    impl_id="mimo_v2_6_flash_mtp",
+    impl_name="mimo-v2.6-flash-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/mimo_v2_6_flash",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -502,6 +510,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "mimo_v2_6_flash": mimo_v2_6_flash_impl,
+    "mimo_v2_6_flash_mtp": mimo_v2_6_flash_mtp_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
