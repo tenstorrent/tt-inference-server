@@ -1,0 +1,34 @@
+# IFBench (AllenAI, NeurIPS 2025 D&B): 300 single-turn prompts with 58 out-of-distribution
+# verifiable constraints. Scored with AllenAI's own verifier (`ifbench` package, pinned in
+# requirements/evals-common.txt), replicating its evaluation_lib strict/loose checks.
+# The paper's headline number is prompt-level loose accuracy.
+task: ifbench
+dataset_path: allenai/IFBench_test
+dataset_kwargs:
+  revision: 2e8a48de45ff3bf41242f927254ca81b59ca3ae2
+test_split: train
+output_type: generate_until
+num_fewshot: 0
+doc_to_text: prompt
+doc_to_target: 0
+generation_kwargs:
+  until: []
+  do_sample: false
+  temperature: 0.0
+  max_gen_toks: 1280
+process_results: !function utils.process_results
+metric_list:
+  - metric: prompt_level_strict_acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: inst_level_strict_acc
+    aggregation: !function utils.agg_inst_level_acc
+    higher_is_better: true
+  - metric: prompt_level_loose_acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: inst_level_loose_acc
+    aggregation: !function utils.agg_inst_level_acc
+    higher_is_better: true
+metadata:
+  version: 1.0

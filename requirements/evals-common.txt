@@ -22,3 +22,7 @@ protobuf
 pyjwt
 pillow
 datasets==3.1.0
+# IFBench verifier (AllenAI; not on PyPI) for the custom `ifbench` task under
+# reference_config/evals/lm_eval_tasks/ifbench. Pinned commit; its NLTK data is
+# staged by scripts/setup_nltk_data.py.
+ifbench @ git+https://github.com/allenai/IFBench.git@1c40f0c10d9b5c5c2f10a175a28007ebb64f7f4d

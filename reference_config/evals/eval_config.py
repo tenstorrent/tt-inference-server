@@ -564,6 +564,12 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# IFBench (AllenAI) as an lm-eval task, scored with AllenAI's verifier package
+# (pinned in requirements/evals-common.txt).
+_IFBENCH_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "ifbench"
+)
+
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
 # The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
@@ -12764,47 +12770,53 @@ _eval_config_list = [
     ),
     # =========================================================================
     # Qwen/Qwen3.8-Flash-Next (TP4 autoport, P300X2). CI TEST ENTRY, not for merge.
-    # Thinking model; the model card lists no IFEval/GPQA-subset references we can
-    # match (it reports GPQA Diamond 91.7 with very long reasoning budgets and
-    # IFBench, not IFEval), so these runs are informational.
+    # Thinking model; both tasks are graded against the model card: IFBench 81.3 and
+    # GPQA Diamond 91.7 (the card uses very long reasoning budgets, so the 32K one here
+    # is expected to cost points on GPQA).
     # Order matters: tasks run sequentially and GPQA (bounded, longest) goes last.
-    # Run as an evals-only dispatch (no benchmark sweep). The release run 39271633490
-    # (slowest runner) reached IFEval 400/541 in 3.5 h and GPQA 68/80 in 5.5 h, so the
-    # bounds are IFEval <= 6 h + GPQA <= 10 h + server start (~0.5-1.2 h) < 18 h job cap.
-    # Exceeding a bound marks that task incomplete (rc=124) instead of losing the whole
-    # run. Request timeout == wall bound (never retry).
+    # Sized for a release dispatch (benchmark sweep + evals) in the 18 h job: server
+    # start <= ~1.2 h, sweep ~3.5-5.3 h (release run 39271633490, slowest runner),
+    # IFBench <= 3.5 h, GPQA-80 <= 7.5 h (evals run 39398093834 took 4.9 h on a normal
+    # runner; ~6.5 h projected on the slowest). Exceeding a bound marks that task
+    # incomplete (rc=124) instead of losing the whole run. Request timeout == wall
+    # bound (never retry).
     # =========================================================================
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-Flash-Next",
         tasks=[
             EvalTask(
-                # All 541 prompts (no CI limit). prompt_level_strict_acc, 0-shot.
-                task_name="leaderboard_ifeval",
+                # IFBench (AllenAI), the card's "Instruction following" row (81.3). Custom
+                # task (the pinned lm-eval fork has none): all 300 prompts, scored by
+                # AllenAI's verifier. Graded on prompt-level loose accuracy, IFBench's
+                # headline metric; strict and instruction-level are reported alongside.
+                task_name="ifbench",
+                include_path=_IFBENCH_LM_EVAL_TASKS,
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results (no IFEval score; IFBench 81.3)",
+                    published_score=81.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            "prompt_level_loose_acc,none",
                         ],
                         "unit": "percent",
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(6 * 60 * 60),
+                wall_clock_timeout_seconds=int(3.5 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(6 * 60 * 60),
+                    "timeout": int(3.5 * 60 * 60),
                 },
                 # Model-card thinking-mode sampling; the qwen3 reasoning parser keeps
-                # the thinking out of the scored content.
+                # the thinking out of the scored content. 32K (IFEval at 16K truncated
+                # 2/541 answers in run 39398093834; IFBench constraints are harder).
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 16384,
+                    "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -12832,10 +12844,10 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(10 * 60 * 60),
+                wall_clock_timeout_seconds=int(7.5 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(10 * 60 * 60),
+                    "timeout": int(7.5 * 60 * 60),
                 },
                 # 32K thinking budget (the card's GPQA uses far longer budgets, so
                 # truncated answers are expected to cost points).

@@ -16,7 +16,8 @@ def test_untrusted_download_does_not_write_tokenizer_data(tmp_path, monkeypatch)
         setup_nltk_data.urllib.request, "urlopen", lambda *a, **kw: io.BytesIO(b"bad")
     )
     with pytest.raises(ValueError, match="checksum mismatch"):
-        setup_nltk_data.ensure_punkt_data(tmp_path)
+        for package in setup_nltk_data.PACKAGES:
+            setup_nltk_data.ensure_package(tmp_path, *package)
     assert not list(tmp_path.iterdir())
 
 
@@ -28,13 +29,14 @@ def test_verified_data_repairs_partial_cache_and_reuses_it(tmp_path, monkeypatch
             archive.writestr(f"punkt_tab/english/{name}", data)
         archive.writestr("../../outside", b"must not be extracted")
     payload = buffer.getvalue()
-    monkeypatch.setattr(
-        setup_nltk_data, "ARCHIVE_SHA256", hashlib.sha256(payload).hexdigest()
-    )
-    monkeypatch.setattr(
-        setup_nltk_data,
-        "ENGLISH_FILES",
-        {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
+    package = (
+        "tokenizers/punkt_tab.zip",
+        hashlib.sha256(payload).hexdigest(),
+        {
+            f"punkt_tab/english/{name}": hashlib.sha256(data).hexdigest()
+            for name, data in files.items()
+        },
+        "tokenizers",
     )
     monkeypatch.setattr(
         setup_nltk_data.urllib.request,
@@ -44,7 +46,7 @@ def test_verified_data_repairs_partial_cache_and_reuses_it(tmp_path, monkeypatch
     target = tmp_path / "tokenizers" / "punkt_tab" / "english"
     target.mkdir(parents=True)
     (target / "collocations.tab").write_bytes(b"partial")
-    setup_nltk_data.ensure_punkt_data(tmp_path)
+    setup_nltk_data.ensure_package(tmp_path, *package)
     assert {p.name: p.read_bytes() for p in target.iterdir()} == files
     assert not (tmp_path / "outside").exists()
 
@@ -52,4 +54,4 @@ def test_verified_data_repairs_partial_cache_and_reuses_it(tmp_path, monkeypatch
         pytest.fail("Verified cache should not need network access")
 
     monkeypatch.setattr(setup_nltk_data.urllib.request, "urlopen", no_download)
-    setup_nltk_data.ensure_punkt_data(tmp_path)
+    setup_nltk_data.ensure_package(tmp_path, *package)
