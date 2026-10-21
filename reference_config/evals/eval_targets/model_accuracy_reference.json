@@ -311,14 +311,11 @@
     },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-        "_comment": "Placeholder: clip_valid_range is copied from Wan2.2-T2V; replace with the range from the Wan2.2 I2V GPU reference dataset.",
+        "_comment": "Placeholder: no I2V reference yet, so clip_valid_range is null and the CLIP score is recorded without gating (accuracy_check NA). The T2V range it used to copy, [28.25276, 30.54], failed a working BH Galaxy 480p run at 23.48: the eval conditions on one fixed image and scores against unrelated COCO captions. Set it from the Wan2.2 I2V GPU reference dataset.",
         "num_inference_steps": 40,
         "accuracy": {
             "5": {
-                "clip_valid_range": [
-                    28.25276,
-                    30.54
-                ]
+                "clip_valid_range": null
             }
         },
         "extra_args": {
