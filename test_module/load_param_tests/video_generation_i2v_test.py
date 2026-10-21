@@ -179,7 +179,8 @@ class VideoGenerationI2VTest(BaseTest):
         mismatched = [
             key
             for key in ("prompt", "negative_prompt", "num_inference_steps", "seed")
-            if echoed.get(key) != payload[key]
+            # A field the request left out is echoed as null.
+            if echoed.get(key) != payload.get(key)
         ]
         if mismatched:
             return f"request_parameters do not echo {mismatched}"

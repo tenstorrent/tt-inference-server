@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .video_quality_metrics import (
+    FRAME_METRIC_SIZE,
     MissingVideoQualityDependency,
     probe_video,
     sample_video_frames,
@@ -98,4 +99,58 @@ def check_video_output(
     return "; ".join(problems) or None
 
 
-__all__ = ["check_video_output", "deployment_resolution", "expected_video_shape"]
+def mean_frame_difference(path_a: str | Path, path_b: str | Path) -> float:
+    """Mean absolute pixel difference (0-255) between two clips' sampled frames.
+
+    Both clips are sampled at the same uniform positions and resized to
+    FRAME_METRIC_SIZE, so identical clips score 0.
+    """
+    import numpy as np
+
+    frames_a = sample_video_frames(Path(path_a)).frames
+    frames_b = sample_video_frames(Path(path_b)).frames
+    return float(
+        np.mean(
+            [
+                np.abs(np.asarray(a, np.float32) - np.asarray(b, np.float32)).mean()
+                for a, b in zip(frames_a, frames_b)
+            ]
+        )
+    )
+
+
+def frame_distances_to_image(
+    video_path: str | Path, image_bytes: bytes, frame_indices: list[int]
+) -> dict[int, float]:
+    """Mean absolute pixel difference (0-255) from each chosen frame to an image.
+
+    Frames and image are both resized to FRAME_METRIC_SIZE. Lower means the frame
+    looks more like the image: how an I2V test sees where its conditioning landed.
+    """
+    import io
+
+    import imageio.v3 as iio
+    import numpy as np
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    target = np.asarray(image.resize(FRAME_METRIC_SIZE), np.float32)
+    wanted, distances = set(frame_indices), {}
+    for index, frame in enumerate(iio.imiter(Path(video_path))):
+        if index in wanted:
+            resized = Image.fromarray(frame).convert("RGB").resize(FRAME_METRIC_SIZE)
+            distances[index] = float(
+                np.abs(np.asarray(resized, np.float32) - target).mean()
+            )
+        if index >= max(wanted):
+            break
+    return distances
+
+
+__all__ = [
+    "check_video_output",
+    "deployment_resolution",
+    "expected_video_shape",
+    "frame_distances_to_image",
+    "mean_frame_difference",
+]
