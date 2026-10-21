@@ -32,6 +32,7 @@ from .._test_common import (
     build_video_generation_payload,
     get_video_generation_submit_endpoint,
     is_i2v_video_model,
+    load_i2v_eval_pairs,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,9 +95,20 @@ class VideoGenerationEvalsTest(BaseTest):
             )
             request.num_inference_steps = num_inference_steps
 
-        # Step 1: Get prompts from COCO dataset
-        logger.info(f"Step 1: Loading {request.num_prompts} prompts from COCO captions")
-        prompts = sdxl_get_prompts(request.start_from, request.num_prompts)
+        # Step 1: Get prompts from COCO. I2V gets image-caption pairs, so each
+        # video is conditioned on the image its prompt describes.
+        conditioning = None
+        if is_i2v_video_model(request.model_name):
+            logger.info(
+                f"Step 1: Loading {request.num_prompts} COCO image-caption pairs"
+            )
+            conditioning = load_i2v_eval_pairs(request.num_prompts)
+            prompts = [pair["prompt"] for pair in conditioning]
+        else:
+            logger.info(
+                f"Step 1: Loading {request.num_prompts} prompts from COCO captions"
+            )
+            prompts = sdxl_get_prompts(request.start_from, request.num_prompts)
 
         # Step 2: Generate videos
         logger.info("Step 2: Generating videos")
@@ -105,6 +117,7 @@ class VideoGenerationEvalsTest(BaseTest):
             model_name=request.model_name,
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
+            conditioning=conditioning,
         )
         num_generated = len(videos_info)
 
@@ -115,6 +128,7 @@ class VideoGenerationEvalsTest(BaseTest):
             prompts=prompts,
             frame_sample_rate=request.frame_sample_rate,
         )
+        concept_results = self._score_concepts(videos_info, conditioning)
 
         # Step 4: Calculate accuracy check
         logger.info("Step 4: Checking accuracy against reference")
@@ -143,7 +157,8 @@ class VideoGenerationEvalsTest(BaseTest):
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
-            # {prompt, video_path, job_id} per clip, so the caller can keep them.
+            "concept_results": concept_results,
+            # {prompt, video_path, job_id, ...} per clip, so the caller can keep them.
             "videos": videos_info,
         }
 
@@ -160,6 +175,7 @@ class VideoGenerationEvalsTest(BaseTest):
         model_name: str,
         server_url: str | None,
         num_inference_steps: int,
+        conditioning: list[dict] | None = None,
     ) -> list[dict]:
         """Generate videos for all prompts.
 
@@ -168,6 +184,8 @@ class VideoGenerationEvalsTest(BaseTest):
             model_name: Model name used to select T2V vs I2V endpoint/payload
             server_url: Base server URL (e.g., http://localhost:8000)
             num_inference_steps: Number of inference steps for generation
+            conditioning: For I2V, one ``{image, image_b64}`` per prompt; without
+                it every I2V prompt gets the fixed fixture image
 
         Returns:
             List of dicts with video information: {'prompt': str, 'video_path': str, 'job_id': str}
@@ -178,7 +196,9 @@ class VideoGenerationEvalsTest(BaseTest):
             f"Generating {len(prompts)} videos using "
             f"{'I2V' if is_i2v else 'T2V'} endpoint: {submit_endpoint}"
         )
-        image_b64 = _load_fixture_image_base64() if is_i2v else None
+        fixture_image_b64 = (
+            _load_fixture_image_base64() if is_i2v and not conditioning else None
+        )
 
         # Remove any stale videos from previous runs so FVD/FVMD only sees
         # outputs produced in the current eval.
@@ -202,12 +222,13 @@ class VideoGenerationEvalsTest(BaseTest):
 
         for idx, prompt in enumerate(prompts):
             logger.info(f"Generating video {idx + 1}/{len(prompts)}: {prompt[:50]}...")
+            pair = conditioning[idx] if conditioning else None
 
             payload = build_video_generation_payload(
                 prompt=prompt,
                 num_inference_steps=num_inference_steps,
                 model_name=model_name,
-                image_b64=image_b64,
+                image_b64=pair["image_b64"] if pair else fixture_image_b64,
             )
 
             generation_start = time.time()
@@ -242,6 +263,7 @@ class VideoGenerationEvalsTest(BaseTest):
                             "prompt": prompt,
                             "video_path": video_path,
                             "job_id": job_id,
+                            "image": pair["image"] if pair else None,
                         }
                     )
                     logger.info(f"✅ Video generated successfully: {video_path}")
@@ -342,6 +364,59 @@ class VideoGenerationEvalsTest(BaseTest):
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
             return ""
+
+    def _score_concepts(
+        self, videos_info: list[dict], conditioning: list[dict] | None
+    ) -> dict | None:
+        """CLIP score of each pair's concepts, per clip; informational, never gates.
+
+        The prompt-level CLIP score says how well a clip matches its caption as a
+        whole; scoring "a bird feeder" and "a small bird" separately shows which
+        part of it the video loses. Adds ``concept_scores`` to each video entry.
+        """
+        concepts_by_image = {
+            pair["image"]: pair.get("concepts") or [] for pair in conditioning or []
+        }
+        if not any(concepts_by_image.values()):
+            return None
+        from .._test_common.video_quality_metrics import (
+            BatchedCLIPScorer,
+            clip_video_metrics,
+            sample_video_frames,
+        )
+
+        logger.info("Step 3b: Scoring each pair's concepts with CLIP")
+        try:
+            scorer = BatchedCLIPScorer()
+            scores = []
+            for video in videos_info:
+                concepts = concepts_by_image.get(video.get("image")) or []
+                if not concepts:
+                    continue
+                metrics = clip_video_metrics(
+                    scorer=scorer,
+                    sampled=sample_video_frames(Path(video["video_path"])),
+                    prompt=video["prompt"],
+                    required_concepts=concepts,
+                )
+                video["concept_scores"] = {
+                    concept: round(values["mean"], 2)
+                    for concept, values in metrics["concept_scores"].items()
+                }
+                for concept, score in video["concept_scores"].items():
+                    scores.append((score, concept, video["prompt"]))
+                    logger.info(f"  {score:6.2f}  {concept!r} in: {video['prompt']}")
+        except Exception as e:  # noqa: BLE001 - informational; must not fail the eval
+            logger.warning(f"Concept scoring skipped: {e}")
+            return None
+        if not scores:
+            return None
+        weakest = min(scores)
+        return {
+            "mean_concept_score": statistics.mean(score for score, _, _ in scores),
+            "min_concept_score": weakest[0],
+            "weakest_concept": f"{weakest[1]} ({weakest[2]})",
+        }
 
     def _calculate_video_clip_scores(
         self,

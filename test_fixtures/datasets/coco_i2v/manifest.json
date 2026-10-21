@@ -1,0 +1,85 @@
+[
+  {
+    "image": "coco_000000412355.jpg",
+    "caption": "A small bird is perched on an empty bird feeder.",
+    "coco_image_id": 412355,
+    "coco_caption_id": 392,
+    "coco_url": "http://images.cocodataset.org/val2014/COCO_val2014_000000412355.jpg",
+    "crop": "center 16:9",
+    "size": [
+      640,
+      360
+    ],
+    "concepts": [
+      "a small bird",
+      "a bird feeder"
+    ]
+  },
+  {
+    "image": "coco_000000128675.jpg",
+    "caption": "A man holding one water ski at the lake.",
+    "coco_image_id": 128675,
+    "coco_caption_id": 1159,
+    "coco_url": "http://images.cocodataset.org/val2014/COCO_val2014_000000128675.jpg",
+    "crop": "center 16:9",
+    "size": [
+      640,
+      360
+    ],
+    "concepts": [
+      "a man",
+      "a water ski",
+      "a lake"
+    ]
+  },
+  {
+    "image": "coco_000000286036.jpg",
+    "caption": "A group of people ski and snowboard together",
+    "coco_image_id": 286036,
+    "coco_caption_id": 1823,
+    "coco_url": "http://images.cocodataset.org/val2014/COCO_val2014_000000286036.jpg",
+    "crop": "center 16:9",
+    "size": [
+      640,
+      360
+    ],
+    "concepts": [
+      "people skiing",
+      "a snowboard",
+      "a snowy slope"
+    ]
+  },
+  {
+    "image": "coco_000000112232.jpg",
+    "caption": "Two trains running along a set of tracks.",
+    "coco_image_id": 112232,
+    "coco_caption_id": 3495,
+    "coco_url": "http://images.cocodataset.org/val2014/COCO_val2014_000000112232.jpg",
+    "crop": "center 16:9",
+    "size": [
+      640,
+      360
+    ],
+    "concepts": [
+      "a train",
+      "railway tracks"
+    ]
+  },
+  {
+    "image": "coco_000000310278.jpg",
+    "caption": "A young man riding a bike past a car while talking on a cell phone.",
+    "coco_image_id": 310278,
+    "coco_caption_id": 8455,
+    "coco_url": "http://images.cocodataset.org/val2014/COCO_val2014_000000310278.jpg",
+    "crop": "center 16:9",
+    "size": [
+      640,
+      360
+    ],
+    "concepts": [
+      "a young man",
+      "a bicycle",
+      "a car"
+    ]
+  }
+]

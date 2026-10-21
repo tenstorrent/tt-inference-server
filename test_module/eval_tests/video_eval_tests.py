@@ -152,7 +152,12 @@ def _save_eval_clips(ctx: MediaContext, videos: list[dict]) -> None:
     for i, video in enumerate(videos):
         name = f"{i:02d}_{video.get('job_id') or 'clip'}.mp4"
         if save_clip(video.get("video_path"), ctx.output_path, "evals", name):
-            index.append({"file": name, "prompt": video.get("prompt")})
+            entry = {"file": name, "prompt": video.get("prompt")}
+            if video.get("image"):
+                entry["conditioning_image"] = video["image"]
+            if video.get("concept_scores"):
+                entry["concept_scores"] = video["concept_scores"]
+            index.append(entry)
     if index:
         index_path = Path(ctx.output_path) / "videos" / "evals" / "index.json"
         index_path.write_text(json.dumps(index, indent=2))
@@ -196,6 +201,11 @@ def run_video_eval(ctx: MediaContext) -> Block:
             "clip_standard_deviation", 0.0
         )
         data["accuracy_check"] = eval_result.get("accuracy_check", ReportCheckTypes.NA)
+        concept_results = eval_result.get("concept_results")
+        if concept_results:
+            data["mean_concept_score"] = concept_results["mean_concept_score"]
+            data["min_concept_score"] = concept_results["min_concept_score"]
+            data["weakest_concept"] = concept_results["weakest_concept"]
     else:
         logger.warning("No eval results from video generation test")
 
