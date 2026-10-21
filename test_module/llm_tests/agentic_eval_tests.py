@@ -21,6 +21,7 @@ from llm_module import (
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
 from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.server_lifecycle import get_server_lifecycle
 from workflow_module import accept_blocks
 
 from .._test_common import sweep_envelope
@@ -157,11 +158,27 @@ def _configure_openai_env(ctx: MediaContext) -> None:
     # 401 on the agent's first completion -- silently zeroing swe_bench_verified
     # and terminal_bench_2. Mint the same token the standard-eval and
     # server_tests paths use (setup_tests_auth) instead of sending "EMPTY".
-    rc = getattr(ctx, "runtime_config", None)
-    jwt_secret = (getattr(rc, "jwt_secret", None) if rc else None) or os.getenv(
-        "JWT_SECRET", ""
+    # A forge/media server checks a literal ``Bearer $API_KEY`` and 401s a JWT, so a
+    # local one gets the key the eval and benchmark clients send it
+    # (command_factory._resolve_auth_token).
+    remote = getattr(ctx, "remote_server", False)
+    engine = getattr(getattr(ctx, "model_spec", None), "inference_engine", None)
+    engine = get_server_lifecycle().normalize_engine_value(
+        getattr(engine, "value", engine)
     )
-    setup_tests_auth(jwt_secret, getattr(ctx, "remote_server", False), logger)
+    if not remote and get_server_lifecycle().uses_literal_api_key(engine):
+        os.environ["OPENAI_API_KEY"] = (
+            os.getenv("VLLM_API_KEY") or os.getenv("API_KEY") or "your-secret-key"
+        )
+        logger.info(
+            "OPENAI_API_KEY set to the literal API key for a %s server.", engine
+        )
+    else:
+        rc = getattr(ctx, "runtime_config", None)
+        jwt_secret = (getattr(rc, "jwt_secret", None) if rc else None) or os.getenv(
+            "JWT_SECRET", ""
+        )
+        setup_tests_auth(jwt_secret, remote, logger)
     # --no-auth servers need no key, but the OpenAI/litellm client still requires
     # a non-empty value; keep the historical placeholder as a final fallback.
     os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))

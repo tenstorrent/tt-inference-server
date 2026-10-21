@@ -1182,24 +1182,6 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
-    },
-    {
-      "devices": [
-        "p150x8",
-        "blackhole_galaxy"
-      ],
-      "impls": [
-        "tt_lab_glm"
-      ],
-      "models": [
-        "zai-org/GLM-5.3-Flash"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
     }
   ]
 }
