@@ -1,7 +1,7 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
   "target_commit": null,
-  "patch_sha256": "2a31f70051e25deb726ca4f03b70d2b9e0899832a7fab8705d61232b6348b716",
+  "patch_sha256": "d12a4343d6ed9f5560b05ee9b002d865d69d4bc74aa957e08ce57635298ad563",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -9,11 +9,11 @@
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "1f0cdea97f598333e8900791cce4006747830f522499c2f4148e0975aff46c28"
+      "target": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "f3dfb384253b03ca0a87367026d7fe300a6fda5b26578539db0650e5e834489e"
+      "target": "cf607632e3bd85f908ddce7c087d35d82e4e59ceef6b8b94685941e0ec70a670"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
@@ -68,7 +68,7 @@
       "target": "a2b1fa5d3566d2be6f10cbb0f803f4e4eb8096b955dce8b4fe698bc753150c72"
     }
   },
-  "scope": "Accepted sharing/observer source plus explicit F311296->3824/7648 preparation profile only; runtime capacity closure pending.",
+  "scope": "Joint BF8QKV+down andexplicitF3934464profile; preserved accepted observer64adapter; runtimeoperationtriplet separatelypinned",
   "base_model_commit": "e2f60739b2d9fdfb29feefeabb183dfdc218ca7a",
   "target_content_manifest_sha256": "66487a96a07343e032004cda40e6f01a5106e90045b800b4a848eaa05855a8df",
   "native_acceptance_sha256": "04271b98980953ee6ba480c28381b710450412fbd2ff41b5bb9a453c4260c82a"

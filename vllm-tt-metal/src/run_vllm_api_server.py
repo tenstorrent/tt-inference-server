@@ -1361,6 +1361,10 @@ def main():
     logger.info(f"Using model spec: {model_spec['model_id']}")
 
     if model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_"):
+        # Strict tracking flags must be present before the loader proof imports TTNN.
+        set_runtime_env_vars(model_spec)
+        from gemma_install_runtime import install_runtime
+        install_runtime(Path("/home/container_app_user/tt-metal"))
         from gemma_install_prefix_overlay import install_anchor_overlay
         install_anchor_overlay(Path(sysconfig.get_paths()["purelib"]) / "vllm")
 
