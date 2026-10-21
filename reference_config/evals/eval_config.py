@@ -2881,8 +2881,9 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=67.9,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=56.05,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6288668031",
+                    # MOPD weights, 3 attempts per task, with the DeepSWE harness env fixes.
+                    gpu_reference_score=65.49,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6317472058",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
