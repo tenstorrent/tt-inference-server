@@ -953,9 +953,6 @@ templates:
         GEMMA4_26B_ALLOW_HOST_SAMPLING: "1"
         GEMMA4_PREFIX_CACHING: "1"
         GEMMA4_PREFIX_TRACE_SUFFIX: "1"
-        TT_METAL_CACHE: /home/container_app_user/cache_root/gemma4_metal_kernel_cache
-        HF_HOME: /home/container_app_user/cache_root/huggingface
-        HF_HUB_CACHE: /home/container_app_user/cache_root/huggingface/hub
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1000000000

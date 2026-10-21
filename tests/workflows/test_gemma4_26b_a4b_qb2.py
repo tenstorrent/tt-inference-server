@@ -60,9 +60,21 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.vllm_args["enable-prefix-caching"] is True
     assert dedicated.device_model_spec.env_vars["GEMMA4_PREFIX_CACHING"] == "1"
     assert dedicated.device_model_spec.env_vars["GEMMA4_PREFIX_TRACE_SUFFIX"] == "1"
-    assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
-        "/gemma4_metal_kernel_cache"
+
+
+def test_gemma4_profile_leaves_cache_paths_to_the_launch_environment():
+    dedicated = resolve_model_spec(
+        _gemma4_26b_specs(),
+        model="google/gemma-4-26B-A4B-it",
+        device="p300x2",
+        impl="tt-vllm-plugin",
+        catalog_name="Shield",
     )
+    # Runtime spec env vars overwrite existing settings, including local-server
+    # cache paths. Deployment-specific defaults do not belong in this profile.
+    cache_vars = {"TT_METAL_CACHE", "HF_HOME", "HF_HUB_CACHE"}
+    assert cache_vars.isdisjoint(dedicated.env_vars)
+    assert cache_vars.isdisjoint(dedicated.device_model_spec.env_vars)
 
 
 def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
