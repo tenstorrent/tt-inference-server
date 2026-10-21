@@ -988,7 +988,8 @@ class TestMiniSweAgentParity:
         kwargs = harbor._get_agent_kwargs(cfg)
         assert "config" not in kwargs
 
-    def test_mini_swe_docker_uses_host_gateway(self, tmp_path):
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_mini_swe_docker_reaches_the_host_address(self, _host_address, tmp_path):
         cfg = build_harbor_config(
             _swebench_task(),
             _server(),
@@ -1005,19 +1006,17 @@ class TestMiniSweAgentParity:
         config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
         harbor_config = json.loads(config_path.read_text())
         assert harbor_config["agents"][0]["env"] == {
-            "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
-            "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+            "OPENAI_BASE_URL": "http://172.17.0.1:8000/v1",
+            "OPENAI_API_BASE": "http://172.17.0.1:8000/v1",
         }
-        overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
-        assert json.loads(overlay_path.read_text()) == {
-            "services": {
-                "main": {
-                    "extra_hosts": ["host.docker.internal:host-gateway"],
-                }
-            }
-        }
+        # No extra_hosts overlay: Docker rejects one on a service that shares the
+        # egress-control sidecar's network namespace.
+        assert "extra_docker_compose" not in harbor_config["environment"]
 
-    def test_allow_agent_endpoint_allowlists_the_task_side_host(self, tmp_path):
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_allow_agent_endpoint_allowlists_the_task_side_host(
+        self, _host_address, tmp_path
+    ):
         """A no-network task (DeepSWE) must still let the agent reach the
         server, at the host the container actually dials."""
         task = _swebench_task()
@@ -1035,7 +1034,100 @@ class TestMiniSweAgentParity:
 
         config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
         agent = json.loads(config_path.read_text())["agents"][0]
-        assert agent["extra_allowed_hosts"] == ["host.docker.internal"]
+        assert agent["extra_allowed_hosts"] == ["172.17.0.1"]
+
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_tau3_agent_and_its_containers_reach_the_host_address(
+        self, _host_address, tmp_path
+    ):
+        """tau3's LLM agent, user simulator and NL-assertion verifier all call
+        the model from task containers."""
+        task = _harbor_task(
+            task_name="tau3_bench_banking",
+            agentic_eval_config=FakeHarborConfig(
+                dataset="sierra-research/tau3-bench",
+                agent="tau3_llm_agent",
+                agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                environment_env={
+                    "TAU2_USER_MODEL": "openai/m",
+                    "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+                },
+                verifier_env={
+                    "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+                    "OPENAI_API_BASE": "http://localhost:8000/v1",
+                },
+            ),
+        )
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["env"]["OPENAI_BASE_URL"] == (
+            "http://172.17.0.1:8000/v1"
+        )
+        assert harbor_config["environment"]["env"] == {
+            "TAU2_USER_MODEL": "openai/m",
+            "OPENAI_BASE_URL": "http://172.17.0.1:8000/v1",
+        }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+            "OPENAI_API_BASE": "http://172.17.0.1:8000/v1",
+        }
+
+    def test_remote_endpoint_is_not_rewritten(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            ServerConnection(
+                base_url="http://172.17.0.1", service_port=8004, model="m"
+            ),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        with patch.object(harbor, "_docker_host_address") as host_address:
+            assert harbor._get_agent_env(cfg)["OPENAI_BASE_URL"] == (
+                "http://172.17.0.1:8004/v1"
+            )
+        host_address.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "override, docker_os, gateways, expected",
+        [
+            ("10.0.0.5", "", "", "10.0.0.5"),
+            ("", "Docker Desktop", "", "host.docker.internal"),
+            ("", "Ubuntu 22.04.5 LTS", "172.17.0.1 ", "172.17.0.1"),
+            ("", "Ubuntu 22.04.5 LTS", "", "172.17.0.1"),
+        ],
+    )
+    def test_docker_host_address(
+        self, monkeypatch, override, docker_os, gateways, expected
+    ):
+        monkeypatch.setenv("AGENTIC_DOCKER_HOST_ADDRESS", override)
+        harbor._docker_host_address.cache_clear()
+
+        def fake_run(cmd, **kwargs):
+            out = docker_os if cmd[1] == "info" else gateways
+            return SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+        with patch.object(harbor.subprocess, "run", side_effect=fake_run):
+            assert harbor._docker_host_address() == expected
+        harbor._docker_host_address.cache_clear()
+
+    def test_docker_host_address_without_docker(self, monkeypatch):
+        monkeypatch.delenv("AGENTIC_DOCKER_HOST_ADDRESS", raising=False)
+        harbor._docker_host_address.cache_clear()
+        with patch.object(
+            harbor.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            assert harbor._docker_host_address() == "172.17.0.1"
+        harbor._docker_host_address.cache_clear()
 
     def test_prepull_images_reach_the_harbor_run_config(self, tmp_path):
         task = _swebench_task()

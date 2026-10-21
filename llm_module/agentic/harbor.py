@@ -14,6 +14,7 @@ translate an eval config into a Harbor job config.
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import logging
 import os
@@ -40,14 +41,25 @@ logger = logging.getLogger(__name__)
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
-# mini-swe-agent runs inside the task container, where host loopback is not
-# the inference server.
+# Inside a task container host loopback is not the inference server. A local
+# endpoint is rewritten to the address containers reach the host at
+# (``_docker_host_address``): Docker Desktop's ``host.docker.internal``, else the
+# docker bridge gateway, which needs no ``extra_hosts`` entry (Docker rejects one
+# on a service sharing the egress-control sidecar's network namespace).
+# AGENTIC_DOCKER_HOST_ADDRESS overrides it.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _DOCKER_HOST_NAME = "host.docker.internal"
+_DOCKER_HOST_ADDRESS_ENV = "AGENTIC_DOCKER_HOST_ADDRESS"
+_DEFAULT_BRIDGE_GATEWAY = "172.17.0.1"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
 # harness (see ``_apply_mini_swe_agent_defaults``).
 _MINI_SWE_AGENT = "mini-swe-agent"
+# Custom agents that run inside the task container, as mini-swe-agent does
+# (terminus-2 and other agents run on the host): the tau3 adapter's LLM agent
+# runs run_tau3_llm_agent.py in the container.
+_IN_CONTAINER_AGENT_IMPORTS = ("adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",)
 
 
 @dataclass(frozen=True)
@@ -184,25 +196,73 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     return values[0] if values else config.api_base
 
 
-def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
-    return (
-        config.agent == _MINI_SWE_AGENT
-        and config.agent_import_path is None
-        and config.environment_type == "docker"
-        and urlsplit(_get_agent_endpoint(config)).hostname
-        in {"127.0.0.1", "localhost", "::1"}
+def _agent_in_task_container(config: HarborRunConfig) -> bool:
+    if config.agent_import_path is None:
+        return config.agent == _MINI_SWE_AGENT
+    return config.agent_import_path in _IN_CONTAINER_AGENT_IMPORTS
+
+
+@functools.cache
+def _docker_host_address() -> str:
+    """The address task containers reach this host at (see _LOOPBACK_HOSTS)."""
+    override = os.environ.get(_DOCKER_HOST_ADDRESS_ENV, "").strip()
+    if override:
+        return override
+    try:
+        info = subprocess.run(
+            ["docker", "info", "--format", "{{.OperatingSystem}}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if "Docker Desktop" in info.stdout:
+            return _DOCKER_HOST_NAME
+        bridge = subprocess.run(
+            [
+                "docker",
+                "network",
+                "inspect",
+                "bridge",
+                "--format",
+                "{{range .IPAM.Config}}{{.Gateway}} {{end}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        gateways = bridge.stdout.split() if bridge.returncode == 0 else []
+        if gateways:
+            return gateways[0]
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not ask docker for the host address: %s", exc)
+    return _DEFAULT_BRIDGE_GATEWAY
+
+
+def _task_side_url(config: HarborRunConfig, url: str) -> str:
+    """``url`` as a task container on the docker environment reaches it."""
+    parsed = urlsplit(url)
+    if config.environment_type != "docker" or parsed.hostname not in _LOOPBACK_HOSTS:
+        return url
+    host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+    return urlunsplit(
+        parsed._replace(netloc=parsed.netloc.replace(host, _docker_host_address(), 1))
     )
 
 
+def _task_side_env(config: HarborRunConfig, env: dict[str, str]) -> dict[str, str]:
+    """``env`` with its OpenAI endpoint values as a task container reaches them."""
+    return {
+        key: _task_side_url(config, value) if key in _OPENAI_ENDPOINT_ENV else value
+        for key, value in env.items()
+    }
+
+
 def _get_task_side_endpoint(config: HarborRunConfig) -> str:
-    """The endpoint as the agent inside the task container reaches it."""
+    """The endpoint as the agent reaches it: from the task container when it runs
+    there, else (on the host) unchanged."""
     endpoint = _get_agent_endpoint(config)
-    if _mini_swe_needs_host_gateway(config):
-        parsed = urlsplit(endpoint)
-        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
-        endpoint = urlunsplit(
-            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
-        )
+    if _agent_in_task_container(config):
+        endpoint = _task_side_url(config, endpoint)
     return endpoint
 
 
@@ -254,22 +314,6 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
-    if _mini_swe_needs_host_gateway(config):
-        overlay_path = (
-            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
-        )
-        overlay_path.write_text(
-            json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                    }
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -295,12 +339,14 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
             raise ValueError("allow_agent_endpoint needs an endpoint with a host")
         agent_config["extra_allowed_hosts"] = [host]
 
+    # Environment and verifier env is read inside task containers (tau3's user
+    # simulator and NL-assertion verifier call the model with it).
     if config.environment_env:
-        environment_config["env"] = config.environment_env
+        environment_config["env"] = _task_side_env(config, config.environment_env)
 
     verifier_config: dict[str, Any] = {}
     if config.verifier_env:
-        verifier_config["env"] = config.verifier_env
+        verifier_config["env"] = _task_side_env(config, config.verifier_env)
 
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
@@ -333,7 +379,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        _get_task_side_endpoint(config) != _get_agent_endpoint(config)
         or config.dataset_path is not None
         or config.allow_agent_endpoint
         or config.agent_timeout_sec is not None
