@@ -12043,7 +12043,6 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 1.0,
                     EvalLimitMode.SMOKE_TEST: 0.1,
                 },
             ),
