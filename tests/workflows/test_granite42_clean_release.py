@@ -41,7 +41,7 @@ def test_standard_plugin_resolves_granite_without_a_custom_implementation():
     assert spec.impl.impl_name == "tt-vllm-plugin"
     device = spec.device_model_spec
     assert device.max_context == 131072
-    assert device.max_tokens_all_users == 327680
+    assert device.max_tokens_all_users == 655360
     assert json.loads(device.vllm_args["default-chat-template-kwargs"]) == {
         "enable_thinking": True,
         "low_effort": False,
@@ -59,6 +59,7 @@ def test_standard_harbor_config_preserves_cohort_and_enables_thinking(tmp_path, 
         runtime_config=SimpleNamespace(limit_samples_mode="ci-nightly"),
         n_tasks=10,
     )
+    assert config.n_concurrent_trials == 10
     generated = json.loads(_write_harbor_config(config).read_text())
     assert len(generated["datasets"][0]["task_names"]) == 10
     assert generated["datasets"][0]["n_tasks"] == 10
