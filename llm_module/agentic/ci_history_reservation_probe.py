@@ -3,7 +3,6 @@ import concurrent.futures
 import json
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from .ci_r9_wire import Wire, canonical, save
@@ -48,6 +47,57 @@ def exact_server_log():
         raise RuntimeError('Reservation fixture requires one own-workflow server log')
     return paths[0]
 
+def check_batch_generation(response, prompts, cap):
+    assert isinstance(response['id'],str) and response['id']
+    assert len(response['choices'])==len(prompts)
+    by_index={choice['index']:choice for choice in response['choices']}
+    assert set(by_index)==set(range(len(prompts)))
+    rows=[]
+    for index in range(len(prompts)):
+        choice=by_index[index];ids=choice['token_ids']
+        assert ids and all(type(token)is int and token>=0 for token in ids) and len(ids)<=cap
+        assert choice['finish_reason']in ('stop','length','tool_calls')
+        rows.append(dict(label='ordered-partial-'+str(index),response_id=response['id'],choice_index=index,
+                         prompt_tokens=len(prompts[index]),output_ids=ids))
+    assert response['usage']['prompt_tokens']==sum(map(len,prompts))
+    assert response['usage']['completion_tokens']==sum(len(row['output_ids'])for row in rows)
+    return rows
+
+
+def check_gated_lifecycle(records, gate_trigger, response_id):
+    gate_key=gate_trigger['value']['rows'][0]['key']
+    states=[record['value']for record in records if record['tag']=='GEMMA_HISTORY_RESERVATION_STATE']
+    gate_rows=[(state,row)for state in states for row in state['rows']if row['key']==gate_key]
+    assert [(row['start'],row['end'],row['retain'])for state,row in gate_rows]==[(start,start+8192,start+8192<65536)for start in range(0,65536,8192)]
+    def index_of(key):
+        for index in range(4):
+            if key[0].startswith(response_id+'-'+str(index)+'-'):return index
+        return None
+    keys={}
+    for state in states:
+        for row in state['rows']:
+            index=index_of(row['key'])
+            if index is not None:
+                if index in keys:assert keys[index]==row['key']
+                keys[index]=row['key']
+    assert set(keys)=={0,1,2,3}
+    expected={0:(0,129,False),1:(4096,12032,True),2:(4096,4223,True)}
+    matches=[]
+    for state in states:
+        rows={index_of(row['key']):row for row in state['rows']}
+        if set(rows)!=set(expected):continue
+        if all((rows[i]['start'],rows[i]['end'],rows[i]['retain'])==expected[i]for i in expected):
+            if {tuple(k)for k in state['retained']}=={tuple(keys[1]),tuple(keys[2])}:matches.append(state)
+    if not matches:raise RuntimeError('Gated batch did not produce exact short129/B7936/C127 retained-two schedule')
+    assert len(matches)==1 and gate_rows[-1][0]['submission']<matches[0]['submission']
+    denials=[r['value']for r in records if r['tag']=='GEMMA_HISTORY_RESERVATION_DENIED'
+        and r['value']['key']==keys[3] and r['value']['start']==4096 and r['value']['count']==115
+        and {tuple(k)for k in r['value']['tentative']}=={tuple(keys[1]),tuple(keys[2])}]
+    if not denials:raise RuntimeError('Expected gated third partial denial was not observed')
+    return dict(gate_key=gate_key,gate_chunks=8,target_keys=keys,retained_two_submission=matches[0]['submission'],
+                exact_denials=denials,source_schedule_predictions_matched=True)
+
+
 def execute_reservation(server, root):
     root.mkdir(parents=True, exist_ok=False)
     log = exact_server_log()
@@ -67,19 +117,43 @@ def execute_reservation(server, root):
     try:
         seed=tokens(4097,23)
         calls.append(request('seed',body(seed,'reservation-shared-seed',1)))
-        bodies=[body(tokens(17164,1),'reservation-cold-a',64),
-                body(seed+tokens(13068,31)[1:],'reservation-shared-seed',64),
-                body(seed+tokens(13068,47)[1:],'reservation-shared-seed',64)]
-        assert all(len(b['prompt'])==17164 for b in bodies)
-        barrier=threading.Barrier(3)
-        def one(index):
-            barrier.wait(timeout=10)
-            return request('three-partial-'+str(index),bodies[index])
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            futures=[pool.submit(one,i)for i in range(3)]
-            calls.extend(f.result()for f in futures)
-        reader.poll()
-        save(root/'partial-lifecycle.json',reader.records)
+        # Eight exact full-budget gate chunks allow the ordered prompt batch
+        # to enter the queue; the gate's final row leaves no residual budget.
+        gate_reader=StateReader(log)
+        gate_trigger=None
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                gate_future=pool.submit(request,'full-budget-gate',body(tokens(65536,1),'reservation-full-budget-gate',1))
+                stop=time.monotonic()+120
+                while time.monotonic()<stop:
+                    records=gate_reader.poll()
+                    states=[r for r in records if r['tag']=='GEMMA_HISTORY_RESERVATION_STATE']
+                    for record in states:
+                        state=record['value']
+                        if len(state['rows'])==1:
+                            row=state['rows'][0]
+                            if row['start']==0 and row['end']==8192 and row['retain'] and state['retained']==[row['key']]:
+                                gate_trigger=record
+                    if gate_trigger is not None:break
+                    if gate_future.done():raise RuntimeError('Gate completed before first retained chunk was observed')
+                    time.sleep(.01)
+                if gate_trigger is None:raise RuntimeError('No first full-budget gate chunk observed')
+                save(root/'gate-trigger.json',dict(trigger=gate_trigger,log_start_offset=gate_reader.offset,
+                    batch_submit_wall_s=time.time()))
+                prompts=[tokens(129,71)] + [seed+tokens(13068,offset)[1:]for offset in (31,47,63)]
+                assert list(map(len,prompts))==[129,17164,17164,17164]
+                batch_body=body(prompts,'reservation-shared-seed',64)
+                directory=root/'ordered-partial-batch';directory.mkdir()
+                wire=Wire(directory,server.url_with_port,server.auth_token);wire.deadline=deadline
+                result,raw=wire.call('/v1/completions',batch_body,'ordered-partial-batch')
+                batch_rows=check_batch_generation(result,prompts,64)
+                save(directory/'result.json',dict(response_id=result['id'],usage=result['usage'],choices=batch_rows,raw=str(raw)))
+                calls.append(gate_future.result());calls.extend(batch_rows)
+            reader.poll()
+            coverage=check_gated_lifecycle(reader.records,gate_trigger,result['id'])
+            save(root/'gated-coverage.json',coverage)
+            save(root/'partial-lifecycle.json',reader.records)
+        finally:gate_reader.close()
         # All prior client calls completed. Observe a newly retained generation
         # before disconnecting the one owned streaming client; a timed sleep
         # alone is deliberately insufficient cancellation evidence.
@@ -152,7 +226,7 @@ def execute_reservation(server, root):
             and r['value']['count']>0
             and r['value']['start']+r['value']['count']<r['value']['total']]
         if not third_denials:raise RuntimeError('Third-partial denial not observed; fixture coverage incomplete')
-        summary=dict(complete=True,completed_generation_requests=5,deliberately_aborted_requests=1,
+        summary=dict(complete=True,completed_generation_requests=7,deliberately_aborted_requests=1,
             calls=calls,denial_records=len(denied),third_partial_denials=len(third_denials),
             retained_abort_generation=selected,
             scope='Unscored deterministic controls and observed retained-generation abort; not task quality/performance')
