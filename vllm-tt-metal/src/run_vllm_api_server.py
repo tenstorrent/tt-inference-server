@@ -1371,6 +1371,8 @@ def main():
     if model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_"):
         from gemma_install_prefix_overlay import install_prefix_overlay
         install_prefix_overlay(Path("/home/container_app_user/tt-metal"))
+        from gemma_install_history_reservation import install_history_reservation
+        install_history_reservation(Path("/home/container_app_user/tt-metal"))
 
     # Step 3: Register TT models (after lookup, with correct impl_id)
     impl_id = model_spec.get("impl", {}).get("impl_id")

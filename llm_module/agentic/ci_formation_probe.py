@@ -118,6 +118,8 @@ def run_probe(server, context):
                          Path(__file__).parent / 'r9_data/c32-mixed-prefixes.json')
         execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-admission32',
                          Path(__file__).parent / 'r9_data/c32-admission32-prefixes.json')
+        from .ci_history_reservation_probe import execute_reservation
+        execute_reservation(server, Path(context.output_dir) / 'UNSCORED-history-reservation')
         return summary, summary_path
     except BaseException as error:
         save(root / 'failure.json', dict(error_type=type(error).__name__, error=str(error),

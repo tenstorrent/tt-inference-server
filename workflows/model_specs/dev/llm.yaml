@@ -893,6 +893,7 @@ templates:
         MESH_DEVICE: P300x2
         GEMMA_BATCH_PREFILL_MAX_BATCH: '1'
         GEMMA_PREFILL_HISTORY_BANK: '1'
+        GEMMA_HISTORY_RESERVATION: '1'
         GEMMA_PREFILL_RUNTIME_POSITION: '1'
         GEMMA_PREFILL_RUNTIME_FINAL_TILE: '1'
         GEMMA_PREFILL_RUNTIME_PAGES: '1'
@@ -924,6 +925,7 @@ templates:
         l1_small_size: 16384
       vllm_args:
         additional_config: '{"tt":{"sample_on_device_mode":"all","trace_region_size":134217728,"l1_small_size":16384},"gemma_admitted_request_limit":20}'
+        distributed-executor-backend: uni
         scheduling-policy: fcfs
         block_size: '128'
         enable-prompt-tokens-details: true
