@@ -1,0 +1,98 @@
+{
+  "run_id": 39602265481,
+  "scope": "remote FillPad operation compatibility only; independent review pending",
+  "arms": {
+    "control": {
+      "native_seconds": 49.46685834880918,
+      "owned_seconds": 53.31572985649109,
+      "cold_op_seconds": 18.552302637370303,
+      "warm_op_seconds": 0.005797040415927768,
+      "cold_programs": 92,
+      "strict_guarded_cases": 92,
+      "sampled_min_free_per_bank": 4240761216,
+      "sampled_min_largest_free_per_bank": 4220203392,
+      "sampled_max_allocated_per_bank": 31580160,
+      "loaded": {
+        "paths": [
+          "/home/container_app_user/tt-metal/build_Release/lib/_ttnncpp.so"
+        ],
+        "sha256": "fb3478d025a1843cf9b2199ec0d8efade288b6d75c31d93d131f9d3f632d583b",
+        "dependencies": {
+          "_ttnn.so": {
+            "path": "/home/container_app_user/tt-metal/ttnn/ttnn/_ttnn.so",
+            "sha256": "7ce78cf1a13f5d8c14bca5cdefc388163eceafec94f95b5a360f02f1db58529d"
+          },
+          "libtt_metal.so": {
+            "path": "/home/container_app_user/tt-metal/build_Release/lib/libtt_metal.so",
+            "sha256": "aa8b7dc26f23ecccc26eab18eadc7d2467a516a16f01ac0b3eded2642ad18de7"
+          }
+        }
+      },
+      "authoritative_cleanup_owners": 0,
+      "allowed_telemetry": true
+    },
+    "candidate": {
+      "native_seconds": 33.60870358720422,
+      "owned_seconds": 38.2929744720459,
+      "cold_op_seconds": 3.0714178341440856,
+      "warm_op_seconds": 0.014728470239788294,
+      "cold_programs": 12,
+      "strict_guarded_cases": 172,
+      "sampled_min_free_per_bank": 4240920960,
+      "sampled_min_largest_free_per_bank": 4220363136,
+      "sampled_max_allocated_per_bank": 31420416,
+      "loaded": {
+        "paths": [
+          "/home/container_app_user/tt-metal/build_Release/lib/_ttnncpp.so"
+        ],
+        "sha256": "01d961eddddb9f60c23ee27696e72fe2af77f8dcd54432e931fd1e8199771406",
+        "dependencies": {
+          "_ttnn.so": {
+            "path": "/home/container_app_user/tt-metal/ttnn/ttnn/_ttnn.so",
+            "sha256": "7ce78cf1a13f5d8c14bca5cdefc388163eceafec94f95b5a360f02f1db58529d"
+          },
+          "libtt_metal.so": {
+            "path": "/home/container_app_user/tt-metal/build_Release/lib/libtt_metal.so",
+            "sha256": "aa8b7dc26f23ecccc26eab18eadc7d2467a516a16f01ac0b3eded2642ad18de7"
+          }
+        }
+      },
+      "authoritative_cleanup_owners": 0,
+      "allowed_telemetry": true
+    }
+  },
+  "build_seconds": 26.166182279586792,
+  "wrapper_seconds": 129.88346672058105,
+  "job_seconds": 214,
+  "build_candidate_sha256": "01d961eddddb9f60c23ee27696e72fe2af77f8dcd54432e931fd1e8199771406",
+  "build_control_sha256": "fb3478d025a1843cf9b2199ec0d8efade288b6d75c31d93d131f9d3f632d583b",
+  "source_commit": "847c1a824c611f12f3dcc00f57ef68b9c2bbc51e",
+  "actual_image": "sha256:0041fbc0fcad0ca8d90d4c9aa2e099a8a0db9a2b0d0684d9f4ba46917c3b6eef",
+  "completion_utc": "2026-10-21T15:08:32Z",
+  "collection_approx_utc": "2026-10-21T15:10:00Z",
+  "scientific_interpretation_resumed_approx_utc": "2026-10-21T15:17:00Z",
+  "latency_note": "Approx1m28 completion-to-collection and7m collection-to-analysis; systems attention on C32SWE12. Delayed interpretation retained, not represented as immediate.",
+  "raw_checks": {
+    "control": {
+      "cases": 188,
+      "raw_tensor_keys": 372,
+      "raw_sha256": "05cc58cd3433c0b67d46c40a60982cfcc2cb47d88694b803686e6cdb13c786f4",
+      "independent_expected_hashes_and_raw_samples": true
+    },
+    "candidate": {
+      "cases": 188,
+      "raw_tensor_keys": 372,
+      "raw_sha256": "05cc58cd3433c0b67d46c40a60982cfcc2cb47d88694b803686e6cdb13c786f4",
+      "independent_expected_hashes_and_raw_samples": true
+    }
+  },
+  "raw_directory": "/data/mvasiljev/gemma-fillpad-remote-ci/ci-39602265481/artifacts/gemma-fillpad-ops-39602265481",
+  "evidence_sha256": {
+    "comparison.json": "b29d5af620f489f18ffa0a75f8bd711187579a6fa3068ab252e34a3f06f279b0",
+    "raw-checks.json": "551469cdaa1a499ea8f2e5244b8ed816e00c36f8efa0c8dbab3ae08ab229d94c",
+    "build/build-status.json": "2a54de89b17e038e9fef1b98b8d58de26836a44c2a7366518bda58e946ae9b2a",
+    "EXPERIMENT_PLAN.json": "e059f9aa3568cf8ce1a9d729bb7b5b17a9f2aeb304acf7479788fdd8480e80f4",
+    "status.json": "83681eccda1a3f425a2ba1cee4a570b33d1da2df9753764892af1e0d705ea185"
+  },
+  "restored_raw_hashes_checked": true
+}

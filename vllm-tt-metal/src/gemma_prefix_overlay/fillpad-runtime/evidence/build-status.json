@@ -1,0 +1,38 @@
+{
+  "started_at": 1792595164.9179578,
+  "phase": "complete",
+  "stage": "complete",
+  "device_access": false,
+  "image": "sha256:0041fbc0fcad0ca8d90d4c9aa2e099a8a0db9a2b0d0684d9f4ba46917c3b6eef",
+  "dependency_sha256": {
+    "ttnn/ttnn/_ttnn.so": "7ce78cf1a13f5d8c14bca5cdefc388163eceafec94f95b5a360f02f1db58529d",
+    "build_Release/lib/libtt_metal.so": "aa8b7dc26f23ecccc26eab18eadc7d2467a516a16f01ac0b3eded2642ad18de7"
+  },
+  "compiler_sha256": "a7b31cd92536924097ddbd01c3a238f8afd00f7d60bb359ebcc0813f3ff8394f",
+  "payload_sha256": {
+    "installed-source-pins.json": "fd0df76c39f7a6851a25101994a7f21deb8ff05eb8ea357fd185b2086e3e4334",
+    "candidate-pins.json": "25a56fa6fa0fe09c81318122f7d46ea9549386897773987e4398a832eed78e8b",
+    "stride-build-commands.json": "1706769f60d152108fd0092b8bbee2cc2dd28b6df4b52d537796e2f3ed61eb5d",
+    "fillpad-compile-command.json": "6cb94c9390d9695a4dbca28d6c94e4c2dabe1148a131626c63cae55ceea929aa",
+    "physical-stride.patch": "fd38bc3f3515214a317b0c60092eb65213fd70adde1055c6d99ef5043bfd6ee3",
+    "unity.json": "0fdc639f3af5f86e0ecb2190dda28fecf432f230e745ef77196970be9b62c21e",
+    "accepted-remote-build.json": "e33c04a799c660fac07aad63ec6fcfc767732ce4ec8f6dc2fad8224210104d93"
+  },
+  "control-compile": {
+    "elapsed_s": 18.84721875190735
+  },
+  "control-link": {
+    "elapsed_s": 0.21406126022338867
+  },
+  "control_sha256": "fb3478d025a1843cf9b2199ec0d8efade288b6d75c31d93d131f9d3f632d583b",
+  "candidate-compile": {
+    "elapsed_s": 6.7252020835876465
+  },
+  "candidate-link": {
+    "elapsed_s": 0.16410613059997559
+  },
+  "candidate_sha256": "01d961eddddb9f60c23ee27696e72fe2af77f8dcd54432e931fd1e8199771406",
+  "candidate_bytes": 65770856,
+  "candidate_matches_local": true,
+  "ended_at": 1792595191.08414
+}

@@ -1,0 +1,20 @@
+{
+  "verdict": "clean-pass",
+  "scope": "remote-fillpad-operation",
+  "run_id": 39602265481,
+  "candidate_sha256": "01d961eddddb9f60c23ee27696e72fe2af77f8dcd54432e931fd1e8199771406",
+  "image_id": "sha256:0041fbc0fcad0ca8d90d4c9aa2e099a8a0db9a2b0d0684d9f4ba46917c3b6eef",
+  "payload_manifest_sha256": "cbba56db2af06dd5064eda630b82f17491737fcb54130e3851f066647350a6fa",
+  "result": {
+    "file": "RESULT.json",
+    "sha256": "e9c7bf4a988ae9643791b04d0bdfed3ce22f18475b30d1e94ef396c91b782302"
+  },
+  "review": {
+    "file": "RESULT_REVIEW.md",
+    "sha256": "4f5d6133e46a585b300a5b0222b4efe80e1e5235d3efcb795a6103c9f9aecf26"
+  },
+  "build": {
+    "file": "build-status.json",
+    "sha256": "2a54de89b17e038e9fef1b98b8d58de26836a44c2a7366518bda58e946ae9b2a"
+  }
+}
