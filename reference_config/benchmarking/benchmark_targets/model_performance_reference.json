@@ -6456,14 +6456,14 @@
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "blackhole_galaxy": [
             {
-                "_comment": "Requirement: one 5 s clip (81 frames at 16 fps, 720p on this mesh) in 131 s end to end. The video benchmark reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "_comment": "480p run branch: requirement is one 5 s clip (81 frames at 16 fps) at 480p in 39 s end to end (131 s at 720p on the main branch). The video benchmark reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 131000,
-                        "end_to_end_latency_ms": 131000,
+                        "ttft_ms": 39000,
+                        "end_to_end_latency_ms": 39000,
                         "inference_steps_per_second": null,
                         "tput_user": null
                     }

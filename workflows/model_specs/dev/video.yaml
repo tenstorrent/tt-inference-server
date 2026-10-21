@@ -147,6 +147,8 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      env_vars:
+        WAN22_RESOLUTION: 480p  # 480p run: the requirement is a 5 s clip in 39 s
     - device: P150X4
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
