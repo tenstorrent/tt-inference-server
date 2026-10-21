@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import math
@@ -317,6 +318,29 @@ class HarborEvalConfig:
 TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
+
+# Docker's ``cpus`` limit is a quota, so Node still reports every host core and
+# vitest/jest start ~63 workers in a 2-CPU, 8 GB container: vitest times out
+# and jest gets OOM-killed. Report the 2 cores a cpuset would give, so both
+# pick 1 worker. jest has no worker-count env var, hence the NODE_OPTIONS
+# preload; the VITEST_* vars also cover vitest runs that replace NODE_OPTIONS.
+# vitest <4 reads the THREADS/FORKS pairs (min defaults to the core count, so
+# both bounds are needed); vitest 4 reads MAX_WORKERS.
+_DEEPSWE_NODE_CPU_PRELOAD = (
+    'import os from "node:os";'
+    'import {syncBuiltinESMExports} from "node:module";'
+    "os.availableParallelism=()=>2;"
+    "syncBuiltinESMExports();"
+)
+DEEPSWE_TEST_WORKER_ENV = {
+    "NODE_OPTIONS": "--import=data:text/javascript;base64,"
+    + base64.b64encode(_DEEPSWE_NODE_CPU_PRELOAD.encode()).decode(),
+    "VITEST_MAX_THREADS": "1",
+    "VITEST_MIN_THREADS": "1",
+    "VITEST_MAX_FORKS": "1",
+    "VITEST_MIN_FORKS": "1",
+    "VITEST_MAX_WORKERS": "1",
+}
 
 
 @dataclass(frozen=True)
