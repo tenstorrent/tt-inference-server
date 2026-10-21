@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "root": "purelib",
+      "path": "vllm/v1/engine/core.py",
+      "module": "vllm.v1.engine.core",
+      "base": "f990e260cebf0826d08cfd30955c0c7a85b9af00504841b91759ca5bc7b036f6",
+      "target": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0"
+    },
+    {
+      "root": "purelib",
+      "path": "vllm/v1/executor/uniproc_executor.py",
+      "module": "vllm.v1.executor.uniproc_executor",
+      "base": "3cb039b80fe9b03dc1122f93c1f8a4098ef1355104b317ff6df25358f4349494",
+      "target": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938"
+    },
+    {
+      "root": "plugin",
+      "path": "src/vllm_tt_plugin/scheduler.py",
+      "module": "vllm_tt_plugin.scheduler",
+      "base": "638f1ae2b5b0b9cda34d87665c948bafa526ecebaaa5027f3989a62150704ca5",
+      "target": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273"
+    },
+    {
+      "root": "plugin",
+      "path": "src/vllm_tt_plugin/model_runner.py",
+      "module": "vllm_tt_plugin.model_runner",
+      "base": "a6361da1a1493016f972bef7551030e7d8c6d3ba9a6bb0159007ccbf018f9c1e",
+      "target": "e6aefb99e59170f8a337af0f950437e6456132bf548f8cba1423447f577ba521"
+    },
+    {
+      "root": "metal",
+      "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
+      "module": "models.demos.gemma4_31b_qb2.tt.generator",
+      "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
+      "target": "5205aed151a13edac1918344a125669ed8dbfe16cf1241f467a93f08a4b32ed1"
+    },
+    {
+      "root": "metal",
+      "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
+      "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
+      "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
+      "target": "5f90ae8f01e371d5f1e14640997d6b0b05b1c5dbae5a6b5a568f311eb92915c6"
+    },
+    {
+      "root": "metal",
+      "path": "models/demos/gemma4_31b_qb2/tt/history_bank.py",
+      "module": "models.demos.gemma4_31b_qb2.tt.history_bank",
+      "base": "87767c5e02811e25ec069d30940241a512ca5022d5a34576e1f4e104cdbe44d9",
+      "target": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d"
+    },
+    {
+      "root": "purelib",
+      "path": "gemma_history_reservation.py",
+      "module": "gemma_history_reservation",
+      "base": null,
+      "target": "cd4ac0cfc6d590d3e33d828d4b0c22d1b6b96cbdabd27e3663d7e33f2b6888b3"
+    },
+    {
+      "root": "purelib",
+      "path": "gemma_history_reservation_ledger.py",
+      "module": "gemma_history_reservation_ledger",
+      "base": null,
+      "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+    }
+  ],
+  "attestation_sha256": "c8416fa08458ca8cc36e7b2e5105b96a552535ede906be990fb710c4c6c2d85e",
+  "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
+  "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
+  "scope": "Prepared source payload only; baseline history20; no device validation or dispatch."
+}

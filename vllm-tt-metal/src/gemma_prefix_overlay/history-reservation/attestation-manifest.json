@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "modules": {
+    "vllm.v1.engine.core": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0",
+    "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
+    "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
+    "vllm_tt_plugin.model_runner": "e6aefb99e59170f8a337af0f950437e6456132bf548f8cba1423447f577ba521",
+    "models.demos.gemma4_31b_qb2.tt.generator": "5205aed151a13edac1918344a125669ed8dbfe16cf1241f467a93f08a4b32ed1",
+    "models.demos.gemma4_31b_qb2.tt.generator_vllm": "5f90ae8f01e371d5f1e14640997d6b0b05b1c5dbae5a6b5a568f311eb92915c6",
+    "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
+    "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
+    "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
+    "vllm_tt_plugin.worker": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341",
+    "vllm_tt_plugin.config": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b",
+    "vllm_tt_plugin.async_decode": "e2491aa165559ea9979428838a5ebce6416e6164b511c0cd39b7eaa705c8c891",
+    "vllm_tt_plugin.input_batch": "51603c76fe0447e64a273faa5550fee8c77963336d538f6d02638476753684dc",
+    "vllm_tt_plugin.lane_scheduler": "59d6339b2ef465a4b0f7e7bec24afc8ab2eb15fbb208bc895b590d4b2a5bf207",
+    "vllm_tt_plugin.model_input": "3b7e664ba688ff1bedb5a90a606593e90820d79cd35d388f3308ff7080dec28f",
+    "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
+    "gemma_history_reservation": "cd4ac0cfc6d590d3e33d828d4b0c22d1b6b96cbdabd27e3663d7e33f2b6888b3",
+    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+  }
+}
