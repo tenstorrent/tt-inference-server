@@ -4743,8 +4743,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    gpu_reference_score=86.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6327025575",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4780,8 +4780,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    gpu_reference_score=96.80,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6327025575",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4817,8 +4817,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    gpu_reference_score=64.65,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6327025575",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [

@@ -390,9 +390,14 @@ def test_granite_42_30b_follows_the_dense_reasoning_convention():
         t.task_name: t for t in _eval_config_map["ibm-granite/granite-4.2-30b"].tasks
     }
     assert sorted(tasks) == ["r1_aime24", "r1_gpqa_diamond", "r1_math500"]
+    # Colab G4 full-sample references (#5353 issuecomment-6327025575).
+    refs = {"r1_aime24": 86.67, "r1_math500": 96.80, "r1_gpqa_diamond": 64.65}
     for name, task in tasks.items():
         assert task.priority == "must", name
-        assert task.score.gpu_reference_score is None, name  # set from colab only
+        assert task.score.gpu_reference_score == refs[name], name
+        assert task.score.gpu_reference_score_ref.endswith(
+            "issues/5353#issuecomment-6327025575"
+        ), name
         assert task.model_kwargs["max_length"] == 65536
         assert int(task.model_kwargs["timeout"]) == QWQ_R1_REQUEST_TIMEOUT_S
         assert task.gen_kwargs["max_gen_toks"] == 32768
