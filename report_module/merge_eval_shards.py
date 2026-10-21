@@ -20,16 +20,37 @@ Each shard dir is searched recursively for ``eval_shard_<task>.json`` (written
 by run.py next to that shard's lm-eval output), its ``results_*.json`` and its
 ``samples_<leaf>_*.jsonl``. Exit 0 PASS, 1 graded but not PASS, 2 the shards do
 not form one complete run (nothing is graded).
+
+Besides its own ``results_merged.json`` and ``eval_shard_merge_report.json``,
+the merge writes the two files an unsharded ``run.py --workflow evals`` writes,
+with run.py's own writers and in run.py's layout under ``--out``:
+
+- ``reports_output/evals/data/report_data_<id>.json`` (and its ``.md``), by
+  ``ReportGenerator`` after the evals workflow's stage tagging and metadata
+  injection;
+- ``runtime_model_specs/runtime_model_spec_<...>.json``, by
+  ``RuntimeConfig.to_json``: the runtime model spec of the merged shards
+  (found under the shard dirs and bound to each merged shard's results by the
+  run id in its shard record; see :func:`find_shard_runtime_model_spec`) with
+  ``eval_shard`` None, ``eval_tasks`` the merged task and ``eval_shard_merge``
+  the merge provenance.
+
+So a CI that collects a run.py run collects the merged verdict the same way.
+Without a shard runtime model spec under the shard dirs these two files are
+not written (a report with no run config could not be told apart from an
+unsharded run); the grade and exit code are unchanged.
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
+import dataclasses
 import hashlib
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -41,10 +62,17 @@ from workflows.eval_shard import (
     check_shard_set,
     leaf_doc_ids,
     merge_shard_samples,
+    parse_eval_shard,
 )
 
 MERGED_RESULTS_NAME = "results_merged.json"
 MERGED_REPORT_NAME = "eval_shard_merge_report.json"
+# run.py's layout under its workflow log root: the evals workflow's report dir
+# (ReportGenerator writes data/report_data_<id>.json there) and the runtime
+# model spec dir (RuntimeConfig.to_json).
+RUN_REPORT_DIR = Path("reports_output") / "evals"
+RUN_RUNTIME_MODEL_SPEC_DIR = Path("runtime_model_specs")
+RUNTIME_MODEL_SPEC_GLOB = "runtime_model_spec_*.json"
 
 
 def _sha(path: Path) -> str:
@@ -137,6 +165,7 @@ def merge(
         sources.append(
             {
                 "shard": record["shard"],
+                "run_id": record.get("run_id"),
                 "attempt_dir": str(attempt),
                 "results_sha256": _sha(results_path),
                 "record_sha256": _sha(attempt / f"{SHARD_RECORD_PREFIX}{task}.json"),
@@ -198,20 +227,27 @@ def merge(
     return doc
 
 
-def grade(
-    model: str, task_name: str, doc: Mapping[str, Any], results_path: Path
-) -> dict:
-    """Grade the merged results exactly as a full run would be graded."""
+def _graded(model: str, task_name: str, doc: Mapping[str, Any], results_path: Path):
+    """Grade the merged results exactly as a full run would be graded.
+
+    Returns ``(report, workflow, schema)``: the merge report, and the evals
+    workflow and report schema run.py would hold at this point (blocks tagged
+    with their delivery stages, acceptance export in the metadata), for
+    :func:`write_run_report`.
+    """
     from report_module.acceptance_criteria import (
         acceptance_criteria_check,
         build_acceptance_export,
+        stage_results,
     )
-    from report_module.schema import ReportSchema
     from test_module.llm_tests.llm_eval_tests import (
+        _envelope,
         blocks_for_task,
         load_eval_results,
         mark_incomplete,
     )
+    from workflow_module.blocks_sink import BlockAccumulator
+    from workflow_module.workflows import EvalsWorkflow
 
     task = eval_task(model, task_name)
     provenance = doc["eval_shard_merge"]["provenance"]
@@ -248,26 +284,233 @@ def grade(
             "shard_count": doc["eval_shard_merge"]["shard_count"],
             "plan_sha": doc["eval_shard_merge"]["plan_sha"],
         }
-    schema = ReportSchema(
-        metadata={"model_repo": model, "report_id": f"merge_{task_name}"},
-        sections=blocks,
-    )
+    # The same accumulator, envelope and stage tagging as run.py's evals
+    # workflow, so the schema graded here is the one its report is written from.
+    accumulator = BlockAccumulator()
+    accumulator.accept(blocks, envelope=_envelope(ctx))
+    workflow = EvalsWorkflow(ctx, accumulator=accumulator)
+    schema = workflow.format_results()
+    known_issues = provenance.get("known_issues") or None
+    model_status = provenance.get("model_status")
     accepted, blockers, categories = acceptance_criteria_check(
-        schema,
-        known_issues=provenance.get("known_issues") or None,
-        model_status=provenance.get("model_status"),
+        schema, known_issues=known_issues, model_status=model_status
     )
-    return {
+    stages = stage_results(
+        schema, blockers, known_issues=known_issues, model_status=model_status
+    )
+    export = build_acceptance_export(
+        accepted, blockers, categories, model_status, stages
+    )
+    schema.metadata.update(export)
+    report = {
         "model": model,
         "task_name": task_name,
         "eval_shard_merge": doc["eval_shard_merge"],
         "evals": [
             {"title": b.title, "data": b.data, "targets": b.targets} for b in blocks
         ],
-        **build_acceptance_export(
-            accepted, blockers, categories, provenance.get("model_status")
-        ),
+        **export,
     }
+    return report, workflow, schema
+
+
+def grade(
+    model: str, task_name: str, doc: Mapping[str, Any], results_path: Path
+) -> dict:
+    """Grade the merged results exactly as a full run would be graded."""
+    return _graded(model, task_name, doc, results_path)[0]
+
+
+# Run config that legitimately differs between the shards of one merge. run.py
+# also copies the whole run config into the model spec's legacy ``cli_args``
+# (populate_model_spec_cli_args), so the same keys are per-shard there too;
+# nothing else in the spec is (apply_overrides copies only build identity).
+PER_SHARD_RUNTIME_CONFIG_KEYS = frozenset({"eval_shard", "run_id"})
+
+
+def _shared_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
+    """``spec`` without the per-shard keys of its legacy ``cli_args`` copy."""
+    shared = dict(spec)
+    cli_args = shared.get("cli_args")
+    if isinstance(cli_args, dict):
+        shared["cli_args"] = {
+            key: value
+            for key, value in cli_args.items()
+            if key not in PER_SHARD_RUNTIME_CONFIG_KEYS
+        }
+    return shared
+
+
+def _spec_identity_problems(spec: Mapping[str, Any], provenance: Mapping[str, Any]):
+    """Where a runtime model spec disagrees with the shards' recorded provenance."""
+    env_vars = (spec.get("device_model_spec") or {}).get("env_vars") or {}
+    pairs = (
+        ("hf_model_repo", spec.get("hf_model_repo")),
+        ("docker_image", spec.get("docker_image")),
+        ("device", spec.get("device_type")),
+        ("model_status", spec.get("status")),
+        ("package_manifest_sha256", env_vars.get("QUETZAL_BUNDLE_MANIFEST_SHA256")),
+    )
+    return [
+        f"{key} {mine!r} != shards' {provenance.get(key)!r}"
+        for key, mine in pairs
+        if mine != provenance.get(key)
+    ]
+
+
+def find_shard_runtime_model_spec(
+    dirs: Sequence[Path], model: str, merge_info: Mapping[str, Any]
+) -> Optional[Path]:
+    """The runtime model spec the merged run's identity comes from, or None.
+
+    run.py writes one ``runtime_model_spec_*.json`` per run and stamps the
+    run's ``run_id`` into the shard record next to that run's results, so each
+    spec is bound to the shard attempt it belongs to. Fail closed: when any
+    spec is present, every merged shard must have exactly one spec with its
+    run id and shard id, every spec must belong to a merged shard (a spec from
+    an aborted or foreign attempt is refused, never picked), all specs must
+    agree except on per-shard keys, and their identity (model, image, device,
+    status, package) must match the merged provenance. None only when the
+    shard dirs hold no spec at all. Returns the lowest shard's spec.
+    """
+    specs = []
+    for root in dirs:
+        for path in sorted(Path(root).rglob(RUNTIME_MODEL_SPEC_GLOB)):
+            data = json.loads(path.read_text())
+            spec = data.get("runtime_model_spec") if isinstance(data, dict) else None
+            config = data.get("runtime_config") if isinstance(data, dict) else None
+            if not isinstance(spec, dict) or not isinstance(config, dict):
+                raise ShardError(f"{path}: not a run.py runtime model spec")
+            specs.append((path, spec, config))
+    if not specs:
+        return None
+    by_run: Dict[str, List[Tuple[Path, dict, dict]]] = {}
+    for entry in specs:
+        by_run.setdefault(entry[2].get("run_id"), []).append(entry)
+    sources = merge_info["sources"]
+    merged_runs = {source.get("run_id") for source in sources}
+    problems = []
+    for run_id, entries in sorted(by_run.items(), key=lambda kv: str(kv[0])):
+        if run_id is None or run_id not in merged_runs:
+            problems.extend(
+                f"{path}: run {run_id!r} contributed no merged shard"
+                for path, _, _ in entries
+            )
+    bound = []
+    for source in sorted(sources, key=lambda s: parse_eval_shard(s["shard"])[0]):
+        run_id = source.get("run_id")
+        entries = by_run.get(run_id, []) if run_id else []
+        if len(entries) != 1:
+            problems.append(
+                f"shard {source['shard']} (run {run_id!r}): expected one runtime "
+                f"model spec, found {len(entries)}"
+            )
+            continue
+        path, spec, config = entries[0]
+        if config.get("eval_shard") != source["shard"]:
+            problems.append(
+                f"{path}: eval_shard {config.get('eval_shard')!r} != {source['shard']!r}"
+            )
+        if spec.get("hf_model_repo") != model:
+            problems.append(
+                f"{path}: spec is for {spec.get('hf_model_repo')}, not {model}"
+            )
+        problems.extend(
+            f"{path}: {problem}"
+            for problem in _spec_identity_problems(spec, merge_info["provenance"])
+        )
+        bound.append((path, spec, config))
+    if not problems and bound:
+        first_path, first_spec, first_config = bound[0]
+        for path, spec, config in bound[1:]:
+            if _shared_spec(spec) != _shared_spec(first_spec):
+                problems.append(f"{path}: runtime model spec differs from {first_path}")
+            keys = (set(config) | set(first_config)) - PER_SHARD_RUNTIME_CONFIG_KEYS
+            differing = sorted(k for k in keys if config.get(k) != first_config.get(k))
+            if differing:
+                problems.append(
+                    f"{path}: runtime config differs from {first_path} on {differing}"
+                )
+    if problems:
+        raise ShardError(
+            "runtime model specs do not bind to the merged shards:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return bound[0][0]
+
+
+class _SerializedModelSpec:
+    """A shard's serialized ``runtime_model_spec``, re-emitted as is.
+
+    ``RuntimeConfig.to_json`` only calls ``get_serialized_dict()``; passing the
+    shard's dict (not a ModelSpec rebuilt from it) keeps the merged spec the
+    shards' model spec.
+    """
+
+    def __init__(self, serialized: dict) -> None:
+        self._serialized = serialized
+
+    def get_serialized_dict(self) -> dict:
+        return self._serialized
+
+
+def write_runtime_model_spec(
+    out_dir: Path, shard_spec: Path, task_name: str, merge_info: Mapping[str, Any]
+) -> Path:
+    """The merged run's runtime model spec, written by ``RuntimeConfig.to_json``.
+
+    The shard's model spec and run config, except ``eval_shard`` (None: the
+    merged set is the full task), ``run_id`` (None: the merge is no one run;
+    each shard's is in ``eval_shard_merge.sources``), ``eval_tasks`` (the
+    merged task) and ``eval_shard_merge`` (the merge provenance). The model
+    spec's legacy ``cli_args`` copy of the run config gets the same per-shard
+    keys, so no shard's id is left in the merged spec.
+    """
+    from workflows.runtime_config import RuntimeConfig
+
+    data = json.loads(shard_spec.read_text())
+    config = RuntimeConfig.from_dict(data["runtime_config"])
+    config.eval_shard = None
+    config.run_id = None
+    config.eval_tasks = task_name
+    config.eval_shard_merge = dict(merge_info)
+    spec = dict(data["runtime_model_spec"])
+    if isinstance(spec.get("cli_args"), dict):
+        spec["cli_args"] = {
+            **spec["cli_args"],
+            **{
+                key: getattr(config, key)
+                for key in (*PER_SHARD_RUNTIME_CONFIG_KEYS, "eval_tasks")
+                if key in spec["cli_args"]
+            },
+        }
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return config.to_json(
+        _SerializedModelSpec(spec),
+        timestamp,
+        spec.get("model_id") or "merged",
+        str(out_dir),
+    )
+
+
+def write_run_report(
+    workflow, schema, out_dir: Path, run_command: str, spec_path: Path
+) -> Path:
+    """Write ``report_data_<id>.json`` as run.py's evals workflow does.
+
+    Same metadata injection (identity fields from the runtime model spec) and
+    the same ``ReportGenerator``; returns the JSON path.
+    """
+    from report_module.generator import ReportGenerator
+    from workflow_module.execution import OrchestratorMetadata
+
+    workflow.orchestrator_metadata = dataclasses.replace(
+        workflow.orchestrator_metadata or OrchestratorMetadata(),
+        run_command=run_command,
+        runtime_model_spec_json=str(spec_path),
+    )
+    workflow.inject_metadata(schema)
+    return ReportGenerator().generate(schema, out_dir).json_path
 
 
 def main(argv=None) -> int:
@@ -282,6 +525,9 @@ def main(argv=None) -> int:
     try:
         task = eval_task(args.model, args.task)
         doc = merge(args.shard_dirs, args.task, task.doc_ids)
+        shard_spec = find_shard_runtime_model_spec(
+            args.shard_dirs, args.model, doc["eval_shard_merge"]
+        )
     except ShardError as exc:
         print(f"merge refused: {exc}", file=sys.stderr)
         return 2
@@ -289,13 +535,32 @@ def main(argv=None) -> int:
     results_path = args.out / MERGED_RESULTS_NAME
     results_path.write_text(json.dumps(doc, indent=2, default=str))
     try:
-        report = grade(args.model, args.task, doc, results_path)
+        report, workflow, schema = _graded(args.model, args.task, doc, results_path)
     except ShardError as exc:
         print(f"merge refused: {exc}", file=sys.stderr)
         return 2
     (args.out / MERGED_REPORT_NAME).write_text(
         json.dumps(report, indent=2, default=str)
     )
+    if shard_spec is None:
+        print(
+            f"warning: no {RUNTIME_MODEL_SPEC_GLOB} under the shard dirs; not writing "
+            "the run.py report layout (report_data / runtime model spec)",
+            file=sys.stderr,
+        )
+    else:
+        spec_path = write_runtime_model_spec(
+            args.out / RUN_RUNTIME_MODEL_SPEC_DIR,
+            shard_spec,
+            args.task,
+            doc["eval_shard_merge"],
+        )
+        run_command = " ".join(
+            ["python -m report_module.merge_eval_shards", *(argv or sys.argv[1:])]
+        )
+        write_run_report(
+            workflow, schema, args.out / RUN_REPORT_DIR, run_command, spec_path
+        )
     print(report["acceptance_summary_markdown"])
     return 0 if report["acceptance_criteria"] else 1
 

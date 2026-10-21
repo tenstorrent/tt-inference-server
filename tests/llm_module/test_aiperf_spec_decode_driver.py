@@ -295,6 +295,11 @@ class TestPlaceholderPrompts:
         assert parser.parse(base).data["placeholder_prompts"] is None
 
 
+def _sse(*data_fields: str) -> dict:
+    """One SSE message as aiperf's raw export stores it."""
+    return {"packets": [{"name": "data", "value": value} for value in data_fields]}
+
+
 class TestUsageAcceptance:
     """Acceptance from per-request usage, for frontends (Dynamo) whose
     /metrics carries no spec-decode counters."""
@@ -305,15 +310,18 @@ class TestUsageAcceptance:
         records = [
             {"status": 500, "error": {"code": 500, "message": "boom"}, "responses": []}
         ] * errors
-        for usage in usages:
-            packets = [{"name": "data", "value": json.dumps({"choices": []})}]
-            if num_drafts is not None:
-                nvext = {"engine_data": {"spec_decode": {"num_drafts": num_drafts}}}
-                packets.append({"name": "data", "value": json.dumps({"nvext": nvext})})
+        if not isinstance(num_drafts, list):
+            num_drafts = [num_drafts] * len(usages)
+        for usage, drafts in zip(usages, num_drafts):
+            # aiperf stores one response per SSE message.
+            chunks = [json.dumps({"choices": []})]
+            if drafts is not None:
+                nvext = {"engine_data": {"spec_decode": {"num_drafts": drafts}}}
+                chunks.append(json.dumps({"nvext": nvext}))
             if usage is not None:
-                packets.append({"name": "data", "value": json.dumps({"usage": usage})})
-            packets.append({"name": "data", "value": "[DONE]"})
-            records.append({"responses": [{"packets": packets}]})
+                chunks.append(json.dumps({"usage": usage}))
+            chunks.append("[DONE]")
+            records.append({"responses": [_sse(chunk) for chunk in chunks]})
         artifact_dir.mkdir(parents=True, exist_ok=True)
         (artifact_dir / "profile_export_raw.jsonl").write_text(
             "\n".join(json.dumps(r) for r in records)
@@ -347,6 +355,75 @@ class TestUsageAcceptance:
 
         assert out["num_drafts"] == 6.0
         assert out["mean_accepted_length"] == pytest.approx(1 + 12 / 6)
+
+    def test_mean_accepted_length_uses_only_responses_with_draft_counts(
+        self, tmp_path, caplog
+    ):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path,
+            [{"completion_tokens_details": details}] * 2,
+            num_drafts=[3, None],
+        )
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 12.0
+        assert out["num_drafts"] == 3.0
+        assert out["responses_with_drafts"] == 1
+        assert out["mean_accepted_length"] == pytest.approx(1 + 6 / 3)
+        assert "1/2 responses with prediction tokens report a draft count" in (
+            caplog.text
+        )
+
+    def test_draft_count_without_prediction_tokens_is_ignored(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}, None], num_drafts=3
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["num_drafts"] == 3.0
+        assert out["mean_accepted_length"] == pytest.approx(1 + 6 / 3)
+
+    def test_multiline_sse_data_is_joined(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        body = json.dumps({"usage": {"completion_tokens_details": details}}, indent=1)
+        first, rest = body.split("\n", 1)
+        record = {"responses": [_sse(first, rest), _sse("[DONE]")]}
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(json.dumps(record))
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+
+    def test_malformed_telemetry_is_skipped(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        good = {
+            "responses": [
+                _sse(json.dumps({"usage": {"completion_tokens_details": details}}))
+            ]
+        }
+        bad = {
+            "status": 500,
+            "error": {"code": 500},
+            "responses": [_sse('{"usage": {"completion_tokens_details": {')],
+        }
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(
+            "\n".join([json.dumps(good), json.dumps(bad), '{"responses": ['])
+        )
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+        assert out["responses"] == 1
+        assert out["failed_responses"] == 1
+        assert "skipped 2 unparsable" in caplog.text
 
     def test_usage_without_prediction_tokens_is_none(self, tmp_path):
         self._write_raw(tmp_path, [{"prompt_tokens_details": {"cached_tokens": 0}}])
@@ -389,7 +466,7 @@ class TestUsageAcceptance:
         record = {
             "status": 200,
             "error": {"type": "InvalidInferenceResultError"},
-            "responses": [{"packets": [{"name": "data", "value": json.dumps(usage)}]}],
+            "responses": [_sse(json.dumps(usage))],
         }
         tmp_path.mkdir(parents=True, exist_ok=True)
         (tmp_path / "profile_export_raw.jsonl").write_text(json.dumps(record))

@@ -202,10 +202,10 @@ EvalTask(
 
 ## Step 4: Add Performance Targets
 
-The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/reference_config/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specify points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` there are 2 points: ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
+The performance targets are all in [`reference_config/benchmarking/benchmark_targets/model_performance_reference.json`](../reference_config/benchmarking/benchmark_targets/model_performance_reference.json), keyed by Hugging Face repo id and then device; each entry is one ISL/OSL/concurrency point with a `theoretical` target and, once the implementation has been measured, a `measured` target with a tolerance. In the example below for `meta-llama/Llama-3.3-70B-Instruct` there is one `t3k` point and two `galaxy` points. These points are graded on every benchmark run and become the performance pass/fail checkpoints in Models CI; see [Targets and grading](../reference_config/benchmarking/README.md#targets-and-grading) for how the tiers are derived.
 
 ```json
-"Llama-3.3-70B-Instruct": {
+"meta-llama/Llama-3.3-70B-Instruct": {
         "t3k": [
             {
                 "isl": 128,

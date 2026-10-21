@@ -369,6 +369,13 @@ class EvalTask:
     thinking_kwarg: str = "enable_thinking"
     # Execution policy only; does not reduce samples, context, or output tokens.
     wall_clock_timeout_seconds: Optional[int] = None
+    # Per-mode wall-clock bounds, keyed like limit_samples_map. A run in a
+    # listed mode uses that bound; any other run, including an unrestricted
+    # full run, falls back to wall_clock_timeout_seconds. Lets a task bound its
+    # capped CI subset without also cutting off the full dataset.
+    wall_clock_timeout_seconds_map: Dict[EvalLimitMode, int] = field(
+        default_factory=dict
+    )
     max_attempts: Optional[int] = None
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
@@ -419,6 +426,15 @@ class EvalTask:
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value <= 0):
                 raise ValueError(f"{name} must be a positive integer")
+        for mode, value in self.wall_clock_timeout_seconds_map.items():
+            if not isinstance(mode, EvalLimitMode):
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map keys must be EvalLimitMode"
+                )
+            if type(value) is not int or value <= 0:
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map values must be positive integers"
+                )
         if (
             self.max_attempts is not None
             and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
@@ -2565,6 +2581,12 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so without this the agent samples at the server
+                        # default top_p=1.0. MiniMax recommends temperature 1.0
+                        # / top_p 0.95, as every other M3 task sends.
+                        # Must stay a JSON *string* (see the Kimi tau3 entry).
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
@@ -8863,6 +8885,88 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16); base checkpoint (Qwen3_5ForConditionalGeneration, text
+    # path); tasks and apply_chat_template=False copied from Qwen/Qwen3-4B-Base (the base profile). The model card
+    # publishes no scores: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
+    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353), TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.5-9B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=43.81,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=25.82,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=58.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
     # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
     # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
@@ -12676,6 +12780,148 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # Aleph-Alpha/Kolibri-1-BF16 (TP4 autoport, P300X2). Reasoning model; the
+    # model card recommends temperature 1.0, top_p 0.97, top_k 128 with thinking
+    # on (reasoning_effort=high, the chat template default). Published scores are
+    # the model card's own single-harness table (GPQA Diamond EN 84.8, AIME 2025
+    # EN 95.8). No GPU reference run exists yet (tt-agentic-bringup-qb2#76).
+    # MMLU-Pro is not run: 3.4 h of CI for an EXPERIMENTAL-waived score that
+    # needs the GPU reference (#76) to interpret.
+    # Chat API so the server renders the native template and the kolibri1
+    # reasoning parser separates thinking from the final answer.
+    #
+    # Nightly (= ci-long; tt-shield's --ci-mode always runs ci-nightly) is the
+    # productization set: AIME full (30, one pass) and GPQA Diamond 80, both at
+    # a 64K thinking budget. Measured on the 32-slot QB2 CI server (runs
+    # 37777268044 and 37864081794): AIME 25K tokens/question, 16 slots -> ~54
+    # tok/s (30 -> 3.8 h); GPQA at 64K ~21K+ tokens/question and KV-bound (the
+    # 368K-token KV cache holds ~6 full 64K generations, so 8-20 requests run
+    # instead of 32 and aggregate decode drops from ~114 to ~85 tok/s): 80 ->
+    # ~6-7 h, full 198 -> >= 14.5 h, which does not fit next to anything in
+    # tt-shield's 1080-minute job (run 37864081794 was cancelled at the cap with
+    # GPQA at 142/198 and NO artifacts, losing the finished scores).
+    # Hence: AIME first, GPQA last, and in the CI modes each task bounded
+    # (wall_clock_timeout_seconds_map) with setup (~35 min) + sum of bounds
+    # < 18 h (0.6 + 4.5 + 8 = 13.1 h). Full runs (no limit mode) score the whole
+    # datasets and stay unbounded: the CI bounds would cut them off with no
+    # score. A per-user 64K generation takes 3.6-5.2 h (3.6-5 tok/s per user)
+    # plus queue wait, so the lm-eval per-request timeout equals the CI task
+    # bound: a timed-out request is re-sent from scratch (7 times in run
+    # 37864081794), pure waste.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="Aleph-Alpha/Kolibri-1-BF16",
+        tasks=[
+            # Order matters: tasks run sequentially and GPQA (bounded, longest)
+            # goes last so AIME is always scored.
+            # Long-generation math check for the batched-decode MoE path
+            # (tt-agentic-bringup-qb2#75). Informational ("should"): one pass over
+            # 30 problems is +/-4 pts, and the model card's thinking budget is
+            # unknown; this has to produce correct answers through tens of
+            # thousands of decode steps on the grouped/EP path.
+            EvalTask(
+                task_name="aime25",
+                priority="should",
+                score=EvalTaskScore(
+                    # Model card: AIME 2025 (EN) 95.8.
+                    published_score=95.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                # CI bound: 4.5 h (measured 3h50m for 30 problems at 16 slots: the
+                # tail of 64K solutions at ~5 tok/s per user dominates).
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 16200,
+                    EvalLimitMode.CI_LONG: 16200,
+                    EvalLimitMode.SMOKE_TEST: 16200,
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 16200,  # == CI wall bound: never retry a request
+                },
+                # Model-card sampling; a 64K generation budget because AIME
+                # solutions regularly exceed the 32K that empties GPQA answers.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,  # all 30 problems, one pass (+/-4 pts)
+                    EvalLimitMode.CI_LONG: 30,
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=84.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # CI bound: 8 h for 80 questions (estimate 6-7 h: ~1.8M tokens at
+                # ~85 tok/s KV-bound plus the tail of 64K generations). Exceeding
+                # it marks GPQA incomplete (rc=124) instead of losing the run.
+                # Full GPQA (198) at 64K measured >= 14.5 h alone, so full runs
+                # are unbounded.
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 28800,
+                    EvalLimitMode.CI_LONG: 28800,
+                    EvalLimitMode.SMOKE_TEST: 28800,
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,  # == CI wall bound: never retry a request
+                },
+                # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
+                # stream=false is required by lm-eval's chat-completions parser.
+                # 64K budget: at 32K, 9 of 40 nightly answers came back empty
+                # (thinking truncated) in CI runs 37616282707 and 37777268044.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                # 80 of 198 (+/-4.5 pts); the first 80 docs, a superset of the
+                # 40 scored in runs 37616282707 / 37777268044.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.CI_LONG: 80,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],

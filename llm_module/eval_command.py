@@ -401,6 +401,7 @@ def _resolve_eval_shard(
         index,
         count,
         _shard_provenance(model_spec, device, cmd, output_dir_path),
+        run_id=getattr(runtime_config, "run_id", None),
     )
     record_path = Path(output_path) / f"{SHARD_RECORD_PREFIX}{task.task_name}.json"
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True))

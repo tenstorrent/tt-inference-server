@@ -163,8 +163,13 @@ def _build_evals_data(
 
 
 def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) -> None:
-    """Keep Harbor-specific counters in targets for JSON export only."""
-    for key in ("n_trials", "n_resolved", "pass_at_1"):
+    """Keep Harbor-specific counters in targets for JSON export only.
+
+    ``n_trials`` counts trials the verifier rewarded; ``n_errors`` trials that
+    raised (infrastructure or agent errors, a trial can be both); and
+    ``n_total_trials`` the trials the job ran, so a consumer can check the
+    scored coverage."""
+    for key in ("n_trials", "n_errors", "n_total_trials", "n_resolved", "pass_at_1"):
         if key in metrics:
             targets[key] = metrics[key]
     for key, value in metrics.items():
@@ -174,6 +179,9 @@ def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) 
 
 def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     metrics = _extract_harbor_summary_metrics(raw)
+    n_total = raw.get("n_total_trials")
+    if isinstance(n_total, int) and not isinstance(n_total, bool):
+        metrics["n_total_trials"] = n_total
     _add_harbor_pass_at_metrics(raw, metrics)
     mean_seconds = _mean_seconds_per_task(raw, metrics)
     if mean_seconds is not None:
@@ -279,6 +287,7 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         None,
     )
     n_trials = eval_stats.get("n_trials")
+    n_errors = eval_stats.get("n_errors")
     n_resolved = _count_harbor_resolved_trials(eval_stats)
 
     metrics: Dict[str, Any] = {}
@@ -287,6 +296,8 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         metrics["pass_at_1"] = mean_metric
     if isinstance(n_trials, int):
         metrics["n_trials"] = n_trials
+    if isinstance(n_errors, int):
+        metrics["n_errors"] = n_errors
     if n_resolved is not None:
         metrics["n_resolved"] = n_resolved
     return metrics

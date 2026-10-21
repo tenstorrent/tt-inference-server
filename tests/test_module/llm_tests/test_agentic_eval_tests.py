@@ -159,6 +159,17 @@ HARBOR_ZERO_TRIALS_FIXTURE = {
 
 
 class TestAgenticParser:
+    def test_parse_keeps_harbor_error_and_job_counts_in_targets(self):
+        # Scored trials, errored trials and the job size travel with the
+        # block, so a consumer can check the scored coverage.
+        raw = dict(HARBOR_ZERO_TRIALS_FIXTURE, n_total_trials=5)
+        block = AgenticEvalParser(task_name="terminal_bench_2").parse(
+            raw, device="N150"
+        )
+        assert block.targets["n_trials"] == 0
+        assert block.targets["n_errors"] == 5
+        assert block.targets["n_total_trials"] == 5
+
     def test_parse_harbor_result_to_evals_block(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
