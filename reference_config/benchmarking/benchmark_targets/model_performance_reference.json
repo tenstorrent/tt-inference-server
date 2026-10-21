@@ -7764,5 +7764,145 @@
                 }
             }
         ]
+    },
+    "Aleph-Alpha/Kolibri-1-BF16": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries, applied to the",
+                    "ACTIVE parameters of this MoE (3.46B per token on the model card, minus the 0.33B embedding table = 3.13B =",
+                    "6.26 GB bf16, 1.57 GB per chip on the 4-chip TP mesh at ~560 GB/s = 2.8 ms per step = 358 t/s/u; TTFT floor",
+                    "two step-times = 6 ms). At 32 users the step streams the union of routed experts (~192 of 384 at 6 of 384",
+                    "per token) plus the dense weights: ~24.5 GB bf16 per step = 11 ms = 2,900 tok/s, 91 t/s/u. Longer-prompt",
+                    "TTFT adds the prefill compute at the LoFi peak (6.26 GFLOP/token; 2.65 PFLOP/s) and the global-attention",
+                    "layers' SDPA. The deployed BFP8/BFP4 precision policy streams fewer bytes, so the true ceilings are higher;",
+                    "theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: the WORST of the two bh-qb-ge runner machines, as a machine-independent floor.",
+                    "qb2-120-p05t02 (release run 37777268044, 2026-10-08): 128/128 c1 TTFT 233 ms / 17.6 t/s/u, c32 250 tok/s;",
+                    "120-qb2-p04t05 (release run 38432395585, 2026-10-13, this stack rebased onto tt-metal main / vLLM 0.30):",
+                    "128/128 c1 TTFT 320 ms / 11.9 t/s/u, c32 168 tok/s, i.e. 30-47% slower at every point (its eval phases took",
+                    "11-43% longer too). Floors are the p04t05 values with tolerance 0.30 (the spread-sized cap the gemma-4-31B",
+                    "Galaxy entry uses), so a run on either machine passes and a real regression on the slower one still trips.",
+                    "The single-user points are held down by the 32-slot server's batch-32 decode trace (a 1-slot server decodes at",
+                    "16.7 ms/token, 60 t/s/u); re-measure after the occupancy-adaptive decode path (tt-agentic-bringup-qb2#75) lands."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 320.2,
+                        "tput_user": 11.9,
+                        "tput": 11.7,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=128 osl=128 c=32 n=256.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 91,
+                        "tput": 2900
+                    },
+                    "measured": {
+                        "ttft_ms": 4728.0,
+                        "tput_user": 6.5,
+                        "tput": 168.0,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=2048 osl=128 c=1 n=4.",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 10,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 606.0,
+                        "tput_user": 11.8,
+                        "tput": 11.3,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=8192 osl=128 c=1 n=2.",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 2098.0,
+                        "tput_user": 11.7,
+                        "tput": 9.9,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=32768 osl=128 c=1 n=1.",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 105,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 7334.0,
+                        "tput_user": 11.2,
+                        "tput": 6.9,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
     }
 }

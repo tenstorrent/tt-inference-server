@@ -997,6 +997,59 @@ class TestDeadlineReachesRunCommand:
         assert rc == 0
         assert seen.get("timeout_seconds") == 3600
 
+    def _ctx_in_mode(self, mode):
+        ctx = _ctx()
+        ctx.runtime_config = SimpleNamespace(limit_samples_mode=mode)
+        return ctx
+
+    def _invoke_in(self, ctx, task):
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
+            mod._run_eval_task(ctx, task, "", output_path=tmp_output_path())
+        return seen
+
+    def test_per_mode_deadline_bounds_only_its_mode(self):
+        task = EvalTask(
+            task_name="aime25",
+            wall_clock_timeout_seconds_map={EvalLimitMode.CI_NIGHTLY: 3600},
+        )
+        nightly = self._invoke_in(self._ctx_in_mode("ci-nightly"), task)
+        assert nightly.get("timeout_seconds") == 3600
+        # A full run (no limit mode) and an unlisted mode stay unbounded.
+        assert "timeout_seconds" not in self._invoke_in(_ctx(), task)
+        assert "timeout_seconds" not in self._invoke_in(
+            self._ctx_in_mode("ci-long"), task
+        )
+
+    def test_unlisted_mode_falls_back_to_the_task_deadline(self):
+        task = EvalTask(
+            task_name="aime25",
+            wall_clock_timeout_seconds=7200,
+            wall_clock_timeout_seconds_map={EvalLimitMode.CI_NIGHTLY: 3600},
+        )
+        assert self._invoke_in(_ctx(), task).get("timeout_seconds") == 7200
+        nightly = self._invoke_in(self._ctx_in_mode("ci-nightly"), task)
+        assert nightly.get("timeout_seconds") == 3600
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {EvalLimitMode.CI_NIGHTLY: 0},
+            {EvalLimitMode.CI_NIGHTLY: 1.5},
+            {"ci-nightly": 60},
+        ],
+    )
+    def test_per_mode_deadline_is_validated(self, bad):
+        with pytest.raises(ValueError):
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds_map=bad)
+
     def test_absent_deadline_leaves_execution_unbounded(self):
         rc, seen = self._invoke(EvalTask(task_name="aime25"))
         assert rc == 0
