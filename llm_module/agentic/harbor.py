@@ -17,7 +17,9 @@ import copy
 import json
 import logging
 import os
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -116,6 +118,11 @@ class HarborRunConfig:
     # allowlist, for tasks that block agent egress
     # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
     allow_agent_endpoint: bool = False
+    # Pulled before ``harbor run`` on the docker environment (see
+    # ``prepull_images``).
+    prepull_images: list[str] = field(default_factory=list)
+    prepull_attempts: int = 3
+    prepull_timeout_sec: float = 30 * 60
 
 
 def _apply_mini_swe_agent_defaults(
@@ -363,8 +370,83 @@ def harbor_python(config: HarborRunConfig) -> Path:
     return Path(config.venv_python or sys.executable)
 
 
+def prepull_images(
+    images: list[str],
+    attempts: int,
+    timeout_sec: float,
+    retry_delay_sec: float = 30.0,
+) -> list[str]:
+    """``docker pull`` each image not already local, up to ``attempts`` times.
+
+    A trial's environment build pulls its base image itself, under the task's
+    build timeout and once per concurrent trial; on a slow or resetting registry
+    link every build of the wave then fails together (tau3-bench on the Galaxy
+    runner: ``python:3.12-slim`` at ~11 KB/s, reset mid-layer). One pull ahead
+    of the run, retried, leaves the builds a local image (self-hosted runners
+    keep it for later runs). A pull that still fails is logged and the run goes
+    ahead: Harbor reports the build failure per trial. Returns the images that
+    could not be pulled.
+    """
+    failed = []
+    for image in images:
+        try:
+            present = (
+                subprocess.run(
+                    ["docker", "image", "inspect", image],
+                    capture_output=True,
+                    timeout=60,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            logger.warning(
+                "Cannot inspect docker image %s (%s); not pre-pulling", image, e
+            )
+            failed.append(image)
+            continue
+        if present:
+            logger.info("Docker image %s is already local", image)
+            continue
+        pulled = False
+        for attempt in range(1, attempts + 1):
+            logger.info(
+                "Pre-pulling docker image %s (attempt %d/%d)", image, attempt, attempts
+            )
+            try:
+                pulled = (
+                    subprocess.run(
+                        ["docker", "pull", image], timeout=timeout_sec
+                    ).returncode
+                    == 0
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "docker pull %s timed out after %.0f s", image, timeout_sec
+                )
+            except OSError as e:
+                logger.warning("docker pull %s failed to start: %s", image, e)
+                break
+            if pulled:
+                break
+            if attempt < attempts:
+                time.sleep(retry_delay_sec)
+        if not pulled:
+            logger.error(
+                "Could not pull docker image %s in %d attempt(s); trials that build on it may fail",
+                image,
+                attempts,
+            )
+            failed.append(image)
+    return failed
+
+
 def run(config: HarborRunConfig) -> int:
     harbor_exec = harbor_python(config).parent / "harbor"
+
+    if config.prepull_images and config.environment_type == "docker":
+        prepull_images(
+            config.prepull_images, config.prepull_attempts, config.prepull_timeout_sec
+        )
 
     if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)

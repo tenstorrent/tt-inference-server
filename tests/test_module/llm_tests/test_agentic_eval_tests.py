@@ -1037,6 +1037,19 @@ class TestMiniSweAgentParity:
         agent = json.loads(config_path.read_text())["agents"][0]
         assert agent["extra_allowed_hosts"] == ["host.docker.internal"]
 
+    def test_prepull_images_reach_the_harbor_run_config(self, tmp_path):
+        task = _swebench_task()
+        object.__setattr__(
+            task.agentic_eval_config, "prepull_images", ["python:3.12-slim"]
+        )
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        assert cfg.prepull_images == ["python:3.12-slim"]
+
     def test_agent_endpoint_is_not_allowlisted_by_default(self, tmp_path):
         cfg = build_harbor_config(
             _swebench_task(),
