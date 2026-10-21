@@ -17,6 +17,7 @@ from typing import Optional
 from huggingface_hub import snapshot_download
 
 from utils.cache_monitor import get_container_cache_dir
+from utils.pinned_artifacts import get_pinned_revision
 from utils.device_utils import get_mesh_device_name
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
@@ -33,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+# Meta repos ship a second copy of the weights in original/ (Meta's own format, e.g.
+# 141 GB extra for Llama-3.1-70B) that nothing here loads. The host-side download
+# (workflows/setup_host.py) already skips it; keep the container download in line.
+HF_DOWNLOAD_IGNORE_PATTERNS = ["original/**"]
 QUETZAL_IMPL_ID = "quetzal"
 QUETZAL_PROVIDER_ENV = {
     "QUETZAL_VLLM": "1",
@@ -91,16 +96,10 @@ def configure_quetzal_provider(model_spec: dict) -> None:
     if not isinstance(model_id, str) or not model_id.strip():
         raise RuntimeError("impl=quetzal requires a canonical hf_model_repo")
     context_len = _quetzal_runtime_context(model_spec)
-    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
-    revision = vllm_args.get("revision")
-    tokenizer_revision = vllm_args.get("tokenizer_revision")
-    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise RuntimeError(
-            "impl=quetzal requires vLLM revision as an immutable lowercase "
-            "40-hex commit"
-        )
-    if tokenizer_revision != revision:
-        raise RuntimeError("impl=quetzal requires tokenizer_revision to match revision")
+    try:
+        revision = get_pinned_revision(model_spec, required=True)
+    except ValueError as exc:
+        raise RuntimeError(f"impl=quetzal: {exc}") from exc
     device_type = model_spec.get("device_type")
     if not isinstance(device_type, str) or not device_type:
         raise RuntimeError("impl=quetzal requires a canonical device_type")
@@ -129,6 +128,7 @@ def configure_quetzal_provider(model_spec: dict) -> None:
             "QUETZAL_HF_SNAPSHOT": str(Path(weights_dir).resolve()),
             "QUETZAL_MODEL": model_id,
             "MESH_DEVICE": mesh_device,
+            "QZ_TRACE_REGION_BYTES": str(_quetzal_trace_region_bytes(model_spec)),
         }
     )
 
@@ -206,7 +206,40 @@ def _quetzal_runtime_context(model_spec: dict) -> int:
     return catalog_context
 
 
-def _validate_quetzal_scheduler_capacity(model_spec: dict) -> None:
+def _quetzal_trace_region_bytes(model_spec: dict) -> int:
+    """Bind admission and the generated provider to vLLM's resolved TT config."""
+    device = model_spec.get("device_model_spec", {})
+    config = device.get("vllm_args", {}).get("additional_config")
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError as error:
+            raise RuntimeError(
+                "impl=quetzal requires valid additional_config JSON"
+            ) from error
+    tt_config = config.get("tt") if isinstance(config, dict) else None
+    value = tt_config.get("trace_region_size") if isinstance(tt_config, dict) else None
+    if type(value) is not int or value <= 0:
+        raise RuntimeError(
+            "impl=quetzal requires a positive integer additional_config.tt.trace_region_size"
+        )
+    override = (device.get("override_tt_config") or {}).get("trace_region_size")
+    if override is not None and (type(override) is not int or override != value):
+        raise RuntimeError(
+            "impl=quetzal trace reservation conflicts with override_tt_config"
+        )
+    for source, inherited in (
+        ("environment", os.getenv("QZ_TRACE_REGION_BYTES")),
+        ("catalog", _model_spec_env_vars(model_spec).get("QZ_TRACE_REGION_BYTES")),
+    ):
+        if inherited is not None and str(inherited) != str(value):
+            raise RuntimeError(
+                f"impl=quetzal trace reservation conflicts with {source}"
+            )
+    return value
+
+
+def _quetzal_scheduler_capacity(model_spec: dict) -> int:
     device_spec = model_spec.get("device_model_spec", {})
     max_concurrency = _quetzal_positive_int(
         device_spec.get("max_concurrency"), "max_concurrency"
@@ -215,10 +248,39 @@ def _validate_quetzal_scheduler_capacity(model_spec: dict) -> None:
         device_spec.get("vllm_args", {}).get("max_num_seqs", max_concurrency),
         "vLLM max_num_seqs",
     )
-    if max_concurrency != 1 or max_num_seqs != 1:
+    if max_concurrency != max_num_seqs:
         raise RuntimeError(
-            "impl=quetzal currently requires max_concurrency=max_num_seqs=1"
+            "impl=quetzal requires catalog max_concurrency and vLLM "
+            "max_num_seqs to match"
         )
+    return max_concurrency
+
+
+def _quetzal_runtime_tt_metal_commit(model_spec: dict) -> str:
+    """Bind package admission to the exact tt-metal revision in this image."""
+    image_commit = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not isinstance(image_commit, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", image_commit
+    ):
+        raise RuntimeError(
+            "impl=quetzal batched serving requires the runtime image to be "
+            "built from an immutable lowercase 40-hex tt-metal commit"
+        )
+    declared = os.getenv("QUETZAL_RUNTIME_TT_METAL_COMMIT")
+    catalog_declared = _model_spec_env_vars(model_spec).get(
+        "QUETZAL_RUNTIME_TT_METAL_COMMIT"
+    )
+    for source, value in (
+        ("runtime environment", declared),
+        ("catalog", catalog_declared),
+    ):
+        if value is not None and value != image_commit:
+            raise RuntimeError(
+                f"impl=quetzal {source} tt-metal commit differs from the "
+                "runtime image build"
+            )
+    os.environ["QUETZAL_RUNTIME_TT_METAL_COMMIT"] = image_commit
+    return image_commit
 
 
 def _quetzal_variant(model_spec: dict) -> str:
@@ -257,7 +319,10 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         selection.get("QUETZAL_BUNDLE_MANIFEST_SHA256")
     )
     context_len = _quetzal_runtime_context(model_spec)
-    _validate_quetzal_scheduler_capacity(model_spec)
+    batch_size = _quetzal_scheduler_capacity(model_spec)
+    runtime_tt_metal_commit = (
+        _quetzal_runtime_tt_metal_commit(model_spec) if batch_size > 1 else None
+    )
     expected_variant = _quetzal_variant(model_spec)
     auxiliary_roots = _quetzal_auxiliary_roots(
         selection.get("QUETZAL_AUXILIARY_ROOTS_JSON")
@@ -276,8 +341,10 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         model_id=model_id,
         context_len=context_len,
         expected_variant=expected_variant,
-        expected_batch_size=1,
+        expected_batch_size=batch_size,
         auxiliary_roots=auxiliary_roots,
+        runtime_tt_metal_commit=runtime_tt_metal_commit,
+        trace_region_bytes=_quetzal_trace_region_bytes(model_spec),
     )
     logger.info(
         "Quetzal content-address admission succeeded: state=%s schema=%s files=%s "
@@ -540,6 +607,78 @@ def find_default_impl(
     )
 
 
+def _ensure_quetzal_metadata(model_spec: dict) -> Path:
+    """Fetch only pinned HF metadata; generated package owns all model tensors."""
+    try:
+        revision = get_pinned_revision(model_spec, required=True)
+    except ValueError as exc:
+        raise RuntimeError(f"Quetzal metadata: {exc}") from exc
+    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    path = (
+        Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+        / "hf_metadata"
+        / ("models--" + hf_repo.replace("/", "--"))
+        / revision
+    )
+    path.mkdir(parents=True, exist_ok=True)
+    allowed = [
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "tokenizer.model",
+        "spiece.model",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "vocab.json",
+        "vocab.txt",
+        "merges.txt",
+        "chat_template.jinja",
+        "chat_templates/*.jinja",
+    ]
+    try:
+        snapshot_download(
+            repo_id=hf_repo, revision=revision, local_dir=path, allow_patterns=allowed
+        )
+    except Exception as error:
+        logger.warning(
+            "Pinned Quetzal metadata fetch unavailable: %s; validating local metadata",
+            error,
+        )
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+
+        # A checkpoint whose config.json names remote code (auto_map) resolves
+        # here only if its architecture is registered locally: quetzal vendors
+        # those classes byte-pinned (tt_quetzalcoatlus.hf_compat, #320/#323) and
+        # registers them with AutoConfig/AutoModel, so remote code is never
+        # trusted. A quetzal that predates the vendoring keeps today's
+        # behaviour (fails closed on such a config).
+        try:
+            from tt_quetzalcoatlus.hf_compat import register_vendored_architectures
+        except ImportError:
+            register_vendored_architectures = None
+        if register_vendored_architectures is not None:
+            register_vendored_architectures()
+
+        AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+        AutoTokenizer.from_pretrained(
+            path, local_files_only=True, trust_remote_code=False
+        )
+    except Exception as error:
+        raise RuntimeError(
+            f"Quetzal metadata unavailable or incomplete for revision {revision} at {path}"
+        ) from error
+    files = [
+        (str(p.relative_to(path)), p.stat().st_size)
+        for p in sorted(path.rglob("*"))
+        if p.is_file() and ".cache" not in p.relative_to(path).parts
+    ]
+    logger.info("Quetzal HF metadata revision=%s files_and_bytes=%s", revision, files)
+    os.environ["MODEL_WEIGHTS_DIR"] = str(path)
+    return path
+
+
 def ensure_weights_available(model_spec: dict) -> Path:
     """Ensure model weights are available, downloading if necessary.
 
@@ -569,6 +708,27 @@ def ensure_weights_available(model_spec: dict) -> Path:
         logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
         return weights_path
 
+    if model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID:
+        return _ensure_quetzal_metadata(model_spec)
+
+    revision = get_pinned_revision(model_spec)
+    if revision:
+        # Keep pinned checkpoints separate from mutable downloads, regardless
+        # of implementation selection.
+        cache_root = Path(
+            os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        )
+        weights_path = Path(
+            snapshot_download(
+                repo_id=model_spec["hf_model_repo"],
+                revision=revision,
+                cache_dir=cache_root / "weights" / "hub",
+                ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
+            )
+        )
+        os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
+        return weights_path
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash
@@ -578,11 +738,22 @@ def ensure_weights_available(model_spec: dict) -> Path:
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    # A spec that pins vLLM to an immutable checkpoint (vllm_args.revision) gets the
+    # same checkpoint here, so the served weights do not drift when the hub's main moves.
+    revision = (
+        (model_spec.get("device_model_spec") or {}).get("vllm_args", {}).get("revision")
+    )
 
     weights_path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
+    at_revision = f" at revision {revision}" if revision else ""
+    logger.info(f"Downloading weights from {hf_repo}{at_revision} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(
+            repo_id=hf_repo,
+            local_dir=weights_path,
+            revision=revision,
+            ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
+        )
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
@@ -629,11 +800,13 @@ def register_tt_models(impl_id=None):
 
     impl_id = impl_id or "tt_transformers"
 
-    # Llama path selection based on impl_id
-    if impl_id == "llama3_70b_galaxy":
-        os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
-    else:  # default: tt_transformers
-        os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
+    llama_text_versions = {
+        "llama3_70b_galaxy": "llama3_70b_galaxy",
+        "llama31_8b_qb2": "llama31_8b_qb2",
+    }
+    os.environ["TT_LLAMA_TEXT_VER"] = llama_text_versions.get(
+        impl_id, "tt_transformers"
+    )
 
     # Qwen3 env var setting based on impl_id
     if impl_id == "qwen3_32b_galaxy":
@@ -678,6 +851,13 @@ def model_setup(model_spec_json):
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
+    model_path_env = model_spec_json.get("metadata", {}).get("model_path_env")
+    if model_path_env:
+        if not isinstance(model_path_env, str) or not re.fullmatch(
+            r"[A-Z][A-Z0-9_]*", model_path_env
+        ):
+            raise ValueError("model_path_env must be an environment variable name")
+        dynamic_env_vars[model_path_env] = str(weights_dir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
@@ -773,6 +953,19 @@ def set_metal_timeout_env_vars():
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
+    # The op-timeout watchdog is sized for a single generation step, but the
+    # colocated worker also services device-socket weight updates: recv_state()
+    # blocks in ttnn.synchronize_device() for several seconds while it streams
+    # the full state dict, so the default 5s watchdog fires mid-transfer. Give
+    # the colocated path a much larger budget (or an explicit override).
+    override = os.getenv("TT_METAL_OPERATION_TIMEOUT_SECONDS")
+    if override:
+        timeout_seconds = override
+    elif os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        timeout_seconds = "120.0"
+    else:
+        timeout_seconds = "5.0"
+
     tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
     python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
     # Triage report dir: TT_TRIAGE_LOGS_PATH (the cache_root volume in CI) if set,
@@ -802,9 +995,9 @@ def set_metal_timeout_env_vars():
         f"tee {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log"
     )
 
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = timeout_seconds
     os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(f"Set TT_METAL_OPERATION_TIMEOUT_SECONDS={timeout_seconds}")
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
@@ -908,14 +1101,86 @@ def _normalize_vllm_arg_name(arg_name: str) -> str:
     return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
 
 
-def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
+def _vllm_multi_value_arg_names() -> set[str]:
+    """Normalized names of the vLLM serve flags that take one argv token per value (nargs='+').
+
+    Lists reach this entrypoint as one JSON token, from the model spec and from
+    --vllm-override-args alike, because only vLLM knows which flags read several
+    tokens. --served-model-name reads ["a", "b"] as a single model named ["a", "b"],
+    while --allowed-origins (nargs=None, type=json.loads) only parses the JSON form.
+    """
+    import importlib
+
+    try:
+        # vLLM 0.29 moved the serve parser from openai to launchers.
+        from vllm.entrypoints.launchers.cli_args import make_arg_parser
+    except ModuleNotFoundError as exc:
+        if exc.name not in (
+            "vllm.entrypoints.launchers",
+            "vllm.entrypoints.launchers.cli_args",
+        ):
+            raise
+        from vllm.entrypoints.openai.cli_args import make_arg_parser
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+
+    # Building the serve parser runs vLLM's general plugins (EngineArgs.add_cli_args
+    # calls load_general_plugins()). A plugin may refuse to register before the
+    # model and context are on argv (Quetzal does), and that refusal would end
+    # the server here. Only flag shapes are read, so suppress plugin loading for
+    # this one parser and restore it; vLLM loads the plugins itself at startup.
+    suppressed = []
+    for module_name in ("vllm.plugins", "vllm.engine.arg_utils"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        if hasattr(module, "load_general_plugins"):
+            suppressed.append((module, module.load_general_plugins))
+            module.load_general_plugins = lambda: None
+    try:
+        parser = make_arg_parser(FlexibleArgumentParser())
+    finally:
+        for module, original in suppressed:
+            module.load_general_plugins = original
+    return {action.dest for action in parser._actions if action.nargs == "+"}
+
+
+def _multi_value_tokens(value) -> list[str]:
+    # Dict items stay JSON: --lora-modules parses each token as JSON or name=path.
+    return [json.dumps(item) if isinstance(item, dict) else str(item) for item in value]
+
+
+def _append_vllm_arg(
+    argv: list[str], arg_name: str, value, multi_value_arg_names: set[str]
+) -> None:
     if value is None:
         return
     if isinstance(value, bool):
         if value:
             argv.append(arg_name)
         return
+    if (
+        isinstance(value, list)
+        and _normalize_vllm_arg_name(arg_name) in multi_value_arg_names
+    ):
+        if value:
+            argv.append(arg_name)
+            argv.extend(_multi_value_tokens(value))
+        return
+    if isinstance(value, (dict, list)):
+        argv.extend([arg_name, json.dumps(value)])
+        return
     argv.extend([arg_name, str(value)])
+
+
+def _split_json_list_value(value: str) -> Optional[list]:
+    if not value.startswith("["):
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, list) else None
 
 
 def _extract_cli_arg_value(argv: list[str], arg_name: str) -> Optional[str]:
@@ -962,6 +1227,7 @@ def format_vllm_serve_command(argv) -> str:
 def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
+    multi_value_arg_names = _vllm_multi_value_arg_names()
     remaining_default_vllm_args = dict(default_vllm_args)
     default_arg_name_by_normalized_name = {
         _normalize_vllm_arg_name(arg_name): arg_name
@@ -993,30 +1259,180 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
         if overridden_default_arg_name is not None:
             remaining_default_vllm_args.pop(overridden_default_arg_name, None)
 
+        is_multi_value = _normalize_vllm_arg_name(cli_arg_name) in multi_value_arg_names
+
         if separator:
-            vllm_argv.append(f"{cli_arg_name}={inline_value}")
+            items = _split_json_list_value(inline_value) if is_multi_value else None
+            if items is None:
+                vllm_argv.append(f"{cli_arg_name}={inline_value}")
+            elif items:
+                vllm_argv.append(cli_arg_name)
+                vllm_argv.extend(_multi_value_tokens(items))
             index += 1
             continue
 
-        vllm_argv.append(cli_arg_name)
         next_token_is_value = index + 1 < len(input_vllm_argv) and not input_vllm_argv[
             index + 1
         ].startswith("--")
         if next_token_is_value:
             value = input_vllm_argv[index + 1]
-            vllm_argv.append(value)
+            items = _split_json_list_value(value) if is_multi_value else None
+            if items is None:
+                vllm_argv.extend([cli_arg_name, value])
+            elif items:
+                vllm_argv.append(cli_arg_name)
+                vllm_argv.extend(_multi_value_tokens(items))
             index += 2
             continue
 
+        vllm_argv.append(cli_arg_name)
         index += 1
 
     for key, value in remaining_default_vllm_args.items():
         cli_arg_name = f"--{key}"
-        _append_vllm_arg(vllm_argv, cli_arg_name, value)
+        _append_vllm_arg(vllm_argv, cli_arg_name, value, multi_value_arg_names)
 
     # finally set sys.argv to the vllm server args
     sys.argv = vllm_argv
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
+
+
+def absorb_plugin_config_into_additional_config(default_vllm_args):
+    """Translate the fork-only ``plugin_config`` into ``additional_config['tt']``.
+
+    ``model_spec.py`` serializes the general ``override_tt_config`` as
+    ``plugin_config = json.dumps({"tt": {...}})``. That flag only exists in the
+    TT vLLM fork; upstream vLLM rejects ``--plugin_config``. Upstream's supported
+    channel is ``--additional-config``, so we pop ``plugin_config`` here and
+    fold its inner ``tt`` dict into ``additional_config['tt']``. Only pre-seeds
+    keys so the ``inject_*`` functions (called afterwards) always win. Tolerates
+    a JSON string, a dict, or empty/missing/unparseable input (no-op, and the
+    ``--plugin_config`` flag is never forwarded).
+    """
+    raw = default_vllm_args.pop("plugin_config", None)
+    if raw is None:
+        raw = default_vllm_args.pop("plugin-config", None)
+    else:
+        default_vllm_args.pop("plugin-config", None)
+    if raw is None:
+        return
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+    if not isinstance(raw, dict):
+        return
+    tt_override = raw.get("tt")
+    if not isinstance(tt_override, dict) or not tt_override:
+        return
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
+    for key, value in tt_override.items():
+        tt_cfg.setdefault(key, value)
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Absorbed plugin_config into additional_config['tt']: {tt_override} "
+        "(routed through upstream --additional-config)"
+    )
+
+
+def _additional_config_tt(default_vllm_args):
+    """Return ``(additional_config, additional_config['tt'])`` as mutable dicts.
+
+    The model spec serializes ``additional_config`` as a JSON *string*
+    (``'{"tt": {}}'``), while the ``inject_*`` helpers below build it as a dict.
+    Treating a string as "not a dict" and starting from ``{}`` silently discards
+    everything the spec asked for, so parse it instead. Unparseable or absent
+    values still fall back to an empty dict.
+    """
+    additional = default_vllm_args.get("additional_config")
+    if isinstance(additional, str):
+        try:
+            additional = json.loads(additional)
+        except (TypeError, ValueError):
+            additional = {}
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    return additional, tt_cfg
+
+
+def inject_tt_data_parallel(default_vllm_args):
+    """Route ``TT_DATA_PARALLEL`` into ``additional_config['tt']['tt_data_parallel']``.
+
+    vLLM spawns the EngineCore with a curated env that drops arbitrary env vars,
+    so ``TT_DATA_PARALLEL`` would not survive to the worker (DP silently falls
+    back to 1). ``additional_config`` is serialized to the EngineCore reliably.
+    Only fires when TT_DATA_PARALLEL>1, so other modes are unchanged.
+    """
+    raw = os.environ.get("TT_DATA_PARALLEL")
+    if raw is None:
+        return
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return
+    if n <= 1:
+        return
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
+    tt_cfg["tt_data_parallel"] = n
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_data_parallel={n} into additional_config['tt'] from "
+        "TT_DATA_PARALLEL (in-process submesh DP)"
+    )
+
+
+def inject_tt_weight_bridge_dir(default_vllm_args):
+    """Route ``TT_WEIGHT_BRIDGE_DIR`` into ``additional_config['tt']['tt_weight_bridge_dir']``
+    so the receiver can locate ``inference_bridge.py`` (same curated-env issue as
+    ``inject_tt_data_parallel``). The worker resolves this key first and falls
+    back to the ``TT_WEIGHT_BRIDGE_DIR`` env var. Only fires when the env var is set.
+    """
+    bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
+    if not bridge_dir:
+        return
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
+    tt_cfg["tt_weight_bridge_dir"] = bridge_dir
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_weight_bridge_dir={bridge_dir} into additional_config['tt'] "
+        "from TT_WEIGHT_BRIDGE_DIR (co-located device-socket weight bridge)"
+    )
+
+
+def inject_tt_colocated_fabric_config(default_vllm_args):
+    """Force ``additional_config['tt']['fabric_config'] = FABRIC_2D`` on the
+    co-located RL inference server so the vLLM worker joins the SAME
+    world-collective ``SetFabricConfig`` the trainer issues via
+    ``enable_fabric``. Single-chip inference (P150) otherwise skips fabric
+    setup entirely (``get_fabric_config`` returns None for num_devices==1),
+    leaving the trainer's fabric-config all_gather without a peer -> deadlock.
+    Only fires co-located; never overrides an explicit fabric_config.
+    """
+    if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+        return
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
+    if "fabric_config" not in tt_cfg:
+        tt_cfg["fabric_config"] = "FABRIC_2D"
+    # RL rollouts issue many prompts of varying lengths, so the model
+    # captures more distinct prefill traces at runtime than a fixed-length
+    # inference warmup. The stock default (~50MB) overflows
+    # (mesh_trace.cpp: get_trace_buffers_size() <= trace_region_size).
+    # Reserve a larger trace region co-located; never override an explicit one.
+    if "trace_region_size" not in tt_cfg:
+        tt_cfg["trace_region_size"] = 134217728
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        "Injected fabric_config=FABRIC_2D into additional_config['tt'] "
+        "(co-located: match trainer enable_fabric world-collective)"
+    )
 
 
 def main():
@@ -1062,6 +1478,10 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    absorb_plugin_config_into_additional_config(default_vllm_args)
+    inject_tt_data_parallel(default_vllm_args)
+    inject_tt_weight_bridge_dir(default_vllm_args)
+    inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
     configure_quetzal_provider(model_spec)
 
@@ -1071,6 +1491,18 @@ def main():
         service_port=resolve_service_port(),
         disable_trace_capture=args.disable_trace_capture,
     )
+
+    # The internal weight-update routes (/v1/internal/weights/*) exist ONLY for
+    # the co-located RL trainer and must never mount on a normal (non-colocated)
+    # inference server -- they would expose a device-socket rendezvous that
+    # hangs. Gate the install strictly on the co-located signal.
+    if os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        try:
+            from weight_update_api import install as install_weight_update_routes
+
+            install_weight_update_routes()
+        except Exception as exc:  # noqa: BLE001 - never block server startup on this
+            logger.warning("Could not install weight-update routes: %s", exc)
 
     # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available

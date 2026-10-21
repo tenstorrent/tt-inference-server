@@ -734,9 +734,10 @@ class SPRunner(BaseDeviceRunner):
             negative_prompt=request.negative_prompt or "",
             num_inference_steps=request.num_inference_steps or 20,
             seed=int(request.seed or 0),
-            height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
-            width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
-            num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
+            # `or DEFAULT`: these fields exist on the request and default to None.
+            height=getattr(request, "height", None) or DEFAULT_VIDEO_HEIGHT,
+            width=getattr(request, "width", None) or DEFAULT_VIDEO_WIDTH,
+            num_frames=getattr(request, "num_frames", None) or DEFAULT_VIDEO_NUM_FRAMES,
             guidance_scale=getattr(
                 request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
             ),

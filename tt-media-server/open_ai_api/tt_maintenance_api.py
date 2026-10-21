@@ -11,7 +11,7 @@ from resolver.service_resolver import service_resolver
 router = APIRouter()
 
 
-@router.get("/tt-liveness")
+@router.api_route("/tt-liveness", methods=["GET", "HEAD"])
 def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
     """
     Check service liveness and model readiness.
@@ -33,7 +33,7 @@ def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]
         raise HTTPException(status_code=500, detail=f"Liveness check failed: {e}")
 
 
-@router.get("/health")
+@router.api_route("/health", methods=["GET", "HEAD"])
 def health(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
     """
     OpenAI-compatible health check endpoint.

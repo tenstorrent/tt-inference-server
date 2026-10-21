@@ -16,6 +16,7 @@ from workflows.model_spec import (
     _build_device_model_spec,
     _build_system_requirements,
     _build_template,
+    blaze_impl,
     get_model_spec_map,
     load_templates_from_yaml,
     quetzal_impl,
@@ -35,6 +36,7 @@ def test_impl_registry_is_populated():
     """Every ImplSpec instance defined at module scope must be in _IMPL_REGISTRY."""
     assert _IMPL_REGISTRY["tt_transformers"] is tt_transformers_impl
     assert _IMPL_REGISTRY["quetzal"] is quetzal_impl
+    assert _IMPL_REGISTRY["blaze"] is blaze_impl
     # impl_id of each registry entry must match its key
     for impl_id, impl in _IMPL_REGISTRY.items():
         assert impl.impl_id == impl_id
@@ -276,7 +278,6 @@ def test_prod_catalog_requires_tt_metal_commit_and_version(tmp_path):
         ("tt_metal_commit", "abc1234"),
         ("vllm_commit", "def5678"),
         ("version", '"0.10.0"'),
-        ("docker_image", '"ghcr.io/x/y:1.0"'),
     ],
 )
 def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
@@ -286,13 +287,37 @@ def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
         load_templates_from_yaml(p)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        '"ghcr.io/x/y:latest"',
+        '"ghcr.io/x/y@sha256:not-a-digest"',
+        '"ghcr.io/x/y@sha256:' + "a" * 63 + '"',
+    ],
+)
+def test_dev_catalog_rejects_mutable_or_malformed_docker_image(tmp_path, value):
+    p = _write_catalog(tmp_path, "dev", {"docker_image": value})
+    with pytest.raises(ValueError, match="immutable OCI repo@sha256 digest"):
+        load_templates_from_yaml(p)
+
+
+def test_dev_catalog_accepts_immutable_docker_image(tmp_path):
+    image = "ghcr.io/x/y@sha256:" + "a" * 64
+    p = _write_catalog(tmp_path, "dev", {"docker_image": f'"{image}"'})
+    template = load_templates_from_yaml(p)[0]
+    assert template.docker_image == image
+    assert template.image_pinned is True
+    assert template.expand_to_specs()[0].docker_image == image
+
+
 def test_dev_catalog_without_pinning_fields_loads(tmp_path):
     p = _write_catalog(tmp_path, "dev", {})
     templates = load_templates_from_yaml(p)
     assert len(templates) == 1
-    # dev (base) template carries no pin fields at all.
+    # dev (base) template carries no source/build release pins.
     assert not hasattr(templates[0], "tt_metal_commit")
     assert not hasattr(templates[0], "version")
+    assert templates[0].docker_image is None
     # expanded spec has them as None and skips docker/code-link synthesis.
     spec = templates[0].expand_to_specs()[0]
     assert spec.tt_metal_commit is None
@@ -417,3 +442,77 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     assert (
         int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
     )
+
+
+def test_super_cluster_dev_llm_templates_use_blaze_impl():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    super_cluster = [
+        t
+        for t in templates
+        if any(d.device == DeviceTypes.SUPER_CLUSTER for d in t.device_model_specs)
+    ]
+    assert super_cluster, "expected SUPER_CLUSTER templates in dev/llm.yaml"
+    for template in super_cluster:
+        assert template.impl is blaze_impl, (
+            f"{template.weights} on SUPER_CLUSTER must use impl blaze, "
+            f"got {template.impl.impl_id}"
+        )
+
+
+def test_llama_qb2_catalog_preserves_default_and_shared_pool():
+    specs = get_model_spec_map(
+        load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+    )
+    choices = [
+        s
+        for s in specs.values()
+        if s.hf_model_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        and s.device_type == DeviceTypes.P300X2
+        and s.inference_engine == InferenceEngine.VLLM.value
+    ]
+    assert [s.impl.impl_id for s in choices if s.device_model_spec.default_impl] == [
+        "tt_transformers"
+    ]
+    spec = next(s for s in choices if s.impl.impl_id == "llama31_8b_qb2")
+    assert spec.impl.impl_name == "llama31-8b-qb2"
+    assert spec.impl.code_path == "models/demos/llama31_8b_qb2"
+    device = spec.device_model_spec
+    assert device.max_concurrency == 32
+    assert device.max_context == device.max_tokens_all_users == 131072
+    assert device.env_vars["MESH_DEVICE"] == "P300x2"
+    assert device.known_issues == []
+    assert spec.has_builtin_warmup
+
+
+def test_performance_references_are_scoped_to_implementation(monkeypatch):
+    from workflows import model_spec
+
+    common = {"isl": 128, "osl": 128, "max_concurrency": 1, "num_prompts": 8}
+    monkeypatch.setattr(
+        model_spec,
+        "model_performance_reference",
+        {
+            "test/model": {
+                "p300x2": [
+                    {**common, "targets": {"measured": {"tput_user": 10.0}}},
+                    {
+                        **common,
+                        "impl": "llama31_8b_qb2",
+                        "targets": {
+                            "measured": {"tput_user": 130.0, "tolerance": 0.05}
+                        },
+                    },
+                ]
+            }
+        },
+    )
+
+    def rates(impl):
+        refs = model_spec.get_perf_reference_map("test/model", {}, impl_id=impl)
+        return [r.targets["target"].tput_user for r in refs[DeviceTypes.P300X2]]
+
+    assert rates("tt_transformers") == [10.0]
+    assert rates(None) == [10.0]
+    assert rates("llama31_8b_qb2") == [10.0, 130.0]

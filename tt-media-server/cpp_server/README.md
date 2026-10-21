@@ -63,6 +63,7 @@ Configuration: env vars override the compiled-in defaults from
 | `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
 | `SENTRY_RELEASE` | Release override | server version |
 | `SENTRY_DEBUG` | `1` logs SDK activity to stderr | off |
+| `SENTRY_SERVER_NAME` | `server_name` tag override (the OS hostname is a random container ID under Docker) | `POD_NAME`, else OS hostname |
 
 There is no sample-rate setting: the server never starts a root trace, so the
 sampling decision carried in the upstream `traceparent` always applies.

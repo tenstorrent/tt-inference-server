@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
+from ..agentic_traces.charts import TELEMETRY_CHART_PREFIX, write_point_charts
+from ..agentic_traces.sweep_export import write_agentic_sweep
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
 from .aiperf_prefix_cache import (
@@ -81,12 +84,38 @@ class AIPerfAgenticTracesDriver:
         model_repo: str = "",
         model_id: str = "",
         output_dir: Optional[Path] = None,
+        report_dir: Optional[Path] = None,
     ) -> None:
         self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)
         self.artifact_root = Path(artifact_root) if artifact_root else None
         self.model_repo = model_repo
         self.model_id = model_id
         self.output_dir = Path(output_dir) if output_dir else None
+        # Chart links in the payload are relative to the directory the markdown
+        # report is written to, so they resolve wherever the report is opened.
+        self.report_dir = Path(report_dir) if report_dir else None
+
+    def _write_telemetry_charts(
+        self, trace_run: AgenticTracesRun, artifact_dir: Path
+    ) -> Dict[str, str]:
+        """Draw the run's per-point charts; ``{name: link relative to the report}``."""
+        assert self.output_dir is not None
+        chart_dir = (
+            self.output_dir / "charts" / safe_filename_part(trace_run.filesafe_label())
+        )
+        try:
+            written = write_point_charts(artifact_dir, chart_dir)
+        except Exception:
+            # Charts are an extra view over numbers the tables already carry.
+            logger.exception(
+                "[agentic-traces] Telemetry charts failed for %s", trace_run.label
+            )
+            return {}
+        base = self.report_dir or self.output_dir
+        return {
+            name: Path(os.path.relpath(chart_dir / filename, base)).as_posix()
+            for name, filename in written.items()
+        }
 
     def run(
         self,
@@ -124,6 +153,7 @@ class AIPerfAgenticTracesDriver:
             artifact_dir=artifact_dir,
             auth_token=server.auth_token,
             metrics_urls=metrics_urls,
+            goodput=trace_run.goodput,
         )
         _log_run_header(trace_run)
 
@@ -172,11 +202,26 @@ class AIPerfAgenticTracesDriver:
             model_repo=server.model or self.model_repo,
             artifact_dir=artifact_dir,
         )
+        charts = self._write_telemetry_charts(trace_run, artifact_dir)
+        # Flat keys, not a nested map: the report generator flattens nested
+        # mappings when it merges the runs' blocks, which would lose them.
+        for name, link in charts.items():
+            payload[f"{TELEMETRY_CHART_PREFIX}{name}"] = link
         raw_path = _save_payload(
             payload=payload,
             output_dir=self.output_dir,
             model_id=self.model_id or self.model_repo,
             label=trace_run.filesafe_label(),
+        )
+        # This point's requirements-shaped view, written now rather than at the
+        # end of the sweep: each point costs an hour, so a later failure must
+        # not take the ones already measured with it.
+        write_agentic_sweep(
+            [payload],
+            self.output_dir,
+            filename=(
+                f"agentic_sweep_{safe_filename_part(trace_run.filesafe_label())}.json"
+            ),
         )
         _log_run_summary(trace_run, metrics)
         return AgenticTracesDriverResult(
@@ -194,6 +239,7 @@ def build_aiperf_cmd(
     artifact_dir: Path,
     auth_token: str = "",
     metrics_urls: Sequence[str] = (),
+    goodput: str = "",
 ) -> List[str]:
     """Construct the ``aiperf profile`` CLI for one agentic-trace run.
 
@@ -206,6 +252,11 @@ def build_aiperf_cmd(
     ``--server-metrics`` is additive, not a replacement: AIPerf always scrapes
     ``<url>/metrics`` from the load target and appends ``metrics_urls``, so
     passing them cannot turn the default scrape off.
+
+    ``goodput`` is a space-separated ``TAG:VALUE`` SLO string (AIPerf's tags:
+    ``time_to_first_token``, ``inter_token_latency``, ``request_latency`` in ms,
+    ``output_token_throughput_per_user`` in tokens/s). AIPerf reports goodput
+    only when it is passed, so an empty string means the run measures none.
     """
     if not url.startswith("http"):
         url = f"http://{url}"
@@ -259,6 +310,10 @@ def build_aiperf_cmd(
         str(artifact_dir),
         "--public-dataset",
         run.public_dataset,
+        # Fixed count: processors auto-scaled after the dataset is configured
+        # never receive DatasetConfiguredNotification and abort mid-run.
+        "--record-processor-service-count",
+        "8",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
@@ -266,9 +321,15 @@ def build_aiperf_cmd(
     if normalized_metrics_urls:
         cmd.append("--server-metrics")
         cmd.extend(normalized_metrics_urls)
+    # Unlike --server-metrics above, --goodput is NOT consume_multiple: its
+    # validator splits the one string itself, so the whole SLO must be a
+    # single argv element. Splitting it would make every pair after the first
+    # fall through as a positional arg. Same handling as the prefix-cache
+    # driver.
+    if goodput.strip():
+        cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
-        cmd.extend(["--prefill-concurrency", str(run.concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:
@@ -276,6 +337,10 @@ def build_aiperf_cmd(
         cmd.append("--no-gpu-telemetry")
     if run.tokenizer_trust_remote_code:
         cmd.append("--tokenizer-trust-remote-code")
+    if run.trace_idle_gap_cap_seconds is not None:
+        cmd.extend(
+            ["--trace-idle-gap-cap-seconds", f"{run.trace_idle_gap_cap_seconds:g}"]
+        )
     if auth_token:
         cmd.extend(["--api-key", auth_token])
     return cmd
@@ -317,10 +382,13 @@ def parse_aiperf_output(
         value = summary.get(tag)
         return value if isinstance(value, Mapping) else {}
 
-    def _stat(tag: str, stat: str = "avg", default: Any = 0) -> Any:
+    def _stat(tag: str, stat: str = "avg", default: Any = None) -> Any:
         return _block(tag).get(stat, default)
 
     def _int(tag: str, stat: str = "avg") -> int:
+        # Counts keep a zero default: an absent counter genuinely means zero
+        # (no errors, no overflows), unlike a metric, where absence must stay
+        # distinguishable from a measured 0.0 for downstream grading.
         value = _stat(tag, stat)
         return int(value) if isinstance(value, (int, float)) else 0
 
@@ -328,30 +396,31 @@ def parse_aiperf_output(
     itl = _block("inter_token_latency")
     e2el = _block("request_latency")
     per_user = _block("output_token_throughput_per_user")
+    e2e_per_user = _block("e2e_output_token_throughput")
     metadata = summary.get("metadata") or {}
     dataset = metadata.get("dataset") or {} if isinstance(metadata, Mapping) else {}
 
     metrics: Dict[str, Any] = {
         # Latency. TTFT carries the full spread because it is the headline
         # metric for long-context agentic prefill.
-        "mean_ttft_ms": ttft.get("avg", 0),
-        "median_ttft_ms": ttft.get("p50", 0),
-        "p90_ttft_ms": ttft.get("p90", 0),
-        "p95_ttft_ms": ttft.get("p95", 0),
-        "p99_ttft_ms": ttft.get("p99", 0),
-        "min_ttft_ms": ttft.get("min", 0),
-        "max_ttft_ms": ttft.get("max", 0),
-        "std_ttft_ms": ttft.get("std", 0),
-        "mean_tpot_ms": itl.get("avg", 0),
-        "median_tpot_ms": itl.get("p50", 0),
-        "p90_tpot_ms": itl.get("p90", 0),
-        "p95_tpot_ms": itl.get("p95", 0),
-        "p99_tpot_ms": itl.get("p99", 0),
-        "mean_e2el_ms": e2el.get("avg", 0),
-        "median_e2el_ms": e2el.get("p50", 0),
-        "p90_e2el_ms": e2el.get("p90", 0),
-        "p95_e2el_ms": e2el.get("p95", 0),
-        "p99_e2el_ms": e2el.get("p99", 0),
+        "mean_ttft_ms": ttft.get("avg"),
+        "median_ttft_ms": ttft.get("p50"),
+        "p90_ttft_ms": ttft.get("p90"),
+        "p95_ttft_ms": ttft.get("p95"),
+        "p99_ttft_ms": ttft.get("p99"),
+        "min_ttft_ms": ttft.get("min"),
+        "max_ttft_ms": ttft.get("max"),
+        "std_ttft_ms": ttft.get("std"),
+        "mean_tpot_ms": itl.get("avg"),
+        "median_tpot_ms": itl.get("p50"),
+        "p90_tpot_ms": itl.get("p90"),
+        "p95_tpot_ms": itl.get("p95"),
+        "p99_tpot_ms": itl.get("p99"),
+        "mean_e2el_ms": e2el.get("avg"),
+        "median_e2el_ms": e2el.get("p50"),
+        "p90_e2el_ms": e2el.get("p90"),
+        "p95_e2el_ms": e2el.get("p95"),
+        "p99_e2el_ms": e2el.get("p99"),
         "mean_ttst_ms": _stat("time_to_second_token"),
         # Distinct from TTFT on a reasoning model: TTFT is the first token of any
         # kind, this is the first token the user actually sees, so the gap is
@@ -363,16 +432,28 @@ def parse_aiperf_output(
         "median_effective_latency_ms": _stat("effective_latency", "p50"),
         "p99_effective_latency_ms": _stat("effective_latency", "p99"),
         # Throughput. output_token_throughput_per_user is decode speed while a
-        # request is streaming; e2e_output_token_throughput divides by the whole
-        # request wall-clock, so it is the honest user-visible speed for a
-        # long-prefill agentic turn (40 vs 119 tok/s/user in practice).
+        # request is streaming; e2e normalized interactivity divides by the
+        # whole request wall-clock, so it is the honest user-visible speed for
+        # a long-prefill agentic turn (40 vs 119 tok/s/user in practice).
         "output_token_throughput": _stat("output_token_throughput"),
-        "output_token_throughput_per_user": per_user.get("avg", 0),
-        "median_output_token_throughput_per_user": per_user.get("p50", 0),
-        "e2e_output_token_throughput_per_user": _stat("e2e_output_token_throughput"),
+        "output_token_throughput_per_user": per_user.get("avg"),
+        "median_output_token_throughput_per_user": per_user.get("p50"),
+        "mean_e2e_norm_intvty": e2e_per_user.get("avg"),
+        # Tail percentiles read off the low end: this is a rate, so the slow
+        # tail is the bottom of the distribution. A "p90" here means what the
+        # slowest 10% of requests saw, matching p90_e2el_ms above (and
+        # InferenceX's e2e_norm_intvty, which grades the same way). Reading
+        # AIPerf's own p90 would report the *fastest* decile instead.
+        "p75_e2e_norm_intvty": e2e_per_user.get("p25"),
+        "p90_e2e_norm_intvty": e2e_per_user.get("p10"),
+        "p95_e2e_norm_intvty": e2e_per_user.get("p5"),
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
+        # Requests/sec meeting every --goodput SLO. AIPerf emits this only
+        # when those bars were passed, so it is absent for a run with no
+        # SLOs -- and goodputPct stays unreported rather than reading as 0%.
+        "goodput": _stat("goodput"),
         # Prefill/decode split, which is the main serving insight for
         # long-context agentic replay. "effective" averages over the whole run
         # including idle time; "active" only counts windows where that phase was
@@ -399,6 +480,11 @@ def parse_aiperf_output(
         "error_rate_pct": _stat("request_error_rate"),
         "mean_isl": _stat("input_sequence_length"),
         "mean_osl": _stat("output_sequence_length"),
+        # Trace replay draws prompts of wildly different sizes from the trace
+        # pool, so the mean alone hides the long-context tail that sets KV
+        # pressure.
+        "p95_isl": _stat("input_sequence_length", "p95"),
+        "p95_osl": _stat("output_sequence_length", "p95"),
         "total_input_tokens": _int("total_isl"),
         "total_output_tokens": _int("total_osl"),
         # Measured, not requested: confirms the run actually profiled for the
@@ -421,6 +507,13 @@ def parse_aiperf_output(
         "connection_reuse_rate": _stat("http_req_connection_reused"),
         "mean_http_req_waiting_ms": _stat("http_req_waiting"),
     }
+
+    # A metric the export never contained must stay absent, not read as a
+    # measured 0.0: the sweep export omits what a run did not produce, and the
+    # requirements grading compares against targets -- a defaulted 0.0 would
+    # pass any lower-is-better latency target vacuously. Counts are exempt by
+    # construction (``_int`` above): an absent counter means zero happened.
+    metrics = {key: value for key, value in metrics.items() if value is not None}
 
     # Error-adjusted percentiles: these blocks carry no `avg`, only percentiles,
     # so they read as 0 if fetched like the others. They are absent entirely when
@@ -487,8 +580,49 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+    # The engine's own prefix-cache counters are authoritative when the scrape
+    # produced any: they are the cache's accounting, scoped to the profiling
+    # window. A prefix-unaware frontend (Dynamo) exports none and AIPerf then
+    # writes no usable series -- or no ``server_metrics_export.json`` at all --
+    # so fall back to the server's per-response usage accounting, which every
+    # OpenAI-compatible endpoint reports as ``prompt_tokens_details``.
+    engine_metrics = _parse_prefix_cache_metrics(artifact_dir, metrics_urls)
+    if engine_metrics:
+        metrics.update(engine_metrics)
+    else:
+        metrics.update(_usage_cache_hit_metrics(summary))
 
+    return metrics
+
+
+def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    """Measured prefix-cache hit rate from the server's own usage accounting.
+
+    Returns ``{}`` when the tags are absent, so the report drops the column
+    rather than publishing a misleading 0%.
+    """
+
+    def _avg(tag: str) -> Optional[float]:
+        block = summary.get(tag)
+        if not isinstance(block, Mapping):
+            return None
+        value = block.get("avg")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    cached = _avg("total_usage_prompt_cache_read_tokens")
+    prompt = _avg("total_usage_prompt_tokens")
+
+    pct = _avg("overall_usage_prompt_cache_read_pct")
+    if pct is None and cached is not None and prompt:
+        pct = 100.0 * cached / prompt
+    if pct is None:
+        return {}
+
+    metrics: Dict[str, Any] = {"measured_prefix_cache_hit_pct": pct}
+    if cached is not None:
+        metrics["prefix_cache_hit_tokens_measured"] = cached
+    if prompt is not None:
+        metrics["prefix_cache_prompt_tokens_measured"] = prompt
     return metrics
 
 
@@ -719,9 +853,17 @@ def _build_payload(
         "slice_duration": run.slice_duration,
         "max_context_length": run.max_context_length,
         "random_seed": run.random_seed,
+        # The SLO bars goodput was graded against, so a goodput number is
+        # never read without the definition of "good" that produced it.
+        "goodput_slo": run.goodput,
+        # The document's expected sweep, so the report can grade each measured
+        # point against its target -- and call out the points a truncated
+        # sweep never measured. Empty when nothing grades the run.
+        "expected_sweep": [dict(point) for point in run.expected_sweep],
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,
+        "trace_idle_gap_cap_seconds": run.trace_idle_gap_cap_seconds,
         "artifact_dir": str(artifact_dir),
         "metadata": dict(run.metadata or {}),
         **metrics,
@@ -788,7 +930,7 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
         "[agentic-traces]   output tok/s/user streaming/e2e = %.1f/%.1f; "
         "total tok/s = %.1f",
         float(metrics.get("output_token_throughput_per_user", 0) or 0),
-        float(metrics.get("e2e_output_token_throughput_per_user", 0) or 0),
+        float(metrics.get("mean_e2e_norm_intvty", 0) or 0),
         float(metrics.get("total_token_throughput", 0) or 0),
     )
     measured_cache = metrics.get("measured_prefix_cache_hit_pct")

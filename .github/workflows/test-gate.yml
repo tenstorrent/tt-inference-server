@@ -1175,20 +1175,20 @@ jobs:
           # unset, so the chart fails closed until the operator picks.
           echo "--- media/forge with neither auth.apiKey nor auth.disabled must fail"
           if helm template ttis charts/tt-inference-server \
-              --set model=Qwen3-Embedding-4B --set device=n150 >/dev/null 2>&1; then
+              --set model=Qwen3-Embedding-4B --set device=p300x2 >/dev/null 2>&1; then
             echo "::error::a forge row rendered with no auth values — the fail-closed auth check is gone"
             exit 1
           fi
 
           echo "--- auth.apiKey -> API_KEY in the Secret (media/forge)"
           helm template ttis charts/tt-inference-server \
-            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.apiKey=k \
+            --set model=Qwen3-Embedding-4B --set device=p300x2 --set auth.apiKey=k \
             --show-only templates/secret.yaml | grep -qE '^[[:space:]]*API_KEY: "k"$' \
             || { echo "::error::auth.apiKey did not land as API_KEY for a forge row"; exit 1; }
 
           echo "--- auth.disabled -> NO_AUTH in the ConfigMap (media/forge)"
           helm template ttis charts/tt-inference-server \
-            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --set model=Qwen3-Embedding-4B --set device=p300x2 --set auth.disabled=true \
             --show-only templates/configmap.yaml | grep -qE '^[[:space:]]*NO_AUTH: "1"$' \
             || { echo "::error::auth.disabled did not set NO_AUTH for a forge row"; exit 1; }
 
@@ -1200,7 +1200,7 @@ jobs:
 
           echo "--- HF_HOME points at the persistent cache volume (media/forge only)"
           helm template ttis charts/tt-inference-server \
-            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --set model=Qwen3-Embedding-4B --set device=p300x2 --set auth.disabled=true \
             --show-only templates/configmap.yaml \
             | grep -qE '^[[:space:]]*HF_HOME: "/home/container_app_user/cache_root/huggingface"$' \
             || { echo "::error::HF_HOME must point into the cache volume, or weights are re-downloaded on every restart"; exit 1; }
@@ -1231,7 +1231,7 @@ jobs:
 
           echo "--- contradictory auth values must fail"
           if helm template ttis charts/tt-inference-server \
-              --set model=Qwen3-Embedding-4B --set device=n150 \
+              --set model=Qwen3-Embedding-4B --set device=p300x2 \
               --set auth.apiKey=k --set auth.disabled=true >/dev/null 2>&1; then
             echo "::error::auth.apiKey together with auth.disabled rendered instead of failing"
             exit 1
@@ -1256,7 +1256,7 @@ jobs:
           # startupProbe is always rendered and its failureThreshold is computed as
           # ceil(progressDeadlineSeconds / periodSeconds) (periodSeconds default 15).
           # model:device:expected-failureThreshold (pd 5400 -> 360, pd 7200 -> 480)
-          for triple in gpt-oss-20b:t3k:360 gpt-oss-120b:t3k:480; do
+          for triple in Qwen3-8B:t3k:360 gpt-oss-120b:t3k:480; do
             model="${triple%%:*}"; rest="${triple#*:}"; device="${rest%%:*}"; want="${rest##*:}"
             echo "--- startupProbe: $model / $device (expect failureThreshold $want)"
             RENDERED=$(helm template ttis charts/tt-inference-server \

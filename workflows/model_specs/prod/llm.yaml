@@ -6,90 +6,20 @@ templates:
 # LLM templates
 # =============================================================================
 - weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: T3K
-      max_concurrency: 1
-      max_context: 16384      # 16 * 1024
-      default_impl: true
-      env_vars:
-        VLLM_ENABLE_RESPONSES_API_STORE: 1
-        VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS: 1
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-- weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY_T3K
-      max_concurrency: 1
-      max_context: 16384      # 16 * 1024
-      default_impl: true
-      env_vars:
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-- weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      env_vars:
-        MESH_DEVICE: "(4, 8)"      # Override default TG->(8,4) to use (4,8) mesh grid
-      vllm_args:
-        data_parallel_size: 4
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-
-- weights:
     - openai/gpt-oss-120b
-  version: "0.17.0"
-  tt_metal_commit: "8c48a10"
-  vllm_commit: "f52987a"
+  version: "0.12.0"
+  tt_metal_commit: "805f43d"
+  vllm_commit: "a45c614"
   impl: gpt_oss
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 16384      # 16 * 1024
+      max_context: 16384        # 16 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 134217728      # 128 MB; vLLM default 50 MB is too small for long prefill
+        trace_region_size: 134217728        # 128 MB; vLLM default 50 MB is too small for long prefill
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -179,29 +109,11 @@ templates:
   status: EXPERIMENTAL
 
 - weights:
-    - google/gemma-3-1b-it
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c254ee3
-  vllm_commit: c4f2327
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150
-      max_concurrency: 32
-      max_context: 32768      # 32 * 1024
-      default_impl: true
-      override_tt_config:
-        l1_small_size: 4096
-        fabric_config: FABRIC_1D
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-- weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -218,9 +130,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
@@ -237,9 +149,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -254,9 +166,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
@@ -276,42 +188,17 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
+      max_concurrency: 128        # 32 * 4
       max_context: 40960
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
-  status: FUNCTIONAL
-  metadata:
-    Qwen/Qwen3-8B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: hermes
-
-- weights:
-    - Qwen/Qwen3-8B
-  impl: tt_transformers
-  system_requirements:
-    firmware:
-      specifier: ">=19.2.0"
-      mode: STRICT
-    kmd:
-      specifier: ">=2.5.0"
-      mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 22be241
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P300
-      max_concurrency: 32
-      max_context: 40960
-      default_impl: true
   status: FUNCTIONAL
   metadata:
     Qwen/Qwen3-8B:
@@ -378,14 +265,14 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 54000000
@@ -399,14 +286,14 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
@@ -423,14 +310,14 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: false
       override_tt_config:
         trace_region_size: 66147328
@@ -446,7 +333,6 @@ templates:
     Qwen/Qwen3-32B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: hermes
-
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
@@ -457,14 +343,14 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 61341696
@@ -509,14 +395,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -524,14 +410,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -539,14 +425,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -555,14 +441,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: FUNCTIONAL
   env_vars:
@@ -574,14 +460,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 27381760
@@ -597,14 +483,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
@@ -622,14 +508,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -645,14 +531,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -670,14 +556,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -697,14 +583,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -720,14 +606,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -745,14 +631,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -769,99 +655,18 @@ templates:
     Qwen/Qwen2.5-72B-Instruct:
       tool_call_parser_name: hermes
   model_display_name: Qwen2.5-72B
-
-- weights:
-    - Qwen/Qwen2.5-7B
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N300
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 60000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150X4
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N300
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 60000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B-Instruct:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150X4
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B-Instruct:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
 
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -888,14 +693,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-70B
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -922,14 +727,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-70B-Instruct
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -956,14 +761,14 @@ templates:
 - weights:
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -1221,14 +1026,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: tt_transformers
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -1456,17 +1261,17 @@ templates:
       specifier: ">=2.5.0"
       mode: STRICT
   version: "0.16.0"
-  tt_metal_commit: 669d59e
+  tt_metal_commit: "669d59e"
   vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1491,17 +1296,17 @@ templates:
       specifier: ">=2.5.0"
       mode: STRICT
   version: "0.16.0"
-  tt_metal_commit: 669d59e
+  tt_metal_commit: "669d59e"
   vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1526,17 +1331,17 @@ templates:
       specifier: ">=2.5.0"
       mode: STRICT
   version: "0.16.0"
-  tt_metal_commit: 669d59e
+  tt_metal_commit: "669d59e"
   vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1685,14 +1490,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1705,14 +1510,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1725,14 +1530,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1745,14 +1550,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1765,14 +1570,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1785,14 +1590,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1913,14 +1718,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 65536      # 64 * 1024
+      max_context: 65536        # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 52000000
@@ -1932,14 +1737,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 70000000
@@ -1951,14 +1756,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 117000000
@@ -1970,14 +1775,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: COMPLETE
   metadata:
@@ -1987,14 +1792,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 65536      # 64 * 1024
+      max_context: 65536        # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 52000000
@@ -2006,14 +1811,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 70000000
@@ -2025,14 +1830,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 117000000
@@ -2044,14 +1849,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: COMPLETE
   metadata:
@@ -2059,85 +1864,6 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
 
-- weights:
-    - meta-llama/Llama-3.1-8B
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P100
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 90000000
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 900000000      # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
-      known_issues:
-        - workflow_type: EVALS
-          task_name: meta_ifeval
-          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
-        - workflow_type: EVALS
-          task_name: meta_gpqa_cot
-          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
-        - workflow_type: EVALS
-          task_name: longbench_fewshot_e
-          reason: "longbench_fewshot_e known issue with longbench code sub-task where
-            the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-        - workflow_type: EVALS
-          task_name: longbench_summarization_e
-          reason: "longbench_summarization_e measured score is ~94% which does not satisfy
-            the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-        - workflow_type: EVALS
-          task_name: longbench_code_e
-          reason: "longbench_code_e known issue with longbench code sub-task where the
-            chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B-Instruct
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P100
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 90000000
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B-Instruct:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   version: "0.18.0"
@@ -2183,47 +1909,6 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X4
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        sample_on_device_mode: decode_only
-        trace_region_size: 70000000
-  status: COMPLETE
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B-Instruct
-  impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X4
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        sample_on_device_mode: decode_only
-        trace_region_size: 70000000
-  status: COMPLETE
-  metadata:
-    meta-llama/Llama-3.1-8B-Instruct:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-
-- weights:
-    - meta-llama/Llama-3.1-8B
-  impl: tt_transformers
   system_requirements:
     firmware:
       specifier: ">=18.12.0"
@@ -2259,14 +1944,14 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
-      max_concurrency: 256      # 32 * 8
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 256        # 32 * 8
+      max_context: 131072        # 128 * 1024
       default_impl: true
       vllm_args:
         data_parallel_size: 8
@@ -2280,9 +1965,9 @@ templates:
 
 - weights:
     - meta-llama/Llama-3.1-8B
-  version: "0.19.0"
-  tt_metal_commit: "b204341"
-  vllm_commit: "9bd099c"
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2295,7 +1980,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2344,7 +2029,7 @@ templates:
   device_model_specs:
     - device: P300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
@@ -2380,9 +2065,9 @@ templates:
   model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
-  version: "0.19.0"
-  tt_metal_commit: "b204341"
-  vllm_commit: "9bd099c"
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2395,7 +2080,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2545,14 +2230,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
+  version: "0.11.0"
+  tt_metal_commit: "bac8b34"
+  vllm_commit: "7c6685a"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       vllm_args:
         data_parallel_size: 4
@@ -2606,49 +2291,6 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
 
-- weights:
-    - Qwen/Qwen2.5-Coder-32B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 17a5973
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: T3K
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 56000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-Coder-32B-Instruct:
-      tool_call_parser_name: hermes
-- weights:
-    - Qwen/Qwen2.5-Coder-32B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 17a5973
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY_T3K
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      env_vars:
-        TT_MM_THROTTLE_PERF: 5
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-Coder-32B-Instruct:
-      tool_call_parser_name: hermes
 - weights:
     - openai/gpt-oss-120b
   version: "0.17.0"
@@ -2689,71 +2331,98 @@ templates:
       tool_call_parser_name: openai
 - weights:
     - google/gemma-4-31B-it
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
   impl: tt_transformers
-      # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
-      # them; only prod specs carry commits). The image is supplied at runtime via
-      # --override-docker-image; the prod gemma4 specs pin the build commits.
+    # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+    # them; only prod specs carry commits). The image is supplied at runtime via
+    # --override-docker-image; the prod gemma4 specs pin the build commits.
   inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
   device_model_specs:
-    - device: P300X2      # QB2 (2x P300, 4-chip TP mesh)
-      max_concurrency: 1
-          # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
-          # of the 60 layers allocates a full-length KV buffer, so the largest pool
-          # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
-          # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
-          # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
-          # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
-      max_context: 49152      # 48 * 1024
-      default_impl: true
+    - device: P300X2    # QB2 (2x P300, 4-chip TP mesh)
+        # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
+        # micro-batched ≤4 users inside the generator.
+      max_concurrency: 32
+        # Metal policy (generator_trace 31B/_QB2): auto-bounded at ≥64k; at
+        # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
+        # Scheduler tokens must match the resolved metal chunk (2048 here).
+      max_context: 262144    # 256 * 1024
+      default_impl: true    # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       env_vars:
-            # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
-            # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
-            # laid the TP collectives over the wrong fabric links and corrupted decode
-            # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+          # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+          # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+          # laid the TP collectives over the wrong fabric links and corrupted decode
+          # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-            # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
-            # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
-            # honors this env override (value kept here, gated by device + model,
-            # rather than hardcoded in tt-metal).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "393216"    # one 256K request + sliding-group charges
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+          # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+          # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"    # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 200000000
-            # On-device decode sampling is required on the TP mesh so token ids
-            # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
+        trace_region_size: 512000000
+        l1_small_size: 24576    # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
+          # On-device decode sampling is required on the TP mesh so token ids
+          # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
-            # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
-            # model's HF generation_config.json; evals override per-request. No
-            # override_generation_config here -- it would just restate the HF default.
-            # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
-            # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
-            # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
-            # is passed explicitly here; the gemma4 parser is registered by the
-            # vllm-tt-plugin entry point (tenstorrent/vllm #431).
+          # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+          # Sampling defaults come from the HF generation_config; the gemma4 tool
+          # parser ships in vllm-tt-plugin.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-            # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
-            # terminal-bench-2 / swe-bench-verified evals (methodology matched to
-            # tenstorrent/tt-inference-server#4331) get the reasoning channel the
-            # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
-            # --reasoning-parser separates the thought channel into reasoning_content.
+          # Thinking on: the reasoning evals need the thought channel (~10 pts otherwise).
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-  status: EXPERIMENTAL
+          # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
+          # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
+          # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
+          # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
+          # rounds starved decode under async scheduling. 65536/4096 measured
+          # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
+        enable_chunked_prefill: true
+          # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+          # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: 'test_penalties fails two repeat_trap cases at seed 1234 / temperature
+            0.1 although every penalty changes the output: repetition_penalty=1.5 raises
+            the unique-word ratio 0.21 -> 0.42 (the 446-word robotic story becomes 666
+            words of prose) but the rule compares the ABSOLUTE most-common-word count
+            (56 -> 79), which grows with length; presence_penalty=1.2 yields a different
+            repetitive story (the prompt asks for one) whose ratio drops 0.211 -> 0.186,
+            past the 90%-of-baseline rule. Identical numbers on two tt-shield runs (37495434533,
+            37560947407); the other 7 cases pass. Same exemption as Llama-3.3-70B P300X2
+            (#3888). Measured 2026-10-07.'
+      # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
+      # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
+      # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
+      # ≥512MB trace region.
+  status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/gemma-4-31B-it:
       reasoning_parser_name: gemma4
-          # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
-          # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+
+  # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
+  # models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
+  # Shield sweep is directly comparable with the existing autoport benchmark run.
 - weights:
     - Qwen/Qwen3.6-27B
   version: "0.20.0"
@@ -2775,41 +2444,6 @@ templates:
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
-      vllm_args:
-        enable_auto_tool_choice: true
-        reasoning_parser: qwen3
-        tool_call_parser: qwen3_coder
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 1073741824
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  metadata:
-    Qwen/Qwen3.6-27B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: qwen3_coder
-- weights:
-    - Qwen/Qwen3.6-27B
-  version: "0.20.0"
-  tt_metal_commit: "de59f8a"
-  vllm_commit: "03fa3af"
-  impl: qwen36_blackhole
-  inference_engine: VLLM
-  model_type: LLM
-  supported_modalities:
-    - text
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 32
-      max_context: 262144
-      max_tokens_all_users_override: 525312
-      default_impl: true
-      env_vars:
-        HF_MODEL: Qwen/Qwen3.6-27B
-        MESH_DEVICE: "P150x8"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
         enable_auto_tool_choice: true
@@ -2896,4 +2530,469 @@ templates:
       output_block_size: 256
         # A request must leave one full output canvas inside max_context.
       max_effective_input_tokens: 261888
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  version: "0.23.0"
+  tt_metal_commit: "2fd9445"
+  vllm_commit: "7250ddf"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 536870912
+        l1_small_size: 16384
+      vllm_args:
+        block_size: '128'
+        hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
+        max-logprobs: '-1'
+        async-scheduling: true
+        no-enable-prefix-caching: true
+          # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
+          # prefill and rejects budgets above 8192 batched tokens. Requests that
+          # omit top_k need a default inside the device sampler's 1..32 range.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: '8192'
+        override_generation_config: '{"top_k": 20}'
+        reasoning-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking":true}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: llama31_8b_qb2
+  inference_engine: VLLM
+  version: "0.24.0"
+  tt_metal_commit: "29f93c9"
+  vllm_commit: "3506696"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      max_tokens_all_users_override: 131072    # Shared across all 32 slots.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P300x2
+      vllm_args:
+        block_size: 128
+        data_parallel_size: 1
+        revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        tokenizer_revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        seed: 0    # Match the published adapter and frozen performance baseline.
+        max-logprobs: -1
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 16384
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+      pinned_checkpoint: true
+      checkpoint_index: model.safetensors.index.json
+      model_path_env: LLAMA_MODEL_PATH
+      benchmark_protocol: fixed_workload
+      benchmark_require_complete_metrics: true
+      benchmark_tokenizer_sha256:
+        tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
+        tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: P300X2    # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 32
+      max_context: 262144    # auto-bounded sliding + chunk 4096 at 256k (metal policy)
+      default_impl: true
+      env_vars:
+          # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+          # 2x the 31B QB2 pool (8 full layers x 8 KV heads vs 10 x 16); bfloat8_b KV as on Galaxy.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+          # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+          # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"    # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576    # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
+        sample_on_device_mode: decode_only
+      vllm_args:
+          # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+          # Sampling defaults come from the HF generation_config; the gemma4 tool
+          # parser ships in vllm-tt-plugin.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+          # Thinking on: the reasoning evals need the thought channel (~10 pts otherwise).
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+          # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+          # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+      # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
+      # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
+      # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
+      # 12B P150X8 target entry: bounded sliding + batched prefill + eager 4k
+      # chunks — gated/traced prefill wedges 12B under mixed prefill+decode
+      # concurrency (G7, cross-platform); same known wave-boundary issue applies.
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - Qwen/Qwen3-32B
+  impl: qwen3_32b_galaxy
+  inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32    # 8 * 4
+        # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+      env_vars:
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+      vllm_args:
+        data_parallel_size: 4
+          # Mirrors the Wormhole GALAXY entry: the Qwen3 streaming conformance
+          # suite exercises reasoning + tool calls, which need these parsers.
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace":
+          true}'
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: hermes
+        default_chat_template_kwargs: '{"enable_thinking": false}'
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+          # Blackhole Galaxy decode runs column-axis collectives, which need the
+          # 2D torus; a 1D ring is the Wormhole setting and was inherited here.
+        fabric_config: FABRIC_2D_TORUS_XY
+        worker_l1_size: 1344544
+        trace_region_size: 184915840
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3-32B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen38_27b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 262144
+      max_tokens_all_users_override: 1050592
+      default_impl: true
+      env_vars:
+        QWEN_DECODE_BUCKETS: "1"
+        QWEN_COMPACT_DECODE_RESIDUAL: "1"
+        QWEN_COMPACT_DECODE_MLP: "1"
+        QWEN_BATCHED_DECODE_ROPE: "1"
+        QWEN_COMPACT_DECODE_ATTENTION: "1"
+        QWEN_VLLM_KV_POOL_TOKENS: "1050592"
+        QWEN_BATCHED_PREFILL: "1"
+        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
+        QWEN_PREFILL_BATCHED_HEAD: "1"
+        QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
+        QWEN_PREFILL_STARTUP_WARMUP: "1"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "(1, 4)"
+        QWEN_VLLM_HOST_COMPATIBILITY: "1"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        block_size: "32"
+        enable_auto_tool_choice: true
+        hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
+        max-logprobs: "-1"
+        max_num_seqs: "16"
+        no-enable-prefix-caching: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        fabric_max_packet_payload_size_bytes: 8192
+        l1_small_size: 24576
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        trace_region_size: 134217728
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+  # IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
+  # the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
+  # TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the
+  # k2_horizon reasoning and tool-call parsers ship with upstream vLLM >= 0.30
+  # (vllm-tt-plugin #171 backports them for the 0.26 pin).
+- weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+    # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+    # them; only prod specs carry commits). The image is supplied at runtime via
+    # --override-docker-image; the prod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128    # 32 x 4 engines
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        GEMMA4_CCL_TOPOLOGY: "linear"    # the galaxy column ring is unmeasured
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+          # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        GEMMA4_KV_BFP8: "1"
+          # Decode graphs for 1, 4, 8 and 32 residents: the fastest set measured (2-8 residents per
+          # engine decode up to 2x faster than in the 32-row graph alone). Seeded requests must
+          # reproduce whichever graph they decode in (spec test_non_uniform_seeding at DP=4), so two
+          # things are held identical across the graphs (tt-metal#59300, measured 2026-10-06 22/22):
+          #  - RoPE: the batch-1 graph used a different op than the wider graphs (PCC 0.99999, not
+          #    bitwise); GEMMA4_ROPE_PERUSER_B1 keeps every graph on the elementwise form.
+          #  - Decode SDPA core split: the op splits its cores per padded row, so each graph reduced
+          #    a row in a different order; GEMMA4_SDPA_MAX_CORES_PER_HEAD pins the split to the
+          #    widest graph's value (3 on 110 cores, one kv head per device). Cost: a lone user's
+          #    decode is -29% at 64K and -43% at 128K prompts (none at <=4K, 8 users unchanged);
+          #    a reduction order fixed by the KV chunks (kernel follow-up) removes that cost.
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+          # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+          # bounded device rings stay off. Traced chunked prefill still carries one chunk
+          # table for all layers; keep it untraced until per-layer traced chunk tables land.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"    # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 960000000    # four resident decode-bucket traces
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only    # host sampling (logprobs etc.) is correct but slower
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32    # per-engine; max_concurrency above is whole-box
+          # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+          # Token-chunked prefill. vLLM charges each sliding-window group
+          # window + max_num_batched_tokens per request, so the 65536 budget used
+          # elsewhere would reserve the whole context per request under hybrid groups.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+      # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
+      # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
+      # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
+      # (the bring-your-own-server path builds no tt-metal docker image).
+      # WH T3K (1x8 = 8x n300, ~96 GB). Metal policy (generator_trace 31B/T3K):
+      # unbounded through 16k, auto-bounded + multi-chunk (2048) from 32k. Measured
+      # batch-1 on a real T3K: 4k TTFT 8.5 s / 15.7 tok/s, 32k 55 s / 14.8 tok/s,
+      # 128k 188 s / 12.9 tok/s, 256k 564 s / 10.1 tok/s (all PASS). Served context
+      # is held at 128k: metal Direct reached 256k, but the vLLM paged pool plus
+      # trace regions have not been validated that high on WH.
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+  # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
+  # models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
+  # Shield sweep is directly comparable with the existing autoport benchmark run.
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+        # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
+        # pins the per-engine ceiling (default inference would give 128/engine).
+      max_concurrency: 128
+      max_context: 262144    # 256 * 1024 per engine (same budget as P150X8)
+      default_impl: true
+      env_vars:
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"    # as on the 31B Galaxy entry (see its comment on seeding)
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"    # 110 cores / 32 rows, one kv head per device at TP=8
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+          # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
+          # 11 x 256K users per engine (44 per Galaxy); bfloat8_b KV halves pool bytes. Was
+          # 3047424: with the four decode graphs (1,4,8,32) that left no DRAM headroom and the
+          # 131072-prompt benchmark points failed with Out of Memory on a 60 MB buffer
+          # (2026-10-06 02:36, banks at 4.19 of 4.21 GB).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2883584"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+          # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+          # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"    # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576    # all_gather semaphores into L1_SMALL (metal demo parity)
+          # On-device decode sampling required on TP so token ids >= 65536 are
+          # reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32    # per-engine; max_concurrency above is whole-box
+          # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+          # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+          # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: 'test_penalties[repetition_penalty-1.5-natural_repetition] fails the
+            "increase diversity" rule at seed 1234 / temperature 0.1: the penalty changes
+            the bananas paragraph but its unique-word ratio moves 0.757 -> 0.741, inside
+            per-seed noise. Identical on tt-shield run 37518281683 and on a local run
+            of the same stack (2026-10-06); the other 8 cases pass and the P300X2 entry
+            passes all 9. Same exemption as Llama-3.3-70B P300X2 (#3888).'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - openai/gpt-oss-120b
+  impl: gpt_oss
+  inference_engine: VLLM
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  vllm_commit: "a723030"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32    # currently limiting client-side max_concurrency=32 to allow workflows to
+        # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      env_vars:
+        MESH_DEVICE: "(4, 8)"    # Override default BH-Galaxy name to use (4,8) mesh grid; see note above
+        TT_MM_THROTTLE_PERF: 2
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32    # override the default inferred by max_concurrency
+          # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 134217728    # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing
+            this eval task to pass/fail flakily. Masking this part of the acceptance
+            criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing
+            this eval task to pass/fail flakily. Masking this part of the acceptance
+            criteria due to other evals passing consistently."
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+
+
+
 

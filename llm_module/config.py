@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from llm_module.goodput import GoodputSlo
+
 
 @dataclass(frozen=True)
 class LLMRunConfig:
@@ -36,6 +38,13 @@ class LLMRunConfig:
     # Models that commit more than one token per engine step use block-level
     # latency/throughput as their primary benchmark semantics.
     output_block_size: int = 1
+    # Opt in only when references use first-to-last nonempty content timing.
+    token_timing: bool = False
+    # Opt in when every declared metric is required for release qualification.
+    require_complete_metrics: bool = False
+    # Fixed measured references require a complete warmup and independent repeats.
+    full_workload_warmup: bool = False
+    repetitions: int = 1
     # When set, the vLLM driver runs ``--dataset-name custom`` against this
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.
@@ -46,9 +55,18 @@ class LLMRunConfig:
     # Per-metric severity keyed by PerformanceTarget attribute; lets a block
     # mixing must/should targets downgrade individual metric failures.
     target_priorities: Optional[dict] = field(default=None, compare=False)
-    # ``vllm bench serve --goodput`` SLO constraints for this sweep point
-    # ("ttft:2000 tpot:20 e2el:20000", milliseconds). None = not measured.
-    goodput: Optional[str] = field(default=None, compare=False)
+    # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
+    # own vocabulary. None = not measured.
+    goodput: Optional[GoodputSlo] = field(default=None, compare=False)
+    # Per-request prefix-cache isolation. Benchmarks measure prefill, not the
+    # prefix cache, but the serving entries keep prefix caching on, and vLLM's
+    # random dataset makes prompt i at a longer ISL an extension of prompt i at
+    # a shorter ISL (same seed), so later sweep points would otherwise report
+    # cache-assisted TTFTs. vLLM scopes a request's cache keys by its
+    # ``cache_salt``; the driver sends one unique to this sweep point and
+    # driver invocation, so no benchmark request can hit blocks from another
+    # point, an earlier run, or the evals. None = generate; set to pin.
+    cache_salt: Optional[str] = None
 
 
 @dataclass(frozen=True)

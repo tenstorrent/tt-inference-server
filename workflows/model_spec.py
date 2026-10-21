@@ -98,7 +98,9 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    hf_model_repo: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str,
+    perf_targets_map: Dict[str, float],
+    impl_id: Optional[str] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
     model_data = model_performance_reference.get(hf_model_repo, {})
@@ -109,6 +111,10 @@ def get_perf_reference_map(
         params_list: List[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
+            # Measured references can differ between implementations of one
+            # checkpoint. Unscoped entries retain their shared legacy behavior.
+            if bench.get("impl") is not None and bench["impl"] != impl_id:
+                continue
             # Parse performance targets under the "reference" key.
             target_dict = {}
             targets = bench.get("targets", {})
@@ -273,6 +279,12 @@ llama3_70b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+llama31_8b_qb2_impl = ImplSpec(
+    impl_id="llama31_8b_qb2",
+    impl_name="llama31-8b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama31_8b_qb2",
+)
 qwen3_32b_galaxy_impl = ImplSpec(
     impl_id="qwen3_32b_galaxy",
     impl_name="qwen3-32b-galaxy",
@@ -302,6 +314,12 @@ speecht5_impl = ImplSpec(
     impl_name="speecht5-tts",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
+)
+qwen3_tts_impl = ImplSpec(
+    impl_id="qwen3_tts",
+    impl_name="qwen3-tts",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/audio/qwen3_tts",
 )
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
@@ -373,6 +391,15 @@ training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
+# tt-blacksmith-backed LoRA runner (LoraLLMTrainer). Distinct impl_id so it does
+# not collide with the legacy `training_lora` on the same (model_name, device);
+# selectable via --impl trainer-training-lora.
+trainer_training_lora_impl = ImplSpec(
+    impl_id="trainer_training_lora",
+    impl_name="trainer-training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
+)
 
 quetzal_impl = ImplSpec(
     impl_id="quetzal",
@@ -381,15 +408,87 @@ quetzal_impl = ImplSpec(
     code_path="serving",
 )
 
+# --- Gemma4 speculative-decoding serving profiles (same tt-metal code path) ---
+#
+# Same namespacing pattern as the qwen36 profiles above: these are NOT separate
+# implementations -- both point at models/demos/gemma4 -- but a model spec is
+# keyed by (impl_name, model_name, device), so offering the MTP (it-assistant
+# KV-shared drafter) and dFlash (z-lab block-diffusion drafter) speculative
+# profiles for the same weights needs distinct impl ids. The profile selects
+# the TT decode class via the plugin's TT_GEMMA4_SPEC env (set in the yaml
+# entry); speculation is TT-native (draft+verify inside one device step,
+# variable tokens/step) and does not use vLLM's speculative_config.
+gemma4_mtp_impl = ImplSpec(
+    impl_id="gemma4_mtp",
+    impl_name="gemma4-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+gemma4_dflash_impl = ImplSpec(
+    impl_id="gemma4_dflash",
+    impl_name="gemma4-dflash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+# dFlash on the plugin's speculative contract (vLLM-scheduled drafts, every
+# step streams); a separate impl so run reports name the rail.
+gemma4_dflash_contract_impl = ImplSpec(
+    impl_id="gemma4_dflash_contract",
+    impl_name="gemma4-dflash-contract",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+# Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765. Unlike the
+# two profiles above this is a separate code path (models/demos/gemma4_31b_qb2,
+# architectures TTGemma4QB2ForCausalLM), not another speculative profile over
+# models/demos/gemma4.
+gemma4_31b_qb2_impl = ImplSpec(
+    impl_id="gemma4_31b_qb2",
+    impl_name="gemma4-31b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_31b_qb2",
+)
+qwen38_27b_qb2_impl = ImplSpec(
+    impl_id="qwen38_27b_qb2",
+    impl_name="qwen38-27b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen38_27b_qb2",
+)
+# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
+blaze_impl = ImplSpec(
+    impl_id="blaze",
+    impl_name="blaze",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/cpp_server",
+)
+
+# IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
+# models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
+# the tt-model-bringup pipeline.
+k2_horizon_7b_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_7b_qb2",
+    impl_name="k2-horizon-7b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/k2_horizon_7b_qb2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
+    "gemma4_mtp": gemma4_mtp_impl,
+    "gemma4_dflash": gemma4_dflash_impl,
+    "gemma4_dflash_contract": gemma4_dflash_contract_impl,
+    "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
+    "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
+    "qwen3_tts": qwen3_tts_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
@@ -397,6 +496,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
+    "trainer_training_lora": trainer_training_lora_impl,
+    "blaze": blaze_impl,
 }
 
 
@@ -453,6 +554,14 @@ class DeviceModelSpec:
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
+    # When set, the docker server runs this entry in a private IPC namespace with a /dev/shm of
+    # this size (docker --ipc private --shm-size) instead of sharing the host's (--ipc host). Use it
+    # where the host prunes /dev/shm under running jobs: vLLM's engine<->worker ring buffers and
+    # multiprocessing semaphores live there, and a multi-engine (data-parallel) server attaches to
+    # them only after model load.
+    # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
+    # auto-generated Helm chart values)
+    docker_shm_size: Optional[str] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
@@ -1021,8 +1130,11 @@ class ModelSpecTemplate:
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    # Dev entries may select an already-reviewed image only by immutable OCI
+    # digest. Tags and source/build release pins remain prod-only.
+    docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image` (prod templates always do; dev never does). When neither is
+    # `docker_image`. When neither is
     # set, no docker tag is synthesized, so these specs are excluded from
     # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
     # Set by _build_template from YAML key presence; defaults True for directly
@@ -1081,7 +1193,7 @@ class ModelSpecTemplate:
 
         for weight in self.weights:
             template_reference_map = get_perf_reference_map(
-                weight, self.perf_targets_map
+                weight, self.perf_targets_map, impl_id=self.impl.impl_id
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1105,6 +1217,7 @@ class ModelSpecTemplate:
                             **self.perf_targets_map,
                             **device_model_spec.perf_targets_map,
                         },
+                        impl_id=self.impl.impl_id,
                     )
                 else:
                     perf_reference_map = template_reference_map
@@ -1169,7 +1282,6 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
     tt_metal_commit: str
     version: str
     vllm_commit: Optional[str] = None
-    docker_image: Optional[str] = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
@@ -1223,6 +1335,14 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
     with the offending weights for a readable, catalog-scoped message.
     """
     kwargs = dict(data)
+    if env != "prod" and (docker_image := data.get("docker_image")) is not None:
+        if (
+            not isinstance(docker_image, str)
+            or re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", docker_image) is None
+        ):
+            raise ValueError(
+                "dev docker_image must be an immutable OCI repo@sha256 digest"
+            )
     impl_id = kwargs["impl"]
     if impl_id not in _IMPL_REGISTRY:
         raise ValueError(

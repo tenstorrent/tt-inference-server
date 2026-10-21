@@ -11,6 +11,7 @@ runners emit; these tests assert against that shape directly.
 from __future__ import annotations
 
 from report_module.acceptance_criteria import (
+    CATEGORY_AGENTIC_TARGETS,
     CATEGORY_BENCHMARKS,
     CATEGORY_EVALS,
     CATEGORY_SPEC_TESTS,
@@ -21,6 +22,8 @@ from report_module.acceptance_criteria import (
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
+    spec_tasks_explained_by_waivers,
+    stage_results,
     task_failure_blockers,
 )
 from report_module.schema import Block, ReportSchema
@@ -130,6 +133,58 @@ def test_benchmark_no_check_fields_blocks():
     schema = _schema(_bench({"target": {"ttft": 100}}))
     _, blockers, _ = acceptance_criteria_check(schema)
     assert "No *_check fields" in blockers["benchmarks:B.target_checks"]
+
+
+def test_zero_completed_requests_block_even_when_benchmark_is_ungraded():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 0,
+            "error_request_count": 8,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is False
+    assert "benchmarks:B.requests" in blockers
+    assert "zero requests" in blockers["benchmarks:B.requests"]
+
+
+def test_failed_requests_block_even_when_benchmark_is_ungraded():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 7,
+            "error_request_count": 1,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is False
+    assert "1 request(s) failed" in blockers["benchmarks:B.requests"]
+
+
+def test_clean_ungraded_benchmark_remains_non_blocking():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 8,
+            "error_request_count": 0,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is True
+    assert blockers == {}
 
 
 # --- Evals ----------------------------------------------------------------
@@ -468,6 +523,186 @@ def test_mixed_spec_statuses_counts():
     assert cat.total == 3 and cat.passed == 1 and cat.skipped == 1 and cat.na == 1
 
 
+# --- Agentic targets ------------------------------------------------------
+
+
+def _targets_block(points=(), missing=()) -> Block:
+    return Block(
+        kind="agentic_traces_targets",
+        id="kimi_super_cluster",
+        data={
+            "points": [dict(point) for point in points],
+            "missing_concurrencies": list(missing),
+        },
+    )
+
+
+def _verdict(field, passed, measured=1.0):
+    return {
+        "field": field,
+        "target": 1.0,
+        "measured": measured if passed is not None else None,
+        "passed": passed,
+        "lower_is_better": True,
+    }
+
+
+def test_agentic_targets_na_without_blocks():
+    """Catalog runs carry no expectations, so the category must not pass vacuously."""
+    cat = _categories_by_name(_schema())[CATEGORY_AGENTIC_TARGETS]
+    assert cat.status == STATUS_NA and cat.total == 0
+
+
+def test_agentic_targets_pass_when_every_point_met():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 2,
+                "graded": 2,
+                "passed": True,
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", True),
+                ],
+            }
+        ]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is True and blockers == {}
+    assert cat.status == STATUS_PASS and cat.total == 1 and cat.failed == 0
+
+
+def test_agentic_targets_fail_with_per_point_blockers():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 1,
+                "graded": 2,
+                "passed": False,
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", False),
+                ],
+            },
+            {
+                "concurrency": 4,
+                "met": 2,
+                "graded": 2,
+                "passed": True,
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", True),
+                ],
+            },
+        ]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    # the count is per measured point, not per block
+    assert cat.status == STATUS_FAIL and cat.total == 2 and cat.failed == 1
+    # one blocker for the failing point, none for the passing one
+    assert set(blockers) == {"agentic_traces_targets.c1"}
+    assert "1/2 targets met" in blockers["agentic_traces_targets.c1"]
+    assert "tpotMeanMs" in blockers["agentic_traces_targets.c1"]
+
+
+def test_agentic_soft_misses_are_not_named_as_offenders():
+    soft_miss = {**_verdict("ttftMeanMs", False), "soft": True}
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 0,
+                "graded": 1,
+                "passed": False,
+                "verdicts": [soft_miss, _verdict("tpotMeanMs", False)],
+            }
+        ]
+    )
+    _, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert "tpotMeanMs" in blockers["agentic_traces_targets.c1"]
+    assert "ttftMeanMs" not in blockers["agentic_traces_targets.c1"]
+
+
+def test_agentic_targets_count_is_per_measured_point():
+    """Three measured points all missing targets read as 0/3, not 0/1 blocks."""
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": c,
+                "met": 0,
+                "graded": 1,
+                "passed": False,
+                "verdicts": [_verdict("ttftMeanMs", False)],
+            }
+            for c in (1, 4, 8)
+        ]
+    )
+    accepted, _blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    assert cat.total == 3 and cat.failed == 3 and cat.passed == 0
+
+
+def test_agentic_targets_unmeasured_document_points_block():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 1,
+                "graded": 1,
+                "passed": True,
+                "verdicts": [_verdict("ttftMeanMs", True)],
+            }
+        ],
+        missing=(64,),
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    # the measured point passed and counts as such; the missing point blocks
+    # without posing as a measured-and-failed one
+    assert cat.status == STATUS_FAIL and cat.total == 1 and cat.failed == 0
+    assert set(blockers) == {"agentic_traces_targets.missing"}
+    assert "c64" in blockers["agentic_traces_targets.missing"]
+    assert "never measured" in blockers["agentic_traces_targets.missing"]
+
+
+def test_agentic_targets_ungradable_point_blocks():
+    """Declared targets the run never produced are a failure, not a pass."""
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 0,
+                "graded": 0,
+                "passed": False,
+                "verdicts": [_verdict("ttftMeanMs", None)],
+            }
+        ]
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert accepted is False
+    assert "none of the declared metrics" in blockers["agentic_traces_targets.c1"]
+
+
+def test_agentic_targets_point_without_declared_targets_is_skipped():
+    """An empty document point promises nothing: not counted, not blocking."""
+    block = _targets_block(
+        points=[
+            {"concurrency": 1, "met": 0, "graded": 0, "passed": None, "verdicts": []}
+        ]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is True and blockers == {}
+    assert cat.status == STATUS_PASS and cat.total == 0 and cat.failed == 0
+
+
 # --- Evals: explicit status overrides accuracy heuristics -----------------
 
 
@@ -586,3 +821,373 @@ def test_build_acceptance_export_failure_defaults_model_status():
     assert export["acceptance_blockers"] == {"benchmarks:B": "bad"}
     assert export["acceptance_criteria_metadata"]["enforcement_result"] == "FAIL"
     assert export["acceptance_criteria_metadata"]["model_status"] == ""
+
+
+# --- Request failure edge cases -------------------------------------------
+
+
+def test_optional_request_failure_is_waived():
+    block = Block(
+        kind="benchmarks",
+        title="optional",
+        data={
+            "status": "na",
+            "priority": "should",
+            "num_requests": 7,
+            "error_request_count": 1,
+        },
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    assert accepted and not blockers
+    assert cats[0].waived and cats[0].failed == 0
+
+
+def test_skipped_request_point_is_not_an_execution_failure():
+    block = Block(kind="benchmarks", data={"status": "skip", "num_requests": 0})
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    assert accepted and not blockers
+    assert cats[0].skipped == 1
+
+
+def test_repeated_benchmark_titles_keep_all_failure_reasons():
+    blocks = [
+        Block(
+            kind="benchmarks",
+            title="vLLM Benchmark",
+            data={"status": "na", "num_requests": 0, "requested_concurrency": n},
+        )
+        for n in [1, 2, 2]
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(_schema(*blocks))
+    assert not accepted and len(blockers) == 3
+    assert cats[0].failed == 3
+    assert any("requested_concurrency=1" in key for key in blockers)
+
+
+def test_functional_pass_does_not_override_required_target_failure():
+    block = _bench({"functional": {"ttft_check": 2}, "target": {"ttft_check": 3}})
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(block), model_status="TOP_PERF"
+    )
+    assert not accepted and any("target.ttft_check" in key for key in blockers)
+    assert acceptance_criteria_check(_schema(block), model_status="FUNCTIONAL")[0]
+
+
+def test_missing_measurement_for_configured_required_target_blocks():
+    block = Block(
+        kind="benchmarks",
+        data={
+            "status": "na",
+            "num_requests": 8,
+            "target_checks": {"target": {"ttft": 100, "ttft_check": 1}},
+        },
+    )
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(block), model_status="TOP_PERF"
+    )
+    assert not accepted and blockers
+    assert acceptance_criteria_check(_schema(block), model_status="EXPERIMENTAL")[0]
+
+
+# --- Spec tests: model_spec known_issues waivers (SPEC_TESTS) -------------
+
+
+def _conformance(*rows, status="fail") -> Block:
+    summary = [
+        {"test_case": name, "status": state, "summary": "x"} for name, state in rows
+    ]
+    return Block(
+        kind="spec_tests",
+        title="VLLMParamConformanceTest",
+        task_type="functional",
+        data={
+            "success": status == "pass",
+            "status": status,
+            "parameter_conformance_summary": summary,
+        },
+    )
+
+
+_PENALTIES_WAIVER = [
+    {"workflow_type": "SPEC_TESTS", "task_name": "test_penalties", "reason": "#3888"}
+]
+
+
+def test_spec_known_issue_waives_a_block_whose_only_failure_it_names():
+    schema = _schema(
+        _conformance(("test_logprobs", "✅ PASS"), ("test_penalties", "❌ FAIL"))
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_SPEC_TESTS].status == STATUS_PASS
+    (reason,) = by_name[CATEGORY_SPEC_TESTS].waived.values()
+    assert "test_penalties: #3888" in reason
+
+
+def test_spec_known_issue_does_not_waive_an_unlisted_failure():
+    schema = _schema(
+        _conformance(("test_penalties", "❌ FAIL"), ("test_logprobs", "❌ FAIL"))
+    )
+    accepted, blockers, _ = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is False and blockers
+
+
+def test_spec_known_issue_for_another_case_still_blocks():
+    schema = _schema(_conformance(("test_stop", "❌ FAIL")))
+    accepted, _, _ = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is False
+
+
+def test_spec_known_issue_never_waives_an_error():
+    schema = _schema(_conformance(("test_penalties", "❌ FAIL"), status="error"))
+    accepted, _, _ = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is False
+
+
+def test_spec_known_issue_needs_a_per_case_breakdown():
+    schema = _schema(
+        Block(
+            kind="spec_tests",
+            title="T",
+            task_type="functional",
+            data={"success": False, "status": "fail"},
+        )
+    )
+    accepted, _, _ = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is False
+
+
+def test_evals_known_issue_does_not_waive_spec_tests():
+    schema = _schema(_conformance(("test_penalties", "❌ FAIL")))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "test_penalties", "reason": "x"}
+    ]
+    accepted, _, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False
+
+
+_REPEAT_TRAP = "test_penalties[presence_penalty-1.2-repeat_trap-messages0]"
+_REPEAT_TRAP_WAIVER = [
+    {"workflow_type": "SPEC_TESTS", "task_name": _REPEAT_TRAP, "reason": "measured"}
+]
+
+
+def _penalties_detail(*failing) -> Block:
+    block = _conformance(("test_logprobs", "✅ PASS"), ("test_penalties", "❌ FAIL"))
+    other = "test_penalties[frequency_penalty-1.2-repeat_trap-messages0]"
+    block.data["detailed_test_results"] = [
+        {"test_case": "test_penalties", "parametrization": p, "status": "❌ FAILED"}
+        for p in failing
+    ] + [
+        {
+            "test_case": "test_penalties",
+            "parametrization": other,
+            "status": "✅ PASSED",
+        },
+        {
+            "test_case": "test_logprobs",
+            "parametrization": "test_logprobs",
+            "status": "✅ PASSED",
+        },
+    ]
+    return block
+
+
+def test_spec_parametrization_waiver_waives_only_that_parametrization():
+    schema = _schema(_penalties_detail(_REPEAT_TRAP))
+    accepted, blockers, cats = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    (reason,) = by_name[CATEGORY_SPEC_TESTS].waived.values()
+    assert f"{_REPEAT_TRAP}: measured" in reason
+    waived = spec_tasks_explained_by_waivers(cats, schema, _REPEAT_TRAP_WAIVER)
+    assert waived == {"spec_tests"}
+
+
+def test_spec_parametrization_waiver_does_not_cover_a_sibling_parametrization():
+    sibling = "test_penalties[presence_penalty-1.2-natural_repetition-messages1]"
+    for failing in ((sibling,), (_REPEAT_TRAP, sibling)):
+        schema = _schema(_penalties_detail(*failing))
+        accepted, blockers, _ = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+        assert accepted is False and blockers
+
+
+def test_spec_parametrization_waiver_needs_the_detailed_breakdown():
+    schema = _schema(
+        _conformance(("test_logprobs", "✅ PASS"), ("test_penalties", "❌ FAIL"))
+    )
+    accepted, _, _ = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+    assert accepted is False
+
+
+def test_a_spec_task_exit_explained_by_waivers_is_not_a_crash_blocker():
+    # run_spec_tests exits 1 for the waived case; acceptance must not re-block it.
+    schema = _schema(_conformance(("test_penalties", "❌ FAIL")))
+    _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
+    assert waived == {"spec_tests"}
+    assert task_failure_blockers([("spec_tests", 1, True)], waived) == {}
+
+
+def test_an_unwaived_or_crashed_spec_task_still_blocks():
+    schema = _schema(_conformance(("test_stop", "❌ FAIL")))
+    _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
+    assert waived == set()
+    assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
+    # A crash that produced no block is never excused, even by a matching waiver.
+    assert "task:spec_tests" in task_failure_blockers(
+        [("spec_tests", 1, False)], {"spec_tests"}
+    )
+
+
+def test_a_failing_infra_spec_block_is_not_excused_by_a_waiver_elsewhere():
+    # The graded category drops INFRA_TASK_TYPES blocks, but run_spec_tests
+    # still exits 1 for them; a waiver on test_penalties must not excuse it.
+    schema = _schema(
+        _conformance(("test_penalties", "❌ FAIL")),
+        Block(
+            kind="spec_tests",
+            title="Health",
+            task_type="health",
+            data={"success": False, "status": "fail"},
+        ),
+    )
+    accepted, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
+    assert waived == set()
+    assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
+
+
+def _non_blocking_block(status: str = "fail") -> Block:
+    return Block(
+        kind="spec_tests",
+        title="Tool Call Json Schema (tool_choice=required, non-blocking)",
+        task_type="functional",
+        data={
+            "success": False,
+            "status": status,
+            "non_blocking": True,
+            "non_blocking_reason": "informational run",
+        },
+    )
+
+
+def test_a_non_blocking_spec_block_is_waived_without_known_issues():
+    schema = _schema(_non_blocking_block())
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_SPEC_TESTS].status == STATUS_PASS
+    (reason,) = by_name[CATEGORY_SPEC_TESTS].waived.values()
+    assert "informational run" in reason
+    # run_spec_tests exits 1 for it; that exit is explained, not a crash.
+    waived = spec_tasks_explained_by_waivers(cats, schema)
+    assert waived == {"spec_tests"}
+    assert task_failure_blockers([("spec_tests", 1, True)], waived) == {}
+
+
+def test_a_non_blocking_spec_block_still_blocks_on_error():
+    accepted, _, _ = acceptance_criteria_check(_schema(_non_blocking_block("error")))
+    assert accepted is False
+
+
+def test_a_non_blocking_block_does_not_excuse_a_blocking_one():
+    schema = _schema(
+        _non_blocking_block(),
+        Block(
+            kind="spec_tests",
+            title="Tool Call Json Schema (tool_choice=auto)",
+            task_type="functional",
+            data={"success": False, "status": "fail"},
+        ),
+    )
+    accepted, _, cats = acceptance_criteria_check(schema)
+    assert accepted is False
+    assert spec_tasks_explained_by_waivers(cats, schema) == set()
+
+
+def test_a_skipped_case_does_not_need_a_waiver():
+    schema = _schema(
+        _conformance(("test_penalties", "❌ FAIL"), ("test_logprobs", "⚠️ SKIP"))
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is True, blockers
+    assert spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER) == {
+        "spec_tests"
+    }
+
+
+# --- Delivery stages ---------------------------------------------------------
+
+
+def _staged(block, key, position):
+    block.targets["stage"] = {"key": key, "name": key.title(), "position": position}
+    return block
+
+
+def _point(concurrency, passed):
+    return {
+        "concurrency": concurrency,
+        "met": 1 if passed else 0,
+        "graded": 1,
+        "passed": passed,
+        "verdicts": [_verdict("ttftMeanMs", passed)],
+    }
+
+
+def _two_stage_schema():
+    return _schema(
+        _staged(_targets_block(points=[_point(1, True)]), "accuracy", 1),
+        _staged(_targets_block(points=[_point(1, False)]), "performance", 2),
+    )
+
+
+def test_each_stage_is_graded_on_its_own_blocks():
+    schema = _two_stage_schema()
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+
+    stages = stage_results(schema, blockers)
+
+    assert accepted is False
+    # One targets block per stage, so their blocker keys stay apart.
+    assert set(blockers) == {"agentic_traces_targets[performance].c1"}
+    assert [(s.key, s.name, s.accepted) for s in stages] == [
+        ("accuracy", "Accuracy", True),
+        ("performance", "Performance", False),
+    ]
+    assert stages[1].blockers == blockers
+
+
+def test_a_stage_keeps_only_blockers_the_overall_verdict_kept():
+    """A waiver the overall verdict applied must not resurface per stage."""
+    stages = stage_results(_two_stage_schema(), overall_blockers={})
+
+    assert all(stage.accepted for stage in stages)
+
+
+def test_the_export_lists_and_tabulates_the_stages():
+    schema = _two_stage_schema()
+    accepted, blockers, categories = acceptance_criteria_check(schema)
+
+    export = build_acceptance_export(
+        accepted, blockers, categories, stages=stage_results(schema, blockers)
+    )
+
+    assert [s["status"] for s in export["acceptance_stages"]] == ["PASS", "FAIL"]
+    md = export["acceptance_summary_markdown"]
+    assert "#### Delivery stages" in md
+    assert "| 1. Accuracy |" in md and "| 2. Performance |" in md
+    assert "Agentic Targets 0/1 passed, 1 failed" in md
+
+
+def test_untagged_reports_have_no_stage_table():
+    accepted, blockers, categories = acceptance_criteria_check(
+        _schema(_targets_block())
+    )
+
+    export = build_acceptance_export(accepted, blockers, categories)
+
+    assert export["acceptance_stages"] == []
+    assert "Delivery stages" not in export["acceptance_summary_markdown"]

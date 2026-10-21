@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config/defaults.hpp"
+#include "config/qwen3_tts.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
 #include "utils/logger.hpp"
@@ -213,10 +214,6 @@ size_t callbackPoolThreads() {
 unsigned batchTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
-}
-
-std::string pythonPath() {
-  return envString("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
 }
 
 static std::filesystem::path tokenizersDir() {
@@ -526,34 +523,35 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
 // ---------------------------------------------------------------------------
 // Embedding model catalog.
 //
-// Only what C++ must know *before* Python exists lives here:
-//   - python_model_name is exported as MODEL. Without it Python's Settings
-//     skips its config lookup entirely (config/settings.py: the
-//     `if model_to_run and self.device` gate) and silently keeps defaults.
-//   - batch_by_device is needed by the parent process, which forms batches
-//     and never boots an interpreter.
-//   - hf_model_id is the default the controller fills in when a client omits
-//     "model", also in the parent.
+// C++ is the single config authority for the embedding path: the runner
+// drives tt-metal directly (ttnn + the model's generator class), so the
+// per-(model, device) facts Python's ModelConfigs used to resolve live here.
+// The numbers mirror config/constants.py rows for the same models so the two
+// servers behave identically; there is no runtime handshake left to catch
+// drift, so keep them in sync when constants.py changes.
 //
-// Everything else Python already owns and is not duplicated here: which class
-// implements a model comes from tt_model_runners/runner_fabric.py, keyed on
-// the MODEL_RUNNER we export.
-//
-// The batch sizes mirror config/constants.py (ModelConfigs). Python stays
-// authoritative - each worker reads settings.max_batch_size back after import
-// and refuses to start if the two disagree.
-//
-// To onboard a model: add a ModelRunnerType enumerator with its toString and
-// toClientRunnerName cases, then one row here.
+// To onboard a model: add a ModelRunnerType enumerator with its toString
+// case, one row here, and a model impl in embedding_runner.cpp (module path,
+// constructor kwargs, output extraction).
+struct EmbeddingDeviceEntry {
+  std::string_view device;  // DEVICE value, e.g. "n150"
+  size_t max_batch_size;
+  size_t max_seq_len;  // vLLM max_model_length for this device
+  std::vector<size_t> mesh_shape;
+};
+
 struct EmbeddingModelEntry {
   ModelRunnerType runner_type;
   std::string_view hf_model_id;
-  // Internal ModelNames value, exported as MODEL. Empty for the mock, which
-  // starts no interpreter.
-  std::string_view python_model_name;
-  // {DEVICE value, max_batch_size}
-  std::vector<std::pair<std::string_view, size_t>> batch_by_device;
+  // ttnn.open_mesh_device knobs the model's Python runner used to pass.
+  // num_command_queues 0 = don't pass the kwarg (ttnn default).
+  size_t num_command_queues;
+  size_t trace_region_size;
+  std::vector<EmbeddingDeviceEntry> devices;
 };
+
+// Python Settings' default trace_region_size; no embedding row overrides it.
+constexpr size_t EMBEDDING_TRACE_REGION_SIZE = 34541598;
 
 constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
@@ -562,24 +560,39 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
   static const std::vector<EmbeddingModelEntry> kModels = {
       {ModelRunnerType::TT_BGE_LARGE_EN,
        "BAAI/bge-large-en-v1.5",
-       "bge-large-en-v1.5",
-       {{"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+       2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {2, 1}},
+        {"t3k", 16, 384, {2, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
       {ModelRunnerType::TT_BGE_M3,
        "BAAI/bge-m3",
-       "bge-m3",
-       {{"n150", 32}, {"n300", 32}, {"t3k", 32}, {"galaxy", 32}}},
-      // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
-      // Python resolves the Settings default (1); max_num_seqs=1 keeps it.
+       2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 32, 8192, {1, 1}},
+        {"n300", 12, 8192, {2, 1}},
+        {"t3k", 32, 8192, {2, 1}},
+        {"galaxy", 32, 8192, {1, 1}}}},
+
       {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
        "Qwen/Qwen3-Embedding-8B",
-       "Qwen3-Embedding-8B",
-       {{"n150", 1}, {"n300", 2}, {"t3k", 2}, {"galaxy", 1}}},
-      // The mock needs no device and no Python. The "" device entry is
-      // deliberate: CI runs it with nothing set.
+       0,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 1, 1024, {1, 1}},
+        {"n300", 2, 4096, {2, 1}},
+        {"t3k", 2, 4096, {2, 1}},
+        {"galaxy", 1, 1024, {1, 1}}}},
+
       {ModelRunnerType::EMBEDDING_MOCK,
        "BAAI/bge-large-en-v1.5",
-       "",
-       {{"", 8}, {"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+       0,
+       0,
+       {{"", 8, 384, {1, 1}},
+        {"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {1, 1}},
+        {"t3k", 16, 384, {1, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
   };
   return kModels;
 }
@@ -602,20 +615,122 @@ const EmbeddingModelEntry& findEmbeddingModelOrThrow(
                            "'; expected one of: " + joinNames(valid));
 }
 
-size_t batchSizeOrThrow(const EmbeddingModelEntry& model,
-                        const std::string& device) {
-  for (const auto& [name, batchSize] : model.batch_by_device) {
-    if (name == device) return batchSize;
+const EmbeddingDeviceEntry& deviceEntryOrThrow(const EmbeddingModelEntry& model,
+                                               const std::string& device) {
+  for (const auto& entry : model.devices) {
+    if (entry.device == device) return entry;
   }
   std::vector<std::string> valid;
-  for (const auto& [name, batchSize] : model.batch_by_device) {
-    if (!name.empty()) valid.push_back(std::string(name));
+  for (const auto& entry : model.devices) {
+    if (!entry.device.empty()) valid.push_back(std::string(entry.device));
   }
   throw std::runtime_error(
       "[Config] DEVICE='" + device + "' is not supported by " +
       toString(model.runner_type) + "; expected one of: " + joinNames(valid) +
       ". DEVICE describes the machine and cannot be derived, so it must be "
       "set.");
+}
+
+bool envIsSet(const char* name) {
+  const char* v = std::getenv(name);
+  return v != nullptr && *v != '\0';
+}
+
+/** A rate Qwen3-TTS fixes at 24 kHz: defaulted to it, refused otherwise. */
+uint32_t qwen3FixedRate(const char* envName) {
+  const auto rate = static_cast<uint32_t>(
+      envUlong(envName, defaults::TTS_QWEN3_SAMPLE_RATE_HZ));
+  if (rate != defaults::TTS_QWEN3_SAMPLE_RATE_HZ) {
+    throw std::runtime_error(
+        std::string("[Config] ") + envName + "=" + std::to_string(rate) +
+        " is not supported by tt_qwen3_tts, whose codec works at " +
+        std::to_string(defaults::TTS_QWEN3_SAMPLE_RATE_HZ) + " Hz; unset it");
+  }
+  return rate;
+}
+
+/** The Qwen3-TTS half of ttsEngineConfig(). */
+void applyQwen3TtsConfig(TtsConfig& cfg) {
+  namespace qwen3 = tt::config::qwen3_tts;
+
+  // The codec is 24 kHz mono; any other TTS_* rate would mislabel the audio.
+  cfg.voiceSampleRateHz = qwen3FixedRate("TTS_VOICE_SAMPLE_RATE_HZ");
+  cfg.audioSampleRateHz = qwen3FixedRate("TTS_AUDIO_SAMPLE_RATE_HZ");
+  if (cfg.voiceChannels != 1 || cfg.audioChannels != 1) {
+    throw std::runtime_error(
+        "[Config] tt_qwen3_tts is mono; unset TTS_VOICE_CHANNELS / "
+        "TTS_AUDIO_CHANNELS");
+  }
+
+  // Batch 1: capacity scales with DEVICE_IDS groups; TTS_MAX_USERS overrides.
+  if (cfg.maxBatchSize != 1) {
+    TT_LOG_WARN(
+        "[Config] TTS_MAX_BATCH_SIZE={} ignored: tt_qwen3_tts runs batch 1",
+        cfg.maxBatchSize);
+    cfg.maxBatchSize = 1;
+  }
+  if (!envIsSet("TTS_MAX_USERS")) {
+    cfg.maxUsers = std::max<size_t>(numWorkers(), 1);
+  }
+
+  const std::string ckptDir = envString("QWEN3_TTS_CKPT", "");
+  const std::string hfModel = envString("HF_MODEL", "");
+  const std::string configPath = qwen3::findCheckpointConfig(
+      ckptDir, hfModel, qwen3::huggingFaceHubCacheDir());
+  const auto checkpoint = qwen3::readCheckpointConfig(configPath);
+
+  const auto resolved = qwen3::resolveRelease(
+      {.explicitRelease = envString("TTS_QWEN3_RELEASE", ""),
+       .explicitSize = envString("TTS_QWEN3_MODEL_SIZE", ""),
+       .ckptDir = ckptDir,
+       .hfModel = hfModel,
+       .checkpoint = checkpoint});
+  cfg.qwen3.emplace();
+  cfg.qwen3->release = resolved.release;
+  cfg.qwen3->modelSize = resolved.size;
+  cfg.qwen3->checkpointDir = ckptDir;
+  cfg.qwen3->hfModel = hfModel;
+  if (checkpoint) {
+    cfg.qwen3->speakers = checkpoint->speakers;
+    cfg.qwen3->languages = checkpoint->languages;
+  }
+
+  cfg.qwen3->maxFrames = static_cast<uint32_t>(
+      envUlong("TTS_QWEN3_MAX_FRAMES", defaults::TTS_QWEN3_MAX_FRAMES));
+  if (cfg.qwen3->maxFrames == 0) {
+    throw std::runtime_error("[Config] TTS_QWEN3_MAX_FRAMES must be >= 1");
+  }
+  if (const std::string seed = envString("TTS_QWEN3_SEED", ""); !seed.empty()) {
+    try {
+      size_t used = 0;
+      cfg.qwen3->seed = std::stoull(seed, &used);
+      if (used != seed.size()) throw std::invalid_argument(seed);
+    } catch (const std::exception&) {
+      throw std::runtime_error("[Config] TTS_QWEN3_SEED='" + seed +
+                               "' is not a non-negative integer");
+    }
+  }
+  cfg.qwen3->maxReferenceSeconds = static_cast<uint32_t>(
+      envUlong("TTS_QWEN3_MAX_REFERENCE_SECONDS",
+               defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS));
+  if (cfg.qwen3->maxReferenceSeconds == 0 ||
+      cfg.qwen3->maxReferenceSeconds >
+          defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT) {
+    throw std::runtime_error(
+        "[Config] TTS_QWEN3_MAX_REFERENCE_SECONDS must be in [1, " +
+        std::to_string(defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT) +
+        "] (a longer clip does not fit one TTS task message)");
+  }
+
+  TT_LOG_INFO(
+      "[Config] Qwen3-TTS release={} size={} checkpoint={} speakers={} "
+      "languages={} max_frames={} seed={} max_users={}",
+      toString(cfg.qwen3->release), toString(cfg.qwen3->modelSize),
+      configPath.empty() ? "(not on local disk yet)" : configPath,
+      cfg.qwen3->speakers.size(), cfg.qwen3->languages.size(),
+      cfg.qwen3->maxFrames,
+      cfg.qwen3->seed ? std::to_string(*cfg.qwen3->seed) : "unseeded",
+      cfg.maxUsers);
 }
 
 }  // namespace
@@ -657,10 +772,14 @@ TtsConfig ttsEngineConfig() {
       cfg.runner_type = ModelRunnerType::TT_TTS;
     } else if (runner == "mock_tts") {
       cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
+    } else if (runner == "tt_qwen3_tts") {
+      cfg.runner_type = ModelRunnerType::TT_QWEN3_TTS;
     } else {
-      throw std::runtime_error("[Config] Unknown TTS MODEL_RUNNER_TYPE='" +
-                               runner + "'; expected one of: tt_tts, mock_tts");
+      throw std::runtime_error(
+          "[Config] Unknown TTS MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_tts, mock_tts, tt_qwen3_tts");
     }
+    const bool isQwen3 = cfg.runner_type == ModelRunnerType::TT_QWEN3_TTS;
 
     cfg.maxBatchSize = static_cast<size_t>(
         envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
@@ -733,6 +852,9 @@ TtsConfig ttsEngineConfig() {
         envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
                   defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
 
+    if (isQwen3) {
+      applyQwen3TtsConfig(cfg);
+    }
     return cfg;
   }();
   return cached;
@@ -747,10 +869,15 @@ EmbeddingConfig embeddingEngineConfig() {
     EmbeddingConfig cfg;
     cfg.runner_type = model.runner_type;
     cfg.hf_model_id = model.hf_model_id;
-    cfg.python_model_name = model.python_model_name;
+    cfg.num_command_queues = model.num_command_queues;
+    cfg.trace_region_size = model.trace_region_size;
     cfg.device = envStringLower("DEVICE", "");
     cfg.visible_devices = visibleDevicesForWorker(0);
-    cfg.max_batch_size = batchSizeOrThrow(model, cfg.device);
+    const EmbeddingDeviceEntry& deviceEntry =
+        deviceEntryOrThrow(model, cfg.device);
+    cfg.max_batch_size = deviceEntry.max_batch_size;
+    cfg.max_seq_len = deviceEntry.max_seq_len;
+    cfg.mesh_shape = deviceEntry.mesh_shape;
     return cfg;
   }();
   return cached;
@@ -766,6 +893,8 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
     }
     case ModelService::TTS: {
       auto cfg = ttsEngineConfig();
+      cfg.workerId = workerIndex;
+      cfg.visibleDevices = visibleDevicesForWorker(workerIndex);
       return cfg;
     }
     case ModelService::EMBEDDING: {
@@ -1253,6 +1382,10 @@ std::string sentryRelease() {
 }
 
 bool sentryDebug() { return envBool("SENTRY_DEBUG", defaults::SENTRY_DEBUG); }
+
+std::string sentryServerName() {
+  return envString("SENTRY_SERVER_NAME", defaults::SENTRY_SERVER_NAME);
+}
 
 /**
  * Mooncake KV Migration configuration.

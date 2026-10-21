@@ -37,6 +37,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_package import resolve_quetzal_package_mount  # noqa: E402
 from workflows.requirements_cli import (
     add_requirements_argument,
     apply_requirements,
@@ -49,6 +50,7 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
 )
 from workflows.runtime_config import RuntimeConfig
+from workflows.eval_shard import parse_eval_shard  # noqa: E402
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -199,15 +201,17 @@ def parse_arguments():
     parser.add_argument(
         "--service-port",
         type=str,
-        help="SERVICE_PORT",
-        default=os.getenv("SERVICE_PORT", "8000"),
+        default=None,
+        help="SERVICE_PORT. Defaults to the SERVICE_PORT env var, then 443 when "
+        "--server-url is an https URL without an explicit port, else 8000.",
     )
     parser.add_argument(
         "--server-url",
         type=str,
         default=None,
         help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
-        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server. "
+        "An explicit port in the URL wins; an https URL without a port defaults to 443 unless --service-port is given.",
     )
     parser.add_argument(
         "--bind-host",
@@ -309,6 +313,25 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--eval-tasks",
+        type=str,
+        default=None,
+        help="Comma-separated eval task names: run only these of the model's eval "
+        "tasks, every sample of each (no --samples filter). For splitting a long eval "
+        "set across separate runs. Mutually exclusive with --eval-samples.",
+    )
+    parser.add_argument(
+        "--eval-shard",
+        type=str,
+        default=None,
+        help="Run shard i of N (0-based, 'i/N') of each selected eval task: every "
+        "N-th doc, from position i, of each leaf task's doc set (its configured "
+        "doc_ids, else the whole dataset), with no sample caps. The N shards are "
+        "disjoint and cover exactly that set; only `python -m "
+        "report_module.merge_eval_shards` over all N can grade a task PASS. "
+        "Mutually exclusive with --eval-samples and --limit-samples-mode.",
+    )
+    parser.add_argument(
         "--repeat-evals",
         type=int,
         default=1,
@@ -348,7 +371,7 @@ def parse_arguments():
         type=str,
         choices=["vllm", "genai", "aiperf", "guidellm"],
         default="vllm",
-        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
+        help="Benchmarking tool to use: 'vllm' for vLLM `vllm bench serve` (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
         "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
     )
@@ -703,9 +726,12 @@ def parse_arguments():
     spec_decode_group.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "throughput"],
         default="full",
-        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep; "
+        "'throughput' skips the qualitative categories and runs only the throughput grid. "
+        "SPEC_DECODE_ISLS / SPEC_DECODE_CONCURRENCIES (comma-separated env vars) replace "
+        "the preset's throughput ISLs / concurrencies.",
     )
     spec_decode_group.add_argument(
         "--spec-decode-warmup-requests",
@@ -756,6 +782,14 @@ def parse_arguments():
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
+    if args.service_port is None:
+        # Precedence: explicit --service-port > SERVICE_PORT env > 443 for an
+        # https --server-url without a port > 8000.
+        from utils.url_helpers import default_service_port
+
+        args.service_port = os.getenv("SERVICE_PORT") or default_service_port(
+            args.server_url
+        )
     if args.custom_weights is not None:
         if not args.custom_weights.strip():
             parser.error("--custom-weights cannot be empty.")
@@ -807,13 +841,33 @@ def parse_arguments():
 
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
-        if "--limit-samples-mode" not in args:
+        # An explicit --limit-samples-mode (e.g. ci-long) wins; --ci-mode only
+        # supplies the ci-nightly default. (The old membership test checked the
+        # Namespace's attribute names, so it never matched and always overrode.)
+        if not args.limit_samples_mode:
             args.limit_samples_mode = "ci-nightly"
-        if "--skip-system-sw-validation" not in args:
+        if not args.skip_system_sw_validation:
             args.skip_system_sw_validation = True
 
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+    if args.eval_tasks and args.eval_samples:
+        parser.error("--eval-tasks and --eval-samples are mutually exclusive.")
+    if args.eval_shard is not None:
+        try:
+            parse_eval_shard(args.eval_shard)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if args.eval_samples:
+            parser.error("--eval-shard and --eval-samples are mutually exclusive.")
+        if args.limit_samples_mode:
+            parser.error(
+                "--eval-shard and --limit-samples-mode are mutually exclusive."
+            )
+    if args.eval_tasks is not None and not all(
+        name.strip() for name in args.eval_tasks.split(",")
+    ):
+        parser.error("--eval-tasks must be a comma-separated list of task names.")
 
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
@@ -1023,6 +1077,8 @@ def format_cli_args_summary(runtime_config):
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
+        f"  eval_tasks:                 {runtime_config.eval_tasks}",
+        f"  eval_shard:                 {runtime_config.eval_shard}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",
@@ -1234,6 +1290,10 @@ def main():
             logger.info("Running inference server in Docker container ...")
         else:
             logger.info("Resolving local-server host storage ...")
+        # Validation above admits the immutable Quetzal package and all of its
+        # auxiliary roots.  Such a package supplies the runtime device weights,
+        # so host setup must not apply Hugging Face weight-download sizing to it.
+        package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -1246,6 +1306,7 @@ def main():
                 runtime_config.image_user if runtime_config.docker_server else None
             ),
             local_server=runtime_config.local_server,
+            package_provides_weights=package_mount is not None,
         )
 
     # step 4: optionally run inference server. Server bring-up runs as a

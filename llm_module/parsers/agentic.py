@@ -28,6 +28,7 @@ class AgenticEvalParser(LLMResultParser):
         score: Any = None,
         result_path: Optional[Path] = None,
         limit_mode: Any = None,
+        priority: str = "must",
     ) -> None:
         self.task_name = task_name
         self.score = score
@@ -35,6 +36,11 @@ class AgenticEvalParser(LLMResultParser):
         # EvalLimitMode (or None). Under --ci-mode the accuracy check compares
         # against the task's CI-subset reference instead of the full-set one.
         self.limit_mode = limit_mode
+        # The EvalTask's priority ("must" blocks acceptance, "should" is
+        # informational). The lm-eval emitter stamps it on every block; the
+        # acceptance check reads it from block data and defaults to "must"
+        # when absent, so it has to travel with the block here too.
+        self.priority = priority
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
@@ -67,6 +73,7 @@ class AgenticEvalParser(LLMResultParser):
                 score=self.score,
                 metrics=metrics,
                 limit_mode=self.limit_mode,
+                priority=self.priority,
             ),
         )
 
@@ -86,6 +93,7 @@ class AgenticEvalParser(LLMResultParser):
                 metrics={},
                 success=False,
                 subprocess_rc=return_code,
+                priority=self.priority,
             ),
         )
 
@@ -99,6 +107,7 @@ def _build_evals_data(
     success: bool = True,
     error: Optional[str] = None,
     subprocess_rc: Optional[int] = None,
+    priority: str = "must",
 ) -> Dict[str, Any]:
     """Shape agentic results like standard lm-eval Blocks for report rendering."""
 
@@ -142,6 +151,7 @@ def _build_evals_data(
         "ratio_to_reference": ratio_ref,
         "accuracy_check": accuracy_check,
         "mean_seconds_per_task": metrics.get("mean_seconds_per_task"),
+        "priority": priority,
     }
     if not success:
         data["success"] = False
@@ -153,8 +163,13 @@ def _build_evals_data(
 
 
 def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) -> None:
-    """Keep Harbor-specific counters in targets for JSON export only."""
-    for key in ("n_trials", "n_resolved", "pass_at_1"):
+    """Keep Harbor-specific counters in targets for JSON export only.
+
+    ``n_trials`` counts trials the verifier rewarded; ``n_errors`` trials that
+    raised (infrastructure or agent errors, a trial can be both); and
+    ``n_total_trials`` the trials the job ran, so a consumer can check the
+    scored coverage."""
+    for key in ("n_trials", "n_errors", "n_total_trials", "n_resolved", "pass_at_1"):
         if key in metrics:
             targets[key] = metrics[key]
     for key, value in metrics.items():
@@ -164,6 +179,9 @@ def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) 
 
 def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     metrics = _extract_harbor_summary_metrics(raw)
+    n_total = raw.get("n_total_trials")
+    if isinstance(n_total, int) and not isinstance(n_total, bool):
+        metrics["n_total_trials"] = n_total
     _add_harbor_pass_at_metrics(raw, metrics)
     mean_seconds = _mean_seconds_per_task(raw, metrics)
     if mean_seconds is not None:
@@ -269,6 +287,7 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         None,
     )
     n_trials = eval_stats.get("n_trials")
+    n_errors = eval_stats.get("n_errors")
     n_resolved = _count_harbor_resolved_trials(eval_stats)
 
     metrics: Dict[str, Any] = {}
@@ -277,6 +296,8 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         metrics["pass_at_1"] = mean_metric
     if isinstance(n_trials, int):
         metrics["n_trials"] = n_trials
+    if isinstance(n_errors, int):
+        metrics["n_errors"] = n_errors
     if n_resolved is not None:
         metrics["n_resolved"] = n_resolved
     return metrics

@@ -191,7 +191,6 @@ else
     echo "CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number or outside expected range of 1000 to 59999."
 fi
 QUETZAL_SOURCE_CONTEXT=""
-QUETZAL_SOURCE_ARCHIVE=""
 cleanup_quetzal_source_context() {
     if [[ -n "$QUETZAL_SOURCE_CONTEXT" && -d "$QUETZAL_SOURCE_CONTEXT" ]]; then
         rm -rf -- "$QUETZAL_SOURCE_CONTEXT"
@@ -216,10 +215,10 @@ if [[ -n "$TT_QUETZAL_COMMIT_SHA" || -n "$TT_QUETZAL_SOURCE_DIR" ]]; then
         exit 1
     fi
     QUETZAL_SOURCE_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/ttis-quetzal-source.XXXXXX")
-    QUETZAL_SOURCE_ARCHIVE="${QUETZAL_SOURCE_CONTEXT}/source.tar"
-    git -C "$TT_QUETZAL_SOURCE_DIR" archive --format=tar "$TT_QUETZAL_COMMIT_SHA" > "$QUETZAL_SOURCE_ARCHIVE"
-    if ! DOCKER_BUILDKIT=1 docker build --help 2>&1 | grep -q -- '--secret'; then
-        echo "⛔ Error: Quetzal image builds require Docker BuildKit support for --secret."
+    git -C "$TT_QUETZAL_SOURCE_DIR" archive --format=tar "$TT_QUETZAL_COMMIT_SHA" \
+        | tar -xf - -C "$QUETZAL_SOURCE_CONTEXT"
+    if ! DOCKER_BUILDKIT=1 docker build --help 2>&1 | grep -q -- '--build-context'; then
+        echo "⛔ Error: Quetzal image builds require Docker BuildKit support for --build-context."
         exit 1
     fi
     export DOCKER_BUILDKIT=1
@@ -338,7 +337,7 @@ generate_model_specs_json()
         if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
             QUETZAL_BUILD_ARGS+=(
                 --build-arg "TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}"
-                --secret "id=quetzal_source,src=${QUETZAL_SOURCE_ARCHIVE}"
+                --build-context "quetzal_source=${QUETZAL_SOURCE_CONTEXT}"
             )
         fi
 

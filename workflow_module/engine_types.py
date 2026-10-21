@@ -28,6 +28,7 @@ class WorkflowType(IntEnum):
     AGENTIC_TRACES = auto()
     SERVING_BENCH = auto()
     PREFILL_DECODE = auto()
+    TRAINING_TESTS = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -277,3 +278,4 @@ class WorkflowVenvType(IntEnum):
     SERVER = auto()
     TT_SMI = auto()
     TT_TOPOLOGY = auto()
+    LLM_VLLM_TOKEN_TIMING = auto()

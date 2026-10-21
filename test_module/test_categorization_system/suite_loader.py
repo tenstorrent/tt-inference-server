@@ -27,6 +27,8 @@ TEST_SUITES_DIR = "test_suites"
 TEST_SUITES_KEY = "test_suites"
 TEST_MATRICES_KEY = "test_matrices"
 TEST_SUITE_CATEGORY_KEY = "_category"
+MATRIX_IMPLS_KEY = "impls"
+MATRIX_EXCLUDE_IMPLS_KEY = "exclude_impls"
 CONFIG_DIR = Path(__file__).parent.parent
 SUITES_DIR = CONFIG_DIR / TEST_SUITES_DIR
 CONFIG_PATH = CONFIG_DIR / SERVER_TESTS_CONFIG_FILE
@@ -103,6 +105,13 @@ def expand_test_matrices(matrices: list[dict], model_configs: dict) -> list[dict
                     "model_marker": model_key,
                     "test_cases": test_cases,
                 }
+                # Optional implementation scope (ModelSpec.impl.impl_id): one
+                # weights+device pair can be served by several impls, and a
+                # matrix may hold for some of them only. See
+                # TestFilter.filter_by_impl.
+                for key in (MATRIX_IMPLS_KEY, MATRIX_EXCLUDE_IMPLS_KEY):
+                    if matrix.get(key) is not None:
+                        suite[key] = list(matrix[key])
 
                 num_devices = _resolve_num_devices(matrix_num_devices, model_cfg)
                 if num_devices is not None:

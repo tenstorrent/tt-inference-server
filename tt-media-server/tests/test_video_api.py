@@ -9,9 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from config.constants import (
     DEFAULT_VIDEO_INFERENCE_STEPS,
-    JobTypes,
+    LTX_NUM_INFERENCE_STEPS,
+    LTX_TEMPORAL_COMPRESSION,
     MAX_VIDEO_INFERENCE_STEPS,
     MIN_VIDEO_INFERENCE_STEPS,
+    JobTypes,
+    ModelRunners,
+    ltx_served_shape,
+    snap_num_frames,
 )
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
@@ -19,6 +24,7 @@ from domain.video_i2v_generate_request import (
     VideoI2VGenerateRequest,
 )
 from fastapi import HTTPException
+from pydantic import ValidationError
 from open_ai_api.video import (
     _is_i2v_only_deployment,
     cancel_video_job,
@@ -301,6 +307,83 @@ class TestDownloadVideoContent:
         finally:
             os.unlink(tmp_path)
 
+    def test_download_deletes_faststart_temp_file(self):
+        """The per-request faststart copy must not survive the response."""
+        import asyncio
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def fake_faststart(src_path, dst_path):
+            # Stand in for the real remux: leave real bytes at the temp path.
+            with open(dst_path, "wb") as fh:
+                fh.write(b"faststart output")
+            created.append(dst_path)
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = fake_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                )
+
+            assert len(created) == 1
+            faststart_path = created[0]
+            # Served from the remuxed copy, which still exists until the response ends.
+            assert response.path == faststart_path
+            assert os.path.exists(faststart_path)
+
+            # The cleanup rides on the response as a background task.
+            assert response.background is not None
+            asyncio.run(response.background())
+            assert not os.path.exists(faststart_path)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_download_removes_stub_when_faststart_fails(self):
+        """A failed remux must not leave its empty stub file behind."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def failing_faststart(src_path, dst_path):
+            created.append(dst_path)
+            raise RuntimeError("ffmpeg unavailable")
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = failing_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                )
+
+            # Falls back to the original file, and the stub is already gone.
+            assert response.path == tmp_path
+            assert response.background is None
+            assert len(created) == 1
+            assert not os.path.exists(created[0])
+        finally:
+            os.unlink(tmp_path)
+
     def test_download_video_content_with_faststart(self):
         """Test video download with faststart processing"""
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -485,6 +568,188 @@ class TestVideoGenerateRequestValidation:
                 prompt="A cat walking in the park",
                 num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
             )
+
+
+class TestLTXShapeValidation:
+    """VideoGenerateRequest shape validation against the served LTX config."""
+
+    @staticmethod
+    def _ltx():
+        """Patch settings so the validator takes its LTX branch."""
+        return patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(
+                model_runner=ModelRunners.TT_LTX_2_3_DISTILLED.value
+            ),
+        )
+
+    @staticmethod
+    def _wan():
+        return patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(model_runner=ModelRunners.TT_WAN_2_2.value),
+        )
+
+    def test_prompt_only_resolves_to_served_shape(self):
+        """The pre-existing client contract: no shape fields at all."""
+        served = ltx_served_shape()
+        with self._ltx():
+            r = VideoGenerateRequest(prompt="A cat walking in the park")
+        assert r.num_frames == served.num_frames
+        assert (r.height, r.width) == (served.height, served.width)
+        assert r.fps == served.fps
+        assert r.duration == pytest.approx(served.num_frames / served.fps)
+        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
+
+    @pytest.mark.parametrize("duration", [6, 6.0, 6.12])
+    def test_duration_snaps_to_served_frame_count(self, duration):
+        """6s at 25fps is 150 frames, which is not 8k+1; it snaps to 153."""
+        with self._ltx():
+            r = VideoGenerateRequest(prompt="p", duration=duration)
+        assert r.num_frames == ltx_served_shape().num_frames
+
+    def test_explicit_served_shape_accepted(self):
+        served = ltx_served_shape()
+        with self._ltx():
+            r = VideoGenerateRequest(
+                prompt="p",
+                duration=6,
+                fps=served.fps,
+                height=served.height,
+                width=served.width,
+            )
+        assert r.num_frames == served.num_frames
+
+    def test_explicit_num_frames_accepted(self):
+        with self._ltx():
+            r = VideoGenerateRequest(
+                prompt="p", num_frames=ltx_served_shape().num_frames
+            )
+        assert r.num_frames == ltx_served_shape().num_frames
+
+    def test_short_duration_rejected(self):
+        """5.8s snaps to 145 frames, which under-delivers and is not served."""
+        with self._ltx(), pytest.raises(ValidationError, match="not served"):
+            VideoGenerateRequest(prompt="p", duration=5.8)
+
+    def test_illegal_frame_count_rejected(self):
+        """150 is not 8k+1 and is not the served count."""
+        with self._ltx(), pytest.raises(ValidationError, match="not served"):
+            VideoGenerateRequest(prompt="p", num_frames=150)
+
+    def test_mismatched_fps_rejected(self):
+        with self._ltx(), pytest.raises(ValidationError, match="fps=24 is not served"):
+            VideoGenerateRequest(prompt="p", fps=24)
+
+    def test_mismatched_height_rejected(self):
+        with self._ltx(), pytest.raises(ValidationError, match="height=720"):
+            VideoGenerateRequest(prompt="p", height=720)
+
+    def test_mismatched_width_rejected(self):
+        with self._ltx(), pytest.raises(ValidationError, match="width=1280"):
+            VideoGenerateRequest(prompt="p", width=1280)
+
+    def test_duration_contradicting_num_frames_rejected(self):
+        with self._ltx(), pytest.raises(ValidationError, match="contradicts"):
+            VideoGenerateRequest(prompt="p", duration=6, num_frames=145)
+
+    def test_error_message_names_the_served_shape(self):
+        """A 422 the caller can act on without reading the source."""
+        served = ltx_served_shape()
+        with self._ltx(), pytest.raises(ValidationError) as exc:
+            VideoGenerateRequest(prompt="p", fps=24)
+        msg = str(exc.value)
+        assert str(served.num_frames) in msg
+        assert f"{served.height}x{served.width}" in msg
+
+    def test_fixed_step_count_reported_not_echoed(self):
+        """The job record reports the fixed schedule, not a client step count."""
+        with self._ltx():
+            r = VideoGenerateRequest(prompt="p")
+        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
+        with self._ltx():
+            r = VideoGenerateRequest(
+                prompt="p", num_inference_steps=LTX_NUM_INFERENCE_STEPS
+            )
+        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
+
+    def test_client_supplied_step_count_rejected(self):
+        with self._ltx(), pytest.raises(ValidationError, match="fixed distilled"):
+            VideoGenerateRequest(prompt="p", num_inference_steps=20)
+
+    # --- the other video models must be unaffected -------------------------
+
+    def test_non_ltx_keeps_default_step_count(self):
+        with self._wan():
+            r = VideoGenerateRequest(prompt="p")
+        assert r.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    @pytest.mark.parametrize(
+        "steps", [MIN_VIDEO_INFERENCE_STEPS, 20, MAX_VIDEO_INFERENCE_STEPS]
+    )
+    def test_non_ltx_accepts_conventional_step_range(self, steps):
+        with self._wan():
+            r = VideoGenerateRequest(prompt="p", num_inference_steps=steps)
+        assert r.num_inference_steps == steps
+
+    @pytest.mark.parametrize(
+        "steps", [MIN_VIDEO_INFERENCE_STEPS - 1, MAX_VIDEO_INFERENCE_STEPS + 1]
+    )
+    def test_non_ltx_still_enforces_step_bounds(self, steps):
+        """Defaulting the field to None must not relax the shared step bounds."""
+        with self._wan(), pytest.raises(ValidationError):
+            VideoGenerateRequest(prompt="p", num_inference_steps=steps)
+
+    def test_non_ltx_leaves_shape_fields_unresolved(self):
+        """Wan resolves its shape from settings/mesh, so the request must not
+        pin one. sp_runner's `or DEFAULT` turns these Nones into its defaults."""
+        with self._wan():
+            r = VideoGenerateRequest(prompt="p")
+        assert r.height is None and r.width is None
+        assert r.num_frames is None and r.fps is None
+
+    # --- LTX and MiniMax-H3 refuse each other's shape fields ----------------
+
+    @pytest.mark.parametrize(
+        "field,value", [("aspect_ratio", "16:9"), ("duration_seconds", 6)]
+    )
+    def test_ltx_rejects_h3_shape_fields(self, field, value):
+        with self._ltx(), pytest.raises(ValidationError, match="not supported"):
+            VideoGenerateRequest(prompt="p", **{field: value})
+
+    @pytest.mark.parametrize(
+        "field,value", [("duration", 6), ("height", 768), ("num_frames", 124)]
+    )
+    def test_h3_rejects_ltx_shape_fields(self, field, value):
+        h3 = patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(model_runner=ModelRunners.TT_MINIMAX_H3_T2VA.value),
+        )
+        with h3, pytest.raises(ValidationError, match="unknown field"):
+            VideoGenerateRequest(prompt="p", **{field: value})
+
+
+class TestSnapNumFrames:
+    """The duration -> frame-count rule: (num_frames - 1) % 8 == 0."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            (1, 1),
+            (145, 145),
+            (150, 153),  # 6s @ 25fps -- the case that picked 153 over 150
+            (153, 153),
+            (154, 153),
+            (0, 1),
+            (-5, 1),
+        ],
+    )
+    def test_snaps_to_nearest_legal_value(self, raw, expected):
+        assert snap_num_frames(raw) == expected
+
+    @pytest.mark.parametrize("raw", range(1, 200))
+    def test_result_is_always_legal(self, raw):
+        assert (snap_num_frames(raw) - 1) % LTX_TEMPORAL_COMPRESSION == 0
 
 
 class TestResponseContent:

@@ -20,12 +20,16 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import AgenticTracesMode
+
+logger = logging.getLogger(__name__)
 
 # The InferenceX ``inferencex-agentx-mvp`` scenario rejects a profiling window
 # shorter than this (see its scenario definition in the InferenceX repo:
@@ -72,8 +76,29 @@ class AgenticTracesRunSpec:
     slice_duration: float = 1.0
     max_context_length: Optional[int] = None
     tokenizer_trust_remote_code: Optional[bool] = None
+    # True reads token counts off the streaming ``usage`` chunk; TT endpoints
+    # honour ``stream_options.include_usage``, so this works and matches the
+    # served token counts. False would count ISL/OSL with the local tokenizer
+    # instead, ``vllm bench serve`` style.
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # Caps any single recorded idle gap in a trace (``--trace-idle-gap-cap-seconds``).
+    # 300 is InferenceX's own default (``AIPERF_TRACE_IDLE_GAP_CAP_SECONDS`` in
+    # benchmarks/benchmark_lib.sh). Without it a lane whose trace recorded an
+    # overnight pause sits idle for the whole profiling window. ``None`` omits
+    # the flag, which is required on InferenceX pins before agentx-v1.0.0: their
+    # scenario rejects it.
+    trace_idle_gap_cap_seconds: Optional[float] = 300.0
+    # AIPerf ``--goodput`` SLO string: space-separated TAG:VALUE bars deciding
+    # whether a request counts as good. Empty means the run measures no
+    # goodput, since AIPerf reports it only when the bars are passed. Catalog
+    # entries leave this empty; a requirements document supplies its SLOs.
+    goodput: str = ""
+    # The document's expected ``agenticSweep``, kept verbatim (one camelCase
+    # point per concurrency) so the report can grade the measurement against
+    # it -- including the points a truncated sweep never reached. Empty for
+    # catalog runs, which have no expectations to grade against.
+    expected_sweep: List[Dict[str, Any]] = field(default_factory=list)
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
     # ``task`` selects a single task from a multi-task swo-bench scenario (its
@@ -128,6 +153,14 @@ class AgenticTracesRunSpec:
                 "0 <= min <= max <= 1, got min="
                 f"{self.trajectory_start_min_ratio} max="
                 f"{self.trajectory_start_max_ratio}"
+            )
+        if (
+            self.trace_idle_gap_cap_seconds is not None
+            and self.trace_idle_gap_cap_seconds <= 0
+        ):
+            raise ValueError(
+                "AgenticTracesRunSpec.trace_idle_gap_cap_seconds must be > 0 "
+                f"when set, got {self.trace_idle_gap_cap_seconds}"
             )
         if self.resident is not None and self.resident < 1:
             raise ValueError(
@@ -230,14 +263,11 @@ class AgenticTracesModeSettings:
 # Reference full-length run: the shape validated by hand before this workflow
 # existed (1h profiling, all 393 eligible traces).
 #
-# 14 requests/lane reproduces the warmup depth of that validated run, which
-# used the superseded 600s time-bounded warmup: it issued 109 warmup wire
-# requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
-# the trace corpus or the server's warmup latency changes materially.
+# 10 requests/lane matches InferenceX's reference warmup.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
-    warmup_requests_per_lane=14,
-    warmup_grace_period=1800,
+    warmup_requests_per_lane=10,
+    warmup_grace_period=int(os.environ.get("AGENTX_WARMUP_GRACE", "1800")),
     num_dataset_entries=393,
 )
 
@@ -333,6 +363,16 @@ def for_model_ids(model_ids: List[str], **kwargs) -> List[AgenticTracesConfig]:
     return [AgenticTracesConfig(model_id=mid, **kwargs) for mid in model_ids]
 
 
+# InferenceX revision every agentx config below pins. See the Kimi entry for why
+# this commit.
+INFERENCEX_AGENTX_GIT_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
+
+
+def _agentx_concurrency(default: int) -> int:
+    """An agentx run's concurrency, overridable with ``AGENTX_CONCURRENCY``."""
+    return int(os.environ.get("AGENTX_CONCURRENCY", str(default)))
+
+
 _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # Kimi K2.7-Code on SUPER_CLUSTER (dev catalog). 256k dataset variant to
     # match the spec's 262144 max_context
@@ -342,18 +382,21 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # resolving ("reference is not a tree") once that branch is gone, and the
     # server then refuses it outright as "not our ref".
     #
-    # Pinned to the InferenceX commit that bumps the vendored aiperf submodule
-    # to be758d621, the first revision carrying
-    # ``--warmup-requests-per-lane``. Do not lower this pin without also
-    # restoring a time-bounded warmup: the flag does not exist earlier.
+    # Pinned to the InferenceX main commit that landed SemiAnalysis's B300 GLM
+    # agentic sweep (#2829), so replays run the same client as InferenceX's GPU
+    # reference runs: vendored aiperf 754356e9 (agentx-v1.0.5). Earlier pins
+    # (ddeb02eb, aiperf be758d62) prefixed warmup requests at token 0 even
+    # under cache-bust, so warmup primed cache entries profiling never read
+    # and the first ~5 min of profiling ran cold (aiperf b60d3a9a fixes it).
+    # Keep every model on the same pin so numbers stay comparable.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        model_id="id_blaze_Kimi-K2.7-Code_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=64,
+                concurrency=_agentx_concurrency(64),
             ),
             # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
             # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,
@@ -383,13 +426,52 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
     # Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_GLM-5.2_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        model_id="id_blaze_GLM-5.2_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(80),
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_blaze_GLM-5.3_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(80),
+            ),
+        ),
+    ),
+    # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
+    # only; no SwarmOne scenario is recorded for this model. Same InferenceX
+    # pin as Kimi above so numbers stay comparable across the two models.
+    AgenticTracesConfig(
+        model_id="id_blaze_gemma-4-31B-it_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=80,
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
+    # only. Full (1M) dataset to match the spec's 1048576 max_context, and
+    # concurrency at the spec's max_concurrency of 62.
+    AgenticTracesConfig(
+        model_id="id_blaze_MiniMax-M3_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(62),
             ),
         ),
     ),
@@ -411,6 +493,115 @@ def get_agentic_traces_config(model_spec) -> Optional[AgenticTracesConfig]:
     if not model_id:
         return None
     return AGENTIC_TRACES_CONFIGS.get(model_id)
+
+
+# impl_id stamped on specs synthesized from a requirements document for
+# off-catalog models (see workflows/model_spec_provider.py). Such a model can
+# never have an AGENTIC_TRACES_CONFIGS entry, so the strict lookup above would
+# always refuse it.
+_REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
+
+# Template borrowed for requirements-driven runs: the Kimi K2.7-Code config,
+# currently the only onboarded one. Its default sweep is the
+# InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
+# needed); the InferenceX pin and mode settings carry over unchanged.
+_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
+
+
+def _borrows_template(model_spec) -> bool:
+    """Whether ``model_spec`` may fall back to the template.
+
+    Two cases, both requirements-driven. A synthesized spec is off-catalog and
+    so can never have an entry. A *catalog* spec without one is the same
+    situation in practice: being in the catalog says the model can be served,
+    not that it is onboarded to this workflow, so adding a model for evals
+    would otherwise turn a working requirements sweep into a refusal.
+
+    Requirements mode is read from argv rather than passed in, because every
+    process that needs this already receives ``--requirements-json``: run.py
+    and run_workflows.py from the operator, the launchers because
+    workflow_dispatch forwards it.
+    """
+    impl_id = getattr(getattr(model_spec, "impl", None), "impl_id", None)
+    if impl_id == _REQUIREMENTS_SYNTHESIZED_IMPL_ID:
+        return True
+    from workflows.requirements_cli import requirements_mode_in_argv
+
+    return requirements_mode_in_argv()
+
+
+def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesConfig]:
+    """Config for ``model_spec``, borrowing a template for requirements runs.
+
+    Strict catalog lookup first. When the model has no entry and the run is
+    requirements-driven, returns the Kimi K2.7-Code config retargeted at this
+    ``model_id`` — the traces are recorded traffic replayed against whatever
+    server is under test, so the run shape is not model-specific. A plain
+    ``--workflow agentic_traces`` on a model with no entry still gets ``None``
+    (refuse to run), unchanged.
+    """
+    config = get_agentic_traces_config(model_spec)
+    if config is not None:
+        return config
+    if not _borrows_template(model_spec):
+        return None
+    template = AGENTIC_TRACES_CONFIGS.get(_REQUIREMENTS_TEMPLATE_MODEL_ID)
+    if template is None:
+        return None
+    model_id = getattr(model_spec, "model_id", None)
+    if not model_id:
+        return None
+    logger.warning(
+        "No agentic-traces config for model_id=%r; borrowing the %r template "
+        "(requirements-driven run).",
+        model_id,
+        _REQUIREMENTS_TEMPLATE_MODEL_ID,
+    )
+    return replace(template, model_id=model_id)
+
+
+def replace_agentic_runs(
+    config: AgenticTracesConfig,
+    concurrencies: Sequence[int],
+    goodput: Union[str, Mapping[int, str]] = "",
+    expected_sweep: Sequence[Mapping[str, Any]] = (),
+) -> AgenticTracesConfig:
+    """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
+
+    A requirements document sweeps concurrency while holding the run shape
+    fixed, so each configured run is duplicated once per concurrency rather
+    than replaced: a config carrying both an InferenceX and a SwarmOne spec
+    still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
+    document with no agentic sweep keeps the catalog's single operating point.
+
+    ``goodput`` accepts a mapping of concurrency -> SLO string (per-row
+    overrides via ``requirements_schema.effective_slo``), or a plain string
+    broadcast to every run; an omitted concurrency keeps its run spec's own
+    ``goodput``.
+
+    Every run carries the whole ``expected_sweep``, so the report can call out
+    points a truncated sweep never measured.
+    """
+    if not concurrencies:
+        return config
+    expected = [dict(point) for point in expected_sweep]
+
+    def _goodput_for(concurrency: int) -> str:
+        if isinstance(goodput, Mapping):
+            return goodput.get(concurrency, "")
+        return goodput
+
+    runs = tuple(
+        replace(
+            run,
+            concurrency=concurrency,
+            goodput=_goodput_for(concurrency) or run.goodput,
+            expected_sweep=list(expected),
+        )
+        for run in config.runs
+        for concurrency in concurrencies
+    )
+    return replace(config, runs=runs)
 
 
 def default_run_specs(
@@ -472,10 +663,13 @@ __all__ = [
     "CI_MODE_SETTINGS",
     "DEFAULT_MODE_SETTINGS",
     "FULL_MODE_SETTINGS",
+    "INFERENCEX_AGENTX_GIT_REF",
     "OPT_IN_TRACE_SOURCES",
     "TraceSource",
     "default_run_specs",
     "for_model_ids",
     "get_agentic_traces_config",
+    "get_agentic_traces_config_or_template",
+    "replace_agentic_runs",
     "resolve_run_specs",
 ]

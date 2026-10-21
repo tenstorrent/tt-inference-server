@@ -17,10 +17,8 @@ To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 
 - [WH Galaxy](Llama-3.1-8B_galaxy.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
-- [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH P300](Llama-3.1-8B_p300.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100](Llama-3.1-8B_p100.md)
 - [P150](Llama-3.1-8B_p150.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
 - [N150](Llama-3.1-8B_n150.md)
@@ -41,7 +39,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-25305db-6e67d2d \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.2.0-9b67e09-a91b644 \
   --model meta-llama/Llama-3.1-8B \
   --tt-device n300
 ```
@@ -61,7 +59,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
-| tt-metal Commit | `25305db` |
-| vLLM Commit | `6e67d2d` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-25305db-6e67d2d` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers) |
+| tt-metal Commit | `9b67e09` |
+| vLLM Commit | `a91b644` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.2.0-9b67e09-a91b644` |

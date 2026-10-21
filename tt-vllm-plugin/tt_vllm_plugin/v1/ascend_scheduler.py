@@ -10,18 +10,14 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Optional, Union
 
-from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
-from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from vllm.utils import cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs
-from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
-from vllm.v1.structured_output import StructuredOutputManager
 
 logger = init_logger("vllm.tt_vllm_plugin.v1.ascend_scheduler")
 
@@ -30,23 +26,11 @@ class AscendScheduler(Scheduler):
     """This Scheduler extends vllm's original v1 scheduler
     with prefill-first scheduling strategy."""
 
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        kv_cache_config: KVCacheConfig,
-        structured_output_manager: StructuredOutputManager,
-        mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
-        include_finished_set: bool = False,
-        log_stats: bool = False,
-    ) -> None:
-        super().__init__(
-            vllm_config,
-            kv_cache_config,
-            structured_output_manager,
-            mm_registry,
-            include_finished_set,
-            log_stats,
-        )
+    def __init__(self, *args, **kwargs) -> None:
+        # The base Scheduler.__init__ signature drifts across vLLM versions
+        # (e.g. block_size became a required positional arg); forward whatever
+        # the factory passes and only layer AscendScheduler state on top.
+        super().__init__(*args, **kwargs)
         self.scheduled_req_ids: set[str] = set()
         self.running: list[Request] = []
         # Optional execution mode gate (None=auto, 1=prefill, 0=decode)
@@ -76,6 +60,7 @@ class AscendScheduler(Scheduler):
         structured_output_request_ids: dict[str, int] = {}
 
         req_to_new_block_ids: dict[str, tuple[list[int], ...]] = {}
+        req_to_new_blocks: dict = {}
         num_scheduled_tokens: dict[str, int] = {}
         token_budget = self.max_num_scheduled_tokens
         # Spec decode-related.
@@ -273,6 +258,9 @@ class AscendScheduler(Scheduler):
             req_to_new_block_ids[request.request_id] = (
                 self.kv_cache_manager.get_block_ids(request.request_id)
             )
+            req_to_new_blocks[request.request_id] = self.kv_cache_manager.get_blocks(
+                request.request_id
+            )
             # Update request info.
             num_scheduled_tokens[request.request_id] = num_new_tokens
             token_budget -= num_new_tokens
@@ -381,6 +369,7 @@ class AscendScheduler(Scheduler):
                     structured_output_request_ids[request.request_id] = req_index
                 self.scheduled_req_ids.add(request.request_id)
                 req_to_new_block_ids[request.request_id] = new_blocks.get_block_ids()
+                req_to_new_blocks[request.request_id] = new_blocks
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 req_index += 1
@@ -421,16 +410,9 @@ class AscendScheduler(Scheduler):
             any_request = self.running[0]
             num_common_prefix_blocks = (
                 self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request, len(self.running)
+                    any_request.request_id
                 )
             )
-
-        # Generate grammar bitmask for structured output requests
-        grammar_bitmask = self.structured_output_manager.grammar_bitmask(
-            self.requests,
-            structured_output_request_ids,
-            scheduled_spec_decode_tokens,
-        )
 
         # Construct the scheduler output.
         new_reqs_data = [
@@ -443,7 +425,7 @@ class AscendScheduler(Scheduler):
             scheduled_resumed_reqs,
             num_scheduled_tokens,
             scheduled_spec_decode_tokens,
-            req_to_new_block_ids,
+            req_to_new_blocks,
         )
         scheduled_cached_reqs = cached_reqs_data
 
@@ -460,10 +442,12 @@ class AscendScheduler(Scheduler):
             # It contains the request IDs that are finished in between
             # the previous and the current steps.
             finished_req_ids=self.finished_req_ids,  # type: ignore
-            free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
-            structured_output_request_ids=structured_output_request_ids,
-            grammar_bitmask=grammar_bitmask,
+            free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes(),
         )
+
+        # Older vLLM pins do not accept this field in the constructor. Attach
+        # it afterwards so TT replica placement can release preempted KV slots.
+        scheduler_output.preempted_req_ids = {req.request_id for req in preempted_reqs}
 
         # NOTE(Kuntai): this function is designed for multiple purposes:
         # 1. Plan the KV cache store
@@ -532,10 +516,10 @@ class AscendScheduler(Scheduler):
             self.scheduler_config.chunked_prefill_enabled
             and not self.scheduler_config.is_multi_step
         ):
-            prompt_limit = self.scheduler_config.max_model_len
+            prompt_limit = self.max_model_len
         else:
             prompt_limit = min(
-                self.scheduler_config.max_model_len,
+                self.max_model_len,
                 self.scheduler_config.max_num_batched_tokens,
             )
 

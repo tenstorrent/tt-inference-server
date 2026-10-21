@@ -6,6 +6,10 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`gemma-4-31B-it` is also supported on hardware:
+
+- [BH Galaxy](gemma-4-31B-it_blackhole_galaxy.md)
+
 ## Quickstart - Deploy gemma-4-31B-it Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
@@ -22,7 +26,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gemma-4-31B-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.25.0-978f93b-a723030 \
   --model google/gemma-4-31B-it \
   --tt-device p300x2
 ```
@@ -39,10 +43,16 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
-| Model Status | 🛠️ Experimental |
-| Max Batch Size | 1 |
-| Max Context Length | 49152 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers) |
-| tt-metal Commit | `c49bb76` |
-| vLLM Commit | `6b4a3a7` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7` |
+| Model Status | 🟢 Complete |
+| Max Batch Size | 32 |
+| Max Context Length | 262144 |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/978f93b/models/tt_transformers) |
+| tt-metal Commit | `978f93b` |
+| vLLM Commit | `a723030` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.25.0-978f93b-a723030` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | `gemma4-31b-qb2` | 1 | 262144 | `2fd9445` | `7250ddf` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.23.0-2fd9445-7250ddf` |

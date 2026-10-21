@@ -280,6 +280,9 @@ class TestFilter:
             }
             if NUM_OF_DEVICES in suite:
                 expanded_suite[NUM_OF_DEVICES] = suite[NUM_OF_DEVICES]
+            for key in ("impls", "exclude_impls"):  # see filter_by_impl
+                if suite.get(key) is not None:
+                    expanded_suite[key] = list(suite[key])
 
             # Expand each test case
             for test_case in suite.get("test_cases", []):
@@ -432,18 +435,51 @@ class TestFilter:
         """
         Filter tests by specific model name.
 
+        Accepts either the bare weight name used in the suite configs
+        ("Qwen3-32B") or a full HF repo id ("Qwen/Qwen3-32B"). Callers pass
+        the repo id since #4722 made it the canonical model id, while the
+        suite configs still key on the bare name; matching both keeps the
+        two spellings from silently resolving to zero suites.
+
         Args:
             model_name: Model name (e.g., "stable-diffusion-xl-base-1.0")
 
         Returns:
             Self for method chaining
         """
+        candidates = {model_name, model_name.split("/")[-1]}
         self.filtered_suites = [
             suite
             for suite in self.filtered_suites
-            if model_name in suite.get("weights", [])
+            if candidates & set(suite.get("weights", []))
         ]
 
+        return self
+
+    def filter_by_impl(self, impl_id: Optional[str]) -> TestFilter:
+        """
+        Filter tests by serving implementation (``ModelSpec.impl.impl_id``).
+
+        A suite may carry ``impls`` (it applies to those impls only) and/or
+        ``exclude_impls`` (it applies to every impl except those), copied from
+        its test matrix. A suite with neither applies to every impl, so suites
+        without the keys behave exactly as before. ``impl_id=None`` (caller
+        does not know the impl) leaves the selection unchanged.
+
+        Args:
+            impl_id: Implementation id, e.g. "tt_transformers" or "quetzal"
+
+        Returns:
+            Self for method chaining
+        """
+        if impl_id is None:
+            return self
+        self.filtered_suites = [
+            suite
+            for suite in self.filtered_suites
+            if (suite.get("impls") is None or impl_id in suite["impls"])
+            and impl_id not in (suite.get("exclude_impls") or [])
+        ]
         return self
 
     def filter_by_device(self, device: str) -> TestFilter:

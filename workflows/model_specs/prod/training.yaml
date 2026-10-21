@@ -2,4 +2,21 @@
 # Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 # Training specs are currently dev-only (EXPERIMENTAL); no prod entries yet.
-templates: []
+templates:
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: trainer_training_lora
+  model_type: TRAINING
+  inference_engine: FORGE
+  status: EXPERIMENTAL
+  uses_tensor_model_cache: false
+  env_vars:
+    MODEL_RUNNER: "trainer-training-lora"
+    TRAINING_MODEL: "Llama-3.1-8B-Instruct"
+    ENABLE_JOB_PERSISTENCE: true
+  version: "0.25.0"
+  tt_metal_commit: "978f93b"
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 1024

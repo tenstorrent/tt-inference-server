@@ -191,6 +191,44 @@ class TestArgumentParsing:
         assert args.device == "n150"
         assert args.tt_device == "n150"
 
+    def test_ci_mode_keeps_an_explicit_limit_samples_mode(self, base_args):
+        """--ci-mode supplies the ci-nightly default only; an explicit preset wins."""
+        with patch("sys.argv", ["run.py"] + base_args + ["--ci-mode"]):
+            args = parse_arguments()
+        assert args.limit_samples_mode == "ci-nightly"
+        assert args.skip_system_sw_validation is True
+        with patch(
+            "sys.argv",
+            ["run.py"] + base_args + ["--ci-mode", "--limit-samples-mode", "ci-long"],
+        ):
+            args = parse_arguments()
+        assert args.limit_samples_mode == "ci-long"
+        assert args.skip_system_sw_validation is True
+
+    def test_eval_shard_parses_and_composes_with_eval_tasks(self, base_args):
+        argv = (
+            ["run.py"] + base_args + ["--eval-tasks", "aime25", "--eval-shard", "1/3"]
+        )
+        with patch("sys.argv", argv):
+            args = parse_arguments()
+        assert args.eval_shard == "1/3"
+        assert args.eval_tasks == "aime25"
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--eval-shard", "3/3"],
+            ["--eval-shard", "0/1"],
+            ["--eval-shard", "x"],
+            ["--eval-shard", "0/2", "--eval-samples", '{"aime25": [0]}'],
+            ["--eval-shard", "0/2", "--limit-samples-mode", "ci-nightly"],
+        ],
+    )
+    def test_eval_shard_rejects_bad_values_and_subset_flags(self, base_args, extra):
+        with patch("sys.argv", ["run.py"] + base_args + extra):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
         [
@@ -649,6 +687,59 @@ class TestModelSpecCliArgsCompatibility:
 
         assert args.quetzal_package_root == "/mnt/models/sha256-package"
 
+    def test_service_port_defaults_to_443_for_https_server_url(self, base_args):
+        """--server-url https://host without a port targets 443 by default."""
+        full_args = base_args + ["--server-url", "https://example.com"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.server_url == "https://example.com"
+        assert args.service_port == "443"
+
+    def test_explicit_service_port_wins_over_https_default(self, base_args):
+        """An explicit --service-port is used even for https URLs."""
+        full_args = base_args + [
+            "--server-url",
+            "https://example.com",
+            "--service-port",
+            "9000",
+        ]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+
+        assert args.service_port == "9000"
+
+    def test_service_port_env_wins_over_https_default(self, base_args):
+        """SERVICE_PORT env var beats the https 443 default."""
+        full_args = base_args + ["--server-url", "https://example.com"]
+        with patch.dict(os.environ, {"SERVICE_PORT": "9001"}, clear=False):
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "9001"
+
+    def test_service_port_stays_8000_for_https_url_with_port(self, base_args):
+        """A port in the URL wins downstream; service_port keeps the 8000 default."""
+        full_args = base_args + ["--server-url", "https://example.com:8443"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "8000"
+
+    def test_service_port_stays_8000_for_http_server_url(self, base_args):
+        """Plain http URLs keep the historical 8000 default."""
+        full_args = base_args + ["--server-url", "http://example.com"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "8000"
+
 
 class TestArgsInference:
     """Tests for argument inference and validation."""
@@ -942,6 +1033,8 @@ class TestOverrideArgsIntegration:
         mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.subdevice_type = None
         mock_model_spec.inference_engine = "vLLM"
+        mock_model_spec.device_model_spec.vllm_args = {}
+        mock_model_spec.metadata = {}
         return mock_model_spec
 
     def _make_mock_runtime_config(self):
@@ -1242,6 +1335,45 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "Qwen3-TTS-12Hz-1.7B-Base",
+            "Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            "Qwen3-TTS-12Hz-0.6B-Base",
+            "Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        ],
+    )
+    @pytest.mark.parametrize("device", ["N150", "P150"])
+    def test_qwen3_tts_uses_cpp_server(self, model, device):
+        # Qwen3-TTS is in the dev catalog only.
+        from workflows.model_spec import _MODEL_SPECS_DIR, load_templates_from_yaml
+
+        (model_spec,) = [
+            spec
+            for template in load_templates_from_yaml(
+                _MODEL_SPECS_DIR / "dev" / "audio_tts.yaml", env="dev"
+            )
+            for spec in template.expand_to_specs()
+            if spec.model_name == model and spec.device_type.name == device
+        ]
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "tts"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_qwen3_tts"
+        # The release (Base vs CustomVoice) is derived from the checkpoint id.
+        assert env_vars["HF_MODEL"] == f"Qwen/{model}"
+        assert env_vars["DEVICE_IDS"] == "(0)"
+        # Reproducible audio for the evals, and small /dev/shm queues.
+        assert env_vars["TTS_QWEN3_SEED"] == "0"
+        assert int(env_vars["TTS_TASK_QUEUE_CAPACITY"]) <= 64
+        assert int(env_vars["TTS_AUDIO_QUEUE_CAPACITY"]) <= 64
+        # The C++ parent throws on a non-LLM MODEL value.
+        assert "MODEL" not in env_vars
+
     def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
         """Whisper (uvicorn media server) must place HF_HOME on the cache_root
         volume so weights survive container restarts."""
@@ -1367,6 +1499,80 @@ class TestUtilityFunctions:
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
+
+
+@pytest.mark.parametrize("local_server", [False, True])
+@pytest.mark.parametrize("selection", ["selected", "absent", "native", "rejected"])
+def test_main_forwards_validated_package_weight_source(
+    monkeypatch, tmp_path, local_server, selection
+):
+    """Exercise main's real host-setup call; stop before launching a server."""
+    import run as entrypoint
+
+    args = argparse.Namespace(requirements_doc=None)
+    runtime = MagicMock(
+        docker_server=not local_server,
+        local_server=local_server,
+        host_volume=str(tmp_path / "storage"),
+        host_hf_cache=None,
+        host_weights_dir=None,
+        image_user="1000",
+        workflow="server",
+    )
+    model = MagicMock(model_id="test-model")
+    model.impl.impl_id = "tt_transformers" if selection == "native" else "quetzal"
+    monkeypatch.setattr(entrypoint, "parse_arguments", lambda: args)
+    monkeypatch.setattr(entrypoint, "resolve_runtime", lambda _: (runtime, model))
+    for name in (
+        "handle_maintenance_args",
+        "export_model_specs_json",
+        "bootstrap_uv",
+        "handle_secrets",
+        "setup_run_logger",
+        "ensure_readwriteable_dir",
+    ):
+        monkeypatch.setattr(entrypoint, name, MagicMock())
+    monkeypatch.setattr(entrypoint, "get_current_commit_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        entrypoint, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(entrypoint, "format_cli_args_summary", lambda _: "test")
+    validation = MagicMock()
+    monkeypatch.setattr(entrypoint, "validate_setup", validation)
+
+    selected_mount = object() if selection == "selected" else None
+
+    def resolve(spec, config):
+        validation.assert_called_once()
+        assert spec is model and config is runtime
+        if selection == "rejected":
+            raise ValueError("package selection rejected")
+        return selected_mount
+
+    resolver = MagicMock(side_effect=resolve)
+    monkeypatch.setattr(entrypoint, "resolve_quetzal_package_mount", resolver)
+
+    class SetupReached(Exception):
+        pass
+
+    setup = MagicMock(side_effect=SetupReached)
+    monkeypatch.setattr(entrypoint, "setup_host", setup)
+    if selection == "rejected":
+        with pytest.raises(ValueError, match="package selection rejected"):
+            entrypoint.main()
+        setup.assert_not_called()
+    else:
+        with pytest.raises(SetupReached):
+            entrypoint.main()
+        setup.assert_called_once()
+        kwargs = setup.call_args.kwargs
+        assert kwargs["package_provides_weights"] is (selection == "selected")
+        assert kwargs["model_spec"] is model
+        assert kwargs["host_volume"] == runtime.host_volume
+        assert kwargs["host_weights_dir"] is None
+        assert kwargs["local_server"] is local_server
+        assert kwargs["image_user"] == (None if local_server else "1000")
+    resolver.assert_called_once_with(model, runtime)
 
 
 if __name__ == "__main__":

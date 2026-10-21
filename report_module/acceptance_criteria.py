@@ -4,19 +4,27 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from workflow_module.engine_types import ModelStatusTypes
 
 from .schema import Block, ReportSchema
 from .status import TestStatus, glyph_for_label
 
+# Block.targets key naming the delivery stage a block is graded under:
+# ``{"key", "name", "position"}``. Set for multi-stage requirements runs only.
+STAGE_TARGET_KEY = "stage"
+
 # Three canonical kinds emitted by every runner. Acceptance routes by
 # this field alone — no substring matching, no frozensets, no regex.
 KIND_BENCHMARKS = "benchmarks"
 KIND_EVALS = "evals"
 KIND_SPEC_TESTS = "spec_tests"
+# Sweep-level grading block from the agentic-traces runner, present only
+# when a requirements document stated expected sweep points to grade against.
+KIND_AGENTIC_TRACES_TARGETS = "agentic_traces_targets"
 
 TARGET_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
@@ -25,6 +33,9 @@ FAIL_CHECK_INT = 3
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
+STATUS_PARTIAL = "PARTIAL"
+# Blocker-key prefix for subset (shard / explicit sample list) eval blocks.
+PARTIAL_BLOCKER_PREFIX = "partial:"
 
 # Acceptance severity carried on a block by requirements-driven runs. A
 # "should" failure is informational (waived) rather than a blocker; anything
@@ -75,10 +86,19 @@ def _status_badge(status: str) -> str:
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
 CATEGORY_SPEC_TESTS = "Spec Tests"
+CATEGORY_AGENTIC_TARGETS = "Agentic Targets"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
 
 TASK_BLOCKER_PREFIX = "task"
+
+# A spec block whose data sets NON_BLOCKING_KEY true is informational: a FAIL
+# is waived with NON_BLOCKING_REASON_KEY as the reason (an ERROR still blocks).
+NON_BLOCKING_KEY = "non_blocking"
+NON_BLOCKING_REASON_KEY = "non_blocking_reason"
+# An eval block whose data sets INCOMPLETE_KEY true did not measure the model
+# (e.g. its requests errored); it blocks whatever the tier or a waiver says.
+INCOMPLETE_KEY = "incomplete"
 
 
 @dataclass(frozen=True)
@@ -92,6 +112,16 @@ class CategoryResult:
     blockers: Dict[str, str] = field(default_factory=dict)
     # Would-be blockers dropped because a model_spec known_issues waiver matched.
     waived: Dict[str, str] = field(default_factory=dict)
+    # The subset of ``waived`` that are must-priority evals: waived by a model
+    # status tier ("informational: EXPERIMENTAL") or a known issue. Acceptance
+    # may pass with these; the strict qualification verdict never does.
+    waived_must: Dict[str, str] = field(default_factory=dict)
+    # Must-priority evals that produced no PASS without failing: SKIP (e.g. the
+    # context was too small to run the task) or NA (no published or reference
+    # score to grade against). Acceptance treats these as non-blocking; the
+    # strict qualification verdict does not, because nothing was measured
+    # against a reference.
+    ungraded_must: Dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
@@ -119,7 +149,8 @@ def acceptance_criteria_check(
     categories = [
         _check_benchmarks(schema, model_status),
         _check_evals(schema, known_issues, model_status),
-        _check_spec_tests(schema),
+        _check_spec_tests(schema, known_issues),
+        _check_agentic_targets(schema),
     ]
     blockers: Dict[str, str] = {}
     for category in categories:
@@ -129,6 +160,7 @@ def acceptance_criteria_check(
 
 def task_failure_blockers(
     outcomes: Iterable[Tuple[str, int, bool]],
+    waived_tasks: Iterable[str] = (),
 ) -> Dict[str, str]:
     """Blockers for workflow tasks whose process exited non-zero.
 
@@ -137,10 +169,18 @@ def task_failure_blockers(
     missing category as ``NA`` rather than a failure. Surfacing the raw task
     exit code here keeps the acceptance verdict consistent with the workflow's
     return code so a crash can never be laundered into a silent ``PASS``.
+
+    ``waived_tasks`` names tasks whose non-zero exit is fully explained by
+    failures a known_issues waiver already demoted (see
+    :func:`spec_tasks_explained_by_waivers`); a crash still blocks, because it
+    leaves an ERROR block or no block, which no waiver matches.
     """
     blockers: Dict[str, str] = {}
+    waived = set(waived_tasks)
     for task_type, exit_code, produced_block in outcomes:
         if exit_code == 0:
+            continue
+        if produced_block and task_type in waived:
             continue
         detail = (
             "and produced no report block"
@@ -151,6 +191,40 @@ def task_failure_blockers(
             f"Task '{task_type}' failed (exit={exit_code}) {detail}."
         )
     return blockers
+
+
+def spec_tasks_explained_by_waivers(
+    categories: Iterable[CategoryResult],
+    schema: ReportSchema,
+    known_issues: Optional[Iterable[Any]] = None,
+) -> set:
+    """Task types whose exit code only reflects known_issues-waived failures.
+
+    run_spec_tests exits non-zero for any failing case, before waivers are
+    applied. When the Spec Tests category has no blocker, at least one waiver
+    and no ERROR (an error is never waived), that exit is fully explained --
+    but only if EVERY blocking spec_tests block is waived. The graded category
+    drops INFRA_TASK_TYPES blocks, while run_spec_tests still counts their
+    failures in the exit code, so they are re-checked here from the schema.
+    """
+    explained = any(
+        category.name == CATEGORY_SPEC_TESTS
+        and category.status == STATUS_PASS
+        and category.waived
+        and not category.blockers
+        for category in categories
+    )
+    if not explained:
+        return set()
+    for block in schema.sections:
+        if block.kind != KIND_SPEC_TESTS or not isinstance(block.data, Mapping):
+            continue
+        status = _block_test_status(block)
+        if not status.is_blocking:
+            continue
+        if status is not TestStatus.FAIL or _spec_waiver(block, known_issues) is None:
+            return set()
+    return {KIND_SPEC_TESTS}
 
 
 def _find_waiver(
@@ -193,7 +267,123 @@ ACCEPTANCE_EXPORT_KEYS = (
     "acceptance_blockers",
     "acceptance_criteria_metadata",
     "acceptance_summary_markdown",
+    "acceptance_stages",
 )
+
+
+@dataclass
+class StageResult:
+    """One delivery stage's verdict, graded on the blocks tagged with it."""
+
+    key: str
+    name: str
+    position: int
+    accepted: bool
+    blockers: Dict[str, str]
+    categories: List[CategoryResult]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "key": self.key,
+            "name": self.name,
+            "position": self.position,
+            "status": STATUS_PASS if self.accepted else STATUS_FAIL,
+            "blockers": dict(self.blockers),
+            "categories": [category.to_dict() for category in self.categories],
+        }
+
+
+def _block_stage(block: Block) -> Optional[Mapping[str, Any]]:
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    stage = targets.get(STAGE_TARGET_KEY)
+    return stage if isinstance(stage, Mapping) and stage.get("key") else None
+
+
+def stage_results(
+    schema: ReportSchema,
+    overall_blockers: Mapping[str, str],
+    *,
+    known_issues: Optional[Iterable[Any]] = None,
+    model_status: Optional[str] = None,
+) -> List[StageResult]:
+    """Each tagged stage graded by the usual checks on its own blocks.
+
+    The overall verdict stays authoritative: a stage keeps only the blockers
+    the overall result still has, so a waiver applied there holds here too.
+    Untagged blocks count toward the overall verdict only.
+    """
+    stages: Dict[str, Mapping[str, Any]] = {}
+    for block in schema.sections:
+        stage = _block_stage(block)
+        if stage is not None:
+            stages.setdefault(str(stage["key"]), stage)
+    results: List[StageResult] = []
+    for key, stage in sorted(stages.items(), key=lambda kv: kv[1].get("position", 0)):
+        subset = ReportSchema(
+            metadata=schema.metadata,
+            sections=[
+                b for b in schema.sections if (_block_stage(b) or {}).get("key") == key
+            ],
+        )
+        _, blockers, categories = acceptance_criteria_check(
+            subset, known_issues=known_issues, model_status=model_status
+        )
+        kept = {k: v for k, v in blockers.items() if k in overall_blockers}
+        results.append(
+            StageResult(
+                key=key,
+                name=str(stage.get("name") or key),
+                position=int(stage.get("position") or 0),
+                accepted=not kept,
+                blockers=kept,
+                categories=[c for c in categories if c.total],
+            )
+        )
+    return results
+
+
+def strict_qualification(
+    accepted: bool, categories: Sequence[CategoryResult]
+) -> Dict[str, Any]:
+    """The verdict a qualification count may use: acceptance with every
+    must-eval graded PASS, none waived and none left ungraded (SKIP or NA).
+
+    Acceptance lets a model-status tier (EXPERIMENTAL: "eval failures are
+    informational") or a known issue turn a failed must-eval into a waiver.
+    That is a deployment policy. It is not evidence that the model reproduces
+    its reference, so a pass that rests on such a waiver is never a
+    qualification pass.
+
+    Likewise a must-eval that was skipped or had no score to grade against
+    (NA) is not a failure, so acceptance may pass with it, but it is not a
+    measurement either, so it is never a qualification pass.
+    """
+    waived_must = {
+        key: message
+        for category in categories
+        if category.name == CATEGORY_EVALS
+        for key, message in category.waived_must.items()
+    }
+    ungraded_must = {
+        key: message
+        for category in categories
+        if category.name == CATEGORY_EVALS
+        for key, message in category.ungraded_must.items()
+    }
+    return {
+        "strict_pass": bool(accepted) and not waived_must and not ungraded_must,
+        "waived_must_evals": waived_must,
+        "ungraded_must_evals": ungraded_must,
+    }
+
+
+def overall_status(accepted: bool, blockers: Mapping[str, str]) -> str:
+    """PASS, FAIL, or PARTIAL when the only blockers are subset eval runs."""
+    if accepted:
+        return STATUS_PASS
+    if blockers and all(k.startswith(PARTIAL_BLOCKER_PREFIX) for k in blockers):
+        return STATUS_PARTIAL
+    return STATUS_FAIL
 
 
 def build_acceptance_export(
@@ -201,18 +391,21 @@ def build_acceptance_export(
     blockers: Mapping[str, str],
     categories: List[CategoryResult],
     model_status: str | None = None,
+    stages: Sequence[StageResult] = (),
 ) -> Dict[str, Any]:
     return {
         "acceptance_criteria": accepted,
         "acceptance_blockers": dict(blockers),
         "acceptance_criteria_metadata": {
-            "enforcement_result": STATUS_PASS if accepted else STATUS_FAIL,
+            "enforcement_result": overall_status(accepted, blockers),
             "model_status": model_status or "",
             "categories": [category.to_dict() for category in categories],
+            "qualification": strict_qualification(accepted, categories),
         },
         "acceptance_summary_markdown": format_acceptance_summary_markdown(
-            accepted, blockers, categories, model_status
+            accepted, blockers, categories, model_status, stages
         ),
+        "acceptance_stages": [stage.to_dict() for stage in stages],
     }
 
 
@@ -221,18 +414,39 @@ def format_acceptance_summary_markdown(
     blockers: Mapping[str, str],
     categories: List[CategoryResult],
     model_status: str | None = None,
+    stages: Sequence[StageResult] = (),
 ) -> str:
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Acceptance status: {_status_badge(STATUS_PASS if accepted else STATUS_FAIL)}",
+        f"- Acceptance status: {_status_badge(overall_status(accepted, blockers))}",
     ]
     if model_status:
         lines.append(f"- Model status: `{model_status}`")
+    strict = strict_qualification(accepted, categories)
+    lines.append(
+        "- Qualification (every must-eval passes unwaived): "
+        f"{_status_badge(STATUS_PASS if strict['strict_pass'] else STATUS_FAIL)}"
+    )
     for category in categories:
         lines.append(
             f"- {category.name}: {_status_badge(category.status)} ({_detail(category)})"
         )
+    if stages:
+        lines += [
+            "",
+            "#### Delivery stages",
+            "",
+            "| Stage | Status | Graded |",
+            "|---|---|---|",
+        ]
+        for stage in stages:
+            graded = "; ".join(f"{c.name} {_detail(c)}" for c in stage.categories)
+            lines.append(
+                f"| {stage.position}. {stage.name} | "
+                f"{_status_badge(STATUS_PASS if stage.accepted else STATUS_FAIL)} | "
+                f"{graded or 'no blocks present'} |"
+            )
 
     if not blockers:
         lines.append("- All acceptance criteria passed.")
@@ -290,10 +504,50 @@ def _check_benchmarks(
     failed = 0
     skipped = 0
     na = 0
-    for block in benchmark_blocks:
+    key_counts = Counter(_block_key(block) for block in benchmark_blocks)
+    for index, block in enumerate(benchmark_blocks, start=1):
         block_key = _block_key(block)
+        if key_counts[block_key] > 1:
+            dimensions = ",".join(
+                f"{key}={_resolve_nested(block.data, key)}"
+                for key in (
+                    "requested_concurrency",
+                    "requested_input_sequence_length",
+                    "requested_output_sequence_length",
+                    "concurrency",
+                    "input_sequence_length",
+                    "output_sequence_length",
+                )
+                if _resolve_nested(block.data, key) is not None
+            )
+            block_key += f"[point={index}{',' + dimensions if dimensions else ''}]"
 
         explicit = _explicit_status(block)
+        if explicit is TestStatus.SKIP:
+            skipped += 1
+            continue
+
+        request_failure = _request_failure(block)
+        if request_failure is not None:
+            if _block_priority(block) == PRIORITY_SHOULD:
+                waived[block_key] = f"{request_failure} {_should_priority_suffix()}"
+            else:
+                blockers[f"{block_key}.requests"] = request_failure
+                failed += 1
+            continue
+
+        target_checks = _resolve_nested(block.data, "target_checks")
+        if (
+            explicit is TestStatus.NA
+            and isinstance(target_checks, Mapping)
+            and any(
+                name.endswith(CHECK_SUFFIX) and _has_target(level, name)
+                for level in target_checks.values()
+                if isinstance(level, Mapping)
+                for name in level
+            )
+        ):
+            explicit = None
         if explicit is not None:
             if explicit.is_blocking and _block_priority(block) == PRIORITY_SHOULD:
                 waived[block_key] = (
@@ -305,17 +559,12 @@ def _check_benchmarks(
                     f"{block.title or block.kind} reported status={explicit.value}"
                 )
                 failed += 1
-            elif explicit is TestStatus.SKIP:
-                skipped += 1
             elif explicit is TestStatus.NA:
                 na += 1
             continue
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
-        # Per-metric severities stamped by apply_target_checks (requirements-
-        # driven runs mixing must/should targets in one sweep point), keyed by
-        # target_checks field name (e.g. "goodput").
         metric_priorities = (
             block.data.get("target_priorities")
             if isinstance(block.data, Mapping)
@@ -323,17 +572,10 @@ def _check_benchmarks(
         )
         if not isinstance(metric_priorities, Mapping):
             metric_priorities = {}
-        target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
                 "Missing target_checks in benchmark block."
             )
-        elif any(
-            isinstance(target_checks.get(lvl), Mapping)
-            and _level_passes(target_checks[lvl])
-            for lvl in TARGET_LEVELS
-        ):
-            pass
         else:
             any_check_seen = False
             for lvl in TARGET_LEVELS:
@@ -344,11 +586,19 @@ def _check_benchmarks(
                     if not check_name.endswith(CHECK_SUFFIX):
                         continue
                     any_check_seen = True
-                    if not _passes_check(check_value):
+                    missing_measurement = (
+                        _has_target(level_checks, check_name)
+                        and _check_state(check_value) == STATUS_NA
+                    )
+                    if missing_measurement or not _passes_check(check_value):
                         metric = check_name[: -len(CHECK_SUFFIX)]
                         failure = _format_benchmark_failure(
                             lvl, check_name, metric, level_checks
                         )
+                        if missing_measurement:
+                            failure = (
+                                f"{lvl} {metric}: configured target has no measurement."
+                            )
                         key = f"{block_key}.{lvl}.{check_name}"
                         if lvl not in enforced_tiers:
                             block_informational[key] = failure
@@ -356,9 +606,6 @@ def _check_benchmarks(
                             str(metric_priorities.get(metric, "")).strip().lower()
                             == PRIORITY_SHOULD
                         ):
-                            # A "should" metric failure is informational even in
-                            # an enforced tier; the point's other (must) metrics
-                            # still block.
                             block_informational[key] = (
                                 f"{failure} {_should_priority_suffix()}"
                             )
@@ -416,9 +663,12 @@ def _check_evals(
     evals_enforced = _evals_enforced(model_status)
     blockers: Dict[str, str] = {}
     waived: Dict[str, str] = {}
+    waived_must: Dict[str, str] = {}
+    ungraded_must: Dict[str, str] = {}
     failed = 0
     na = 0
     skipped = 0
+    partial = 0
     for block in eval_blocks:
         block_key = _block_key(block)
         data = block.data if isinstance(block.data, Mapping) else None
@@ -427,6 +677,16 @@ def _check_evals(
         # decisive — a test that self-reported failure is a blocker regardless
         # of any accuracy_check value alongside it.
         message: Optional[str] = None
+        if data is not None and data.get(INCOMPLETE_KEY) is True:
+            # Ran but produced no real answers for some samples (every errored
+            # request is scored as a wrong answer). Not a measurement, so no
+            # model-status tier, priority or known issue may waive it.
+            blockers[block_key] = (
+                f"{block.title or block.kind} is incomplete: "
+                f"{data.get('reason') or 'inference errors in its samples'}"
+            )
+            failed += 1
+            continue
         explicit = _explicit_status(block)
         if explicit is not None:
             if explicit.is_blocking:
@@ -438,6 +698,8 @@ def _check_evals(
                     waived[block_key] = (
                         f"{explicit_message} {_informational_suffix(model_status)}"
                     )
+                    if _block_priority(block) != PRIORITY_SHOULD:
+                        waived_must[block_key] = waived[block_key]
                 elif _block_priority(block) == PRIORITY_SHOULD:
                     waived[block_key] = (
                         f"{explicit_message} {_should_priority_suffix()}"
@@ -445,10 +707,28 @@ def _check_evals(
                 else:
                     blockers[block_key] = explicit_message
                     failed += 1
+            elif explicit is TestStatus.PARTIAL:
+                # Never waivable, never informational: a subset is not a verdict.
+                partial += 1
+                blockers[f"{PARTIAL_BLOCKER_PREFIX}{block_key}"] = (
+                    f"{block.title or block.kind} graded a subset of the samples "
+                    f"({(data or {}).get('reason', 'partial run')}); only the merged "
+                    "full-set report can pass"
+                )
             elif explicit is TestStatus.SKIP:
                 skipped += 1
+                if _block_priority(block) != PRIORITY_SHOULD:
+                    ungraded_must[block_key] = (
+                        f"{block.title or block.kind} reported status=skip "
+                        f"({(data or {}).get('reason') or 'not run'})"
+                    )
             elif explicit is TestStatus.NA:
                 na += 1
+                if _block_priority(block) != PRIORITY_SHOULD:
+                    ungraded_must[block_key] = (
+                        f"{block.title or block.kind} reported status=na "
+                        f"({(data or {}).get('reason') or 'no score to grade against'})"
+                    )
             continue
 
         # success=False is decisive — a test that self-reported failure
@@ -468,6 +748,11 @@ def _check_evals(
                     message = "Accuracy check failed."
                 elif state == STATUS_NA:
                     na += 1
+                    if _block_priority(block) != PRIORITY_SHOULD:
+                        ungraded_must[block_key] = (
+                            f"{block.title or block.kind} accuracy_check NA "
+                            "(no published or GPU reference score)"
+                        )
 
         if message is None:
             continue
@@ -479,10 +764,14 @@ def _check_evals(
         reason = _find_waiver(known_issues, "EVALS", task_name)
         if reason is not None:
             waived[block_key] = f"{message} (waived: {reason})"
+            if _block_priority(block) != PRIORITY_SHOULD:
+                waived_must[block_key] = waived[block_key]
             continue
 
         if not evals_enforced:
             waived[block_key] = f"{message} {_informational_suffix(model_status)}"
+            if _block_priority(block) != PRIORITY_SHOULD:
+                waived_must[block_key] = waived[block_key]
             continue
 
         # A requirements-driven "should" eval is informational, not a blocker.
@@ -496,6 +785,8 @@ def _check_evals(
     non_pass = failed + na + skipped
     if failed:
         status = STATUS_FAIL
+    elif partial:
+        status = STATUS_PARTIAL
     elif na == len(eval_blocks) or (skipped and non_pass == len(eval_blocks)):
         status = STATUS_NA
     else:
@@ -504,15 +795,109 @@ def _check_evals(
         CATEGORY_EVALS,
         status,
         len(eval_blocks),
-        failed,
+        failed + partial,
         na=na,
         skipped=skipped,
         blockers=blockers,
         waived=waived,
+        waived_must=waived_must,
+        ungraded_must=ungraded_must,
     )
 
 
-def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
+def _spec_failing_cases(block: Block) -> Optional[List[str]]:
+    """Names of the non-passing test cases a spec block reports, or None.
+
+    VLLMParamConformanceTest reports one row per pytest function in
+    ``parameter_conformance_summary`` (``{"test_case", "status", "summary"}``).
+    A block without that per-case breakdown returns None: nothing finer than
+    the whole block can then be matched against a waiver.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    rows = data.get("parameter_conformance_summary")
+    if not isinstance(rows, list) or not rows:
+        return None
+    failing = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not row.get("test_case"):
+            return None
+        # Rows are exactly PASS, FAIL or SKIP; a SKIP ran nothing, so it needs no waiver.
+        if "FAIL" in str(row.get("status", "")).upper():
+            failing.append(str(row["test_case"]))
+    return failing
+
+
+def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optional[str]:
+    """Reason(s) when every failure in a blocking spec block is a known issue.
+
+    Mirrors the EVALS waiver: a model_spec ``known_issues`` entry with
+    workflow_type SPEC_TESTS waives exactly the test case its ``task_name``
+    names (e.g. ``test_penalties``); one with no ``task_name`` waives the
+    workflow. A single unwaived failing case keeps the block a blocker.
+
+    A ``task_name`` may instead name ONE parametrization exactly as pytest
+    reports it (e.g. ``test_penalties[presence_penalty-1.2-repeat_trap-messages0]``).
+    It waives a failing test case only when every failing parametrization of
+    that case in ``detailed_test_results`` is named by such a waiver, so any
+    other parametrization of the same function that fails still blocks.
+
+    A block that declares itself non-blocking (``NON_BLOCKING_KEY``, set from
+    its suite ``test_config``) is waived whatever failed.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    if data.get(NON_BLOCKING_KEY) is True:
+        return str(data.get(NON_BLOCKING_REASON_KEY) or "non-blocking test")
+    whole = _find_waiver(known_issues, "SPEC_TESTS", None)
+    if whole is not None:
+        return whole
+    failing = _spec_failing_cases(block)
+    if not failing:
+        return None
+    reasons = []
+    for case in failing:
+        reason = _find_waiver(known_issues, "SPEC_TESTS", case)
+        if reason is not None:
+            reasons.append(f"{case}: {reason}")
+            continue
+        params = _spec_failing_parametrizations(block, case)
+        if not params:
+            return None
+        for param in params:
+            reason = _find_waiver(known_issues, "SPEC_TESTS", param)
+            if reason is None:
+                return None
+            reasons.append(f"{param}: {reason}")
+    return "; ".join(reasons)
+
+
+def _spec_failing_parametrizations(block: Block, case: str) -> Optional[List[str]]:
+    """Failing parametrization ids of one test case, or None if unreported.
+
+    VLLMParamConformanceTest reports one ``detailed_test_results`` row per
+    parametrization (``{"test_case", "parametrization", "status", ...}``),
+    ``parametrization`` being pytest's node name. A missing or malformed
+    breakdown returns None, so no parametrization-scoped waiver can match.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    rows = data.get("detailed_test_results")
+    if not isinstance(rows, list) or not rows:
+        return None
+    failing = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not row.get("test_case"):
+            return None
+        if str(row["test_case"]) != case:
+            continue
+        if "FAIL" in str(row.get("status", "")).upper():
+            if not row.get("parametrization"):
+                return None
+            failing.append(str(row["parametrization"]))
+    return failing or None
+
+
+def _check_spec_tests(
+    schema: ReportSchema, known_issues: Optional[Iterable[Any]] = None
+) -> CategoryResult:
     spec_blocks = [
         b
         for b in schema.sections
@@ -524,16 +909,26 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         return CategoryResult(CATEGORY_SPEC_TESTS, STATUS_NA, 0, 0)
 
     blockers: Dict[str, str] = {}
+    waived: Dict[str, str] = {}
     failed = 0
     skipped = 0
     na = 0
     for block in spec_blocks:
         test_status = _block_test_status(block)
         if test_status.is_blocking:
-            blockers[f"spec.{_block_key(block)}"] = (
+            message = (
                 f"{block.title or block.kind} reported status={test_status.value} "
                 f"(attempts={block.data.get('attempts', '?')})"
             )
+            reason = (
+                _spec_waiver(block, known_issues)
+                if test_status is TestStatus.FAIL
+                else None
+            )
+            if reason is not None:
+                waived[f"spec.{_block_key(block)}"] = f"{message} (waived: {reason})"
+                continue
+            blockers[f"spec.{_block_key(block)}"] = message
             failed += 1
         elif test_status is TestStatus.SKIP:
             skipped += 1
@@ -548,6 +943,97 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         failed,
         na=na,
         skipped=skipped,
+        blockers=blockers,
+        waived=waived,
+    )
+
+
+def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
+    """Grade the agentic-traces targets blocks from requirements-driven runs.
+
+    Each block carries the sweep's precomputed verdicts (see
+    ``build_targets_blocks``): one entry per measured concurrency plus the
+    document points the sweep never reached. The count is per measured point
+    (``2/3 passed`` reads as "two concurrencies met their targets"), and a
+    point blocks when any graded metric missed. A point where the document
+    declared no targets (``passed`` is None) is skipped entirely -- an empty
+    point promises nothing, so there is nothing to fail. Unmeasured document
+    points block too -- a partial sweep is not a passed one -- but stay out
+    of the count: never-measured is a different story from measured-and-
+    missed, and the blocker names them. No blocks means the run had no
+    expectations to grade against (a catalog run), so the category is NA
+    rather than PASS.
+    """
+    targets_blocks = [
+        b
+        for b in schema.sections
+        if b.kind == KIND_AGENTIC_TRACES_TARGETS and isinstance(b.data, Mapping)
+    ]
+    if not targets_blocks:
+        return CategoryResult(CATEGORY_AGENTIC_TARGETS, STATUS_NA, 0, 0)
+
+    blockers: Dict[str, str] = {}
+    total = 0
+    failed = 0
+    any_missing = False
+    for block in targets_blocks:
+        block_key = _block_key(block)
+        stage = _block_stage(block)
+        if stage is not None:
+            # One targets block per stage: keep their blocker keys apart.
+            block_key = f"{block_key}[{stage['key']}]"
+        data = block.data
+        points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
+        missing = [c for c in data.get("missing_concurrencies") or []]
+        for point in points:
+            passed = point.get("passed")
+            if passed is None:
+                # The document declared no gradable targets at this
+                # concurrency: nothing to pass or fail, so the point stays
+                # out of the count and raises no blocker.
+                continue
+            total += 1
+            if passed:
+                continue
+            failed += 1
+            concurrency = point.get("concurrency")
+            met = point.get("met") or 0
+            graded = point.get("graded") or 0
+            if not graded:
+                # Targets were declared but the run produced none of them:
+                # the gap is the run's, not the document's.
+                blockers[f"{block_key}.c{concurrency}"] = (
+                    f"Agentic targets at concurrency {concurrency}: the run "
+                    "produced none of the declared metrics."
+                )
+                continue
+            # A soft miss is reported in the table but is not why a point fails.
+            offenders = [
+                str(v.get("field"))
+                for v in point.get("verdicts") or []
+                if isinstance(v, Mapping)
+                and v.get("passed") is False
+                and not v.get("soft")
+            ]
+            suffix = f" ({', '.join(offenders[:3])}, ...)" if offenders else ""
+            blockers[f"{block_key}.c{concurrency}"] = (
+                f"Agentic targets missed at concurrency {concurrency}: "
+                f"{met}/{graded} targets met{suffix}."
+            )
+        if missing:
+            any_missing = True
+            listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+            blockers[f"{block_key}.missing"] = (
+                f"Requirements document expects agentic sweep points {listed}, "
+                "which were never measured."
+            )
+
+    status = STATUS_FAIL if failed or any_missing else STATUS_PASS
+    return CategoryResult(
+        CATEGORY_AGENTIC_TARGETS,
+        status,
+        total,
+        failed,
         blockers=blockers,
     )
 
@@ -618,6 +1104,26 @@ def _level_passes(level_checks: Mapping[str, Any]) -> bool:
     return bool(check_values) and all(_passes_check(v) for v in check_values)
 
 
+def _has_target(level: Mapping[str, Any], check_name: str) -> bool:
+    value = level.get(check_name[: -len(CHECK_SUFFIX)])
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _request_failure(block: Block) -> str | None:
+    """Return a blocker when a benchmark did not complete every request."""
+    completed = _resolve_nested(block.data, "num_requests")
+    failed = _resolve_nested(block.data, "error_request_count")
+    if (
+        isinstance(completed, (int, float))
+        and not isinstance(completed, bool)
+        and completed <= 0
+    ):
+        return "Benchmark completed zero requests; at least one is required."
+    if isinstance(failed, (int, float)) and not isinstance(failed, bool) and failed > 0:
+        return f"{int(failed)} request(s) failed at this point; zero are required."
+    return None
+
+
 def _resolve_nested(data: Any, key: str) -> Any:
     if not isinstance(data, Mapping):
         return None
@@ -673,14 +1179,19 @@ __all__ = [
     "format_acceptance_summary_markdown",
     "ACCEPTANCE_EXPORT_KEYS",
     "CategoryResult",
+    "STAGE_TARGET_KEY",
+    "StageResult",
+    "stage_results",
     "KIND_BENCHMARKS",
     "KIND_EVALS",
     "KIND_SPEC_TESTS",
+    "KIND_AGENTIC_TRACES_TARGETS",
     "STATUS_PASS",
     "STATUS_FAIL",
     "STATUS_NA",
     "CATEGORY_BENCHMARKS",
     "CATEGORY_EVALS",
     "CATEGORY_SPEC_TESTS",
+    "CATEGORY_AGENTIC_TARGETS",
     "INFRA_TASK_TYPES",
 ]

@@ -16,7 +16,7 @@ so the per-block ``Block.targets`` doesn't have to duplicate it.
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Callable, List, Mapping, Optional, Sequence
 
 from report_module.schema import Block, ReportSchema
 from utils.model_naming import slugify_model_id
@@ -32,11 +32,23 @@ class BlockAccumulator:
     ``envelope`` passed to :meth:`accept` wins and becomes the schema's
     top-level ``metadata`` — keeping the envelope stable even when later
     accept calls supply different (or no) envelope dicts.
+
+    An optional ``on_accept`` hook (:meth:`set_on_accept`) runs after every
+    :meth:`accept`; ``WorkflowExecution`` uses it to checkpoint the report so a
+    killed run still leaves one behind.
     """
 
     def __init__(self) -> None:
         self._blocks: List[Block] = []
         self._envelope: dict = {}
+        self._on_accept: Optional[Callable[[], None]] = None
+
+    def set_on_accept(
+        self, hook: Optional[Callable[[], None]]
+    ) -> Optional[Callable[[], None]]:
+        """Install ``hook`` (``None`` uninstalls); return the one it replaces."""
+        previous, self._on_accept = self._on_accept, hook
+        return previous
 
     def accept(
         self,
@@ -65,6 +77,13 @@ class BlockAccumulator:
                 block.id,
                 dict(block.targets) if block.targets else {},
             )
+        if self._on_accept is not None:
+            try:
+                self._on_accept()
+            except Exception:
+                # The Blocks are already recorded; a failed hook must never
+                # cost the sweep its data.
+                logger.exception("BlockAccumulator on_accept hook failed")
 
     def clear(self) -> None:
         self._blocks.clear()

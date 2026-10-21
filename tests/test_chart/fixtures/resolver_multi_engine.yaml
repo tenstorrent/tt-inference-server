@@ -1,0 +1,53 @@
+# Synthetic resolver fixture — overlaid on the chart's values.yaml.
+#
+# It supplies one model ("resolver-multi-engine-fixture") whose `t3k` device is
+# served by BOTH vllm and media, so the resolver's engine tie-break (default →
+# vllm) and explicit `engine=media` override can be exercised directly. No model
+# in the real catalogue has a single device under two engines, so this overlay
+# provides one rather than relying on catalogue coincidence.
+models:
+  resolver-multi-engine-fixture:
+    defaultEngine: vllm
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.0.0-fixture
+            resources:
+              requests:
+                memory: 20Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+    media:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.0.0-fixture
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml

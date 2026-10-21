@@ -44,7 +44,10 @@ from llm_module.drivers.swo_bench_agentic_traces import (
 from llm_module.drivers.swo_bench_agentic_traces import (
     _invalid_result_reason as _swo_invalid_result_reason,
 )
-from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.aiperf_agentic_traces import (
+    AIPerfAgenticTracesParser,
+    build_targets_blocks,
+)
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from reference_config.agentic_traces.agentic_traces_config import (
     AGENTIC_TRACES_CONFIGS,
@@ -56,10 +59,12 @@ from reference_config.agentic_traces.agentic_traces_config import (
     get_agentic_traces_config,
     resolve_run_specs,
 )
+from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
-KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
-KIMI_PINNED_REF = "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a"
+KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
+# InferenceX #2829, the commit SemiAnalysis's B300 GLM agentic sweep landed as.
+KIMI_PINNED_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
 
 class _FakeDeviceModelSpec:
@@ -100,6 +105,12 @@ class TestConfigRegistry:
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
             assert config.inferencex_git_ref.strip(), f"{model_id} has no git ref"
             assert config.runs, f"{model_id} has no runs"
+
+    def test_every_agentx_config_shares_one_pin(self):
+        """Numbers are only comparable across models run on the same client."""
+        for model_id, config in AGENTIC_TRACES_CONFIGS.items():
+            if TraceSource.INFERENCEX_AGENTX in config.trace_sources():
+                assert config.inferencex_git_ref == KIMI_PINNED_REF, model_id
 
     def test_registry_is_keyed_by_the_config_model_id(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
@@ -190,7 +201,7 @@ class TestModeResolution:
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
         assert run.benchmark_duration == 3600
-        assert run.warmup_requests_per_lane == 14
+        assert run.warmup_requests_per_lane == 10
         assert run.num_dataset_entries == 393
         assert run.mode is AgenticTracesMode.FULL
 
@@ -381,6 +392,10 @@ class TestRunSpecValidation:
         with pytest.raises(ValueError, match="failed_request_threshold"):
             AgenticTracesRunSpec(failed_request_threshold=10)
 
+    def test_non_positive_idle_gap_cap_is_rejected(self):
+        with pytest.raises(ValueError, match="trace_idle_gap_cap_seconds"):
+            AgenticTracesRunSpec(trace_idle_gap_cap_seconds=0)
+
     def test_inverted_trajectory_ratios_are_rejected(self):
         with pytest.raises(ValueError, match="trajectory ratios"):
             AgenticTracesRunSpec(
@@ -468,6 +483,20 @@ class TestAiperfCommand:
             artifact_dir=Path("/tmp/artifacts"),
         )
         assert "--no-gpu-telemetry" not in cmd
+
+    def test_idle_gap_cap_defaults_to_the_inferencex_value(self):
+        cmd = self._cmd()
+        assert cmd[cmd.index("--trace-idle-gap-cap-seconds") + 1] == "300"
+
+    def test_idle_gap_cap_is_omitted_when_disabled(self):
+        """Pins before agentx-v1.0.0 reject the flag outright."""
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(trace_idle_gap_cap_seconds=None),),
+        )
+        run = build_runs(config, _FakeModelSpec())[0]
+        assert "--trace-idle-gap-cap-seconds" not in self._cmd(run=run)
 
     def test_no_server_metrics_flag_without_explicit_urls(self):
         """AIPerf already derives <url>/metrics; the flag is only for extras."""
@@ -627,7 +656,12 @@ class TestOutputParsing:
         assert metrics["mean_tpot_ms"] == 15.02
         assert metrics["median_e2el_ms"] == 10016.63
         assert metrics["output_token_throughput_per_user"] == 119.49
-        assert metrics["e2e_output_token_throughput_per_user"] == 40.41
+        assert metrics["mean_e2e_norm_intvty"] == 40.41
+        # E2E normalized interactivity is a rate, so its slow tail is the
+        # bottom of the distribution: p90 reads AIPerf's p10, not its p90.
+        assert metrics["p75_e2e_norm_intvty"] == 3019.83
+        assert metrics["p90_e2e_norm_intvty"] == 2215.77
+        assert metrics["p95_e2e_norm_intvty"] == 1813.5
         assert metrics["measured_benchmark_duration"] == 3605.47
 
     def test_distinguishes_successful_from_completed_counts(self, tmp_path):
@@ -712,6 +746,51 @@ class TestOutputParsing:
         assert "error_summary" not in metrics
         assert "branch_children_spawned" not in metrics
         assert metrics["completed"] == 10
+
+    def test_metrics_the_export_lacks_are_omitted_not_zeroed(self, tmp_path):
+        """A missing tag is not a measured 0.0.
+
+        Downstream, the sweep export omits what a run did not produce and the
+        requirements grading compares against targets -- a defaulted 0.0 would
+        pass any lower-is-better latency target vacuously.
+        """
+        (tmp_path / "profile_export_aiperf.json").write_text(
+            json.dumps(
+                {
+                    "time_to_first_token": {"unit": "ms", "avg": 100.0, "p50": 90.0},
+                    "request_count": {"unit": "requests", "avg": 10.0},
+                }
+            )
+        )
+        metrics = parse_aiperf_output(tmp_path)
+
+        assert metrics["mean_ttft_ms"] == 100.0
+        # absent from the export -> absent from the metrics, not 0.0
+        assert "p95_ttft_ms" not in metrics
+        assert "p99_ttft_ms" not in metrics
+        assert "mean_tpot_ms" not in metrics
+        assert "p95_isl" not in metrics
+        assert "theoretical_prefix_cache_hit_pct" not in metrics
+        assert "goodput" not in metrics
+        # counts still default to zero: an absent counter means zero happened
+        assert metrics["error_request_count"] == 0
+        assert metrics["context_overflow_count"] == 0
+
+    def test_omitted_metrics_stay_off_the_sweep_point(self, tmp_path):
+        """The real parse -> sweep-point path, not a hand-built sparse dict."""
+        from llm_module.agentic_traces.sweep_export import to_agentic_sweep_point
+
+        (tmp_path / "profile_export_aiperf.json").write_text(
+            json.dumps(
+                {
+                    "time_to_first_token": {"unit": "ms", "avg": 100.0},
+                    "request_count": {"unit": "requests", "avg": 10.0},
+                }
+            )
+        )
+        point = to_agentic_sweep_point(parse_aiperf_output(tmp_path), concurrency=1)
+
+        assert point == {"concurrency": 1, "ttftMeanMs": 100.0}
 
 
 def _server_metrics_export(**overrides):
@@ -956,6 +1035,112 @@ class TestParser:
         block = AIPerfAgenticTracesParser().parse({"model_id": "m"})
         assert "error_rate" not in block.data
         assert "submission_status" not in block.data
+
+
+class TestBuildTargetsBlock:
+    """The sweep-level grading block: verdicts precomputed into block data."""
+
+    _EXPECTED = (
+        {
+            "concurrency": 1,
+            "ttftMeanMs": 8000.0,  # measured 100 -> pass
+            "tpotMeanMs": 3.0,  # measured 11.8 -> fail
+            "goodputPct": 90.0,  # unmeasured -> ungraded
+            "inputTokensMean": 999999.0,  # never graded
+        },
+        {"concurrency": 64, "ttftMeanMs": 700.0},  # never measured -> missing
+    )
+
+    def _payload(self, concurrency=1, **overrides):
+        payload = {
+            "model_id": "moonshotai/Kimi-K2.7-Code",
+            "date": "20260727-120000",
+            "trace_source": "inferencex_agentx",
+            "concurrency": concurrency,
+            "mean_ttft_ms": 100.0,
+            "mean_tpot_ms": 11.8,
+            "expected_sweep": [dict(point) for point in self._EXPECTED],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_none_without_expectations(self):
+        assert build_targets_blocks([self._payload(expected_sweep=None)]) == []
+
+    def test_block_shape_and_verdicts(self):
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
+
+        assert "stage" not in block.targets
+        assert block.kind == "agentic_traces_targets"
+        assert block.targets["model"] == "moonshotai/Kimi-K2.7-Code"
+        assert block.targets["device"] == "super_cluster"
+        assert block.targets["timestamp"] == "2026-07-27 12:00:00"
+        (point,) = block.data["points"]
+        assert point["concurrency"] == 1
+        assert point["met"] == 1
+        assert point["graded"] == 2
+        assert point["passed"] is False
+        verdicts = {v["field"]: v for v in point["verdicts"]}
+        assert verdicts["ttftMeanMs"]["passed"] is True
+        assert verdicts["tpotMeanMs"]["passed"] is False
+        assert verdicts["goodputPct"]["passed"] is None
+        assert "inputTokensMean" not in verdicts
+        assert block.data["missing_concurrencies"] == [64]
+
+    def test_data_survives_a_json_round_trip(self):
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
+
+        restored = Block.from_dict(json.loads(json.dumps(block.to_dict())))
+
+        assert restored.data == block.data
+
+    def test_one_block_per_delivery_stage(self):
+        """A multi-stage document's sweep is graded per stage, each block tagged."""
+        poc = {"key": "poc", "name": "PoC", "position": 1}
+        ga = {"key": "ga", "name": "GA", "position": 2}
+        expected = [
+            {"concurrency": 1, "ttftMeanMs": 800.0, "stage": poc},
+            {"concurrency": 4, "ttftMeanMs": 800.0, "stage": ga},
+        ]
+        payloads = [
+            self._payload(concurrency=1, expected_sweep=expected),
+            self._payload(concurrency=4, expected_sweep=expected),
+        ]
+
+        blocks = build_targets_blocks(payloads, device="super_cluster")
+
+        assert [b.targets["stage"] for b in blocks] == [poc, ga]
+        assert [[p["concurrency"] for p in b.data["points"]] for b in blocks] == [
+            [1],
+            [4],
+        ]
+        assert len({b.id for b in blocks}) == 2
+
+    def test_grades_a_partial_sweep(self):
+        """A sweep that lost a point still grades the ones that ran."""
+        expected = [
+            dict(self._EXPECTED[0]),
+            {**self._EXPECTED[0], "concurrency": 4},
+            {"concurrency": 64, "ttftMeanMs": 700.0},
+        ]
+        payloads = [
+            self._payload(concurrency=1, expected_sweep=expected),
+            self._payload(concurrency=4, expected_sweep=expected),
+        ]
+        (block,) = build_targets_blocks(payloads)
+
+        assert [p["concurrency"] for p in block.data["points"]] == [1, 4]
+        assert block.data["missing_concurrencies"] == [64]
+
+    def test_measured_points_without_an_expected_counterpart_are_not_graded(self):
+        """Grading needs a target; an extra measured point is simply ignored."""
+        payloads = [
+            self._payload(concurrency=1),
+            self._payload(concurrency=4),
+        ]
+        (block,) = build_targets_blocks(payloads)
+
+        assert [p["concurrency"] for p in block.data["points"]] == [1]
 
 
 SWO_SCENARIO = "claude-code-swe-bench-python-kimi-k2.7-code"
@@ -1373,3 +1558,62 @@ class TestSwoBenchParser:
         assert block.data["mode"] == "ci"
         assert block.targets["device"] == "super_cluster"
         assert block.targets["timestamp"] == "2026-07-27 12:00:00"
+
+
+class TestExpectedSweepPlumbing:
+    """The document's expected sweep rides spec -> run -> payload, so the
+    report can grade the measurement against it (goodput_slo precedent)."""
+
+    _SWEEP = [{"concurrency": 4, "ttftMeanMs": 700.0}, {"concurrency": 8}]
+
+    def test_build_runs_carries_the_specs_expected_sweep(self):
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(
+                AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
+            ),
+        )
+
+        run = build_runs(config, _FakeModelSpec())[0]
+
+        assert run.expected_sweep == list(self._SWEEP)
+
+    def test_build_runs_defaults_to_no_expectation(self):
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(),),
+        )
+
+        assert build_runs(config, _FakeModelSpec())[0].expected_sweep == []
+
+    def test_payload_carries_the_expected_sweep(self):
+        from llm_module.drivers.aiperf_agentic_traces import _build_payload
+
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(
+                AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
+            ),
+        )
+        run = build_runs(config, _FakeModelSpec())[0]
+
+        payload = _build_payload(
+            run=run, metrics={}, model_repo="org/model", artifact_dir=Path("/tmp/a")
+        )
+
+        assert payload["expected_sweep"] == list(self._SWEEP)
+
+    def test_payload_defaults_to_empty_expectation(self):
+        from llm_module.drivers.aiperf_agentic_traces import _build_payload
+
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.CI)[0]
+
+        payload = _build_payload(
+            run=run, metrics={}, model_repo="org/model", artifact_dir=Path("/tmp/a")
+        )
+
+        assert payload["expected_sweep"] == []

@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
@@ -35,6 +36,10 @@ logger = logging.getLogger(__name__)
 # we cannot see from here). Only feeds the deadline math; the stall watchdog is
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
+_OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
+# mini-swe-agent runs inside the task container, where host loopback is not
+# the inference server.
+_DOCKER_HOST_NAME = "host.docker.internal"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
@@ -70,11 +75,10 @@ class HarborRunConfig:
     yes: bool = True
     debug: bool = False
     agent_import_path: Optional[str] = None
-    # Injected into the agent's container for the agent phase. Harbor's
-    # installed agents also fall back to the harbor host's ``os.environ``, so
-    # this is only needed to override the ambient value (or to be explicit
-    # about it) -- e.g. pointing one eval at a different endpoint.
+    # Per-agent overrides. OpenAI endpoint variables are filled from api_base
+    # unless explicitly set here, so stale host endpoints cannot take priority.
     agent_env: dict[str, str] = field(default_factory=dict)
+    dataset_ref: Optional[str] = None
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
     # Provider-specific environment knobs (namespace, image_mode, node_selector,
@@ -145,24 +149,46 @@ def _apply_mini_swe_agent_defaults(
 
 
 def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
-    """Agent kwargs with the resolved endpoint added as ``api_base``.
-
-    Note that ``api_base`` is not how every agent learns the endpoint. Harbor's
-    in-container "installed" agents (mini-swe-agent among them) accept the kwarg
-    but ignore it, reading ``OPENAI_BASE_URL`` / ``OPENAI_API_BASE`` from the
-    agent env -- which falls back to the harbor host's environment, where
-    ``agentic_eval_tests._configure_openai_env`` has already exported them. Set
-    ``agent_env`` to override that per eval. Agents implemented in Harbor itself
-    (e.g. terminus-2) do read this kwarg, hence the unconditional default.
-
-    A deep copy is taken so the mini-swe-agent parity defaults never mutate the
-    shared, module-level eval config.
-    """
+    """Copy agent options without injecting connection arguments."""
     agent_kwargs = copy.deepcopy(dict(config.agent_kwargs))
-    agent_kwargs.setdefault("api_base", config.api_base)
     if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
         _apply_mini_swe_agent_defaults(agent_kwargs, config)
     return agent_kwargs
+
+
+def _get_agent_endpoint(config: HarborRunConfig) -> str:
+    """Resolve explicit endpoint overrides without consulting the host env."""
+    values = [
+        config.agent_env[key] for key in _OPENAI_ENDPOINT_ENV if key in config.agent_env
+    ]
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError("Agent endpoint overrides must be non-empty strings")
+    if len(set(values)) > 1:
+        raise ValueError("Conflicting OpenAI endpoint overrides in agent env")
+    return values[0] if values else config.api_base
+
+
+def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
+    return (
+        config.agent == _MINI_SWE_AGENT
+        and config.agent_import_path is None
+        and config.environment_type == "docker"
+        and urlsplit(_get_agent_endpoint(config)).hostname
+        in {"127.0.0.1", "localhost", "::1"}
+    )
+
+
+def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
+    env = dict(config.agent_env)
+    endpoint = _get_agent_endpoint(config)
+    if _mini_swe_needs_host_gateway(config):
+        parsed = urlsplit(endpoint)
+        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+        endpoint = urlunsplit(
+            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
+        )
+    env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
+    return env
 
 
 def _format_kwarg(value: Any) -> str:
@@ -178,6 +204,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_config: dict[str, Any] = {"name": config.dataset}
+    if config.dataset_ref:
+        dataset_config["ref"] = config.dataset_ref
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -186,6 +214,22 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    if _mini_swe_needs_host_gateway(config):
+        overlay_path = (
+            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
+        )
+        overlay_path.write_text(
+            json.dumps(
+                {
+                    "services": {
+                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
+                    }
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -202,8 +246,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         agent_config["import_path"] = config.agent_import_path
     else:
         agent_config["name"] = config.agent
-    if config.agent_env:
-        agent_config["env"] = config.agent_env
+    agent_env = _get_agent_env(config)
+    if agent_env:
+        agent_config["env"] = agent_env
 
     if config.environment_env:
         environment_config["env"] = config.environment_env
@@ -243,13 +288,16 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        config.agent_timeout_sec is not None
+        _mini_swe_needs_host_gateway(config)
+        or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
         or bool(config.agent_env)
         or bool(config.environment_env)
         or bool(config.verifier_env)
         or bool(config.environment_kwargs)
+        # The Hub ref is only expressible in the config file's datasets block.
+        or bool(config.dataset_ref)
     )
 
 
@@ -328,6 +376,8 @@ def run(config: HarborRunConfig) -> int:
         agent_kwargs = _get_agent_kwargs(config)
         for key, value in agent_kwargs.items():
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
+        for key, value in _get_agent_env(config).items():
+            cmd.extend(["--agent-env", f"{key}={value}"])
 
     if config.debug:
         cmd.append("--debug")
@@ -341,10 +391,15 @@ def run(config: HarborRunConfig) -> int:
     per_task_budget = agent_timeout + config.per_task_overhead_sec
     # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
     # harness; the wave-aware stall/ceiling watchdog is the primary protection.
+    # Host-executed agents use this endpoint directly. Container-executed
+    # mini-swe receives its translated endpoint through the agent config.
+    process_env = os.environ.copy()
+    endpoint = _get_agent_endpoint(config)
+    process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(
         cmd,
         cwd=None,
-        env=os.environ.copy(),
+        env=process_env,
         probe=make_terminal_bench_probe(job_dir),
         label=config.task_name,
         per_task_budget_s=per_task_budget,

@@ -19,10 +19,12 @@ Resolution precedence (used by :func:`resolve_deploy_url`):
 from __future__ import annotations
 
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 DEFAULT_DEPLOY_URL = "http://127.0.0.1"
+DEFAULT_SERVICE_PORT = "8000"
+DEFAULT_HTTPS_PORT = "443"
 
 
 def normalize_server_url(value: str) -> str:
@@ -45,6 +47,21 @@ def normalize_server_url(value: str) -> str:
             "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
         )
     return server_url
+
+
+def default_service_port(deploy_url: Optional[str]) -> str:
+    """Default service port when neither the URL nor ``--service-port`` gives one.
+
+    An ``https`` URL without an explicit port defaults to 443 (standard TLS
+    port); everything else keeps the historical 8000. Callers must only use
+    this when the user did not pass ``--service-port`` (or ``SERVICE_PORT``)
+    explicitly — an explicit port always wins.
+    """
+    if deploy_url:
+        parsed = urlparse(deploy_url.rstrip("/"))
+        if parsed.scheme == "https" and parsed.port is None:
+            return DEFAULT_HTTPS_PORT
+    return DEFAULT_SERVICE_PORT
 
 
 def resolve_deploy_url(runtime_config=None) -> str:
