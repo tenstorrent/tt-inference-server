@@ -41,7 +41,7 @@ def test_standard_plugin_resolves_granite_without_a_custom_implementation():
     assert spec.impl.impl_name == "tt-vllm-plugin"
     device = spec.device_model_spec
     assert device.max_context == 131072
-    assert device.max_tokens_all_users == 327680
+    assert device.max_tokens_all_users == 655360
     assert device.vllm_args["enable-prefix-caching"] is True
     assert "no-enable-prefix-caching" not in device.vllm_args
     assert device.vllm_args["enable-prompt-tokens-details"] is True
