@@ -40,6 +40,15 @@
          self.PREFILL_CHUNK = 1024 if self.kind == "sliding_attention" else 6656
          if self.PREFILL_CHUNK <= 0 or self.PREFILL_CHUNK % self.PAGE_SIZE:
              raise ValueError("Compute chunks must contain a positive whole number of cache pages")
+@@ -118,7 +124,7 @@
+         )
+         self.pref_compute = ttnn.init_device_compute_kernel_config(
+             mesh_device.arch(),
+-            math_fidelity=ttnn.MathFidelity.LoFi,
++            math_fidelity=ttnn.MathFidelity.HiFi4,
+             math_approx_mode=False,
+             fp32_dest_acc_en=True,
+             packer_l1_acc=False,
 @@ -182,9 +188,16 @@
                  memory_config=memory_config,
              )

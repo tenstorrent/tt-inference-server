@@ -1,7 +1,7 @@
 {
   "base_commit": "pinned original image source",
-  "target_commit": "experimental-c32-a24-v1",
-  "patch_sha256": "aa1202889084680c04dc40fa8e1f0cc897c0ce23e0f9746fde32d5df78df3465",
+  "target_commit": "experimental-c32-a24-prefill-hifi4",
+  "patch_sha256": "4c4a61319642ef86f56b5c70c52358e6baae8f884f8aea883820ffb70058996d",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/__init__.py": {
       "base": "d0926f1fbdd7958aba9856477e9997552f2d67e75e4412955b9df1f47a98f159",
@@ -13,7 +13,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/decoder.py": {
       "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
-      "target": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae"
+      "target": "1b99025f4bbde26360e6edd39e4148b90a4a5413d8092cf30e1ae7b5197f2af6"
     },
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
@@ -68,5 +68,5 @@
       "target": "639590e24385ab0d8595493fc4605a87121bbb2c3f594d34513ad99af8ed4e03"
     }
   },
-  "scope": "PhysicalC32 shared admission24/history24/tail24; original algorithms/observers retained; unaccepted candidate"
+  "scope": "AcceptedC32/A24 source plus ONLYprefillSDPA fidelityLoFi\u2192HiFi4; decode unchanged; servingclosure pending"
 }
