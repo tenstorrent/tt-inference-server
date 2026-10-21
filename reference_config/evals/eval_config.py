@@ -11033,7 +11033,13 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=5,
+                # Client concurrency only; samples, sampling and budget unchanged. The
+                # P300X2 row decodes a fixed B32 graph (TPOT ~420 ms at c1 and c32 alike),
+                # so c5 used 5 of 32 lanes. 16 is the most whose full contexts fit the
+                # shared 262144-token KV pool at the GPU reference's mean length
+                # (~15.5k generated tokens/sample, 3.07M over 198; #5353). Beyond 16 the
+                # pool relies on vLLM preemption, as the H100 reference itself did.
+                max_concurrent=16,
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
