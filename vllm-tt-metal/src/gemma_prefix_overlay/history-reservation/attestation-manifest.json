@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "modules": {
-    "vllm.v1.engine.core": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0",
+    "vllm.v1.engine.core": "4570fa94425f70e2279e40431178dac5f5107ecd22a7904530722c2e95fda39b",
     "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
     "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
     "vllm_tt_plugin.model_runner": "e6aefb99e59170f8a337af0f950437e6456132bf548f8cba1423447f577ba521",

@@ -103,6 +103,68 @@ HANDSHAKE_TIMEOUT_MINS = 5
 _R = TypeVar("_R")  # Return type for collective_rpc
 
 
+
+# Proof-only serial engine-thread host timers; no device synchronization.
+import json as _gemma_json
+import sys as _gemma_sys
+_gemma_host_totals = defaultdict(float)
+_gemma_host_counts = defaultdict(int)
+_gemma_host_last = 0.0
+_gemma_host_mode_seconds = defaultdict(float)
+_gemma_host_mode_counts = defaultdict(int)
+
+def _gemma_host_writer():
+    previous = None
+    while True:
+        time.sleep(0.25)
+        snapshot = dict(_gemma_host_totals)
+        if snapshot and snapshot != previous:
+            record = {"schema": 1, "wall_s": time.time(),
+                      "last_step_wall_s": _gemma_host_last,
+                      "seconds": snapshot, "counts": dict(_gemma_host_counts), "mode_seconds": dict(_gemma_host_mode_seconds), "mode_counts": dict(_gemma_host_mode_counts)}
+            try:
+                _gemma_sys.stdout.write("GEMMA_HOST_TOTALS " + _gemma_json.dumps(record) + "\n")
+                _gemma_sys.stdout.flush()
+            except Exception:
+                pass
+            previous = snapshot
+
+@contextmanager
+def _gemma_host_timer(label, mode=None):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        _gemma_host_totals[label] += elapsed
+        if mode is not None:
+            _gemma_host_mode_seconds[label + "/" + mode] += elapsed
+            _gemma_host_mode_counts[label + "/" + mode] += 1
+        _gemma_host_counts[label] += 1
+
+
+def _gemma_host_mode(scheduler_output):
+    detail = compute_iteration_details(scheduler_output)
+    if detail.num_ctx_tokens and detail.num_generation_tokens:
+        return "mixed"
+    if detail.num_ctx_tokens:
+        return "prefill"
+    if detail.num_generation_tokens:
+        return "decode"
+    return "empty"
+
+def _gemma_host_step(fn):
+    def wrapped(self, *args, **kwargs):
+        global _gemma_host_last
+        if not getattr(self, "_gemma_host_started", False):
+            threading.Thread(target=_gemma_host_writer, daemon=True).start()
+            self._gemma_host_started = True
+        with _gemma_host_timer("step_total"):
+            result = fn(self, *args, **kwargs)
+        _gemma_host_last = time.time()
+        return result
+    return wrapped
+
 class EngineCore:
     """Inner loop of vLLM's Engine."""
 
@@ -637,6 +699,7 @@ class EngineCore:
             if draft_token_ids is not None:
                 self.scheduler.update_draft_token_ids(draft_token_ids)
 
+    @_gemma_host_step
     def step_with_batch_queue(
         self,
     ) -> tuple[dict[int, EngineCoreOutputs] | None, bool]:
@@ -665,11 +728,13 @@ class EngineCore:
         model_executed = False
         deferred_scheduler_output = None
         if self.scheduler.has_requests():
-            scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+            with _gemma_host_timer('schedule'):
+                scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
             with self.log_error_detail(scheduler_output):
-                exec_future = self.model_executor.execute_model(
-                    scheduler_output, non_block=True
-                )
+                with _gemma_host_timer('execute_submit', _gemma_host_mode(scheduler_output)):
+                    exec_future = self.model_executor.execute_model(
+                        scheduler_output, non_block=True
+                    )
             if self.is_ec_consumer:
                 model_executed = scheduler_output.total_num_scheduled_tokens > 0
 
@@ -680,12 +745,14 @@ class EngineCore:
                 if not scheduler_output.pending_structured_output_tokens:
                     # We aren't waiting for any tokens, get any grammar output
                     # and sample immediately.
-                    grammar_output = self.scheduler.get_grammar_bitmask(
-                        scheduler_output
-                    )
-                    future = self.model_executor.sample_tokens(
-                        grammar_output, non_block=True
-                    )
+                    with _gemma_host_timer('grammar'):
+                        grammar_output = self.scheduler.get_grammar_bitmask(
+                            scheduler_output
+                        )
+                    with _gemma_host_timer('sample_submit'):
+                        future = self.model_executor.sample_tokens(
+                            grammar_output, non_block=True
+                        )
                 else:
                     # We need to defer sampling until we have processed the model output
                     # from the prior step.
@@ -713,19 +780,22 @@ class EngineCore:
             self.capture_iteration_details(scheduler_output) as iteration_details,
             self.log_error_detail(scheduler_output),
         ):
-            model_output = future.result()
+            with _gemma_host_timer('future_wait', _gemma_host_mode(scheduler_output)):
+                model_output = future.result()
             if model_output is None:
                 # None from sample_tokens() implies that the original execute_model()
                 # call failed - raise that exception.
-                exec_model_fut.result()
+                with _gemma_host_timer('future_wait', _gemma_host_mode(scheduler_output)):
+                    exec_model_fut.result()
                 raise RuntimeError("unexpected error")
 
         # Before processing the model output, process any aborts that happened
         # during the model execution.
         self._process_aborts_queue()
-        engine_core_outputs = self.scheduler.update_from_output(
-            scheduler_output, model_output
-        )
+        with _gemma_host_timer('update'):
+            engine_core_outputs = self.scheduler.update_from_output(
+                scheduler_output, model_output
+            )
         self._attach_iteration_details(engine_core_outputs, iteration_details)
 
         # NOTE(nick): We can either handle the deferred tasks here or save
@@ -745,10 +815,12 @@ class EngineCore:
                     )
             # We now have the tokens needed to compute the bitmask for the
             # deferred request. Get the bitmask and call sample tokens.
-            grammar_output = self.scheduler.get_grammar_bitmask(
-                deferred_scheduler_output
-            )
-            future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+            with _gemma_host_timer('grammar'):
+                grammar_output = self.scheduler.get_grammar_bitmask(
+                    deferred_scheduler_output
+                )
+            with _gemma_host_timer('sample_submit'):
+                future = self.model_executor.sample_tokens(grammar_output, non_block=True)
             batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
 
         return engine_core_outputs, model_executed

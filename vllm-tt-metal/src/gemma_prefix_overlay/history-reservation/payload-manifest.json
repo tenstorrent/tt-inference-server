@@ -6,7 +6,7 @@
       "path": "vllm/v1/engine/core.py",
       "module": "vllm.v1.engine.core",
       "base": "f990e260cebf0826d08cfd30955c0c7a85b9af00504841b91759ca5bc7b036f6",
-      "target": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0"
+      "target": "4570fa94425f70e2279e40431178dac5f5107ecd22a7904530722c2e95fda39b"
     },
     {
       "root": "purelib",
@@ -65,8 +65,20 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "c8416fa08458ca8cc36e7b2e5105b96a552535ede906be990fb710c4c6c2d85e",
+  "attestation_sha256": "70ebe4fd25069a19830f47addb307b68bbce10973d3164683c6d0c6d7771e2c8",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
-  "scope": "Prepared source payload only; baseline history20; no device validation or dispatch."
+  "scope": "Composed reviewed reservation core plus existing host timers; history20 unchanged; real device closure pending.",
+  "derived_core_composition": {
+    "base_tti": "dc3a02fa723301377fa466d8ad4b35e34a6d363c",
+    "reviewed_core_sha256": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0",
+    "instrumenter_sha256": "6df90016d9bf2cc817c398b1fc86d81bcf2c02a8d52bc7bfb3a8d9784cf6d750",
+    "instrumenter_args": [
+      "--modes"
+    ],
+    "composed_core_sha256": "4570fa94425f70e2279e40431178dac5f5107ecd22a7904530722c2e95fda39b",
+    "parent_attestation_sha256": "c8416fa08458ca8cc36e7b2e5105b96a552535ede906be990fb710c4c6c2d85e",
+    "derived_attestation_sha256": "70ebe4fd25069a19830f47addb307b68bbce10973d3164683c6d0c6d7771e2c8",
+    "scope": "Only deterministic existing host-timer composition of accepted reservation core. Other eight payload files unchanged; memory allocation, policy, fixture and installer unchanged."
+  }
 }
