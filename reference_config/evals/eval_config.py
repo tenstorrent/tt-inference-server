@@ -8952,7 +8952,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=16,
+                    n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=6 * 60 * 60,
@@ -9474,10 +9474,10 @@ _eval_config_list = [
                         'sympy__sympy-24661',
                     ],
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: ['astropy__astropy-12907', 'django__django-11099', 'django__django-14122', 'matplotlib__matplotlib-23412', 'mwaskom__seaborn-3069', 'psf__requests-1142', 'pydata__xarray-3677', 'pylint-dev__pylint-4970', 'pytest-dev__pytest-5631', 'scikit-learn__scikit-learn-10297', 'sphinx-doc__sphinx-10466', 'sympy__sympy-13551'],
+                        EvalLimitMode.CI_NIGHTLY: ['astropy__astropy-12907', 'astropy__astropy-14096', 'astropy__astropy-14369', 'django__django-11119', 'django__django-11206', 'django__django-11299', 'django__django-11532', 'django__django-11820', 'django__django-12050', 'django__django-13344', 'django__django-14122', 'django__django-14559', 'django__django-14855', 'django__django-15104', 'django__django-15572', 'django__django-15973', 'django__django-16819', 'django__django-16950', 'matplotlib__matplotlib-25332', 'psf__requests-2317', 'pydata__xarray-3677', 'pylint-dev__pylint-4970', 'pytest-dev__pytest-5631', 'pytest-dev__pytest-7982', 'scikit-learn__scikit-learn-14629', 'sphinx-doc__sphinx-10466', 'sphinx-doc__sphinx-7985', 'sphinx-doc__sphinx-8638', 'sympy__sympy-13551', 'sympy__sympy-14976', 'sympy__sympy-19637', 'sympy__sympy-20438'],
                     },
                 ),
-                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5, EvalLimitMode.CI_NIGHTLY: 12},
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5, EvalLimitMode.CI_NIGHTLY: 32},
             ),
         ],
     ),
