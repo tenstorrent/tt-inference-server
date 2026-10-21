@@ -91,3 +91,18 @@ def test_ci_gates_keep_original_minimum_wins_without_claiming_gpu_controls(
     reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
     assert accept_eval_score(reference, minimum * 10, n_total=10)
     assert not accept_eval_score(reference, (minimum - 1) * 10, n_total=10)
+
+
+def test_granite_gpqa_matches_other_dense_reasoning_models():
+    gpqa = _eval_config_map[MODEL].tasks[0]
+    assert gpqa.task_name == "r1_gpqa_diamond"
+    assert gpqa.use_chat_api and gpqa.thinking
+    assert gpqa.score.score_func_kwargs["result_keys"] == ["exact_match,none"]
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    for model in ("google/gemma-4-31B-it", "Qwen/Qwen3.8-27B"):
+        peer = _eval_config_map[model].tasks[0]
+        assert peer.task_name == gpqa.task_name
+        assert (
+            peer.score.score_func_kwargs["result_keys"]
+            == gpqa.score.score_func_kwargs["result_keys"]
+        )
