@@ -34,10 +34,16 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      docker_shm_size: 8g
+      env_vars:
+        TT_METAL_INSPECTOR_RPC: "0"
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      docker_shm_size: 8g
+      env_vars:
+        TT_METAL_INSPECTOR_RPC: "0"
     - device: P150
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
@@ -127,6 +133,9 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      docker_shm_size: 8g
+      env_vars:
+        TT_METAL_INSPECTOR_RPC: "0"
     - device: P150
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
