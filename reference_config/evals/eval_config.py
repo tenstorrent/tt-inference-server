@@ -564,6 +564,11 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# Custom lm-eval task (AIME 2026, avg@4) for the google/gemma-4-12B-it model-card evals.
+_GEMMA4_12B_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "gemma4_12b"
+)
+
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
 # The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
@@ -12141,6 +12146,45 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.07,
                     EvalLimitMode.CI_LONG: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # AIME 2026 (MathArena, 30 problems), the model card's "AIME 2026 no
+                # tools" row (77.5 for the 12B). avg@4, same task and settings as
+                # gemma-4-31B-it (lm_eval_tasks/gemma4_12b/aime_2026.yaml). All 30
+                # problems on every limit mode except smoke.
+                task_name="gemma4_aime_2026",
+                include_path=_GEMMA4_12B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=77.5,
+                    published_score_ref="https://huggingface.co/google/gemma-4-12B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                propagate_seed_to_gen_kwargs=False,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 1.0,
+                    EvalLimitMode.SMOKE_TEST: 0.1,
                 },
             ),
             EvalTask(
