@@ -502,9 +502,19 @@ class TestAgenticDriverConfigMapping:
         task.agentic_eval_config.n_concurrent_trials = 62
 
         with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "28"}):
-            assert build_harbor_config(task, _server(), _driver_context()).n_concurrent_trials == 28
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 28
+            )
         with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "100"}):
-            assert build_harbor_config(task, _server(), _driver_context()).n_concurrent_trials == 62
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 62
+            )
 
     def test_harbor_config_injects_runtime_openai_environment(self):
         task = _harbor_task()
