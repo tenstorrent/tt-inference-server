@@ -17,21 +17,27 @@ index 0000000..6f3a905
 +  }
 +}
 diff --git a/models/demos/gemma4_31b_qb2/tt/decoder.py b/models/demos/gemma4_31b_qb2/tt/decoder.py
-index e9ae70b..adf7bec 100644
+index e9ae70b..8f74be5 100644
 --- a/models/demos/gemma4_31b_qb2/tt/decoder.py
 +++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
-@@ -15,7 +15,10 @@ The bounded ring supports forward decoding with complete live history, not
+@@ -15,7 +15,11 @@ The bounded ring supports forward decoding with complete live history, not
  arbitrary rollback into evicted tokens. Page-ID changes require live KV migration.
  """
  
 +import os
 +
  import ttnn
++from models.demos.gemma4_31b_qb2.tt.kv_precision import selected_kv_dtypes
 +from models.demos.gemma4_31b_qb2.tt.history_bank import HistoryTail
  from models.demos.gemma4_31b_qb2.tt.sdpa_l1 import BLACKHOLE_L1_BYTES, full_sdpa_fp32_l1_end
  from models.demos.gpt_oss.tt.ccl import CCLManager
  
-@@ -71,6 +74,7 @@ class Decoder:
+@@ -67,10 +71,12 @@ class Decoder:
+         assert c.max_position_embeddings == 262144 and c.sliding_window == 1024
+         self = cls()
+         self.device = mesh_device
++        self.kv_dtypes = selected_kv_dtypes()
+         self.kind = c.layer_types[layer_idx]
          self.activation_dtype = ttnn.bfloat16
          self.residual_dtype = ttnn.bfloat16
          self.norms_dtype = ttnn.bfloat16
@@ -39,7 +45,7 @@ index e9ae70b..adf7bec 100644
          self.PREFILL_CHUNK = 1024 if self.kind == "sliding_attention" else 6656
          if self.PREFILL_CHUNK <= 0 or self.PREFILL_CHUNK % self.PAGE_SIZE:
              raise ValueError("Compute chunks must contain a positive whole number of cache pages")
-@@ -182,9 +186,16 @@ class Decoder:
+@@ -182,9 +188,16 @@ class Decoder:
                  memory_config=memory_config,
              )
  
@@ -57,7 +63,7 @@ index e9ae70b..adf7bec 100644
              )
  
          q, k = (sd["self_attn.q_proj.weight"], sd["self_attn.k_proj.weight"])
-@@ -197,17 +208,17 @@ class Decoder:
+@@ -197,17 +210,17 @@ class Decoder:
  
          self.qkv = tensor(
              packed(q, k, v),
@@ -78,7 +84,25 @@ index e9ae70b..adf7bec 100644
              dim=1,
              decode_only="gate_up",
          )
-@@ -324,6 +335,20 @@ class Decoder:
+@@ -293,6 +306,17 @@ class Decoder:
+             if weight.memory_config().is_sharded():
+                 assert weight.memory_config() == mem
+                 assert weight.buffer_unique_id() == self.decode_weights[name].buffer_unique_id()
++        share_qkv = os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV", "0")
++        if share_qkv not in ("0", "1"):
++            raise ValueError("Invalid sliding QKV sharing flag")
++        if share_qkv == "1" and self.sliding:
++            owner = self.decode_weights["qkv"]
++            assert self.qkv.dtype == owner.dtype == ttnn.bfloat8_b
++            assert tuple(self.qkv.shape) == tuple(owner.shape) == (5376, 4096)
++            assert banks == 8 and tuple(owner.memory_config().shard_spec.shape) == (5376, 512)
++            assert owner.memory_config().memory_layout == ttnn.TensorMemoryLayout.WIDTH_SHARDED
++            assert owner.memory_config().buffer_type == ttnn.BufferType.DRAM
++            self.qkv = owner
+         # Separate prefill gate/up weights are already resident. Decode
+         # owns its DRAM-sharded packed copy; retain no unused duplicate.
+         del self.gate_up
+@@ -324,6 +348,20 @@ class Decoder:
              shared_setup[table_key] = {name: getattr(self, name) for name in names}
          for name, value in shared_setup[table_key].items():
              setattr(self, name, value)
@@ -99,7 +123,7 @@ index e9ae70b..adf7bec 100644
          self.decode_sdpa_config = ttnn.SDPAProgramConfig(
              compute_with_storage_grid_size=ttnn.CoreCoord(*[8, 4]),
              q_chunk_size=0,
-@@ -365,10 +390,11 @@ class Decoder:
+@@ -365,10 +403,11 @@ class Decoder:
          # tile storage for this descriptor instead of allocating and releasing
          # a large unused template between persistent norm owners. The view's
          # values are intentionally never consumed by a numerical operation.
@@ -113,7 +137,7 @@ index e9ae70b..adf7bec 100644
          assert x.buffer_unique_id() == self.cos.buffer_unique_id()
          assert x.dtype == ttnn.bfloat16 and x.layout == ttnn.TILE_LAYOUT
          assert x.memory_config() == ttnn.DRAM_MEMORY_CONFIG
-@@ -385,14 +411,14 @@ class Decoder:
+@@ -385,14 +424,14 @@ class Decoder:
          # Query the native factory rather than duplicating worker/round
          # sizing. Its geometry does not depend on the norm weight's values.
          shapes = {}
@@ -130,7 +154,7 @@ index e9ae70b..adf7bec 100644
                  first_owner = probe
              del probe
          self.prefill_norm_stats_owners = {}
-@@ -474,15 +500,24 @@ class Decoder:
+@@ -474,15 +513,24 @@ class Decoder:
          """Residual ownership chosen once at entry to the entire layer stack."""
          return 1344 if sequence_length > 128 else 5376
  
@@ -156,7 +180,7 @@ index e9ae70b..adf7bec 100644
          y = ttnn.experimental.reduce_scatter_minimal_async(
              x,
              dim=3,
-@@ -494,17 +529,42 @@ class Decoder:
+@@ -494,17 +542,42 @@ class Decoder:
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
              num_workers_per_link=None,
          )
@@ -201,7 +225,7 @@ index e9ae70b..adf7bec 100644
              and weight.dtype == ttnn.bfloat4_b
              and x.dtype == ttnn.bfloat16
          )
-@@ -519,15 +579,25 @@ class Decoder:
+@@ -519,15 +592,25 @@ class Decoder:
          cap = (8 if name == "o" else 14) if self.sliding else (4 if name == "o" else 6)
          expected_input = ttnn.bfloat8_b if name == "o" and not self.sliding else ttnn.bfloat16
          if not wide_qkv and weight.dtype == ttnn.bfloat4_b and x.dtype == expected_input:
@@ -229,7 +253,7 @@ index e9ae70b..adf7bec 100644
              compute_with_storage_grid_size=(gx, gy),
              in0_block_w=block,
              per_core_M=pm,
-@@ -538,7 +608,7 @@ class Decoder:
+@@ -538,7 +621,7 @@ class Decoder:
              fuse_batch=False,
              fused_activation=ttnn.UnaryWithParam(ttnn.UnaryOpType.GELU_TANH) if activation else None,
          )
@@ -238,7 +262,7 @@ index e9ae70b..adf7bec 100644
              x,
              weight,
              program_config=config,
-@@ -547,6 +617,8 @@ class Decoder:
+@@ -547,6 +630,8 @@ class Decoder:
              memory_config=ttnn.DRAM_MEMORY_CONFIG,
          )
  
@@ -247,7 +271,7 @@ index e9ae70b..adf7bec 100644
      def _dlinear(self, x, name):
          weight = self.decode_weights[name]
          kdim, ndim = weight.shape[-2], weight.shape[-1]
-@@ -584,6 +656,10 @@ class Decoder:
+@@ -584,6 +669,10 @@ class Decoder:
              return self._dnorm(x, name)
          if x.shape[-1] == self.hidden_size:
              rows = x.padded_shape[-2]
@@ -258,7 +282,7 @@ index e9ae70b..adf7bec 100644
              mem = ttnn.create_sharded_memory_config(
                  (rows, 192),
                  ttnn.CoreGrid(x=7, y=4),
-@@ -641,16 +717,16 @@ class Decoder:
+@@ -641,16 +730,16 @@ class Decoder:
          n = self._resnorm(x, name, decode)
          return self._gather(n) if x.shape[-1] != self.hidden_size else n
  
@@ -280,7 +304,7 @@ index e9ae70b..adf7bec 100644
          del local
          post = self._resnorm(reduced, "post_feedforward_layernorm", False)
          del reduced
-@@ -681,18 +757,24 @@ class Decoder:
+@@ -681,18 +770,24 @@ class Decoder:
              activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.MUL_UNARY_SFPU, self.layer_scalar)],
          )
  
@@ -308,7 +332,7 @@ index e9ae70b..adf7bec 100644
          for chunk in eligible:
              end = full_sdpa_fp32_l1_end(
                  rows=q.shape[2],
-@@ -704,6 +786,7 @@ class Decoder:
+@@ -704,6 +799,7 @@ class Decoder:
                  q_tile_bytes=tile_bytes[q.dtype],
                  kv_tile_bytes=tile_bytes[cache.dtype],
                  page_table_bytes=page_bytes,
@@ -316,7 +340,7 @@ index e9ae70b..adf7bec 100644
              )
              if end <= BLACKHOLE_L1_BYTES:
                  key = (q.shape[2], start, str(q.dtype), str(cache.dtype), page_bytes)
-@@ -716,6 +799,7 @@ class Decoder:
+@@ -716,6 +812,7 @@ class Decoder:
                      q_chunk=chunk,
                      k_chunk=128,
                      cb_region_end=end,
@@ -324,7 +348,7 @@ index e9ae70b..adf7bec 100644
                  )
                  return self.pref_sdpa_by_q[chunk]
          raise ValueError("No configured full-attention SDPA Q chunk fits Blackhole L1")
-@@ -730,9 +814,15 @@ class Decoder:
+@@ -730,9 +827,15 @@ class Decoder:
          result = self._apply_decode_rope(x, cos, sin)
          return ttnn.reshape(result, ttnn.Shape(list(x.shape)), ttnn.Shape(list(x.padded_shape)))
  
@@ -342,7 +366,7 @@ index e9ae70b..adf7bec 100644
          q, k, v = ttnn.experimental.nlp_create_qkv_heads(
              fused,
              num_heads=8,
-@@ -746,27 +836,323 @@ class Decoder:
+@@ -746,27 +849,323 @@ class Decoder:
              # Full attention derives rotated K from normalized V below.
              # The raw K output has no consumer after head creation.
              del k
@@ -680,7 +704,7 @@ index e9ae70b..adf7bec 100644
      ):
          """Prefill a page-aligned span, optionally retaining sliding history for a continuation."""
          if start_pos < 0 or start_pos % self.PAGE_SIZE:
-@@ -775,6 +1161,8 @@ class Decoder:
+@@ -775,6 +1174,8 @@ class Decoder:
              raise ValueError("Sliding continuation requires its preceding K/V history")
          next_history = None
          batch, one, seq, width = x.shape
@@ -689,7 +713,7 @@ index e9ae70b..adf7bec 100644
          assert one == 1 and width == self.prefill_input_width(seq) and (0 < seq <= self.max_context)
          assert page_table.shape[0] == batch and page_table.shape[1] * self.PAGE_SIZE >= start_pos + seq
          if consume_input:
-@@ -823,7 +1211,10 @@ class Decoder:
+@@ -823,7 +1224,10 @@ class Decoder:
                      q = ttnn.typecast(q, ttnn.bfloat8_b)
                  sdpa_config = self._prefill_sdpa_config(q, kv_cache[0], pt, start=absolute_start)
                  length = inp.shape[2]
@@ -701,7 +725,7 @@ index e9ae70b..adf7bec 100644
                  ttnn.experimental.paged_fill_cache(
                      kv_cache[0], ttnn.typecast(k, kv_cache[0].dtype), fill_pt, batch_idx=0
                  )
-@@ -849,7 +1240,8 @@ class Decoder:
+@@ -849,7 +1253,8 @@ class Decoder:
                          program_config=sdpa_config,
                          compute_kernel_config=self.pref_compute,
                      )
@@ -711,7 +735,7 @@ index e9ae70b..adf7bec 100644
                  elif self.sliding:
                      attn = ttnn.transformer.scaled_dot_product_attention(
                          q,
-@@ -862,27 +1254,41 @@ class Decoder:
+@@ -862,27 +1267,41 @@ class Decoder:
                          compute_kernel_config=self.pref_compute,
                      )
                  else:
@@ -770,8 +794,33 @@ index e9ae70b..adf7bec 100644
                      previous_kv = (k, v)
                  if attn.dtype != ttnn.bfloat16 and self.sliding:
                      attn = ttnn.typecast(attn, ttnn.bfloat16)
+@@ -1017,7 +1436,8 @@ class Decoder:
+         v = ttnn.to_memory_config(v, vmem)
+         bounded = cyclic_cache and self.sliding and page_table.padded_shape[1] > kv_cache[0].shape[0]
+         modulo = {"cache_position_modulo": self.SLIDING_WINDOW_PAGES * self.PAGE_SIZE} if bounded else {}
+-        if bounded:
++        if bounded or kv_cache[0].dtype != kv_cache[1].dtype:
++            # Mixed precision cannot share the fused factory data format.
+             # Fused update still enforces logical pages <= physical pages.
+             # Native separate updates support a bounded pool explicitly. The
+             # documented cyclic table repeats its first nine private pages.
+@@ -1128,12 +1548,12 @@ class Decoder:
+             (
+                 ttnn.zeros(
+                     shape,
+-                    dtype=ttnn.bfloat8_b,
++                    dtype=cache_dtype,
+                     layout=ttnn.TILE_LAYOUT,
+                     device=self.device,
+                     memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                 )
+-                for _ in range(2)
++                for cache_dtype in self.kv_dtypes
+             )
+         )
+ 
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator.py b/models/demos/gemma4_31b_qb2/tt/generator.py
-index f2058ec..e204af9 100644
+index f2058ec..f3969b0 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator.py
 @@ -6,7 +6,9 @@ The optimized loop replays two traces. Only the sampling trace writes the next
@@ -882,7 +931,34 @@ index f2058ec..e204af9 100644
  
      def _owned(self, batch, capacity):
          for (b, c), state in self.states.items():
-@@ -327,7 +382,161 @@ class Gemma4Generator:
+@@ -182,11 +237,11 @@ class Gemma4Generator:
+         for layer, pair in zip(self.model.layers, state.kv):
+             if len(pair) != 2:
+                 raise ValueError("Each layer requires exactly two K/V tensors")
+-            for tensor in pair:
++            for tensor, expected_dtype in zip(pair, layer.kv_dtypes):
+                 if (
+                     len(tensor.shape) != 4
+                     or tuple(tensor.shape)[1:] != (layer.kv_heads, 128, layer.head_dim)
+-                    or tensor.dtype != ttnn.bfloat8_b
++                    or tensor.dtype != expected_dtype
+                     or tensor.layout != ttnn.TILE_LAYOUT
+                     or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
+                     or tensor.device() != self.mesh
+@@ -228,10 +283,10 @@ class Gemma4Generator:
+                 raise ValueError("Invalid serving table geometry")
+             if len(pair) != 2 or pair[0].buffer_unique_id() == pair[1].buffer_unique_id():
+                 raise ValueError("Serving K and V must have separate storage")
+-            for tensor in pair:
++            for tensor, expected_dtype in zip(pair, layer.kv_dtypes):
+                 if (
+                     tuple(tensor.shape)[1:] != (layer.kv_heads, 128, layer.head_dim)
+-                    or tensor.dtype != ttnn.bfloat8_b
++                    or tensor.dtype != expected_dtype
+                     or tensor.layout != ttnn.TILE_LAYOUT
+                     or tensor.device() != self.mesh
+                     or tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG
+@@ -327,7 +382,168 @@ class Gemma4Generator:
          self.counters["token_readbacks"] += 1
          return ttnn.to_torch(ttnn.get_device_tensors(token)[0]).reshape(-1)[:batch].long()
  
@@ -932,9 +1008,16 @@ index f2058ec..e204af9 100644
 +                or self._serving_prefill_prepared_state is not None):
 +            raise RuntimeError("Experimental preparation requires fresh full60 C16 serial state")
 +        pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-+        if pool_profile not in ("f606208", "f262144"):
++        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824}
++        if pool_profile not in pool_rows:
 +            raise RuntimeError("Unsupported serial prepared alias pool profile")
-+        wide_rows = 6128 if pool_profile == "f606208" else 3440
++        if pool_profile == "f311296" and (
++                os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != "311296"
++                or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV") != "1"
++                or os.environ.get("GEMMA_REPETITION_PRECISION_POLICY") != "bf8"
++                or os.environ.get("GEMMA_EXPERIMENT_KV_DTYPE") != "bf8kv"):
++            raise RuntimeError("F311296 preparation requires declared shared BF8/BF8KV source")
++        wide_rows = pool_rows[pool_profile]
 +        if any(int(pair[0].shape[0]) != (wide_rows if layer.sliding else 2 * wide_rows)
 +               for layer, pair in zip(self.model.layers, state.kv)):
 +            raise RuntimeError("Experimental preparation requires the declared alias pool")
@@ -1045,7 +1128,7 @@ index f2058ec..e204af9 100644
          self,
          tokens,
          *,
-@@ -339,6 +548,7 @@ class Gemma4Generator:
+@@ -339,6 +555,7 @@ class Gemma4Generator:
          return_device=False,
          start_positions=None,
          history_keys=None,
@@ -1053,7 +1136,7 @@ index f2058ec..e204af9 100644
          **kwargs,
      ):
          state = kv_cache
-@@ -357,16 +567,24 @@ class Gemma4Generator:
+@@ -357,16 +574,24 @@ class Gemma4Generator:
          self._validate_tokens(tokens)
          if any(not isinstance(n, int) or not 0 < n <= min(state.capacity, tokens.shape[1]) for n in prompt_lens):
              raise ValueError("Invalid logical prompt length")
@@ -1082,7 +1165,7 @@ index f2058ec..e204af9 100644
          for row, (slot, length) in enumerate(zip(slots, prompt_lens)):
              if not 0 < length <= state.capacity or length > tokens.shape[1]:
                  raise ValueError("Invalid logical prompt length")
-@@ -374,30 +592,289 @@ class Gemma4Generator:
+@@ -374,30 +599,289 @@ class Gemma4Generator:
              aligned_start = start // Decoder.PAGE_SIZE * Decoder.PAGE_SIZE
              chunk_length = length - aligned_start
              histories = None
@@ -1381,7 +1464,7 @@ index f2058ec..e204af9 100644
              for kind, table in page_table.items():
                  sentinel = state.vllm_owned and self.model.layers[kind].kind == "sliding_attention"
                  key = (id(table), sentinel)
-@@ -411,6 +888,22 @@ class Gemma4Generator:
+@@ -411,6 +895,22 @@ class Gemma4Generator:
                      uploaded_rows[key] = self._upload(row_table)
                      self.counters["prefill_table_uploads"] += 1
                  tables[kind] = uploaded_rows[key]
@@ -1404,7 +1487,7 @@ index f2058ec..e204af9 100644
              out = self.model.prefill_device(
                  tt_ids,
                  sequence_length=chunk_length,
-@@ -419,15 +912,23 @@ class Gemma4Generator:
+@@ -419,15 +919,23 @@ class Gemma4Generator:
                  all_logits=return_all_logits,
                  start_pos=aligned_start,
                  histories=histories,
@@ -1430,7 +1513,7 @@ index f2058ec..e204af9 100644
          self.prefill_shapes.add(shape_key)
          if return_device:
              return outputs
-@@ -466,6 +967,16 @@ class Gemma4Generator:
+@@ -466,6 +974,16 @@ class Gemma4Generator:
          del merged
          ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
          self.counters["sampling_replays"] += 1
@@ -1447,7 +1530,7 @@ index f2058ec..e204af9 100644
          return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
  
      def _sample_step(self, entry):
-@@ -484,61 +995,110 @@ class Gemma4Generator:
+@@ -484,61 +1002,110 @@ class Gemma4Generator:
                      "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
                  )
              return self.traces[key]
@@ -1594,7 +1677,7 @@ index f2058ec..e204af9 100644
          return entry
  
      def replay(self, entry, *, sample=True):
-@@ -724,6 +1284,8 @@ class Gemma4Generator:
+@@ -724,6 +1291,8 @@ class Gemma4Generator:
          self.configure_sampling()
  
      def _retire_traces(self):
@@ -1603,7 +1686,7 @@ index f2058ec..e204af9 100644
          if self.traces:
              ttnn.synchronize_device(self.mesh)
              self.counters["synchronizations"] += 1
-@@ -733,7 +1295,14 @@ class Gemma4Generator:
+@@ -733,7 +1302,14 @@ class Gemma4Generator:
          self.traces.clear()
  
      def close(self):
@@ -1619,10 +1702,10 @@ index f2058ec..e204af9 100644
  
  def build_generator(mesh_device, *, checkpoint=None, layer_indices=None, max_seq_len=2048):
 diff --git a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-index 943e226..305b8f6 100644
+index 943e226..0eacf8d 100644
 --- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
 +++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
-@@ -2,6 +2,10 @@
+@@ -2,9 +2,14 @@
  # SPDX-FileCopyrightText: 2026 Tenstorrent USA, Inc.
  """Translate vLLM scheduler updates into the Gemma4 TP4 generator's inputs."""
  
@@ -1633,7 +1716,11 @@ index 943e226..305b8f6 100644
  import torch
  
  import ttnn
-@@ -13,7 +17,7 @@ class Gemma4ForCausalLM:
++from models.demos.gemma4_31b_qb2.tt.kv_precision import selected_kv_dtypes, tile_bytes
+ from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
+ from models.demos.gemma4_31b_qb2.tt.generator import CacheState, build_generator
+ 
+@@ -13,7 +18,7 @@ class Gemma4ForCausalLM:
      _router = ttnn.FabricRouterConfig()
      _router.max_packet_payload_size_bytes = 8192
      model_capabilities = {
@@ -1642,7 +1729,7 @@ index 943e226..305b8f6 100644
          "supports_async_decode": True,
          "supports_sample_on_device": True,
          "supports_device_penalties": False,
-@@ -24,6 +28,7 @@ class Gemma4ForCausalLM:
+@@ -24,6 +29,7 @@ class Gemma4ForCausalLM:
              "router_config": _router,
          },
      }
@@ -1650,7 +1737,7 @@ index 943e226..305b8f6 100644
      decode_input_update_contract = 1
      MAX_PREFILL_TOKENS = 8192
  
-@@ -38,6 +43,12 @@ class Gemma4ForCausalLM:
+@@ -38,6 +44,12 @@ class Gemma4ForCausalLM:
          self.entry = None
          self.cache = None
          self.prefill_slot_keys = {}
@@ -1663,7 +1750,7 @@ index 943e226..305b8f6 100644
  
      def embed_input_ids(self, input_ids):
          raise RuntimeError("Use the TT prefill_forward/decode_forward interface")
-@@ -65,8 +76,6 @@ class Gemma4ForCausalLM:
+@@ -65,8 +77,6 @@ class Gemma4ForCausalLM:
      def get_kv_cache_spec(cls, vllm_config):
          from vllm.v1.kv_cache_interface import FullAttentionSpec, SlidingWindowSpec
  
@@ -1672,7 +1759,7 @@ index 943e226..305b8f6 100644
          if vllm_config.max_in_flight_tokens > 2 * cls.MAX_PREFILL_TOKENS:
              raise ValueError("Gemma4 QB2 supports at most 8192 batched tokens with async chunked prefill")
          config = vllm_config.model_config.hf_text_config
-@@ -101,38 +110,215 @@ class Gemma4ForCausalLM:
+@@ -101,38 +111,217 @@ class Gemma4ForCausalLM:
          # in-flight prefill tokens globally, in addition to the per-request tails.
          # The plugin separately adds one output page per request.
          tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * max_num_seqs
@@ -1711,6 +1798,8 @@ index 943e226..305b8f6 100644
 +            if n <= 1:
 +                raise ValueError("Alias pool must contain null and live block IDs")
 +            wide_layer = next(layer for _, layer, _ in members if layer.sliding)
++            if any(layer.kv_dtypes != wide_layer.kv_dtypes for _, layer, _ in members):
++                raise ValueError("Aliased layers must share the exact selected KV dtype pair")
 +            pair = wide_layer.allocate_cache(physical_pages=n + self.max_batch_size)
 +            pools[pool_id] = pair
 +            full_views[pool_id] = tuple(self._reinterpret_kv_backing(t) for t in pair)
@@ -1721,7 +1810,7 @@ index 943e226..305b8f6 100644
 +                scheduler_bounds[i] = n
 +        # Explicit roots outlive every native view and every trace using cache.
 +        self._kv_alias_pool_members = {pool: [i for i, _, _ in members] for pool, members in grouped.items()}
-+        print("KV_ALIAS_ROOTS " + json.dumps({"pools":len(pools), "roots":[{"pool":str(pool),"root_id":root.buffer_unique_id(),"view_id":full_views[pool][index].buffer_unique_id(),"address":root.buffer_address(),"wide_rows":int(root.shape[0]),"logical_backing_bytes":int(root.shape[0])*128*1088} for pool,pair in pools.items() for index,root in enumerate(pair)]}), flush=True)
++        print("KV_ALIAS_ROOTS " + json.dumps({"pools":len(pools), "roots":[{"pool":str(pool),"root_id":root.buffer_unique_id(),"view_id":full_views[pool][index].buffer_unique_id(),"address":root.buffer_address(),"wide_rows":int(root.shape[0]),"dtype":str(root.dtype),"tile_bytes":tile_bytes(root.dtype),"logical_backing_bytes":int(root.shape[0])*128*tile_bytes(root.dtype)} for pool,pair in pools.items() for index,root in enumerate(pair)]}), flush=True)
 +        self._kv_alias_roots = pools
 +        self._kv_alias_factors = native_factors
 +        self._kv_alias_bounds = scheduler_bounds
@@ -1750,9 +1839,9 @@ index 943e226..305b8f6 100644
 +        # must be doubled, and global group ownership must remain exclusive.
 +        shape = tuple(int(x) for x in root.shape)
 +        if (len(shape) != 4 or shape[1:] != (4, 128, 256)
-+                or root.dtype != ttnn.bfloat8_b or root.layout != ttnn.TILE_LAYOUT
++                or root.dtype not in selected_kv_dtypes() or root.layout != ttnn.TILE_LAYOUT
 +                or root.memory_config() != ttnn.DRAM_MEMORY_CONFIG
-+                or root.buffer_aligned_page_size() != 1088):
++                or root.buffer_aligned_page_size() != tile_bytes(root.dtype)):
 +            raise ValueError("Unsupported root backing geometry")
 +        view = ttnn.experimental.view(root, [2 * shape[0], 1, 128, 512])
 +        if (view.buffer_unique_id() != root.buffer_unique_id()
@@ -1899,7 +1988,7 @@ index 943e226..305b8f6 100644
              if key not in translated:
                  dest = torch.zeros_like(cache.page_tables[i])
                  rows, cols = source.shape
-@@ -143,7 +329,10 @@ class Gemma4ForCausalLM:
+@@ -143,7 +332,10 @@ class Gemma4ForCausalLM:
                      raise ValueError("Page table has fewer rows than prefill requests")
                  # Prefill rows are compact, then padded to the decode batch.
                  # Scatter only the live prefix into its assigned state slots.
@@ -1911,7 +2000,7 @@ index 943e226..305b8f6 100644
                  translated[key] = dest
              result[i] = translated[key]
          return result
-@@ -185,32 +374,43 @@ class Gemma4ForCausalLM:
+@@ -185,32 +377,43 @@ class Gemma4ForCausalLM:
          page_tables_per_layer=None,
          start_pos=None,
          empty_slots=None,
@@ -1975,7 +2064,7 @@ index 943e226..305b8f6 100644
  
      def decode_forward(
          self,
-@@ -227,6 +427,7 @@ class Gemma4ForCausalLM:
+@@ -227,6 +430,7 @@ class Gemma4ForCausalLM:
          reload_page_table=False,
          reload_sampling_params=True,
          reset_sampling_state=True,
@@ -1983,7 +2072,7 @@ index 943e226..305b8f6 100644
          **kwargs,
      ):
          if "reset_batch" in kwargs:
-@@ -239,17 +440,20 @@ class Gemma4ForCausalLM:
+@@ -239,17 +443,20 @@ class Gemma4ForCausalLM:
              raise ValueError("Serving must use the cache allocated by vLLM")
          sample = sampling_params is not None
          if reload_inputs:
@@ -2011,7 +2100,7 @@ index 943e226..305b8f6 100644
              self.generator._tables(kv_cache, tables)
          if sample and (reload_sampling_params or reset_sampling_state):
              params = self._sampling(sampling_params, self.max_batch_size, start_pos, reset_seed=reset_sampling_state)
-@@ -290,11 +494,11 @@ class Gemma4ForCausalLM:
+@@ -290,11 +497,11 @@ class Gemma4ForCausalLM:
      def release_request(self, slot):
          key = self.prefill_slot_keys.pop(slot, None)
          if key is not None and self.cache is not None:
@@ -2268,6 +2357,29 @@ index 0000000..d34bf78
 +        self.restore = None
 +        self.rewind = 0
 +        return self
+diff --git a/models/demos/gemma4_31b_qb2/tt/kv_precision.py b/models/demos/gemma4_31b_qb2/tt/kv_precision.py
+new file mode 100644
+index 0000000..8b67633
+--- /dev/null
++++ b/models/demos/gemma4_31b_qb2/tt/kv_precision.py
+@@ -0,0 +1,17 @@
++"""Explicit diagnostic KV storage policy; BF8 remains default."""
++import os
++import ttnn
++
++def selected_kv_dtypes():
++    name=os.environ.get("GEMMA_EXPERIMENT_KV_DTYPE", "bf8kv")
++    policies={"bf8kv":(ttnn.bfloat8_b,ttnn.bfloat8_b),
++              "bf8k_bf4v":(ttnn.bfloat8_b,ttnn.bfloat4_b),
++              "bf4kv":(ttnn.bfloat4_b,ttnn.bfloat4_b)}
++    if name not in policies:
++        raise ValueError("Unsupported explicit KV precision policy: "+name)
++    return policies[name]
++
++def tile_bytes(dtype):
++    if dtype==ttnn.bfloat8_b:return 1088
++    if dtype==ttnn.bfloat4_b:return 576
++    raise ValueError("Unsupported KV cache dtype")
 diff --git a/models/demos/gemma4_31b_qb2/tt/model.py b/models/demos/gemma4_31b_qb2/tt/model.py
 index 5bd8795..1ade965 100644
 --- a/models/demos/gemma4_31b_qb2/tt/model.py
@@ -2547,21 +2659,23 @@ index 0000000..694ab5c
 +                          num_devices=padded[2] // 32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
 new file mode 100644
-index 0000000..2a11bd7
+index 0000000..fdb7bcf
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_page_selector.py
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,53 @@
 +"""Ordered-CQ0 raw tiled page selection using existing tensor-start slice.
 +
 +Setup owns padded controls. No cache writes, quantization, or trace-policy change.
 +"""
 +import torch
 +import ttnn
++from models.demos.gemma4_31b_qb2.tt.kv_precision import selected_kv_dtypes
 +
 +
 +class RuntimePageSelector:
 +    def __init__(self, mesh):
 +        self.mesh = mesh
++        self.allowed_dtypes = frozenset(selected_kv_dtypes())
 +        self._assert_queue()
 +        self.starts = self._allocate()
 +        self.ends = self._allocate()
@@ -2572,7 +2686,7 @@ index 0000000..2a11bd7
 +            raise ValueError("Page selector requires one ordered CQ0 caller")
 +
 +    def _allocate(self):
-+        # Native reader reads one data tile (1088 BF8 bytes) from each control.
++        # Native reader reads one data tile (max1088 BF8 bytes) from each control.
 +        return ttnn.from_torch(torch.zeros(512, dtype=torch.int32), device=self.mesh,
 +            dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT,
 +            memory_config=ttnn.DRAM_MEMORY_CONFIG,
@@ -2593,9 +2707,9 @@ index 0000000..2a11bd7
 +        shape = tuple(cache.shape)
 +        if (len(shape) != 4 or shape[1:] != (4, 128, 256)
 +                or tuple(cache.padded_shape) != shape
-+                or cache.dtype != ttnn.bfloat8_b or cache.layout != ttnn.TILE_LAYOUT
++                or cache.dtype not in self.allowed_dtypes or cache.layout != ttnn.TILE_LAYOUT
 +                or cache.memory_config() != ttnn.DRAM_MEMORY_CONFIG):
-+            raise ValueError("Expected original interleaved BF8 sliding cache")
++            raise ValueError("Expected selected interleaved sliding cache")
 +        if type(page) is not int or not 0 <= page < shape[0]:
 +            raise ValueError("Physical page index outside cache")
 +        self._refresh(self.starts, (page, 0, 0, 0))
@@ -2604,10 +2718,10 @@ index 0000000..2a11bd7
 +                          num_devices=shape[0], memory_config=ttnn.DRAM_MEMORY_CONFIG)
 diff --git a/models/demos/gemma4_31b_qb2/tt/runtime_position.py b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
 new file mode 100644
-index 0000000..4965e83
+index 0000000..8192ce7
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/runtime_position.py
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,85 @@
 +"""Opt-in prefill positions using original tables and existing native operations.
 +
 +Constructed once per layer kind in Gemma4Model.shared_setup, never globally.
@@ -2679,8 +2793,13 @@ index 0000000..4965e83
 +    def full_sdpa(self, layer, query, keys, values, page_table, *, position, program_config):
 +        if not self.full_attention or layer.sliding or position < 0 or position % 128:
 +            raise ValueError("Expected the original page-aligned full-attention start")
-+        if any(value.dtype != ttnn.bfloat8_b for value in (query, keys, values)):
-+            raise ValueError("Preserve the original full-attention BF8 Q/K/V policy")
++        expected = layer.kv_dtypes
++        supported = ((ttnn.bfloat8_b, ttnn.bfloat8_b),
++                     (ttnn.bfloat8_b, ttnn.bfloat4_b),
++                     (ttnn.bfloat4_b, ttnn.bfloat4_b))
++        if (expected not in supported or query.dtype != ttnn.bfloat8_b
++                or (keys.dtype, values.dtype) != expected):
++            raise ValueError("Full-attention requires BF8 Q and the exact selected K/V policy")
 +        # Config selection remains in Decoder and still sees the scalar position.
 +        # The native tensor contains one shared group start, never per-B positions.
 +        self._refresh(self.start, torch.tensor([position], dtype=torch.int32), ttnn.int32)
@@ -2730,10 +2849,10 @@ index 5e7b119..0800f46 100644
          + 3 * a * 2048  # maxima and exp difference
 diff --git a/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
 new file mode 100644
-index 0000000..c368606
+index 0000000..a966c53
 --- /dev/null
 +++ b/models/demos/gemma4_31b_qb2/tt/serial_compute_preparation.py
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,88 @@
 +"""Experimental representative prefill computation preparation before capture.
 +
 +Caller owns fresh, empty request state. This intentionally mutates only specified
@@ -2796,11 +2915,15 @@ index 0000000..c368606
 +                    del output,x,ids,history,fills
 +            memory(kind+':'+str(span))
 +        # Restore every touched physical page, including the two-page start.
-+        clear=ttnn.zeros([1,layer.kv_heads,68*128,layer.head_dim],device=mesh,
-+            dtype=ttnn.bfloat8_b,layout=ttnn.TILE_LAYOUT,memory_config=ttnn.DRAM_MEMORY_CONFIG)
 +        clear_table=upload(host_table[:,:68])
-+        for cache in pair:ttnn.experimental.paged_fill_cache(cache,clear,clear_table,batch_idx=0)
-+        del clear,clear_table,table
++        for dtype in dict.fromkeys(cache.dtype for cache in pair):
++            clear=ttnn.zeros([1,layer.kv_heads,68*128,layer.head_dim],device=mesh,
++                dtype=dtype,layout=ttnn.TILE_LAYOUT,memory_config=ttnn.DRAM_MEMORY_CONFIG)
++            for cache in pair:
++                if cache.dtype == dtype:
++                    ttnn.experimental.paged_fill_cache(cache,clear,clear_table,batch_idx=0)
++            del clear
++        del clear_table,table
 +    # Every actual scalar is compiled into a native fused residual-add program.
 +    # Interleaved BinaryNg omits logical size from its key; native closure later
 +    # validates this source-derived economy against all60 real layers.
