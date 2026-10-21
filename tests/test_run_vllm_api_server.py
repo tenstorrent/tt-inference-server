@@ -686,6 +686,52 @@ def test_set_vllm_sys_argv_splits_json_list_for_multi_value_flag(
     ]
 
 
+def test_multi_value_arg_names_does_not_load_vllm_general_plugins(
+    monkeypatch, run_vllm_api_server_module
+):
+    # vLLM's EngineArgs.add_cli_args runs load_general_plugins() while the serve
+    # parser is built. A plugin that refuses before model/context are on argv
+    # (Quetzal: "manifest-selected Quetzal serving requires exact model and
+    # context") must not end the entrypoint while it only reads flag shapes.
+    def refusing_plugins():
+        raise RuntimeError(
+            "Quetzal generated-provider registration failed; "
+            "refusing to serve the tt_transformers reference model"
+        )
+
+    plugins = types.ModuleType("vllm.plugins")
+    plugins.load_general_plugins = refusing_plugins
+    engine = types.ModuleType("vllm.engine")
+    engine.__path__ = []
+    arg_utils = types.ModuleType("vllm.engine.arg_utils")
+    arg_utils.load_general_plugins = refusing_plugins
+    for name, module in (
+        ("vllm.plugins", plugins),
+        ("vllm.engine", engine),
+        ("vllm.engine.arg_utils", arg_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    cli_args = sys.modules["vllm.entrypoints.openai.cli_args"]
+    parser = cli_args.make_arg_parser.return_value
+
+    def make_arg_parser(_parser):
+        # Both binding styles vLLM has used: a module-level import in
+        # arg_utils, and a function-local `from vllm.plugins import ...`.
+        arg_utils.load_general_plugins()
+        sys.modules["vllm.plugins"].load_general_plugins()
+        return parser
+
+    monkeypatch.setattr(cli_args, "make_arg_parser", make_arg_parser)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert {"served_model_name", "cudagraph_capture_sizes", "lora_modules"} <= names
+    assert "allowed_origins" not in names
+    # The real loader is restored for vLLM's own startup.
+    assert plugins.load_general_plugins is refusing_plugins
+    assert arg_utils.load_general_plugins is refusing_plugins
+
+
 def test_set_vllm_sys_argv_keeps_json_list_for_single_value_flag(
     monkeypatch, run_vllm_api_server_module
 ):
