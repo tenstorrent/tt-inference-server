@@ -26,7 +26,10 @@ import aiohttp
 from report_module.schema import Block
 
 from .._test_common import BaseTest, HardwareRequirement, TestConfig
-from .._test_common.video_output_check import check_video_output
+from .._test_common.video_output_check import (
+    check_video_output,
+    deployment_resolution,
+)
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -139,6 +142,9 @@ class VideoGenerationI2VTest(BaseTest):
                 file_path,
                 hf_model_repo=self.ctx.model_spec.hf_model_repo if self.ctx else "",
                 device_name=self.ctx.device.name if self.ctx else "",
+                resolution=deployment_resolution(self.ctx.model_spec)
+                if self.ctx
+                else None,
             )
             if clip_problem:
                 problems.append(f"clip: {clip_problem}")

@@ -200,13 +200,16 @@ class _FakeVideoServer:
         return web.Response(body=self.clip.read_bytes(), content_type="video/mp4")
 
 
-def _run_lifecycle(server: _FakeVideoServer, device: str = "T3K") -> dict:
+def _run_lifecycle(
+    server: _FakeVideoServer, device: str = "T3K", env_vars: dict | None = None
+) -> dict:
     async def body(url):
         ctx = SimpleNamespace(
             service_port=0,
             base_url=url,
             model_spec=SimpleNamespace(
-                hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+                hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+                env_vars=env_vars or {},
             ),
             device=SimpleNamespace(name=device),
         )
@@ -256,6 +259,15 @@ def test_lifecycle_fails_on_a_frozen_clip(tmp_path):
 def test_lifecycle_fails_on_the_wrong_resolution_for_the_mesh(wan_t3k_clip):
     result = _run_lifecycle(_FakeVideoServer(wan_t3k_clip), device="GALAXY")
     assert any("expected 1280x720" in problem for problem in result["problems"])
+
+
+def test_lifecycle_expects_480p_on_a_bh_galaxy_pinned_to_480p(wan_t3k_clip):
+    result = _run_lifecycle(
+        _FakeVideoServer(wan_t3k_clip),
+        device="BLACKHOLE_GALAXY",
+        env_vars={"WAN22_RESOLUTION": "480p"},
+    )
+    assert result["success"], result["problems"]
 
 
 def test_suite_runs_the_contract_before_the_lifecycle():

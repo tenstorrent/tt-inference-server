@@ -35,6 +35,7 @@ from .._test_common import (
 )
 from .._test_common.video_output_check import (
     check_video_output,
+    deployment_resolution,
     expected_video_shape,
 )
 from ..context import MediaContext, require_health
@@ -197,7 +198,11 @@ def _generate_video(
 
 
 def _expected_video_shape(ctx: MediaContext) -> tuple[int, int, int] | None:
-    return expected_video_shape(ctx.model_spec.hf_model_repo, ctx.device.name)
+    return expected_video_shape(
+        ctx.model_spec.hf_model_repo,
+        ctx.device.name,
+        deployment_resolution(ctx.model_spec),
+    )
 
 
 def _check_video_output(ctx: MediaContext, video_path: str) -> str | None:
@@ -205,6 +210,7 @@ def _check_video_output(ctx: MediaContext, video_path: str) -> str | None:
         video_path,
         hf_model_repo=ctx.model_spec.hf_model_repo,
         device_name=ctx.device.name,
+        resolution=deployment_resolution(ctx.model_spec),
     )
 
 

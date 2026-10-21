@@ -504,10 +504,26 @@ def is_large_mesh(mesh_shape: Tuple[int, int]) -> bool:
 WAN22_NUM_FRAMES = 81
 WAN22_RESOLUTION_LARGE_MESH = Resolution(height=720, width=1280)
 WAN22_RESOLUTION_SMALL_MESH = Resolution(height=480, width=832)
+# A deployment can pin its resolution with WAN22_RESOLUTION (e.g. 480p on a BH
+# Galaxy, which tt-metal supports at both). The pipeline is traced for one shape,
+# so this is per deployment, not per request.
+WAN22_RESOLUTIONS = {
+    "480p": WAN22_RESOLUTION_SMALL_MESH,
+    "720p": WAN22_RESOLUTION_LARGE_MESH,
+}
 
 
 def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
-    """Resolve Wan2.2 target resolution from a (rows, cols) mesh shape."""
+    """Resolve Wan2.2 target resolution: WAN22_RESOLUTION if set, else by mesh size."""
+    override = os.getenv("WAN22_RESOLUTION")
+    if override:
+        try:
+            return WAN22_RESOLUTIONS[override.strip().lower()]
+        except KeyError:
+            raise ValueError(
+                f"WAN22_RESOLUTION must be one of {sorted(WAN22_RESOLUTIONS)}, "
+                f"got {override!r}"
+            ) from None
     if is_large_mesh(mesh_shape):
         return WAN22_RESOLUTION_LARGE_MESH
     return WAN22_RESOLUTION_SMALL_MESH

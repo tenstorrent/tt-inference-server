@@ -139,6 +139,19 @@ def test_expected_video_shape(model, device, expected):
     assert mod._expected_video_shape(_ctx(model, device)) == expected
 
 
+@pytest.mark.parametrize(
+    "resolution,device,expected",
+    [
+        ("480p", "BLACKHOLE_GALAXY", (81, 832, 480)),
+        ("720p", "T3K", (81, 1280, 720)),
+    ],
+)
+def test_deployment_resolution_overrides_the_mesh_default(resolution, device, expected):
+    ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", device)
+    ctx.model_spec.env_vars = {"WAN22_RESOLUTION": resolution}
+    assert mod._expected_video_shape(ctx) == expected
+
+
 class TestCheckVideoOutput:
     """Real clips through the benchmark's output check (T3K: 832x480, 81 frames)."""
 

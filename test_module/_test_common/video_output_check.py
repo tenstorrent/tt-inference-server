@@ -23,21 +23,37 @@ WAN22_FPS = 16
 WAN22_LARGE_MESH_DEVICES = frozenset({"GALAXY", "BLACKHOLE_GALAXY"})
 WAN22_LARGE_MESH_SIZE = (1280, 720)
 WAN22_SMALL_MESH_SIZE = (832, 480)
+# A deployment that sets WAN22_RESOLUTION serves that size whatever its mesh.
+WAN22_SIZES = {"480p": WAN22_SMALL_MESH_SIZE, "720p": WAN22_LARGE_MESH_SIZE}
 
 
 def expected_video_shape(
-    hf_model_repo: str, device_name: str
+    hf_model_repo: str, device_name: str, resolution: str | None = None
 ) -> tuple[int, int, int] | None:
-    """``(num_frames, width, height)`` the server must return, or None if not pinned."""
+    """``(num_frames, width, height)`` the server must return, or None if not pinned.
+
+    ``resolution`` is the deployment's WAN22_RESOLUTION, if it sets one.
+    """
     if not hf_model_repo.startswith("Wan-AI/Wan2.2-"):
         return None
+    if resolution:
+        return (WAN22_NUM_FRAMES, *WAN22_SIZES[resolution.strip().lower()])
     if device_name.upper() in WAN22_LARGE_MESH_DEVICES:
         return (WAN22_NUM_FRAMES, *WAN22_LARGE_MESH_SIZE)
     return (WAN22_NUM_FRAMES, *WAN22_SMALL_MESH_SIZE)
 
 
+def deployment_resolution(model_spec) -> str | None:
+    """The WAN22_RESOLUTION a deployment's model spec sets, if any."""
+    return (getattr(model_spec, "env_vars", None) or {}).get("WAN22_RESOLUTION")
+
+
 def check_video_output(
-    video_path: str | Path, *, hf_model_repo: str, device_name: str
+    video_path: str | Path,
+    *,
+    hf_model_repo: str,
+    device_name: str,
+    resolution: str | None = None,
 ) -> str | None:
     """Return why a downloaded clip is unusable, or None when it is fine.
 
@@ -61,7 +77,7 @@ def check_video_output(
             "pairs unchanged)"
         )
 
-    expected = expected_video_shape(hf_model_repo, device_name)
+    expected = expected_video_shape(hf_model_repo, device_name, resolution)
     if expected is not None:
         num_frames, width, height = expected
         decoded = structural["total_decoded_frames"]
@@ -82,4 +98,4 @@ def check_video_output(
     return "; ".join(problems) or None
 
 
-__all__ = ["check_video_output", "expected_video_shape"]
+__all__ = ["check_video_output", "deployment_resolution", "expected_video_shape"]
