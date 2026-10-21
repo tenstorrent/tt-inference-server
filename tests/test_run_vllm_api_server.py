@@ -1544,3 +1544,39 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+def test_vllm_030_parser_preserves_multi_value_flags(
+    monkeypatch, run_vllm_api_server_module
+):
+    legacy = sys.modules["vllm.entrypoints.openai.cli_args"]
+    launchers = types.ModuleType("vllm.entrypoints.launchers")
+    launchers.__path__ = []
+    cli_args = types.ModuleType("vllm.entrypoints.launchers.cli_args")
+    cli_args.make_arg_parser = legacy.make_arg_parser
+    monkeypatch.setitem(sys.modules, "vllm.entrypoints.launchers", launchers)
+    monkeypatch.setitem(sys.modules, "vllm.entrypoints.launchers.cli_args", cli_args)
+    monkeypatch.delitem(sys.modules, "vllm.entrypoints.openai.cli_args")
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", '["Granite", "alias"]'],
+        {},
+    ) == ["--served-model-name", "Granite", "alias"]
+
+
+def test_vllm_parser_does_not_hide_a_missing_dependency(
+    monkeypatch, run_vllm_api_server_module
+):
+    real_import = builtins.__import__
+
+    def import_missing_dependency(name, *args, **kwargs):
+        if name == "vllm.entrypoints.launchers.cli_args":
+            raise ModuleNotFoundError(
+                "missing parser dependency", name="parser_dependency"
+            )
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_missing_dependency)
+    with pytest.raises(ModuleNotFoundError, match="missing parser dependency"):
+        run_vllm_api_server_module._vllm_multi_value_arg_names()

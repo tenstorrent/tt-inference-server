@@ -1109,7 +1109,15 @@ def _vllm_multi_value_arg_names() -> set[str]:
     tokens. --served-model-name reads ["a", "b"] as a single model named ["a", "b"],
     while --allowed-origins (nargs=None, type=json.loads) only parses the JSON form.
     """
-    from vllm.entrypoints.openai.cli_args import make_arg_parser
+    try:
+        from vllm.entrypoints.launchers.cli_args import make_arg_parser
+    except ModuleNotFoundError as error:
+        if error.name not in {
+            "vllm.entrypoints.launchers",
+            "vllm.entrypoints.launchers.cli_args",
+        }:
+            raise
+        from vllm.entrypoints.openai.cli_args import make_arg_parser
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
     parser = make_arg_parser(FlexibleArgumentParser())
