@@ -528,6 +528,213 @@ def resolve_task_for_device(task: "EvalTask", device) -> "EvalTask":
     return resolved
 
 
+# --- capacity-derived lm-eval per-request timeout ----------------------------
+#
+# lm-eval's local-(chat-)completions `timeout` model arg is an aiohttp
+# ClientTimeout total per request, defaulting to 1800 s. The clock starts when
+# the request is sent, so it covers time spent waiting in the server's scheduler
+# queue as well as decode. A long reasoning generation on a large model can
+# legitimately need longer than 1800 s, and lm-eval then records
+# __INFERENCE_ERROR__: TimeoutError for a request the server would have
+# finished. That is a harness cut-off, not a model result.
+#
+# capacity_request_timeout_s() sizes the timeout from values the config and the
+# device model spec already carry, and resolve_capacity_request_timeout()
+# applies it as the default for Quetzal (impl=quetzal) rows when the task does
+# not set its own. It never lowers an explicit timeout and never changes
+# samples, max_gen_toks or thresholds.
+
+# lm-eval local-completions / local-chat-completions default `timeout` (s).
+LM_EVAL_DEFAULT_REQUEST_TIMEOUT_S = 1800
+
+# max_gen_toks the pinned lm-eval r1_evals task YAMLs (aime24, math_500,
+# gpqa_reasoning_diamond) set in generation_kwargs, used when the EvalTask's
+# gen_kwargs does not override it.
+R1_TASK_DEFAULT_MAX_GEN_TOKS = 32768
+
+# Conservative per-request decode rate (tokens/s per in-flight request) used
+# when the device model spec declares no slower measured per-user rate at the
+# eval's concurrency. Measured on a 70B: DeepSeek-R1-Distill-Llama-70B on P300X2
+# (Quetzal, num_concurrent=32, KV pool ~80K tokens), Shield run 39430476368,
+# server-log generation throughput / running requests (running >= 4): p10
+# 4.5 tok/s, p50 8.1 tok/s. QwQ-32B on the same box measured p10 6.2 tok/s
+# (Shield run 38323771398), so 4.5 is a floor for the Quetzal P300X2 rows, not
+# a typical rate. Devices without their own entry use the same floor.
+DEFAULT_DECODE_FLOOR_TOK_S_PER_USER = 4.5
+DECODE_FLOOR_TOK_S_PER_USER_BY_DEVICE: Dict[str, float] = {
+    "P300X2": 4.5,
+}
+
+# Cap on the queue-wait multiplier. The worst-case queue depth,
+# ceil(concurrency / floor(kv_tokens / max_context)), assumes every in-flight
+# request runs to the full context, which reasoning evals do not do: most
+# generations finish well short of max_gen_toks and free their KV blocks, so a
+# queued request waits behind a few short generations, not behind a full wave
+# of max-length ones. On both measured rows (QwQ-32B: worst-case depth 11,
+# R1-Distill-Llama-70B: 32) one full-length generation of queue wait on top of
+# the generation itself covered the observed requests, so the multiplier is
+# min(depth, 2): 1 when the KV pool holds every concurrent request at full
+# context, otherwise 2.
+MAX_REQUEST_QUEUE_FACTOR = 2
+
+# Computed timeouts are rounded up to a multiple of this (the harness default).
+REQUEST_TIMEOUT_GRANULARITY_S = LM_EVAL_DEFAULT_REQUEST_TIMEOUT_S
+
+
+def capacity_request_timeout_s(
+    *,
+    max_gen_toks: int,
+    max_context: int,
+    max_concurrency: int,
+    kv_tokens: int,
+    decode_tok_s: float,
+) -> int:
+    """Per-request client timeout (s) that covers one full-length generation.
+
+    ``kv_slots = max(1, kv_tokens // max_context)`` is how many requests the KV
+    pool holds at full context; ``queue_depth = ceil(max_concurrency /
+    kv_slots)`` is how many such waves the client's concurrency asks for. The
+    timeout is ``max_gen_toks / decode_tok_s`` (one full-length generation at
+    the per-request decode rate) times ``min(queue_depth,
+    MAX_REQUEST_QUEUE_FACTOR)``, rounded up to REQUEST_TIMEOUT_GRANULARITY_S
+    and never below the harness default.
+    """
+    for name, value in (
+        ("max_gen_toks", max_gen_toks),
+        ("max_context", max_context),
+        ("max_concurrency", max_concurrency),
+        ("kv_tokens", kv_tokens),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer, got {value!r}")
+    if isinstance(decode_tok_s, bool) or not decode_tok_s or decode_tok_s <= 0:
+        raise ValueError(f"decode_tok_s must be positive, got {decode_tok_s!r}")
+    kv_slots = max(1, kv_tokens // max_context)
+    queue_depth = math.ceil(max_concurrency / kv_slots)
+    queue_factor = min(queue_depth, MAX_REQUEST_QUEUE_FACTOR)
+    seconds = max_gen_toks / decode_tok_s * queue_factor
+    granularity = REQUEST_TIMEOUT_GRANULARITY_S
+    rounded = int(math.ceil(seconds / granularity) * granularity)
+    return max(rounded, LM_EVAL_DEFAULT_REQUEST_TIMEOUT_S)
+
+
+def _positive_int(value) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out > 0 else None
+
+
+def _spec_kv_tokens(device_model_spec) -> Optional[int]:
+    """KV pool size in tokens: the smaller of the declared KV budget
+    (``override_tt_config.kv_cache_usable_tokens``) and the spec's
+    ``max_tokens_all_users`` (``max_tokens_all_users_override`` when set,
+    otherwise derived from max_context)."""
+    tt_config = getattr(device_model_spec, "override_tt_config", None) or {}
+    candidates = [
+        _positive_int(tt_config.get("kv_cache_usable_tokens")),
+        _positive_int(getattr(device_model_spec, "max_tokens_all_users", None)),
+    ]
+    candidates = [c for c in candidates if c is not None]
+    return min(candidates) if candidates else None
+
+
+def _spec_decode_tok_s(device_model_spec, concurrency: int) -> float:
+    """Per-request decode rate for the timeout: the device floor, or a lower
+    measured per-user rate (perf_reference ``target`` tier, which is parsed
+    from a ``measured`` block) declared at >= the eval's concurrency. A
+    declared rate can only lengthen the timeout, never shorten it."""
+    device = getattr(device_model_spec, "device", None)
+    device_name = str(getattr(device, "name", device) or "").upper()
+    rate = DECODE_FLOOR_TOK_S_PER_USER_BY_DEVICE.get(
+        device_name, DEFAULT_DECODE_FLOOR_TOK_S_PER_USER
+    )
+    for params in getattr(device_model_spec, "perf_reference", None) or []:
+        params_concurrency = _positive_int(getattr(params, "max_concurrency", None))
+        if params_concurrency is None or params_concurrency < concurrency:
+            continue
+        target = (getattr(params, "targets", None) or {}).get("target")
+        tput_user = getattr(target, "tput_user", None)
+        if tput_user and tput_user > 0:
+            rate = min(rate, float(tput_user))
+    return rate
+
+
+def _task_max_gen_toks(task: "EvalTask", gen_kwargs: Optional[dict]) -> Optional[int]:
+    value = _positive_int((gen_kwargs or {}).get("max_gen_toks"))
+    if value is not None:
+        return value
+    if task.task_name.startswith("r1_"):
+        return R1_TASK_DEFAULT_MAX_GEN_TOKS
+    return None
+
+
+def resolve_capacity_request_timeout(
+    task: "EvalTask",
+    model_spec,
+    *,
+    gen_kwargs: Optional[dict] = None,
+    num_concurrent: Optional[int] = None,
+) -> Optional[int]:
+    """Default lm-eval ``timeout`` for ``task`` on ``model_spec``, or None.
+
+    Returns a timeout only when all of these hold, so every other task keeps
+    its command line unchanged:
+
+    * the row is a Quetzal row (``model_spec.impl.impl_id == "quetzal"``);
+    * the task is an lm-eval (EVALS_COMMON) task with no explicit ``timeout``
+      in ``model_kwargs`` (an explicit value always wins);
+    * the task's output budget is known (``gen_kwargs["max_gen_toks"]``, after
+      the device clamp, or the r1_* task YAML default);
+    * the device spec carries max_context and a KV pool size;
+    * the computed timeout exceeds the harness default, i.e. the task is a
+      long-generation task the default could cut off.
+
+    ``gen_kwargs`` and ``num_concurrent`` are the effective values the eval
+    command sends (after device clamps); they default to the task's own.
+    """
+    impl_id = getattr(getattr(model_spec, "impl", None), "impl_id", None)
+    if impl_id != "quetzal":
+        return None
+    if task.workflow_venv_type != WorkflowVenvType.EVALS_COMMON:
+        return None
+    if "timeout" in (task.model_kwargs or {}):
+        return None
+    device_model_spec = getattr(model_spec, "device_model_spec", None)
+    max_context = _positive_int(getattr(device_model_spec, "max_context", None))
+    kv_tokens = _spec_kv_tokens(device_model_spec)
+    if max_context is None or kv_tokens is None:
+        return None
+    max_gen_toks = _task_max_gen_toks(
+        task, task.gen_kwargs if gen_kwargs is None else gen_kwargs
+    )
+    if max_gen_toks is None:
+        return None
+    concurrency = _positive_int(
+        task.max_concurrent if num_concurrent is None else num_concurrent
+    )
+    if concurrency is None:
+        concurrency = 1
+    device_concurrency = _positive_int(
+        getattr(device_model_spec, "max_concurrency", None)
+    )
+    if device_concurrency is not None:
+        concurrency = min(concurrency, device_concurrency)
+    timeout = capacity_request_timeout_s(
+        max_gen_toks=max_gen_toks,
+        max_context=max_context,
+        max_concurrency=concurrency,
+        kv_tokens=kv_tokens,
+        decode_tok_s=_spec_decode_tok_s(device_model_spec, concurrency),
+    )
+    if timeout <= LM_EVAL_DEFAULT_REQUEST_TIMEOUT_S:
+        return None
+    return timeout
+
+
 @dataclass(frozen=True)
 class EvalConfig:
     hf_model_repo: str

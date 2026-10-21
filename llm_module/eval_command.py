@@ -552,6 +552,23 @@ def build_eval_command(
         effective_gen_kwargs = _inject_seed_into_gen_kwargs(
             effective_gen_kwargs, getattr(task, "seed", None)
         )
+    # Quetzal long-generation tasks with no explicit timeout get one sized from
+    # the device's KV capacity and decode rate instead of lm-eval's 1800 s
+    # default, which cuts off full-length reasoning generations.
+    from reference_config.evals.eval_config import resolve_capacity_request_timeout
+
+    capacity_timeout = resolve_capacity_request_timeout(
+        task,
+        model_spec,
+        gen_kwargs=effective_gen_kwargs,
+        num_concurrent=effective_max_concurrent,
+    )
+    if capacity_timeout is not None:
+        effective_model_kwargs["timeout"] = str(capacity_timeout)
+        logger.info(
+            f"{task.task_name}: lm-eval per-request timeout {capacity_timeout} s "
+            "derived from device KV capacity and decode floor (no explicit timeout)"
+        )
 
     optional_model_args = []
     if effective_max_concurrent:
