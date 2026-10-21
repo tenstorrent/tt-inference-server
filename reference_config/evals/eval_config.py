@@ -8532,8 +8532,8 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row. Ungated like the tasks above (no GPU
-            # reference yet); they report the card's AIME 2026 at a 64K budget and the CI agentic subsets.
+            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row. AIME 2026 is ungated (no GPU reference yet);
+            # the CI agentic subsets gate on a 1-of-5 floor.
             # The chat API lets the server render the native template and the muse_glimmer reasoning
             # parser separate thinking from the answer. lm-eval timeout == wall bound: never retry a request.
             EvalTask(
@@ -8586,7 +8586,7 @@ _eval_config_list = [
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # Card 51.7 on the full set; this 5-task CI subset is not comparable: reported, not gated.
+                    # Card 51.7 on the full set; this 5-task CI subset is not comparable, so it is not cited.
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
@@ -8595,6 +8595,16 @@ _eval_config_list = [
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
                         "unit": "percent",
+                    },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
@@ -8641,7 +8651,7 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # Card 76.0 on the full set; this 5-task CI subset is not comparable: reported, not gated.
+                    # Card 76.0 on the full set; this 5-task CI subset is not comparable, so it is not cited.
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
@@ -8650,6 +8660,16 @@ _eval_config_list = [
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
                         "unit": "percent",
+                    },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
                     },
                 ),
                 agentic_eval_config=HarborEvalConfig(
