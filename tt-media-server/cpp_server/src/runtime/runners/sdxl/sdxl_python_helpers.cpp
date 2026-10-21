@@ -22,6 +22,7 @@ constexpr const char* HELPER_SOURCE = R"PY(
 import fcntl
 import os
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -118,29 +119,65 @@ def _triggers_from_safetensors_repo(repo_id):
         return []
 
 
+def _coordination_dir():
+    lock_dir = Path(os.environ.get("HF_HOME") or "/tmp")
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        probe = lock_dir / f".tt_sdxl_write_probe.{os.getpid()}"
+        probe.touch()
+        probe.unlink()
+        return lock_dir
+    except Exception:
+        return Path("/tmp")
+
+
 def resolve_model_path(repo_or_path):
+    """HF repo id or local directory -> local directory with a complete snapshot.
+
+    Only one worker process downloads on a cold cache; the others block on an
+    exclusive flock. A snapshot directory appears in the hub cache as soon as
+    the first file lands and snapshot_download(local_files_only=True) returns it
+    without checking that every file is present, so a waiting worker must never
+    trust the cache on its own: the downloading worker records the resolved
+    path in a marker file only after snapshot_download returned, and followers
+    accept the cache only through that marker. Anything else re-runs the online
+    snapshot_download, which verifies and resumes a partial snapshot.
+    """
     p = Path(repo_or_path)
     if p.exists():
         return str(p.resolve())
     from huggingface_hub import snapshot_download
-    try:
-        return snapshot_download(repo_id=repo_or_path, local_files_only=True)
-    except Exception:
-        pass
     safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", repo_or_path)
-    lock_dir = Path(os.environ.get("HF_HOME") or "/tmp")
-    try:
-        lock_dir.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        lock_dir = Path("/tmp")
+    lock_dir = _coordination_dir()
     lock_path = lock_dir / f".tt_sdxl_hf_{safe_name}.lock"
+    done_path = lock_dir / f".tt_sdxl_hf_{safe_name}.complete"
     with open(lock_path, "w") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
             try:
-                return snapshot_download(repo_id=repo_or_path, local_files_only=True)
-            except Exception:
-                return snapshot_download(repo_id=repo_or_path)
+                recorded = done_path.read_text().strip()
+            except OSError:
+                recorded = ""
+            if recorded and Path(recorded).is_dir():
+                return recorded
+            try:
+                local = snapshot_download(repo_id=repo_or_path)
+            except Exception as exc:
+                # Offline / Hub unreachable: fall back to whatever the cache holds.
+                # Not recorded as complete, since it was never verified.
+                local = snapshot_download(repo_id=repo_or_path, local_files_only=True)
+                print(
+                    f"[SDXL] Hub unreachable ({exc!r}); using unverified cached "
+                    f"snapshot {local}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return local
+            try:
+                done_path.write_text(local)
+            except OSError:
+                pass
+            return local
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
