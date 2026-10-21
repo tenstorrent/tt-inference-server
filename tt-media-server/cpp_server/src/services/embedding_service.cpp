@@ -51,7 +51,7 @@ makeDefaultEmbeddingQueueSet(const config::EmbeddingConfig& cfg) {
 
 }  // namespace
 
-void EmbeddingService::DispatchSummary::record(
+bool EmbeddingService::DispatchSummary::record(
     size_t batchSize, double queueWaitMs, double collectMs, double enqueueMs,
     double shmRoundTripMs, double completeMs) {
   std::lock_guard<std::mutex> lock(mutex);
@@ -61,9 +61,10 @@ void EmbeddingService::DispatchSummary::record(
   phases[3].samplesMs.push_back(shmRoundTripMs);
   phases[4].samplesMs.push_back(completeMs);
   batchSizeCounts[batchSize] += 1;
+  return ++batchesSinceSummary >= kSummaryEveryBatches;
 }
 
-void EmbeddingService::DispatchSummary::logSummary() {
+void EmbeddingService::DispatchSummary::logSummary(const char* reason) {
   std::lock_guard<std::mutex> lock(mutex);
   if (batchSizeCounts.empty()) return;
 
@@ -74,8 +75,8 @@ void EmbeddingService::DispatchSummary::logSummary() {
     batches += count;
     requests += count * size;
   }
-  line << "[EmbeddingService] Dispatch summary: batches=" << batches
-       << " requests=" << requests;
+  line << "[EmbeddingService] Dispatch summary (" << reason
+       << "): batches=" << batches << " requests=" << requests;
   for (auto& phase : phases) {
     line << " " << phase.name << "_ms=" << meanOf(phase.samplesMs) << "/"
          << p99Of(phase.samplesMs) << "(mean/p99)";
@@ -86,6 +87,10 @@ void EmbeddingService::DispatchSummary::logSummary() {
   }
   TT_LOG_INFO("{}", line.str());
   batchSizeCounts.clear();
+  for (auto& phase : phases) {
+    phase.samplesMs.clear();
+  }
+  batchesSinceSummary = 0;
 }
 
 EmbeddingService::EmbeddingService()
@@ -174,13 +179,16 @@ void EmbeddingService::onTaskCompleted(
                                                         state.claimTime)
                   .count()
             : 0.0;
-    dispatchSummary_.record(state.batchSize, state.queueWaitMs,
-                            state.batchCollectMs, state.batchEnqueueMs,
-                            shmRoundTripMs, state.batchCompleteMs);
+    const bool summaryDue = dispatchSummary_.record(
+        state.batchSize, state.queueWaitMs, state.batchCollectMs,
+        state.batchEnqueueMs, shmRoundTripMs, state.batchCompleteMs);
     state.batchSize = 0;
+    if (summaryDue) {
+      dispatchSummary_.logSummary("periodic");
+    }
   }
 }
 
-void EmbeddingService::onStopped() { dispatchSummary_.logSummary(); }
+void EmbeddingService::onStopped() { dispatchSummary_.logSummary("final"); }
 
 }  // namespace tt::services
