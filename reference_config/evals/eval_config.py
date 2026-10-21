@@ -12093,7 +12093,6 @@ _eval_config_list = [
                 # Match gemma-4-31B-it: CI_NIGHTLY 0.2 = doc_ids 0-39 (40 samples; one
                 # question is 2.5 points). 0.05 was 10 samples, a 10-point step.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 1.0,  # branch-only: all 198
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
