@@ -90,6 +90,9 @@ tt-media-server/huggingface
 
 # ignore downloaded datsets
 test_fixtures/datasets/*
+# ...except the committed I2V eval pairs (see its ATTRIBUTION.md)
+!test_fixtures/datasets/coco_i2v/
+!test_fixtures/datasets/coco_i2v/manifest.json
 
 # ignore generated files
 model_spec.json

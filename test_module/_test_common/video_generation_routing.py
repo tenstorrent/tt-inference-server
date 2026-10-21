@@ -11,6 +11,7 @@ submit jobs to the same endpoints with the same payload shape.
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
@@ -18,6 +19,9 @@ VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT = "v1/videos/generations/i2v"
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
+# Image-caption pairs for the I2V eval: each image with the caption that
+# describes it (see its ATTRIBUTION.md).
+I2V_EVAL_PAIRS_DIR = Path("test_fixtures") / "datasets" / "coco_i2v"
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 
@@ -35,6 +39,31 @@ def _load_fixture_image_base64() -> str:
             "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
         )
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
+
+
+def load_i2v_eval_pairs(num_pairs: int) -> list[dict]:
+    """The first ``num_pairs`` I2V eval pairs: ``{prompt, image, image_b64, concepts}``.
+
+    ``prompt`` is the caption of ``image``, so the video is scored against text
+    that describes what it was conditioned on; ``concepts`` are the things in it
+    the video should keep showing, each scored separately.
+    """
+    manifest = json.loads((I2V_EVAL_PAIRS_DIR / "manifest.json").read_text())
+    if num_pairs > len(manifest):
+        raise ValueError(
+            f"I2V eval wants {num_pairs} pairs; {I2V_EVAL_PAIRS_DIR} has {len(manifest)}"
+        )
+    return [
+        {
+            "prompt": entry["caption"],
+            "image": entry["image"],
+            "concepts": entry.get("concepts", []),
+            "image_b64": base64.b64encode(
+                (I2V_EVAL_PAIRS_DIR / entry["image"]).read_bytes()
+            ).decode("ascii"),
+        }
+        for entry in manifest[:num_pairs]
+    ]
 
 
 def build_video_generation_payload(
