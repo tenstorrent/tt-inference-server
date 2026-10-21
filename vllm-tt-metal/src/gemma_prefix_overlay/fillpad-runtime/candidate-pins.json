@@ -1,0 +1,30 @@
+{
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/fill_pad_device_operation.cpp": {
+    "original": "85c623bc7160418fe5c40913e4c682b20503757095145b36670d44ea3442c491",
+    "candidate": "1f9f5f82c265df4a751aad42a9a97370fa43438ea7e3504a4d69c872990bdd56"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/fill_pad_device_operation.hpp": {
+    "original": "442c5aaff22aeb7f1eb7badfb915e783c6838df92a770f03fd5d5a7bbc03738a",
+    "candidate": "50d88b6fdc3af412e60d94805615ae5e627a46f87dbfcbb9b9be518067c82814"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/fill_pad_device_operation_types.hpp": {
+    "original": "c9894e4792a2a4297cbdbafea6e3dab7a9144e95bb98adea41252376a59ffaae",
+    "candidate": "7ac7a31df0834e102f50896eeb1591c528aabf5335798e281e39bec7ab032c52"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/fill_pad_program_factory.cpp": {
+    "original": "2e1cb06e91e012da9ebb51339cc5e2b7e5d7d7456a0570c5135d59b8f5c29ece",
+    "candidate": "7544653590a7d97a706dec237e67df796cd9c9c8d25247479231582e28627083"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/fill_pad_program_factory.hpp": {
+    "original": "9559bca3ce87a8fc3da11ee69e6ded99d65b692cd9eb8b902c61bf66e24283b1",
+    "candidate": "9392831e20ffd54bee831af53994fc0e8970e5b5f811d6132ecf085144cffe28"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/kernels/dataflow/fill_pad_dataflow_common.hpp": {
+    "original": "e35617068184ecb6e1fc220d923bef87a375b441ce39a7aa2fc0ad636fc1fcb5",
+    "candidate": "36c8c8a54322c6a766fbda5d299ea642159b0568a200e3161eb5c6f6bcff6873"
+  },
+  "ttnn/cpp/ttnn/operations/data_movement/fill_pad/device/kernels/dataflow/fill_pad_writer.cpp": {
+    "original": "237469738ff47491f08712fb977c4194bc68a34e16d8297ee6ebb1ed4cad974d",
+    "candidate": "64a3285c716043cc9b84fc86a11a2e6d390a73b1c9ca6c07f8f6e35733a8ae31"
+  }
+}

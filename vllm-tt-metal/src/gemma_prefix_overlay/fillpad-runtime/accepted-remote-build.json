@@ -1,0 +1,39 @@
+{
+  "started_at": 1792572786.0200806,
+  "stage": "complete",
+  "image": "sha256:0041fbc0fcad0ca8d90d4c9aa2e099a8a0db9a2b0d0684d9f4ba46917c3b6eef",
+  "device_access": false,
+  "scope": "Build preparation for subsequent device operation triplet, not standalone CPU reference",
+  "original_factory_sha256": "ee6af40c79d5e2a60c970d896c10bdd25919a50578030d72ca7750d0a61cca06",
+  "unity_sha256": "1e5dd6f15bbd81733a8b1c1b8ee86a8600075e41a20bd9f9307add722287fe76",
+  "installed_runtime_sha256": "3a538c789f3ef3fe07f3014a34e4018e9e876ad82eae3c6d13fd37903328ca77",
+  "commands_sha256": "1706769f60d152108fd0092b8bbee2cc2dd28b6df4b52d537796e2f3ed61eb5d",
+  "patch_sha256": "fd38bc3f3515214a317b0c60092eb65213fd70adde1055c6d99ef5043bfd6ee3",
+  "compiler_sha256": "a7b31cd92536924097ddbd01c3a238f8afd00f7d60bb359ebcc0813f3ff8394f",
+  "unity_includes_sha256": {
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/matmul.cpp": "802bf69b5ace5696c30890ad403fc0de382fbf9ad5b578b11ced117b07813f05",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/config/matmul_program_config.cpp": "515cda80bb1705a44bd3439963bff6724c8a6667a28b851d7c9e350384b6d3b3",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/matmul_device_operation.cpp": "0aa160afbbff0efeba414a632e5c723a5a5ef4df4916df92154e577ad494a83a",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/utilities/matmul_utilities.cpp": "6b79d9461ebbfe437c7fc8afc4f7b01c77cdf4fd33c1f1cfe444a42e3b6326c4",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_program_factory.cpp": "04ef16ffcbac2b4615ef7e99262a18419713e0ea80764aa8588e5af779f4c7ad",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_1d_program_factory.cpp": "7ddeb4b8e7308218ebb206fc15c78487ba36ad8619869d8bea974e058f68e03c",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_2d_program_factory.cpp": "ee6af40c79d5e2a60c970d896c10bdd25919a50578030d72ca7750d0a61cca06",
+    "/home/container_app_user/tt-metal/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_dram_sharded_program_factory.cpp": "99952f3c4879176f56379c4f5023394cd02079d950f6790fc77e0db6907d1a3c"
+  },
+  "rebuilt": {
+    "started_at": 1792572787.876456,
+    "factory_sha256": "ee6af40c79d5e2a60c970d896c10bdd25919a50578030d72ca7750d0a61cca06",
+    "binary_sha256": "f8066a13535a5e3601fb16ad90b1523c677a9750be99af0f40be8db035e5e1d6",
+    "binary_bytes": 65761904,
+    "ended_at": 1792572805.2344277
+  },
+  "patched": {
+    "started_at": 1792572805.238545,
+    "factory_sha256": "cde44dc74ae1bf2f92d18fd263b298384bcf7df6b2e0c6eff3308be58342024e",
+    "binary_sha256": "fb3478d025a1843cf9b2199ec0d8efade288b6d75c31d93d131f9d3f632d583b",
+    "binary_bytes": 65762304,
+    "ended_at": 1792572822.2954187,
+    "matches_local_fb3478": true
+  },
+  "finished_at": 1792572822.295643
+}
