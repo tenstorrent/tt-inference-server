@@ -116,6 +116,8 @@ def run_probe(server, context):
         from .ci_returning_pressure import execute_pressure
         execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-mixed',
                          Path(__file__).parent / 'r9_data/c32-mixed-prefixes.json')
+        execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-admission32',
+                         Path(__file__).parent / 'r9_data/c32-admission32-prefixes.json')
         return summary, summary_path
     except BaseException as error:
         save(root / 'failure.json', dict(error_type=type(error).__name__, error=str(error),
