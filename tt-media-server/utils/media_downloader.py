@@ -94,12 +94,19 @@ def is_media_url(value: str) -> bool:
 
 
 def redact_url(url: str) -> str:
-    """Strip the query string and fragment for error/log text.
+    """Strip userinfo, the query string and the fragment.
 
     Presigned URLs carry credentials in the query (``X-Amz-Signature``,
-    expiry); they must never land in HTTP error details or server logs.
+    expiry) and ``user:pass@`` URLs in the authority; neither may land in HTTP
+    error details, server logs or a stored job's request. String-based so it
+    also works on URLs ``urlsplit`` rejects.
     """
-    return url.split("#", 1)[0].split("?", 1)[0]
+    stripped = url.split("#", 1)[0].split("?", 1)[0]
+    scheme, separator, rest = stripped.partition("://")
+    if not separator:
+        return stripped
+    authority, slash, path = rest.partition("/")
+    return f"{scheme}{separator}{authority.rpartition('@')[2]}{slash}{path}"
 
 
 def _normalize_hostname(hostname: str) -> str:

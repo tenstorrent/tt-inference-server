@@ -27,6 +27,7 @@ from utils.media_downloader import (
     check_media_url_policy,
     download_media_url,
     is_media_url,
+    redact_url,
 )
 
 
@@ -90,6 +91,24 @@ class TestIsMediaUrl:
         assert not is_media_url("data:image/png;base64,AAAA")
         assert not is_media_url("ftp://host/x")
         assert not is_media_url("file:///etc/passwd")
+
+
+class TestRedactUrl:
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            (
+                "https://b.s3.amazonaws.com/a.png?X-Amz-Signature=sig#frag",
+                "https://b.s3.amazonaws.com/a.png",
+            ),
+            ("https://user:pass@host:8443/a/b.mp4", "https://host:8443/a/b.mp4"),
+            ("https://user:pass@host?token=t", "https://host"),
+            ("https://host/a/b@c.png", "https://host/a/b@c.png"),
+            ("not a url?secret", "not a url"),
+        ],
+    )
+    def test_strips_credentials(self, url, expected):
+        assert redact_url(url) == expected
 
 
 class TestPolicy:

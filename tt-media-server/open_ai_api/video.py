@@ -61,6 +61,7 @@ from utils.media_downloader import (
     MediaDownloadTooLargeError,
     download_media_url,
     is_media_url,
+    redact_url,
 )
 from utils.video_manager import VideoManager
 
@@ -623,6 +624,18 @@ def _check_request_media(request: VideoGenerateRequest) -> None:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _redact_media_urls(parameters: dict) -> None:
+    """Strip credentials from media URLs in a request dump; it is stored and echoed on every poll."""
+    for entry in parameters.get("image_prompts") or []:
+        if is_media_url(entry["image"]):
+            entry["image"] = redact_url(entry["image"])
+    references = parameters.get("references") or {}
+    for kind in ("images", "videos", "audios"):
+        for source in references.get(kind) or []:
+            if source.get("url"):
+                source["url"] = redact_url(source["url"])
+
+
 async def _submit_video_request(
     request: VideoGenerateRequest,
     service: BaseJobService,
@@ -645,6 +658,7 @@ async def _submit_video_request(
     client_parameters = request.model_dump(
         mode="json", exclude=_H3_UNREAD_FIELDS if _is_minimax_h3() else None
     )
+    _redact_media_urls(client_parameters)
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
     _check_request_media(request)

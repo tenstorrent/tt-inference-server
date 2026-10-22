@@ -31,6 +31,7 @@ from open_ai_api.video import (
     MAX_INLINE_MEDIA_LEN,
     _check_request_media,
     _enforce_inline_media_total,
+    _redact_media_urls,
     _resolve_image_prompt_urls,
     _submit_video_request,
     submit_generate_video_i2v_request,
@@ -245,5 +246,19 @@ class TestSubmitPathResolvesUrls:
             await _submit_video_request(request, mock_service)
 
         echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
-        assert echoed["image_prompts"][0]["image"] == _URL
+        assert echoed["image_prompts"][0]["image"] == _URL.split("?")[0]
         assert request.image_prompts[0].image == _TINY_PNG_BASE64
+
+    def test_echoed_reference_urls_are_redacted(self):
+        request = VideoRef2VAGenerateRequest(
+            prompt="p",
+            references=MultimodalReferences(
+                images=[MediaSource(b64=_TINY_PNG_BASE64)],
+                videos=[MediaSource(url="https://u:p@host/clip.mp4?sig=s")],
+            ),
+        )
+        parameters = request.model_dump(mode="json")
+        _redact_media_urls(parameters)
+        assert parameters["references"]["videos"][0]["url"] == "https://host/clip.mp4"
+        assert parameters["references"]["images"][0]["b64"] == _TINY_PNG_BASE64
+        assert request.references.videos[0].url == "https://u:p@host/clip.mp4?sig=s"
