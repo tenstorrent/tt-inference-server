@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 import math
 import os
 import signal
@@ -411,6 +412,7 @@ def _terminate(proc: subprocess.Popen, log: logging.Logger) -> None:
 
 def make_terminal_bench_probe(
     job_dir: Path,
+    *, emit_completed_outcomes: bool = False,
 ) -> Callable[[], Optional[ProgressSnapshot]]:
     """Probe for ``harbor run``.
 
@@ -424,6 +426,47 @@ def make_terminal_bench_probe(
     estimating on this harness.
     """
     result_path = job_dir / "result.json"
+    emitted_outcomes: dict[str, str] = {}
+    next_outcome_scan = 0.0
+
+    def preserve_completed_outcomes(completed: int, *, force: bool = False) -> None:
+        # Observational only: no task mutation/retry or scheduler/budget changes.
+        # A completed counter may precede a readable trial file, so retry at most
+        # every 60 seconds until all observed completions have a snapshot.
+        nonlocal next_outcome_scan
+        now = time.monotonic()
+        if not emit_completed_outcomes or (not force and (completed <= len(emitted_outcomes) or now < next_outcome_scan)):
+            return
+        next_outcome_scan = now + 60.0
+        for path in sorted(job_dir.glob("*/result.json")):
+            try:
+                if path.stat().st_size > 1024 * 1024:
+                    continue  # Bounded observation; never interpret skipped evidence as a failure.
+                raw = path.read_bytes()
+                trial = json.loads(raw)
+                if not trial.get("finished_at") or not trial.get("trial_name"):
+                    continue
+                name = trial["trial_name"]
+                if name in emitted_outcomes:
+                    continue
+                config = trial["config"]
+                policy = {k: config[k] for k in ("task", "agent", "verifier")}
+                policy_bytes = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+                event = {
+                    "schema": 1, "trial_name": name, "task_name": trial["task_name"],
+                    "task_id": trial["task_id"], "task_checksum": trial["task_checksum"],
+                    "started_at": trial.get("started_at"), "finished_at": trial["finished_at"],
+                    "rewards": (trial.get("verifier_result") or {}).get("rewards"),
+                    "exception_type": (trial.get("exception_info") or {}).get("exception_type"),
+                    "trial_snapshot_sha256": hashlib.sha256(raw).hexdigest(),
+                    "task_agent_verifier_policy_sha256": hashlib.sha256(policy_bytes).hexdigest(),
+                    "scope": "Completed trial snapshot, not complete-suite/source/runtime acceptance",
+                }
+                logger.info("AGENTIC_COMPLETED_TRIAL %s", json.dumps(event, separators=(",", ":")))
+                emitted_outcomes[name] = event["trial_snapshot_sha256"]
+            except Exception:
+                # Sink failure or partial/unreadable evidence never becomes a fabricated failure.
+                continue
 
     def probe() -> Optional[ProgressSnapshot]:
         if not result_path.exists():
@@ -436,6 +479,10 @@ def make_terminal_bench_probe(
         total = data.get("n_total_trials")
         stats = data.get("stats") or {}
         completed = int(stats.get("n_completed_trials", 0) or 0)
+        try:
+            preserve_completed_outcomes(completed)
+        except Exception:
+            pass  # Observation cannot change progress/watchdog behavior.
         running = int(stats.get("n_running_trials", 0) or 0)
         pending = stats.get("n_pending_trials")
 
@@ -452,4 +499,11 @@ def make_terminal_bench_probe(
             heartbeat=heartbeat,
         )
 
+    def finalize_outcomes() -> None:
+        try:
+            preserve_completed_outcomes(0, force=True)
+        except Exception:
+            pass  # Recovery observation never changes harness return/exception.
+
+    probe.finalize_outcomes = finalize_outcomes
     return probe

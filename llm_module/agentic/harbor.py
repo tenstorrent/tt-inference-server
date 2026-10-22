@@ -410,21 +410,25 @@ def run(config: HarborRunConfig) -> int:
         process_env["PYTHONPATH"] = source_root + os.pathsep + process_env.get("PYTHONPATH", "")
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
-    rc = run_with_progress(
-        cmd,
-        cwd=None,
-        env=process_env,
-        probe=make_terminal_bench_probe(job_dir),
-        label=config.task_name,
-        per_task_budget_s=per_task_budget,
-        concurrency=config.n_concurrent_trials,
-        startup_grace_s=config.startup_grace_sec,
-        stall_grace_s=config.stall_grace_sec,
-        log_interval_s=config.progress_log_interval_sec,
-        hard_timeout_s=config.harbor_timeout_sec,
-        enforce_deadlines=config.enforce_agent_deadline,
-        log=logger,
-    )
+    probe = make_terminal_bench_probe(job_dir, emit_completed_outcomes=True)
+    try:
+        rc = run_with_progress(
+            cmd,
+            cwd=None,
+            env=process_env,
+            probe=probe,
+            label=config.task_name,
+            per_task_budget_s=per_task_budget,
+            concurrency=config.n_concurrent_trials,
+            startup_grace_s=config.startup_grace_sec,
+            stall_grace_s=config.stall_grace_sec,
+            log_interval_s=config.progress_log_interval_sec,
+            hard_timeout_s=config.harbor_timeout_sec,
+            enforce_deadlines=config.enforce_agent_deadline,
+            log=logger,
+        )
+    finally:
+        probe.finalize_outcomes()
     # A watchdog timeout can still leave useful per-trial diagnostics in
     # result.json. Annotate that file, but preserve rc=124: Harbor computes
     # accuracy over completed trials, so treating a partial file as success can
