@@ -145,6 +145,10 @@ class TestLlamaTrainingServiceCreateJob:
             assert (
                 kwargs["mark_worker_retiring"] == service.scheduler.mark_worker_retiring
             )
+            assert (
+                kwargs["clear_worker_retirement"]
+                == service.scheduler.clear_worker_retirement
+            )
             assert kwargs["replace_worker"] == service.scheduler.replace_worker
             assert kwargs["result_path"] == "./adapters/llama_task_456"
 
