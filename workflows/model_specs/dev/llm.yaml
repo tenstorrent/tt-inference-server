@@ -5832,6 +5832,9 @@ templates:
       tokenizer_revision: cca48b6631d03c338a0e1d8beb0c392af8becbd3
       # k2_horizon config class is remote code (auto_map); vLLM >= 0.30.0 has the model natively
       trust_remote_code: true
+      # 16384-token profiling forward (fused MoVA + MoE) OOMed after 69.96 GiB of
+      # weights on a 96 GB G4; 4096 = the TT row's prefill bucket (scheduling only)
+      max_num_batched_tokens: 4096
   status: EXPERIMENTAL
 - weights:
   - Qwen/Qwen2-7B
