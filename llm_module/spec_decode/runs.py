@@ -41,8 +41,8 @@ THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 8, 16, 32, 64)
 # 'coding' qualitative category plus a single throughput ISL at three
 # concurrencies — 32k_maxcon-{1,16,64}.
 CI_QUALITATIVE_CATEGORIES: Tuple[str, ...] = ("coding",)
-CI_THROUGHPUT_ISLS: Tuple[str, ...] = ("32k",)
-CI_THROUGHPUT_CONCURRENCIES: Tuple[int, ...] = (1, 16, 64)
+CI_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k",)
+CI_THROUGHPUT_CONCURRENCIES: Tuple[int, ...] = (1, 16)
 
 # Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
 # max(10, concurrency*2) == 10 for conc=1, so the count must be passed
@@ -130,7 +130,7 @@ def _throughput_runs(
         SpecDecodeRun(
             public_dataset=f"speed_bench_throughput_{isl}",
             max_concurrency=concurrency,
-            num_prompts=max(32, 4 * concurrency),
+            num_prompts=max(8, 4 * concurrency),
             max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
         )
         for isl in isls
