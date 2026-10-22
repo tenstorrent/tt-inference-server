@@ -730,19 +730,12 @@ class TestDeleteVideoJob:
         }
         assert {"GET", "DELETE"} <= methods
 
-    def test_delete_video_job_success(self):
+    async def test_delete_video_job_success(self):
         """A finished job is deleted and the OpenAI-style receipt is returned."""
         mock_service = MagicMock()
-        mock_service.delete_job = MagicMock(
-            return_value={
-                "id": "job_123",
-                "job_type": JobTypes.VIDEO.value,
-                "status": "completed",
-                "created_at": 1000,
-            }
-        )
+        mock_service.delete_job = AsyncMock(return_value=True)
 
-        response = delete_video_job(
+        response = await delete_video_job(
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
@@ -754,14 +747,14 @@ class TestDeleteVideoJob:
             "object": JobTypes.VIDEO.value,
             "deleted": True,
         }
-        mock_service.delete_job.assert_called_once_with("job_123")
+        mock_service.delete_job.assert_awaited_once_with("job_123")
 
-    def test_delete_video_job_not_found(self):
+    async def test_delete_video_job_not_found(self):
         mock_service = MagicMock()
-        mock_service.delete_job = MagicMock(return_value=None)
+        mock_service.delete_job = AsyncMock(return_value=False)
 
         with pytest.raises(HTTPException) as exc_info:
-            delete_video_job(
+            await delete_video_job(
                 job_id="non_existent_job",
                 service=mock_service,
                 api_key="test_key",
@@ -770,15 +763,15 @@ class TestDeleteVideoJob:
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Video job not found"
 
-    def test_delete_video_job_active_conflict_propagates(self):
-        """The manager's 409 for an unfinished job reaches the client unchanged."""
+    async def test_delete_video_job_active_conflict(self):
+        """The manager refuses an unfinished video job; the client gets a 409."""
         mock_service = MagicMock()
-        mock_service.delete_job = MagicMock(
-            side_effect=HTTPException(status_code=409, detail="Job is in_progress")
+        mock_service.delete_job = AsyncMock(
+            side_effect=ValueError("Only active training jobs can be force-deleted")
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            delete_video_job(
+            await delete_video_job(
                 job_id="job_123",
                 service=mock_service,
                 api_key="test_key",
@@ -792,7 +785,9 @@ class TestDeleteVideoJobHTTP:
 
     @pytest.fixture
     def mock_service(self):
-        return MagicMock()
+        service = MagicMock()
+        service.delete_job = AsyncMock()
+        return service
 
     @pytest.fixture
     def client(self, mock_service):
@@ -812,7 +807,7 @@ class TestDeleteVideoJobHTTP:
 
     @pytest.mark.parametrize("prefix", ["/v1/videos", "/video"])
     def test_delete_finished_job(self, client, mock_service, prefix):
-        mock_service.delete_job.return_value = {"id": "job_123", "status": "completed"}
+        mock_service.delete_job.return_value = True
 
         response = client.delete(f"{prefix}/generations/job_123")
 
@@ -822,10 +817,10 @@ class TestDeleteVideoJobHTTP:
             "object": JobTypes.VIDEO.value,
             "deleted": True,
         }
-        mock_service.delete_job.assert_called_once_with("job_123")
+        mock_service.delete_job.assert_awaited_once_with("job_123")
 
     def test_delete_unknown_job_is_404(self, client, mock_service):
-        mock_service.delete_job.return_value = None
+        mock_service.delete_job.return_value = False
 
         response = client.delete("/v1/videos/generations/nope")
 
@@ -833,8 +828,8 @@ class TestDeleteVideoJobHTTP:
         assert response.json()["detail"] == "Video job not found"
 
     def test_delete_active_job_is_409(self, client, mock_service):
-        mock_service.delete_job.side_effect = HTTPException(
-            status_code=409, detail="Job is in_progress; cancel it first"
+        mock_service.delete_job.side_effect = ValueError(
+            "Only active training jobs can be force-deleted; job 'job_123' is in_progress"
         )
 
         response = client.delete("/v1/videos/generations/job_123")

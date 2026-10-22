@@ -957,7 +957,7 @@ def cancel_video_job(
 
 
 @router.delete("/generations/{job_id}")
-def delete_video_job(
+async def delete_video_job(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
@@ -977,7 +977,7 @@ def delete_video_job(
         HTTPException: 404 if the job does not exist, 409 if it is still active.
     """
     try:
-        deleted = service.delete_job(job_id)
+        deleted = await service.delete_job(job_id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     if not deleted:

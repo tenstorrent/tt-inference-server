@@ -777,8 +777,10 @@ class Scheduler:
                     "workers need restart"
                 )
 
-                if self.is_multihost and dead_workers:
-                    self._exit_multihost_job(f"worker(s) {dead_workers} died")
+                if self.is_multihost and workers_to_restart:
+                    self._exit_multihost_job(
+                        f"worker(s) {list(workers_to_restart)} died"
+                    )
 
                 # Restart dead workers (one failure must not block restarting others)
                 for worker_id, expected_process in workers_to_restart.items():

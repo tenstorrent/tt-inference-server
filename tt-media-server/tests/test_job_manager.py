@@ -2735,7 +2735,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_delete_job_not_found(self, job_manager):
         """Deleting an unknown job returns False (-> 404 at the API layer)."""
-        assert job_manager.delete_job("nonexistent") is False
+        assert await job_manager.delete_job("nonexistent") is False
 
     @pytest.mark.asyncio
     async def test_delete_completed_job_removes_record_and_file(
@@ -2762,7 +2762,7 @@ class TestJobManager:
             assert job_manager.get_job_metadata("job-del")["status"] == "completed"
             assert os.path.exists(file_path)
 
-            assert job_manager.delete_job("job-del") is True
+            assert await job_manager.delete_job("job-del") is True
             assert job_manager.get_job_metadata("job-del") is None
             assert job_manager.get_all_jobs_metadata() == []
             assert not os.path.exists(file_path)
@@ -2791,7 +2791,7 @@ class TestJobManager:
         await asyncio.sleep(0.2)
         assert job_manager.get_job_metadata("job-failed")["status"] == "failed"
 
-        assert job_manager.delete_job("job-failed") is True
+        assert await job_manager.delete_job("job-failed") is True
         assert job_manager.get_job_metadata("job-failed") is None
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-failed") is None
@@ -2815,7 +2815,7 @@ class TestJobManager:
         assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
 
         with pytest.raises(ValueError, match="in_progress"):
-            job_manager.delete_job("job-active")
+            await job_manager.delete_job("job-active")
 
         assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
         if job_manager.db:
@@ -2841,7 +2841,7 @@ class TestJobManager:
         assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
 
         with pytest.raises(ValueError, match="queued"):
-            job_manager.delete_job("job-queued")
+            await job_manager.delete_job("job-queued")
 
         assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
 
@@ -2866,7 +2866,7 @@ class TestJobManager:
         await asyncio.sleep(0.1)  # let the CancelledError propagate
         assert job_manager.get_job_metadata("job-cd")["status"] == "cancelled"
 
-        assert job_manager.delete_job("job-cd") is True
+        assert await job_manager.delete_job("job-cd") is True
         assert job_manager.get_job_metadata("job-cd") is None
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-cd") is None
@@ -2891,9 +2891,9 @@ class TestJobManager:
         await asyncio.sleep(0.2)
         assert job_manager.get_job_metadata("org-del-job")["status"] == "completed"
 
-        assert job_manager.delete_job("org-del-job", org_id="org-other") is False
+        assert await job_manager.delete_job("org-del-job", org_id="org-other") is False
         assert job_manager.get_job_metadata("org-del-job") is not None
-        assert job_manager.delete_job("org-del-job", org_id="org-abc") is True
+        assert await job_manager.delete_job("org-del-job", org_id="org-abc") is True
         assert job_manager.get_job_metadata("org-del-job") is None
 
     @pytest.mark.asyncio
@@ -2918,7 +2918,7 @@ class TestJobManager:
             job_manager.db, "delete_job", side_effect=RuntimeError("db down")
         ):
             with pytest.raises(RuntimeError):
-                job_manager.delete_job("job-dbfail")
+                await job_manager.delete_job("job-dbfail")
 
         assert job_manager.get_job_metadata("job-dbfail") is not None
         assert job_manager.db.get_job_by_id("job-dbfail") is not None
@@ -2975,7 +2975,7 @@ class TestJobManager:
             assert os.path.exists(file_path)
 
             # ...but now DELETE can actually reclaim the bytes.
-            assert job_manager.delete_job("job-coop-file") is not None
+            assert await job_manager.delete_job("job-coop-file") is True
             assert not os.path.exists(file_path)
         finally:
             if os.path.exists(file_path):
