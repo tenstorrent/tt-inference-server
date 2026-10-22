@@ -1,4 +1,4 @@
-"""Two waves of archived requests; only output limit changes, no cache salt injection."""
+"""Two eight-task cohorts, paired turns before the next cohort; unchanged request bodies."""
 import concurrent.futures,copy,hashlib,json,time
 from types import SimpleNamespace
 from .ci_r9_wire import Wire,save
@@ -21,9 +21,10 @@ def run_probe(server, context):
   result=dict(actor=row['actor'],turn=row['turn'],response_id=d['id'],original_response_id=row['response_id'],start_wall=start,end_wall=time.time(),usage=usage,request_sha256=hashlib.sha256(wire).hexdigest(),response_sha256=hashlib.sha256(raw).hexdigest(),session_header_preserved=row['session_header'])
   (args.output/(label+'.result.json')).write_text(json.dumps(result,indent=2)+'\n');return result
  results=[]
- for turn in [0,1]:
-  wave=sorted([x for x in source if x['turn']==turn],key=lambda x:x['actor']);assert len(wave)==16
-  with concurrent.futures.ThreadPoolExecutor(max_workers=16)as pool:results.extend(pool.map(run,wave))
- complete=dict(requests=len(results),total_prompt_tokens=sum(x['usage']['prompt_tokens']for x in results),total_output_tokens=sum(x['usage']['completion_tokens']for x in results),results=results)
+ for cohort_start in [0,8]:
+  for turn in [0,1]:
+   wave=sorted([x for x in source if x['turn']==turn and cohort_start<=x['actor']<cohort_start+8],key=lambda x:x['actor']);assert len(wave)==8
+   with concurrent.futures.ThreadPoolExecutor(max_workers=8)as pool:results.extend(pool.map(run,wave))
+ complete=dict(unscored_policy_probe=True,status='completed',schedule='two_cohorts_of_eight_paired_turns',requests=len(results),total_prompt_tokens=sum(x['usage']['prompt_tokens']for x in results),total_output_tokens=sum(x['usage']['completion_tokens']for x in results),results=results)
  (args.output/'client-complete.json').write_text(json.dumps(complete,indent=2)+'\n');print({k:v for k,v in complete.items()if k!='results'})
  return complete,args.output/'client-complete.json'
