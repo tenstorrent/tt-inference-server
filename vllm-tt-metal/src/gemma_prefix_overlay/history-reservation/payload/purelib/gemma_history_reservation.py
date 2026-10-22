@@ -36,10 +36,15 @@ def context():
 
 
 def bank_mode():
+    diagnostic = os.environ.get('GEMMA_DIAGNOSTIC_WEIGHTS_BF16')
+    if diagnostic not in (None, '0', '1'):
+        raise RuntimeError('Invalid BF16 diagnostic flag')
+    if diagnostic == '1' and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') != 'c16a1_bf16_f262144':
+        raise RuntimeError('BF16 diagnostic requires its exact serving profile')
     value = os.environ.get('GEMMA_HISTORY_RESERVATION_BANKS')
     if value is not None and value != '3':
         raise RuntimeError('GEMMA_HISTORY_RESERVATION_BANKS must be absent or exactly 3')
-    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') in ('c32a24_f458752', 'c16a16_f508928'):
+    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') in ('c32a24_f458752', 'c16a16_f508928', 'c16a1_bf16_f262144'):
         raise RuntimeError('Declared enlarged-pool profile requires explicit attested history3')
     if value is not None and not enabled():
         raise RuntimeError('Reduced history requires enabled attested reservation')
@@ -47,11 +52,13 @@ def bank_mode():
 
 
 def check_reduced_bank_profile():
-    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368), 'c16a16_f508928': (16, '508928', 5368)}
+    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368), 'c16a16_f508928': (16, '508928', 5368), 'c16a1_bf16_f262144': (1, '262144', 2765)}
     profile = os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE')
     if profile not in profiles:
         raise RuntimeError('Unknown reduced history profile')
     admitted, pool_tokens, wide_rows = profiles[profile]
+    if (os.environ.get('GEMMA_DIAGNOSTIC_WEIGHTS_BF16') == '1') != (profile == 'c16a1_bf16_f262144'):
+        raise RuntimeError('Weight precision flag and serving profile disagree')
     required = {
         'GEMMA_EXPERIMENT_KV_POOL_TOKENS': pool_tokens,
         'GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV': '1',
@@ -67,6 +74,14 @@ def check_reduced_bank_profile():
     return (profile, admitted, pool_tokens, wide_rows)
 
 
+
+def check_bf16_diagnostic_admission(batch, admitted):
+    if type(batch) is not int or type(admitted) is not int or (batch, admitted) != (16, 1):
+        raise RuntimeError('BF16 diagnostic requires C16/A1')
+    if bank_mode() != '3' or check_reduced_bank_profile()[0] != 'c16a1_bf16_f262144':
+        raise RuntimeError('BF16 diagnostic requires exact enabled history3 profile')
+
+
 def serving_history_capacity(*, batch, admitted, capacity):
     mode = bank_mode()
     if _context is not None:
@@ -79,7 +94,7 @@ def serving_history_capacity(*, batch, admitted, capacity):
     if reservation.bank_mode != '3':
         raise RuntimeError('Reduced history mode was not attested')
     profile = check_reduced_bank_profile()
-    if type(batch) is not int or type(admitted) is not int or type(capacity) is not int or (batch, admitted, capacity) != (16 if profile[0] == 'c16a16_f508928' else 32, profile[1], 262144):
+    if type(batch) is not int or type(admitted) is not int or type(capacity) is not int or (batch, admitted, capacity) != (16 if profile[0] in ('c16a16_f508928', 'c16a1_bf16_f262144') else 32, profile[1], 262144):
         raise RuntimeError('Reduced history geometry differs from attested profile')
     return 3
 
@@ -100,7 +115,7 @@ def attest(executor_class, config):
         geometry = (getattr(config.scheduler_config, "max_num_seqs", None),
                     declared if declared is not None else config.scheduler_config.max_num_seqs,
                     getattr(config.model_config, "max_model_len", None))
-        if any(type(value) is not int for value in geometry) or geometry != (16 if selected_bank_profile[0] == 'c16a16_f508928' else 32, selected_bank_profile[1], 262144):
+        if any(type(value) is not int for value in geometry) or geometry != (16 if selected_bank_profile[0] in ('c16a16_f508928', 'c16a1_bf16_f262144') else 32, selected_bank_profile[1], 262144):
             raise RuntimeError("Reduced history constructor differs from declared profile")
     p = config.parallel_config
     checks = dict(executor=executor_class is UniProcExecutor,

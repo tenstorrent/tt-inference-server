@@ -55,7 +55,9 @@ class Gemma4ForCausalLM:
         self._pool_memory_phase_attempts = {}
 
     def configure_admission_limit(self, limit):
-        if type(limit) is not int or (self.max_batch_size, limit) not in ((32, 20), (32, 24)):
+        if (self.max_batch_size, limit) == (16, 1):
+            _history_reservation.check_bf16_diagnostic_admission(self.max_batch_size, limit)
+        elif type(limit) is not int or (self.max_batch_size, limit) not in ((32, 20), (32, 24)):
             raise ValueError("Experimental serving admission requires C32/A20 or A24")
         if self.cache is not None or self.entry is not None or self.prefill_slot_keys:
             raise RuntimeError("Admission must be configured before KV allocation or requests")
@@ -123,7 +125,9 @@ class Gemma4ForCausalLM:
         admitted = kwargs.get("admitted_request_limit", max_num_seqs)
         if type(admitted) is not int or not 1 <= admitted <= max_num_seqs:
             raise ValueError("Invalid shared admission for pool sizing")
-        if admitted != max_num_seqs and (max_num_seqs, admitted) not in ((32, 20), (32, 24)):
+        if (max_num_seqs, admitted) == (16, 1):
+            _history_reservation.check_bf16_diagnostic_admission(max_num_seqs, admitted)
+        elif admitted != max_num_seqs and (max_num_seqs, admitted) not in ((32, 20), (32, 24)):
             raise ValueError("Only C32/A20 or A24 supports a reduced tail reserve")
         tails = Decoder.SLIDING_WINDOW_PAGES * Decoder.PAGE_SIZE * admitted
         pool_tokens = int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))
@@ -140,6 +144,9 @@ class Gemma4ForCausalLM:
         if os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE") == "c16a16_f508928":
             if len(per_layer_specs) != 60 or any(type(shape[0]) is not int or shape[0] != 5352 for shape, dtype, pool_id in per_layer_specs):
                 raise RuntimeError("C16/A16/F508928 requires exactly60 allocator specs with n5352 before TT access")
+        if os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE") == "c16a1_bf16_f262144":
+            if len(per_layer_specs) != 60 or any(type(shape[0]) is not int or shape[0] != 2749 for shape, dtype, pool_id in per_layer_specs):
+                raise RuntimeError("BF16 diagnostic requires exactly60 allocator specs n2749 before TT access")
         before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
         print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
         if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":

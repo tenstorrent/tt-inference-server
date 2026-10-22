@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "f0ccc086561a93898df7fba3713ec3c91c70f1656abbf8316dd9a0a88651d5b3"
+      "target": "5d33f4cc0c7070bc486792c78b952687652dc1efa8a9481bc493708ba4bf7cea"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "86ca7d66302c9ffa4cc8965902742ef59d78efef0ef3f0f293db59f465cedb88"
+      "target": "426333b027b5fa6d699aefd5e0faabfa79bb006701d668cfb22497282a8ceef4"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "ba235dc7e7d381cc77c22ddd708d283095aa01972d6b13050032f0ba7544397e"
+      "target": "7509b5a8b9b01d98f2481655fd90e2b3ddae8086fb7a0d208cd784ebadaa44cb"
     },
     {
       "root": "purelib",
@@ -63,9 +63,30 @@
       "module": "gemma_history_reservation_ledger",
       "base": null,
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+    },
+    {
+      "root": "plugin",
+      "path": "src/vllm_tt_plugin/config.py",
+      "module": "vllm_tt_plugin.config",
+      "base": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b",
+      "target": "c386c8d6552792016dd2d484ba4b18925e54aea62fcf3cee85d48248fb523740"
+    },
+    {
+      "root": "metal",
+      "path": "models/demos/gemma4_31b_qb2/tt/decoder.py",
+      "module": "models.demos.gemma4_31b_qb2.tt.decoder",
+      "base": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae",
+      "target": "7b86dbef299661904d571ca7c540f3e53e215fd250b268b81df1b67fcd8cb80e"
+    },
+    {
+      "root": "metal",
+      "path": "models/demos/gemma4_31b_qb2/tt/model.py",
+      "module": "models.demos.gemma4_31b_qb2.tt.model",
+      "base": "27fc5fe7da825668949d2fb1a98009064061995c0be8f8cefe69d26076db8d88",
+      "target": "ca661ce507f16f33270d4427217a0cc4c4b7755ca91ac0777cf761bd6a56844d"
     }
   ],
-  "attestation_sha256": "a7e0f80277869385164bfbf344191e4a257fa29b9db64564177647bdffa3f6db",
+  "attestation_sha256": "705f249e01a55326bcebbea66f5cf1bb2993d6e7e35744fbcc67f9748f2a88c3",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -118,5 +139,12 @@
       "gemma_history_reservation.py"
     ],
     "core_composition": "Preserved accepted composed4570fa; previous derivation fields describe ancestors."
+  },
+  "bf16_diagnostic_derivation": {
+    "base_tti": "9abfb478199f7037e3665b82fa899c24497fba93",
+    "profile_source_commit": "5e22b07c",
+    "profile_source_pins_sha256": "ddbf06093597549388504665144c86a378dcdf32845e2835a1f12c7f68d9bb04",
+    "model_source_pins_sha256": "97aabc56298026d00a2b4d62fa722cb8963f94d227c38154a0ec2e6bec310aae",
+    "scope": "Full BF16 projection/head weights; same KV/math fidelity with explicit QKV/down decode K-grouping7, shared QKV/down, transient exact prefill gate/up. Native/serving results recorded separately."
   }
 }

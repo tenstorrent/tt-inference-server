@@ -5,19 +5,21 @@
     "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
     "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
     "vllm_tt_plugin.model_runner": "e6aefb99e59170f8a337af0f950437e6456132bf548f8cba1423447f577ba521",
-    "models.demos.gemma4_31b_qb2.tt.generator": "f0ccc086561a93898df7fba3713ec3c91c70f1656abbf8316dd9a0a88651d5b3",
-    "models.demos.gemma4_31b_qb2.tt.generator_vllm": "86ca7d66302c9ffa4cc8965902742ef59d78efef0ef3f0f293db59f465cedb88",
+    "models.demos.gemma4_31b_qb2.tt.generator": "5d33f4cc0c7070bc486792c78b952687652dc1efa8a9481bc493708ba4bf7cea",
+    "models.demos.gemma4_31b_qb2.tt.generator_vllm": "426333b027b5fa6d699aefd5e0faabfa79bb006701d668cfb22497282a8ceef4",
     "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
     "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
     "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
     "vllm_tt_plugin.worker": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341",
-    "vllm_tt_plugin.config": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b",
+    "vllm_tt_plugin.config": "c386c8d6552792016dd2d484ba4b18925e54aea62fcf3cee85d48248fb523740",
     "vllm_tt_plugin.async_decode": "e2491aa165559ea9979428838a5ebce6416e6164b511c0cd39b7eaa705c8c891",
     "vllm_tt_plugin.input_batch": "51603c76fe0447e64a273faa5550fee8c77963336d538f6d02638476753684dc",
     "vllm_tt_plugin.lane_scheduler": "59d6339b2ef465a4b0f7e7bec24afc8ab2eb15fbb208bc895b590d4b2a5bf207",
     "vllm_tt_plugin.model_input": "3b7e664ba688ff1bedb5a90a606593e90820d79cd35d388f3308ff7080dec28f",
     "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
-    "gemma_history_reservation": "ba235dc7e7d381cc77c22ddd708d283095aa01972d6b13050032f0ba7544397e",
-    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+    "gemma_history_reservation": "7509b5a8b9b01d98f2481655fd90e2b3ddae8086fb7a0d208cd784ebadaa44cb",
+    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
+    "models.demos.gemma4_31b_qb2.tt.decoder": "7b86dbef299661904d571ca7c540f3e53e215fd250b268b81df1b67fcd8cb80e",
+    "models.demos.gemma4_31b_qb2.tt.model": "ca661ce507f16f33270d4427217a0cc4c4b7755ca91ac0777cf761bd6a56844d"
   }
 }
