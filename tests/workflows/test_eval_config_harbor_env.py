@@ -14,6 +14,7 @@ the variables before importing the config.
 """
 
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -30,9 +31,10 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
     return TerminalBenchEvalConfig(**base)
 
 
-def test_harbor_checkout_uses_runtime_branch():
-    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "tt-inference-server"
+def test_harbor_checkout_is_pinned_to_a_commit():
+    # A branch name here would let a push to the fork change every agentic run.
+    assert HARBOR_REPO.startswith("https://github.com/")
+    assert re.fullmatch(r"[0-9a-f]{40}", HARBOR_REF)
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):

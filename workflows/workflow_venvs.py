@@ -36,11 +36,12 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
-# Track the runtime branch during development. It will be protected and require
-# review before merging changes. Switch to a specific commit once development
-# is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+# Pinned to a commit, not a branch, so a push to the fork can't change agentic
+# runs without a change here. Bump this SHA to pick up fork changes.
+# TODO: point back at dcvijeticTT/harbor once handrews/upstream-sync-2026-10-21
+# (upstream main merged into the tt-inference-server branch) lands there.
+HARBOR_REPO = "https://github.com/handrewsTT/harbor.git"
+HARBOR_REF = "52e0a56003d13b4f27f68ed1ee74de70614704b8"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
