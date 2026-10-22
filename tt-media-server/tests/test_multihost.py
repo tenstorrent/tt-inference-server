@@ -34,6 +34,7 @@ from multihost.comm import (
     to_request_data,
 )
 from multihost.follower import MultiHostLockstepFollower
+from multihost import lockstep_runner
 from multihost.lockstep_runner import MultiHostLockstepRunner, wrap_if_multihost
 
 _TINY_PNG_BASE64 = (
@@ -101,7 +102,7 @@ class _FakeComm:
 
 
 class _FakeRunner:
-    def __init__(self, fail_prompts=(), warmup_ok=True):
+    def __init__(self, fail_prompts=(), warmup_ok=True, fail_error=ValueError):
         self.calls = []
         self.export_in_runner = True
         self.ttnn_device = None
@@ -109,6 +110,7 @@ class _FakeRunner:
         self.settings = "runner-settings"
         self._fail_prompts = set(fail_prompts)
         self._warmup_ok = warmup_ok
+        self._fail_error = fail_error
 
     def set_device(self):
         self.ttnn_device = "mesh"
@@ -120,7 +122,7 @@ class _FakeRunner:
     def run(self, requests):
         self.calls.append(requests)
         if requests[0].prompt in self._fail_prompts:
-            raise ValueError(f"bad prompt {requests[0].prompt}")
+            raise self._fail_error(f"bad prompt {requests[0].prompt}")
         return [f"result-{requests[0].prompt}"]
 
     def _build_warmup_video_request(self):
@@ -366,6 +368,34 @@ class TestLockstep:
         assert prompts == ["bad", "good"]
         assert quad.exit_codes == {1: 0}
 
+    def test_follower_runtime_error_is_fatal(self):
+        quad = _Quad(
+            follower_runner_kwargs={
+                "fail_prompts": {"boom"},
+                "fail_error": RuntimeError,
+            }
+        ).start()
+        assert quad.leader.run([_video_request("boom")]) == ["result-boom"]
+        # Well inside the fake receive timeout, which would also end the loop.
+        quad.threads[0].join(timeout=_TIMEOUT_S / 5)
+        assert quad.exit_codes == {1: 1}
+
+    def test_leader_runtime_error_ends_job(self, monkeypatch):
+        monkeypatch.setattr(lockstep_runner, "end_job", _raise_job_ended)
+        quad = _Quad().start()
+        quad.leader_runner._fail_prompts = {"boom"}
+        quad.leader_runner._fail_error = RuntimeError
+        with pytest.raises(_JobEnded, match="run failed"):
+            quad.leader.run([_video_request("boom")])
+
+    def test_failed_broadcast_ends_job(self, monkeypatch):
+        monkeypatch.setattr(lockstep_runner, "end_job", _raise_job_ended)
+        quad = _Quad().start()
+        quad.leader._comm.broadcast = MagicMock(side_effect=RuntimeError("rank 2 gone"))
+        with pytest.raises(_JobEnded, match="broadcast"):
+            quad.leader.run([_video_request("a cat")])
+        assert not quad.leader_runner.calls
+
     def test_follower_warmup_failure_is_fatal(self):
         link = _FakeLink(2)
         follower = MultiHostLockstepFollower(
@@ -380,6 +410,14 @@ class TestLockstep:
         quad.leader._comm.broadcast("garbage")
         quad.threads[0].join(timeout=_TIMEOUT_S)
         assert quad.exit_codes == {1: 1}
+
+
+class _JobEnded(Exception):
+    pass
+
+
+def _raise_job_ended(reason):
+    raise _JobEnded(reason)
 
 
 class TestCanary:
@@ -397,6 +435,14 @@ class TestCanary:
         for runner in [quad.leader_runner, *quad.follower_runners.values()]:
             (call,) = runner.calls
             assert call[0].prompt == "warmup"
+
+    def test_failed_deep_probe_ends_job(self, monkeypatch):
+        monkeypatch.setattr(lockstep_runner, "end_job", _raise_job_ended)
+        quad = _Quad().start()
+        quad.leader_runner._fail_prompts = {"warmup"}
+        quad.leader_runner._fail_error = RuntimeError
+        with pytest.raises(_JobEnded, match="run failed"):
+            quad.leader.health_check(deep=True)
 
     def test_probe_while_busy_does_not_touch_mesh(self):
         quad = _Quad().start()

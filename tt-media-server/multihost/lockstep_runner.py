@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import threading
 from typing import Any
 
@@ -22,6 +23,17 @@ from multihost.comm import (
 
 # How long close_device waits for an in-progress canary before closing anyway.
 _CLOSE_LOCK_TIMEOUT_S = 5.0
+
+
+def end_job(reason: str) -> None:
+    """Kill this worker process; the scheduler then exits rank 0 and tt-run stops every rank.
+
+    The ranks can't be re-synchronised in place once one has diverged.
+    """
+    TTLogger().error(f"Rank 0: multi-host job cannot continue: {reason}")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(1)
 
 
 def discard_outputs(result: Any) -> None:
@@ -47,6 +59,12 @@ class MultiHostLockstepRunner:
 
     One lock serialises everything that touches the mesh or the comm: the
     ranks must see requests and canary probes in the same order.
+
+    A ``ValueError`` from the runner is a request every rank rejects
+    identically before touching the mesh; it propagates as a request error.
+    A failed broadcast or any other runner error leaves the ranks out of step
+    (some may have received the message, or be waiting in a collective), so it
+    ends the job.
     """
 
     def __init__(self, runner: Any, comm: Any = None):
@@ -83,10 +101,10 @@ class MultiHostLockstepRunner:
 
     def run(self, requests: list[Any]):
         with self._mesh_lock:
-            self._comm.broadcast(
+            self._broadcast(
                 RunMessage([to_request_data(request) for request in requests])
             )
-            return self._runner.run(requests)
+            return self._run_locally(requests)
 
     def health_check(self, deep: bool = False) -> bool:
         """Canary probe that never makes a real request wait.
@@ -100,16 +118,30 @@ class MultiHostLockstepRunner:
         if not self._mesh_lock.acquire(blocking=False):
             return True
         try:
-            self._comm.broadcast(CanaryMessage(deep=deep))
+            self._broadcast(CanaryMessage(deep=deep))
             if deep:
                 discard_outputs(
-                    self._runner.run([self._runner._build_warmup_video_request()])
+                    self._run_locally([self._runner._build_warmup_video_request()])
                 )
             else:
                 self._comm.barrier()
             return True
         finally:
             self._mesh_lock.release()
+
+    def _broadcast(self, message: Any) -> None:
+        try:
+            self._comm.broadcast(message)
+        except Exception as e:
+            end_job(f"broadcast to the other ranks failed: {e}")
+
+    def _run_locally(self, requests: list[Any]):
+        try:
+            return self._runner.run(requests)
+        except ValueError:
+            raise
+        except Exception as e:
+            end_job(f"run failed: {e}")
 
     def close_device(self):
         locked = self._mesh_lock.acquire(timeout=_CLOSE_LOCK_TIMEOUT_S)

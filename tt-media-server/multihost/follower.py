@@ -53,11 +53,12 @@ class MultiHostLockstepFollower:
     """Opens this rank's part of the mesh and mirrors rank 0's runner calls.
 
     Same runner, same mesh-opening path and same warmup as rank 0's device
-    worker, followed by a loop over rank 0's messages. Errors that every rank
-    hits identically (e.g. request validation) are logged and the loop goes
-    on, as rank 0 reports them to the client. Anything else is fatal: the
-    method returns non-zero and the process exits, which makes tt-run stop the
-    whole job instead of leaving ranks waiting on each other.
+    worker, followed by a loop over rank 0's messages. A ``ValueError`` from
+    the runner is a request every rank rejects identically before touching the
+    mesh, so it is logged and the loop goes on; rank 0 reports it to the
+    client. Anything else is fatal: the method returns non-zero and the process
+    exits, which makes tt-run stop the whole job instead of leaving rank 0
+    waiting in a collective this rank has abandoned.
     """
 
     def __init__(
@@ -131,10 +132,8 @@ class MultiHostLockstepFollower:
     def _run(self, runner: Any, requests: list[Any], label: str) -> None:
         try:
             discard_outputs(runner.run(requests))
-        except Exception as e:
-            self._logger.error(
-                f"Rank {self.rank}: {label} failed: {e}\n{traceback.format_exc()}"
-            )
+        except ValueError as e:
+            self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
 
 
 def _task_ids(requests: list[Any]) -> str:
