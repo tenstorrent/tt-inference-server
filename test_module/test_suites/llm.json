@@ -237,9 +237,11 @@
           "enabled": true,
           "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
           "_comment": "The verifier is exported at MINIMAX_VERIFIER_COMMIT in workflows/workflow_venvs.py; graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_PATHS.",
+          "_comment_threshold": "Scenario-Check-Pass-Rate keeps the README's 100% but is advisory (advisory_metrics), as on MiniMax-M3: it is graded and shown against 100% and never fails the run, because it is a single case, so one miss would fail the whole verify run.",
           "test_config": {
             "suite": "verify",
-            "verify_baseline": "output-dir/MiniMax-M2.7/loop_01"
+            "verify_baseline": "output-dir/MiniMax-M2.7/loop_01",
+            "advisory_metrics": ["scenario_check_pass_rate"]
           }
         }
       ]

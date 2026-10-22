@@ -50,12 +50,15 @@ EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 # MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
 # its verify.py and m3_format_check pytest suites run unchanged from these
 # files, and test_module/llm_tests/minimax_verifier_grading.py grades their
-# output. Pinned to an upstream commit: the `verify` gate is blocking and its
-# targets were calibrated on this code, so a moving branch (or a fork) must not
-# change what is graded. This commit is MiniMax-AI/MiniMax-Provider-Verifier
-# main as of #67, which carries the `reasoning_content` fix vLLM servers need.
-# Moving the pin can change scores: re-measure the `verify` targets in
-# test_module/test_suites/llm.json when it does.
+# output. Pinned to an upstream commit: the `verify` gate is blocking, so a
+# moving branch (or a fork) must not change what is graded. This commit is
+# MiniMax-AI/MiniMax-Provider-Verifier main as of #67, which carries the
+# `reasoning_content` fix vLLM servers need. The `verify` cases set no
+# `targets`: they are graded against the README defaults in VERIFY_METRICS
+# (minimax_verifier_grading.py). The GPU vLLM measurements in MiniMax-M3's
+# `_comment_threshold` (test_module/test_suites/llm.json) are reference only.
+# Moving the pin can change scores: re-measure them there when it does, but
+# don't add them as `targets` unless the gates are deliberately changed.
 MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
 MINIMAX_VERIFIER_COMMIT = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
 MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
