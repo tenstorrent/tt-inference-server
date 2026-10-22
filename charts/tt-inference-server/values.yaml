@@ -4089,50 +4089,6 @@ models:
               - name: MESH_DEVICE
                 value: P150
     defaultEngine: forge
-  Falcon3-7B-Instruct:
-    forge:
-      p150:
-        defaultImpl: forge_vllm_plugin
-        impls:
-          forge_vllm_plugin:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
-              tag: 0.18.0-c49bb76
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 12Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: CPU_SAMPLING
-                value: 'false'
-              - name: ENABLE_TRACE
-                value: 'true'
-              - name: GPU_MEMORY_UTILIZATION
-                value: '0.35'
-              - name: KV_CACHE_DTYPE
-                value: bfp_bf8
-              - name: MAX_MODEL_LENGTH
-                value: '32768'
-              - name: MAX_NUM_SEQS
-                value: '32'
-              - name: MESH_DEVICE
-                value: P150
-              - name: MIN_NUM_SEQS
-                value: '1'
-              - name: OPTIMIZATION_LEVEL
-                value: '1'
-              - name: PREFILL_BATCH_THRESHOLD
-                value: '16'
-              - name: PREFILL_CHUNK_SIZE
-                value: '1024'
-              - name: TT_KV_POOL_GB
-                value: '32'
-    defaultEngine: forge
   Z-Image-Turbo:
     media:
       p300x2:
