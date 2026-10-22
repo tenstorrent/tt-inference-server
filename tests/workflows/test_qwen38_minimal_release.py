@@ -66,7 +66,7 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
     swe = tasks[2].agentic_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 10
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == 10
+    assert terminal.n_concurrent_trials == 8
     assert swe.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
     assert swe.llm_timeout_sec == 60 * 60

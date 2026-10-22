@@ -11074,7 +11074,10 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=10,
+                    # 8, not 10: TTQ_DECODE_PREFIX_OCCUPANCY runs <=8 active lanes on the 8-row
+                    # GDN graph (TPOT 314 ms on P300X2) and 9-16 on the 16-row graph (360 ms); see
+                    # the occupancy receipt qwen3.8-27b-occupancy-89fc65d8-04235fa2-20261022T151053Z.
+                    n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
