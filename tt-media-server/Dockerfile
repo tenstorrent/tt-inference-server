@@ -183,6 +183,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
+# mpi4py built against the base image's ULFM OpenMPI. Multi-rank runners (e.g. MiniMax-H3 GALAXY_QUAD via
+# video_runner._attach_mpi_comm) require it; single-galaxy runs never import it, so its absence only shows on quads.
+# Must run before server/scripts is removed below.
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && bash ${TT_METAL_HOME}/server/scripts/install_mpi4py_ulfm.sh"
+
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
 ENV AUDIO_VENV_DIR=${TT_METAL_HOME}/audio_venv
