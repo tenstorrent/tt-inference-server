@@ -1074,6 +1074,36 @@ class TestLTXShapeValidation:
         with h3, pytest.raises(ValidationError, match="unknown field"):
             VideoGenerateRequest(prompt="p", **{field: value})
 
+    @pytest.mark.parametrize(
+        "runner",
+        [
+            ModelRunners.TT_MINIMAX_H3_T2VA,
+            ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "field", ["fps", "num_frames", "num_inference_steps", "negative_prompt"]
+    )
+    def test_h3_accepts_null_unread_fields(self, runner, field):
+        h3 = patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(model_runner=runner.value),
+        )
+        with h3:
+            explicit_null = VideoGenerateRequest.model_validate(
+                {"prompt": "p", field: None}
+            )
+            omitted = VideoGenerateRequest(prompt="p")
+        assert getattr(explicit_null, field) == getattr(omitted, field)
+
+    def test_h3_still_rejects_null_unknown_fields(self):
+        h3 = patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(model_runner=ModelRunners.TT_MINIMAX_H3_T2VA.value),
+        )
+        with h3, pytest.raises(ValidationError, match="unknown field"):
+            VideoGenerateRequest.model_validate({"prompt": "p", "resolution": None})
+
 
 class TestSnapNumFrames:
     """The duration -> frame-count rule: (num_frames - 1) % 8 == 0."""

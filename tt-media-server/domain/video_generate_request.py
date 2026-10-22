@@ -68,7 +68,14 @@ class VideoGenerateRequest(BaseRequest):
         if not isinstance(data, dict) or not _is_minimax_h3():
             return data
         readable = set(cls.model_fields) - _H3_UNREAD_FIELDS
-        unknown = sorted(set(data) - readable)
+        # A null for a field H3 does not read asks for nothing, so it is not refused. Form
+        # endpoints pass these as None when the client leaves them out.
+        supplied = {
+            key
+            for key, value in data.items()
+            if value is not None or key not in _H3_UNREAD_FIELDS
+        }
+        unknown = sorted(supplied - readable)
         if unknown:
             known = ", ".join(sorted(readable))
             raise ValueError(
