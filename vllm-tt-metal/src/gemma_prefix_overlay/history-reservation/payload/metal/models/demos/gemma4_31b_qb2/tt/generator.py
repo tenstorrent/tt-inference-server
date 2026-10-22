@@ -437,6 +437,8 @@ class Gemma4Generator:
         if _history_reservation.bank_mode() is not None and (
                 not getattr(state, "vllm_owned", False) or not hasattr(state, "serving_admission_limit")):
             raise RuntimeError("Reduced prepared history requires explicit serving state")
+        if pool_profile == "c16a16_f508928" and getattr(state, "serving_admission_limit", None) != 16:
+            raise RuntimeError("C16 declared preparation requires admission16")
         if c32_profile and (
                 getattr(state, "serving_admission_limit", None) != expected_admission
                 or os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != c32_profiles[pool_profile][1]
@@ -453,7 +455,7 @@ class Gemma4Generator:
                 or self._serving_prefill_prepared_state is not None):
             raise RuntimeError("Experimental preparation requires fresh full60 declared-width serial state")
         pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832, "c32a20_f327680": 4164, "c32a24_f458752": 5368}
+        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832, "c32a20_f327680": 4164, "c32a24_f458752": 5368, "c16a16_f508928": 5368}
         if pool_profile not in pool_rows:
             raise RuntimeError("Unsupported serial prepared alias pool profile")
         if pool_profile == "f311296" and (

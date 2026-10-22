@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "873fb9b9afbf55eb6e7097587faaddfa519dde9b72d4af0524db7445fd766429"
+      "target": "f0ccc086561a93898df7fba3713ec3c91c70f1656abbf8316dd9a0a88651d5b3"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "e7916d4392747a1b4dc189826f04fb0edb0ec0e17b97bbf231a1f38f057b543a"
+      "target": "86ca7d66302c9ffa4cc8965902742ef59d78efef0ef3f0f293db59f465cedb88"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "2313864746268c8c82944207c84950982a07f421057216d0eba481b1ac15107e"
+      "target": "ba235dc7e7d381cc77c22ddd708d283095aa01972d6b13050032f0ba7544397e"
     },
     {
       "root": "purelib",
