@@ -134,6 +134,9 @@ class Gemma4ForCausalLM:
     def allocate_kv_cache_per_layer(self, per_layer_specs):
         history_capacity = _history_reservation.serving_history_capacity(
             batch=self.max_batch_size, admitted=self.admitted_request_limit, capacity=self.max_seq_len)
+        if os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE") == "c32a24_f458752":
+            if len(per_layer_specs) != 60 or any(type(shape[0]) is not int or shape[0] != 5336 for shape, dtype, pool_id in per_layer_specs):
+                raise RuntimeError("A24/F458752 requires exactly60 allocator specs with n5336 before TT access")
         before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
         print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
         if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":

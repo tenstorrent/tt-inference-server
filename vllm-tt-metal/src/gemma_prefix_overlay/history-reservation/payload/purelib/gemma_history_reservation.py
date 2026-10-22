@@ -26,6 +26,8 @@ def context():
     mode = bank_mode()
     if _context is not None and getattr(_context, "bank_mode", None) != mode:
         raise RuntimeError("History capacity mode changed after attestation")
+    if mode is not None and _context is not None and getattr(_context, 'bank_profile', None) != check_reduced_bank_profile():
+        raise RuntimeError('Reduced history profile changed after attestation')
     if not enabled():
         return None
     if _context is None:
@@ -37,15 +39,21 @@ def bank_mode():
     value = os.environ.get('GEMMA_HISTORY_RESERVATION_BANKS')
     if value is not None and value != '3':
         raise RuntimeError('GEMMA_HISTORY_RESERVATION_BANKS must be absent or exactly 3')
+    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') == 'c32a24_f458752':
+        raise RuntimeError('A24/F458752 requires explicit attested history3')
     if value is not None and not enabled():
         raise RuntimeError('Reduced history requires enabled attested reservation')
     return value
 
 
 def check_reduced_bank_profile():
+    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368)}
+    profile = os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE')
+    if profile not in profiles:
+        raise RuntimeError('Unknown reduced history profile')
+    admitted, pool_tokens, wide_rows = profiles[profile]
     required = {
-        'GEMMA_SERIAL_PREPARED_POOL_PROFILE': 'c32a20_f327680',
-        'GEMMA_EXPERIMENT_KV_POOL_TOKENS': '327680',
+        'GEMMA_EXPERIMENT_KV_POOL_TOKENS': pool_tokens,
         'GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV': '1',
         'GEMMA_EXPERIMENT_SHARE_BF8_DOWN': '1',
         'GEMMA_REPETITION_PRECISION_POLICY': 'bf8',
@@ -55,7 +63,8 @@ def check_reduced_bank_profile():
         'GEMMA_SERIAL_PREPARED_RETENTION': '1',
     }
     if any(os.environ.get(key) != value for key, value in required.items()):
-        raise RuntimeError('Reduced history requires exact C32/A20/F327680 serving profile')
+        raise RuntimeError('Reduced history requires exact declared BF8/BF8KV serving profile')
+    return (profile, admitted, pool_tokens, wide_rows)
 
 
 def serving_history_capacity(*, batch, admitted, capacity):
@@ -69,9 +78,9 @@ def serving_history_capacity(*, batch, admitted, capacity):
     reservation = context()  # Must already be constructed by full source/backend attestation.
     if reservation.bank_mode != '3':
         raise RuntimeError('Reduced history mode was not attested')
-    check_reduced_bank_profile()
-    if type(batch) is not int or type(admitted) is not int or type(capacity) is not int or (batch, admitted, capacity) != (32, 20, 262144):
-        raise RuntimeError('Reduced history requires C32/A20/context262144')
+    profile = check_reduced_bank_profile()
+    if type(batch) is not int or type(admitted) is not int or type(capacity) is not int or (batch, admitted, capacity) != (32, profile[1], 262144):
+        raise RuntimeError('Reduced history geometry differs from attested profile')
     return 3
 
 
@@ -79,18 +88,18 @@ def attest(executor_class, config):
     """Called BEFORE executor/model construction by the patched core."""
     global _context
     selected_bank_mode = bank_mode()
-    if selected_bank_mode is not None:
-        check_reduced_bank_profile()
+    selected_bank_profile = check_reduced_bank_profile() if selected_bank_mode is not None else None
     if not enabled():
         return
     from vllm.v1.executor.uniproc_executor import UniProcExecutor
     from vllm_tt_plugin.config import get_tt_data_parallel_size
     if selected_bank_mode is not None:
+        declared = (getattr(config, 'additional_config', None) or {}).get('gemma_admitted_request_limit')
         geometry = (getattr(config.scheduler_config, "max_num_seqs", None),
-                    (getattr(config, "additional_config", None) or {}).get("gemma_admitted_request_limit"),
+                    declared if declared is not None else config.scheduler_config.max_num_seqs,
                     getattr(config.model_config, "max_model_len", None))
-        if any(type(value) is not int for value in geometry) or geometry != (32, 20, 262144):
-            raise RuntimeError("Reduced history requires constructor C32/A20/context262144")
+        if any(type(value) is not int for value in geometry) or geometry != (32, selected_bank_profile[1], 262144):
+            raise RuntimeError("Reduced history constructor differs from declared profile")
     p = config.parallel_config
     checks = dict(executor=executor_class is UniProcExecutor,
                   backend=p.distributed_executor_backend == 'uni',
@@ -128,7 +137,8 @@ def attest(executor_class, config):
         loaded[name]=str(filename)
     _context = Context()
     _context.bank_mode = selected_bank_mode
-    print('GEMMA_HISTORY_RESERVATION_ATTEST '+json.dumps(dict(checks=checks,modules=manifest['modules'],loaded=loaded,bank_mode=selected_bank_mode)),flush=True)
+    _context.bank_profile = selected_bank_profile
+    print('GEMMA_HISTORY_RESERVATION_ATTEST '+json.dumps(dict(checks=checks,modules=manifest['modules'],loaded=loaded,bank_mode=selected_bank_mode,bank_profile=selected_bank_profile)),flush=True)
 
 
 class Context:
