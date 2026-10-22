@@ -92,7 +92,7 @@ def check_gated_lifecycle(records, gate_trigger, response_id):
     gate_rows=[(state,row)for state in states for row in state['rows']if row['key']==gate_key]
     assert [(row['start'],row['end'],row['retain'])for state,row in gate_rows]==[(start,start+8192,start+8192<65536)for start in range(0,65536,8192)]
     def index_of(key):
-        for index in range(4):
+        for index in range(5):
             if key[0].startswith(response_id+'-'+str(index)+'-'):return index
         return None
     keys={}
@@ -102,7 +102,7 @@ def check_gated_lifecycle(records, gate_trigger, response_id):
             if index is not None:
                 if index in keys:assert keys[index]==row['key']
                 keys[index]=row['key']
-    assert set(keys)=={0,1,2,3}
+    assert set(keys)=={0,1,2,3,4}
     expected={0:(0,129,False),1:(4096,12032,True),2:(4096,4223,True)}
     matches=[]
     for state in states:
@@ -113,10 +113,24 @@ def check_gated_lifecycle(records, gate_trigger, response_id):
     if not matches:raise RuntimeError('Gated batch did not produce exact short129/B7936/C127 retained-two schedule')
     assert len(matches)==1 and gate_rows[-1][0]['submission']<matches[0]['submission']
     denials=[r['value']for r in records if r['tag']=='GEMMA_HISTORY_RESERVATION_DENIED'
-        and r['value']['key']==keys[3] and r['value']['start']==4096 and r['value']['count']==115
+        and r['value']['key']==keys[4] and r['value']['start']==4096 and r['value']['count']==51 and r['value']['total']==17164
         and {tuple(k)for k in r['value']['tentative']}=={tuple(keys[1]),tuple(keys[2])}]
     if not denials:raise RuntimeError('Expected gated third partial denial was not observed')
-    return dict(gate_key=gate_key,gate_chunks=8,target_keys=keys,retained_two_submission=matches[0]['submission'],
+    initial=matches[0]
+    expected_second=[(3,0,64,False),(1,12032,17164,False),(2,4223,7168,True)]
+    following=[state for state in states if state['submission']>initial['submission']]
+    if not following:raise RuntimeError('No acquisition-three target state')
+    target=following[0]
+    observed=[(index_of(row['key']),row['start'],row['end'],row['retain'])for row in target['rows']]
+    if observed!=expected_second:raise RuntimeError('Final-only E did not execute before retained B/C')
+    assert {tuple(k)for k in target['retained']}=={tuple(keys[2])}
+    assert initial['observed_acquire_highwater']==2 and target['observed_acquire_highwater']==3
+    assert target['projected_acquire_highwater']==3
+    first_index=next(i for i,r in enumerate(records)if r['tag']=='GEMMA_HISTORY_RESERVATION_STATE'and r['value']is initial)
+    target_index=next(i for i,r in enumerate(records)if r['tag']=='GEMMA_HISTORY_RESERVATION_STATE'and r['value']is target)
+    assert any(first_index<i<target_index and r['tag']=='GEMMA_HISTORY_RESERVATION_DENIED'and r['value']in denials for i,r in enumerate(records))
+    return dict(gate_key=gate_key,gate_chunks=8,target_keys=keys,retained_two_submission=initial['submission'],
+                temporary_three_submission=target['submission'],temporary_three_state=target,
                 exact_denials=denials,source_schedule_predictions_matched=True)
 
 
@@ -162,8 +176,8 @@ def execute_reservation(server, root):
                         break
                     time.sleep(.01)
                 if gate_trigger is None:raise RuntimeError('No first full-budget gate chunk observed')
-                prompts=[tokens(129,71)] + [seed+tokens(13068,offset)[1:]for offset in (31,47,63)]
-                assert list(map(len,prompts))==[129,17164,17164,17164]
+                prompts=[tokens(129,71),seed+tokens(13068,31)[1:],seed+tokens(13068,47)[1:],tokens(64,83),seed+tokens(13068,63)[1:]]
+                assert list(map(len,prompts))==[129,17164,17164,64,17164]
                 batch_body=body(prompts,'reservation-shared-seed',64)
                 directory=root/'ordered-partial-batch';directory.mkdir()
                 wire=Wire(directory,server.url_with_port,server.auth_token);wire.deadline=deadline
@@ -255,7 +269,7 @@ def execute_reservation(server, root):
             and r['value']['count']>0
             and r['value']['start']+r['value']['count']<r['value']['total']]
         if not third_denials:raise RuntimeError('Third-partial denial not observed; fixture coverage incomplete')
-        summary=dict(complete=True,completed_generation_requests=7,deliberately_aborted_requests=1,
+        summary=dict(complete=True,completed_generation_requests=8,deliberately_aborted_requests=1,
             calls=calls,denial_records=len(denied),third_partial_denials=len(third_denials),
             retained_abort_generation=selected,
             scope='Unscored deterministic controls and observed retained-generation abort; not task quality/performance')
