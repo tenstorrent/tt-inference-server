@@ -5835,6 +5835,10 @@ templates:
       # 16384-token profiling forward (fused MoVA + MoE) OOMed after 69.96 GiB of
       # weights on a 96 GB G4; 4096 = the TT row's prefill bucket (scheduling only)
       max_num_batched_tokens: 4096
+      # vLLM 0.31.0 auto-detects 'openai' for this template and renders an empty user
+      # turn (every reply 'Hi there!', run gpuref-mova-9dd8e91b); the TT server detects
+      # 'string', so pin it to send the same prompt text
+      chat_template_content_format: string
   status: EXPERIMENTAL
 - weights:
   - Qwen/Qwen2-7B
