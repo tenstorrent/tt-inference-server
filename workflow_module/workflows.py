@@ -99,14 +99,59 @@ def _has_agentic_tasks(ctx) -> bool:
     )
 
 
+def _agentic_task_names(ctx) -> set:
+    """Names of the run's EVALS_AGENTIC eval tasks."""
+    from .engine_types import WorkflowVenvType
+
+    tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
+    return {
+        t.task_name
+        for t in tasks
+        if getattr(t, "workflow_venv_type", None) == WorkflowVenvType.EVALS_AGENTIC
+    }
+
+
+def _eval_tasks_selection(ctx) -> Optional[set]:
+    """Task names selected by --eval-tasks, or None when it is not set."""
+    from llm_module.eval_configs import eval_task_names
+
+    names = eval_task_names(getattr(ctx, "runtime_config", None))
+    return set(names) if names else None
+
+
 class EvalsWorkflow(WorkflowExecution):
     name = "evals"
     task_types = (MediaTaskType.EVALUATION,)
 
     def run_tasks(self) -> List[TaskOutcome]:
         if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
-            return [self._run_llm_eval_task()]
+            return self._run_llm_tasks()
         return super().run_tasks()
+
+    def _run_llm_tasks(self) -> List[TaskOutcome]:
+        """Standard (lm-eval) tasks, plus the agentic tasks --eval-tasks names.
+
+        Without --eval-tasks this is the standard eval set only (a release
+        runs the agentic set as its own child). With --eval-tasks, agentic
+        task names in the selection run here through AgenticWorkflow, so an
+        agentic task can be selected -- and sharded with --eval-shard -- like
+        an lm-eval task; the lm-eval sweep is skipped when the selection names
+        only agentic tasks.
+        """
+        selected = _eval_tasks_selection(self.ctx)
+        agentic = _agentic_task_names(self.ctx)
+        outcomes: List[TaskOutcome] = []
+        if selected is None or selected - agentic:
+            outcomes.append(self._run_llm_eval_task())
+        if selected is not None and selected & agentic:
+            outcomes.extend(
+                AgenticWorkflow(
+                    self.ctx,
+                    accumulator=self.accumulator,
+                    orchestrator_metadata=self.orchestrator_metadata,
+                ).run_tasks()
+            )
+        return outcomes
 
     def _run_llm_eval_task(self) -> TaskOutcome:
         """Drive the standard (lm-eval / lmms-eval) sweep for an LLM model.
@@ -631,9 +676,13 @@ class ReleaseWorkflow(WorkflowExecution):
         interpreter, since a release child does not re-exec into that venv.
         It runs last: it is the longest child, so a failure in the cheaper ones
         surfaces without waiting for it.
+
+        With ``--eval-tasks`` the selection decides: the evals child runs the
+        agentic tasks it names (see EvalsWorkflow._run_llm_tasks), so the
+        agentic child is not added and unselected agentic tasks do not run.
         """
         children = tuple(self.llm_children)
-        if _has_agentic_tasks(self.ctx):
+        if _has_agentic_tasks(self.ctx) and _eval_tasks_selection(self.ctx) is None:
             children += ("agentic",)
         if self.orchestrator_metadata.agentic_traces is not None:
             children += ("agentic_traces",)

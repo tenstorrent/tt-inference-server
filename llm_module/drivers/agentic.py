@@ -6,15 +6,27 @@
 
 from __future__ import annotations
 
+import dataclasses
+import glob
+import hashlib
 import json
 import logging
 import os
+import subprocess
+import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
+from workflows.eval_shard import (
+    ShardError,
+    agentic_shard_plan,
+    agentic_shard_task_names,
+    parse_eval_shard,
+)
 
 from llm_module.request_overrides import (
     agent_kwargs_with_request_body,
@@ -63,6 +75,10 @@ class AgenticEvalDriver(LLMDriver):
         # so a re-run into the same logs dir does not collide with the previous
         # run's folder (harbor/sweagent refuse to start in an existing one).
         self._run_stamp: Optional[str] = None
+        # Set by run() under --eval-shard: the plan, this shard's index/count
+        # and task names, and (once configured) the Harbor job dir and command
+        # hash, for the caller to write the shard record.
+        self.shard: Optional[dict] = None
         self._parser = AgenticEvalParser(
             task_name=task.task_name,
             score=task.score,
@@ -131,6 +147,31 @@ class HarborAgenticDriver(AgenticEvalDriver):
             return DriverResult(return_code=0, raw=None, raw_path=None)
         self._run_stamp = _run_timestamp()
         _cfg = self.task.agentic_eval_config
+        task_names = None
+        shard_value = getattr(self.runtime_config, "eval_shard", None)
+        if isinstance(shard_value, str) and shard_value:
+            index, count = parse_eval_shard(shard_value)
+            plan = plan_agentic_shards(
+                self.task, self.runtime_config, n_tasks, self.venv_python
+            )
+            shard_names = agentic_shard_task_names(plan, index, count)
+            # Harbor matches task_names as fnmatch patterns; escape so each
+            # name selects exactly itself.
+            task_names = [glob.escape(name) for name in shard_names]
+            self.shard = {
+                "plan": plan,
+                "index": index,
+                "count": count,
+                "task_names": shard_names,
+            }
+            logger.info(
+                "[agentic] %s shard %s: %d of %d task(s): %s",
+                self.task.task_name,
+                shard_value,
+                len(shard_names),
+                len(plan["task_names"]),
+                shard_names,
+            )
         logger.info(
             "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
             self.task.task_name,
@@ -148,7 +189,11 @@ class HarborAgenticDriver(AgenticEvalDriver):
             n_tasks=n_tasks,
             venv_python=self.venv_python,
             run_stamp=self._run_stamp,
+            task_names=task_names,
         )
+        if self.shard is not None:
+            self.shard["command_sha"] = harbor_command_sha(run_config)
+            self.shard["job_dir"] = run_config.jobs_dir / run_config.task_name
         rc = run_harbor(run_config)
         return self._load_result(rc, self.result_path(server, context))
 
@@ -189,7 +234,9 @@ def build_harbor_config(
     n_tasks: Optional[int] = None,
     venv_python: Optional[Path] = None,
     run_stamp: Optional[str] = None,
+    task_names: Optional[List[str]] = None,
 ) -> HarborRunConfig:
+    """``task_names`` (an --eval-shard slice) replaces the configured ones."""
     cfg = task.agentic_eval_config
     task_output_dir = _agentic_output_dir(
         context.output_dir,
@@ -218,7 +265,11 @@ def build_harbor_config(
         timeout_multiplier=cfg.timeout_multiplier,
         agent_timeout_sec=cfg.agent_timeout_sec,
         agent_setup_timeout_multiplier=cfg.agent_setup_timeout_multiplier,
-        task_names=resolve_task_names(task, runtime_config),
+        task_names=(
+            list(task_names)
+            if task_names is not None
+            else resolve_task_names(task, runtime_config)
+        ),
         exclude_task_names=cfg.exclude_task_names,
         quiet=cfg.quiet,
         yes=cfg.yes,
@@ -238,6 +289,91 @@ def build_harbor_config(
         enforce_agent_deadline=cfg.enforce_agent_deadline,
         venv_python=venv_python,
     )
+
+
+_HARBOR_TASK_LIST_SCRIPT = (
+    Path(__file__).resolve().parents[1] / "agentic" / "harbor_task_list.py"
+)
+
+# HarborRunConfig fields that differ between the shards of one run set (the
+# shard's own tasks, job name/dir, interpreter path): excluded from the
+# command hash every shard of one merge must share.
+_PER_SHARD_HARBOR_FIELDS = frozenset(
+    {"task_name", "jobs_dir", "task_names", "venv_python"}
+)
+
+
+def list_harbor_task_names(
+    task: Any,
+    runtime_config: Any = None,
+    n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
+) -> dict:
+    """The task set an unsharded run of ``task`` evaluates, from Harbor itself.
+
+    Runs ``harbor_task_list.py`` in the EVALS_AGENTIC venv with the run's own
+    dataset filters (configured task_names / exclude_task_names / n_tasks).
+    Returns ``{"task_names": [...], "resolved_ref": ...}``.
+    """
+    cfg = task.agentic_eval_config
+    spec = {
+        "dataset": cfg.dataset,
+        "dataset_ref": getattr(cfg, "dataset_ref", None),
+        "task_names": resolve_task_names(task, runtime_config),
+        "exclude_task_names": list(cfg.exclude_task_names or []),
+        "n_tasks": n_tasks if n_tasks is not None else cfg.n_tasks,
+    }
+    interpreter = str(venv_python or sys.executable)
+    with tempfile.TemporaryDirectory(prefix="harbor_task_list_") as tmp:
+        spec_path = Path(tmp) / "spec.json"
+        out_path = Path(tmp) / "names.json"
+        spec_path.write_text(json.dumps(spec))
+        cmd = [
+            interpreter,
+            str(_HARBOR_TASK_LIST_SCRIPT),
+            "--spec",
+            str(spec_path),
+            "--out",
+            str(out_path),
+        ]
+        logger.info("Listing %s tasks for sharding: %s", task.task_name, cmd)
+        listed = subprocess.run(cmd, stderr=subprocess.PIPE, text=True)
+        if listed.returncode != 0:
+            raise ShardError(
+                f"listing the {cfg.dataset} tasks for {task.task_name} failed "
+                f"(rc={listed.returncode}): {(listed.stderr or '').strip()[-2000:]}"
+            )
+        return json.loads(out_path.read_text())
+
+
+def plan_agentic_shards(
+    task: Any,
+    runtime_config: Any = None,
+    n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
+) -> dict:
+    """The --eval-shard plan of an agentic task: its sorted full task set."""
+    cfg = task.agentic_eval_config
+    listing = list_harbor_task_names(task, runtime_config, n_tasks, venv_python)
+    return agentic_shard_plan(
+        dataset=cfg.dataset,
+        dataset_ref=getattr(cfg, "dataset_ref", None),
+        resolved_ref=listing.get("resolved_ref"),
+        task_names=listing.get("task_names") or [],
+        n_attempts=cfg.n_attempts,
+    )
+
+
+def harbor_command_sha(run_config: HarborRunConfig) -> str:
+    """Hash of the Harbor run settings every shard of one merge shares."""
+    fields = {
+        key: value
+        for key, value in dataclasses.asdict(run_config).items()
+        if key not in _PER_SHARD_HARBOR_FIELDS
+    }
+    return hashlib.sha256(
+        json.dumps(fields, sort_keys=True, default=str).encode()
+    ).hexdigest()
 
 
 def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
@@ -304,7 +440,10 @@ __all__ = [
     "AgenticEvalDriver",
     "HarborAgenticDriver",
     "build_harbor_config",
+    "harbor_command_sha",
+    "list_harbor_task_names",
     "make_agentic_driver",
+    "plan_agentic_shards",
     "resolve_n_tasks",
     "resolve_task_names",
 ]

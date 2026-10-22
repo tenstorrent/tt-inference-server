@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -18,12 +19,14 @@ from llm_module import (
     ServerConnection,
     make_agentic_driver,
 )
+from llm_module.eval_configs import eval_task_names
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
 from workflow_module.engine_types import WorkflowVenvType
 from workflow_module import accept_blocks
+from workflows.eval_shard import SHARD_RECORD_PREFIX, agentic_shard_record
 
-from .._test_common import sweep_envelope
+from .._test_common import ReportCheckTypes, TestStatus, sweep_envelope
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -103,13 +106,27 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     (they are mutually exclusive in run.py), so failing hard on mixed configs
     would leave no way to run agentic evals in CI.
 
-    When ``--agentic-benchmark`` is set, the agentic tasks are further narrowed
-    to the selected benchmark(s).
+    When ``--eval-tasks`` is set, only the agentic tasks it names run (its
+    other names are lm-eval tasks, run by the evals workflow; a name the model
+    does not configure at all is an error). When ``--agentic-benchmark`` is
+    set, the agentic tasks are further narrowed to the selected benchmark(s).
     """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]
+    selected = eval_task_names(getattr(ctx, "runtime_config", None))
+    if selected:
+        unknown = sorted(set(selected) - {t.task_name for t in tasks})
+        if unknown:
+            raise ValueError(
+                f"--eval-tasks names task(s) {unknown} that this model does not "
+                f"configure; its eval tasks are {sorted(t.task_name for t in tasks)}."
+            )
+        agentic = [t for t in agentic if t.task_name in set(selected)]
+        logger.info(
+            "--eval-tasks selecting agentic tasks: %s", [t.task_name for t in agentic]
+        )
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
@@ -208,6 +225,46 @@ def _require_openai_server(ctx: MediaContext) -> None:
     logger.info("Inference server health check passed via %s", endpoint)
 
 
+def _write_agentic_shard_record(ctx: MediaContext, task, shard: dict, rc: int):
+    """Write ``eval_shard_<task>.json`` into the shard's Harbor job dir.
+
+    It is what ``python -m report_module.merge_eval_shards`` finds and checks:
+    the plan (the full sorted task set), this shard's index/count and task
+    list, the run's return code (only rc 0 attempts are merged) and the same
+    identity provenance an lm-eval shard records, with the Harbor settings'
+    hash as the command hash.
+    """
+    from llm_module.eval_command import _shard_provenance
+
+    job_dir = shard.get("job_dir")
+    if job_dir is None:
+        return
+    job_dir = Path(job_dir)
+    job_dir.mkdir(parents=True, exist_ok=True)
+    provenance = _shard_provenance(ctx.model_spec, ctx.device, [], "")
+    provenance["eval_command_sha"] = shard["command_sha"]
+    rc_config = getattr(ctx, "runtime_config", None)
+    record = agentic_shard_record(
+        task.task_name,
+        shard["plan"],
+        shard["index"],
+        shard["count"],
+        provenance,
+        return_code=rc,
+        run_id=getattr(rc_config, "run_id", None),
+    )
+    path = job_dir / f"{SHARD_RECORD_PREFIX}{task.task_name}.json"
+    path.write_text(json.dumps(record, indent=2, sort_keys=True))
+    logger.info("Wrote agentic shard record %s", path)
+
+
+def _mark_shard_partial(block: Block, shard_value: str) -> None:
+    """A shard is a measurement, never a verdict (as for lm-eval shards)."""
+    block.data["status"] = TestStatus.PARTIAL.value
+    block.data["reason"] = f"eval shard {shard_value}; merge all shards to grade"
+    block.data["accuracy_check"] = ReportCheckTypes.NA
+
+
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     """Run every EVALS_AGENTIC task for this model; return one Block per task.
 
@@ -236,6 +293,12 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
         driver = make_agentic_driver(task, runtime_config=runtime_config)
         logger.info("Running %s task: %s", driver.name, task.task_name)
         outcome = driver.run(placeholder_config, server, driver_context)
+        # Set by the driver only under --eval-shard (a dict: plan, slice, job dir).
+        shard = getattr(driver, "shard", None)
+        if not isinstance(shard, dict):
+            shard = None
+        if shard is not None:
+            _write_agentic_shard_record(ctx, task, shard, outcome.return_code)
 
         if outcome.return_code != 0:
             logger.error(
@@ -255,6 +318,8 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
             continue
 
         blocks.append(driver.parse(outcome.raw, device=driver_context.device))
+        if shard is not None:
+            _mark_shard_partial(blocks[-1], f"{shard['index']}/{shard['count']}")
         accept_blocks([blocks[-1]], envelope=envelope)
         logger.info(
             "Task %s done: accuracy=%s",
