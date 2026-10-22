@@ -52,6 +52,60 @@ def _build_catalog():
     }
 
 
+# The vllm serve flag shapes set_vllm_sys_argv has to tell apart, taken from the
+# real parser in the serving image (vLLM 0.26.0):
+#
+#   from vllm.entrypoints.openai.cli_args import make_arg_parser
+#   from vllm.utils.argparse_utils import FlexibleArgumentParser
+#   for a in make_arg_parser(FlexibleArgumentParser())._actions:
+#       print(a.dest, a.nargs, getattr(a.type, "__name__", a.type))
+#
+# nargs='+' (one token per value): lora_modules, api_key, allowed_media_domains,
+#   served_model_name, logits_processors, ignore_patterns, numa_bind_nodes,
+#   numa_bind_cpus, kv_cache_dtype_skip_layers, cpu_offload_params, offload_params,
+#   lora_target_modules, collect_detailed_traces, cudagraph_capture_sizes.
+# nargs=None with type=json.loads (one JSON token, list or dict): allowed_origins,
+#   allowed_methods, allowed_headers, default_chat_template_kwargs.
+_MOCK_VLLM_SERVE_FLAGS = (
+    ("served_model_name", "+"),
+    ("cudagraph_capture_sizes", "+"),
+    ("lora_modules", "+"),
+    ("allowed_origins", None),
+    ("default_chat_template_kwargs", None),
+    ("hf_overrides", None),
+    ("max_model_len", None),
+)
+
+
+def _install_mock_vllm_serve_parser(monkeypatch, vllm, namespace="openai"):
+    parser = types.SimpleNamespace(
+        _actions=[
+            types.SimpleNamespace(dest=dest, nargs=nargs)
+            for dest, nargs in _MOCK_VLLM_SERVE_FLAGS
+        ]
+    )
+    vllm.__path__ = []
+    entrypoints = types.ModuleType("vllm.entrypoints")
+    entrypoints.__path__ = []
+    frontend = types.ModuleType(f"vllm.entrypoints.{namespace}")
+    frontend.__path__ = []
+    cli_args = types.ModuleType(f"{frontend.__name__}.cli_args")
+    cli_args.make_arg_parser = MagicMock(return_value=parser)
+    utils = types.ModuleType("vllm.utils")
+    utils.__path__ = []
+    argparse_utils = types.ModuleType("vllm.utils.argparse_utils")
+    argparse_utils.FlexibleArgumentParser = MagicMock()
+    for name, module in (
+        ("vllm.entrypoints", entrypoints),
+        (frontend.__name__, frontend),
+        (cli_args.__name__, cli_args),
+        ("vllm.utils", utils),
+        ("vllm.utils.argparse_utils", argparse_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    return cli_args
+
+
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
     monkeypatch.delenv("QZ_TRACE_REGION_BYTES", raising=False)
@@ -66,6 +120,7 @@ def run_vllm_api_server_module(monkeypatch):
     vllm = types.ModuleType("vllm")
     vllm.ModelRegistry = MagicMock()
     monkeypatch.setitem(sys.modules, "vllm", vllm)
+    _install_mock_vllm_serve_parser(monkeypatch, vllm)
 
     utils = types.ModuleType("utils")
     utils.__path__ = [str(get_repo_root_path() / "utils")]
@@ -606,6 +661,214 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
     )
 
 
+def _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, defaults):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), passthrough, defaults
+    )
+    return sys.argv[1:]
+
+
+@pytest.fixture(params=["openai", "launchers"])
+def vllm_cli_args(monkeypatch, run_vllm_api_server_module, request):
+    monkeypatch.delitem(sys.modules, "vllm.entrypoints.openai.cli_args")
+    return _install_mock_vllm_serve_parser(
+        monkeypatch, sys.modules["vllm"], namespace=request.param
+    )
+
+
+def test_set_vllm_sys_argv_supports_vllm_parser_locations(
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
+):
+    origins = '["https://example.com"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", '["model", "alias"]', "--allowed-origins", origins],
+        {"cudagraph_capture_sizes": [1, 2, 4]},
+    ) == [
+        "--served-model-name",
+        "model",
+        "alias",
+        "--allowed-origins",
+        origins,
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+    ]
+    vllm_cli_args.make_arg_parser.assert_called_once()
+
+
+def test_multi_value_arg_names_falls_back_when_launchers_has_no_cli_args(
+    monkeypatch, run_vllm_api_server_module
+):
+    launchers = types.ModuleType("vllm.entrypoints.launchers")
+    launchers.__path__ = []
+    monkeypatch.setitem(sys.modules, launchers.__name__, launchers)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert "served_model_name" in names
+    assert "allowed_origins" not in names
+
+
+def test_multi_value_arg_names_preserves_missing_dependency_error(
+    monkeypatch, run_vllm_api_server_module
+):
+    real_import = builtins.__import__
+    missing_dependency = ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    def import_with_missing_dependency(name, *args, **kwargs):
+        if name == "vllm.entrypoints.launchers.cli_args":
+            raise missing_dependency
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_with_missing_dependency)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert exc_info.value is missing_dependency
+    sys.modules["vllm.entrypoints.openai.cli_args"].make_arg_parser.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "passthrough",
+    [
+        ["--served-model-name", '["Qwen/Qwen3.6-27B", "local-vlm"]'],
+        ['--served-model-name=["Qwen/Qwen3.6-27B", "local-vlm"]'],
+    ],
+    ids=["separate", "equals"],
+)
+def test_set_vllm_sys_argv_splits_json_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module, passthrough
+):
+    assert _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, {}) == [
+        "--served-model-name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+    ]
+
+
+def test_multi_value_arg_names_does_not_load_vllm_general_plugins(
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
+):
+    # vLLM's EngineArgs.add_cli_args runs load_general_plugins() while the serve
+    # parser is built. A plugin that refuses before model/context are on argv
+    # (Quetzal: "manifest-selected Quetzal serving requires exact model and
+    # context") must not end the entrypoint while it only reads flag shapes.
+    def refusing_plugins():
+        raise RuntimeError(
+            "Quetzal generated-provider registration failed; "
+            "refusing to serve the tt_transformers reference model"
+        )
+
+    plugins = types.ModuleType("vllm.plugins")
+    plugins.load_general_plugins = refusing_plugins
+    engine = types.ModuleType("vllm.engine")
+    engine.__path__ = []
+    arg_utils = types.ModuleType("vllm.engine.arg_utils")
+    arg_utils.load_general_plugins = refusing_plugins
+    for name, module in (
+        ("vllm.plugins", plugins),
+        ("vllm.engine", engine),
+        ("vllm.engine.arg_utils", arg_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    cli_args = vllm_cli_args
+    parser = cli_args.make_arg_parser.return_value
+
+    def make_arg_parser(_parser):
+        # Both binding styles vLLM has used: a module-level import in
+        # arg_utils, and a function-local `from vllm.plugins import ...`.
+        arg_utils.load_general_plugins()
+        sys.modules["vllm.plugins"].load_general_plugins()
+        return parser
+
+    monkeypatch.setattr(cli_args, "make_arg_parser", make_arg_parser)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert {"served_model_name", "cudagraph_capture_sizes", "lora_modules"} <= names
+    assert "allowed_origins" not in names
+    # The real loader is restored for vLLM's own startup.
+    assert plugins.load_general_plugins is refusing_plugins
+    assert arg_utils.load_general_plugins is refusing_plugins
+
+
+def test_set_vllm_sys_argv_keeps_json_list_for_single_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # nargs=None, type=json.loads: splitting it makes vLLM exit at parsing.
+    origins = '["https://a.example", "https://b.example"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--allowed-origins", origins],
+        {"default_chat_template_kwargs": {"enable_thinking": False}},
+    ) == [
+        "--allowed-origins",
+        origins,
+        "--default_chat_template_kwargs",
+        '{"enable_thinking": false}',
+    ]
+
+
+def test_set_vllm_sys_argv_leaves_plain_multi_value_tokens_alone(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"],
+        {},
+    ) == ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"]
+
+
+def test_set_vllm_sys_argv_splits_spec_default_lists_for_multi_value_flags(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        [],
+        {
+            "served_model_name": ["Qwen/Qwen3.6-27B", "local-vlm"],
+            "cudagraph_capture_sizes": [1, 2, 4],
+            "lora_modules": [{"name": "adapter", "path": "/adapters/a"}],
+            "hf_overrides": {"max_seq_len": 4096},
+        },
+    ) == [
+        "--served_model_name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+        "--lora_modules",
+        '{"name": "adapter", "path": "/adapters/a"}',
+        "--hf_overrides",
+        '{"max_seq_len": 4096}',
+    ]
+
+
+def test_set_vllm_sys_argv_drops_empty_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # A bare nargs='+' flag is an argparse error, so an empty list falls back to vLLM's default.
+    assert (
+        _vllm_argv_for(
+            run_vllm_api_server_module,
+            monkeypatch,
+            ["--served-model-name", "[]"],
+            {"cudagraph_capture_sizes": []},
+        )
+        == []
+    )
+
+
 def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -666,6 +929,12 @@ def test_vllm_dockerfile_checks_out_supplied_standalone_plugin_ref():
     assert "git fetch --depth 1 origin ${TT_VLLM_COMMIT_SHA_OR_TAG}" not in dockerfile
     assert "source docs/install-vllm-tt.sh" in dockerfile
     assert "git clone https://github.com/tenstorrent/vllm.git" not in dockerfile
+
+
+def test_vllm_dockerfile_exposes_tt_metal_device_build_in_both_stages():
+    dockerfile = VLLM_DOCKERFILE_PATH.read_text()
+
+    assert dockerfile.count("TT_METAL_DEVICE_BUILD=${TT_METAL_HOME}/build") == 2
 
 
 @pytest.mark.parametrize(
@@ -1102,6 +1371,9 @@ def test_ensure_weights_available_resumes_partial_download(
     kwargs = run_vllm_api_server_module.snapshot_download.call_args.kwargs
     assert kwargs["repo_id"] == spec["hf_model_repo"]
     assert Path(kwargs["local_dir"]) == weights_path
+    # Meta's duplicate original/ checkpoint is never loaded; skip it like the host
+    # download does.
+    assert kwargs["ignore_patterns"] == ["original/**"]
     assert result == weights_path
     assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
 
@@ -1279,6 +1551,7 @@ def test_llama_qb2_download_and_tt_model_use_the_same_pinned_snapshot(
         repo_id=spec["hf_model_repo"],
         revision="0e9e39f249a16976918f6564b8830bc894c89659",
         cache_dir=tmp_path / "weights" / "hub",
+        ignore_patterns=["original/**"],
     )
     # Track mutation through monkeypatch so the fixture restores the environment.
     monkeypatch.setenv("HF_MODEL", "stale")
@@ -1322,3 +1595,63 @@ def test_llama_qb2_failed_download_does_not_use_shared_partial_weights(
     module.snapshot_download.side_effect = RuntimeError("offline")
     with pytest.raises(RuntimeError, match="offline"):
         module.ensure_weights_available(spec)
+
+
+def _install_fake_transformers(monkeypatch, calls):
+    transformers = types.ModuleType("transformers")
+
+    class _Auto:
+        def __init__(self, name):
+            self.name = name
+
+        def from_pretrained(self, path, **kwargs):
+            calls.append((self.name, kwargs))
+            return object()
+
+    transformers.AutoConfig = _Auto("AutoConfig")
+    transformers.AutoTokenizer = _Auto("AutoTokenizer")
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+
+def _install_fake_hf_compat(monkeypatch, calls):
+    package = types.ModuleType("tt_quetzalcoatlus")
+    package.__path__ = []
+    hf_compat = types.ModuleType("tt_quetzalcoatlus.hf_compat")
+    hf_compat.register_vendored_architectures = lambda: calls.append(("register", {}))
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus", package)
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus.hf_compat", hf_compat)
+
+
+def test_quetzal_metadata_registers_vendored_architectures_before_config(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    """Vendored remote-code checkpoints (K2-Horizon, Kolibri) resolve locally:
+    quetzal's vendored classes are registered before AutoConfig loads, and
+    remote code is still never trusted."""
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    calls = []
+    _install_fake_transformers(monkeypatch, calls)
+    _install_fake_hf_compat(monkeypatch, calls)
+
+    run_vllm_api_server_module._ensure_quetzal_metadata(_quetzal_model_spec())
+
+    assert [name for name, _ in calls] == ["register", "AutoConfig", "AutoTokenizer"]
+    for name, kwargs in calls[1:]:
+        assert kwargs["trust_remote_code"] is False, name
+        assert kwargs["local_files_only"] is True, name
+
+
+def test_quetzal_metadata_without_vendored_registry_is_unchanged(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    """A quetzal predating hf_compat keeps today's behaviour: no registration,
+    the same trust_remote_code=False loads."""
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    calls = []
+    _install_fake_transformers(monkeypatch, calls)
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus.hf_compat", None)
+
+    run_vllm_api_server_module._ensure_quetzal_metadata(_quetzal_model_spec())
+
+    assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
+    assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)

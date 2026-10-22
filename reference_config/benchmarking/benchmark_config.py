@@ -121,6 +121,24 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # SUPER_CLUSTER sweep point sends at least this many multiples of the model's
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
+# Model-scoped sweep extensions for models whose context exceeds the standard
+# 131072 top point. Keyed by model_name, appended to the standard pairs and
+# still filtered by ``isl + osl <= max_context``. Scoped per model so other
+# long-context specs keep their existing sweeps.
+MODEL_EXTRA_ISL_OSL_PAIRS = {
+    # 512K-context autoport: extend the sweep to its full window.
+    "K2-Horizon-7B": [
+        # Decode across a page-table capacity bucket (4096 -> 8192 at 32 users,
+        # 32768 -> 65536 single-user): the adapter rebuilds its resident decode
+        # state from device inputs under reload contract v1 (tt-metal #59517).
+        (4000, 256),
+        (32700, 256),
+        (196608, 128),  # 192K
+        (262144 - 128, 128),  # 256K
+        (393216, 128),  # 384K
+        (524288 - 128, 128),  # 512K
+    ],
+}
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -371,7 +389,14 @@ def select_smoke_test_benchmark_config(
 ) -> BenchmarkConfig:
     if benchmark_config.tasks:
         benchmark_target_task = benchmark_config.tasks[0]
-        benchmark_targets = benchmark_target_task.param_map.get(device)
+        # Rows without targets are informational (e.g. MiniMax-M3's long-context
+        # sweep points) and can be very large, so a smoke test only runs the
+        # rows that carry targets and otherwise falls back to the tiny pair.
+        benchmark_targets = [
+            params
+            for params in benchmark_target_task.param_map.get(device) or []
+            if params.targets
+        ]
         if benchmark_targets:
             benchmark_target_param_map = dict(benchmark_target_task.param_map)
             benchmark_target_param_map[device] = list(benchmark_targets)
@@ -581,6 +606,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # filtering still applies below.
     text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
     sweep_min_num_prompts = 0
+    text_isl_osl_pairs += MODEL_EXTRA_ISL_OSL_PAIRS.get(model_spec.model_name, [])
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (

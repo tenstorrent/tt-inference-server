@@ -200,4 +200,17 @@ constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
 constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
 constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
 
+// Qwen3-TTS: the codec reads the voice clip and writes audio at 24 kHz.
+constexpr uint32_t TTS_QWEN3_SAMPLE_RATE_HZ = 24000;
+// 32 s at 12.5 frames/s; fixes the talker's KV cache size for the worker.
+constexpr uint32_t TTS_QWEN3_MAX_FRAMES = 400;
+// Hard ceiling: a 2 MiB task-queue message holds ~43 s of 24 kHz PCM16.
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS = 30;
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT = 40;
+// 4 s of 24 kHz PCM16 (192 KB), under the 512 KiB audio-queue message limit.
+constexpr size_t TTS_QWEN3_CHUNK_SAMPLES = 96000;
+// tt-metal's checkpoint_dir() default when QWEN3_TTS_CKPT/HF_MODEL are unset.
+constexpr const char* TTS_QWEN3_DEFAULT_HF_MODEL =
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base";
+
 }  // namespace tt::config::defaults

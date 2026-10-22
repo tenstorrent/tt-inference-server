@@ -6,6 +6,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "openai/gpt-oss-120b"
       ],
@@ -20,13 +23,21 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3.8-27B"
       ],
       "test_cases": [
         {
           "enabled": true,
-          "template": "VLLMParamConformanceTest"
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
         }
       ]
     },
@@ -37,6 +48,10 @@
         "llama_3_2_1b",
         "llama_70b_family",
         "gpt_oss_20b"
+      ],
+      "_exclude_impls_note": "quetzal rows get their own generated VLLMParamConformanceTest matrix (with their chat_template_kwargs), so this generic one must not also apply to them",
+      "exclude_impls": [
+        "quetzal"
       ],
       "devices": [
         "n150",
@@ -65,6 +80,9 @@
       "models": [
         "gemma4_31b",
         "gemma4_12b"
+      ],
+      "exclude_impls": [
+        "quetzal"
       ],
       "devices": [
         "p300x2",
@@ -169,6 +187,80 @@
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
           }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
+          "_comment": "The verifier is exported at MINIMAX_VERIFIER_COMMIT in workflows/workflow_venvs.py; graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_PATHS.",
+          "_comment_threshold": "For now every metric uses the verifier README threshold (no targets). Measured on GPU vLLM, 10 verify.py runs (102 cases, concurrency 20, verifier 87c03f2, 2026-10-08; its verify.py, validator/ and sample.jsonl are identical to the pinned 4e778f7), mean - 3 sample std would give: ToolCalls-Match-Rate 96.70% - 3 x 0.82% = 94.23% (README 97%), i.e. at least 95 of 100 labelled cases; ToolCalls-Trigger-Similarity 98.61% - 3 x 0.50% = 97.10% (README 98%); ToolCalls-Schema-Accuracy 98.65% - 3 x 0.38% = 97.50% (README 98%), i.e. at most 2 invalid of ~82 tool calls. To grade against these instead, set targets {tool_calls_match_rate: 0.9423, tool_calls_trigger_similarity: 0.971, tool_calls_schema_accuracy: 0.975}. Scenario-Check-Pass-Rate keeps the README's 100% but is advisory (advisory_metrics): it is graded and shown against 100% and never fails the run, because it is one case and GPU vLLM failed it in 2 of the 10 runs.",
+          "test_config": {
+            "suite": "verify",
+            "verify_baseline": "output-dir/MiniMax-M3/loop_01",
+            "advisory_metrics": ["scenario_check_pass_rate"]
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check text: chat-completions contract, non-blocking",
+          "test_config": {
+            "suite": "text",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check stream: SSE protocol and packet-length distribution, non-blocking",
+          "test_config": {
+            "suite": "stream",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check image: image input, non-blocking",
+          "test_config": {
+            "suite": "image",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check video: video input, non-blocking",
+          "test_config": {
+            "suite": "video",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "minimax_m2_7"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
+          "_comment": "The verifier is exported at MINIMAX_VERIFIER_COMMIT in workflows/workflow_venvs.py; graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_PATHS.",
+          "_comment_threshold": "Scenario-Check-Pass-Rate keeps the README's 100% but is advisory (advisory_metrics), as on MiniMax-M3: it is graded and shown against 100% and never fails the run, because it is a single case, so one miss would fail the whole verify run.",
+          "test_config": {
+            "suite": "verify",
+            "verify_baseline": "output-dir/MiniMax-M2.7/loop_01",
+            "advisory_metrics": ["scenario_check_pass_rate"]
+          }
         }
       ]
     },
@@ -202,16 +294,37 @@
       ]
     },
     {
-      "devices": [
-        "p300x2"
-      ],
       "models": [
-        "tiiuae/Falcon3-3B-Base"
+        "glm_5_3"
+      ],
+      "devices": [
+        "super_cluster"
       ],
       "test_cases": [
         {
+          "template": "ToolCallSchemaConformanceTest",
           "enabled": true,
-          "template": "VLLMParamConformanceTest"
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 97.45%; $ref schemas excluded, GLM parser bug)",
+          "_comment": "exclude_ref_schemas: like MiniMax-M3, GLM-5.3's tool-call parser does not follow $ref -> $defs when it converts argument values, so a value typed through $ref comes back as a JSON string (an object as '{\"name\": \"a\"}'). On GPU vLLM, 8 $ref cases failed this way in every one of 10 runs, both modes. Drop the exclusion once the parser resolves $ref.",
+          "_comment_threshold": "pass_rate_threshold = mean - 3 sample std of 10 runs on GPU vLLM ($ref excluded, no retries, 2026-10-07): 99.14% - 3 x 0.57% = 97.45%, i.e. at least 330 of 338.",
+          "test_config": {
+            "exclude_ref_schemas": true
+          },
+          "targets": {
+            "pass_rate_threshold": 0.9745
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking ($ref schemas excluded, GLM parser bug)",
+          "_comment": "Second run of the suite with tool_choice required; $ref schemas excluded for the reason given on the case above.",
+          "test_config": {
+            "exclude_ref_schemas": true,
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
         }
       ]
     },
@@ -219,19 +332,8 @@
       "devices": [
         "p300x2"
       ],
-      "models": [
-        "tiiuae/Falcon3-7B-Base"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3-4B"
@@ -247,6 +349,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-14B"
       ],
@@ -260,6 +365,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3-8B"
@@ -275,6 +383,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-Coder-7B"
       ],
@@ -288,6 +399,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-Coder-7B-Instruct"
@@ -303,19 +417,8 @@
       "devices": [
         "p300x2"
       ],
-      "models": [
-        "TinyLlama/TinyLlama_v1.1"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -331,75 +434,8 @@
       "devices": [
         "p300x2"
       ],
-      "models": [
-        "stabilityai/stablelm-2-1_6b"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "tiiuae/Falcon3-1B-Base"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "EleutherAI/pythia-70m"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "microsoft/phi-1_5"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "microsoft/phi-1"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-14B-Instruct-1M"
@@ -415,6 +451,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "meta-llama/Llama-3.1-8B-Instruct"
       ],
@@ -428,6 +467,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "HuggingFaceTB/SmolLM2-1.7B-Instruct"
@@ -443,6 +485,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "meta-llama/Llama-3.2-3B-Instruct"
       ],
@@ -456,6 +501,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3-0.6B"
@@ -471,8 +519,662 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-1.7B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "arcee-ai/Arcee-Spark"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "tiiuae/Falcon3-10B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B-Instruct-2507"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "upstage/SOLAR-10.7B-Instruct-v1.0"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen1.5-0.5B-Chat"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "01-ai/Yi-1.5-9B-Chat"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "NousResearch/Hermes-3-Llama-3.2-3B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-14B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "mistralai/Mistral-7B-Instruct-v0.3"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-14B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "01-ai/Yi-1.5-34B-Chat"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-7B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "meta-models/Muse-Glimmer-30B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "arcee-ai/Llama-3.1-SuperNova-Lite"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Math-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "tiiuae/Falcon3-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "NousResearch/Hermes-3-Llama-3.1-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "allenai/Llama-3.1-Tulu-3-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-8B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "mistralai/Mistral-Nemo-Instruct-2407"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-14B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/QwQ-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "meta-llama/Llama-3.2-1B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3.5-9B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "IFM/K2-Horizon-7B"
       ],
       "test_cases": [
         {

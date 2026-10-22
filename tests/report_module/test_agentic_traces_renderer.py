@@ -686,3 +686,30 @@ class TestRequirementsTargets:
         # InferenceX-graded sweeps
         assert "**TPOT**: inter-token latency" in out
         assert "Ready Starved" not in out
+
+
+def test_telemetry_charts_render_as_images_per_run():
+    records = [
+        _record(
+            concurrency=8,
+            telemetry_chart_isl_osl="agentic_traces/charts/c8/isl_osl.svg",
+            telemetry_chart_latency="agentic_traces/charts/c8/latency.svg",
+        ),
+        _record(concurrency=16),
+    ]
+    out = render_agentic_traces(
+        Block(kind="agentic_traces", data={"records": records}), METADATA
+    )
+
+    assert "#### Per-point Telemetry" in out
+    assert "![Sequence length distribution - inferencex_agentx c8" in out
+    assert "(agentic_traces/charts/c8/latency.svg)" in out
+    # Only the run that has charts gets a subsection.
+    assert out.count("##### ") == 1
+
+
+def test_no_telemetry_section_without_charts():
+    out = render_agentic_traces(
+        Block(kind="agentic_traces", data={"records": [_record()]}), METADATA
+    )
+    assert "Per-point Telemetry" not in out

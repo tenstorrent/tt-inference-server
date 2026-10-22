@@ -16,6 +16,10 @@ from typing import Any, List, Optional
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
+from llm_module.request_overrides import (
+    agent_kwargs_with_request_body,
+    resolve_request_body,
+)
 from ..agentic.harbor import HarborRunConfig, run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
@@ -63,6 +67,7 @@ class AgenticEvalDriver(LLMDriver):
             task_name=task.task_name,
             score=task.score,
             limit_mode=_get_limit_mode(runtime_config),
+            priority=getattr(task, "priority", "must"),
         )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -97,6 +102,7 @@ class AgenticEvalDriver(LLMDriver):
             score=self.task.score,
             result_path=result_path,
             limit_mode=_get_limit_mode(self.runtime_config),
+            priority=getattr(self.task, "priority", "must"),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
@@ -129,7 +135,7 @@ class HarborAgenticDriver(AgenticEvalDriver):
             "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
             self.task.task_name,
             n_tasks,
-            getattr(_cfg, "n_concurrent_trials", "?"),
+            _n_concurrent_trials(_cfg),
             getattr(_cfg, "agent", "?"),
             getattr(_cfg, "dataset", "?"),
             getattr(_cfg, "model", None),
@@ -174,6 +180,35 @@ def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEval
     return HarborAgenticDriver(task, runtime_config=runtime_config)
 
 
+def _n_concurrent_trials(cfg: Any) -> int:
+    """``cfg.n_concurrent_trials``, capped by ``AGENTIC_MAX_CONCURRENT_TRIALS`` when set.
+
+    Docker environments create one bridge network per trial, and a runner on
+    the default address pools runs out after ~31; the excess trials then fail
+    before the agent starts. The cap lets a dispatch stay under that limit
+    without changing the configured value.
+    """
+    cap = os.environ.get("AGENTIC_MAX_CONCURRENT_TRIALS")
+    if not cap:
+        return cfg.n_concurrent_trials
+    try:
+        cap_value = int(cap)
+    except ValueError:
+        cap_value = 0
+    if cap_value < 1:
+        raise ValueError(
+            f"AGENTIC_MAX_CONCURRENT_TRIALS must be an integer >= 1, got {cap!r}"
+        )
+    capped = min(cfg.n_concurrent_trials, cap_value)
+    if capped != cfg.n_concurrent_trials:
+        logger.info(
+            "[agentic] n_concurrent_trials %s -> %s (AGENTIC_MAX_CONCURRENT_TRIALS)",
+            cfg.n_concurrent_trials,
+            capped,
+        )
+    return capped
+
+
 def build_harbor_config(
     task: Any,
     server: ServerConnection,
@@ -195,14 +230,17 @@ def build_harbor_config(
     return HarborRunConfig(
         task_name=task_output_dir.name,
         dataset=cfg.dataset,
+        dataset_ref=getattr(cfg, "dataset_ref", None),
         agent=cfg.agent,
         model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
-        n_concurrent_trials=cfg.n_concurrent_trials,
+        n_concurrent_trials=_n_concurrent_trials(cfg),
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
-        agent_kwargs=cfg.agent_kwargs,
+        agent_kwargs=agent_kwargs_with_request_body(
+            cfg.agent, cfg.agent_kwargs, resolve_request_body(task)
+        ),
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         override_cpus=cfg.override_cpus,
         override_memory_mb=cfg.override_memory_mb,

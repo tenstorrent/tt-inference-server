@@ -112,6 +112,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "ratio_to_published": "Ratio to Published",
     "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
+    "accuracy_rule": "Accuracy Rule",
+    "noise_n": "Noise n",
+    "noise_se": "Noise SE",
+    "noise_z": "Noise z",
     # Benchmarks report a performance-target verdict, not an accuracy check.
     "target_check": "Target Check",
     # Liveness / infra
@@ -143,8 +147,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "public_dataset": "Dataset",
     "output_len": "OSL",
     "completed": "Completed",
+    "placeholder_prompts": "Placeholders in Dataset",
     "acceptance_rate": "Accept Rate",
     "mean_accepted_length": "Mean Acc Len",
+    "acceptance_source": "Acceptance Source",
     "p95_ttft_ms": "P95 TTFT (ms)",
     "p95_tpot_ms": "P95 TPOT (ms)",
     "p95_e2el_ms": "P95 E2EL (ms)",

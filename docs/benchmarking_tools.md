@@ -1,641 +1,122 @@
-# Benchmarking Tools for Tenstorrent Hardware
+# Benchmarking Tools
 
-Comprehensive guide to performance benchmarking tools integrated with tt-inference-server.
+The `benchmarks` workflow can drive four client tools against the same server and the same sweep. This guide covers what each tool does, how the harness invokes it, and why their numbers differ. What the sweep contains, how results are graded, and how to read a report are in the [Performance Benchmarks reference](../reference_config/benchmarking/README.md).
 
-## Overview
-
-tt-inference-server supports four benchmarking tools for measuring LLM inference performance on Tenstorrent accelerators:
-
-| Tool | Source | Installation | Best For |
-|------|--------|--------------|----------|
-| **vLLM** | vLLM project | Docker | Baseline reference |
-| **GenAI-Perf** | NVIDIA Triton SDK | Docker (~10GB) | Official Triton validation |
-| **AIPerf** | NVIDIA ai-dynamo | `pip install` | Detailed percentiles, VLM support |
-| **GuideLLM** | vLLM project | `pip install` | Multi-turn, custom datasets, omni-modal scenarios |
-
-## Quick Start
-
-All tools use the same CLI pattern:
+| Tool | `--tools` | Client | Version | Best for |
+|---|---|---|---|---|
+| [vLLM `vllm bench serve`](#vllm-vllm-bench-serve) | `vllm` (default) | Python venv | `vllm==0.13.0`, pinned | Release grading, regression tracking |
+| [AIPerf](#aiperf) | `aiperf` | Python venv | unpinned | Full percentile distribution, per-request records, goodput |
+| [GenAI-Perf](#genai-perf) | `genai` | NVIDIA Triton SDK Docker image | `nvcr.io/nvidia/tritonserver:25.11-py3-sdk` | Comparison with Triton-based results |
+| [GuideLLM](#guidellm) | `guidellm` | Python venv | unpinned | Multi-turn, custom-dataset and omni-modal scenarios |
 
 ```bash
-# vLLM (default)
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
-
-# GenAI-Perf
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools genai
-
-# AIPerf
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
-
-# GuideLLM
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
+python3 run.py --model Qwen/Qwen3-32B --tt-device t3k --workflow benchmarks --tools aiperf
 ```
 
-## Tool Comparison
+Each Python client gets its own virtual environment under `.workflow_venvs/`, created on first use; `--reset-venvs` rebuilds them. For an unpinned tool, record its version (`.workflow_venvs/<venv>/bin/pip show aiperf`) with the results.
 
-### vLLM benchmark_serving.py
+## vLLM `vllm bench serve`
 
-**What it is:**  
-Server-side benchmarking using vLLM's built-in `benchmark_serving.py` script.
+Driver: [`llm_module/drivers/vllm.py`](../llm_module/drivers/vllm.py). Each sweep point runs:
 
-**Key features:**
-- Server-side TTFT measurement (measures first SSE chunk)
-- Minimal overhead
-- Direct HTTP/JSON interface
-- Supports text and image (VLM) benchmarks
-
-**Metrics provided:**
-- TTFT (mean only)
-- TPOT (mean only)
-- Throughput (input, output, total, user-level)
-- E2EL (mean only)
-- Request throughput
-
-**Output:**
-```json
-{
-  "mean_ttft_ms": 73.2,
-  "mean_tpot_ms": 38.2,
-  "tps_input_throughput": 73.9,
-  "tps_output_throughput": 26.1,
-  "tps_total_throughput": 100.0,
-  "mean_e2el_ms": 4930.4
-}
+```text
+vllm bench serve --backend openai-chat --endpoint /v1/chat/completions --model <model>
+  --dataset-name random --random-input-len <ISL> --random-output-len <OSL>
+  --max-concurrency <C> --num-prompts <N> --percentile-metrics ttft,tpot,itl,e2el
+  --save-result --save-detailed --result-filename <file>
+  --host <host> --port <port> --extra-body '{"truncate_prompt_tokens": <ISL>}'
 ```
 
-**When to use:**
-- Quick baseline reference
-- Server-side measurements
-- Standard vLLM validation
+- **Output length.** vLLM 0.13.0 forces ignore-EOS for the `random` dataset on OpenAI-compatible backends, so every request generates exactly OSL tokens.
+- **Warmup.** One unmeasured readiness request per point; `--num-warmups` defaults to 0.
+- **Percentiles.** Mean, median, P99 and standard deviation for TTFT, TPOT, ITL and E2E latency (`--metric-percentiles` adds more). `--save-detailed` keeps per-request values in the result JSON.
+- **Goodput.** `--goodput ttft:<ms> tpot:<ms> e2el:<ms>` is passed when a [requirements document](../reference_config/benchmarking/README.md#goodput-and-requirements-documents) sets SLOs for the point.
+- **Remote endpoints** (`--server-url https://…`) use `--base-url`, a bearer-token header and no prompt truncation.
+- The [fixed-workload protocol](../reference_config/benchmarking/README.md#fixed-workload-protocol) runs this tool through a timing adapter with a separately pinned client and tokenizer.
 
----
+## AIPerf
 
-### GenAI-Perf
+Driver: [`llm_module/drivers/aiperf.py`](../llm_module/drivers/aiperf.py). [AIPerf](https://github.com/ai-dynamo/aiperf) is NVIDIA's OpenAI-compatible benchmarking client from the ai-dynamo project. Each sweep point runs:
 
-**What it is:**  
-NVIDIA's official benchmarking tool for Triton Inference Server, also supports OpenAI-compatible endpoints.
-
-**Key features:**
-- Runs inside Triton Docker container
-- Uses Triton's client library
-- Docker-based execution
-- Built-in warm-up support (`--warmup-request-count`)
-
-**Metrics provided:**
-- TTFT (mean)
-- TPOT (mean)
-- Throughput (decode, prefill, user-level)
-- E2EL (mean)
-- Request throughput
-
-**Output:**
-```json
-{
-  "mean_ttft_ms": 73.7,
-  "mean_tpot_ms": 33.8,
-  "tps_decode_throughput": 29.6,
-  "mean_e2el_ms": 29782.8
-}
+```text
+python -m aiperf profile --model <model> --tokenizer <model> --endpoint-type chat --streaming
+  --url <url> --concurrency <C> --request-count <N>
+  --synthetic-input-tokens-mean <ISL> --synthetic-input-tokens-stddev 0
+  --output-tokens-mean <OSL> --output-tokens-stddev 0 --artifact-dir <dir>
 ```
 
-**When to use:**
-- Official NVIDIA validation
-- Triton Inference Server compatibility testing
-- Standard industry benchmark
+- **Output length is not guaranteed.** Without `--extra-inputs ignore_eos:true`, requests may stop early at EOS, so OSL can be shorter than requested. The harness does not pass it today.
+- **Warmup.** None; AIPerf runs no warmup unless `--warmup-request-count` or `--warmup-duration` is set, and the harness sets neither.
+- **Percentiles.** P1 to P99 for every metric, plus per-request records.
+- **Goodput.** `run.py --goodput "time_to_first_token:<ms> inter_token_latency:<ms> request_latency:<ms>"` applies to every point. Keys are AIPerf metric tags with values in their display units.
+- **Artifacts.** `aiperf_artifacts/bench_<isl>_<osl>_<conc>_n<N>/` in the workflow output: `profile_export_aiperf.json` (aggregates), `profile_export.jsonl` (one record per request), `profile_export_aiperf.csv`.
 
-**Note:**  
-Current implementation has warm-up disabled (`--warmup-request-count "0"` in `benchmarking/genai_benchmark.py`). This causes high TTFT on the first benchmark due to cold start. NVIDIA's standard practice is 10 warm-up requests.
+## GenAI-Perf
 
----
+Driver: [`llm_module/drivers/genai_perf.py`](../llm_module/drivers/genai_perf.py). Runs `genai-perf profile` in the NVIDIA Triton SDK container (`docker run --net host`, about 10 GB on first pull) with the same synthetic-input options as AIPerf. It passes no warmup and no ignore-EOS option, so expect a cold first point and variable output lengths.
 
-### AIPerf
+## GuideLLM
 
-**What it is:**  
-NVIDIA's detailed performance benchmarking tool from the ai-dynamo project, designed for OpenAI-compatible APIs.
+Driver: [`llm_module/drivers/guidellm.py`](../llm_module/drivers/guidellm.py). With `--tools guidellm`, [GuideLLM](https://github.com/vllm-project/guidellm) runs the synthetic ISL/OSL sweep at fixed concurrency like the other tools. It also runs dataset-driven scenarios defined in [`llm_module/guidellm_scenarios.py`](../llm_module/guidellm_scenarios.py): multi-turn chat, custom datasets and omni-modal (text, image, video, audio) workloads.
 
-**Key features:**
-- Client-side measurement (includes connection overhead)
-- **Detailed percentiles** (mean, P50, P99, std) for all metrics
-- Per-request metrics in JSONL format
-- Automatic warm-up requests (implemented in our integration)
-- VLM/multimodal support
+## Understanding metric differences
 
-**Metrics provided:**
-- TTFT (mean, median, P99, std)
-- TPOT (mean, median, P99, std)
-- E2EL (mean, median, P99, std)
-- Throughput (output tokens, requests)
+The tools agree on what they send but not on where they stop each clock. Compare numbers from one tool only, and name the tool when quoting them.
 
-**Output:**
-```json
-{
-  "mean_ttft_ms": 93.5,
-  "median_ttft_ms": 91.2,
-  "p99_ttft_ms": 112.8,
-  "std_ttft_ms": 8.4,
-  "mean_tpot_ms": 40.2,
-  "median_tpot_ms": 39.8,
-  "p99_tpot_ms": 48.7,
-  "std_tpot_ms": 3.1,
-  "mean_e2el_ms": 5180.3,
-  "output_token_throughput": 25.1,
-  "request_throughput": 0.194
-}
+**TTFT.** vLLM's server streams an empty role announcement before the first token:
+
+```text
+data: {"choices":[{"delta":{"role":"assistant","content":""}}]}   <- vLLM client stops TTFT here
+data: {"choices":[{"delta":{"content":"The"}}]}                    <- AIPerf stops TTFT here
 ```
 
-**When to use:**
-- Detailed performance analysis
-- Understanding latency distribution (not just averages)
-- VLM/multimodal benchmarking
-- Quick validation (supports `--limit-samples-mode smoke-test`)
+`vllm bench serve` (`openai-chat` backend) stops the clock at the first streamed chunk that has any `choices`; AIPerf stops at the first chunk carrying content, reasoning or tool-call text. On gemma-3-4b-it on N300 at 128/128, concurrency 1, vLLM measured 73 ms and AIPerf 93 ms for the same server. The fixed-workload protocol stops at the first non-empty content event, like AIPerf.
 
----
+**Decode metrics** share definitions under different names:
 
-## Understanding TTFT Differences
+| Quantity | vLLM | AIPerf | Definition |
+|---|---|---|---|
+| Per-request decode time per token | TPOT | `inter_token_latency` | (E2E latency − TTFT) / (output tokens − 1), averaged over requests |
+| Gap between streamed chunks | ITL | `inter_chunk_latency` | Every chunk gap, pooled across requests |
+| Per-user decode throughput (`tput_user`) | `1000 / mean TPOT` (derived by the harness) | `output_token_throughput_per_user` | Tokens/s seen by one user |
 
-TTFT values differ across tools **by design** - they measure different points in the streaming response.
+TPOT agreed within about 5% between the two tools in the measurement above. `tput_user` can differ slightly between them when TPOT varies across requests, because the mean of reciprocals is not the reciprocal of the mean.
 
-### vLLM's Streaming Pattern
+**Throughput.** Input, output and total token throughput are aggregate over the whole run (all concurrent requests), in tokens/s. Request throughput is completed requests per second.
 
-When vLLM streams a response:
+**Percentiles.** At the default sweep's request counts (as few as one request per point at long ISL), a P99 is effectively the maximum and a mean can be dominated by one cold request. Use the [acceptance procedure](../reference_config/benchmarking/README.md#recommended-procedure-for-acceptance-runs) when percentiles matter.
 
-```
-Chunk 1: {"choices": [{"delta": {"role": "assistant", "content": ""}}]}
-         ↑ Empty role announcement (~73ms)
+## Running a tool outside the harness
 
-Chunk 2: {"choices": [{"delta": {"content": "The"}}]}
-         ↑ First actual token (~93ms)
+These stand-alone commands reproduce one sweep point against a running server, with the warmup and exact-length options the harness does not yet pass. Set `API_KEY` to the server's bearer token (the harness derives it from `JWT_SECRET`; omit the header with `--no-auth` servers).
 
-Chunk 3+: {"choices": [{"delta": {"content": " quick"}}]} ...
-```
-
-### Measurement Points
-
-| Tool | Stops Timer At | What It Measures |
-|------|----------------|------------------|
-| **vLLM** | First SSE chunk (role) | Server response time |
-| **AIPerf** | First content-bearing chunk | Time to actual text |
-| **GenAI-Perf** | First token via Triton client | Full client roundtrip |
-
-**Visual Timeline:**
-```
-HTTP POST → Role chunk → First token → Last token
-0ms         73ms        93ms          5000ms
-            ↑           ↑             ↑
-            vLLM        AIPerf        E2EL (all tools)
-```
-
-**Real-world example (ISL=128, OSL=128, Con=1):**
-
-| Tool | TTFT | TPOT | Analysis |
-|------|------|------|----------|
-| vLLM | 73ms | 38ms | Server-side baseline |
-| AIPerf | 93ms | 40ms | +20ms (skips empty role chunk) |
-| GenAI-Perf | 73ms* | 34ms | *2484ms on first run (cold start) |
-
-**Key insight:** TPOT variance is only ~5%, confirming consistent decode performance. TTFT differences are measurement artifacts, not performance differences.
-
----
-
-## Benchmark Configurations
-
-All tools run the same benchmark sweep defined in `benchmark_config.py`:
-
-### Text-to-Text Benchmarks
-
-| Scenario | ISL Range | OSL | Concurrency | Requests |
-|----------|-----------|-----|-------------|----------|
-| Low concurrency | 128 - 32000 | 64-128 | 1 | 2-8 |
-| High concurrency | 128 - 16000 | 64-2048 | 8-32 | 16-256 |
-
-### Image (VLM) Benchmarks
-
-| Scenario | ISL | OSL | Concurrency | Image Sizes | Requests |
-|----------|-----|-----|-------------|-------------|----------|
-| Low concurrency | 128 | 128 | 1 | 512x512 to 1024x1024 | 8 |
-| High concurrency | 128 | 128 | 32 | 512x512 to 1024x1024 | 256 |
-
----
-
-## Output Files
-
-### Unified Output Directory
-
-All three tools save results to `workflow_logs/benchmarks_output/`:
-
-```
-workflow_logs/benchmarks_output/
-├── benchmark_<model>_<timestamp>_<params>.json              # vLLM results
-├── genai_benchmark_<model>_<timestamp>_<params>.json        # GenAI-Perf results
-└── aiperf_benchmark_<model>_<timestamp>_<params>.json       # AIPerf results
-```
-
-### AIPerf Raw Artifacts
-
-AIPerf also generates detailed raw output in `.workflow_venvs/.venv_benchmarks_aiperf/artifacts/`:
-
-```
-.workflow_venvs/.venv_benchmarks_aiperf/artifacts/<model_id>/
-└── bench_<isl>_<osl>_<concurrency>/
-    ├── profile_export_aiperf.json    # Aggregated metrics with percentiles
-    ├── profile_export.jsonl          # Per-request detailed metrics
-    └── profile_export_aiperf.csv     # CSV format for spreadsheet analysis
-```
-
-**JSONL per-request format:**
-```json
-{"request_id": 0, "ttft_ms": 91.2, "tpot_ms": 39.8, "e2el_ms": 5102.4, "output_tokens": 128}
-{"request_id": 1, "ttft_ms": 93.5, "tpot_ms": 40.1, "e2el_ms": 5145.2, "output_tokens": 128}
-```
-
----
-
-## Generated Reports
-
-Run the reports workflow to generate unified summary tables:
+vLLM (install `vllm==0.13.0` in a separate venv):
 
 ```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
+vllm bench serve --backend openai-chat --endpoint /v1/chat/completions --host localhost --port 8000 --model Qwen/Qwen3-32B --dataset-name random --random-input-len 2048 --random-output-len 128 --ignore-eos --max-concurrency 32 --num-prompts 128 --num-warmups 32 --percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 50,90,99 --extra-body '{"truncate_prompt_tokens": 2048}' --header "Authorization=Bearer $API_KEY" --save-result --save-detailed --result-filename qwen3-32b_t3k_isl2048_osl128_c32.json
 ```
 
-### Report Structure
-
-**1. Combined Benchmark Table** (`workflow_logs/reports_output/benchmarks/`)
-
-Stacks all three tools for direct comparison:
-
-| Source | ISL | OSL | Concur | TTFT (ms) | TPOT (ms) | Tput Output (TPS) |
-|--------|-----|-----|--------|-----------|-----------|-------------------|
-| vLLM | 128 | 128 | 1 | 73.2 | 38.2 | 26.1 |
-| aiperf | 128 | 128 | 1 | 93.5 | 40.2 | 25.1 |
-| genai-perf | 128 | 128 | 1 | 2484.6* | 320.8 | 3.1 |
-
-*Cold start - needs warm-up fix
-
-**2. AIPerf Detailed Percentile Tables** (`workflow_logs/reports_output/benchmarks_aiperf/`)
-
-Separate tables with AIPerf's unique percentile metrics:
-
-| ISL | OSL | Concur | TTFT Avg | TTFT P50 | TTFT P99 | TPOT Avg | TPOT P50 | TPOT P99 |
-|-----|-----|--------|----------|----------|----------|----------|----------|----------|
-| 128 | 128 | 1 | 93.5 | 91.2 | 112.8 | 40.2 | 39.8 | 48.7 |
-| 128 | 128 | 32 | 2396.5 | 2580.1 | 2729.4 | 44.7 | 43.3 | 62.8 |
-
----
-
-## Prefix-Caching Benchmarks (v2)
-
-Prefix-caching benchmarks are **not** wired through v1 `run.py`. Use the v2
-orchestrator against an already-running vLLM-compatible server:
+AIPerf:
 
 ```bash
-# CI smoke (~12 runs)
-python run_workflows.py \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --workflow benchmarks \
-  --device gpu \
-  --service-port 8000 \
-  --prefix-cache \
-  --prefix-cache-preset ci \
-  --jwt-secret "$JWT_SECRET"
-
-# Full validation sweep
-python run_workflows.py \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --workflow benchmarks \
-  --device gpu \
-  --service-port 8000 \
-  --prefix-cache
+aiperf profile --model Qwen/Qwen3-32B --tokenizer Qwen/Qwen3-32B --url http://localhost:8000 --endpoint-type chat --streaming --synthetic-input-tokens-mean 2048 --synthetic-input-tokens-stddev 0 --output-tokens-mean 128 --output-tokens-stddev 0 --extra-inputs ignore_eos:true --concurrency 32 --request-count 128 --warmup-request-count 32 --api-key "$API_KEY" --artifact-dir artifacts/qwen3-32b_t3k_isl2048_osl128_c32
 ```
-
-On first use, `run.py` materializes the `PREFIX_CACHE` venv
-(`.workflow_venvs/.venv_prefix_cache`) and re-execs inside it so AIPerf and
-its dependencies are available without manual setup.
-
-### Scenarios
-
-| Scenario | Reuse model | What it answers |
-|----------|-------------|-----------------|
-| `shared_system` | 100% shared system prompt | Best-case prefix-cache uplift |
-| `prefix_pool` | Pool of N prefixes | Realistic chat-style reuse at tunable rates |
-| `multi_turn` | Organic reuse via re-sent chat history | Multi-turn chatting scenario |
-| `mooncake_trace` | Mooncake JSONL trace + AIPerf synthesis multipliers | Production-realistic patterns |
-| `baseline` | Zero shared prefix (control) | Reference for measuring uplift |
-
-Scenarios and per-preset grids are defined in
-`llm_module/prefix_cache/manifest.json`. Override with
-`--prefix-cache-scenarios-json`, subset with `--prefix-cache-scenarios`, and
-point `mooncake_trace` at a production trace via `--prefix-cache-trace`.
-
-See [the workflow development guide](workflow_development.md#prefix-caching-benchmark)
-for flags, report layout, and TT hardware notes (prefix caching may be disabled
-in `tt-vllm-plugin` until lifted).
-
----
-
-## Smoke Testing
-
-Limit benchmark runs to 2 configurations for quick validation:
-
-```bash
-# Works for vLLM (default) and AIPerf
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
-  --docker-server --tools aiperf --limit-samples-mode smoke-test
-
-# Works for GenAI-Perf
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
-  --docker-server --tools genai --limit-samples-mode smoke-test
-```
-
----
-
-## Metrics Reference
-
-| Metric | Description | Unit |
-|--------|-------------|------|
-| **TTFT** | Time To First Token - latency until first token/chunk | ms |
-| **TPOT** | Time Per Output Token - average inter-token latency | ms |
-| **ITL** | Inter-Token Latency - same as TPOT | ms |
-| **E2EL** | End-to-End Latency - total request duration | ms |
-| **Tput User** | User-level throughput (single request) | tokens/sec |
-| **Tput Input** | Input (prefill) token throughput, all concurrent requests | tokens/sec |
-| **Tput Output** | Output (decode) token throughput, all concurrent requests | tokens/sec |
-| **Tput Total** | Input + output token throughput, all concurrent requests | tokens/sec |
-| **Req Tput** | Request throughput | requests/sec |
-
-### Percentile Statistics (AIPerf only)
-
-- **Avg (mean)**: Average across all requests
-- **P50 (median)**: 50th percentile - typical latency
-- **P99**: 99th percentile - worst-case latency (tail latency)
-- **std**: Standard deviation - variance from mean
-
----
-
-## Architecture
-
-### vLLM Benchmarks
-
-```
-run.py --tools vllm
-  ↓
-benchmarking/run_benchmarks.py
-  ↓
-.workflow_venvs/.venv_benchmarks_vllm/bin/serve
-  ↓
-Results → workflow_logs/benchmarks_output/benchmark_*.json
-```
-
-### GenAI-Perf Benchmarks
-
-```
-run.py --tools genai
-  ↓
-benchmarking/run_benchmarks.py
-  ↓
-benchmarking/run_genai_benchmarks.py (Docker orchestration)
-  ↓
-Docker container runs: benchmarking/genai_benchmark.py
-  ↓
-Results → workflow_logs/benchmarks_output/genai_benchmark_*.json
-```
-
-### AIPerf Benchmarks
-
-```
-run.py --tools aiperf
-  ↓
-benchmarking/run_benchmarks_aiperf.py
-  ↓
-.workflow_venvs/.venv_benchmarks_aiperf/bin/aiperf profile ...
-  ↓
-Results → workflow_logs/benchmarks_output/aiperf_benchmark_*.json
-Raw data → .workflow_venvs/.venv_benchmarks_aiperf/artifacts/
-```
-
----
-
-## VLM (Vision-Language Model) Support
-
-Both vLLM and AIPerf support image benchmarks.
-
-### Backend Labels
-
-| Tool | Text Benchmarks | Image Benchmarks |
-|------|-----------------|------------------|
-| vLLM | `"backend": "vllm"` | `"backend": "openai-chat"` |
-| AIPerf | `"backend": "aiperf"` | `"backend": "aiperf"` |
-| GenAI-Perf | `"backend": "genai-perf"` | Not yet supported |
-
-vLLM automatically switches to `openai-chat` for image requests because it uses OpenAI Chat Completions API format:
-
-```json
-{
-  "messages": [{
-    "role": "user",
-    "content": [
-      {"type": "text", "text": "Describe this image"},
-      {"type": "image_url", "image_url": {"url": "data:image/..."}}
-    ]
-  }]
-}
-```
-
----
-
-## Example: Full Benchmark Run
-
-### Step 1: Run vLLM Benchmarks (baseline)
-
-```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
-```
-
-**Output:**
-- 18 text benchmark JSON files
-- 10 image benchmark JSON files (if model supports VLM)
-- Saved to `workflow_logs/benchmarks_output/benchmark_*.json`
-
-### Step 2: Run AIPerf Benchmarks
-
-```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
-```
-
-**Note:** Server already running from Step 1, so omit `--docker-server`.
-
-**Output:**
-- 18 text benchmark JSON files with percentiles
-- 10 image benchmark JSON files with percentiles
-- Saved to `workflow_logs/benchmarks_output/aiperf_benchmark_*.json`
-- Raw per-request data in `.workflow_venvs/.venv_benchmarks_aiperf/artifacts/`
-
-### Step 3: Run GenAI-Perf Benchmarks
-
-```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools genai
-```
-
-**Output:**
-- 18 text benchmark JSON files
-- Saved to `workflow_logs/benchmarks_output/genai_benchmark_*.json`
-
-### Step 4: Generate Unified Report
-
-```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
-```
-
-**Output:**
-- Combined table with vLLM → AIPerf → GenAI-Perf per configuration
-- Separate AIPerf table with detailed percentiles
-- Saved to `workflow_logs/reports_output/benchmarks/` and `benchmarks_aiperf/`
-
----
-
-## Sample Results: gemma-3-4b-it on N300
-
-### Text Benchmark Comparison (ISL=128, OSL=128, Concurrency=1)
-
-| Source | TTFT (ms) | TPOT (ms) | Tput Output (TPS) | E2EL (ms) | Req Tput (RPS) |
-|--------|-----------|-----------|-------------------|-----------|----------------|
-| vLLM | 73.2 | 38.2 | 26.1 | 4930.4 | 0.203 |
-| aiperf | 93.5 | 40.2 | 25.1 | 5180.3 | 0.194 |
-| genai-perf | 2484.6* | 320.8 | 3.1 | 51770.0 | 0.019 |
-
-*Cold start artifact - needs warm-up configuration
-
-### AIPerf Detailed Percentiles (ISL=128, OSL=128, Concurrency=32)
-
-| Metric | Avg | P50 (Median) | P99 | Std Dev |
-|--------|-----|--------------|-----|---------|
-| TTFT | 2396.5ms | 2580.1ms | 2729.4ms | 614.0ms |
-| TPOT | 44.7ms | 43.3ms | 62.8ms | 4.8ms |
-| E2EL | 8026.7ms | 8090.2ms | 8235.0ms | 312.1ms |
-
-**Insights:**
-- P99 TTFT is 333ms higher than median (13% variance)
-- P99 TPOT is 19ms higher than median (45% variance)
-- High TPOT variance suggests occasional slowdowns under load
-
----
-
-## Configuration Controls
-
-### Limit to Target Configs Only
-
-Skip sweep and only run configurations with defined targets:
-
-```bash
-export ONLY_BENCHMARK_TARGETS=1
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
-```
-
-### Override Benchmark Parameters
-
-Use custom benchmark configurations:
-
-```bash
-export OVERRIDE_BENCHMARK_TARGETS=/path/to/custom_benchmarks.json
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
-```
-
-Example `custom_benchmarks.json`:
-```json
-{
-  "gemma-3-4b-it": {
-    "n300": [
-      {
-        "isl": 128,
-        "osl": 128,
-        "max_concurrency": 1,
-        "num_prompts": 8
-      }
-    ]
-  }
-}
-```
-
----
 
 ## Troubleshooting
 
-### vLLM Benchmarks
-
-| Issue | Solution |
-|-------|----------|
-| Server not starting | Check Docker logs: `docker logs <container>` |
-| Connection refused | Verify server health: `curl http://localhost:8000/health` |
-| Slow benchmarks | Ensure server is warm (run 1-2 requests first) |
-
-### GenAI-Perf
-
-| Issue | Solution |
-|-------|----------|
-| Docker pull errors | Normal informational messages, not actual errors |
-| High first TTFT | Expected - warm-up disabled (needs fix in `genai_benchmark.py`) |
-| Container conflicts | Clean up: `docker ps -a \| grep genai-tritonserver` |
-
-### AIPerf
-
-| Issue | Solution |
-|-------|----------|
-| All metrics are 0 | Old JSON files - delete and re-run |
-| Missing dependencies | Delete `.workflow_venvs/.venv_benchmarks_aiperf/` and re-run |
-| Authentication errors | Check `JWT_SECRET` is set |
-| High cold-start TTFT | Automatic warm-up runs before benchmarks (already implemented) |
-
----
-
-## Advanced Usage
-
-### Running Without Docker Server
-
-If vLLM server is already running and healthy:
-
-```bash
-# Skip --docker-server to run benchmarks only
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
-```
-
-### Quick Smoke Test
-
-Run only 2 benchmarks for rapid validation:
-
-```bash
-python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
-  --docker-server --tools aiperf --limit-samples-mode smoke-test
-```
-
----
-
-## File Structure
-
-```
-tt-inference-server/
-├── benchmarking/
-│   ├── run_benchmarks.py              # Main vLLM/GenAI-Perf runner
-│   ├── run_benchmarks_aiperf.py       # AIPerf runner
-│   ├── run_genai_benchmarks.py        # GenAI-Perf Docker orchestration
-│   ├── genai_benchmark.py             # GenAI-Perf in-container script
-│   ├── summary_report.py              # Report generation (all tools)
-│   └── benchmark_config.py            # Benchmark configurations
-├── workflow_logs/
-│   ├── benchmarks_output/             # All benchmark results (unified)
-│   └── reports_output/
-│       ├── benchmarks/                # Combined reports
-│       └── benchmarks_aiperf/         # AIPerf detailed reports
-└── .workflow_venvs/
-    ├── .venv_benchmarks_vllm/                  # vLLM environment
-    ├── .venv_benchmarks_aiperf/                # AIPerf environment
-    └── .venv_benchmarks_aiperf/artifacts/      # AIPerf raw output
-```
-
----
+| Symptom | Cause and fix |
+|---|---|
+| First point has very high TTFT | Server still capturing traces, or a cold client. Wait for `Background trace capture completed successfully` in the container log before benchmarking |
+| `Connection refused` | Check `curl http://localhost:8000/health` and `docker logs <container>` |
+| `401 Unauthorized` | Set `JWT_SECRET` to the value the server was started with, or start the server with `--no-auth` |
+| Python dependency errors in a client venv | `--reset-venvs` |
+| GenAI-Perf `docker pull` output | Informational; the first pull is large |
+| AIPerf output length below OSL | Requests stopped at EOS; see [AIPerf](#aiperf) |
 
 ## References
 
-- **vLLM benchmarking:** [vllm/benchmarks](https://github.com/vllm-project/vllm/tree/main/benchmarks)
-- **GenAI-Perf:** [NVIDIA Triton GenAI-Perf](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/client/src/c++/perf_analyzer/genai-perf/README.html)
-- **AIPerf:** [ai-dynamo/aiperf](https://github.com/ai-dynamo/aiperf)
-- **Workflow guide:** [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#performance-benchmarks)
+- vLLM: [`vllm bench serve` CLI (v0.13.0)](https://docs.vllm.ai/en/v0.13.0/cli/bench/serve/), [benchmark CLI guide](https://docs.vllm.ai/en/v0.13.0/benchmarking/cli/), [`serve.py`](https://github.com/vllm-project/vllm/blob/v0.13.0/vllm/benchmarks/serve.py) and [`endpoint_request_func.py`](https://github.com/vllm-project/vllm/blob/v0.13.0/vllm/benchmarks/lib/endpoint_request_func.py) (metric definitions and timestamps)
+- AIPerf: [repository](https://github.com/ai-dynamo/aiperf), [metrics reference](https://docs.nvidia.com/aiperf/reference/ai-perf-metrics-reference), [warmup](https://docs.nvidia.com/aiperf/tutorials/load-patterns-scheduling/warmup-phase-configuration), [goodput](https://docs.nvidia.com/aiperf/tutorials/metrics-analysis/benchmark-goodput-with-ai-perf)
+- GenAI-Perf: [documentation](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/client/src/c++/perf_analyzer/genai-perf/README.html)
+- GuideLLM: [repository](https://github.com/vllm-project/guidellm)
+- tt-metal: [LLM tech report](https://github.com/tenstorrent/tt-metal/blob/main/tech_reports/LLMs/llms.md) (prefill versus decode, tracing), [models performance table](https://github.com/tenstorrent/tt-metal/blob/main/models/README.md)

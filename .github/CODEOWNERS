@@ -44,7 +44,7 @@ tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicT
 
 
 # benchmarking
-benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
+reference_config/benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
 
 # evals
 evals/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners

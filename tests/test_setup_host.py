@@ -787,6 +787,29 @@ class TestVllmOverrideCliArgs:
     def test_false_and_null_omitted(self):
         assert _vllm_override_cli_args('{"a": false, "b": null}') == []
 
+    def test_list_stays_a_single_json_token(self):
+        # The host cannot see vLLM's nargs, so it never splits; the container
+        # entrypoint does. --allowed-origins (nargs=None, type=json.loads) only
+        # parses in this form.
+        assert _vllm_override_cli_args(
+            '{"allowed-origins": ["https://a.example", "https://b.example"]}'
+        ) == [
+            "--allowed-origins",
+            '["https://a.example", "https://b.example"]',
+        ]
+        assert _vllm_override_cli_args(
+            '{"served-model-name": ["Llama-3.1-8B-Instruct", "local-llm"]}'
+        ) == [
+            "--served-model-name",
+            '["Llama-3.1-8B-Instruct", "local-llm"]',
+        ]
+
+    def test_dict_stays_a_single_json_token(self):
+        assert _vllm_override_cli_args('{"hf-overrides": {"max_seq_len": 4096}}') == [
+            "--hf-overrides",
+            '{"max_seq_len": 4096}',
+        ]
+
     def test_none_and_empty_and_malformed_return_empty(self):
         assert _vllm_override_cli_args(None) == []
         assert _vllm_override_cli_args("") == []
@@ -1452,3 +1475,21 @@ def test_pinned_unsharded_checkpoint_uses_normal_format_validation(
     for name in ("model.safetensors", "config.json", "tokenizer.json"):
         (tmp_path / name).write_text("present")
     assert manager.check_model_weights_dir(tmp_path)
+
+
+def test_pinned_checkpoint_accepts_legacy_safetensors_shard_prefix(
+    tmp_path, tiny_model_spec
+):
+    """K2-Horizon-7B ships pytorch_model-*.safetensors shards with an HF index."""
+    tiny_model_spec.device_model_spec.vllm_args.update(
+        revision="a" * 40, tokenizer_revision="a" * 40
+    )
+    manager = HostSetupManager(model_spec=tiny_model_spec, host_volume=str(tmp_path))
+    shards = [f"pytorch_model-0000{i}-of-00002.safetensors" for i in (1, 2)]
+    for name in shards + ["config.json", "tokenizer.json"]:
+        (tmp_path / name).write_text("present")
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"a": shards[0], "b": shards[1]}})
+    )
+    assert manager.check_model_weights_dir(tmp_path)
+    assert manager.setup_config.model_weights_format == "hf"

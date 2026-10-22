@@ -38,6 +38,16 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
+## [BH Galaxy](https://tenstorrent.com/hardware/galaxy)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | LLM | [gemma-4-12B-it](llm/gemma-4-12B-it_blackhole_galaxy.md) |
+| 🟢 Complete | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_blackhole_galaxy.md) |
+| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_blackhole_galaxy.md) |
+| 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_blackhole_galaxy.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_blackhole_galaxy.md) |
+
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
 | Status | Type | Model |
@@ -54,7 +64,6 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p150x4.md) |
-| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p150x4.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
@@ -72,7 +81,9 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p300x2.md) |
 | 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300x2.md) |
 | 🟢 Complete | Image | [FLUX.1-schnell](image/FLUX.1-schnell_p300x2.md) |
-| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
+| 🟢 Complete | LLM | [gemma-4-12B-it](llm/gemma-4-12B-it_p300x2.md) |
+| 🟢 Complete | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
+| 🟢 Complete | LLM | [Qwen3.8-27B](llm/Qwen3.8-27B_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
@@ -83,8 +94,6 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-0.6B](embedding/Qwen3-Embedding-0.6B_p300x2.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_p300x2.md) |
 | 🛠️ Experimental | LLM | [diffusiongemma-26B-A4B-it](llm/diffusiongemma-26B-A4B-it_p300x2.md) |
-| 🛠️ Experimental | LLM | [gemma-4-12B-it](llm/gemma-4-12B-it_p300x2.md) |
-| 🛠️ Experimental | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
 | 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
@@ -95,7 +104,6 @@ This page lists all supported models organized by hardware type.
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p150.md) |
 | 🟢 Complete | CNN | [yolox_nano](cnn/yolox_nano_p150.md) |
-| 🛠️ Experimental | LLM | [Falcon3-7B-Instruct](llm/Falcon3-7B-Instruct_p150.md) |
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
 | 🛠️ Experimental | Training | [Llama-3.1-8B-Instruct](training/Llama-3.1-8B-Instruct_p150.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p150.md) |

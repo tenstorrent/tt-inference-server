@@ -192,6 +192,56 @@ class TestScrapeSpecDecodeMetricsMulti:
         assert out["acceptance_rate"] == pytest.approx(0.6)
         assert out["mean_accepted_length"] == pytest.approx(4.0)
 
+    def test_tt_engine_family_drives_acceptance_and_length(self, monkeypatch):
+        def exposition(accepted, draft, drafts):
+            text = ""
+            for method, scale in (("dflash", 1), ("mtp", 0)):
+                labels = f'{{dynamo_component="backend",method="{method}"}}'
+                text += (
+                    f"tt_engine_spec_decode_accepted_tokens_total{labels} {accepted * scale}\n"
+                    f"tt_engine_spec_decode_draft_tokens_total{labels} {draft * scale}\n"
+                    f"tt_engine_spec_decode_drafts_total{labels} {drafts * scale}\n"
+                )
+            return parse_prometheus_text(text)
+
+        before = exposition(100, 300, 50)
+        monkeypatch.setattr(
+            metrics,
+            "fetch_prometheus_counters_multi",
+            lambda urls, *, timeout=10.0: exposition(130, 400, 60),
+        )
+
+        out = scrape_spec_decode_metrics_multi(["http://w:20020/metrics"], before)
+
+        assert out["accepted_tokens"] == 30.0
+        assert out["draft_tokens"] == 100.0
+        assert out["acceptance_rate"] == pytest.approx(0.3)
+        assert out["num_drafts"] == 10.0
+        assert out["mean_accepted_length"] == pytest.approx(4.0)
+
+    def test_cpp_server_worker_totals_drive_acceptance(self, monkeypatch):
+        def exposition(accepts, rejects):
+            return parse_prometheus_text(
+                "# TYPE tt_worker_spec_accepts_total gauge\n"
+                f'tt_worker_spec_accepts_total{{worker_id="0"}} {accepts}\n'
+                f'tt_worker_spec_rejects_total{{worker_id="0"}} {rejects}\n'
+                'tt_worker_total_acceptance_rate{worker_id="0"} 0.4\n'
+            )
+
+        before = exposition(100, 100)
+        monkeypatch.setattr(
+            metrics,
+            "fetch_prometheus_counters_multi",
+            lambda urls, *, timeout=10.0: exposition(130, 170),
+        )
+
+        out = scrape_spec_decode_metrics_multi(["http://w:8000/metrics"], before)
+
+        assert out["accepted_tokens"] == 30.0
+        assert out["draft_tokens"] == 100.0
+        assert out["acceptance_rate"] == pytest.approx(0.3)
+        assert out["mean_accepted_length"] is None
+
     def test_no_draft_tokens_yields_zero_rate_and_null_length(self, monkeypatch):
         monkeypatch.setattr(
             metrics,

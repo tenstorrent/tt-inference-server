@@ -49,21 +49,13 @@
       "openai/gpt-oss-20b",
       "google/diffusiongemma-26B-A4B-it",
       "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-      "tiiuae/Falcon3-3B-Base",
-      "tiiuae/Falcon3-7B-Base",
       "Qwen/Qwen3-4B",
       "Qwen/Qwen3-14B",
       "Qwen/Qwen3-8B",
       "Qwen/Qwen2.5-Coder-7B",
       "Qwen/Qwen2.5-Coder-7B-Instruct",
-      "TinyLlama/TinyLlama_v1.1",
       "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-      "stabilityai/stablelm-2-1_6b",
-      "tiiuae/Falcon3-1B-Base",
-      "EleutherAI/pythia-70m",
-      "microsoft/phi-1_5",
       "Qwen/Qwen3.8-27B",
-      "microsoft/phi-1",
       "Qwen/Qwen2.5-14B-Instruct-1M",
       "meta-llama/Llama-3.1-8B-Instruct",
       "HuggingFaceTB/SmolLM2-1.7B-Instruct",
@@ -71,9 +63,46 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
+      "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
-      "google/gemma-4-12B-it"
+      "google/gemma-4-12B-it",
+      "zai-org/GLM-5.3",
+      "deepcogito/cogito-v1-preview-llama-3B",
+      "arcee-ai/Arcee-Spark",
+      "Qwen/Qwen2.5-7B-Instruct",
+      "Qwen/Qwen2.5-7B-Instruct-1M",
+      "tiiuae/Falcon3-1B-Instruct",
+      "tiiuae/Falcon3-3B-Instruct",
+      "tiiuae/Falcon3-10B-Instruct",
+      "deepcogito/cogito-v1-preview-llama-8B",
+      "Qwen/Qwen3-4B-Instruct-2507",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+      "upstage/SOLAR-10.7B-Instruct-v1.0",
+      "Qwen/Qwen1.5-0.5B-Chat",
+      "01-ai/Yi-1.5-9B-Chat",
+      "NousResearch/Hermes-3-Llama-3.2-3B",
+      "Qwen/Qwen2.5-Coder-32B",
+      "Qwen/Qwen2.5-Coder-14B",
+      "Qwen/Qwen2.5-32B",
+      "mistralai/Mistral-7B-Instruct-v0.3",
+      "Qwen/Qwen2.5-Coder-14B-Instruct",
+      "01-ai/Yi-1.5-34B-Chat",
+      "Qwen/Qwen2.5-7B",
+      "meta-models/Muse-Glimmer-30B",
+      "arcee-ai/Llama-3.1-SuperNova-Lite",
+      "Qwen/Qwen2.5-Math-7B-Instruct",
+      "tiiuae/Falcon3-7B-Instruct",
+      "NousResearch/Hermes-3-Llama-3.1-8B",
+      "allenai/Llama-3.1-Tulu-3-8B",
+      "Qwen/Qwen3-8B-Base",
+      "Qwen/Qwen3-4B-Base",
+      "mistralai/Mistral-Nemo-Instruct-2407",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+      "Qwen/Qwen3-14B-Base",
+      "Qwen/QwQ-32B",
+      "Qwen/Qwen3.5-9B-Base",
+      "IFM/K2-Horizon-7B"
     ]
   },
   "available_markers": {
@@ -130,26 +159,6 @@
     }
   },
   "model_configs": {
-    "tiiuae/Falcon3-1B-Base": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "tiiuae--Falcon3-1B-Base",
-      "weights": [
-        "tiiuae/Falcon3-1B-Base"
-      ]
-    },
-    "stabilityai/stablelm-2-1_6b": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "stabilityai--stablelm-2-1_6b",
-      "weights": [
-        "stabilityai/stablelm-2-1_6b"
-      ]
-    },
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
       "category": "LLM",
       "compatible_devices": [
@@ -158,16 +167,6 @@
       "id_name": "TinyLlama--TinyLlama-1.1B-Chat-v1.0",
       "weights": [
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-      ]
-    },
-    "TinyLlama/TinyLlama_v1.1": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "TinyLlama--TinyLlama_v1.1",
-      "weights": [
-        "TinyLlama/TinyLlama_v1.1"
       ]
     },
     "Qwen/Qwen2.5-Coder-7B-Instruct": {
@@ -218,26 +217,6 @@
       "id_name": "Qwen--Qwen3-4B",
       "weights": [
         "Qwen/Qwen3-4B"
-      ]
-    },
-    "tiiuae/Falcon3-7B-Base": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "tiiuae--Falcon3-7B-Base",
-      "weights": [
-        "tiiuae/Falcon3-7B-Base"
-      ]
-    },
-    "tiiuae/Falcon3-3B-Base": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "tiiuae--Falcon3-3B-Base",
-      "weights": [
-        "tiiuae/Falcon3-3B-Base"
       ]
     },
     "openai/gpt-oss-120b": {
@@ -642,6 +621,16 @@
         "super_cluster"
       ]
     },
+    "minimax_m2_7": {
+      "id_name": "minimax-m2.7",
+      "weights": [
+        "MiniMaxAI/MiniMax-M2.7"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
     "kimi_k2_7_code": {
       "id_name": "kimi-k2.7-code",
       "weights": [
@@ -652,24 +641,14 @@
         "super_cluster"
       ]
     },
-    "EleutherAI/pythia-70m": {
+    "glm_5_3": {
+      "id_name": "glm-5.3",
+      "weights": [
+        "zai-org/GLM-5.3"
+      ],
       "category": "LLM",
       "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "EleutherAI--pythia-70m",
-      "weights": [
-        "EleutherAI/pythia-70m"
-      ]
-    },
-    "microsoft/phi-1_5": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "microsoft--phi-1_5",
-      "weights": [
-        "microsoft/phi-1_5"
+        "super_cluster"
       ]
     },
     "Qwen/Qwen3.8-27B": {
@@ -680,16 +659,6 @@
       "id_name": "Qwen--Qwen3.8-27B",
       "weights": [
         "Qwen/Qwen3.8-27B"
-      ]
-    },
-    "microsoft/phi-1": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "microsoft--phi-1",
-      "weights": [
-        "microsoft/phi-1"
       ]
     },
     "Qwen/Qwen2.5-14B-Instruct-1M": {
@@ -750,6 +719,386 @@
       "id_name": "Qwen--Qwen3-1.7B",
       "weights": [
         "Qwen/Qwen3-1.7B"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-3B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ]
+    },
+    "arcee-ai/Arcee-Spark": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Arcee-Spark",
+      "weights": [
+        "arcee-ai/Arcee-Spark"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ]
+    },
+    "tiiuae/Falcon3-1B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-1B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-3B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-3B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-10B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-10B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-10B-Instruct"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-8B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ]
+    },
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-4B-Instruct-2507",
+      "weights": [
+        "Qwen/Qwen3-4B-Instruct-2507"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-8B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      ]
+    },
+    "upstage/SOLAR-10.7B-Instruct-v1.0": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "upstage--SOLAR-10.7B-Instruct-v1.0",
+      "weights": [
+        "upstage/SOLAR-10.7B-Instruct-v1.0"
+      ]
+    },
+    "Qwen/Qwen1.5-0.5B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen1.5-0.5B-Chat",
+      "weights": [
+        "Qwen/Qwen1.5-0.5B-Chat"
+      ]
+    },
+    "01-ai/Yi-1.5-9B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "01-ai--Yi-1.5-9B-Chat",
+      "weights": [
+        "01-ai/Yi-1.5-9B-Chat"
+      ]
+    },
+    "NousResearch/Hermes-3-Llama-3.2-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "NousResearch--Hermes-3-Llama-3.2-3B",
+      "weights": [
+        "NousResearch/Hermes-3-Llama-3.2-3B"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-32B",
+      "weights": [
+        "Qwen/Qwen2.5-Coder-32B"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-14B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-14B",
+      "weights": [
+        "Qwen/Qwen2.5-Coder-14B"
+      ]
+    },
+    "Qwen/Qwen2.5-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-32B",
+      "weights": [
+        "Qwen/Qwen2.5-32B"
+      ]
+    },
+    "mistralai/Mistral-7B-Instruct-v0.3": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Mistral-7B-Instruct-v0.3",
+      "weights": [
+        "mistralai/Mistral-7B-Instruct-v0.3"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-14B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-14B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-Coder-14B-Instruct"
+      ]
+    },
+    "01-ai/Yi-1.5-34B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "01-ai--Yi-1.5-34B-Chat",
+      "weights": [
+        "01-ai/Yi-1.5-34B-Chat"
+      ]
+    },
+    "Qwen/Qwen2.5-7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B",
+      "weights": [
+        "Qwen/Qwen2.5-7B"
+      ]
+    },
+    "meta-models/Muse-Glimmer-30B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-models--Muse-Glimmer-30B",
+      "weights": [
+        "meta-models/Muse-Glimmer-30B"
+      ]
+    },
+    "arcee-ai/Llama-3.1-SuperNova-Lite": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Llama-3.1-SuperNova-Lite",
+      "weights": [
+        "arcee-ai/Llama-3.1-SuperNova-Lite"
+      ]
+    },
+    "Qwen/Qwen3-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-32B",
+      "weights": [
+        "Qwen/Qwen3-32B"
+      ]
+    },
+    "Qwen/Qwen2.5-Math-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Math-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-Math-7B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-7B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-7B-Instruct"
+      ]
+    },
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Mistral-Small-3.1-24B-Instruct-2503",
+      "weights": [
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ]
+    },
+    "NousResearch/Hermes-3-Llama-3.1-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "NousResearch--Hermes-3-Llama-3.1-8B",
+      "weights": [
+        "NousResearch/Hermes-3-Llama-3.1-8B"
+      ]
+    },
+    "allenai/Llama-3.1-Tulu-3-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "allenai--Llama-3.1-Tulu-3-8B",
+      "weights": [
+        "allenai/Llama-3.1-Tulu-3-8B"
+      ]
+    },
+    "Qwen/Qwen3-8B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-8B-Base",
+      "weights": [
+        "Qwen/Qwen3-8B-Base"
+      ]
+    },
+    "Qwen/Qwen3-4B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-4B-Base",
+      "weights": [
+        "Qwen/Qwen3-4B-Base"
+      ]
+    },
+    "mistralai/Mistral-Nemo-Instruct-2407": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Mistral-Nemo-Instruct-2407",
+      "weights": [
+        "mistralai/Mistral-Nemo-Instruct-2407"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Qwen-14B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+      ]
+    },
+    "Qwen/Qwen3-14B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-14B-Base",
+      "weights": [
+        "Qwen/Qwen3-14B-Base"
+      ]
+    },
+    "Qwen/QwQ-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--QwQ-32B",
+      "weights": [
+        "Qwen/QwQ-32B"
+      ]
+    },
+    "meta-llama/Llama-3.2-1B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-llama--Llama-3.2-1B-Instruct",
+      "weights": [
+        "meta-llama/Llama-3.2-1B-Instruct"
+      ]
+    },
+    "Qwen/Qwen3.5-9B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3.5-9B-Base",
+      "weights": [
+        "Qwen/Qwen3.5-9B-Base"
+      ]
+    },
+    "IFM/K2-Horizon-7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "IFM--K2-Horizon-7B",
+      "weights": [
+        "IFM/K2-Horizon-7B"
       ]
     }
   },
@@ -1254,6 +1603,27 @@
         "default_sampling": false,
         "cache_bypass": false,
         "exclude_ref_schemas": false,
+        "non_blocking": false
+      }
+    },
+    "MiniMaxProviderVerifierTest": {
+      "module": "test_module.llm_tests.minimax_provider_verifier_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 10800,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "suite": "verify",
+        "workers": 20,
+        "include_slow": true,
+        "verify_loops": 1,
+        "pass_rate_threshold": 1.0,
         "non_blocking": false
       }
     }

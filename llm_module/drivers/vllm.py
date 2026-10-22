@@ -12,10 +12,13 @@ sweep output dir.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
+import secrets
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -38,14 +41,23 @@ def _resolve_auth_token(server: ServerConnection) -> str:
     )
 
 
+def benchmark_cache_salt(config: LLMRunConfig) -> str:
+    """A prefix-cache salt unique to this sweep point and driver invocation."""
+    return f"bench-isl{config.isl}-osl{config.osl}-c{config.max_concurrency}-{uuid.uuid4().hex[:12]}"
+
+
 def build_vllm_bench_serve_argv(
     *,
     vllm_binary: str,
     config: LLMRunConfig,
     server: ServerConnection,
     result_filename: Path,
+    dataset_seed: int = 0,
 ) -> Tuple[List[str], str]:
     """Build the ``vllm bench serve`` argv list.
+
+    ``dataset_seed`` is the random dataset's ``--seed``; use a distinct one per
+    invocation (see ``VLLMBenchDriver``) so prompts don't hit the prefix cache.
 
     Local servers use ``--host``/``--port`` and vLLM-specific ``extra_body``.
     Remote OpenAI-compatible endpoints (e.g. the Tenstorrent console) need
@@ -76,6 +88,8 @@ def build_vllm_bench_serve_argv(
         "--save-detailed",
         "--result-filename",
         str(result_filename),
+        "--seed",
+        str(dataset_seed),
     ]
 
     goodput = render_goodput(config.goodput, VLLM_GOODPUT_KEYS)
@@ -93,8 +107,6 @@ def build_vllm_bench_serve_argv(
                 server.tokenizer,
                 "--random-range-ratio",
                 "0.0",
-                "--seed",
-                "0",
                 "--request-rate",
                 "inf",
                 "--num-warmups",
@@ -137,6 +149,9 @@ def build_vllm_bench_serve_argv(
         cmd.append("--trust-remote-code")
 
     extra_body = {"seed": 42} if config.token_timing else {}
+    # Benchmarks run with the prefix cache effectively off for their own
+    # requests (see LLMRunConfig.cache_salt); the server keeps its default.
+    extra_body["cache_salt"] = config.cache_salt or benchmark_cache_salt(config)
     if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
@@ -160,6 +175,10 @@ class VLLMBenchDriver(LLMDriver):
 
     def __init__(self, vllm_binary: Optional[str] = None) -> None:
         self.vllm_binary = vllm_binary or shutil.which("vllm") or "vllm"
+        # One seed per invocation: with a shared seed, request i at a longer
+        # ISL extends request i at a shorter one and hits the prefix cache.
+        # Random base so a rerun against a live server gets fresh prompts.
+        self._dataset_seeds = itertools.count(secrets.randbelow(2**31))
 
     def run(
         self,
@@ -175,18 +194,31 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
+        dataset_seed = next(self._dataset_seeds)
+        logger.info("vllm bench serve dataset seed: %d", dataset_seed)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
             server=server,
             result_filename=result_filename,
+            dataset_seed=dataset_seed,
         )
 
+        binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
         if config.token_timing:
-            binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
             cmd = [
                 str(binary.parent / "python"),
                 str(Path(__file__).parents[1] / "vllm_token_timing.py"),
+                *cmd[1:],
+            ]
+        else:
+            # Every request gets its own prefix-cache salt (LLMRunConfig.cache_salt +
+            # llm_module/vllm_bench_cache_off.py): vllm bench serve sends an untimed
+            # test request with the first prompt, and under one per-invocation salt
+            # the measured prompt 0 would hit the blocks that request just filled.
+            cmd = [
+                str(binary.parent / "python"),
+                str(Path(__file__).parents[1] / "vllm_bench_cache_off.py"),
                 *cmd[1:],
             ]
 

@@ -159,6 +159,17 @@ HARBOR_ZERO_TRIALS_FIXTURE = {
 
 
 class TestAgenticParser:
+    def test_parse_keeps_harbor_error_and_job_counts_in_targets(self):
+        # Scored trials, errored trials and the job size travel with the
+        # block, so a consumer can check the scored coverage.
+        raw = dict(HARBOR_ZERO_TRIALS_FIXTURE, n_total_trials=5)
+        block = AgenticEvalParser(task_name="terminal_bench_2").parse(
+            raw, device="N150"
+        )
+        assert block.targets["n_trials"] == 0
+        assert block.targets["n_errors"] == 5
+        assert block.targets["n_total_trials"] == 5
+
     def test_parse_harbor_result_to_evals_block(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
@@ -177,6 +188,36 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_priority_defaults_to_must_on_parsed_and_failure_blocks(self):
+        # Acceptance reads block.data["priority"] and treats a missing key as
+        # "must"; stamping it explicitly keeps agentic blocks aligned with the
+        # lm-eval emitter.
+        parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "must"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "must"
+        )
+
+    def test_should_priority_travels_on_parsed_and_failure_blocks(self):
+        # A catalog task with priority="should" is informational: the agentic
+        # blocks must carry that, or a 0/5 terminal_bench_2 subset blocks a
+        # COMPLETE entry exactly as if the task were "must".
+        parser = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore(), priority="should"
+        )
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "should"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "should"
+        )
 
     def test_zero_trial_harbor_result_stays_na(self):
         # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
@@ -455,6 +496,32 @@ class TestAgenticDriverConfigMapping:
         cfg = build_harbor_config(task, _server(), _driver_context())
 
         assert cfg.agent_env == {"OPENAI_BASE_URL": "http://alt/v1"}
+
+    def test_harbor_config_caps_concurrency_from_env(self):
+        task = _harbor_task()
+        task.agentic_eval_config.n_concurrent_trials = 62
+
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "28"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 28
+            )
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "100"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 62
+            )
+
+    def test_invalid_max_concurrent_trials_cap_names_the_env_var(self):
+        task = _harbor_task()
+        for cap in ("0", "-3", "abc"):
+            with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": cap}):
+                with pytest.raises(ValueError, match="AGENTIC_MAX_CONCURRENT_TRIALS"):
+                    build_harbor_config(task, _server(), _driver_context())
 
     def test_harbor_config_injects_runtime_openai_environment(self):
         task = _harbor_task()
@@ -1019,6 +1086,13 @@ class TestAgenticRunTimestamp:
             f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
         )
 
+    def test_driver_hands_the_task_priority_to_its_parser(self):
+        assert HarborAgenticDriver(_harbor_task())._parser.priority == "must"
+        assert (
+            HarborAgenticDriver(_harbor_task(priority="should"))._parser.priority
+            == "should"
+        )
+
     def test_swebench_driver_result_path_matches_stamped_folder(self):
         driver = HarborAgenticDriver(_swebench_task())
         driver._run_stamp = self.STAMP
@@ -1146,3 +1220,28 @@ class TestAgenticBridge:
             run_llm_agentic_eval(ctx)
 
         assert accept.call_args.args[0] == [failure_block]
+
+
+class TestAgenticRequestOverrides:
+    def test_thinking_off_becomes_the_agents_extra_body(self):
+        task = _harbor_task(
+            thinking=False, request_body={}, thinking_kwarg="enable_thinking"
+        )
+        task.agentic_eval_config.agent = "terminus-2"
+        task.agentic_eval_config.agent_kwargs = {"parser_name": "json"}
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.agent_kwargs == {
+            "parser_name": "json",
+            "llm_call_kwargs": {
+                "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}
+            },
+        }
+        # the shared eval config is never mutated
+        assert task.agentic_eval_config.agent_kwargs == {"parser_name": "json"}
+
+    def test_no_override_leaves_agent_kwargs_untouched(self):
+        task = _harbor_task()
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert cfg.agent_kwargs == dict(task.agentic_eval_config.agent_kwargs)
