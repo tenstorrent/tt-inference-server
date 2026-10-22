@@ -135,7 +135,7 @@ class HarborAgenticDriver(AgenticEvalDriver):
             "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
             self.task.task_name,
             n_tasks,
-            getattr(_cfg, "n_concurrent_trials", "?"),
+            _n_concurrent_trials(_cfg),
             getattr(_cfg, "agent", "?"),
             getattr(_cfg, "dataset", "?"),
             getattr(_cfg, "model", None),
@@ -191,7 +191,15 @@ def _n_concurrent_trials(cfg: Any) -> int:
     cap = os.environ.get("AGENTIC_MAX_CONCURRENT_TRIALS")
     if not cap:
         return cfg.n_concurrent_trials
-    capped = min(cfg.n_concurrent_trials, int(cap))
+    try:
+        cap_value = int(cap)
+    except ValueError:
+        cap_value = 0
+    if cap_value < 1:
+        raise ValueError(
+            f"AGENTIC_MAX_CONCURRENT_TRIALS must be an integer >= 1, got {cap!r}"
+        )
+    capped = min(cfg.n_concurrent_trials, cap_value)
     if capped != cfg.n_concurrent_trials:
         logger.info(
             "[agentic] n_concurrent_trials %s -> %s (AGENTIC_MAX_CONCURRENT_TRIALS)",

@@ -516,6 +516,13 @@ class TestAgenticDriverConfigMapping:
                 == 62
             )
 
+    def test_invalid_max_concurrent_trials_cap_names_the_env_var(self):
+        task = _harbor_task()
+        for cap in ("0", "-3", "abc"):
+            with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": cap}):
+                with pytest.raises(ValueError, match="AGENTIC_MAX_CONCURRENT_TRIALS"):
+                    build_harbor_config(task, _server(), _driver_context())
+
     def test_harbor_config_injects_runtime_openai_environment(self):
         task = _harbor_task()
         task.agentic_eval_config.environment_env = {"TAU2_USER_MODEL": "openai/Qwen"}
