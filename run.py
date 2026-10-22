@@ -1409,4 +1409,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from utils.host_resource_sampler import HostResourceSampler
+
+    with HostResourceSampler(Path("workflow_logs/host_resources.jsonl")):
+        sys.exit(main())
