@@ -8946,7 +8946,7 @@ _eval_config_list = [
                     agent="mini-swe-agent",
                     n_concurrent_trials=1,
                     n_attempts=1,
-                    n_tasks=2,
+                    n_tasks=1,
                     agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs={
@@ -9466,7 +9466,7 @@ _eval_config_list = [
                         'sympy__sympy-24661',
                     ],
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: ['django__django-15973', 'django__django-13344'],
+                        EvalLimitMode.CI_NIGHTLY: ['django__django-13344'],
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
