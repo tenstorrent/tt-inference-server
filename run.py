@@ -734,6 +734,15 @@ def parse_arguments():
         "the preset's throughput ISLs / concurrencies.",
     )
     spec_decode_group.add_argument(
+        "--spec-decode-temperature",
+        type=float,
+        default=None,
+        help="Temperature sent with every --spec-decode request (also the "
+        "SPEC_DECODE_TEMPERATURE env var). Unset, requests carry none and get the model's "
+        "generation_config default. The TT plugin speculates only for greedy requests, so "
+        "0 exercises speculation on TT.",
+    )
+    spec_decode_group.add_argument(
         "--spec-decode-warmup-requests",
         type=int,
         default=None,

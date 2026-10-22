@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Spec-decode sweep presets and the ISL / concurrency env overrides."""
+"""Spec-decode sweep presets and the ISL / concurrency / temperature env overrides."""
 
 import pytest
 
@@ -10,6 +10,7 @@ from llm_module.spec_decode import (
     build_runs,
     parse_concurrencies,
     parse_isls,
+    parse_temperature,
 )
 
 
@@ -20,6 +21,7 @@ _THROUGHPUT_PREFIX = "speed_bench_throughput_"
 def _no_override_env(monkeypatch):
     monkeypatch.delenv("SPEC_DECODE_ISLS", raising=False)
     monkeypatch.delenv("SPEC_DECODE_CONCURRENCIES", raising=False)
+    monkeypatch.delenv("SPEC_DECODE_TEMPERATURE", raising=False)
 
 
 def _throughput(runs):
@@ -151,3 +153,27 @@ def test_parse_concurrencies_rejects_invalid(value):
 def test_unknown_preset_rejected():
     with pytest.raises(ValueError, match="Unknown spec-decode preset"):
         build_runs("bogus")
+
+
+def test_temperature_unset_leaves_requests_to_the_server():
+    runs = build_runs("ci")
+    assert all(run.temperature is None for run in runs)
+    assert not any("temp-" in run.slug for run in runs)
+
+
+def test_env_temperature_sets_every_run(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_TEMPERATURE", "0")
+    runs = build_runs("ci")
+    assert {run.temperature for run in runs} == {0.0}
+    assert runs[0].slug == "speed_bench_coding_maxcon-1_n-80_temp-0"
+
+
+def test_explicit_temperature_wins_over_env(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_TEMPERATURE", "0")
+    assert {run.temperature for run in build_runs("ci", temperature="0.6")} == {0.6}
+
+
+@pytest.mark.parametrize("value", ["-0.1", "hot", "1,0"])
+def test_parse_temperature_rejects_invalid(value):
+    with pytest.raises(ValueError, match="temperature"):
+        parse_temperature(value)
