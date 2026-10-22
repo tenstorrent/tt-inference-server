@@ -1,7 +1,7 @@
 # comfyui-media-server
 
 Standalone FastAPI media-inference server that backs the Tenstorrent **ComfyUI**
-custom nodes (`ComfyUI/custom_nodes/tenstorrent_nodes`). It serves diffusion
+custom nodes ([ComfyUI-Tenstorrent](https://github.com/stisiTT/ComfyUI-Tenstorrent)). It serves diffusion
 image (SDXL, SD3.5) and video (Wan2.2 T2V) generation on Tenstorrent hardware,
 and — unlike the OpenAI-API `tt-media-server/` in this repo — exposes the
 **staged / streaming pipeline contract** the ComfyUI nodes drive.
@@ -73,7 +73,7 @@ image is added (mirrors `tt-media-server/`'s `tt_metal_commit`).
 
 ## How it gets launched (target: `run.py --docker-server`)
 
-The ComfyUI nodes (`ComfyUI/custom_nodes/tenstorrent_nodes/server_manager.py`)
+The ComfyUI nodes (`server_manager.py` in ComfyUI-Tenstorrent)
 supervise the server as a subprocess. Today they spawn
 `$TT_METAL_DIR/launch_server.sh` directly (the makeshift local path). The target
 is to have them instead drive this repo's standard entrypoint, in **dev mode**:
