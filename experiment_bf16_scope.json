@@ -1,0 +1,10 @@
+{
+  "arm": "swe15973",
+  "suite": "swe_bench_verified",
+  "task": "django__django-15973",
+  "n_tasks": 1,
+  "harness_concurrency": 1,
+  "base_source": "d7ad657c37103e2d92f55f40590a24d90ae53312",
+  "purpose": "User-authorized independent BF16 diagnostic; original task policies preserved. Separate commit/run identity permits parallel task scheduling and provenance.",
+  "scope": "No quality/performance promotion; native corrected-runtime behavior proof pending."
+}
