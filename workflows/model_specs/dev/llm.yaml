@@ -7342,6 +7342,9 @@ templates:
     QWEN_TT_PACKAGE: tt-lab-bb21d5b1  # TODO: the package built for the release
     QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
+    # Largest max_tokens a request may ask for: the evals send max_gen_toks 81920 (reasoning budget), so -n must cover
+    # it; each of the 8 users still has a 131072-position context.
+    QWEN_TT_MAX_TOKENS: "131072"
   metadata:
     Qwen/Qwen3.8-27B:
       reasoning_parser_name: qwen3
