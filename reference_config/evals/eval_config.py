@@ -11971,8 +11971,9 @@ _eval_config_list = [
     # with an lm-eval task here, cited as the K2-Horizon-7B and gemma-4 rows cite
     # their cards' GPQA Diamond. HLE's card number is the LLM-judge full set
     # (k2_hle_text_mc is a text-MC subset, not comparable); the AA-* rows,
-    # tau3-Banking, SciCode and CritPt have no TTIS task. GPU reference TBD (36B
-    # bf16 is above the single-A100 Colab sweep).
+    # tau3-Banking, SciCode and CritPt have no TTIS task. GPU reference 82.32:
+    # full 198, G4 bf16, vLLM 0.31.0, no reasoning parser (graded on the full
+    # text, as on TT), chat-template content format string as the TT server.
     # =========================================================================
     EvalConfig(
         hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
@@ -11982,8 +11983,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=80.8,
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=82.32,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6347196514",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
