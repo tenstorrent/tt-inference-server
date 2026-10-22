@@ -440,9 +440,10 @@ def make_terminal_bench_probe(
         next_outcome_scan = now + 60.0
         for path in sorted(job_dir.glob("*/result.json")):
             try:
-                if path.stat().st_size > 1024 * 1024:
-                    continue  # Bounded observation; never interpret skipped evidence as a failure.
-                raw = path.read_bytes()
+                with path.open("rb") as handle:
+                    raw = handle.read(1024 * 1024 + 1)
+                if len(raw) > 1024 * 1024:
+                    continue  # Bound the read itself, including concurrent growth/replacement.
                 trial = json.loads(raw)
                 if not trial.get("finished_at") or not trial.get("trial_name"):
                     continue
