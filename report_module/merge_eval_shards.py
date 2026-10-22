@@ -21,6 +21,12 @@ by run.py next to that shard's lm-eval output), its ``results_*.json`` and its
 ``samples_<leaf>_*.jsonl``. Exit 0 PASS, 1 graded but not PASS, 2 the shards do
 not form one complete run (nothing is graded).
 
+An agentic (Harbor) task merges by task instead of by doc: each shard's record
+sits in its Harbor job dir next to Harbor's ``result.json``, the shards must
+cover the plan's sorted task set exactly once (same identity rules), and the
+merged accuracy is the sum of every shard's trial rewards over the full trial
+count, graded by the agentic result parser as an unsharded run would be.
+
 Besides its own ``results_merged.json`` and ``eval_shard_merge_report.json``,
 the merge writes the two files an unsharded ``run.py --workflow evals`` writes,
 with run.py's own writers and in run.py's layout under ``--out``:
@@ -56,11 +62,14 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from workflows.eval_shard import (
+    AGENTIC_RECORD_KIND,
     SHARD_RECORD_PREFIX,
     ShardError,
+    check_agentic_shard_set,
     check_configured_doc_ids,
     check_shard_set,
     leaf_doc_ids,
+    merge_agentic_shard_results,
     merge_shard_samples,
     parse_eval_shard,
 )
@@ -227,6 +236,175 @@ def merge(
     return doc
 
 
+def is_agentic_task(task) -> bool:
+    """An EVALS_AGENTIC (Harbor) task: its shards merge by task, not by doc."""
+    return getattr(task, "agentic_eval_config", None) is not None
+
+
+def find_agentic_shard_runs(dirs: Sequence[Path], task: str) -> List[Tuple[Path, dict]]:
+    """(Harbor job dir, record) for every completed agentic shard attempt.
+
+    The record sits in the shard's Harbor job dir next to Harbor's
+    ``result.json``. An attempt counts only if Harbor exited 0 and wrote its
+    result (a watchdog timeout leaves a partial result.json, rc 124: not
+    complete); two completed attempts of one shard are both returned so the
+    set check rejects the ambiguity.
+    """
+    found = []
+    name = f"{SHARD_RECORD_PREFIX}{task}.json"
+    for root in dirs:
+        for record_path in sorted(Path(root).rglob(name)):
+            record = json.loads(record_path.read_text())
+            if record.get("kind") != AGENTIC_RECORD_KIND:
+                continue
+            job_dir = record_path.parent
+            if (
+                record.get("return_code") != 0
+                or not (job_dir / "result.json").is_file()
+            ):
+                continue
+            found.append((job_dir, record))
+    return found
+
+
+def check_configured_agentic_plan(plan: Mapping[str, Any], task) -> None:
+    """Refuse shards planned over another dataset/ref/attempt count/selection.
+
+    A complete run of another task set is a different benchmark and must not
+    be graded as this task.
+    """
+    from fnmatch import fnmatch
+
+    cfg = task.agentic_eval_config
+    problems = []
+    for key, expected in (
+        ("dataset", cfg.dataset),
+        ("dataset_ref", getattr(cfg, "dataset_ref", None)),
+        ("n_attempts", cfg.n_attempts),
+    ):
+        if plan.get(key) != expected:
+            problems.append(f"{key} {plan.get(key)!r} != configured {expected!r}")
+    names = list(plan.get("task_names") or [])
+    if cfg.n_tasks is not None and len(names) > cfg.n_tasks:
+        problems.append(f"{len(names)} tasks > configured n_tasks {cfg.n_tasks}")
+    if cfg.task_names:
+        outside = [n for n in names if not any(fnmatch(n, p) for p in cfg.task_names)]
+        if outside:
+            problems.append(f"tasks outside the configured task_names: {outside[:5]}")
+    excluded = [
+        n for n in names if any(fnmatch(n, p) for p in cfg.exclude_task_names or [])
+    ]
+    if excluded:
+        problems.append(f"configured-excluded tasks in the plan: {excluded[:5]}")
+    if problems:
+        raise ShardError(
+            f"{task.task_name}: the shards' task set is not the task's configured "
+            "one:\n  - " + "\n  - ".join(problems)
+        )
+
+
+def merge_agentic(dirs: Sequence[Path], task) -> Dict[str, Any]:
+    """Verify and merge agentic shards; returns a Harbor-format result document.
+
+    Accuracy is the sum of every shard's trial rewards over the full trial
+    count (tasks x attempts), as Harbor scores an unsharded run.
+    """
+    runs = find_agentic_shard_runs(dirs, task.task_name)
+    if not runs:
+        raise ShardError(
+            f"no completed shard of {task.task_name} under {list(map(str, dirs))}"
+        )
+    plan = check_agentic_shard_set([record for _, record in runs])
+    check_configured_agentic_plan(plan, task)
+    count = runs[0][1]["shard_count"]
+    shard_results: Dict[int, dict] = {}
+    sources = []
+    for job_dir, record in sorted(runs, key=lambda r: r[1]["shard_index"]):
+        result_path = job_dir / "result.json"
+        shard_results[record["shard_index"]] = json.loads(result_path.read_text())
+        sources.append(
+            {
+                "shard": record["shard"],
+                "run_id": record.get("run_id"),
+                "attempt_dir": str(job_dir),
+                "results_sha256": _sha(result_path),
+                "record_sha256": _sha(
+                    job_dir / f"{SHARD_RECORD_PREFIX}{task.task_name}.json"
+                ),
+            }
+        )
+    doc = merge_agentic_shard_results(plan, count, shard_results)
+    first = runs[0][1]
+    doc["eval_shard_merge"] = {
+        "task_name": task.task_name,
+        "kind": AGENTIC_RECORD_KIND,
+        "shard_count": count,
+        "plan_sha": first["plan_sha"],
+        "expected_task_count": len(plan["task_names"]),
+        "dataset": plan["dataset"],
+        "resolved_ref": plan.get("resolved_ref"),
+        "provenance": first["provenance"],
+        "sources": sources,
+    }
+    return doc
+
+
+def _merged_ctx(model: str, doc: Mapping[str, Any]):
+    provenance = doc["eval_shard_merge"]["provenance"]
+    if provenance.get("hf_model_repo") not in (None, model):
+        raise ShardError(
+            f"shards are for {provenance.get('hf_model_repo')}, not {model}"
+        )
+    return SimpleNamespace(
+        runtime_config=None,  # the merged set is the full set: not a subset run
+        model_spec=SimpleNamespace(
+            hf_model_repo=model, model_name=model.split("/")[-1]
+        ),
+        device=SimpleNamespace(name=provenance.get("device") or "unknown"),
+    )
+
+
+def _lm_eval_blocks(ctx, task, doc: Mapping[str, Any], results_path: Path):
+    from test_module.llm_tests.llm_eval_tests import (
+        blocks_for_task,
+        load_eval_results,
+        mark_incomplete,
+    )
+
+    results, counts = load_eval_results([str(results_path)])
+    blocks = blocks_for_task(ctx, task, results, counts)
+    if not blocks:
+        # load_eval_results logs and skips a results document it cannot read
+        # (schema mismatch, empty configs, mixed dataset paths), and
+        # blocks_for_task then returns no block. Grading an empty block list
+        # would read PASS with nothing measured, so fail closed instead.
+        raise ShardError(
+            f"INCOMPLETE: the merged results for {task.task_name} could not be "
+            "loaded or scored (no eval block was produced); refusing to grade an "
+            "empty report"
+        )
+    merge_info = doc["eval_shard_merge"]
+    if merge_info.get("inference_error_samples"):
+        mark_incomplete(
+            blocks, merge_info["inference_error_samples"], merge_info["samples_logged"]
+        )
+    return blocks
+
+
+def _agentic_blocks(ctx, task, doc: Mapping[str, Any], results_path: Path):
+    """The block an unsharded agentic run would emit for the merged result."""
+    from llm_module.parsers.agentic import AgenticEvalParser
+
+    parser = AgenticEvalParser(
+        task_name=task.task_name,
+        score=task.score,
+        result_path=results_path,
+        limit_mode=None,
+        priority=getattr(task, "priority", "must"),
+    )
+    return [parser.parse(doc, device=ctx.device.name)]
+
+
 def _graded(model: str, task_name: str, doc: Mapping[str, Any], results_path: Path):
     """Grade the merged results exactly as a full run would be graded.
 
@@ -240,45 +418,15 @@ def _graded(model: str, task_name: str, doc: Mapping[str, Any], results_path: Pa
         build_acceptance_export,
         stage_results,
     )
-    from test_module.llm_tests.llm_eval_tests import (
-        _envelope,
-        blocks_for_task,
-        load_eval_results,
-        mark_incomplete,
-    )
+    from test_module.llm_tests.llm_eval_tests import _envelope
     from workflow_module.blocks_sink import BlockAccumulator
     from workflow_module.workflows import EvalsWorkflow
 
     task = eval_task(model, task_name)
+    ctx = _merged_ctx(model, doc)
+    make_blocks = _agentic_blocks if is_agentic_task(task) else _lm_eval_blocks
+    blocks = make_blocks(ctx, task, doc, results_path)
     provenance = doc["eval_shard_merge"]["provenance"]
-    if provenance.get("hf_model_repo") not in (None, model):
-        raise ShardError(
-            f"shards are for {provenance.get('hf_model_repo')}, not {model}"
-        )
-    ctx = SimpleNamespace(
-        runtime_config=None,  # the merged set is the full set: not a subset run
-        model_spec=SimpleNamespace(
-            hf_model_repo=model, model_name=model.split("/")[-1]
-        ),
-        device=SimpleNamespace(name=provenance.get("device") or "unknown"),
-    )
-    results, counts = load_eval_results([str(results_path)])
-    blocks = blocks_for_task(ctx, task, results, counts)
-    if not blocks:
-        # load_eval_results logs and skips a results document it cannot read
-        # (schema mismatch, empty configs, mixed dataset paths), and
-        # blocks_for_task then returns no block. Grading an empty block list
-        # would read PASS with nothing measured, so fail closed instead.
-        raise ShardError(
-            f"INCOMPLETE: the merged results for {task_name} could not be loaded "
-            "or scored (no eval block was produced); refusing to grade an empty "
-            "report"
-        )
-    merge_info = doc["eval_shard_merge"]
-    if merge_info.get("inference_error_samples"):
-        mark_incomplete(
-            blocks, merge_info["inference_error_samples"], merge_info["samples_logged"]
-        )
     for block in blocks:
         block.data["eval_shard_merge"] = {
             "shard_count": doc["eval_shard_merge"]["shard_count"],
@@ -524,7 +672,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         task = eval_task(args.model, args.task)
-        doc = merge(args.shard_dirs, args.task, task.doc_ids)
+        if is_agentic_task(task):
+            doc = merge_agentic(args.shard_dirs, task)
+        else:
+            doc = merge(args.shard_dirs, args.task, task.doc_ids)
         shard_spec = find_shard_runtime_model_spec(
             args.shard_dirs, args.model, doc["eval_shard_merge"]
         )

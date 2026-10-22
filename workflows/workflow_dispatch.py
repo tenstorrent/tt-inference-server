@@ -135,6 +135,23 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     )
 
 
+def _eval_tasks_select_agentic(model_spec, runtime_config) -> bool:
+    """True if --eval-tasks names any of the model's EVALS_AGENTIC tasks."""
+    from llm_module.eval_configs import eval_task_names
+
+    names = eval_task_names(runtime_config)
+    if not names or model_spec.model_type not in _LLM_LIKE_TYPES:
+        return False
+    cfg = _eval_config_for(model_spec)
+    if cfg is None:
+        return False
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        and task.task_name in names
+        for task in cfg.tasks
+    )
+
+
 def _is_llm_eval_run(wf, model_spec) -> bool:
     """LLM/VLM ``--workflow evals`` / ``--workflow release`` route to the workflow engine.
 
@@ -838,6 +855,12 @@ def _engine_dependency_venv_types(
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
+            # --workflow evals runs the agentic tasks --eval-tasks names
+            # in-process (EvalsWorkflow), resolving harbor from this venv.
+            if wf == WorkflowType.EVALS and _eval_tasks_select_agentic(
+                model_spec, runtime_config
+            ):
+                venv_types.append(WorkflowVenvType.EVALS_AGENTIC)
     if (
         wf in _ENGINE_BENCHMARK_WORKFLOWS
         and model_spec.model_type in _ENGINE_VLLM_CLIENT_BENCHMARK_TYPES
