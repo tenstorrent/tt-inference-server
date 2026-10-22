@@ -1630,7 +1630,6 @@ templates:
       max_concurrency: 128
       max_context: 262144
       max_tokens_all_users_override: 2101248  # total KV pool: 4 DP ranks x 525312 tokens per rank
-      default_impl: true
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         HF_MODEL: Qwen/Qwen3.8-27B
@@ -1672,8 +1671,8 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# Qwen3.8-27B BH Galaxy MTP spec decode (qwen36_blackhole_mtp): TP=8 x DP=4, text-only.
-# Select with --impl qwen36-blackhole-mtp (no default_impl, so the plain qwen36_blackhole spec stays the default).
+# Qwen3.8-27B BH Galaxy MTP spec decode (qwen36_blackhole_mtp): TP=8 x DP=4, text, image and video.
+# Default Galaxy impl. Select the non-spec path with --impl qwen36-blackhole.
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen36_blackhole_mtp
@@ -1681,12 +1680,15 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
+    - image
+    - video
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # DP=4 x 8 per rank
       max_context: 262144
       max_tokens_all_users_override: 2101248  # total KV pool: 4 DP ranks x 525312 tokens per rank
-      # MTP spec decode via vllm-tt-plugin custom_class (Qwen36MTPContractForCausalLM); text-only
+      default_impl: true
+      # MTP spec decode via vllm-tt-plugin custom_class (Qwen36MTPContractForCausalLM); text, image and video
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
@@ -1697,6 +1699,7 @@ templates:
         MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
+        VLLM_IMAGE_FETCH_TIMEOUT: "30"
         QWEN_SDPA_BF8: "1"  # bfp8 paged KV cache: +12-14% aggregate at 8k-32k context, accuracy within noise (see QWEN38_GALAXY_HANDOFF.md §1a)
         # M1: accept on device, chained verify traces, async overlap (tt-metal + vllm-tt-plugin atupe/qwen38-glx-mtp)
         QWEN36_SPEC_FUSED: "1"
@@ -1718,7 +1721,10 @@ templates:
         structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace":
           true}'
         max_num_batched_tokens: "525312"  # per-rank KV capacity, as for the non-MTP template
-        limit-mm-per-prompt: '{"image": 0, "video": 0}'
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: "0"
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
+        media-io-kwargs: '{"video": {"num_frames": 16}}'
         # Prefix caching and async scheduling are on. They need tt-metal 6b5416fa3f2 and vllm-tt-plugin 121053e or later
         # (both atupe/qwen38-glx-mtp). Older code gives a wrong first token or a crash on a cache hit when the
         # prompt length is 1 mod 64, and has no async spec path. Chunked prefill stays off: the TT platform
