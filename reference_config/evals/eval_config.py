@@ -11132,7 +11132,11 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # 8, not 5: <=8 active lanes decode on the 8-row GDN graph with
+                    # TTQ_DECODE_PREFIX_OCCUPANCY=1 (TPOT 314 ms at c5 and c8 alike), so c8 is
+                    # 1.6x the throughput at the same per-trial speed; 8 x ~32k contexts fit the
+                    # row's 262144-token KV pool. Run as --eval-shard i/16 (500 tasks).
+                    n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=6 * 60 * 60,
