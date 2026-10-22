@@ -599,15 +599,35 @@
             }
         },
         "google/gemma-4-12B-it": {
-            "inference_engine": "vLLM",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2",
-                        "BH_GALAXY"
-                    ]
+            "implementations": [
+                {
+                    "inference_engine": "vLLM",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P300X2",
+                                "BH_GALAXY"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "gemma4-12b-qb2",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P300X2"
+                            ],
+                            "device-args": {
+                                "P300X2": {
+                                    "additional-args": "--eval-tasks r1_gpqa_diamond"
+                                }
+                            }
+                        }
+                    }
                 }
-            }
+            ]
         },
         "openai/gpt-oss-120b": {
             "inference_engine": "vLLM",
