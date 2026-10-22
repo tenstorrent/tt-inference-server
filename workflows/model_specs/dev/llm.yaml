@@ -905,8 +905,8 @@ templates:
         GEMMA_PREFILL_FORMATION_TARGET: '4'
         GEMMA_SW_ANCHOR_RETENTION: '1'
         GEMMA_POOL_MEMORY_SAMPLE_INTERVAL: '64'
-        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '458752'
-        GEMMA_SERIAL_PREPARED_POOL_PROFILE: 'c32a24_f458752'
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '425984'
+        GEMMA_SERIAL_PREPARED_POOL_PROFILE: 'c32a32_f425984'
         GEMMA_REPETITION_OBSERVER_DIR: ''
         GEMMA_REPETITION_PRECISION_POLICY: 'bf8'
         GEMMA_EXPERIMENT_KV_DTYPE: 'bf8kv'
@@ -925,7 +925,7 @@ templates:
         trace_region_size: 134217728
         l1_small_size: 16384
       vllm_args:
-        additional_config: '{"tt":{"sample_on_device_mode":"all","trace_region_size":134217728,"l1_small_size":16384},"gemma_admitted_request_limit":24}'
+        additional_config: '{"tt":{"sample_on_device_mode":"all","trace_region_size":134217728,"l1_small_size":16384}}'
         distributed-executor-backend: uni
         scheduling-policy: fcfs
         block_size: '128'

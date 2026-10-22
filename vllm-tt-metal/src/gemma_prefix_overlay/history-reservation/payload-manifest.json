@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "873fb9b9afbf55eb6e7097587faaddfa519dde9b72d4af0524db7445fd766429"
+      "target": "2d08102d856a7f6af6c821d638b5eb35a7e38c06c1520180511a8126147f598f"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "e7916d4392747a1b4dc189826f04fb0edb0ec0e17b97bbf231a1f38f057b543a"
+      "target": "6cb8ef876702dea52c032b62eb675561fb4ac055223b00ee60ff54d5c0331abc"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "2313864746268c8c82944207c84950982a07f421057216d0eba481b1ac15107e"
+      "target": "72f47a4e858448c6e793db888e8f99aee28d465c16c90bd2e4ec5f08727b43af"
     },
     {
       "root": "purelib",
@@ -65,10 +65,10 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "307b771076324c2920bbdc6df6f58d822ddee82f929a74500cca4cb3feb9b1e8",
+  "attestation_sha256": "b120495f7587001b76259ab532eaf63af27f991a8af429c71d7c46d4f7ff8071",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
-  "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
+  "scope": "Conditional reviewed A32/H3/F425984 source; preserves composed core and accepted A20 source lineage. Actual A32 capacity/admission/API acceptance pending.",
   "derived_core_composition": {
     "base_tti": "dc3a02fa723301377fa466d8ad4b35e34a6d363c",
     "reviewed_core_sha256": "1e8f1ae9adadf9f68e84eaf5da922507fdf0fb0ea3b9a6ef5a10fd53b44ca3b0",
@@ -95,9 +95,9 @@
     "core_composition": "Preserves accepted1b83 composed core exact4570fa; existing derived_core_composition describes that historical derivation, not the new whole attestation."
   },
   "admission_pool_delta": {
-    "source_checkpoint_sha256": "18370df9952b2066bd935621bc02d0c376b3086675316271e315b4958cf39001",
-    "patch_sha256": "b9ed4f449f00c7b398d60df7ac01c3a7303de6939d2f8b496050e5922829ab7f",
-    "source_pins_sha256": "75e40b45c55d2478d38db4c02b05f6d429cb8023d7e0dccced6cddbea0a960f2",
+    "source_checkpoint_sha256": "9973a9058dbf1d7426bb5381db3398bdfdd80c8e0e85dd1102bbf04096ea5656",
+    "patch_sha256": "17acd055002fcc10fbea6239972501ec4653b19c6c62068150e999f604b25663",
+    "source_pins_sha256": "c1393833dae25b3139bc77205745d8ae8c862bf40c109a064db5d53ede6814f8",
     "base_payload_manifest_sha256": "a075a5eb70455b0673a7e05ea4b2548963b805d314247fbad5f0bccd2957302e",
     "base_tti": "8d95360edfa73334c11e45eddff838abfcd60102",
     "changed_files": [

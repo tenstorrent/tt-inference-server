@@ -39,15 +39,15 @@ def bank_mode():
     value = os.environ.get('GEMMA_HISTORY_RESERVATION_BANKS')
     if value is not None and value != '3':
         raise RuntimeError('GEMMA_HISTORY_RESERVATION_BANKS must be absent or exactly 3')
-    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') == 'c32a24_f458752':
-        raise RuntimeError('A24/F458752 requires explicit attested history3')
+    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') == 'c32a32_f425984':
+        raise RuntimeError('A32/F425984 requires explicit attested history3')
     if value is not None and not enabled():
         raise RuntimeError('Reduced history requires enabled attested reservation')
     return value
 
 
 def check_reduced_bank_profile():
-    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368)}
+    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a32_f425984': (32, '425984', 5472)}
     profile = os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE')
     if profile not in profiles:
         raise RuntimeError('Unknown reduced history profile')
@@ -95,6 +95,8 @@ def attest(executor_class, config):
     from vllm_tt_plugin.config import get_tt_data_parallel_size
     if selected_bank_mode is not None:
         declared = (getattr(config, 'additional_config', None) or {}).get('gemma_admitted_request_limit')
+        if selected_bank_profile[1] == 32 and declared is not None:
+            raise RuntimeError('A32 uses native physical admission; omit reduced-admission override')
         geometry = (getattr(config.scheduler_config, "max_num_seqs", None),
                     declared if declared is not None else config.scheduler_config.max_num_seqs,
                     getattr(config.model_config, "max_model_len", None))
