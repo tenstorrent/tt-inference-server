@@ -12,4 +12,7 @@ uv pip install torch torchvision torchaudio --index-url https://download.pytorch
 # the CUDA torch wheels we just replaced with CPU-only ones above).
 uv pip install xformers --no-deps
 
-uv pip install diffusers
+# The plugin pins transformers==4.55.0, which requires huggingface-hub<1.0.
+# Newer diffusers releases need Hub APIs unavailable after that downgrade.
+# Keep this pin until the shared environment is upgraded and image models are tested.
+uv pip install "diffusers==0.39.0"
