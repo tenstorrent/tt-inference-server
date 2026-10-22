@@ -12774,12 +12774,14 @@ _eval_config_list = [
     # GPQA Diamond 91.7 (the card uses very long reasoning budgets, so the 32K one here
     # is expected to cost points on GPQA).
     # Order matters: tasks run sequentially and GPQA (bounded, longest) goes last.
-    # Sized for a release dispatch (benchmark sweep + evals) in the 18 h job: server
-    # start <= ~1.2 h, sweep ~3.5-5.3 h (release run 39271633490, slowest runner),
-    # IFBench <= 3.5 h, GPQA-80 <= 7.5 h (evals run 39398093834 took 4.9 h on a normal
-    # runner; ~6.5 h projected on the slowest). Exceeding a bound marks that task
-    # incomplete (rc=124) instead of losing the whole run. Request timeout == wall
-    # bound (never retry).
+    # Sized for an evals dispatch in the 18 h job: server start <= ~1.2 h,
+    # IFBench <= 7.5 h (release run 39592564053 reached 179/300 prompts in 3.4 h at
+    # 32-way concurrency with 32K thinking budgets, i.e. ~6 h projected incl. the
+    # low-concurrency tail), GPQA-80 <= 7.5 h (4.9 h on two normal runners; ~6.5 h
+    # projected on the slowest). With the ~3.4-5.3 h benchmark sweep this no longer
+    # fits one release dispatch; run benchmarks and evals as separate dispatches.
+    # Exceeding a bound marks that task incomplete (rc=124) instead of losing the
+    # whole run. Request timeout == wall bound (never retry).
     # =========================================================================
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-Flash-Next",
@@ -12806,10 +12808,10 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(3.5 * 60 * 60),
+                wall_clock_timeout_seconds=int(7.5 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(3.5 * 60 * 60),
+                    "timeout": int(7.5 * 60 * 60),
                 },
                 # Model-card thinking-mode sampling; the qwen3 reasoning parser keeps
                 # the thinking out of the scored content. 32K (IFEval at 16K truncated
