@@ -589,6 +589,20 @@ QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 # their retries as __INFERENCE_ERROR__: TimeoutError().
 R1_DISTILL_LLAMA_70B_REQUEST_TIMEOUT_S = 4 * 60 * 60
 
+# Per-request client timeout for IFM/K2-Horizon-MoVA-36B-A4B r1_gpqa_diamond
+# (local-chat-completions `timeout`, which counts scheduler queue time). The
+# previous 4 h cut 14/198 requests as __INFERENCE_ERROR__: TimeoutError() in
+# Shield runs 39599132302 and 39654052773 (P300X2 Quetzal, both GPQA shards,
+# num_concurrent=32, max_gen_toks=32768). Derivation from their server logs:
+# KV pool 133,120 tokens holds ~4 full-length requests, so a median 5 run and up
+# to 28 of 32 wait. Single-stream decode is ~163 ms/token, but per request at
+# >= 4 running it is p10 3.8 tok/s (263 ms/token): a 32768-token generation is
+# 8623 s. Completed responses average 12.2k tokens (26-27 per shard hit the
+# 32768 cap), and saturated aggregate decode is p10 14.8 tok/s, so the queue
+# drains ~4.4 requests/h and 28 queued ahead wait ~6.4 h. 6.4 h + 2.4 h = 8.8 h,
+# rounded up to 10 h.
+K2_HORIZON_MOVA_REQUEST_TIMEOUT_S = 10 * 60 * 60
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -11980,13 +11994,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                # timeout covers a full 32768-token generation at the measured
-                # ~6.2 tok/s per request (local spec_tests, ~160 ms/token):
-                # 32768 / 6.2 = 5285 s, doubled for scheduler queueing at 32
-                # concurrent users, rounded up to 4 h.
+                # timeout: see K2_HORIZON_MOVA_REQUEST_TIMEOUT_S (queue wait
+                # plus a full 32768-token generation under the KV-bound load).
                 model_kwargs={
                     "max_length": 131072,
-                    "timeout": 14400,
+                    "timeout": str(K2_HORIZON_MOVA_REQUEST_TIMEOUT_S),
                 },
                 # Model-card sampling (temperature 1.0, top_p 0.95, no top_k) and
                 # output budget (32768). stream=false is required by lm-eval's
