@@ -63,9 +63,30 @@
       "module": "gemma_history_reservation_ledger",
       "base": null,
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+    },
+    {
+      "root": "purelib",
+      "path": "vllm/v1/core/block_pool.py",
+      "module": "vllm.v1.core.block_pool",
+      "base": "daf37f8c3e85d6debac02df2ac2356f5500555b613a369e8efdc66a0db94286b",
+      "target": "40c06a59a01062187da16018e89cbdd008fda64ed8c8f63f41deceefedfc1c6b"
+    },
+    {
+      "root": "purelib",
+      "path": "vllm/v1/core/kv_cache_manager.py",
+      "module": "vllm.v1.core.kv_cache_manager",
+      "base": "b80c872e8023bae09e74ef005ecd443d7fad5d7860f664c46b9bcc98b80a61a8",
+      "target": "79027cc7c85274895a6af9b75d93b8ad4f20e71b6abb6a9b8c5e5637ea8a705b"
+    },
+    {
+      "root": "purelib",
+      "path": "vllm/v1/core/first_key_observer.py",
+      "module": "vllm.v1.core.first_key_observer",
+      "base": null,
+      "target": "8a68f312673adebf7f3c0753a0fa5927ff20c8d8b8344d89c5b89e8723f2aa4d"
     }
   ],
-  "attestation_sha256": "307b771076324c2920bbdc6df6f58d822ddee82f929a74500cca4cb3feb9b1e8",
+  "attestation_sha256": "16a87403dc5777f65e9afaafa807be9dcbd78c8efdea2c9b38b4c78777e242d5",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",

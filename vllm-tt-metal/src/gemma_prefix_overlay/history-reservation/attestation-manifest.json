@@ -18,6 +18,9 @@
     "vllm_tt_plugin.model_input": "3b7e664ba688ff1bedb5a90a606593e90820d79cd35d388f3308ff7080dec28f",
     "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
     "gemma_history_reservation": "2313864746268c8c82944207c84950982a07f421057216d0eba481b1ac15107e",
-    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
+    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
+    "vllm.v1.core.block_pool": "40c06a59a01062187da16018e89cbdd008fda64ed8c8f63f41deceefedfc1c6b",
+    "vllm.v1.core.kv_cache_manager": "79027cc7c85274895a6af9b75d93b8ad4f20e71b6abb6a9b8c5e5637ea8a705b",
+    "vllm.v1.core.first_key_observer": "8a68f312673adebf7f3c0753a0fa5927ff20c8d8b8344d89c5b89e8723f2aa4d"
   }
 }
