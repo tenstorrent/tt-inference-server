@@ -5819,6 +5819,21 @@ templates:
       tokenizer_revision: 31b70e2e869a7173562077fd711b654946d38674
   status: EXPERIMENTAL
 - weights:
+  - IFM/K2-Horizon-MoVA-36B-A4B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 524288
+    default_impl: true
+    vllm_args:
+      revision: cca48b6631d03c338a0e1d8beb0c392af8becbd3
+      tokenizer_revision: cca48b6631d03c338a0e1d8beb0c392af8becbd3
+      # k2_horizon config class is remote code (auto_map); vLLM >= 0.30.0 has the model natively
+      trust_remote_code: true
+  status: EXPERIMENTAL
+- weights:
   - Qwen/Qwen2-7B
   impl: quetzal
   inference_engine: VLLM
