@@ -3201,9 +3201,8 @@ templates:
         reasoning-parser: mimo
         enable-auto-tool-choice: true
         tool-call-parser: mimo
-        # Lane mode speculates only through the model-owned drafter, synchronously.
+        # Async scheduling: the model declares supports_async_spec_decode (lane plain steps overlap, fused verifies chain).
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
-        no-async-scheduling: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # As the default entry: the repo name has no "<N>B" to infer these from.
