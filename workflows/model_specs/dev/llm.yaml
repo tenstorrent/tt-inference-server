@@ -5827,6 +5827,10 @@ templates:
     - Aleph-Alpha/Kolibri-1-BF16
   impl: kolibri_1_qb2
   inference_engine: VLLM
+  # The repo name carries no parameter count, so these can't be inferred; without
+  # them a runner with no cached weights fails setup. 78B BF16 is ~156 GB on disk.
+  min_disk_gb: 180
+  min_ram_gb: 128
   model_type: LLM
   supported_modalities:
     - text
