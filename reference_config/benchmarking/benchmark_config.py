@@ -389,7 +389,14 @@ def select_smoke_test_benchmark_config(
 ) -> BenchmarkConfig:
     if benchmark_config.tasks:
         benchmark_target_task = benchmark_config.tasks[0]
-        benchmark_targets = benchmark_target_task.param_map.get(device)
+        # Rows without targets are informational (e.g. MiniMax-M3's long-context
+        # sweep points) and can be very large, so a smoke test only runs the
+        # rows that carry targets and otherwise falls back to the tiny pair.
+        benchmark_targets = [
+            params
+            for params in benchmark_target_task.param_map.get(device) or []
+            if params.targets
+        ]
         if benchmark_targets:
             benchmark_target_param_map = dict(benchmark_target_task.param_map)
             benchmark_target_param_map[device] = list(benchmark_targets)

@@ -243,6 +243,49 @@ def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
     assert getattr(smoke_sweep_params[0], "task_type", "text") == "text"
 
 
+def test_select_smoke_test_benchmark_config_skips_rows_without_targets(
+    monkeypatch,
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    # Informational perf-reference rows (no targets) must not become the smoke
+    # test: MiniMax-M3's long-context rows would run ~63M input tokens.
+    perf_task = benchmark_config.BenchmarkTask(
+        param_map={
+            DeviceTypes.N150: [
+                BenchmarkTaskParams(
+                    isl=262144, osl=1024, max_concurrency=62, num_prompts=62
+                )
+            ]
+        }
+    )
+    sweep_task = benchmark_config.BenchmarkTask(
+        param_map={
+            DeviceTypes.N150: [
+                BenchmarkTaskParams(
+                    isl=128, osl=128, max_concurrency=32, num_prompts=256
+                )
+            ]
+        }
+    )
+    config = benchmark_config.BenchmarkConfig(
+        model_id="smoke-test-model",
+        tasks=[perf_task, sweep_task],
+    )
+
+    smoke_config = benchmark_config.select_smoke_test_benchmark_config(
+        config, DeviceTypes.N150
+    )
+
+    smoke_params = smoke_config.tasks[0].param_map[DeviceTypes.N150]
+    assert len(smoke_params) == 1
+    assert (
+        smoke_params[0].isl,
+        smoke_params[0].osl,
+    ) == benchmark_config.SMOKE_TEST_BENCHMARK_PAIR
+    assert smoke_params[0].max_concurrency == 1
+
+
 def test_get_benchmark_config_uses_runtime_spec_even_when_model_id_collides(
     monkeypatch,
 ):
