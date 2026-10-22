@@ -16,7 +16,7 @@ def run_probe(server, context):
   directory=args.output/label;directory.mkdir()
   client=Wire(directory,server.url_with_port,server.auth_token);client.deadline=deadline
   if row['session_header']is not None:client.headers['X-Session-ID']=row['session_header']
-  start=time.time();d,raw_path=client.call('/v1/chat/completions',body,label);raw=raw_path.read_bytes()
+  start=time.time();d,wire_dir=client.call('/v1/chat/completions',body,label);raw=(wire_dir/'response.bin').read_bytes()
   (args.output/(label+'.response.json')).write_bytes(raw);usage=d['usage'];assert usage['prompt_tokens']==row['original_prompt_tokens']and 0<=usage['completion_tokens']<=1
   result=dict(actor=row['actor'],turn=row['turn'],response_id=d['id'],original_response_id=row['response_id'],start_wall=start,end_wall=time.time(),usage=usage,request_sha256=hashlib.sha256(wire).hexdigest(),response_sha256=hashlib.sha256(raw).hexdigest(),session_header_preserved=row['session_header'])
   (args.output/(label+'.result.json')).write_text(json.dumps(result,indent=2)+'\n');return result
