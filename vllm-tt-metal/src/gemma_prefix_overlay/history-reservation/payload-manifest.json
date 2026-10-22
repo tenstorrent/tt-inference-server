@@ -76,7 +76,7 @@
       "path": "models/demos/gemma4_31b_qb2/tt/decoder.py",
       "module": "models.demos.gemma4_31b_qb2.tt.decoder",
       "base": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae",
-      "target": "7b86dbef299661904d571ca7c540f3e53e215fd250b268b81df1b67fcd8cb80e"
+      "target": "7cde0ce49bb1d2c87d4009ec2a2f941c9468f9711fa8aa845af1e42c05bdf2e8"
     },
     {
       "root": "metal",
@@ -86,7 +86,7 @@
       "target": "ca661ce507f16f33270d4427217a0cc4c4b7755ca91ac0777cf761bd6a56844d"
     }
   ],
-  "attestation_sha256": "705f249e01a55326bcebbea66f5cf1bb2993d6e7e35744fbcc67f9748f2a88c3",
+  "attestation_sha256": "94cbf86ca9bb794b9eb4d08f2b423a83ba28aaab64f2f8860eddea113215a34b",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -146,5 +146,12 @@
     "profile_source_pins_sha256": "ddbf06093597549388504665144c86a378dcdf32845e2835a1f12c7f68d9bb04",
     "model_source_pins_sha256": "97aabc56298026d00a2b4d62fa722cb8963f94d227c38154a0ec2e6bec310aae",
     "scope": "Full BF16 projection/head weights; same KV/math fidelity with explicit QKV/down decode K-grouping7, shared QKV/down, transient exact prefill gate/up. Native/serving results recorded separately."
+  },
+  "bf16_prefill_spatial_fix": {
+    "parent": "38b213a51dc376a4db9d36588e4a7e83fd2139e5",
+    "before": "7b86dbef299661904d571ca7c540f3e53e215fd250b268b81df1b67fcd8cb80e",
+    "after": "7cde0ce49bb1d2c87d4009ec2a2f941c9468f9711fa8aa845af1e42c05bdf2e8",
+    "scope": "BF16 full attention MLP spatial output block largest divisor of per-core M <=7; K grouping/math/dtypes/context unchanged",
+    "failure_run": 39766614398
   }
 }

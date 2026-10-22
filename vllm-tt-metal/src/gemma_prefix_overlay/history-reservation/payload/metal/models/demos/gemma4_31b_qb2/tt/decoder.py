@@ -645,8 +645,19 @@ class Decoder:
             and x.dtype == ttnn.bfloat16
             and (pm, pn, block, sh, sw) == (21, 16, 6, 1, 8)
         )
+        # BF16 full-attention MLP also needs bounded spatial output tiles.
+        # Keep K grouping, subblocks, fidelity and accumulation unchanged.
+        bf16_full_mlp = (
+            not self.sliding
+            and name in ("gate", "up", "down")
+            and weight.dtype == ttnn.bfloat16
+            and x.dtype == ttnn.bfloat16
+            and (pn, block, sh, sw) == (16, 6, 1, 8)
+            and pm > 7
+        )
+        output_rows = max(i for i in range(1, 8) if pm % i == 0) if bf16_full_mlp else (7 if split_large_full_bf8_mlp else pm)
         config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
-            out_block_h=7 if split_large_full_bf8_mlp else pm,
+            out_block_h=output_rows,
             compute_with_storage_grid_size=(gx, gy),
             in0_block_w=block,
             per_core_M=pm,

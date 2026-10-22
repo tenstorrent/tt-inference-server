@@ -19,7 +19,7 @@
     "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
     "gemma_history_reservation": "7509b5a8b9b01d98f2481655fd90e2b3ddae8086fb7a0d208cd784ebadaa44cb",
     "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
-    "models.demos.gemma4_31b_qb2.tt.decoder": "7b86dbef299661904d571ca7c540f3e53e215fd250b268b81df1b67fcd8cb80e",
+    "models.demos.gemma4_31b_qb2.tt.decoder": "7cde0ce49bb1d2c87d4009ec2a2f941c9468f9711fa8aa845af1e42c05bdf2e8",
     "models.demos.gemma4_31b_qb2.tt.model": "ca661ce507f16f33270d4427217a0cc4c4b7755ca91ac0777cf761bd6a56844d"
   }
 }
