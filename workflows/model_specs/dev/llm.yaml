@@ -941,11 +941,10 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
-# google/gemma-4-12B-it (text decoder only) TP4 autoport
-# (models/autoports/google_gemma_4_12b_it) from the tt-model-bringup multigoal pipeline
-# (tenstorrent/skills 80095f4, Claude Opus 5.5 high) on a 2x p300c QB2. Requires tt-metal
-# branch vkovacevic/gemma-4-12b-it-qb2-model (lean model code + 1 shared SDPA fix); vllm-tt-plugin
-# main 366a7ae, unmodified (the adapter loads through TT_MODEL_CLASS_OVERRIDES).
+# google/gemma-4-12B-it (text decoder only) TP4 on QB2 (models/demos/gemma4_12b_qb2) from
+# the tt-model-bringup multigoal pipeline (tenstorrent/skills 80095f4, Claude Opus 5.5 high).
+# Requires tt-metal PR #61987 (vkovacevic/gemma-4-12b-it-qb2-model, stacked on the SDPA PR
+# #61986); vllm-tt-plugin main, unmodified (the adapter registers through EXTRA_MODELS_DIR).
 # Server settings are the bring-up's validated stage-10/11 ones (precision b0_lmh4_lofi,
 # 1M-token vLLM-owned KV, full 262144 context). Stage-11 numbers (4096/128): c1 TTFT 211 ms,
 # TPOT 13.2 ms (75.8 t/s/u); c32 463 tok/s (19.7 t/s/u).
@@ -963,7 +962,7 @@ templates:
       default_impl: false  # selectable with --impl gemma4_12b_qb2; needs tt-metal vkovacevic/gemma-4-12b-it-qb2-model
       env_vars:
         MESH_DEVICE: P300x2
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.autoports.google_gemma_4_12b_it.tt.generator_vllm:Gemma4AutoportForCausalLM"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         VLLM_RPC_TIMEOUT: "300000"
       override_tt_config:
         sample_on_device_mode: all
@@ -981,6 +980,7 @@ templates:
         # send every request that omits top_k to the host path.
         override_generation_config: '{"top_k": 32}'
         reasoning-parser: gemma4
+        hf-overrides: '{"architectures":["TTGemma4_12BQB2ForCausalLM"]}'
         # Thinking on for the card evals (the chat template suppresses it otherwise).
         default-chat-template-kwargs: '{"enable_thinking": true}'
   status: EXPERIMENTAL

@@ -463,14 +463,15 @@ kolibri_1_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
-# google/gemma-4-12B-it TP4 autoport produced by the tt-model-bringup pipeline (Claude
-# Opus 5.5). The code_path lives under models/autoports/ and exists only on the tt-metal
-# branch vkovacevic/gemma-4-12b-it-qb2-model, not on main.
+# google/gemma-4-12B-it TP4 on QB2: dedicated implementation under
+# models/demos/gemma4_12b_qb2 (architecture TTGemma4_12BQB2ForCausalLM), produced by the
+# tt-model-bringup pipeline. Exists only on tt-metal PR #61987
+# (vkovacevic/gemma-4-12b-it-qb2-model) until it merges.
 gemma4_12b_qb2_impl = ImplSpec(
     impl_id="gemma4_12b_qb2",
     impl_name="gemma4-12b-qb2",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/autoports/google_gemma_4_12b_it",
+    code_path="models/demos/gemma4_12b_qb2",
 )
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
