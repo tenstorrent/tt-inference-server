@@ -20,16 +20,6 @@
                 }
             }
         },
-        "tiiuae/Falcon3-7B-Instruct": {
-            "inference_engine": "FORGE",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P150"
-                    ]
-                }
-            }
-        },
         "meta-llama/Llama-3.1-8B-Instruct": {
             "implementations": [
                 {
