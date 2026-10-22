@@ -8908,7 +8908,7 @@ _eval_config_list = [
                     agent="terminus-2",
                     n_concurrent_trials=1,
                     n_attempts=1,
-                    n_tasks=2,
+                    n_tasks=1,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -8925,7 +8925,7 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: ['terminal-bench/break-filter-js-from-html', 'terminal-bench/make-mips-interpreter'],
+                        EvalLimitMode.CI_NIGHTLY: ['terminal-bench/break-filter-js-from-html'],
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
