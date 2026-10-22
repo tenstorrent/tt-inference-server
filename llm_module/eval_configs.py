@@ -30,23 +30,28 @@ _STANDARD_EVAL_VENVS = frozenset(
 def eval_task_names(runtime_config):
     """Task names selected by --eval-tasks, or None (all tasks)."""
     raw = getattr(runtime_config, "eval_tasks", None)
-    if not raw:
+    if not isinstance(raw, str) or not raw:
         return None
-    names = [name.strip() for name in str(raw).split(",") if name.strip()]
+    names = [name.strip() for name in raw.split(",") if name.strip()]
     return names or None
 
 
-def _select_tasks(tasks: list, runtime_config) -> list:
+def _select_tasks(tasks: list, runtime_config, configured_names=None) -> list:
     """Apply --eval-tasks / --eval-samples / smoke-test task selection (real
     copy of ``run_evals._select_eval_config``, minus the EvalConfig wrapper).
 
     --eval-tasks keeps every sample of each named task: it splits one model's
     eval set across runs, it never caps a task. A name the model does not
     configure is an error, so a typo cannot silently drop a task from a split.
+
+    ``configured_names`` is every task name the model configures (default: the
+    names of ``tasks``). A selected name that the model configures on another
+    path -- an agentic task, which AgenticWorkflow runs -- is not an error
+    here; it just selects none of ``tasks``.
     """
     selected = eval_task_names(runtime_config)
     if selected and tasks:
-        configured = {t.task_name for t in tasks}
+        configured = {t.task_name for t in tasks} | set(configured_names or ())
         unknown = sorted(set(selected) - configured)
         if unknown:
             raise ValueError(
@@ -128,7 +133,11 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     if device is not None:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
-    return _select_tasks(standard, runtime_config)
+    return _select_tasks(
+        standard,
+        runtime_config,
+        configured_names={t.task_name for t in eval_config.tasks},
+    )
 
 
 __all__ = ["get_llm_eval_tasks"]

@@ -448,7 +448,291 @@ def merge_shard_samples(
     return {"results": results, "n_samples": n_samples, "doc_hashes": doc_hashes}
 
 
+# --- agentic (Harbor) tasks --------------------------------------------------
+#
+# An agentic eval's unit is a dataset task (one Harbor trial per attempt), not
+# an lm-eval doc. The plan is the task set an unsharded run evaluates -- the
+# dataset resolved through the run's own Harbor filters, in Harbor's order --
+# sorted by name; shard i runs the names at positions ``p % N == i`` as
+# Harbor ``task_names``. Harbor's score is the mean reward over trials, so the
+# full-set accuracy is the sum of every shard's rewards over the full trial
+# count, which recombines exactly.
+
+AGENTIC_RECORD_KIND = "agentic"
+AGENTIC_SHARD_RECORD_VERSION = 1
+
+
+def agentic_shard_plan(
+    *,
+    dataset: str,
+    dataset_ref: Optional[str],
+    resolved_ref: Optional[str],
+    task_names: Iterable[str],
+    n_attempts: int,
+) -> Dict[str, Any]:
+    """The shard-independent plan of an agentic task: its sorted task set."""
+    names = [str(name) for name in task_names]
+    if not names:
+        raise ShardError(f"{dataset}: the task selection resolved to no tasks")
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ShardError(f"{dataset}: task names listed twice: {duplicates[:5]}")
+    if (
+        not isinstance(n_attempts, int)
+        or isinstance(n_attempts, bool)
+        or n_attempts < 1
+    ):
+        raise ShardError(f"{dataset}: n_attempts must be >= 1; got {n_attempts!r}")
+    return {
+        "kind": AGENTIC_RECORD_KIND,
+        "dataset": dataset,
+        "dataset_ref": dataset_ref,
+        "resolved_ref": resolved_ref,
+        "n_attempts": n_attempts,
+        "task_names": sorted(names),
+    }
+
+
+def agentic_shard_task_names(
+    plan: Mapping[str, Any], index: int, count: int
+) -> List[str]:
+    """Shard ``index`` of ``count``: every count-th name of the sorted set.
+
+    An empty shard is refused: Harbor reads an empty ``task_names`` as "no
+    filter", so it would run the whole dataset.
+    """
+    names = list(plan["task_names"])[index::count]
+    if not names:
+        raise ShardError(
+            f"{plan.get('dataset')}: shard {index}/{count} of "
+            f"{len(plan['task_names'])} tasks is empty; use fewer shards"
+        )
+    return names
+
+
+def agentic_shard_record(
+    task_name: str,
+    plan: Mapping[str, Any],
+    index: int,
+    count: int,
+    provenance: Mapping[str, Any],
+    *,
+    return_code: int,
+    run_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The per-shard record written into the shard's Harbor job dir."""
+    names = agentic_shard_task_names(plan, index, count)
+    return {
+        "kind": AGENTIC_RECORD_KIND,
+        "version": AGENTIC_SHARD_RECORD_VERSION,
+        "task_name": task_name,
+        "shard": f"{index}/{count}",
+        "shard_index": index,
+        "shard_count": count,
+        "plan": dict(plan),
+        "plan_sha": plan_sha(plan),
+        "shard_task_names": names,
+        "shard_task_count": len(names),
+        "expected_task_count": len(plan["task_names"]),
+        "return_code": return_code,
+        "provenance": dict(provenance),
+        "run_id": run_id,
+    }
+
+
+def check_agentic_shard_set(records: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
+    """Verify N agentic shard records form one complete set; return the plan.
+
+    The same identity rules as :func:`check_shard_set`: one task, one plan,
+    one package/ref/image/command/device/status, shards 0..N-1 once each, and
+    each shard's task list exactly its slice of the plan.
+    """
+    if not records:
+        raise ShardError("no shard records")
+    first = records[0]
+    count = first.get("shard_count")
+    problems = []
+    for record in records:
+        shard = record.get("shard")
+        if record.get("kind") != AGENTIC_RECORD_KIND:
+            problems.append(f"shard {shard}: record kind {record.get('kind')!r}")
+        if record.get("version") != AGENTIC_SHARD_RECORD_VERSION:
+            problems.append(f"shard {shard}: record version {record.get('version')!r}")
+        for key in ("task_name", "shard_count", "plan_sha"):
+            if record.get(key) != first.get(key):
+                problems.append(
+                    f"shard {shard}: {key} {record.get(key)!r} != {first.get(key)!r}"
+                )
+        for key in IDENTITY_KEYS:
+            mine = (record.get("provenance") or {}).get(key)
+            theirs = (first.get("provenance") or {}).get(key)
+            if mine != theirs:
+                problems.append(f"shard {shard}: {key} {mine!r} != {theirs!r}")
+        plan = record.get("plan") or {}
+        if plan_sha(plan) != record.get("plan_sha"):
+            problems.append(f"shard {shard}: plan does not match its plan_sha")
+            continue
+        index = record.get("shard_index")
+        if (
+            isinstance(index, int)
+            and isinstance(count, int)
+            and 0 <= index < count
+            and list(record.get("shard_task_names") or [])
+            != list(plan.get("task_names") or [])[index::count]
+        ):
+            problems.append(f"shard {shard}: task list is not its slice of the plan")
+    indices = sorted(record.get("shard_index") for record in records)
+    if isinstance(count, int) and indices != list(range(count)):
+        missing = sorted(set(range(count)) - set(indices))
+        duplicate = sorted({i for i in indices if indices.count(i) > 1})
+        problems.append(
+            f"shards must be exactly 0..{count - 1} once each; "
+            f"missing {missing}, duplicated {duplicate}"
+        )
+    if problems:
+        raise ShardError(
+            "shard set is not one complete run:\n  - " + "\n  - ".join(problems)
+        )
+    return first["plan"]
+
+
+def _harbor_trial_prefix(task_name: str) -> str:
+    """The task part of a Harbor trial name (``<task[:32]>__<uuid>``)."""
+    return task_name.split("/")[-1][:32].rstrip("_-")
+
+
+def _count(value: Any) -> Optional[int]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def merge_agentic_shard_results(
+    plan: Mapping[str, Any],
+    count: int,
+    shard_results: Mapping[int, Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Join N shards' Harbor ``result.json`` into one full-set Harbor result.
+
+    Each shard must have finished every trial of exactly its own tasks (no
+    pending/running trial, and every rewarded trial one of its tasks); the
+    merged accuracy is the sum of rewards over the full trial count, as Harbor
+    scores an unsharded run (a trial without a reward counts 0). Returns a
+    Harbor-format result document (``stats.evals`` with one entry) that the
+    agentic result parser reads as it reads a run's ``result.json``.
+    """
+    if sorted(shard_results) != list(range(count)):
+        raise ShardError(
+            f"need Harbor results for shards 0..{count - 1}; got {sorted(shard_results)}"
+        )
+    n_attempts = int(plan["n_attempts"])
+    total_trials = len(plan["task_names"]) * n_attempts
+    eval_key = None
+    reward_key = None
+    rewards: Dict[float, List[str]] = {}
+    n_rewarded = n_errors = 0
+    for index in range(count):
+        raw = shard_results[index]
+        names = agentic_shard_task_names(plan, index, count)
+        where = f"shard {index}/{count}"
+        expected = len(names) * n_attempts
+        if _count(raw.get("n_total_trials")) != expected:
+            raise ShardError(
+                f"{where}: Harbor ran {raw.get('n_total_trials')!r} trials, "
+                f"its {len(names)} tasks x {n_attempts} attempts need {expected}"
+            )
+        stats = raw.get("stats") or {}
+        completed = _count(stats.get("n_completed_trials", stats.get("n_trials")))
+        if completed != expected:
+            raise ShardError(f"{where}: {completed!r} of {expected} trials completed")
+        for key in ("n_running_trials", "n_pending_trials"):
+            if _count(stats.get(key)) not in (None, 0):
+                raise ShardError(f"{where}: {stats.get(key)} trial(s) {key[2:-7]}")
+        evals = stats.get("evals") or {}
+        if len(evals) != 1:
+            raise ShardError(
+                f"{where}: expected one agent/model/dataset eval, found {sorted(evals)}"
+            )
+        ((key, eval_stats),) = evals.items()
+        if eval_key is None:
+            eval_key = key
+        elif key != eval_key:
+            raise ShardError(f"{where}: eval {key!r} != shard 0's {eval_key!r}")
+        reward_stats = eval_stats.get("reward_stats") or {}
+        if len(reward_stats) > 1:
+            raise ShardError(
+                f"{where}: several reward keys {sorted(reward_stats)}; Harbor's "
+                "accuracy is then per key, not one mean"
+            )
+        prefixes = {_harbor_trial_prefix(name) for name in names}
+        rewarded = 0
+        for rkey, by_value in reward_stats.items():
+            if reward_key is None:
+                reward_key = rkey
+            elif rkey != reward_key:
+                raise ShardError(f"{where}: reward key {rkey!r} != {reward_key!r}")
+            for value, trials in (by_value or {}).items():
+                try:
+                    reward = float(value)
+                except (TypeError, ValueError):
+                    raise ShardError(
+                        f"{where}: reward {value!r} is not a number"
+                    ) from None
+                if not math.isfinite(reward):
+                    raise ShardError(f"{where}: reward {value!r} is not finite")
+                for trial in trials or []:
+                    if str(trial).rsplit("__", 1)[0] not in prefixes:
+                        raise ShardError(
+                            f"{where}: trial {trial!r} is not one of the shard's tasks"
+                        )
+                    rewards.setdefault(reward, []).append(str(trial))
+                    rewarded += 1
+        trials_rewarded = _count(eval_stats.get("n_trials"))
+        if trials_rewarded is not None and trials_rewarded != rewarded:
+            raise ShardError(
+                f"{where}: n_trials {trials_rewarded} != {rewarded} rewarded trials"
+            )
+        if rewarded > expected:
+            raise ShardError(f"{where}: {rewarded} rewards for {expected} trials")
+        n_rewarded += rewarded
+        n_errors += _count(eval_stats.get("n_errors")) or 0
+    reward_sum = sum(value * len(trials) for value, trials in rewards.items())
+    accuracy = reward_sum / total_trials
+    return {
+        "_result_format": "harbor",
+        "n_total_trials": total_trials,
+        "stats": {
+            "n_completed_trials": total_trials,
+            "n_errored_trials": n_errors,
+            "evals": {
+                eval_key: {
+                    "n_trials": n_rewarded,
+                    "n_errors": n_errors,
+                    "metrics": [{"mean": accuracy}],
+                    "reward_stats": (
+                        {
+                            reward_key: {
+                                str(value): sorted(trials)
+                                for value, trials in sorted(rewards.items())
+                            }
+                        }
+                        if reward_key is not None
+                        else {}
+                    ),
+                }
+            },
+        },
+    }
+
+
 __all__ = [
+    "AGENTIC_RECORD_KIND",
+    "AGENTIC_SHARD_RECORD_VERSION",
+    "agentic_shard_plan",
+    "agentic_shard_record",
+    "agentic_shard_task_names",
+    "check_agentic_shard_set",
+    "merge_agentic_shard_results",
     "ShardError",
     "SHARD_RECORD_PREFIX",
     "check_configured_doc_ids",

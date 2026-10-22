@@ -318,7 +318,8 @@ def parse_arguments():
         default=None,
         help="Comma-separated eval task names: run only these of the model's eval "
         "tasks, every sample of each (no --samples filter). For splitting a long eval "
-        "set across separate runs. Mutually exclusive with --eval-samples.",
+        "set across separate runs. Agentic task names are run by --workflow evals "
+        "too. Mutually exclusive with --eval-samples.",
     )
     parser.add_argument(
         "--eval-shard",
@@ -326,8 +327,9 @@ def parse_arguments():
         default=None,
         help="Run shard i of N (0-based, 'i/N') of each selected eval task: every "
         "N-th doc, from position i, of each leaf task's doc set (its configured "
-        "doc_ids, else the whole dataset), with no sample caps. The N shards are "
-        "disjoint and cover exactly that set; only `python -m "
+        "doc_ids, else the whole dataset), with no sample caps. For an agentic "
+        "(Harbor) task, every N-th name, from position i, of its sorted task set. "
+        "The N shards are disjoint and cover exactly that set; only `python -m "
         "report_module.merge_eval_shards` over all N can grade a task PASS. "
         "Mutually exclusive with --eval-samples and --limit-samples-mode.",
     )
