@@ -11807,6 +11807,11 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
+                    # TEMPORARY: Harbor installs the agent with an unpinned `--with litellm`, and the
+                    # litellm releases of 2026-10-21 import `mcp` without requiring it, so every trial
+                    # exits at startup. Resolve the agent's packages as of 2026-10-16. Drop once the
+                    # Harbor install is pinned.
+                    agent_env={"UV_EXCLUDE_NEWER": "2026-10-16T00:00:00Z"},
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
