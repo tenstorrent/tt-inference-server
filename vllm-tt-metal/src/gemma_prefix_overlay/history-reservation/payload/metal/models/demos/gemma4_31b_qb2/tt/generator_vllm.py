@@ -132,6 +132,8 @@ class Gemma4ForCausalLM:
         return pool_tokens + 5 * (tails + 2 * cls.MAX_PREFILL_TOKENS)
 
     def allocate_kv_cache_per_layer(self, per_layer_specs):
+        history_capacity = _history_reservation.serving_history_capacity(
+            batch=self.max_batch_size, admitted=self.admitted_request_limit, capacity=self.max_seq_len)
         before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
         print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
         if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":
@@ -182,7 +184,13 @@ class Gemma4ForCausalLM:
         self.cache.serving_admission_limit = self.admitted_request_limit
         after = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
         print("KV_POOL_MEMORY " + json.dumps({"phase":"after","banks":after.num_banks,"allocated_per_bank":after.total_bytes_allocated_per_bank,"free_per_bank":after.total_bytes_free_per_bank,"unique_pools":len(pools),"pool_full_tokens":int(os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS", "262144"))}), flush=True)
-        self.generator.setup_history_bank(self.cache, capacity=self.admitted_request_limit)
+        self.generator.setup_history_bank(self.cache, capacity=history_capacity)
+        if self.cache.history_bank is not None:
+            if len(self.cache.history_bank.roots) != history_capacity:
+                raise RuntimeError("Allocated history count differs from selected capacity")
+            print("GEMMA_HISTORY_RESERVATION_CAPACITY " + json.dumps(dict(
+                batch=self.max_batch_size, admitted=self.admitted_request_limit, selected=history_capacity,
+                roots=len(self.cache.history_bank.roots))), flush=True)
         self.generator.prepare_serving_prefill(self.cache)
         return self.cache
 

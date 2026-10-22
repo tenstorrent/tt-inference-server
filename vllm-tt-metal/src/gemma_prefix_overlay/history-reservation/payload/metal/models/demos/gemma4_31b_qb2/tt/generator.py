@@ -430,9 +430,15 @@ class Gemma4Generator:
         c32_profiles = {"c32a24_f262144": (24, "262144"), "c32a20_f327680": (20, "327680")}
         c32_profile = pool_profile in c32_profiles
         expected_batch = 32 if c32_profile else 16
-        expected_history = c32_profiles[pool_profile][0] if c32_profile else 16
+        expected_admission = c32_profiles[pool_profile][0] if c32_profile else 16
+        expected_history = _history_reservation.serving_history_capacity(
+            batch=state.batch, admitted=expected_admission,
+            capacity=state.capacity)
+        if _history_reservation.bank_mode() is not None and (
+                not getattr(state, "vllm_owned", False) or not hasattr(state, "serving_admission_limit")):
+            raise RuntimeError("Reduced prepared history requires explicit serving state")
         if c32_profile and (
-                getattr(state, "serving_admission_limit", None) != expected_history
+                getattr(state, "serving_admission_limit", None) != expected_admission
                 or os.environ.get("GEMMA_EXPERIMENT_KV_POOL_TOKENS") != c32_profiles[pool_profile][1]
                 or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_SLIDING_QKV") != "1"
                 or os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_DOWN") != "1"
