@@ -7404,6 +7404,7 @@
                     "Measured gates acceptance: release runs 38773036733 and 39584812502 (tt-agentic-bringup-qb2, bh-qb-ge) gave",
                     "TTFT 84.5-84.6 ms and 58.1 t/s/u. Tolerance 0.30, the runner-spread cap the Kolibri-1 entry uses."
                 ],
+                "impl": "muse_glimmer_30b_qb2",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
