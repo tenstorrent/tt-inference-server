@@ -928,12 +928,18 @@ templates:
         enable-chunked-prefill: true
         max_num_batched_tokens: '8192'
         override_generation_config: '{"top_k": 20}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         reasoning-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
 
 - weights:
     - google/gemma-4-12B-it
@@ -3305,36 +3311,6 @@ templates:
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "1024"
-        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
-        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
-
-- weights:
-    - tiiuae/Falcon3-7B-Instruct
-  impl: forge_vllm_plugin
-  min_disk_gb: 20
-  min_ram_gb: 12
-  model_type: LLM
-  inference_engine: FORGE
-  uses_tensor_model_cache: false
-  status: EXPERIMENTAL
-  device_model_specs:
-    - device: P150
-      max_concurrency: 32
-      max_context: 32768  # Falcon3 native max_position_embeddings
-      default_impl: true
-      eval_max_retries: 1
-      env_vars:
-        MAX_MODEL_LENGTH: "32768"
-        MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.35"
-        TT_KV_POOL_GB: "32"
-        OPTIMIZATION_LEVEL: "1"
-        CPU_SAMPLING: "false"
-        ENABLE_TRACE: "true"
-        KV_CACHE_DTYPE: "bfp_bf8"
-        # 1024 (not 2048): Falcon3 head_dim=256 makes the b32 prefill SDPA buffer
-        # DRAM-OOM at chunk 2048 during trace-capture.
         PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
@@ -5802,6 +5778,78 @@ templates:
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+
+# Aleph-Alpha/Kolibri-1 (78B MoE, 3.46B active) TP4 autoport
+# (models/autoports/aleph_alpha_kolibri_1_bf16) from the tt-model-bringup multigoal
+# pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires the
+# tt-metal model code (models/autoports/aleph_alpha_kolibri_1_bf16, branch
+# vkovacevic/kolibri-1-qb2-model with its four shared-code fixes) and vllm-tt-plugin's
+# kolibri1 registration and parsers (branch vkovacevic/kolibri-1-qb2-plugin; vLLM 0.30).
+# The checkpoint is the vendor's BF16 copy; the main repo is block-FP8. Measured on the
+# 32-slot server (tt-agentic-bringup-qb2#75 batched-decode MoE path, 2048-token chunks):
+# c1 128/128 TTFT 233 ms / TPOT 57 ms, c32 128/128 250 tok/s, c32 4096/128 TTFT 5.5 s /
+# 100 tok/s. Perf targets: the measured gate in model_performance_reference.json (the
+# 2026-10-08 CI sweep) with a bf16 weight-streaming theoretical block.
+# Tracking: tt-agentic-bringup-qb2#73.
+- weights:
+    - Aleph-Alpha/Kolibri-1-BF16
+  impl: kolibri_1_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      # Native trained context (owner decision, tt-agentic-bringup-qb2#78); the
+      # model-card 1M extension is not served.
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        OMP_NUM_THREADS: "8"
+        # The device sampler covers top_k 1..32 (max_device_top_k). The model card's
+        # eval sampling (top_k 128) needs the host path, which the adapter only
+        # allows when this is set; without it such a request kills the engine.
+        KOLIBRI_VLLM_HOST_COMPAT: "1"
+        # The tt-agentic-bringup-qb2#75 batched-decode MoE path (token-grouped
+        # dispatch / fused SwiGLU / combine, expert-parallel weights, page-table
+        # dedupe) is the model code's default; KOLIBRI_GROUPED_DECODE=0 /
+        # KOLIBRI_EP_EXPERTS=0 / KOLIBRI_PAGE_TABLE_DEDUPE=0 would restore the dense path.
+      override_tt_config:
+        # The adapter refuses host sampling unless KOLIBRI_VLLM_HOST_COMPAT=1 is set.
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 200000000
+        fabric_config: FABRIC_1D
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 1
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        # Chunked prefill with a 2048-token budget (the model's prefill traces are
+        # bucketed at 32/128/512/2048/8192 tokens, so 1024 would pad into the 2048
+        # bucket). vs the bring-up's 512: c32 4096-token TTFT 42 s -> 5.6 s and
+        # throughput 2x; cost: c32 short-prompt burst p50 TTFT 2.0 -> 2.5 s. The
+        # model's paged sliding-window cache requires block_size 32.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "2048"
+        dtype: bfloat16
+        # Requests that omit top_k need a default inside the device sampler's range.
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: kolibri1
+        enable-auto-tool-choice: true
+        tool-call-parser: kolibri1
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Aleph-Alpha/Kolibri-1-BF16:
+      reasoning_parser_name: kolibri1
 
 # BEGIN gpu-ref sweep: derived GPU specs. Generated by
 # scripts/gpu_reference_colab/gpuref.py sweep plan --write-specs from each

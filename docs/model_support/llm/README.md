@@ -34,5 +34,4 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - | - |
 | [diffusiongemma-26B-A4B-it](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - |
-| [Falcon3-7B-Instruct](Falcon3-7B-Instruct_p150.md) | - | - | - | - | - | - | - | - | [🛠️ Experimental](Falcon3-7B-Instruct_p150.md) | - | - | - |
 | [Qwen3.6-27B](Qwen3.6-27B_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - |
