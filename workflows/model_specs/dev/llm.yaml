@@ -1709,11 +1709,11 @@ templates:
       reasoning_parser_name: k2_horizon
       tool_call_parser_name: k2_horizon
 
-# meta-models/Muse-Glimmer-30B (dense 30B, text decoder only) TP4 autoport
-# (models/autoports/meta_models_muse_glimmer_30b, tenstorrent/tt-metal PR on top of the
+# meta-models/Muse-Glimmer-30B (dense 30B, text decoder only) TP4 model
+# (models/demos/muse_glimmer_30b_qb2, tenstorrent/tt-metal PR on top of the
 # sharded-norm fix) from the tt-model-bringup pipeline. Runs on stock vllm-tt-plugin main:
 # vLLM >= 0.29 ships the muse_glimmer HF config, reasoning parser and tool parser, and the
-# TT adapter is registered from the autoport's vllm_metadata.json (EXTRA_MODELS_DIR).
+# TT adapter is registered from the model's vllm_metadata.json (EXTRA_MODELS_DIR).
 # Server settings are the bring-up's validated ones. CI (run 38180844318): 128/128 c1
 # TTFT 64 ms, TPOT 20.9 ms; c32 930 tok/s. KV: 4096 x 32-token pages per full-attention
 # layer (sliding layers hold only their 2048 window).
@@ -1730,8 +1730,8 @@ templates:
       max_context: 131072
       default_impl: true
       env_vars:
-        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports"
-        TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.autoports.meta_models_muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.autoports.meta_models_muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+        TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
       vllm_args:
