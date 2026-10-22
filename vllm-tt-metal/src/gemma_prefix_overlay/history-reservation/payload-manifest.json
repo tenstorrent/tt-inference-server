@@ -65,7 +65,7 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "307b771076324c2920bbdc6df6f58d822ddee82f929a74500cca4cb3feb9b1e8",
+  "attestation_sha256": "a7e0f80277869385164bfbf344191e4a257fa29b9db64564177647bdffa3f6db",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -106,5 +106,17 @@
       "gemma_history_reservation.py"
     ],
     "core_composition": "Preserves accepted1b83 composed core exact4570fa; existing derived_core_composition describes that historical derivation, not the new whole attestation."
+  },
+  "c16_profile_derivation": {
+    "source_commit": "6268c8eb",
+    "patch_sha256": "c38d06457f253b302f792b33fbc2ca2bdb6c711ee69a3ae1ac251ccd7346e981",
+    "source_pins_sha256": "2a4c5202be717d5a14519580ccaa272ddd7ec240ae8a1916b6d6aa036997f3a5",
+    "base_tti": "44f0d04661cd458553fcb1616205eb2ac98402e3",
+    "changed_files": [
+      "models/demos/gemma4_31b_qb2/tt/generator.py",
+      "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
+      "gemma_history_reservation.py"
+    ],
+    "core_composition": "Preserved accepted composed4570fa; previous derivation fields describe ancestors."
   }
 }
