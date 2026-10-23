@@ -1,0 +1,3 @@
+include: _mmmlu_cot_template_yaml
+task: mmmlu_cot_es_la
+dataset_name: ES_LA

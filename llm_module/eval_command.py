@@ -434,6 +434,11 @@ def _check_request_overrides_supported(task, request_body: dict, model_spec) -> 
             f"{task.eval_class!r} is not one of the lm-eval adapters the "
             f"request-overrides wrapper patches ({', '.join(SUPPORTED_EVAL_CLASSES)})"
         )
+    if getattr(task, "expand_chat_messages", False) and not task.use_chat_api:
+        raise ValueError(
+            f"{task.task_name}: expand_chat_messages rewrites the chat payload's "
+            "messages, so it needs use_chat_api=True."
+        )
     if "chat_template_kwargs" in request_body and not task.use_chat_api:
         raise ValueError(
             f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
@@ -599,7 +604,8 @@ def build_eval_command(
 
     lm_eval_prefix = [str(lm_eval_exec)]
     request_body = resolve_request_body(task)
-    if request_body:
+    expand_chat_messages = getattr(task, "expand_chat_messages", False)
+    if request_body or expand_chat_messages:
         _check_request_overrides_supported(task, request_body, model_spec)
         # One wrapper covers every payload patch for a task that opts into
         # request overrides (body, seed drop, reasoning capture). Tasks without
@@ -616,6 +622,8 @@ def build_eval_command(
             lm_eval_prefix.append("--drop-server-seed")
         if getattr(task, "capture_reasoning", False):
             lm_eval_prefix.append("--preserve-reasoning")
+        if expand_chat_messages:
+            lm_eval_prefix.append("--expand-chat-messages")
         lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993

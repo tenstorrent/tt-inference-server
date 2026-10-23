@@ -5,7 +5,7 @@
 """Run lm-eval with per-request body overrides for one eval task.
 
     python lm_eval_request_overrides.py [--request-body JSON] [--drop-server-seed]
-        [--preserve-reasoning] -- <lm_eval arguments>
+        [--preserve-reasoning] [--expand-chat-messages] -- <lm_eval arguments>
 
 * ``--request-body`` merges a JSON object into every payload the OpenAI
   completions/chat adapters send (dict values one level deep), e.g.
@@ -15,6 +15,10 @@
   ``lm_eval_no_server_seed.py`` does on its own.
 * ``--preserve-reasoning`` turns on the pinned fork's ``LM_EVAL_PRESERVE_REASONING``
   so a separate ``reasoning_content`` reaches the sample logs (never scoring).
+* ``--expand-chat-messages`` replaces a chat payload's ``messages`` with the JSON
+  message list a doc sends behind ``CHAT_MESSAGES_SENTINEL``. lm-eval's chat path
+  sends each doc as one user message; this lets a task such as MRCR send a whole
+  multi-turn conversation.
 """
 
 from __future__ import annotations
@@ -37,6 +41,9 @@ SUPPORTED_EVAL_CLASSES = (
     "openai-chat-completions",
 )
 _PATCH_MARKER = "_tt_request_overrides"
+# Doc-text prefix marking a JSON-encoded chat message list (--expand-chat-messages).
+# Mirrored in reference_config/evals/lm_eval_tasks/card_evals/mrcr_utils.py.
+CHAT_MESSAGES_SENTINEL = "__TT_CHAT_MESSAGES_JSON__"
 
 
 # Self-contained on purpose: the eval runner launches this file by path from
@@ -61,6 +68,17 @@ def _drop_server_seed(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _expand_chat_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Swap ``messages`` for the list a message carries behind the sentinel."""
+    for message in payload.get("messages") or []:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str) and content.startswith(CHAT_MESSAGES_SENTINEL):
+            out = dict(payload)
+            out["messages"] = json.loads(content[len(CHAT_MESSAGES_SENTINEL) :])
+            return out
+    return payload
+
+
 def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     """Split our options from lm-eval's (everything after ``--``)."""
     if "--" in argv:
@@ -74,6 +92,7 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument("--drop-server-seed", action="store_true")
     parser.add_argument("--preserve-reasoning", action="store_true")
+    parser.add_argument("--expand-chat-messages", action="store_true")
     opts = parser.parse_args(ours)
     body = json.loads(opts.request_body)
     if not isinstance(body, dict):
@@ -84,7 +103,9 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     return opts, theirs
 
 
-def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str]:
+def patch_api_adapters(
+    body: Dict[str, Any], drop_server_seed: bool, expand_chat_messages: bool = False
+) -> List[str]:
     """Wrap ``_create_payload`` on every adapter class in
     ``lm_eval.models.openai_completions`` that defines its own. Returns the
     patched class names."""
@@ -107,6 +128,8 @@ def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str
 
         def _create_payload(self, *args, _original=original, **kwargs):
             payload = merge_request_body(_original(self, *args, **kwargs), body)
+            if expand_chat_messages:
+                payload = _expand_chat_messages(payload)
             return _drop_server_seed(payload) if drop_server_seed else payload
 
         setattr(_create_payload, _PATCH_MARKER, original)
@@ -148,7 +171,9 @@ def main() -> None:
     opts, lm_eval_argv = parse_argv(sys.argv[1:])
     if opts.preserve_reasoning:
         os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
-    patched = patch_api_adapters(opts.body, opts.drop_server_seed)
+    patched = patch_api_adapters(
+        opts.body, opts.drop_server_seed, opts.expand_chat_messages
+    )
     require_patched_adapter(lm_eval_model_name(lm_eval_argv))
     print(
         f"[lm_eval_request_overrides] request body overrides: {json.dumps(opts.body)} "
