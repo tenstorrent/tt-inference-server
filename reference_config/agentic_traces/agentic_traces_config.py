@@ -489,7 +489,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126",
-                concurrency=_agentx_concurrency(16),
+                concurrency=_agentx_concurrency(4),  # throwaway: one session per lane
             ),
         ),
     ),
