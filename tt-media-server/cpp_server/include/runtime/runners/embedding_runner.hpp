@@ -56,6 +56,8 @@ class EmbeddingRunner : public IEmbeddingRunner {
    * itself is left running. */
   void close() override;
 
+  const char* runnerType() const override { return "EmbeddingRunner"; }
+
  private:
   config::EmbeddingConfig config_;
   std::unique_ptr<detail::EmbeddingImpl> impl_;
