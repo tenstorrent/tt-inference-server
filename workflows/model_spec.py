@@ -580,6 +580,10 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+    # Modalities this device profile serves when narrower than the template's
+    # ``supported_modalities`` (a board that serves the text model only inside
+    # a multimodal entry). None inherits the template's list.
+    supported_modalities: Optional[List[str]] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -719,6 +723,15 @@ class ModelSpec:
             **self.device_model_spec.env_vars,
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
+
+        # A device profile that serves fewer modalities than the template
+        # (text-only board in a multimodal entry) narrows the spec's list.
+        if self.device_model_spec.supported_modalities is not None:
+            object.__setattr__(
+                self,
+                "supported_modalities",
+                list(self.device_model_spec.supported_modalities),
+            )
 
         # order of precedence: default_vllm_args, device_model_spec.vllm_args
         default_vllm_args = {
