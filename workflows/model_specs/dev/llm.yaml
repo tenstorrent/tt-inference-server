@@ -31,6 +31,18 @@ templates:
         MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) to use (4,8) mesh grid
       vllm_args:
         data_parallel_size: 4
+    - device: P300X2
+      max_concurrency: 1  # max_num_seqs 1 builds the fused batch-1 decode (tt/fused_decode)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        # the device settings of models/demos/gpt_oss/demo/text_demo.py on QuietBox 2 (tests/test_factory.py)
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 100000000  # models/model_trace_region_sizes.yaml gpt-oss p300x2
+        sample_on_device_mode: decode_only
+      vllm_args:
+        override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
