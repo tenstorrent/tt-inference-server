@@ -1710,6 +1710,10 @@ templates:
         VLLM_TT_SPEC_CHAIN_SAMPLED: "1"
         QWEN36_SPEC_FUSED_AUDIT_EVERY: "8"  # host check of every 8th device accept
         QWEN36_SPEC_CHAIN_AUDIT_EVERY: "8"  # host check of every 8th chain step
+        # Chunked prefill on the MTP class (tt-metal atupe/qwen38-glx-mtp-chunk): exact resume at each chunk end
+        QWEN36_SPEC_CHUNKED_PREFILL: "1"
+        # GDN prefix-state snapshots per rank (22.8 MB/device each); pure stride snapshots are evicted first
+        QWEN36_PREFIX_CACHE_SLOTS: "64"
       vllm_args:
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 32 -> max_num_seqs 8 per rank
         enable_auto_tool_choice: true
@@ -1727,13 +1731,21 @@ templates:
         media-io-kwargs: '{"video": {"num_frames": 16}}'
         # Prefix caching and async scheduling are on. They need tt-metal 6b5416fa3f2 and vllm-tt-plugin 121053e or later
         # (both atupe/qwen38-glx-mtp). Older code gives a wrong first token or a crash on a cache hit when the
-        # prompt length is 1 mod 64, and has no async spec path. Chunked prefill stays off: the TT platform
-        # disables it for this class.
+        # prompt length is 1 mod 64, and has no async spec path.
+        # Chunked prefill is on: a cold 100k-200k prompt no longer blocks its rank for 40-100 s. Needs tt-metal
+        # atupe/qwen38-glx-mtp-chunk 8acc2095eb1 and vllm-tt-plugin atupe/qwen38-glx-mtp-chunk-lb c3f5448 or later.
+        # Per-chunk size: at most long_prefill_token_threshold, lowered with depth by prefill_chunk_cap_table.
+        enable_chunked_prefill: true
+        long_prefill_token_threshold: "16384"
         speculative-config: '{"method":"custom_class","model":"vllm_tt_plugin.model_owned_drafter","num_speculative_tokens":3}'
       override_tt_config:
         fabric_config: FABRIC_1D_RING  # each rank is a Galaxy column; its Ring CCLs need the column's wrap link
         trace_region_size: 1073741824
         l1_small_size: 24576
+        decode_interleave_prefill_steps: 1  # one decode step after each prefill (chunk) step
+        long_prefill_alone_threshold: 16384  # short prompts are admitted before a long one (max defer 8 steps)
+        max_concurrent_partial_prefills: 1  # multi-chunk prefills advance one at a time per rank (FCFS)
+        prefill_chunk_cap_table: [[0, 16384], [65536, 8192], [131072, 4096]]  # [start depth, max chunk tokens]
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
