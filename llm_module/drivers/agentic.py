@@ -135,7 +135,7 @@ class HarborAgenticDriver(AgenticEvalDriver):
             "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
             self.task.task_name,
             n_tasks,
-            getattr(_cfg, "n_concurrent_trials", "?"),
+            _n_concurrent_trials(_cfg),
             getattr(_cfg, "agent", "?"),
             getattr(_cfg, "dataset", "?"),
             getattr(_cfg, "model", None),
@@ -180,6 +180,35 @@ def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEval
     return HarborAgenticDriver(task, runtime_config=runtime_config)
 
 
+def _n_concurrent_trials(cfg: Any) -> int:
+    """``cfg.n_concurrent_trials``, capped by ``AGENTIC_MAX_CONCURRENT_TRIALS`` when set.
+
+    Docker environments create one bridge network per trial, and a runner on
+    the default address pools runs out after ~31; the excess trials then fail
+    before the agent starts. The cap lets a dispatch stay under that limit
+    without changing the configured value.
+    """
+    cap = os.environ.get("AGENTIC_MAX_CONCURRENT_TRIALS")
+    if not cap:
+        return cfg.n_concurrent_trials
+    try:
+        cap_value = int(cap)
+    except ValueError:
+        cap_value = 0
+    if cap_value < 1:
+        raise ValueError(
+            f"AGENTIC_MAX_CONCURRENT_TRIALS must be an integer >= 1, got {cap!r}"
+        )
+    capped = min(cfg.n_concurrent_trials, cap_value)
+    if capped != cfg.n_concurrent_trials:
+        logger.info(
+            "[agentic] n_concurrent_trials %s -> %s (AGENTIC_MAX_CONCURRENT_TRIALS)",
+            cfg.n_concurrent_trials,
+            capped,
+        )
+    return capped
+
+
 def build_harbor_config(
     task: Any,
     server: ServerConnection,
@@ -206,7 +235,7 @@ def build_harbor_config(
         model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
-        n_concurrent_trials=cfg.n_concurrent_trials,
+        n_concurrent_trials=_n_concurrent_trials(cfg),
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
         agent_kwargs=agent_kwargs_with_request_body(

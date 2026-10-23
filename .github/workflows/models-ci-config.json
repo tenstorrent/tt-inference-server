@@ -228,6 +228,11 @@
                     "devices": [
                         "T3K"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "T3K"
+                    ]
                 }
             }
         },
@@ -249,6 +254,11 @@
                     "devices": [
                         "T3K"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "T3K"
+                    ]
                 }
             }
         },
@@ -256,6 +266,12 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
+                    "devices": [
+                        "T3K",
+                        "GALAXY"
+                    ]
+                },
+                "release": {
                     "devices": [
                         "T3K",
                         "GALAXY"
@@ -272,6 +288,12 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
+                    "devices": [
+                        "T3K",
+                        "GALAXY"
+                    ]
+                },
+                "release": {
                     "devices": [
                         "T3K",
                         "GALAXY"
