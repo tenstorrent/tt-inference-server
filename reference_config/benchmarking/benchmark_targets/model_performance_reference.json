@@ -7729,6 +7729,7 @@
                 }
             },
             {
+                "_comment": "measured on the optimized defaults (tt-metal 31f52b7687e, catalog 6debd3334: bfloat8_b KV, 1572864-token pool) on QB2, 2026-10-23",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7740,17 +7741,16 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 31.82,
-                        "tput": 28.0
+                        "tput_user": 45.92,
+                        "tput": 44.1
                     },
                     "measured": {
-                        "ttft_ms": 580.0,
-                        "tput_user": 31.82,
-                        "tput": 28.0,
+                        "ttft_ms": 139.2,
+                        "tput_user": 45.92,
+                        "tput": 44.1,
                         "tolerance": 0.2
                     }
-                },
-                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+                }
             },
             {
                 "isl": 128,
@@ -7764,17 +7764,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 7.27,
-                        "tput": 137.1
+                        "tput_user": 31.51,
+                        "tput": 778.8
                     },
                     "measured": {
-                        "ttft_ms": 12386.5,
-                        "tput_user": 7.27,
-                        "tput": 137.1,
+                        "ttft_ms": 1225.0,
+                        "tput_user": 31.51,
+                        "tput": 778.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+                "_comment": "measured on the optimized defaults (tt-metal 31f52b7687e, catalog 6debd3334: bfloat8_b KV, 1572864-token pool) on QB2, 2026-10-23"
             },
             {
                 "isl": 2048,
@@ -7788,17 +7788,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 31.27,
-                        "tput": 13.2
+                        "tput_user": 44.87,
+                        "tput": 39.9
                     },
                     "measured": {
-                        "ttft_ms": 5660.3,
-                        "tput_user": 31.27,
-                        "tput": 13.2,
+                        "ttft_ms": 373.6,
+                        "tput_user": 44.87,
+                        "tput": 39.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+                "_comment": "measured on the optimized defaults (tt-metal 31f52b7687e, catalog 6debd3334: bfloat8_b KV, 1572864-token pool) on QB2, 2026-10-23"
             },
             {
                 "isl": 8192,
@@ -7812,17 +7812,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 31.04,
-                        "tput": 5.0
+                        "tput_user": 44.75,
+                        "tput": 30.3
                     },
                     "measured": {
-                        "ttft_ms": 21504.5,
-                        "tput_user": 31.04,
-                        "tput": 5.0,
+                        "ttft_ms": 1384.9,
+                        "tput_user": 44.75,
+                        "tput": 30.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+                "_comment": "measured on the optimized defaults (tt-metal 31f52b7687e, catalog 6debd3334: bfloat8_b KV, 1572864-token pool) on QB2, 2026-10-23"
             },
             {
                 "isl": 32768,
@@ -7836,17 +7836,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 30.67,
-                        "tput": 1.4
+                        "tput_user": 43.88,
+                        "tput": 14.5
                     },
                     "measured": {
-                        "ttft_ms": 87494.5,
-                        "tput_user": 30.67,
-                        "tput": 1.4,
+                        "ttft_ms": 5943.7,
+                        "tput_user": 43.88,
+                        "tput": 14.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+                "_comment": "measured on the optimized defaults (tt-metal 31f52b7687e, catalog 6debd3334: bfloat8_b KV, 1572864-token pool) on QB2, 2026-10-23"
             }
         ],
         "blackhole_galaxy": [
