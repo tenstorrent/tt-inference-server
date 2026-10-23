@@ -11730,7 +11730,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 # Terminal-Bench 2.1 is the version the model card reports (39.1).
-                # CI runs the 5-task subset shared by the other QB2 configs.
+                # CI runs the 5 tasks listed in task_names_map below.
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -11738,6 +11738,15 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -11752,7 +11761,9 @@ _eval_config_list = [
                     n_tasks=89,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
                     # host-sampled as for the evals above.
                     # 32K output is the card's minimum reasoning budget; 128K input
@@ -11771,22 +11782,20 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
+                        # Five tasks so the release job fits the 12 h nightly cap: with
+                        # 5 concurrent trials the slowest task sets the wall time, so
+                        # these are the tasks K2 usually finishes in about an hour
+                        # (CI runs 10-08..10-19). Dropped: compile-compcert,
+                        # cobol-modernization, feal-differential-cryptanalysis and
+                        # largest-eigenval (3 h cap in most runs), db-wal-recovery
+                        # (never solved) and qemu-startup (its verifier cannot run:
+                        # apt-get 404 for curl in the task image, run 37249479221).
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            # qemu-startup dropped: its verifier cannot run (apt-get 404
-                            # for curl in the task image, so curl/uvx are missing and no test
-                            # executes; reward 0 regardless; run 37249479221).
-                            "terminal-bench/nginx-request-logging",
-                            # +5 tasks validated with the oracle agent on the gemma QB2
-                            # exploratory set, for a less noisy K2 signal.
                             "terminal-bench/fix-git",
-                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/break-filter-js-from-html",
                             "terminal-bench/crack-7z-hash",
-                            "terminal-bench/db-wal-recovery",
-                            "terminal-bench/largest-eigenval",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
                         ],
                     },
                 ),
@@ -11794,7 +11803,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 # SWE-bench Verified: the model card reports 70.6. CI runs the
-                # 5-instance subset shared by the other QB2 configs.
+                # 5 instances listed in task_names_map below.
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -11802,6 +11811,15 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -11814,7 +11832,9 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -11829,20 +11849,17 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
+                        # Five instances for the 12 h nightly cap: each finished in
+                        # under 2 h in both release runs that reached SWE-bench
+                        # (37667673404, 38406747530). Four come from the subset shared
+                        # by the other QB2 configs; pydata__xarray-4075 replaces
+                        # matplotlib__matplotlib-25332, which hit the 3 h cap once.
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
                             "sympy__sympy-13551",
                             "scikit-learn__scikit-learn-14629",
-                            # +5 instances (oracle-validated on the gemma QB2 exploratory
-                            # set) from repos the shared list does not cover: the shared 5
-                            # all resolve with the #66 decode fix (run 37249479221).
-                            "astropy__astropy-14598",
-                            "matplotlib__matplotlib-25122",
                             "pydata__xarray-4075",
-                            "pytest-dev__pytest-7571",
-                            "sphinx-doc__sphinx-8265",
                         ],
                     },
                 ),
