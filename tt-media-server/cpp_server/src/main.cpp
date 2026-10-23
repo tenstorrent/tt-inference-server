@@ -107,15 +107,31 @@ void startWorker(int workerId) {
   tt::worker::SingleProcessWorker worker(cfg);
 
   static std::atomic<bool> workerShutdown{false};
+  std::atomic<bool> runnerLoopExited{false};
   std::signal(SIGTERM, [](int) { workerShutdown.store(true); });
   std::signal(SIGINT, [](int) { workerShutdown.store(true); });
 
-  std::thread shutdownMonitor([&worker] {
+  std::thread shutdownMonitor([&worker, &runnerLoopExited, workerId] {
+    namespace defs = tt::config::defaults;
     while (!workerShutdown.load()) {
       std::this_thread::sleep_for(
-          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+          std::chrono::milliseconds(defs::SHUTDOWN_POLL_MS));
     }
     worker.stop();
+    // stop() only raises a flag; the runner loop sees it between tasks. If a
+    // run() is still in flight (or wedged) after the parent died, nobody
+    // will SIGKILL us, so exit here rather than keep the device open.
+    for (unsigned waited = 0; waited < defs::WORKER_SHUTDOWN_GRACE_MS;
+         waited += defs::SHUTDOWN_POLL_MS) {
+      if (runnerLoopExited.load()) return;
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(defs::SHUTDOWN_POLL_MS));
+    }
+    TT_LOG_CRITICAL(
+        "[Main] Worker {} runner loop did not exit within {}ms of stop(); "
+        "exiting",
+        workerId, defs::WORKER_SHUTDOWN_GRACE_MS);
+    std::_Exit(1);
   });
 
   int exitCode = 0;
@@ -130,6 +146,7 @@ void startWorker(int workerId) {
                     workerId);
     exitCode = 1;
   }
+  runnerLoopExited.store(true);
   workerShutdown.store(true);
   if (shutdownMonitor.joinable()) shutdownMonitor.join();
   if (exitCode != 0) {

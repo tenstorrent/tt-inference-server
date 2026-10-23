@@ -71,8 +71,13 @@ void EmbeddingIpcRunner::run() {
       break;
     }
 
+    // Bounded wait so a SIGTERM (e.g. PR_SET_PDEATHSIG after the parent
+    // died) is noticed via `stopped` even when no task ever arrives.
     tt::ipc::embedding::EmbeddingIpcTask first;
-    taskQueue->receive(first);
+    if (!taskQueue->timedReceive(first,
+                                 tt::config::defaults::WORKER_TASK_POLL_MS)) {
+      continue;
+    }
     if (first.isDone()) {
       TT_LOG_INFO("[EmbeddingIpcRunner] Worker {} received shutdown task",
                   workerIndex);

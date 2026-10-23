@@ -117,6 +117,12 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
+/** How long a worker blocks on its task queue before re-checking its stop
+ * flag; bounds how long a worker lingers after the parent dies. */
+constexpr unsigned WORKER_TASK_POLL_MS = 200;
+/** After SIGTERM, how long a worker waits for an in-flight run() to return
+ * before exiting outright so it does not keep the device open. */
+constexpr unsigned WORKER_SHUTDOWN_GRACE_MS = 10 * 1000;
 
 // IPC queue capacities
 constexpr size_t RESULT_QUEUE_CAPACITY = 65536;

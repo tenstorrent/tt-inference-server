@@ -117,6 +117,10 @@ class MediaPayloadTaskQueue {
 
   void receive(MediaPayloadTask& out) { queue->receive(out); }
 
+  bool timedReceive(MediaPayloadTask& out, unsigned timeoutMs) {
+    return queue->timedReceive(out, timeoutMs);
+  }
+
   bool empty() const { return queue->empty(); }
 
   void remove() { queue->remove(); }

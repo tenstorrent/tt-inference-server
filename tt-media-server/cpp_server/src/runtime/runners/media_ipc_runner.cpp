@@ -78,8 +78,13 @@ void MediaIpcRunner::run() {
   TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop",
               workerIndex, runnerName);
   while (!stopped.load(std::memory_order_acquire)) {
+    // Bounded wait so a SIGTERM (e.g. PR_SET_PDEATHSIG after the parent
+    // died) is noticed via `stopped` even when no task ever arrives.
     tt::ipc::media_payload::MediaPayloadTask task;
-    taskQueue->receive(task);
+    if (!taskQueue->timedReceive(task,
+                                 tt::config::defaults::WORKER_TASK_POLL_MS)) {
+      continue;
+    }
     if (task.isDone()) {
       TT_LOG_INFO("[MediaIpcRunner] Worker {} received shutdown task",
                   workerIndex);

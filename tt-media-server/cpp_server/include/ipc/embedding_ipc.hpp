@@ -203,6 +203,10 @@ class EmbeddingTaskQueue {
 
   void receive(EmbeddingIpcTask& out) { queue->receive(out); }
 
+  bool timedReceive(EmbeddingIpcTask& out, unsigned timeoutMs) {
+    return queue->timedReceive(out, timeoutMs);
+  }
+
   bool empty() const { return queue->empty(); }
 
   void remove() { queue->remove(); }
