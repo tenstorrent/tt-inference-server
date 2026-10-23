@@ -1,0 +1,26 @@
+# BIG-Bench Extra Hard (BBEH/bbeh: 23 tasks, 4,520 questions), the "BigBench Extra
+# Hard" row of the Gemma 4 model card. exact_match is the micro average over every
+# answered question: the card's Gemma 3 27B number (19.3) matches the BBEH
+# leaderboard's micro average (18.8), not its harmonic mean (4.9). Graded with the
+# official bbeh/evaluate.py matcher (see bbeh_utils.py).
+task: bbeh
+dataset_path: BBEH/bbeh
+test_split: train
+output_type: generate_until
+process_docs: !function bbeh_utils.process_docs
+doc_to_text: !function bbeh_utils.doc_to_text
+doc_to_target: target
+process_results: !function bbeh_utils.process_results
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0
