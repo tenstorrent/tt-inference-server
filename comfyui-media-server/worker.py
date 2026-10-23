@@ -99,6 +99,21 @@ def setup_ltx_worker_environment(worker_id: int, config):
     os.environ["LTX_QUANT"] = config.quant
 
 
+def setup_h3_worker_environment(worker_id: int, config):
+    """MiniMax-H3: a single worker owns all four chips as a 1x4 mesh.
+
+    TT_MESH_GRAPH_DESC_PATH is left unset: the board descriptor describes the
+    QuietBox 2 as 2x2, and the runtime builds the 1x4 open on its own.
+    """
+    os.environ.setdefault("TT_METAL_HOME", os.getcwd())
+    os.environ.setdefault("PYTHONPATH", os.getcwd())
+
+    device_ids_str = ",".join(map(str, config.device_ids))
+    os.environ["TT_VISIBLE_DEVICES"] = device_ids_str
+    os.environ["TT_METAL_VISIBLE_DEVICES"] = device_ids_str
+    os.environ["TT_DIT_CACHE_DIR"] = config.tt_dit_cache_dir
+
+
 def setup_sd35_worker_environment(worker_id: int, config):
     """
     Set worker-specific environment variables for SD3.5 (LoudBox, single worker
@@ -141,6 +156,7 @@ def device_worker_process(
     - LTXConfig    → LTXRunner    (board-derived mesh, single worker)
     - LTXProConfig → LTXProRunner (same, guided one-stage sampler; checked first
       because it subclasses LTXConfig)
+    - H3Config     → H3Runner     (1x4 mesh, single worker)
 
     All runner/ttnn imports are deferred to this function so the main server
     process never initializes ttnn (which would conflict with the child
@@ -161,6 +177,7 @@ def device_worker_process(
     try:
         # Determine model type and set up environment + runner
         # Imports are deferred here to avoid ttnn initialization in the main process
+        from h3_config import H3Config
         from ltx_config import LTXConfig
         from ltx_pro_config import LTXProConfig
         from sd35_config import SD35Config
@@ -168,7 +185,12 @@ def device_worker_process(
 
         # LTXProConfig subclasses LTXConfig, so it must be tested first or a Pro
         # server would silently come up running the distilled pipeline.
-        if isinstance(config, LTXProConfig):
+        if isinstance(config, H3Config):
+            setup_h3_worker_environment(worker_id, config)
+            from h3_runner import H3Runner
+
+            runner = H3Runner(worker_id, config)
+        elif isinstance(config, LTXProConfig):
             setup_ltx_worker_environment(worker_id, config)
             from ltx_pro_runner import LTXProRunner
 
@@ -261,6 +283,8 @@ def device_worker_process(
                             # Per-adapter LoRA status. The staged-op branch below
                             # attaches this too, but does not cover av_generate.
                             "lora": getattr(runner, "_last_lora_status", None),
+                            # Clip shape, from runners whose geometry varies per request (H3).
+                            "meta": getattr(runner, "last_av_meta", None),
                         }
                     )
                 elif op in ("denoise", "vae_decode", "vae_encode"):

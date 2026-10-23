@@ -157,7 +157,7 @@ BOARD_SPECS: Dict[DeviceClass, BoardSpec] = {
         descriptor_filename="p300_x2_mesh_graph_descriptor.textproto",
         arch="blackhole",
         chip_count=4,
-        supports_models=frozenset({"sdxl", "wan22", "ltx", "ltx_pro"}),
+        supports_models=frozenset({"sdxl", "wan22", "ltx", "ltx_pro", "h3"}),
         core_grid_override=None,
         l1_small_size=38000,
         trace_region_size=56_000_000,  # BH SDXL trace ~41MB measured; round up for headroom.
@@ -248,6 +248,14 @@ DEPLOYMENTS: Dict[Tuple[str, DeviceClass], DeploymentSpec] = {
     ("ltx_pro", DeviceClass.P300X2): DeploymentSpec(
         num_workers=1,
         mesh_shape=(2, 2),
+        device_ids=(0, 1, 2, 3),
+        fabric_config="FABRIC_1D",
+    ),
+    # MiniMax-H3 runs TP=4 / SP=1 on a 1x4 open: a 2x2 would split the transformer
+    # only two ways, and its 66 GB does not fit two 32 GB chips.
+    ("h3", DeviceClass.P300X2): DeploymentSpec(
+        num_workers=1,
+        mesh_shape=(1, 4),
         device_ids=(0, 1, 2, 3),
         fabric_config="FABRIC_1D",
     ),

@@ -24,8 +24,8 @@ for arg in "$@"; do
 done
 
 if [ "$MODEL" != "sdxl" ] && [ "$MODEL" != "sd35" ] && [ "$MODEL" != "wan22" ] \
-   && [ "$MODEL" != "ltx" ] && [ "$MODEL" != "ltx_pro" ]; then
-    echo "Error: --model must be 'sdxl', 'sd35', 'wan22', 'ltx' or 'ltx_pro' (got: '$MODEL')"
+   && [ "$MODEL" != "ltx" ] && [ "$MODEL" != "ltx_pro" ] && [ "$MODEL" != "h3" ]; then
+    echo "Error: --model must be 'sdxl', 'sd35', 'wan22', 'ltx', 'ltx_pro' or 'h3' (got: '$MODEL')"
     exit 1
 fi
 
@@ -232,6 +232,13 @@ elif [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
         export HF_TOKEN
         echo "${MODEL}: HF_TOKEN present"
     fi
+
+elif [ "$MODEL" = "h3" ]; then
+    # MiniMax-H3 owns all four chips as a 1x4 mesh; setup_h3_worker_environment
+    # pins them. The tilized weight cache is ~70 GB and saves ~10 min per start.
+    export TT_DIT_CACHE_DIR="${TT_DIT_CACHE_DIR:-${HOME}/.cache/tt-dit}"
+    echo "h3: topology is board-derived (--board). No shell-level device pinning."
+    echo "h3: TT_DIT_CACHE_DIR=${TT_DIT_CACHE_DIR}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -279,6 +286,9 @@ for arg in "$@"; do
             # a per-request parameter.
             echo ""
             echo "*** LTX-2.3 DEV MODE: 25-frame clip ***"
+        elif [ "$MODEL" = "h3" ]; then
+            echo ""
+            echo "*** MiniMax-H3 DEV MODE: no warmup generation ***"
         fi
         break
     fi
@@ -337,6 +347,8 @@ else
     echo "Starting ${MODEL} server..."
     if [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
         echo "This will take ~1 minute with a warm weight cache, or several minutes cold."
+    elif [ "$MODEL" = "h3" ]; then
+        echo "This will take ~3 minutes with a warm weight cache, or 15-20 minutes cold."
     elif [ "$MODEL" = "sd35" ] || [ "$MODEL" = "wan22" ]; then
         echo "This will take 15-25 minutes for first-run trace capture."
     else

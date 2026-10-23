@@ -36,8 +36,9 @@ def parse_args():
         "--model",
         type=str,
         default="sdxl",
-        choices=["sdxl", "sd35", "wan22", "ltx", "ltx_pro"],
-        help="Model to serve: 'sdxl', 'sd35', 'wan22', 'ltx' (distilled AV) or 'ltx_pro' (guided AV)",
+        choices=["sdxl", "sd35", "wan22", "ltx", "ltx_pro", "h3"],
+        help="Model to serve: 'sdxl', 'sd35', 'wan22', 'ltx' (distilled AV), 'ltx_pro' (guided AV) "
+        "or 'h3' (MiniMax-H3 Turbo AV)",
     )
     parser.add_argument(
         "--board",
@@ -64,7 +65,7 @@ def parse_args():
     args = parser.parse_args()
 
     # --board is required for SDXL and Wan2.2; SD3.5 keeps its current flag-less invocation.
-    if args.model in ("sdxl", "wan22", "ltx", "ltx_pro"):
+    if args.model in ("sdxl", "wan22", "ltx", "ltx_pro", "h3"):
         if args.board is None:
             parser.error(f"--board is required when --model {args.model} (e.g. --board p300x2)")
         try:
@@ -95,6 +96,8 @@ if args.dev:
         os.environ["LTX_DEV_MODE"] = "true"
     elif args.model == "ltx_pro":
         os.environ["LTX_PRO_DEV_MODE"] = "true"
+    elif args.model == "h3":
+        os.environ["H3_DEV_MODE"] = "true"
 
 # Build the appropriate config
 if args.model == "sd35":
@@ -122,6 +125,12 @@ elif args.model == "ltx_pro":
 
     config = LTXProConfig(board=args.board)
     model_label = "LTX-2.3 Pro AV"
+    model_kind = "video"
+elif args.model == "h3":
+    from h3_config import H3Config
+
+    config = H3Config(board=args.board)
+    model_label = "MiniMax-H3 AV"
     model_kind = "video"
 else:
     from sdxl_config import SDXLConfig
@@ -361,6 +370,13 @@ class AVGenerateRequest(BaseModel):
     # LoRA adapters to bind for this request, innermost first. Honoured by both
     # LTX servers. Omitted or empty restores the base weights.
     lora_adapters: Optional[List[LoraAdapterSpec]] = None
+    # MiniMax-H3 only. Clip shape is per request there: length in whole seconds and
+    # an aspect ratio such as "16:9" (ignored when a keyframe sets the shape). The
+    # keyframes are base64 PNG/JPEG; either or both selects first/last-frame mode.
+    duration_s: Optional[float] = Field(None, ge=4, le=15)
+    aspect_ratio: Optional[str] = None
+    first_image_b64: Optional[str] = None
+    last_image_b64: Optional[str] = None
 
 
 class AVGenerateResponse(BaseModel):
@@ -548,7 +564,7 @@ async def lifespan(app: FastAPI):
         logger.info("All workers started. Waiting for warmup completion...")
         warmups_received = 0
         # 1200s = 20 min — SD35 trace capture can take ~10-15 min on cold start
-        timeout = time.time() + 1200
+        timeout = time.time() + getattr(config, "warmup_timeout_seconds", 1200)
 
         while warmups_received < config.num_workers and time.time() < timeout:
             try:
@@ -923,22 +939,24 @@ async def video_vae_decode(request: VideoVaeDecodeRequest):
 
 
 def _require_av_support():
-    """AV generation is served only by the LTX runners (distilled and Pro)."""
-    if args.model not in ("ltx", "ltx_pro"):
+    """AV generation is served only by the LTX runners (distilled and Pro) and H3."""
+    if args.model not in ("ltx", "ltx_pro", "h3"):
         raise HTTPException(
             status_code=400,
-            detail=f"AV generation is only supported for --model ltx or ltx_pro, not '{args.model}'.",
+            detail=f"AV generation is only supported for --model ltx, ltx_pro or h3, not '{args.model}'.",
         )
 
 
 def _av_result_payload(result: dict) -> dict:
+    # LTX geometry is pinned in its config; H3 reports each clip's shape.
+    meta = result.get("meta") or {}
     return {
         "type": "result",
         "video_b64": base64.b64encode(result["video"]).decode("ascii"),
-        "num_frames": config.num_frames,
-        "height": config.height,
-        "width": config.width,
-        "fps": config.fps,
+        "num_frames": meta.get("num_frames", getattr(config, "num_frames", 0)),
+        "height": meta.get("height", getattr(config, "height", 0)),
+        "width": meta.get("width", getattr(config, "width", 0)),
+        "fps": meta.get("fps", getattr(config, "fps", 0)),
         "inference_time": result.get("inference_time", 0.0),
         "model": model_label,
         "lora": result.get("lora"),
@@ -947,7 +965,7 @@ def _av_result_payload(result: dict) -> dict:
 
 @app.post("/video/av_generations", response_model=AVGenerateResponse)
 async def generate_av(request: AVGenerateRequest):
-    """Generate a synchronized audio+video clip (LTX-2.3). Returns a muxed MP4."""
+    """Generate a synchronized audio+video clip (LTX-2.3 or MiniMax-H3). Returns a muxed MP4."""
     _require_av_support()
     req = request.dict()
     req["op"] = "av_generate"
