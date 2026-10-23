@@ -159,6 +159,17 @@ HARBOR_ZERO_TRIALS_FIXTURE = {
 
 
 class TestAgenticParser:
+    def test_parse_keeps_harbor_error_and_job_counts_in_targets(self):
+        # Scored trials, errored trials and the job size travel with the
+        # block, so a consumer can check the scored coverage.
+        raw = dict(HARBOR_ZERO_TRIALS_FIXTURE, n_total_trials=5)
+        block = AgenticEvalParser(task_name="terminal_bench_2").parse(
+            raw, device="N150"
+        )
+        assert block.targets["n_trials"] == 0
+        assert block.targets["n_errors"] == 5
+        assert block.targets["n_total_trials"] == 5
+
     def test_parse_harbor_result_to_evals_block(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
@@ -485,6 +496,32 @@ class TestAgenticDriverConfigMapping:
         cfg = build_harbor_config(task, _server(), _driver_context())
 
         assert cfg.agent_env == {"OPENAI_BASE_URL": "http://alt/v1"}
+
+    def test_harbor_config_caps_concurrency_from_env(self):
+        task = _harbor_task()
+        task.agentic_eval_config.n_concurrent_trials = 62
+
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "28"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 28
+            )
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "100"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 62
+            )
+
+    def test_invalid_max_concurrent_trials_cap_names_the_env_var(self):
+        task = _harbor_task()
+        for cap in ("0", "-3", "abc"):
+            with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": cap}):
+                with pytest.raises(ValueError, match="AGENTIC_MAX_CONCURRENT_TRIALS"):
+                    build_harbor_config(task, _server(), _driver_context())
 
     def test_harbor_config_injects_runtime_openai_environment(self):
         task = _harbor_task()

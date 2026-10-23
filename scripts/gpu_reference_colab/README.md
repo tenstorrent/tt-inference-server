@@ -30,7 +30,7 @@ To record a reference:
 | `--keep` | off | do not stop the VM on exit |
 | `--session NAME` | `gpuref-<sha[:8]>` | session name. Re-running with the same name re-attaches. |
 | `--poll-minutes N` | `5` | minutes between status polls |
-| `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
+| `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this; checked before every VM allocation (first VM, capacity retries, `--serve` rollovers), and an unreadable balance refuses the allocation |
 | `--vllm-version V` | per model | override every model's serving stack vLLM (see Serving stack per model) |
 | `--transformers-version V` | per model | override every model's transformers pin |
 | `--task MODEL=T[,T]` | all tasks | explicit runs: run only these lm-eval tasks of MODEL, each in full (e.g. only the tasks missing a reference); repeatable. Passed to run.py as `--eval-samples '{"T": null}'` and recorded in provenance.json (`tasks_selected`) |
@@ -130,7 +130,7 @@ GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_refer
 - **`--retry-capacity 15,8`**: when Colab has no GPU free (503) or the concurrent-session limit is hit (412), the driver tries again every 15 minutes for up to 8 hours. Then it exits 75, and a sweep moves on (see Group fallback).
 - **Status, for people and agents.** Read these; there is no need to tail the driver:
   - `$GPUREF_RESULTS_ROOT/gpuref_status.log`: one line per state change of every driver, as `<time> state=... session=... done=3/26 phase=...`.
-  - `<session dir>/driver_status.json`: the driver's latest state. States are `STARTING`, `WAITING_CAPACITY`, `RUNNING`, `DONE`, `FAILED`, `NO_CAPACITY` and `LOW_BALANCE`.
+  - `<session dir>/driver_status.json`: the driver's latest state. States are `STARTING`, `WAITING_CAPACITY`, `RUNNING`, `DONE`, `FAILED`, `NO_CAPACITY` and `LOW_BALANCE`, plus `SERVING` and `ROLLOVER` in `--serve` mode.
   - `sweep-<sha8>/driver_status.json`: the sweep's state, from `SWEEP_PLANNING` and `SWEEP_GROUP` / `DEFERRED` to `SWEEP_DONE` or `SWEEP_INCOMPLETE`.
   - `<session dir>/results/status.json`: per-model status from the VM.
 - **Exit status:** 0 when everything finished, 75 for no GPU capacity (retry later), 1 otherwise. Partial results are always kept.
@@ -139,11 +139,39 @@ GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_refer
 - **Default:** vLLM 0.13.0 (TTIS's own client pin), transformers unpinned, `VLLM_USE_FLASHINFER_SAMPLER=0`.
 - **`ARCH_STACKS`:** maps an architecture vLLM 0.13.0 cannot serve to the first vLLM release that supports it, and to the transformers the TT side lowers it with. Today:
   - Muse-Glimmer: vLLM 0.28.0, transformers 5.15.0;
-  - Gemma 4: vLLM 0.20.0, transformers 5.5.3 (the version vLLM 0.20.0 is tested with; 5.15.0 fails to start it).
+  - Gemma 4: vLLM 0.20.0, transformers 5.5.3 (the version vLLM 0.20.0 is tested with; 5.15.0 fails to start it);
+  - Gemma 4 unified (gemma-4-12B-it): vLLM 0.23.0, transformers 5.10.0 (the first releases with it);
+  - Qwen 3.5 (Qwen3.5/3.6/3.8-27B): vLLM 0.17.0, transformers 4.57.5.
 
 The plan prints each model's stack. The runner builds one venv per stack on first use, so one sweep handles mixed stacks in a single session. The serve plan, `provenance.json` (`stack`, installed `packages`, `vllm_env`) and the eval fingerprint all record the stack. A run's fingerprint is kept only if the installed packages are the requested stack.
 
 To add an architecture, add one `ARCH_STACKS` entry citing the vLLM PR that added it. `--vllm-version` / `--transformers-version` override every model's stack, for a one-off explicit run.
+
+## Agentic tasks (`--serve`)
+
+Agentic tasks (Harbor: terminal-bench, SWE-bench; `EVALS_AGENTIC`) run every trial in its own sandbox, which a Colab VM cannot host. For them the same command switches to `--serve` mode, chosen by the task type of `--task` (one model, one `--task`):
+
+```
+GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_reference.sh \
+    --gpu H100 --retry-capacity 15,8 --min-balance 2500 --ttis-ref <pushed sha> \
+    --task Qwen/Qwen3.5-27B=terminal_bench_2_1,swe_bench_verified --detach Qwen/Qwen3.5-27B
+```
+
+- **On the VM:** the runner serves the model from its GPU device spec at the pinned revision, on the model's stack, with an API key. It publishes the server through an ngrok tunnel and keeps both up until the driver says stop. A dead tunnel is restarted.
+- **The evals:** for each task the driver dispatches Shield's endpoint-test workflow (`tenstorrent/tt-shield` `on-dispatch-tt-blaze-exabox-tests.yml`) against the tunnel URL. The workflow runs TTIS's own `run.py --workflow agentic --device gpu --agentic-benchmark <task>` at the pinned TTIS commit, with its sandboxes on the KIX1 cluster (`HARBOR_ENV_TYPE=kubernetes`), as it does for a TT deployment. The driver then waits and downloads the run's report.
+- **Records:** `<session dir>/shield/<task>.json` holds the run id, state, conclusion and the redacted endpoint, so re-running the command resumes without dispatching a recorded run twice. `provenance.json` gets an `agentic` section: each run, its report files, score, trial count and `served_by`, the serving snapshot of each VM that served the run. Its `status` is `ok` only when every task's report has a score, scored every expected trial (`n_trials` equals the task config's `n_tasks` x `n_attempts`, recorded by the runner as `agentic_expected_trials`, or Harbor's own `n_total_trials` for a whole-dataset task) with Harbor's error count (`n_errors`) recorded, and every VM that served it had the GPU and serving settings that `provenance.json` records. Each task is graded only on its own run's reports (downloaded to `shield/<task>/run-<run id>/`), which must be whole (`report_partial: false`, no failed block) and come from the dispatched TTIS commit (`tt_inference_server_commit`) and endpoint (run.py's `--server-url`). A Shield `failure` counts only when the report shows a complete run that missed its accuracy target (`accuracy_check` FAIL) and the run's only failed step is Shield's `Enforce acceptance criteria` step of the job that ran this task's test (matched on the exact job and step name; a failed `Run test` or any other step in that job does not count). If every run finished but the final fetch failed, a re-run fetches `provenance.json` from the serving VM when it is still up (e.g. `--keep`) and is one of the saved serving snapshots; otherwise it fails with no grade. `publish` then works as for lm-eval tasks.
+- **Rollover:** polls keep the VM alive. If the VM is lost, or the runner stops serving, the driver starts a new session and relaunches the runner (`ROLLOVER` in the status log; the count goes into provenance). At most `--max-rollovers` (default 3, `GPUREF_MAX_ROLLOVERS`) replacements per invocation, each only if `--min-balance` still holds. A runner that failed for a reason a new VM would hit again (no GPU spec, a serving stack that does not install, a vLLM that never becomes ready, an ngrok error at tunnel start such as a rejected authtoken) is not replaced: the driver stops with `FAILED` and the reason (`persistent setup failure: ...`), and cancels the task's run in flight. Each VM writes `serving_provenance.json` (GPU, stack, serve command, any context cap) before it serves, and the driver saves it as `<session dir>/serving/<id>.json` and lists that id in the record of every run it serves (`serving_epochs`). So a score from a lost VM stays with that VM, and is never filed under a replacement on another GPU. A VM with no snapshot 10 minutes after it serves (`SNAPSHOT_TRIES` checks, a minute apart; e.g. a runner from before the snapshot) is stopped and the run fails closed (`<session dir>/serving/no_snapshot.json`, `serving_status: failed`); nothing is graded. With `--tunnel-domain <reserved ngrok domain>` the URL survives, and Harbor's LLM retries carry the running trials over the gap. Without one, the task's run is cancelled and dispatched again on the new URL.
+- **Status:** `SERVING` while a task's run is in progress (`shield_run=`, `shield_status=`). The URL is only ever logged in redacted form. The full URL is kept in `<session dir>/endpoint.url` (0600).
+
+**Credentials, once.** These are 0600 files. They are never on a command line or in a log, and are uploaded like the HF token.
+- `~/.config/gpuref/endpoint_api_key`: the server's API key. Create one with `mkdir -p ~/.config/gpuref; umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32), end="")' > ~/.config/gpuref/endpoint_api_key` (no trailing newline, so the secret and the file are byte-identical). A tt-shield admin stores the same value as the repo secret `TEST_GPUREF_ENDPOINT_API_KEY` (`gh secret set TEST_GPUREF_ENDPOINT_API_KEY -R tenstorrent/tt-shield < ~/.config/gpuref/endpoint_api_key`). TEST_* names are already selectable from the workflow's `env-variables`, so Shield passes it as `API_KEY=SECRET_TEST_GPUREF_ENDPOINT_API_KEY`.
+- `~/.config/gpuref/ngrok_authtoken`: an ngrok authtoken.
+
+The file paths and the secret name can be overridden with `GPUREF_ENDPOINT_KEY_FILE`, `GPUREF_NGROK_TOKEN_FILE` and `GPUREF_SHIELD_SECRET`. `GPUREF_SHIELD_REF` (default `main`) is the tt-shield ref whose workflow file is dispatched.
+
+**Why ngrok:** the agents send non-streaming requests that can take minutes. A tunnel that times out slow responses (Cloudflare's quick tunnels stop at 100 s) would fail them.
+
+**The model's GPU spec** must be in the dev catalog at the pinned commit, because Shield's `run.py` resolves it there. `gpuref.py write-gpu-specs MODEL...` derives one from the model's TT row, as a sweep's `--write-specs` does: same context, concurrency, HF revision and frontend flags (`reasoning_parser`, `tool_call_parser`, chat-template defaults: `FRONTEND_SERVE_KEYS`). Review and commit the change. The model must also be one of the workflow's `model` choices.
 
 ## Publishing results
 

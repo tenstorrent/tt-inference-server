@@ -517,6 +517,9 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         if value is True:
             cli_args.append(flag)
         elif isinstance(value, (dict, list)):
+            # One JSON token. Whether a list must be split into one token per
+            # item depends on the flag's nargs, which only vLLM knows; the
+            # container entrypoint does that split (run_vllm_api_server.py).
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]

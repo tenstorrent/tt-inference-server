@@ -617,6 +617,9 @@ def _run_eval_task(
     # documented but never reaches proc.run_command, so the bounded path is
     # unreachable and the field has no effect at all.
     timeout_seconds = getattr(task, "wall_clock_timeout_seconds", None)
+    timeout_seconds = (getattr(task, "wall_clock_timeout_seconds_map", None) or {}).get(
+        _limit_mode(ctx), timeout_seconds
+    )
     if timeout_seconds is None:
         return run_command(command=cmd, logger=logger, env=env)
     logger.info(

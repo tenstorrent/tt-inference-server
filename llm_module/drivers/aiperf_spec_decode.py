@@ -51,7 +51,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
@@ -204,11 +204,12 @@ class AIPerfSpecDecodeDriver:
             spec_run.num_prompts,
         )
 
-        env = dict(context.extra_env)
+        env = {**AIPERF_PROGRESS_ENV, **context.extra_env}
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
+        progress = _RunProgress(artifact_dir=artifact_dir, total=spec_run.num_prompts)
         run_start = time.monotonic()
-        with _heartbeat(spec_run.slug, run_start):
+        with _heartbeat(spec_run.slug, run_start, progress=progress):
             rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         logger.info(
             "[spec-decode] %s: aiperf exited rc=%d after %.0fs",
@@ -289,24 +290,40 @@ class AIPerfSpecDecodeDriver:
 # Progress logging
 # ---------------------------------------------------------------------
 
-HEARTBEAT_S = 60.0
+HEARTBEAT_S = 30.0
+PROGRESS_BAR_WIDTH = 20
+# AIPerf buffers raw records 10 at a time; flushing each one as its request
+# finishes lets the heartbeat count completions while the run is live.
+AIPERF_PROGRESS_ENV = {"AIPERF_RECORD_RAW_EXPORT_BATCH_SIZE": "1"}
 
 
 @contextmanager
-def _heartbeat(slug: str, start: float, interval_s: float = HEARTBEAT_S):
-    """Log "still running" every ``interval_s`` while the block runs.
+def _heartbeat(
+    slug: str,
+    start: float,
+    interval_s: float = HEARTBEAT_S,
+    progress: Optional[Callable[[float], str]] = None,
+):
+    """Log the run's progress every ``interval_s`` while the block runs.
 
     AIPerf disables its UI when stdout is not a TTY (CI), so without this a
     run prints nothing until it ends (up to the per-run timeout).
+    ``progress(elapsed_s)`` returns the status for each beat (see
+    :class:`_RunProgress`); without it the beat says "still running".
     """
     stop = threading.Event()
 
     def _beat() -> None:
         while not stop.wait(interval_s):
+            elapsed = time.monotonic() - start
+            status = "still running"
+            if progress is not None:
+                try:
+                    status = progress(elapsed)
+                except Exception as exc:  # noqa: BLE001 -- progress is best-effort
+                    logger.debug("[spec-decode] progress check failed: %s", exc)
             logger.info(
-                "[spec-decode] %s still running (%.0fs elapsed)",
-                slug,
-                time.monotonic() - start,
+                "[spec-decode] %s %s (%s elapsed)", slug, status, _fmt_duration(elapsed)
             )
 
     thread = threading.Thread(target=_beat, daemon=True)
@@ -316,6 +333,67 @@ def _heartbeat(slug: str, start: float, interval_s: float = HEARTBEAT_S):
     finally:
         stop.set()
         thread.join()
+
+
+def _fmt_duration(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes}m{secs:02d}s" if minutes else f"{secs}s"
+
+
+class _RunProgress:
+    """Live progress of one aiperf run, rendered as one heartbeat line.
+
+    Counts finished requests (and how many errored) from the raw records
+    aiperf flushes per request (``AIPERF_PROGRESS_ENV``), so it works
+    against any server, with or without a ``/metrics`` endpoint.
+    """
+
+    def __init__(self, *, artifact_dir: Path, total: Optional[int]) -> None:
+        self.artifact_dir = Path(artifact_dir)
+        self.total = total
+        self.done = 0
+        self.errors = 0
+        self._offsets: Dict[Path, int] = {}
+
+    def __call__(self, elapsed: float) -> str:
+        self._read_new_records()
+        finished = self.done + self.errors
+        errors = f", {self.errors} errors" if self.errors else ""
+        if not self.total:
+            return f"{finished} requests done{errors}"
+        frac = min(finished / self.total, 1.0)
+        filled = int(frac * PROGRESS_BAR_WIDTH)
+        bar = "#" * filled + "-" * (PROGRESS_BAR_WIDTH - filled)
+        text = f"[{bar}] {finished}/{self.total} ({frac:.0%}){errors}"
+        if 0 < finished < self.total:
+            eta = elapsed / finished * (self.total - finished)
+            text += f", ETA ~{_fmt_duration(eta)}"
+        return text
+
+    def _read_new_records(self) -> None:
+        """Count the raw records appended since the previous beat."""
+        for path in self.artifact_dir.rglob("raw_records_*.jsonl"):
+            offset = self._offsets.get(path, 0)
+            with path.open("rb") as fh:
+                fh.seek(offset)
+                for line in fh:
+                    if not line.endswith(b"\n"):
+                        break  # partial write; read it next beat
+                    offset += len(line)
+                    self._count(line)
+            self._offsets[path] = offset
+
+    def _count(self, line: bytes) -> None:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if (record.get("metadata") or {}).get("benchmark_phase") == "warmup":
+            return
+        if record.get("error") or (record.get("status") or 200) >= 400:
+            self.errors += 1
+        else:
+            self.done += 1
 
 
 def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:

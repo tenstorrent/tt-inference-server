@@ -63,6 +63,7 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
+      "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
@@ -100,7 +101,8 @@
       "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
-      "Qwen/Qwen3.5-9B-Base"
+      "Qwen/Qwen3.5-9B-Base",
+      "IFM/K2-Horizon-7B"
     ]
   },
   "available_markers": {
@@ -619,6 +621,16 @@
         "super_cluster"
       ]
     },
+    "minimax_m2_7": {
+      "id_name": "minimax-m2.7",
+      "weights": [
+        "MiniMaxAI/MiniMax-M2.7"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
     "kimi_k2_7_code": {
       "id_name": "kimi-k2.7-code",
       "weights": [
@@ -1077,6 +1089,16 @@
       "id_name": "Qwen--Qwen3.5-9B-Base",
       "weights": [
         "Qwen/Qwen3.5-9B-Base"
+      ]
+    },
+    "IFM/K2-Horizon-7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "IFM--K2-Horizon-7B",
+      "weights": [
+        "IFM/K2-Horizon-7B"
       ]
     }
   },
@@ -1581,6 +1603,27 @@
         "default_sampling": false,
         "cache_bypass": false,
         "exclude_ref_schemas": false,
+        "non_blocking": false
+      }
+    },
+    "MiniMaxProviderVerifierTest": {
+      "module": "test_module.llm_tests.minimax_provider_verifier_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 10800,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "suite": "verify",
+        "workers": 20,
+        "include_slow": true,
+        "verify_loops": 1,
+        "pass_rate_threshold": 1.0,
         "non_blocking": false
       }
     }

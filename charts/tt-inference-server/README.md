@@ -337,7 +337,6 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 
 | Model | Devices |
 |---|---|
-| `Falcon3-7B-Instruct` | p150 |
 | `Llama-3.1-8B-Instruct` | p150 |
 | `Qwen3-Embedding-0.6B` | p300x2 |
 | `Qwen3-Embedding-4B` | p300x2 |

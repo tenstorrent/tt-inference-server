@@ -58,12 +58,12 @@ python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workf
 - [Release Workflow](#release-workflow)
   - [Release Return Codes](#release-return-codes)
 - [Performance Benchmarks](#performance-benchmarks)
-  - [Benchmarking Steps](#benchmarking-steps)
 - [Accuracy Evaluations](#accuracy-evaluations)
 - [Reports](#reports)
 - [Server Spec Tests](#server-spec-tests)
 - [API Parameter Tests](#api-parameter-tests)
 - [Tool-Call Schema Tests](#tool-call-schema-tests)
+- [MiniMax Provider Verifier](#minimax-provider-verifier)
 - [Stress Tests](#stress-tests)
 - [Logs](#logs)
 - [Additional Documentation](#additional-documentation)
@@ -97,7 +97,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 | Option         | Description                                                                                  |
 |----------------|----------------------------------------------------------------------------------------------|
 | `--model`      | Name of the model to run. Available choices are defined in `MODEL_SPECS`. |
-| `--workflow`   | Workflow to run: `benchmarks`, `evals`, `release`, `reports`, `server`, `spec_tests` (internal), `stress_tests` (internal), `tests` (internal). |
+| `--workflow`   | Workflow to run: `server`, `benchmarks`, `evals`, `release`, `spec_tests`, `stress_tests`, `agentic`, `agentic_traces`, `serving_bench`, `prefill_decode`, `training_tests`. Reports are written by every workflow; there is no `reports` workflow. |
 
 ### Model and Device Arguments
 
@@ -148,9 +148,9 @@ See [Host Storage Options](../workflows/README.md#host-storage-options) in the w
 
 ## Serving LLMs with vLLM
 
-You can serve a model with vLLM or another OpenAI API-compatible inference server however you like. The client-side workflows (`evals`, `benchmarks`, `reports`) only send HTTP requests to the inference server, so they work with any compatible server.
+You can serve a model with vLLM or another OpenAI API-compatible inference server however you like. The client-side workflows (`evals`, `benchmarks`, `stress_tests`, `spec_tests`) only send HTTP requests to the inference server, so they work with any compatible server.
 
-For example, if you run vLLM following the docs at https://github.com/tenstorrent/vllm/tree/dev/tt_metal during development, you can run the client-side workflows (`evals`, `benchmarks`, `reports`, or all of them with `release`) against that already running server.
+For example, if you run vLLM with the [Tenstorrent vLLM plugin](../tt-vllm-plugin/README.md) during development, you can run the client-side workflows (or all of them with `release`) against that already running server; use `--server-url` and `--service-port` for a server on another host or port.
 
 This section describes how to use `run.py` automation to also run the inference server.
 
@@ -286,45 +286,21 @@ This is a convenience so that a single run on device executes all workflows requ
 
 ## Performance Benchmarks
 
-The `benchmarks` workflow sends random data prompts to the inference server and profiles throughput and latency.
+The `benchmarks` workflow sends synthetic prompts at a sweep of input lengths, output lengths and concurrencies to the inference server, measures latency and throughput, and grades the results against the model's performance targets.
+
+Start the server, wait for its device warmup to finish (`Background trace capture completed successfully` in the container log), then benchmark it:
 
 ```bash
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
 python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks
 ```
 
-For a quick development smoke test, add `--limit-samples-mode smoke-test`:
+For a quick development smoke test, add `--limit-samples-mode smoke-test`; it runs one tiny point and ignores `--concurrency-sweeps`. `--tools aiperf`, `genai` or `guidellm` selects a client other than the default `vllm bench serve`.
 
-```bash
-python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
-```
+The run log streams to `workflow_logs/run_logs/`; the Markdown and JSON report and the raw client output are written under `workflow_logs/reports_output/benchmarks/`.
 
-In smoke-test mode, `benchmarks` selects a reduced single benchmark target and ignores `--concurrency-sweeps`.
-
-### Benchmarking Steps
-
-The benchmarks workflow follows this sequence (visible in the runtime logs streamed to `workflow_logs/run_logs/`):
-
-1. **Set up workflow virtual environments**: `run.py` bootstraps dedicated venvs for benchmark scripts.
-2. **Start workflow**: `run_benchmarks.py` is launched with the runtime model spec JSON.
-3. **Wait for inference server**: Polls the `/health` endpoint until the vLLM server is ready.
-4. **Trace capture**: Sends initial requests at each configured input length to warm up the model and compile traces.
-5. **Run benchmarks**: Executes a sweep of configurations varying input/output sequence length and concurrency, saving results as JSON.
-
-```log
-INFO: Running benchmark Llama-3.2-1B-Instruct: 1/18
-INFO: Running command: .workflow_venvs/.venv_benchmarks_vllm/bin/serve --backend vllm ...
-Starting initial single prompt test run...
-Initial test run completed. Starting main benchmark run...
-100%|██████████| 8/8 [00:17<00:00, 2.18s/it]
-============ Serving Benchmark Result ============
-...
-==================================================
-```
-
-Benchmark output files are saved to `workflow_logs/benchmarks_output/`, for example:
-`benchmark_Llama-3.2-1B-Instruct_n300_<timestamp>_isl-128_osl-128_maxcon-1_n-8.json`
-
-See [benchmarking docs](../reference_config/benchmarking/README.md) for more detail on code.
+- [Performance Benchmarks reference](../reference_config/benchmarking/README.md): the sweep, warmup, targets and grading, the fixed-workload protocol, outputs, and a recommended procedure for acceptance runs.
+- [Benchmarking Tools](benchmarking_tools.md): what each client tool measures and why their numbers differ.
 
 ## Accuracy Evaluations
 
@@ -413,6 +389,76 @@ Settings go in the test case's `test_config`; `TOOL_CALL_SCHEMA_<KEY>` overrides
 
 The run logs a `[tool-call-schema progress] N/M done` line every ~5% of cases. To run the suite directly with pytest, see [Running vLLM parameter tests](run_vllm_param_tests.md#tool-call-schema-suite).
 
+## MiniMax Provider Verifier
+
+> **Internal.** Runs as part of `spec_tests` for MiniMax models only (`test_module/test_suites/llm.json`, `super_cluster`).
+
+`MiniMaxProviderVerifierTest` runs [MiniMax-Provider-Verifier](https://github.com/MiniMax-AI/MiniMax-Provider-Verifier), MiniMax's own check of a third-party deployment. The verifier's tests run unchanged. The grading (metrics, thresholds, pass/fail) is done here, in `test_module/llm_tests/minimax_verifier_grading.py`, so thresholds are set per model in `llm.json` like the other spec tests'. One test case runs one suite and reports one block:
+
+| Suite | What it checks | Graded on | MiniMax-M3 | MiniMax-M2.7 |
+|---|---|---|---|---|
+| `verify` | `verify.py` replays 102 recorded agentic conversations | 7 tool-call metrics, each against a threshold (below) | blocking | blocking |
+| `text` / `stream` / `image` / `video` | `m3_format_check` pytest suites: the chat-completions contract, SSE streaming, image and video input | pass rate (skipped and xfailed tests excluded) ≥ `pass_rate_threshold`, 100% by default | non-blocking | — |
+
+Non-blocking suites are reported in full, but acceptance waives their FAIL (an ERROR still blocks).
+
+The `verify` metrics and their default thresholds come from the verifier README. A test case's `targets` override any of them by key, e.g. `"targets": {"tool_calls_schema_accuracy": 0.97}`:
+
+| Key | Metric | Default |
+|---|---|---|
+| `query_success_rate` | Query-Success-Rate | ≥ 100% |
+| `tool_calls_match_rate` | ToolCalls-Match-Rate | ≥ 97% |
+| `tool_calls_trigger_similarity` | ToolCalls-Trigger-Similarity: F1 of "made a tool call" against MiniMax's official deployment (`verify_baseline`); not graded without one | ≥ 98% |
+| `tool_calls_schema_accuracy` | ToolCalls-Schema-Accuracy | ≥ 98% |
+| `error_only_reasoning_rate` | Error-Only-Reasoning-Rate | ≤ 0% |
+| `language_following_success_rate` | Language-Following-Success-Rate | ≥ 40% |
+| `scenario_check_pass_rate` | Scenario-Check-Pass-Rate | ≥ 100% |
+
+For now MiniMax-M3 and MiniMax-M2.7 are both graded against the README thresholds, which are calibrated on means of 10 runs of MiniMax's official deployment. For MiniMax-M3, per-model targets were also measured with the same method as the tool-call schema tests: the mean minus 3 sample standard deviations over 10 `verify.py` runs on GPU vLLM. They are not applied, but are kept in `_comment_threshold` in `llm.json`, with the `targets` that would apply them, in case the gates are revisited. GPU vLLM averages 96.70% on ToolCalls-Match-Rate, below the README's 97%. On both models, Scenario-Check keeps the README's 100% but is advisory (`advisory_metrics` in the case's `test_config`): it is graded and shown against 100%, and a miss is listed under `advisory_failed_metrics` without failing the run. It is a single case, so one miss would fail the whole `verify` run, and on MiniMax-M3 GPU vLLM fails it in 2 of 10 runs.
+
+The verifier is not vendored. The `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) exports it from upstream MiniMax-AI/MiniMax-Provider-Verifier, pinned to the commit set in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_COMMIT`). The pin keeps what the blocking `verify` gate grades fixed; move it deliberately. The `verify` cases set no `targets` and are graded against the README defaults (`VERIFY_METRICS` in `minimax_verifier_grading.py`). When the pin moves, re-measure the GPU vLLM reference numbers in MiniMax-M3's `_comment_threshold`, but leave them as reference: don't add them as `targets` unless the gates are deliberately changed. An export that is already at the pinned commit needs no network. If the download fails the setup fails: an export of another commit is not used in its place.
+
+The export is plain files, without `.git`: the GitHub tarball at the pinned commit is streamed, and only the paths in `MINIMAX_VERIFIER_PATHS` are extracted, about 340 MB on disk instead of the full 870 MB tree. The export fails if any of those paths is missing. The exported commit is recorded in `.source_commit` and reported as `verifier_commit` in each block.
+
+To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to `MINIMAX_VERIFIER_PATHS`.
+
+```bash
+python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \
+  --server-url <endpoint> --skip-system-sw-validation
+```
+
+By default only the `verify` suite runs; the other cases report SKIP, which doesn't block. Set `MINIMAX_VERIFIER_SUITES` to a comma-separated list to pick suites, or to `all` for every enrolled suite:
+
+```bash
+python3 run.py ...                                        # verify only (default)
+MINIMAX_VERIFIER_SUITES=all python3 run.py ...            # every suite
+MINIMAX_VERIFIER_SUITES=text,stream python3 run.py ...   # two format checks
+```
+
+Settings go in the test case's `test_config`. `MINIMAX_VERIFIER_<KEY>` overrides one for a single run, and it applies to every suite:
+
+| Key | Default | |
+|---|---|---|
+| `suite` | `verify` | `verify`, `text`, `stream`, `image`, `video`, `reasoning_effort`; `test_config` only, no env override |
+| `workers` | `20` | pytest-xdist workers (`verify`: request concurrency) |
+| `include_slow` | `true` | run the cases marked slow (512k/1M-token prompts, long videos) |
+| `verify_loops` / `verify_limit` | `1` / all | run `verify.py` N times and grade the mean; only the first N cases |
+| `verify_baseline` | none | checkout directory holding the official deployment's `*_results.jsonl` |
+| `pass_rate_threshold` | `1.0` | pytest suites; `targets` overrides it per model |
+| `waived_tests` | none | `{"<test-id regex>": "<reason>"}`: matching pytest failures are listed but not graded |
+| `pytest_args` | none | extra arguments for the pytest suites, e.g. `-k basic` |
+| `non_blocking` / `non_blocking_reason` | off | `test_config` only, no env override |
+
+For a quick check, set `MINIMAX_VERIFIER_VERIFY_LIMIT=10 MINIMAX_VERIFIER_INCLUDE_SLOW=0`.
+
+Each suite's raw output is kept under `<output>/minimax_verifier/<suite>/`, replaced on every run:
+- `verify_results.jsonl` and `verify_summary.json`
+- the JUnit XML
+- the per-request logs
+- the full process log
+
+The bearer token is the one the other chat-completions suites send: `OPENAI_API_KEY` / `API_KEY`, else a JWT from `JWT_SECRET`. Without one, the endpoint is tested unauthenticated and the 401 checks are waived.
+
 ## Stress Tests
 
 > **Internal workflow.** `stress_tests` is used for release validation and CI. It requires a running inference server.
@@ -438,9 +484,8 @@ Log types:
 - **run_logs**: the stdout and stderr output from `run.py`, stored for debugging.
 - **runtime_model_specs**: the serialized `ModelSpec` + `RuntimeConfig` JSON used for each run.
 - **docker_server**: the logs from the Docker container running the vLLM inference server.
-- **benchmarks_output**: the raw data output from the `benchmarks` workflow.
 - **evals_output**: the raw data output from the `evals` workflow.
-- **reports_output**: for each workflow, the markdown (.md) summary output and `/data` summary data. The `release` workflow output has a summary report of both `benchmarks` and `evals` results, used to determine if a model passes release validation. An example report: https://github.com/tenstorrent/tt-inference-server/issues/164.
+- **reports_output**: for each workflow, the markdown (.md) summary output and `/data` summary data; for `benchmarks`, also the raw client output (`llm/`). The `release` workflow output has a summary report of both `benchmarks` and `evals` results, used to determine if a model passes release validation. An example report: https://github.com/tenstorrent/tt-inference-server/issues/164.
 - **spec_tests_output**: JSON and Markdown test reports from the `spec_tests` workflow.
 - **tests_output**: pytest result output from the `tests` workflow.
 - **stress_tests_output**: result data from the `stress_tests` workflow.
@@ -453,10 +498,6 @@ The logs have the following structure:
 
 ```
 ./workflow_logs
-├── benchmarks_output
-│   ├── benchmark_Llama-3.2-1B-Instruct_n300_2025-03-25_04-23-40_isl-128_osl-128_maxcon-1_n-8.json
-│   ├── ...
-│   └── benchmark_Llama-3.2-1B-Instruct_n300_2025-03-25_04-48-11_isl-16000_osl-64_maxcon-32_n-256.json
 ├── docker_server
 │   └── vllm_2025-03-25_20-58-29_Llama-3.2-1B-Instruct_n300_benchmarks.log
 ├── evals_output
@@ -465,9 +506,12 @@ The logs have the following structure:
 │       └── samples_meta_gpqa_2025-03-25T04-57-53.064778.jsonl
 ├── reports_output
 │   ├── benchmarks
-│   │   ├── data
-│   │   │   └── benchmark_stats_Llama-3.2-1B-Instruct_n300.csv
-│   │   └── benchmark_display_Llama-3.2-1B-Instruct_n300.md
+│   │   └── meta-llama__Llama-3.2-1B-Instruct_n300_benchmarks
+│   │       ├── data
+│   │       │   └── report_data_<id>.json
+│   │       ├── llm
+│   │       │   └── benchmark_meta-llama__Llama-3.2-1B-Instruct_<timestamp>_isl-128_osl-128_maxcon-1_n-8.json
+│   │       └── report_<id>.md
 │   ├── evals
 │   │   ├── data
 │   │   │   └── eval_data_Llama-3.2-1B-Instruct_n300.json
