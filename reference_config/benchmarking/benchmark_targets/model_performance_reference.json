@@ -7392,28 +7392,6 @@
             }
         ]
     },
-    "google/gemma-4-26B-A4B-it": {
-        "p300x2": [
-            {
-                "_comment": "Calculated QB2 top-performance estimate, not a measurement. Assumes about 3.8B active MoE parameters per token, BFP8 expert weights, BF16 dense weights, ideal four-chip scaling, full bandwidth utilization, and first-token decode included. The approximately 25.2B total parameters affect residency, not per-token compute. Pure roofline is about 17 ms TTFT and 320 T/S/U; the stored target applies a 70% practical derating, yielding about 24 ms TTFT and 224 T/S/U.",
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 24,
-                        "tput_user": 224,
-                        "tput": 224
-                    }
-                }
-            }
-        ]
-    },
     "gemma-4-12B-it": {
         "p300x2": [
             {
@@ -7726,6 +7704,271 @@
                     }
                 },
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            }
+        ]
+    },
+    "google/gemma-4-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "Calculated QB2 top-performance estimate, not a measurement. Assumes about 3.8B active MoE parameters per token, BFP8 expert weights, BF16 dense weights, ideal four-chip scaling, full bandwidth utilization, and first-token decode included. The approximately 25.2B total parameters affect residency, not per-token compute. Pure roofline is about 17 ms TTFT and 320 T/S/U; the stored target applies a 70% practical derating, yielding about 24 ms TTFT and 224 T/S/U.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "tt_vllm_plugin",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 24,
+                        "tput_user": 224,
+                        "tput": 224
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.82,
+                        "tput": 28.0
+                    },
+                    "measured": {
+                        "ttft_ms": 580.0,
+                        "tput_user": 31.82,
+                        "tput": 28.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 7.27,
+                        "tput": 137.1
+                    },
+                    "measured": {
+                        "ttft_ms": 12386.5,
+                        "tput_user": 7.27,
+                        "tput": 137.1,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.27,
+                        "tput": 13.2
+                    },
+                    "measured": {
+                        "ttft_ms": 5660.3,
+                        "tput_user": 31.27,
+                        "tput": 13.2,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.04,
+                        "tput": 5.0
+                    },
+                    "measured": {
+                        "ttft_ms": 21504.5,
+                        "tput_user": 31.04,
+                        "tput": 5.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.67,
+                        "tput": 1.4
+                    },
+                    "measured": {
+                        "ttft_ms": 87494.5,
+                        "tput_user": 30.67,
+                        "tput": 1.4,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a 4-chip P150x4 block of a Blackhole Galaxy emulating the QB2 (2026-10-18, local benchmarks workflow): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch QB2 release run. Tolerance 0.2."
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 21.43,
+                        "tput": 19.3
+                    },
+                    "measured": {
+                        "ttft_ms": 691.1,
+                        "tput_user": 21.43,
+                        "tput": 19.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a Blackhole Galaxy (one 32-chip lane engine, data_parallel_size 4 folded into lanes) with the local benchmarks workflow (2026-10-18): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch bh-galaxy release run. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 4.59,
+                        "tput": 522.9
+                    },
+                    "measured": {
+                        "ttft_ms": 3375.9,
+                        "tput_user": 4.59,
+                        "tput": 522.9,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a Blackhole Galaxy (one 32-chip lane engine, data_parallel_size 4 folded into lanes) with the local benchmarks workflow (2026-10-18): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch bh-galaxy release run. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 21.06,
+                        "tput": 18.6
+                    },
+                    "measured": {
+                        "ttft_ms": 837.1,
+                        "tput_user": 21.06,
+                        "tput": 18.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a Blackhole Galaxy (one 32-chip lane engine, data_parallel_size 4 folded into lanes) with the local benchmarks workflow (2026-10-18): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch bh-galaxy release run. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 20.63,
+                        "tput": 16.5
+                    },
+                    "measured": {
+                        "ttft_ms": 1605.9,
+                        "tput_user": 20.63,
+                        "tput": 16.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a Blackhole Galaxy (one 32-chip lane engine, data_parallel_size 4 folded into lanes) with the local benchmarks workflow (2026-10-18): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch bh-galaxy release run. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 19.02,
+                        "tput": 9.6
+                    },
+                    "measured": {
+                        "ttft_ms": 6723.0,
+                        "tput_user": 19.02,
+                        "tput": 9.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on a Blackhole Galaxy (one 32-chip lane engine, data_parallel_size 4 folded into lanes) with the local benchmarks workflow (2026-10-18): prefix cache off per request, server warmed by the prefill ladder, no per-point warmups. Re-baseline from the tt-shield on-dispatch bh-galaxy release run. Tolerance 0.2."
             }
         ]
     },
