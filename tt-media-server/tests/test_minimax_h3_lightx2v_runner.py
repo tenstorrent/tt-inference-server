@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""The LightX2V H3 runners: a Turbo adapter, 5 grid points, and the adapter's own shift."""
+"""The LightX2V and HyperFlow H3 runners: an adapter, its grid-point count, and its own shift."""
 
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -15,12 +15,25 @@ from tests.test_video_stage_metrics_wiring import dit_runners
 LIGHTX2V_RUNNERS = [
     ("TTMiniMaxH3FL2VALightX2VRunner", "TTMiniMaxH3FL2VARunner", "t2va"),
     ("TTMiniMaxH3Ref2VALightX2VRunner", "TTMiniMaxH3Ref2VARunner", "ref2va"),
+    ("TTMiniMaxH3FL2VAHyperFlowRunner", "TTMiniMaxH3FL2VARunner", "t2va"),
+    ("TTMiniMaxH3Ref2VAHyperFlowRunner", "TTMiniMaxH3Ref2VARunner", "ref2va"),
 ]
 
-# (video, audio) shift each adapter was distilled at, from the lightx2v model card.
+# (video, audio) shift each adapter was distilled at: the lightx2v model cards, and the HyperFlow
+# header's hyperflow_video_shift / hyperflow_audio_shift.
 ADAPTER_SHIFTS = {
     "TTMiniMaxH3FL2VALightX2VRunner": (6.0, 3.0),
     "TTMiniMaxH3Ref2VALightX2VRunner": (12.0, 3.0),
+    "TTMiniMaxH3FL2VAHyperFlowRunner": (12.0, 3.0),
+    "TTMiniMaxH3Ref2VAHyperFlowRunner": (12.0, 3.0),
+}
+
+# Sigma grid points, one more than the forwards: 4 for lightx2v Turbo, 8 for HyperFlow.
+GRID_POINTS = {
+    "TTMiniMaxH3FL2VALightX2VRunner": 5,
+    "TTMiniMaxH3Ref2VALightX2VRunner": 5,
+    "TTMiniMaxH3FL2VAHyperFlowRunner": 9,
+    "TTMiniMaxH3Ref2VAHyperFlowRunner": 9,
 }
 
 
@@ -45,13 +58,13 @@ def _runner(class_name):
 
 
 @pytest.mark.parametrize(("name", "base", "task"), LIGHTX2V_RUNNERS)
-def test_keeps_the_base_task_and_runs_five_grid_points(name, base, task):
+def test_keeps_the_base_task_and_runs_the_adapters_grid(name, base, task):
     cls = getattr(dit_runners, name)
     base_cls = getattr(dit_runners, base)
     assert issubclass(cls, base_cls)
     assert cls.pipeline_task == task
     assert cls.dit_fsdp == base_cls.dit_fsdp
-    assert cls.num_inference_steps == 5
+    assert cls.num_inference_steps == GRID_POINTS[name]
 
 
 @pytest.mark.parametrize(("name", "base", "task"), LIGHTX2V_RUNNERS)
