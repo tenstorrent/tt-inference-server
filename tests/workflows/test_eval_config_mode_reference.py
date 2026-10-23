@@ -182,47 +182,79 @@ def _gemma4_task(model, task_name):
     return next(t for t in _eval_config_map[model].tasks if t.task_name == task_name)
 
 
-def test_gemma4_12b_gpqa_subset_gate_is_the_measured_deterministic_score():
-    """The 40-question ci-nightly subset is deterministic for a fixed seed on TT
-    (26/40 in three same-seed runs), so it is gated as a regression reference at
-    its measured 65.0 with a 5% band: 24/40 passes, 23/40 fails."""
-    score = _gemma4_task("google/gemma-4-12B-it", "r1_gpqa_diamond").score
-    ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
-    assert ref["is_subset_reference"] is True
-    assert ref["reference_score"] == 65.0
-    assert ref["tolerance"] == 0.05
-    assert accept_eval_score(ref, 26 / 40 * 100, n_total=40) is True
-    assert accept_eval_score(ref, 24 / 40 * 100, n_total=40) is True
-    assert accept_eval_score(ref, 23 / 40 * 100, n_total=40) is False
-    # The full set is still judged against the published score (ratio check).
-    full = resolve_eval_reference(score, EvalLimitMode.CI_LONG)
-    assert full["is_subset_reference"] is False
+def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
+    """Both presets run all 198 questions, graded against the published score (and
+    the full-set GPU reference where one exists); no preset carries a subset
+    reference for this task."""
+    for model in (
+        "google/gemma-4-31B-it",
+        "google/gemma-4-26B-A4B-it",
+        "google/gemma-4-12B-it",
+    ):
+        task = _gemma4_task(model, "r1_gpqa_diamond")
+        assert EvalLimitMode.CI_NIGHTLY not in task.limit_samples_map
+        assert EvalLimitMode.CI_LONG not in task.limit_samples_map
+        assert not task.score.mode_reference_scores
+        ref = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
+        assert ref["is_subset_reference"] is False
 
 
 def test_gemma4_release_models_define_the_ci_long_preset():
-    """ci-long = full gpqa (no CI_LONG limit), the nightly mmlu_pro subset, a 24-task
-    Terminal-Bench 2.0 wave and the nightly swe-bench list, so the preset proves accuracy without running the
-    12k-question mmlu_pro or 500-task swe-bench sets."""
-    for model in ("google/gemma-4-31B-it", "google/gemma-4-12B-it"):
+    """The ci-nightly and ci-long presets are the same sizes and run the model-card
+    evals only, listed first: GPQA Diamond in full, a 24-task Terminal-Bench 2.0
+    wave, the whole LiveCodeBench v6 window and 865 MMMU-Pro questions (the 12B adds
+    FLEURS in full). Every other task carries 0 for both presets, so neither runs the
+    12k-question mmlu_pro or the 500-task swe-bench sets."""
+    from llm_module.eval_configs import tasks_for_limit_mode
+
+    preset = [
+        "r1_gpqa_diamond",
+        "terminal_bench_2",
+        "livecodebench",
+        "mmmu_pro_standard_cot",
+    ]
+    for model, extra in (
+        ("google/gemma-4-31B-it", []),
+        ("google/gemma-4-26B-A4B-it", []),
+        ("google/gemma-4-12B-it", ["fleurs_en"]),
+    ):
+        tasks = _eval_config_map[model].tasks
+        assert [t.task_name for t in tasks][
+            : len(preset) + len(extra)
+        ] == preset + extra
+        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.CI_LONG):
+            kept = [t.task_name for t in tasks_for_limit_mode(tasks, mode)]
+            assert kept == preset + extra, (model, mode, kept)
         gpqa = _gemma4_task(model, "r1_gpqa_diamond")
         assert EvalLimitMode.CI_LONG not in gpqa.limit_samples_map
-        mmlu = _gemma4_task(model, "mmlu_pro")
-        assert (
-            mmlu.limit_samples_map[EvalLimitMode.CI_LONG]
-            == mmlu.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
-            == 0.07
-        )
-        agentic = [t for t in _eval_config_map[model].tasks if t.agentic_eval_config]
-        for task in agentic:
+        assert EvalLimitMode.CI_NIGHTLY not in gpqa.limit_samples_map
+        mmmu = _gemma4_task(model, "mmmu_pro_standard_cot")
+        assert mmmu.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.5
+        assert mmmu.limit_samples_map[EvalLimitMode.CI_LONG] == 0.5
+        assert mmmu.score.published_score is not None
+        refs = mmmu.score.mode_reference_scores
+        # Same-protocol baseline GPU reference measured on the 865-doc subset for every entry; both
+        # presets share it and the task is gating.
+        assert set(refs) == {EvalLimitMode.CI_NIGHTLY, EvalLimitMode.CI_LONG}
+        assert refs[EvalLimitMode.CI_NIGHTLY].score == refs[EvalLimitMode.CI_LONG].score
+        assert mmmu.priority == "must"
+        lcb = _gemma4_task(model, "livecodebench")
+        assert EvalLimitMode.CI_NIGHTLY not in lcb.limit_samples_map
+        assert EvalLimitMode.CI_LONG not in lcb.limit_samples_map
+        for task in tasks:
+            if task.agentic_eval_config is None:
+                continue
             names = task.agentic_eval_config.task_names_map
-            assert len(names[EvalLimitMode.CI_NIGHTLY]) == 5
             if task.task_name == "terminal_bench_2":
-                # ci-long: one 24-task wave (24 concurrent x 3h20 budget < 6 h job).
+                # Both presets: one 24-task wave (24 concurrent x 3h20 budget < 6 h job).
+                assert names[EvalLimitMode.CI_NIGHTLY] == names[EvalLimitMode.CI_LONG]
                 assert len(names[EvalLimitMode.CI_LONG]) == 24
                 assert len(set(names[EvalLimitMode.CI_LONG])) == 24
             else:
-                assert names[EvalLimitMode.CI_LONG] == names[EvalLimitMode.CI_NIGHTLY]
-    # The 12B entry carries the two informational agentic tasks.
+                # Skipped by both presets (the agentic driver reads 0 as n_tasks=0).
+                assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+                assert task.limit_samples_map[EvalLimitMode.CI_LONG] == 0
+    # The 12B entry also carries the two informational agentic tasks.
     assert {
         t.task_name
         for t in _eval_config_map["google/gemma-4-12B-it"].tasks
