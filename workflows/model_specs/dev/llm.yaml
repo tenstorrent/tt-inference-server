@@ -3180,6 +3180,7 @@ templates:
         MESH_DEVICE: "(4, 8)"
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
+        MIMO_VLLM_TIMING: 1
       override_tt_config:
         trace_mode: decode_only
         # The default entry's traces plus the verify step and the MTP draft program per replica.

@@ -151,10 +151,12 @@ class _Preset:
 
 
 _PRESETS = {
+    # Throwaway: the GPU reference sweep's grid (SPEC_DECODE_ISLS=1k,8k,32k
+    # SPEC_DECODE_CONCURRENCIES=1,4,16), which tt-shield cannot pass as env.
     "full": _Preset(
         SPEED_BENCH_QUALITATIVE_CATEGORIES,
-        SPEED_BENCH_THROUGHPUT_ISLS,
-        THROUGHPUT_CONCURRENCY_SWEEP,
+        ("1k", "8k", "32k"),
+        (1, 4, 16),
     ),
     "ci": _Preset(
         CI_QUALITATIVE_CATEGORIES, CI_THROUGHPUT_ISLS, CI_THROUGHPUT_CONCURRENCIES
