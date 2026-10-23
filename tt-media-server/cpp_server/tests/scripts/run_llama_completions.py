@@ -17,7 +17,9 @@ import tempfile
 
 def main():
     executable = Path(sys.argv[1]).resolve()
-    with tempfile.TemporaryDirectory(prefix="llama-completions-", dir=executable.parent) as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="llama-completions-", dir=executable.parent
+    ) as directory:
         root = Path(directory)
         binary = root / "bin" / executable.name
         binary.parent.mkdir()
@@ -44,7 +46,9 @@ def main():
         (assets / "tokenizer.json").write_text(json.dumps(tokenizer))
         env = dict(os.environ, MODEL="meta-llama/Llama-3.2-1B-Instruct")
         # Preserve the original binary's colocated shared-library lookup.
-        env["LD_LIBRARY_PATH"] = str(executable.parent) + ":" + env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = (
+            str(executable.parent) + ":" + env.get("LD_LIBRARY_PATH", "")
+        )
         return subprocess.run(
             [str(binary), "--gtest_filter=MainIntegrationTest.Completions*"],
             env=env,
