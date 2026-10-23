@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
+from llm_module.drivers.agentic import resolve_n_tasks
 from llm_module import (
     DriverContext,
     HttpServerController,
@@ -19,11 +21,12 @@ from llm_module import (
     make_agentic_driver,
 )
 from report_module.schema import Block
+from utils.model_naming import slugify_name_parts
 from utils.auth_helpers import setup_tests_auth
 from workflow_module.engine_types import WorkflowVenvType
 from workflow_module import accept_blocks
 
-from .._test_common import sweep_envelope
+from .._test_common import TestStatus, sweep_envelope
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -208,6 +211,69 @@ def _require_openai_server(ctx: MediaContext) -> None:
     logger.info("Inference server health check passed via %s", endpoint)
 
 
+def _sandbox_missing_reason(task) -> Optional[str]:
+    """Why this host cannot run ``task``'s sandbox, or None when it can.
+
+    Harbor sandboxes every trial in a container; a host without the Docker
+    CLI (a developer box, a non-CI Galaxy) cannot run the task at all, and a
+    failed launch would grade the release as blocked for a reason that has
+    nothing to do with the model.
+    """
+    if task.agentic_eval_config.environment_type != "docker":
+        return None
+    if shutil.which("docker") is None:
+        return (
+            "docker not found on this host; Harbor sandboxes each trial in a "
+            "Docker container (run on a Docker host or in CI)"
+        )
+    if not _docker_daemon_reachable():
+        return (
+            "docker is installed but its daemon is not reachable from this process "
+            "(service down, or the user is not in the docker group); Harbor "
+            "sandboxes each trial in a Docker container"
+        )
+    return None
+
+
+def _docker_daemon_reachable() -> bool:
+    """``docker info`` succeeds for this user (daemon up, socket permitted)."""
+    import subprocess
+
+    try:
+        return (
+            subprocess.run(
+                ["docker", "info", "--format", "{{.ServerVersion}}"],
+                capture_output=True,
+                timeout=30,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _skip_block(task, *, device: str, reason: str) -> Block:
+    """A visible, non-blocking SKIP block for a task this host cannot run."""
+    score = getattr(task, "score", None)
+    return Block(
+        kind="evals",
+        task_type="llm",
+        title=f"LLM Eval — {task.task_name}",
+        id=slugify_name_parts(task.task_name, device),
+        targets={"task_name": task.task_name, "device": device},
+        data={
+            "task_name": task.task_name,
+            "status": TestStatus.SKIP.value,
+            "skipped": True,
+            "reason": reason,
+            "tolerance": getattr(score, "tolerance", None),
+            "published_score": getattr(score, "published_score", None),
+            "score": None,
+            "priority": getattr(task, "priority", "must"),
+        },
+    )
+
+
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     """Run every EVALS_AGENTIC task for this model; return one Block per task.
 
@@ -233,6 +299,21 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
 
     blocks: List[Block] = []
     for task in agentic_tasks:
+        # A task the preset disables (limit 0) is omitted outright, as the
+        # driver would omit it: no sandbox probe and no SKIP block for it.
+        if resolve_n_tasks(task, runtime_config) == 0:
+            logger.info(
+                "Skipping agentic task %s: limit 0 for this preset", task.task_name
+            )
+            continue
+        missing = _sandbox_missing_reason(task)
+        if missing:
+            logger.warning("Skipping agentic task %s: %s", task.task_name, missing)
+            blocks.append(
+                _skip_block(task, device=driver_context.device, reason=missing)
+            )
+            accept_blocks([blocks[-1]], envelope=envelope)
+            continue
         driver = make_agentic_driver(task, runtime_config=runtime_config)
         logger.info("Running %s task: %s", driver.name, task.task_name)
         outcome = driver.run(placeholder_config, server, driver_context)

@@ -181,16 +181,19 @@ def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEval
 
 
 def _n_concurrent_trials(cfg: Any) -> int:
-    """``cfg.n_concurrent_trials``, capped by ``AGENTIC_MAX_CONCURRENT_TRIALS`` when set.
+    """The trial concurrency to run: ``cfg.n_concurrent_trials`` (or the
+    ``TT_AGENTIC_N_CONCURRENT_TRIALS`` override, see ``resolve_n_concurrent_trials``),
+    capped by ``AGENTIC_MAX_CONCURRENT_TRIALS`` when set.
 
     Docker environments create one bridge network per trial, and a runner on
     the default address pools runs out after ~31; the excess trials then fail
     before the agent starts. The cap lets a dispatch stay under that limit
     without changing the configured value.
     """
+    configured = resolve_n_concurrent_trials(cfg)
     cap = os.environ.get("AGENTIC_MAX_CONCURRENT_TRIALS")
     if not cap:
-        return cfg.n_concurrent_trials
+        return configured
     try:
         cap_value = int(cap)
     except ValueError:
@@ -199,11 +202,11 @@ def _n_concurrent_trials(cfg: Any) -> int:
         raise ValueError(
             f"AGENTIC_MAX_CONCURRENT_TRIALS must be an integer >= 1, got {cap!r}"
         )
-    capped = min(cfg.n_concurrent_trials, cap_value)
-    if capped != cfg.n_concurrent_trials:
+    capped = min(configured, cap_value)
+    if capped != configured:
         logger.info(
             "[agentic] n_concurrent_trials %s -> %s (AGENTIC_MAX_CONCURRENT_TRIALS)",
-            cfg.n_concurrent_trials,
+            configured,
             capped,
         )
     return capped
@@ -269,14 +272,61 @@ def build_harbor_config(
     )
 
 
+# Operator overrides for hosts that are not bound by the CI runners' limits
+# (tt-shield #1248: stock Docker address pools allow ~31 concurrent Harbor
+# trials, so the presets keep small task lists and n_concurrent_trials under
+# that). A host with enlarged pools can run the whole set in one wave:
+#   TT_AGENTIC_N_CONCURRENT_TRIALS=<n>  replaces n_concurrent_trials (the
+#                                       AGENTIC_MAX_CONCURRENT_TRIALS cap still applies);
+#   TT_AGENTIC_FULL_TASK_SET=1          ignores the preset's task list and count
+#                                       (a preset limit of 0 still skips the task).
+AGENTIC_CONCURRENCY_ENV = "TT_AGENTIC_N_CONCURRENT_TRIALS"
+AGENTIC_FULL_SET_ENV = "TT_AGENTIC_FULL_TASK_SET"
+
+
+def _full_task_set_requested() -> bool:
+    return os.environ.get(AGENTIC_FULL_SET_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
     limit_mode = _get_limit_mode(runtime_config)
-    if limit_mode is not None and limit_mode in agentic_config.task_names_map:
+    if (
+        limit_mode is not None
+        and limit_mode in agentic_config.task_names_map
+        and not _full_task_set_requested()
+    ):
         return agentic_config.task_names_map[limit_mode]
     return agentic_config.task_names
+
+
+def resolve_n_concurrent_trials(agentic_config: Any) -> int:
+    """The configured concurrency, or the operator's override."""
+    override = os.environ.get(AGENTIC_CONCURRENCY_ENV, "").strip()
+    if not override:
+        return agentic_config.n_concurrent_trials
+    try:
+        value = int(override)
+    except ValueError as e:
+        raise ValueError(
+            f"{AGENTIC_CONCURRENCY_ENV}={override!r} is not an integer"
+        ) from e
+    if value < 1:
+        raise ValueError(f"{AGENTIC_CONCURRENCY_ENV}={override!r} must be >= 1")
+    logger.info(
+        "%s=%d: n_concurrent_trials %s -> %d",
+        AGENTIC_CONCURRENCY_ENV,
+        value,
+        agentic_config.n_concurrent_trials,
+        value,
+    )
+    return value
 
 
 def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
@@ -287,6 +337,19 @@ def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
 
     limit_arg = task.limit_samples_map.get(limit_mode)
     if limit_arg is None:
+        return agentic_config.n_tasks if agentic_config else None
+    from llm_module.eval_configs import eval_task_names
+
+    if limit_arg == 0 and task.task_name in (eval_task_names(runtime_config) or ()):
+        # --eval-tasks never caps a task: the preset's skip does not apply to a
+        # task the operator named (same rule as the standard eval path).
+        logger.info(
+            "Agentic task %s is selected explicitly; the preset's skip (limit 0) "
+            "does not apply",
+            task.task_name,
+        )
+        return agentic_config.n_tasks if agentic_config else None
+    if limit_arg != 0 and _full_task_set_requested():
         return agentic_config.n_tasks if agentic_config else None
     if isinstance(limit_arg, float) and limit_arg < 1:
         logger.warning(
@@ -334,6 +397,7 @@ __all__ = [
     "HarborAgenticDriver",
     "build_harbor_config",
     "make_agentic_driver",
+    "resolve_n_concurrent_trials",
     "resolve_n_tasks",
     "resolve_task_names",
 ]
