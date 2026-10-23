@@ -114,6 +114,8 @@ class AIPerfDriver(LLMDriver):
             "--ui-type",
             "none",
         ]
+        if context.warmup_requests > 0:
+            cmd.extend(["--warmup-request-count", str(context.warmup_requests)])
         # AIPerf parses --goodput as a single token holding the full
         # space-separated KEY:VALUE SLO list, so pass it as one argument.
         if context.goodput and context.goodput.strip():

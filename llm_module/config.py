@@ -102,7 +102,16 @@ class DriverContext:
     extra_env: dict = field(default_factory=dict)
     # LLM_BENCH_PER_RUN_TIMEOUT_S overrides the two hours: a c1 point at the
     # native context is 32 sequential 1M prefills.
-    per_run_timeout_s: Optional[float] = float(os.environ.get("LLM_BENCH_PER_RUN_TIMEOUT_S", 7200.0))
+    per_run_timeout_s: Optional[float] = float(
+        os.environ.get("LLM_BENCH_PER_RUN_TIMEOUT_S", 7200.0)
+    )
+    # Requests AIPerf sends before the measured ones at each point (excluded
+    # from its metrics): the server's first requests pay a host-side cost
+    # outside the model (the API server's tokenizer, chat template and output
+    # path), 80 to 430 ms on the first of a run and decaying over the next
+    # four, which a 32-request point's mean carries.
+    # LLM_BENCH_WARMUP_REQUESTS overrides; 0 sends none (the behaviour before).
+    warmup_requests: int = int(os.environ.get("LLM_BENCH_WARMUP_REQUESTS", 2))
     # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs) applied to
     # the sweep. Only the AIPerf driver consumes it; other drivers ignore it.
     goodput: Optional[str] = None
