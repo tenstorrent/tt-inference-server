@@ -19,10 +19,12 @@ from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
     HarborAgenticDriver,
     build_harbor_config,
+    resolve_n_concurrent_trials,
     resolve_n_tasks,
     resolve_task_names,
 )
 from llm_module.agentic import harbor
+from test_module._test_common import TestStatus
 from llm_module.agentic.harbor import run as run_harbor
 from llm_module.parsers.agentic import (
     AgenticEvalParser,
@@ -935,6 +937,60 @@ class TestAgenticLimitResolution:
         # No task_names and no limit mode -> the whole dataset.
         assert resolve_task_names(swe, None) == []
 
+    def test_full_task_set_override_ignores_the_preset_list_and_count(
+        self, monkeypatch
+    ):
+        task = _harbor_task(limit_samples_map={EvalLimitMode.CI_LONG: 24})
+        task.agentic_eval_config.task_names_map = {EvalLimitMode.CI_LONG: ["a", "b"]}
+        task.agentic_eval_config.task_names = None
+        task.agentic_eval_config.n_tasks = None
+        assert resolve_task_names(task, _runtime("ci-long")) == ["a", "b"]
+        assert resolve_n_tasks(task, _runtime("ci-long")) == 24
+
+        monkeypatch.setenv("TT_AGENTIC_FULL_TASK_SET", "1")
+        # The preset no longer narrows the run: whole dataset, no count.
+        assert resolve_task_names(task, _runtime("ci-long")) is None
+        assert resolve_n_tasks(task, _runtime("ci-long")) is None
+        # A preset that skips the task (0) still skips it.
+        skipped = _harbor_task(limit_samples_map={EvalLimitMode.CI_LONG: 0})
+        assert resolve_n_tasks(skipped, _runtime("ci-long")) == 0
+
+    def test_concurrency_override_replaces_the_configured_trials(
+        self, monkeypatch, tmp_path
+    ):
+        task = _harbor_task()
+        task.agentic_eval_config.n_concurrent_trials = 24
+        assert resolve_n_concurrent_trials(task.agentic_eval_config) == 24
+
+        monkeypatch.setenv("TT_AGENTIC_N_CONCURRENT_TRIALS", "128")
+        assert resolve_n_concurrent_trials(task.agentic_eval_config) == 128
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=None,
+        )
+        assert cfg.n_concurrent_trials == 128
+
+        monkeypatch.setenv("TT_AGENTIC_N_CONCURRENT_TRIALS", "zero")
+        with pytest.raises(ValueError):
+            resolve_n_concurrent_trials(task.agentic_eval_config)
+        monkeypatch.setenv("TT_AGENTIC_N_CONCURRENT_TRIALS", "0")
+        with pytest.raises(ValueError):
+            resolve_n_concurrent_trials(task.agentic_eval_config)
+
+    def test_explicit_selection_overrides_the_preset_skip(self):
+        # --eval-tasks never caps a task: a preset's 0 applies only when the
+        # task was not named by the operator.
+        task = _harbor_task(limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0})
+        task.agentic_eval_config.n_tasks = None
+        runtime = _runtime("ci-nightly")
+        assert resolve_n_tasks(task, runtime) == 0
+        runtime.eval_tasks = "terminal_bench_2"
+        assert resolve_n_tasks(task, runtime) is None
+        runtime.eval_tasks = "swe_bench_verified"
+        assert resolve_n_tasks(task, runtime) == 0
+
 
 class TestSelectAgenticTasks:
     def _ctx_with_tasks(self, tasks):
@@ -1109,6 +1165,95 @@ class TestAgenticRunTimestamp:
 
 
 class TestAgenticBridge:
+    @pytest.fixture(autouse=True)
+    def _docker_present(self):
+        # The bridge skips Docker-sandboxed tasks on a host without the CLI;
+        # these tests describe the driver path, so pretend the CLI exists.
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.shutil.which",
+            return_value="/usr/bin/docker",
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests._docker_daemon_reachable",
+            return_value=True,
+        ):
+            yield
+
+    def test_without_docker_the_task_is_a_visible_skip_not_a_blocker(self):
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_harbor_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("ci-nightly")
+        driver = MagicMock()
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.shutil.which", return_value=None
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            return_value=driver,
+        ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:
+            blocks = run_llm_agentic_eval(ctx)
+
+        assert len(blocks) == 1
+        data = blocks[0].data
+        assert data["status"] == TestStatus.SKIP.value and data["skipped"] is True
+        assert "docker not found" in data["reason"]
+        assert data["task_name"] == "terminal_bench_2" and data["score"] is None
+        assert blocks[0].targets == {"task_name": "terminal_bench_2", "device": "N150"}
+        driver.run.assert_not_called()
+        accept.assert_called_once()
+
+    def test_a_zero_limit_task_is_omitted_before_the_sandbox_probe(self):
+        """ci-nightly/ci-long disable a task with limit 0: it must be omitted as
+        the driver omits it, with no Docker probe and no SKIP block."""
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        task = _harbor_task()
+        task.limit_samples_map = {EvalLimitMode.CI_NIGHTLY: 0}
+        ctx = MagicMock()
+        ctx.all_params.tasks = [task]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("ci-nightly")
+        driver = MagicMock()
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._sandbox_missing_reason",
+            side_effect=AssertionError("the sandbox was probed for a disabled task"),
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            return_value=driver,
+        ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:
+            blocks = run_llm_agentic_eval(ctx)
+
+        assert blocks == []
+        driver.run.assert_not_called()
+        accept.assert_not_called()
+
+    def test_unreachable_daemon_is_also_a_visible_skip(self):
+        from test_module.llm_tests.agentic_eval_tests import _sandbox_missing_reason
+
+        task = _harbor_task()
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._docker_daemon_reachable",
+            return_value=False,
+        ):
+            reason = _sandbox_missing_reason(task)
+        assert reason and "daemon is not reachable" in reason
+        assert _sandbox_missing_reason(task) is None
+
     def test_bridge_delegates_to_driver_and_accepts_blocks(self):
         from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
 
