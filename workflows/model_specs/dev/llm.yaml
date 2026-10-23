@@ -3122,7 +3122,7 @@ templates:
         MIMO_VLLM_TIMING: 1
       override_tt_config:
         trace_mode: decode_only
-        trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
+        trace_region_size: 1200000000  # throwaway: the 16-user decode trace needs 1.005 GB
         l1_small_size: 65536
         dispatch_core_axis: col
         # Greedy decode rows sample in the decode trace; other rows fall back to
