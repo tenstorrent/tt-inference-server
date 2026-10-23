@@ -84,6 +84,9 @@ def build_vllm_bench_serve_argv(
         str(config.num_prompts),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
+        # vLLM's default is p99 only; the report also shows P50/P90 TPOT.
+        "--metric-percentiles",
+        "50,90,99",
         "--save-result",
         "--save-detailed",
         "--result-filename",

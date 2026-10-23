@@ -75,6 +75,8 @@ VLLM_RAW: Dict[str, Any] = {
     "median_ttft_ms": 300.1,
     "p99_ttft_ms": 1200.9,
     "mean_tpot_ms": 28.7,
+    "median_tpot_ms": 25.0,
+    "p90_tpot_ms": 40.2,
     "mean_e2el_ms": 4200.0,
     "request_throughput": 2.1,
     "output_throughput": 480.0,
@@ -181,6 +183,10 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     # vLLM's "median" maps to p50; p99 carried through
     assert data["p50_ttft"] == pytest.approx(300.1)
     assert data["p99_ttft"] == pytest.approx(1200.9)
+    assert data["p50_tpot"] == pytest.approx(25.0)
+    assert data["p90_tpot"] == pytest.approx(40.2)
+    # per-user throughput is derived from mean TPOT: 1000 / 28.7
+    assert data["tput_user"] == pytest.approx(34.8432)
     # throughput is reported as input / output / total, never "decode"
     assert "tps_decode_throughput" not in data
     assert data["tps_output_throughput"] == pytest.approx(480.0)
@@ -188,6 +194,14 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     # input rate = total - output (vLLM derives both over one duration)
     assert data["tps_input_throughput"] == pytest.approx(420.0)
     assert data["error_request_count"] is None
+
+
+def test_vllm_tpot_percentiles_are_none_without_the_flag():
+    # Results saved without --metric-percentiles 90 carry no p90 key.
+    raw = {k: v for k, v in VLLM_RAW.items() if k != "p90_tpot_ms"}
+    data = VLLMBenchParser().parse(raw, device="N150").data
+    assert data["p90_tpot"] is None
+    assert data["p50_tpot"] == pytest.approx(25.0)
 
 
 def test_vllm_goodput_pct_from_request_goodput():
@@ -268,6 +282,8 @@ def test_vllm_partial_output_block_uses_request_latency_not_token_tpot():
     assert data["mean_block_latency_ms"] == pytest.approx(21664.4408)
     assert data["primary_throughput_metric"] == "output_blocks_per_second"
     assert data["primary_latency_metric"] == "mean_block_latency_ms"
+    # 1000 / near-zero token TPOT would be meaningless, so it is dropped
+    assert data["tput_user"] is None
 
 
 def test_vllm_multi_block_latency_amortizes_request_e2el():

@@ -295,6 +295,32 @@
     },
     {
       "models": [
+        "kimi_k3"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate 100%, the suite default)",
+          "_comment_threshold": "No pass_rate_threshold target yet, so the suite default of 100% applies. Set it to mean - 3 sample std of 10 GPU vLLM runs, as for Kimi-K2.7-Code."
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking",
+          "test_config": {
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
         "glm_5_3"
       ],
       "devices": [

@@ -41,6 +41,8 @@ def test_remote_console_uses_base_url_and_skips_ready_check():
     assert "--host" not in cmd
     assert "--port" not in cmd
     assert set(json.loads(cmd[cmd.index("--extra-body") + 1])) == {"cache_salt"}
+    # P50/P90 TPOT in the report need these on top of vLLM's default p99.
+    assert cmd[cmd.index("--metric-percentiles") + 1] == "50,90,99"
     header_values = cmd[cmd.index("--header") + 1 :]
     assert "Accept-Encoding=identity" in header_values
     assert "Authorization=Bearer sk-test" in header_values

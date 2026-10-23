@@ -8085,5 +8085,114 @@
                 "targets": {}
             }
         ]
+    },
+    "moonshotai/Kimi-K3": {
+        "super_cluster": [
+            {
+                "_comment": [
+                    "SUPER_CLUSTER (remote blaze endpoint, 1M context). TPOT and tok/s/user at",
+                    "concurrency 1 and at max users (15, the deployment's concurrency) for the key",
+                    "ISLs: 10K, 100K, 140K (p50) and 550K (p90); all OSL 1024. No targets yet:",
+                    "the rows are informational until a measured block is added.",
+                    "num_prompts: 2 waves of 15 up to 140K, 1 wave at 550K (prefill volume),",
+                    "4 / 2 at concurrency 1. Run with ONLY_BENCHMARK_TARGETS=1 to skip the default",
+                    "ISL/OSL sweep and run only these."
+                ],
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 15,
+                "num_prompts": 30,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 15,
+                "num_prompts": 30,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 15,
+                "num_prompts": 30,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 550000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 550000,
+                "osl": 1024,
+                "max_concurrency": 15,
+                "num_prompts": 15,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            }
+        ]
     }
 }

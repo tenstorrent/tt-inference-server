@@ -39,6 +39,12 @@ class VLLMBenchParser(LLMResultParser):
             "p50_ttft": _round(raw.get("median_ttft_ms"), 4),
             "p99_ttft": _round(raw.get("p99_ttft_ms"), 4),
             "mean_tpot_ms": _round(raw.get("mean_tpot_ms"), 4),
+            "p50_tpot": _round(raw.get("median_tpot_ms"), 4),
+            # Only with --metric-percentiles 90 (the driver passes it).
+            "p90_tpot": _round(raw.get("p90_tpot_ms"), 4),
+            # vLLM reports no per-user throughput; derive it from mean TPOT
+            # the same way target_checks does.
+            "tput_user": _tput_user(raw.get("mean_tpot_ms")),
             "mean_e2el_ms": _round(raw.get("mean_e2el_ms"), 4),
             "tps_input_throughput": _input_throughput(raw),
             "tps_output_throughput": _round(raw.get("output_throughput"), 4),
@@ -81,6 +87,8 @@ class VLLMBenchParser(LLMResultParser):
                         else None,
                         4,
                     ),
+                    # Derived from the token TPOT above, so meaningless here.
+                    "tput_user": None,
                     "primary_throughput_metric": "output_blocks_per_second",
                     "primary_latency_metric": "mean_block_latency_ms",
                 }
@@ -94,6 +102,12 @@ def _num(value: Any) -> Optional[float]:
         if isinstance(value, (int, float)) and not isinstance(value, bool)
         else None
     )
+
+
+def _tput_user(mean_tpot_ms: Any) -> Optional[float]:
+    """Per-user decode throughput (tokens/s/user): ``1000 / mean_tpot_ms``."""
+    tpot = _num(mean_tpot_ms)
+    return round(1000.0 / tpot, 4) if tpot else None
 
 
 def _input_throughput(raw: Mapping[str, Any]) -> Optional[float]:
