@@ -29,6 +29,7 @@ from .._test_common import (
     block_id,
     run_tiered_check,
 )
+from .._test_common.image_output_check import check_image_output, save_image
 from ..context import MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
 
@@ -55,7 +56,9 @@ STRENGTH_INPAINTING = 0.99
 # Qwen-Image-Edit: two transformer forwards per step (true-CFG) on all 32 chips;
 # ~43 s per 50-step edit upstream (CFG-parallel), and a new prompt length re-captures
 # the denoise trace, so the inpainting 90 s timeout is too short.
-QWEN_IMAGE_EDIT_INFERENCE_STEPS = 20
+# The model card's reference workload: 1024px in and out, batch 1, 40 steps.
+QWEN_IMAGE_EDIT_INFERENCE_STEPS = 40
+QWEN_IMAGE_EDIT_CANVAS = (1024, 1024)
 QWEN_IMAGE_EDIT_REQUEST_TIMEOUT_S = 600
 SEED_QWEN_IMAGE_EDIT = 0
 
@@ -248,6 +251,25 @@ def _generate_image_instruction_edit(
         raise RuntimeError(
             f"Instruction edit failed with status {response.status_code}"
         )
+
+    # A 200 is not a working edit: the image must decode at the served canvas and
+    # not be black or flat. A bad image fails the benchmark like a failed request.
+    images = response.json().get("images") or []
+    problem = (
+        check_image_output(images[0], QWEN_IMAGE_EDIT_CANVAS)
+        if len(images) == 1
+        else f"expected 1 image, got {len(images)}"
+    )
+    if problem:
+        if images:
+            save_image(
+                images[0],
+                getattr(ctx, "output_path", None),
+                "failed/benchmarks",
+                f"instruction_edit_{int(start_time)}.jpg",
+            )
+        logger.error(f"❌ Instruction edit returned a bad image: {problem}")
+        raise RuntimeError(f"Instruction edit returned a bad image: {problem}")
 
     logger.info(f"✅ Instruction edit successful in {elapsed:.2f}s")
     return True, elapsed

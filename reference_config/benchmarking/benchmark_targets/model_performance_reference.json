@@ -6025,6 +6025,36 @@
             }
         ]
     },
+    "Qwen/Qwen-Image-Edit-2511": {
+        "galaxy": [
+            {
+                "_comment": "Placeholder: the model card's reference workload (1024px in and out, batch 1, 40 steps); latency targets wait on GPU benchmarking. Null targets report NA.",
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null
+                    }
+                }
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "_comment": "Placeholder: the model card's reference workload (1024px in and out, batch 1, 40 steps); latency targets wait on GPU benchmarking. Null targets report NA.",
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null
+                    }
+                }
+            }
+        ]
+    },
     "openai/whisper-large-v3": {
         "n150": [
             {

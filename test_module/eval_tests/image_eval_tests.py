@@ -30,6 +30,7 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 from workflow_module.context_helpers import is_sdxl_num_prompts_enabled
 
 from .._test_common import block_id
+from .._test_common.image_output_check import check_image_output, save_image
 from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
 from .image_generation_eval_test import ImageGenerationEvalsTest
@@ -63,6 +64,8 @@ STRENGTH_INPAINTING = 0.99
 # mountain road, pines). CLIP scores each output against a caption of the expected result, not
 # the instruction text, so the score tracks whether the edit was applied.
 INSTRUCTION_EDIT_INFERENCE_STEPS = 20
+# The canvas Qwen-Image-Edit serves (tt-media-server qwen_image_edit_policy).
+INSTRUCTION_EDIT_CANVAS = (1024, 1024)
 SEED_INSTRUCTION_EDIT = 0
 INSTRUCTION_EDIT_CASES = (
     (
@@ -459,15 +462,35 @@ async def _run_instruction_edit_eval(
 
     status_list: list[ImageGenerationTestStatus] = []
     failed: list[str] = []
+    output_path = getattr(ctx, "output_path", None)
+    save_image(input_image, output_path, "evals", "input.png")
+    index = []
     async with aiohttp.ClientSession() as session:
         total_start_time = time.time()
         # One edit occupies the whole mesh, so send them one at a time: concurrent
         # requests would only queue and inflate each measured latency.
-        for instruction, caption in INSTRUCTION_EDIT_CASES:
+        for i, (instruction, caption) in enumerate(INSTRUCTION_EDIT_CASES):
             status, elapsed, base64image = await _generate_instruction_edit_eval_async(
                 ctx, session, instruction, input_image
             )
             if not status or base64image is None:
+                failed.append(instruction)
+                continue
+            # Kept for upload either way: these are the images the score is about.
+            name = f"{i:02d}_edit.jpg"
+            save_image(base64image, output_path, "evals", name)
+            problem = check_image_output(base64image, INSTRUCTION_EDIT_CANVAS)
+            index.append(
+                {
+                    "file": name,
+                    "instruction": instruction,
+                    "expected": caption,
+                    "input_image": "input.png",
+                    "problem": problem,
+                }
+            )
+            if problem:
+                logger.error(f"❌ Edit '{instruction}' returned a bad image: {problem}")
                 failed.append(instruction)
                 continue
             status_list.append(
@@ -485,6 +508,9 @@ async def _run_instruction_edit_eval(
             )
         total_time = time.time() - total_start_time
 
+    if index and output_path:
+        index_path = Path(output_path) / "images" / "evals" / "index.json"
+        index_path.write_text(json.dumps(index, indent=2) + "\n")
     logger.info(
         f"Instruction edits: {len(status_list)} succeeded, {len(failed)} failed "
         f"in {total_time:.2f}s"
