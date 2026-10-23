@@ -10,7 +10,9 @@
       "black-forest-labs/FLUX.1-dev",
       "black-forest-labs/FLUX.1-schnell",
       "Motif-Technologies/Motif-Image-6B-Preview",
-      "Tongyi-MAI/Z-Image-Turbo"
+      "Tongyi-MAI/Z-Image-Turbo",
+      "Qwen/Qwen-Image-Edit-2511",
+      "Qwen/Qwen-Image-Edit"
     ],
     "AUDIO": [
       "distil-whisper/distil-large-v3",
@@ -473,6 +475,18 @@
         "p300x2"
       ]
     },
+    "qwen_image_edit": {
+      "id_name": "qwen-image-edit",
+      "weights": [
+        "Qwen/Qwen-Image-Edit-2511",
+        "Qwen/Qwen-Image-Edit"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "galaxy",
+        "blackhole_galaxy"
+      ]
+    },
     "bge": {
       "weights": [
         "BAAI/bge-large-en-v1.5"
@@ -757,6 +771,52 @@
         "test_timeout": 3600,
         "retry_attempts": 1,
         "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "QwenImageEditContractTest": {
+      "module": "test_module.load_param_tests.qwen_image_edit_contract_test",
+      "markers": [
+        "param",
+        "e2e",
+        "fast"
+      ],
+      "test_config": {
+        "test_timeout": 600,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "QwenImageEditTest": {
+      "module": "test_module.load_param_tests.qwen_image_edit_test",
+      "markers": [
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 900,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "QwenImageEditParamTest": {
+      "module": "test_module.load_param_tests.qwen_image_edit_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 0,
+        "retry_delay": 0,
         "break_on_failure": false,
         "mock_mode": false
       }

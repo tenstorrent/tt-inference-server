@@ -61,6 +61,15 @@ from .video_generation_param_test import (
     VideoGenerationParamTest,
     run_video_generation_param,
 )
+from .qwen_image_edit_contract_test import (
+    QwenImageEditContractTest,
+    run_qwen_image_edit_contract,
+)
+from .qwen_image_edit_param_test import (
+    QwenImageEditParamTest,
+    run_qwen_image_edit_param,
+)
+from .qwen_image_edit_test import QwenImageEditTest, run_qwen_image_edit
 
 
 __all__ = [
@@ -78,6 +87,9 @@ __all__ = [
     "ImageGenerationParamTest",
     "Img2ImgGenerationParamTest",
     "InpaintingGenerationParamTest",
+    "QwenImageEditContractTest",
+    "QwenImageEditParamTest",
+    "QwenImageEditTest",
     "TTSLoadTest",
     "TTSParamTest",
     "TestCase",
@@ -107,4 +119,7 @@ __all__ = [
     "run_video_generation_i2v_param",
     "run_video_generation_load",
     "run_video_generation_param",
+    "run_qwen_image_edit",
+    "run_qwen_image_edit_contract",
+    "run_qwen_image_edit_param",
 ]
