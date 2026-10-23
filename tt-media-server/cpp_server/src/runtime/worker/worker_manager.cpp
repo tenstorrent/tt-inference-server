@@ -332,7 +332,7 @@ pid_t WorkerManager::startWorker(SingleProcessWorker& worker) {
                             worker.cfg.env_vars);
   }
   setpgid(pid, pid);
-  worker.pid = pid;
+  worker.pid.store(pid, std::memory_order_release);
   worker.is_alive.store(true, std::memory_order_release);
   return pid;
 }
@@ -503,7 +503,7 @@ void WorkerManager::startLivenessChecker() {
         if (!alive) {
           TT_LOG_ERROR(
               "[WorkerManager] Liveness check: Worker {} is dead (PID {})", i,
-              w->pid);
+              w->pid.load(std::memory_order_acquire));
         }
       }
     }
