@@ -11193,7 +11193,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 80 * 1024,
+                    "max_gen_toks": 124 * 1024,  # tt-lab row: 15 of 198 GPQA replies hit 80K reasoning with no answer; serve -n 131072, so keep prompt + this under 128K
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -11228,7 +11228,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 80 * 1024,
+                    "max_gen_toks": 124 * 1024,  # tt-lab row: 15 of 198 GPQA replies hit 80K reasoning with no answer; serve -n 131072, so keep prompt + this under 128K
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
