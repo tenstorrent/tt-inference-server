@@ -491,7 +491,7 @@ deepseek_v41_flash_impl = ImplSpec(
 )
 
 # Same tt-metal code as deepseek_v41_flash; a distinct impl_id only so that the vision (VLM) profile gets its own model_id and is selected with
-# `--impl deepseek-v41-flash-vlm` (the text profile, now the production 16-user spec, is the default_impl of the model + device).
+# `--impl deepseek-v41-flash-vlm` (the text 1M profile `deepseek-v41-flash-1m`, the production B=4 entry, is the default_impl of the model + device).
 deepseek_v41_flash_vlm_impl = ImplSpec(
     impl_id="deepseek_v41_flash_vlm",
     impl_name="deepseek-v41-flash-vlm",
