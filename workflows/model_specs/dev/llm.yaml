@@ -7239,7 +7239,7 @@ templates:
     - ibm-granite/granite-4.2-30b
   impl: tt_vllm_plugin
   inference_engine: VLLM
-  status: FUNCTIONAL
+  status: COMPLETE
   has_builtin_warmup: true
   device_model_specs:
     - device: P300X2
