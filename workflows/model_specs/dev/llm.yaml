@@ -3139,7 +3139,7 @@ templates:
     # above (128K context, 4096 scheduler tokens). Multimodal (text + image + video).
     - device: BLACKHOLE_GALAXY
       max_concurrency: 128  # 32 slots x 4 lanes
-      max_context: 262144  # the model's max_position_embeddings; the per-lane KV pool holds ~11 users at 256K (22 at 128K)
+      max_context: 262144  # the model's max_position_embeddings; the per-lane KV pool below holds 20 users at 256K (40 at 128K)
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
@@ -3164,7 +3164,7 @@ templates:
         # KV pool per lane: 24 users x 128K. The plugin fits a larger request to free DRAM (32 x 128K became
         # 3.78M tokens = 29 GB per chip) and the 4096-token prefill warmup then has no room for its
         # activations (OOM on a 184 MB buffer); 3.15M tokens leaves ~4 GB per chip for prefill and traces.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "3145728"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "5308416"  # 20 users at 256K (+ the output reservation and sliding-group charge); TP=8 per lane = ~2.7 KB/token/chip bfloat8_b, ~14 GB KV per chip; was 3145728 (11.94x)
         # Every layer allocates the pool unless the sliding layers live in vLLM-managed hybrid KV groups
         # (window-sized caches): without them 30 x 4.3 GB per chip at this pool (OOM at layer 4). bfp8 KV
         # halves the global layers' bytes, as on the 31B / 12B Galaxy entries.
