@@ -24,13 +24,13 @@ docker run \
   --volume volume_id_Llama-3.1-8B-Instruct:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.24.0-29f93c9-3506696 \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --tt-device p300x2
+  --tt-device p300x2 --impl llama31-8b-qb2
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --device p300x2 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --device p300x2 --impl llama31-8b-qb2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
