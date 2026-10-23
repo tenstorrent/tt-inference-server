@@ -93,6 +93,12 @@ ENV UV_HTTP_RETRIES=10
 # A full-history clone of tt-metal has taken over an hour on CI, connection dropped ("fatal: early
 # EOF"). Only the pinned commit is needed, so fetch just that (matches the shallow
 # clone already used by tt-media-server/Dockerfile).
+# Models that import tt-transformers (TTTv2 moved out of tt-metal in tenstorrent/tt-metal#59548)
+# pin it in their requirements.txt; the serving image must install it or importing the model
+# fails. Collect those pins and install them with --no-deps, as the model READMEs do:
+# tt-transformers declares a released ttnn, and a resolving install would replace the ttnn
+# built here. Two models pinning different commits fail the build instead of leaving one of
+# them on the other's version.
 RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -102,6 +108,8 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
+    && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
+    && if [ -s /tmp/tt-transformers-requirements.txt ]; then uv pip install --no-deps -r /tmp/tt-transformers-requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
