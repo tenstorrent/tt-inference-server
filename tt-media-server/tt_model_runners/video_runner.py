@@ -160,8 +160,10 @@ def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import (
         TTMiniMaxFastH3Runner,
+        TTMiniMaxH3FL2VAHyperFlowRunner,
         TTMiniMaxH3FL2VALightX2VRunner,
         TTMiniMaxH3FL2VARunner,
+        TTMiniMaxH3Ref2VAHyperFlowRunner,
         TTMiniMaxH3Ref2VALightX2VRunner,
         TTMiniMaxH3Ref2VARunner,
         TTMiniMaxH3Runner,
@@ -192,6 +194,8 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_MINIMAX_H3_FASTH3.value: TTMiniMaxFastH3Runner,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: TTMiniMaxH3FL2VALightX2VRunner,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: TTMiniMaxH3Ref2VALightX2VRunner,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW.value: TTMiniMaxH3FL2VAHyperFlowRunner,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW.value: TTMiniMaxH3Ref2VAHyperFlowRunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:

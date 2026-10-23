@@ -18,6 +18,7 @@ from config.constants import (
     LTX_NUM_FRAMES,
     LTX_WIDTH,
     MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    MINIMAX_H3_HYPERFLOW_NUM_INFERENCE_STEPS,
     MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
@@ -117,6 +118,8 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_FASTH3.value: "MiniMaxH3-FastH3",
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: "MiniMaxH3-FL2VA-LightX2V",
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
+    ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW.value: "MiniMaxH3-FL2VA-HyperFlow",
+    ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW.value: "MiniMaxH3-Ref2VA-HyperFlow",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -1961,7 +1964,7 @@ class _MiniMaxH3LightX2VMixin:
         lora_path = os.environ.get("MINIMAX_H3_LORA_PATH")
         if not lora_path or not os.path.isfile(lora_path):
             raise ValueError(
-                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to the lightx2v Turbo "
+                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to the "
                 f"adapter's .safetensors file; got {lora_path!r}"
             )
         return {
@@ -1987,3 +1990,22 @@ class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VA
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+class _MiniMaxH3HyperFlowMixin(_MiniMaxH3LightX2VMixin):
+    """The HyperFlow 8-step adapter: one file serves fl2va and ref2va (``transformer/`` and
+    ``transformer_ref/``). Its header carries the sigma grid and the shifts it was distilled at,
+    which are the checkpoint's own; the pipeline refuses any other step count or shift.
+    """
+
+    num_inference_steps = MINIMAX_H3_HYPERFLOW_NUM_INFERENCE_STEPS
+    video_shift = 12.0
+    audio_shift = 3.0
+
+
+class TTMiniMaxH3FL2VAHyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3FL2VARunner):
+    """MiniMax-H3 ``fl2va`` with the HyperFlow 8-step adapter."""
+
+
+class TTMiniMaxH3Ref2VAHyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3Ref2VARunner):
+    """MiniMax-H3 ``ref2va`` with the HyperFlow 8-step adapter."""
