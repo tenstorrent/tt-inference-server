@@ -4,15 +4,15 @@
 #
 # Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B-Instruct on
 # SST-2, run through the forge server's `trainer-training-lora` runner
-# (tt-blacksmith LoraLLMTrainer). Shared as the reference curve for the P150,
+# (tt-blacksmith CrankLLMTrainer). Shared as the reference curve for the P150,
 # P300, and P300x2 devices (see workflows/training/registry.py).
 #
 # IMPORTANT: these values are NOT tt-blacksmith's golden CSVs. The forge runner
-# builds its LoraLLMConfig directly from the TrainingRequest below (seed=0,
+# builds its LLMTrainerConfig directly from the TrainingRequest below (seed=0,
 # deterministic=False) rather than through tt-blacksmith's pytest test-mode, so
 # the trajectory differs. Regenerate from a known-good P150 run whenever the
-# blacksmith pin (tt-media-server/.../forge_runners/requirements.txt) or the
-# tt-forge pin changes.
+# blacksmith pin (tt-media-server/.../forge_training_runners/requirements.txt)
+# or the tt-crank wheel changes.
 #
 # Regenerated from a single-chip P150 run on 2026-09-28 (blacksmith pin
 # 0a3c097). Because the runner is non-deterministic (deterministic=False),
