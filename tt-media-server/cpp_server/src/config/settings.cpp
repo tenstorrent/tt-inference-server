@@ -55,6 +55,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "deepseek";
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "llama";
+    case ModelType::LLAMA_3_2_1B_INSTRUCT:
+      return "llama32_1b";
     case ModelType::KIMI_K2_6:
     case ModelType::KIMI_K2_7_CODE:
       return "kimi";
@@ -81,6 +83,8 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
       return 64;
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
       return 40;
+    case ModelType::LLAMA_3_2_1B_INSTRUCT:
+      return 10;
     case ModelType::KIMI_K2_6:
     case ModelType::KIMI_K2_7_CODE:
       return 64;
@@ -915,6 +919,8 @@ ModelType modelType() {
     std::string m = envString("MODEL", defaults::MODEL);
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
     if (m == "moonshotai/Kimi-K2.7-Code") return ModelType::KIMI_K2_7_CODE;
+    if (m == "meta-llama/Llama-3.2-1B-Instruct")
+      return ModelType::LLAMA_3_2_1B_INSTRUCT;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;

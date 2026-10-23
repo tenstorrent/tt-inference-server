@@ -52,6 +52,8 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
 
   const auto& choice = chunk.choices[0];
   accumulatedAnswer << choice.text;
+  if (params.countTokenIds && choice.token_id)
+    accumulatedTokenIds.push_back(*choice.token_id);
 
   noteToken(choice);
 
@@ -72,6 +74,7 @@ void NonStreamResponseWriter::finalize() {
   choice.index = 0;
 
   choice.text = accumulatedAnswer.str();
+  choice.token_ids = std::move(accumulatedTokenIds);
   choice.finish_reason = finishReason;
 
   llmResponse.choices.push_back(std::move(choice));

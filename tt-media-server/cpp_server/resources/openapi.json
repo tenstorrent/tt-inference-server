@@ -20,6 +20,7 @@
     }
   ],
   "tags": [
+    { "name": "Completions", "description": "Raw text and token completion endpoints" },
     {
       "name": "Chat Completions",
       "description": "OpenAI-compatible chat completion endpoints"
@@ -54,6 +55,83 @@
     }
   ],
   "paths": {
+    "/v1/completions": {
+      "post": {
+        "tags": [
+          "Completions"
+        ],
+        "summary": "Create token completion",
+        "description": "Available only for meta-llama/Llama-3.2-1B-Instruct; other models return HTTP 404. Prompt and stop token IDs must be below 128256. Non-streaming completions from raw text or token IDs, without a chat template. Batched prompts execute sequentially and retain input order. Supports n=1; use repeated prompts for multiple samples. Behavior logprobs are unavailable and returned as null. Seeds and unsupported generation constraints are rejected.",
+        "operationId": "createCompletion",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completions in prompt order with aggregate usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Generation failed; partial results are not returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/chat/completions": {
       "post": {
         "tags": ["Chat Completions"],
@@ -536,6 +614,223 @@
   },
   "components": {
     "schemas": {
+      "CompletionRequest": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Must match the loaded model when supplied."
+          },
+          "prompt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                }
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                }
+              }
+            ],
+            "description": "Raw prompts; no BOS or chat-template tokens are added. Llama-3.2-1B IDs must be below 128256."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 16
+          },
+          "max_completion_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Alias taking precedence over max_tokens."
+          },
+          "stream": {
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "default": false
+          },
+          "n": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "default": 1
+          },
+          "echo": {
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "default": false
+          },
+          "return_token_ids": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include every sampled token, including EOS and tokens with no displayable text."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "default": 1
+          },
+          "top_p": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "default": 1
+          },
+          "top_k": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  -1
+                ]
+              },
+              {
+                "type": "integer",
+                "minimum": 1
+              }
+            ],
+            "default": -1,
+            "description": "Llama-3.2-1B supports at most 32 candidates; -1 uses its default candidate set."
+          },
+          "stop_token_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "description": "Additional stop tokens. Llama-3.2-1B IDs must be below 128256. Non-empty stop_token_ids cannot be combined with ignore_eos=true."
+          },
+          "ignore_eos": {
+            "type": "boolean",
+            "default": false,
+            "description": "Ignore model stop tokens and generate up to max_tokens. Cannot be combined with non-empty stop_token_ids because the engine disables all stop-token handling in this mode."
+          },
+          "skip_special_tokens": {
+            "type": "boolean",
+            "default": true
+          },
+          "logprobs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              0,
+              null
+            ],
+            "description": "Accepted for client compatibility; response logprobs are always null."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Supported only with a single prompt."
+          }
+        }
+      },
+      "CompletionResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices",
+          "usage"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "text_completion"
+            ]
+          },
+          "created": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "index",
+                "text",
+                "finish_reason",
+                "logprobs"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "text": {
+                  "type": "string"
+                },
+                "finish_reason": {
+                  "type": "string",
+                  "enum": [
+                    "stop",
+                    "length"
+                  ]
+                },
+                "logprobs": {
+                  "type": "null"
+                },
+                "token_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                }
+              }
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/CompletionUsage"
+          }
+        }
+      },
       "ChatCompletionRequest": {
         "type": "object",
         "required": ["messages"],

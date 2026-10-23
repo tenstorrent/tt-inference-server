@@ -80,6 +80,10 @@ void registerLLM() {
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
+  if (config::modelType() == config::ModelType::LLAMA_3_2_1B_INSTRUCT) {
+    routes.registerRoute(config::ModelService::LLM, "POST", "/v1/completions",
+                         "Llama-3.2-1B token completions");
+  }
 }
 
 void registerEmbedding() {

@@ -194,6 +194,7 @@ void LLMController::chatCompletions(
 ResponseWriterParams LLMController::makeWriterParams(
     const LLMRequest& request) const {
   ResponseWriterParams params;
+  params.countTokenIds = request.skip_text_decode;
   params.completionId = "chatcmpl-" + std::to_string(request.task_id);
   params.model = request.model.value_or("default");
   params.created = static_cast<int64_t>(
@@ -228,9 +229,10 @@ ResponseWriterParams LLMController::makeWriterParams(
 
 std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
-                                     std::shared_ptr<domain::Session> session) {
-  return [writer = std::move(writer), session = std::move(session)](
-             const LLMStreamChunk& chunk, bool isFinal) {
+                                     std::shared_ptr<domain::Session> session,
+                                     bool preserveTokenIds) {
+  return [writer = std::move(writer), session = std::move(session),
+          preserveTokenIds](const LLMStreamChunk& chunk, bool isFinal) {
     // Accumulate token for prefix index (always, even if connection closed)
     if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
       session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
@@ -249,10 +251,11 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
     // usage even if that chunk carries no displayable text.
     writer->observeCachedTokens(chunk);
 
-    // Only forward chunks with content to the writer; empty decoded tokens are
-    // tracked above but not sent to the client.
+    // Raw completions preserve every token. Chat responses retain their
+    // existing content filter.
     if (!chunk.choices.empty() &&
         (!chunk.choices[0].text.empty() ||
+         (preserveTokenIds && chunk.choices[0].token_id.has_value()) ||
          chunk.choices[0].tool_calls.has_value() ||
          chunk.choices[0].finish_reason.has_value())) {
       writer->handleTokenChunk(chunk);
@@ -329,7 +332,8 @@ void LLMController::handleNonStreaming(
         // The writer owns the HTTP callback from this point on.
         *writer = NonStreamResponseWriter::create(
             makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
-        return makeStreamingCallback(*writer, std::move(sessionPtr));
+        return makeStreamingCallback(*writer, std::move(sessionPtr),
+                                     reqPtr->skip_text_decode);
       },
       std::move(handlers));
 }
