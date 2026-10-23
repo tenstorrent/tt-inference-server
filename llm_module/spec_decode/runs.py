@@ -159,9 +159,8 @@ _PRESETS = {
     "ci": _Preset(
         CI_QUALITATIVE_CATEGORIES, CI_THROUGHPUT_ISLS, CI_THROUGHPUT_CONCURRENCIES
     ),
-    "throughput": _Preset(
-        (), SPEED_BENCH_THROUGHPUT_ISLS, THROUGHPUT_CONCURRENCY_SWEEP
-    ),
+    # Throwaway: 1k at 4 / 8 / 16 users per lane, to time decode steps of 4, 8 and 16 rows.
+    "throughput": _Preset((), ("1k",), (16, 32, 64)),
 }
 
 SPEC_DECODE_PRESETS = {name: preset.runs() for name, preset in _PRESETS.items()}
