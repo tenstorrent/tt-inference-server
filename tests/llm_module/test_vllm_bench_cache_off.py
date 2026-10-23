@@ -64,3 +64,74 @@ def test_patching_is_idempotent():
     once = registry["openai"]
     wrapper.patch_request_funcs(registry)
     assert registry["openai"] is once
+
+
+# Base models (no chat template) are benchmarked on /v1/completions (#5381).
+
+
+def _chat_argv(*extra):
+    return [
+        "bench",
+        "serve",
+        "--backend",
+        "openai-chat",
+        "--endpoint",
+        "/v1/chat/completions",
+        "--model",
+        "meta-llama/Llama-3.1-8B",
+        "--dataset-name",
+        "random",
+        *extra,
+    ]
+
+
+def _template(value):
+    checked = []
+
+    def has_chat_template(tokenizer, trust_remote_code):
+        checked.append((tokenizer, trust_remote_code))
+        return value
+
+    return has_chat_template, checked
+
+
+def test_model_without_chat_template_uses_completions_endpoint():
+    argv = _chat_argv()
+    has_chat_template, checked = _template(False)
+    wrapper.use_completions_without_chat_template(argv, has_chat_template)
+    assert argv[argv.index("--backend") + 1] == "openai"
+    assert argv[argv.index("--endpoint") + 1] == "/v1/completions"
+    assert checked == [("meta-llama/Llama-3.1-8B", False)]
+
+
+def test_model_with_chat_template_keeps_chat_endpoint():
+    argv = _chat_argv()
+    has_chat_template, _ = _template(True)
+    wrapper.use_completions_without_chat_template(argv, has_chat_template)
+    assert argv == _chat_argv()
+
+
+def test_unknown_chat_template_keeps_chat_endpoint():
+    # e.g. a remote console model name that is not a loadable tokenizer
+    argv = _chat_argv()
+    has_chat_template, _ = _template(None)
+    wrapper.use_completions_without_chat_template(argv, has_chat_template)
+    assert argv == _chat_argv()
+
+
+def test_explicit_tokenizer_and_trust_remote_code_are_used_for_the_check():
+    argv = _chat_argv("--tokenizer", "org/tok", "--trust-remote-code")
+    has_chat_template, checked = _template(False)
+    wrapper.use_completions_without_chat_template(argv, has_chat_template)
+    assert checked == [("org/tok", True)]
+
+
+def test_custom_dataset_is_left_on_the_chat_endpoint():
+    # Custom prompts are sized for the server's chat template.
+    argv = _chat_argv()
+    argv[argv.index("--dataset-name") + 1] = "custom"
+    expected = list(argv)
+    has_chat_template, checked = _template(False)
+    wrapper.use_completions_without_chat_template(argv, has_chat_template)
+    assert argv == expected
+    assert checked == []
