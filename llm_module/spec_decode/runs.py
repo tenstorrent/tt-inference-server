@@ -64,7 +64,7 @@ SPEC_DECODE_TEMPERATURE_ENV = "SPEC_DECODE_TEMPERATURE"
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
 # ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a fixed length).
-SPEC_DECODE_MAX_COMPLETION_TOKENS = 8192
+SPEC_DECODE_MAX_COMPLETION_TOKENS = 1024  # throwaway: slots 4+ never stop, keep the phases short
 
 
 @dataclass(frozen=True)
