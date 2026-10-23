@@ -80,11 +80,11 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # cpp_server is a private submodule the crank image does not use
 RUN rm -rf ${APP_DIR}/server/cpp_server
 
-# Worker venv. tt-crank is frozen at tt-mlir 240e14d; its wheel is only available as a
-# tt-mlir Actions artifact (needs a GitHub token, expires 2027-01-18). The wheel lacks
+# Worker venv. tt-crank is frozen at tt-mlir 40085d6; its wheel is only available as a
+# tt-mlir Actions artifact (needs a GitHub token, expires 2027-01-21). The wheel lacks
 # the SFPI toolchain tt-metal's kernel JIT needs, hence tt-crank-install-sfpi (root).
 USER root
-ARG TT_CRANK_ARTIFACT_ID=12240412299
+ARG TT_CRANK_ARTIFACT_ID=12493746911
 RUN --mount=type=secret,id=gh_token \
     cd ${APP_DIR}/server \
     && curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/gh_token)" -o /tmp/tt-crank.zip \
