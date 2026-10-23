@@ -2484,6 +2484,7 @@ templates:
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
+        DSV41_VLLM_MAX_PARTIAL: "4"  # all four prompts of the B=4 build may be part-way through their prefill (default 3 = slots - 1 is for builds with more users than prefill slots)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
@@ -2492,7 +2493,8 @@ templates:
         chat-template-content-format: openai  # the template iterates over the content parts (text / image_url)
         max_num_seqs: "4"
         max_model_len: "1048576"
-        max_num_batched_tokens: "67584"  # chunked prefill token budget per step: the ONE place to set it (67584 = effectively one large prefill, 4096 = real interleaving with decode; value with APC on to be decided after measurement)
+        max_num_batched_tokens: "16384"  # chunked prefill token budget per step: 4 users x 4096 (threshold below); with the single prefill chunk trace and per-row chunk starts 4 concurrent 32k / 64k / 128k prompts reach 25.8 / 49.2 / 100.5 s (demo 22.9-26.5 / 45.6-49.7 / 98.0-99.9)
+        long_prefill_token_threshold: 4096  # per-request prefill tokens per scheduler step (vLLM applies it while more than one request is eligible); needed so that concurrent prompts advance together
         enable-prefix-caching: true  # APC on by default (with DSV41_APC=1 and DSV41_PF_PAGED=read above); --no-enable-prefix-caching turns it off
         limit-mm-per-prompt: '{"image": 16}'
         mm-processor-cache-gb: 0
