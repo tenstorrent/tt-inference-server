@@ -37,14 +37,18 @@ logger = logging.getLogger(__name__)
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
-# mini-swe-agent runs inside the task container, where host loopback is not
-# the inference server.
+# mini-swe-agent and tau3_llm_agent call the model from inside the task's
+# compose services, where host loopback is not the inference server.
 _DOCKER_HOST_NAME = "host.docker.internal"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
 # harness (see ``_apply_mini_swe_agent_defaults``).
 _MINI_SWE_AGENT = "mini-swe-agent"
+# tau3-bench's agent runs in "main"; its simulated user runs in the
+# "tau3-runtime" service and its NL-assertion verifier in "main".
+_TAU3_LLM_AGENT = "tau3_llm_agent"
+_TAU3_SERVICES = ("main", "tau3-runtime")
 
 
 @dataclass(frozen=True)
@@ -168,26 +172,56 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     return values[0] if values else config.api_base
 
 
-def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
-    return (
-        config.agent == _MINI_SWE_AGENT
-        and config.agent_import_path is None
-        and config.environment_type == "docker"
-        and urlsplit(_get_agent_endpoint(config)).hostname
-        in {"127.0.0.1", "localhost", "::1"}
+def _is_loopback(url: str) -> bool:
+    return urlsplit(url).hostname in {"127.0.0.1", "localhost", "::1"}
+
+
+def _host_gateway_services(config: HarborRunConfig) -> tuple[str, ...]:
+    """Compose services that call the model and need the host gateway: empty
+    unless the agent runs in-container on docker against a loopback endpoint."""
+    if config.environment_type != "docker" or not _is_loopback(
+        _get_agent_endpoint(config)
+    ):
+        return ()
+    if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
+        return ("main",)
+    if config.agent == _TAU3_LLM_AGENT:
+        return _TAU3_SERVICES
+    return ()
+
+
+def _to_docker_host(url: str) -> str:
+    if not _is_loopback(url):
+        return url
+    parsed = urlsplit(url)
+    host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+    return urlunsplit(
+        parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
     )
 
 
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
     endpoint = _get_agent_endpoint(config)
-    if _mini_swe_needs_host_gateway(config):
-        parsed = urlsplit(endpoint)
-        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
-        endpoint = urlunsplit(
-            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
-        )
+    if _host_gateway_services(config):
+        endpoint = _to_docker_host(endpoint)
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
+    return env
+
+
+def _get_container_env(config: HarborRunConfig, env: dict[str, str]) -> dict[str, str]:
+    """Environment / verifier env with loopback endpoints moved to the host
+    gateway. tau3's task.toml fills OPENAI_BASE_URL from the host env for both,
+    so an explicit (rewritten) value is added for the verifier too."""
+    if not _host_gateway_services(config):
+        return env
+    env = {
+        key: _to_docker_host(value) if key in _OPENAI_ENDPOINT_ENV else value
+        for key, value in env.items()
+    }
+    env["OPENAI_BASE_URL"] = _to_docker_host(
+        env.get("OPENAI_BASE_URL", config.api_base)
+    )
     return env
 
 
@@ -214,17 +248,15 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
-    if _mini_swe_needs_host_gateway(config):
+    gateway_services = _host_gateway_services(config)
+    if gateway_services:
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
         )
+        extra_hosts = {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
         overlay_path.write_text(
             json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                    }
-                },
+                {"services": {service: extra_hosts for service in gateway_services}},
                 indent=2,
             ),
             encoding="utf-8",
@@ -250,12 +282,14 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if agent_env:
         agent_config["env"] = agent_env
 
-    if config.environment_env:
-        environment_config["env"] = config.environment_env
+    environment_env = _get_container_env(config, config.environment_env)
+    if environment_env:
+        environment_config["env"] = environment_env
 
     verifier_config: dict[str, Any] = {}
-    if config.verifier_env:
-        verifier_config["env"] = config.verifier_env
+    verifier_env = _get_container_env(config, config.verifier_env)
+    if verifier_env:
+        verifier_config["env"] = verifier_env
 
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
@@ -288,7 +322,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        bool(_host_gateway_services(config))
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None

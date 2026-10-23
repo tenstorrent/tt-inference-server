@@ -901,6 +901,50 @@ class TestMiniSweAgentParity:
             }
         }
 
+    def test_tau3_docker_uses_host_gateway(self, tmp_path):
+        task = _harbor_task(
+            task_name="tau2_airline",
+            agentic_eval_config=FakeHarborConfig(
+                dataset="sierra-research/tau3-bench",
+                agent="tau3_llm_agent",
+                agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                environment_env={"TAU2_USER_MODEL": "openai/m"},
+                verifier_env={"TAU2_NL_ASSERTIONS_MODEL": "openai/m"},
+            ),
+        )
+        with patch.dict(
+            os.environ,
+            {"OPENAI_BASE_URL": "http://127.0.0.1:8000/v1", "OPENAI_API_KEY": "k"},
+        ):
+            cfg = build_harbor_config(
+                task,
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=1,
+            )
+        config_path = harbor._write_harbor_config(cfg)
+        harbor_config = json.loads(config_path.read_text())
+
+        gateway = "http://host.docker.internal:8000/v1"
+        assert harbor_config["agents"][0]["env"] == {
+            "OPENAI_BASE_URL": gateway,
+            "OPENAI_API_BASE": gateway,
+        }
+        assert harbor_config["environment"]["env"] == {
+            "TAU2_USER_MODEL": "openai/m",
+            "OPENAI_API_KEY": "k",
+            "OPENAI_BASE_URL": gateway,
+        }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+            "OPENAI_BASE_URL": gateway,
+        }
+        overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
+        extra_hosts = {"extra_hosts": ["host.docker.internal:host-gateway"]}
+        assert json.loads(overlay_path.read_text()) == {
+            "services": {"main": extra_hosts, "tau3-runtime": extra_hosts}
+        }
+
     def test_host_executed_agent_keeps_loopback_endpoint(self, tmp_path):
         cfg = build_harbor_config(
             _harbor_task(),
