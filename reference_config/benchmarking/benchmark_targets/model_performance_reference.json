@@ -1410,6 +1410,32 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "_comment": [
+                    "QuietBox 2, batch 1 (the fused batch-1 decode), measured 2026-10-23 with tt-inference-server --local-server",
+                    "on tt-metal jerrywangTT/gptoss20b-ttis e99af015077 and vllm-tt-plugin with the harmony after-stop fix",
+                    "(vllm bench serve sets ignore_eos; without that fix every request that returned early lost its usage and",
+                    "TPOT read ~2x). 8 prompts: TTFT 46.8 ms mean, TPOT 2.305 ms (median ITL 2.302 ms), output 376.6 tok/s."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 46.8,
+                        "tput_user": 433.7,
+                        "tput": 376.5,
+                        "tolerance": 0.05
+                    }
+                }
+            }
         ]
     },
     "Qwen/QwQ-32B": {
