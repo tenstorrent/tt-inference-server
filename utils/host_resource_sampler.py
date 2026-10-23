@@ -35,12 +35,12 @@ class HostResourceSampler:
             try:
                 row = self.sample()
                 body = json.dumps(row, separators=(",", ":"))
-                print("GEMMA_HOST_RESOURCE " + body, flush=True)
                 self.output.parent.mkdir(parents=True, exist_ok=True)
                 with self.output.open("a") as handle:
                     handle.write(body + "\n")
                     handle.flush()
                     os.fsync(handle.fileno())
+                print("GEMMA_HOST_RESOURCE " + body, flush=True)
             except Exception as exc:
                 # Observation failure must not change task/server behavior.
                 try:
