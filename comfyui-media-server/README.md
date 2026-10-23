@@ -1,5 +1,10 @@
 # comfyui-media-server
 
+> **Moved.** This server now lives in
+> [stisiTT/ComfyUI-Tenstorrent](https://github.com/stisiTT/ComfyUI-Tenstorrent)
+> under `media_server/`, with its history, and ships with the nodes that launch
+> it. This copy is frozen; the branch is kept for history only.
+
 Standalone FastAPI media-inference server that backs the Tenstorrent **ComfyUI**
 custom nodes ([ComfyUI-Tenstorrent](https://github.com/stisiTT/ComfyUI-Tenstorrent)). It serves diffusion
 image (SDXL, SD3.5) and video (Wan2.2 T2V) generation on Tenstorrent hardware,
