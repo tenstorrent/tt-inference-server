@@ -622,6 +622,15 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
 }
 
+TEST_F(MainIntegrationTest, RawEndpointUnavailableOnOtherModels) {
+  ASSERT_NE(tt::config::modelType(),
+            tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT);
+  auto response = tt::test::HttpResponse::parse(tt::test::sendAndReceive(
+      server->host(), server->port(), R"({"prompt":[11],"max_tokens":1})",
+      "your-secret-key", 250, "/v1/completions"));
+  EXPECT_EQ(response.statusCode(), 404) << response.body();
+}
+
 TEST_F(MainIntegrationTest, CompletionsPreservePromptAndEveryOutputToken) {
   auto future = std::async(std::launch::async, [] {
     return tt::test::sendAndReceive(
@@ -715,7 +724,10 @@ TEST_F(MainIntegrationTest, CompletionsRejectIgnoreEosWithExplicitStopTokens) {
 
 TEST_F(MainIntegrationTest, CompletionsRejectInvalidOrUnsupportedRequests) {
   for (const char* body :
-       {R"({"prompt":[]})",
+       {R"({"prompt":[128256]})",
+        R"({"prompt":[1],"stop_token_ids":[128256]})",
+        R"({"prompt":[1],"top_k":33})",
+        R"({"prompt":[]})",
         R"({"prompt":[-1]})",
         R"({"prompt":[1.5]})",
         R"({"prompt":[1],"max_tokens":0})",

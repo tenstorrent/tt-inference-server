@@ -1659,7 +1659,12 @@ include(GoogleTest)
 # tears it down via TearDownTestSuite. Registering each TEST_F as its own
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
-add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+add_test(NAME MainIntegrationTest COMMAND main_integration_test
+    --gtest_filter=-MainIntegrationTest.Completions*)
+add_test(NAME LlamaCompletionsIntegrationTest
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/run_llama_completions.py
+        $<TARGET_FILE:main_integration_test>)
 add_test(NAME TokenizerProvisioning
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/test_tokenizer_provisioning.py)
@@ -1672,7 +1677,7 @@ if(TARGET transport_kv_migration_e2e)
 endif()
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
-set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
+set_tests_properties(MainIntegrationTest LlamaCompletionsIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )

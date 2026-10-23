@@ -33,9 +33,7 @@ std::vector<uint32_t> parsePrompt(const Json::Value& prompt) {
       throw std::invalid_argument(
           "prompt token IDs must be non-negative integers");
     }
-    if (tt::config::modelType() ==
-            tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT &&
-        id.asUInt() >= 128256) {
+    if (id.asUInt() >= 128256) {
       throw std::invalid_argument(
           "prompt token ID exceeds Llama-3.2-1B vocabulary");
     }
@@ -68,6 +66,13 @@ struct LLMController::CompletionBatch {
 void LLMController::completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  if (tt::config::modelType() != tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT) {
+    callback(
+        errorResponse(drogon::k404NotFound,
+                      "completions is available only for Llama-3.2-1B-Instruct",
+                      "not_found_error"));
+    return;
+  }
   const auto json = req->getJsonObject();
   if (!json || !json->isObject()) {
     callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
@@ -98,9 +103,7 @@ void LLMController::completions(
         throw std::invalid_argument("stop_token_ids must be an array");
       for (const auto& id : stopIds) {
         if (!id.isUInt() || id.asUInt() > std::numeric_limits<int32_t>::max() ||
-            (tt::config::modelType() ==
-                 tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT &&
-             id.asUInt() >= 128256)) {
+            id.asUInt() >= 128256) {
           throw std::invalid_argument(
               "stop_token_ids contains an invalid token ID");
         }
@@ -149,9 +152,7 @@ void LLMController::completions(
     const int topK = parameters.top_k.value_or(-1);
     if (topK != -1 && topK < 1)
       throw std::invalid_argument("top_k must be -1 or positive");
-    if (tt::config::modelType() ==
-            tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT &&
-        topK > 32) {
+    if (topK > 32) {
       throw std::invalid_argument("this Blaze model supports top_k up to 32");
     }
     const int maxTokens = parameters.max_tokens.value_or(16);

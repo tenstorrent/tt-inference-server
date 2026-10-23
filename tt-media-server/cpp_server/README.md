@@ -26,6 +26,20 @@ Run that command from `cpp_server`. Place the same model subdirectory under
 frontend image. Complete cached `tokenizer.json`, `tokenizer_config.json`, and
 `config.json` files are reused without credentials or network access.
 
+## Llama-1B rollout endpoint
+
+The C++ `/v1/completions` endpoint is available only when
+`MODEL=meta-llama/Llama-3.2-1B-Instruct`. Other models return HTTP 404.
+Prompt and stop token IDs must be below 128256.
+
+The RL deployment uses this path:
+`trainer -> Blaze weight-control gateway -> C++ server`.
+The gateway forwards generation requests to the loopback C++ backend. It
+also closes admission, drains active requests, and stops the backend before
+weight updates. This deployment does not route generation through Dynamo.
+Dynamo's token-in/token-out frontend remains a separate deployment path;
+this endpoint does not extend its API or add weight-update coordination to it.
+
 The raw `/v1/completions` endpoint rejects `ignore_eos=true` with non-empty
 `stop_token_ids`: the pinned engine disables both model and explicit stop
 tokens in that mode. Use `ignore_eos=false` for explicit stop IDs, or omit
