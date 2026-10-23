@@ -18,10 +18,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
-# Registry dataset name -> generator. A generator receives the EVALS_AGENTIC
+from llm_module.agentic.deepswe import DEEPSWE_DATASET, generate_deepswe
+
+# Dataset name -> generator. A generator receives the EVALS_AGENTIC
 # interpreter, whose editable Harbor install carries the adapters, and returns
-# the directory of generated tasks.
-_GENERATORS: Dict[str, Callable[[Path], Path]] = {}
+# the directory of generated tasks. A dataset that is not in the registry at
+# all (DeepSWE) is checked out here too.
+_GENERATORS: Dict[str, Callable[[Path], Path]] = {
+    DEEPSWE_DATASET: generate_deepswe,
+}
 
 
 def local_task_pattern(dataset: str, pattern: str) -> str:

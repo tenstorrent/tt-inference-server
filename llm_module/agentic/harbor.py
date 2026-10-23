@@ -14,10 +14,13 @@ translate an eval config into a Harbor job config.
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import logging
 import os
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -38,14 +41,25 @@ logger = logging.getLogger(__name__)
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
-# mini-swe-agent runs inside the task container, where host loopback is not
-# the inference server.
+# Inside a task container host loopback is not the inference server. A local
+# endpoint is rewritten to the address containers reach the host at
+# (``_docker_host_address``): Docker Desktop's ``host.docker.internal``, else the
+# docker bridge gateway, which needs no ``extra_hosts`` entry (Docker rejects one
+# on a service sharing the egress-control sidecar's network namespace).
+# AGENTIC_DOCKER_HOST_ADDRESS overrides it.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _DOCKER_HOST_NAME = "host.docker.internal"
+_DOCKER_HOST_ADDRESS_ENV = "AGENTIC_DOCKER_HOST_ADDRESS"
+_DEFAULT_BRIDGE_GATEWAY = "172.17.0.1"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
 # harness (see ``_apply_mini_swe_agent_defaults``).
 _MINI_SWE_AGENT = "mini-swe-agent"
+# Custom agents that run inside the task container, as mini-swe-agent does
+# (terminus-2 and other agents run on the host): the tau3 adapter's LLM agent
+# runs run_tau3_llm_agent.py in the container.
+_IN_CONTAINER_AGENT_IMPORTS = ("adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",)
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,15 @@ class HarborRunConfig:
     # Harbor runs these task directories instead of resolving ``dataset`` in
     # the registry.
     dataset_path: Optional[Path] = None
+    # Add the inference endpoint's host to Harbor's run-specific agent
+    # allowlist, for tasks that block agent egress
+    # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
+    allow_agent_endpoint: bool = False
+    # Pulled before ``harbor run`` on the docker environment (see
+    # ``prepull_images``).
+    prepull_images: list[str] = field(default_factory=list)
+    prepull_attempts: int = 3
+    prepull_timeout_sec: float = 30 * 60
 
 
 def _apply_mini_swe_agent_defaults(
@@ -173,25 +196,79 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     return values[0] if values else config.api_base
 
 
-def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
-    return (
-        config.agent == _MINI_SWE_AGENT
-        and config.agent_import_path is None
-        and config.environment_type == "docker"
-        and urlsplit(_get_agent_endpoint(config)).hostname
-        in {"127.0.0.1", "localhost", "::1"}
+def _agent_in_task_container(config: HarborRunConfig) -> bool:
+    if config.agent_import_path is None:
+        return config.agent == _MINI_SWE_AGENT
+    return config.agent_import_path in _IN_CONTAINER_AGENT_IMPORTS
+
+
+@functools.cache
+def _docker_host_address() -> str:
+    """The address task containers reach this host at (see _LOOPBACK_HOSTS)."""
+    override = os.environ.get(_DOCKER_HOST_ADDRESS_ENV, "").strip()
+    if override:
+        return override
+    try:
+        info = subprocess.run(
+            ["docker", "info", "--format", "{{.OperatingSystem}}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if "Docker Desktop" in info.stdout:
+            return _DOCKER_HOST_NAME
+        bridge = subprocess.run(
+            [
+                "docker",
+                "network",
+                "inspect",
+                "bridge",
+                "--format",
+                "{{range .IPAM.Config}}{{.Gateway}} {{end}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        gateways = bridge.stdout.split() if bridge.returncode == 0 else []
+        if gateways:
+            return gateways[0]
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not ask docker for the host address: %s", exc)
+    return _DEFAULT_BRIDGE_GATEWAY
+
+
+def _task_side_url(config: HarborRunConfig, url: str) -> str:
+    """``url`` as a task container on the docker environment reaches it."""
+    parsed = urlsplit(url)
+    if config.environment_type != "docker" or parsed.hostname not in _LOOPBACK_HOSTS:
+        return url
+    host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+    return urlunsplit(
+        parsed._replace(netloc=parsed.netloc.replace(host, _docker_host_address(), 1))
     )
+
+
+def _task_side_env(config: HarborRunConfig, env: dict[str, str]) -> dict[str, str]:
+    """``env`` with its OpenAI endpoint values as a task container reaches them."""
+    return {
+        key: _task_side_url(config, value) if key in _OPENAI_ENDPOINT_ENV else value
+        for key, value in env.items()
+    }
+
+
+def _get_task_side_endpoint(config: HarborRunConfig) -> str:
+    """The endpoint as the agent reaches it: from the task container when it runs
+    there, else (on the host) unchanged."""
+    endpoint = _get_agent_endpoint(config)
+    if _agent_in_task_container(config):
+        endpoint = _task_side_url(config, endpoint)
+    return endpoint
 
 
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
-    endpoint = _get_agent_endpoint(config)
-    if _mini_swe_needs_host_gateway(config):
-        parsed = urlsplit(endpoint)
-        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
-        endpoint = urlunsplit(
-            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
-        )
+    endpoint = _get_task_side_endpoint(config)
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env
 
@@ -230,22 +307,6 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
-    if _mini_swe_needs_host_gateway(config):
-        overlay_path = (
-            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
-        )
-        overlay_path.write_text(
-            json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                    }
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -265,13 +326,20 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     agent_env = _get_agent_env(config)
     if agent_env:
         agent_config["env"] = agent_env
+    if config.allow_agent_endpoint:
+        host = urlsplit(_get_task_side_endpoint(config)).hostname
+        if not host:
+            raise ValueError("allow_agent_endpoint needs an endpoint with a host")
+        agent_config["extra_allowed_hosts"] = [host]
 
+    # Environment and verifier env is read inside task containers (tau3's user
+    # simulator and NL-assertion verifier call the model with it).
     if config.environment_env:
-        environment_config["env"] = config.environment_env
+        environment_config["env"] = _task_side_env(config, config.environment_env)
 
     verifier_config: dict[str, Any] = {}
     if config.verifier_env:
-        verifier_config["env"] = config.verifier_env
+        verifier_config["env"] = _task_side_env(config, config.verifier_env)
 
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
@@ -304,8 +372,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        _get_task_side_endpoint(config) != _get_agent_endpoint(config)
         or config.dataset_path is not None
+        or config.allow_agent_endpoint
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
@@ -335,9 +404,84 @@ def _annotate_result_file(result_file: Path) -> None:
         raise RuntimeError(msg) from e
 
 
+def prepull_images(
+    images: list[str],
+    attempts: int,
+    timeout_sec: float,
+    retry_delay_sec: float = 30.0,
+) -> list[str]:
+    """``docker pull`` each image not already local, up to ``attempts`` times.
+
+    A trial's environment build pulls its base image itself, under the task's
+    build timeout and once per concurrent trial; on a slow or resetting registry
+    link every build of the wave then fails together (tau3-bench on the Galaxy
+    runner: ``python:3.12-slim`` at ~11 KB/s, reset mid-layer). One pull ahead
+    of the run, retried, leaves the builds a local image (self-hosted runners
+    keep it for later runs). A pull that still fails is logged and the run goes
+    ahead: Harbor reports the build failure per trial. Returns the images that
+    could not be pulled.
+    """
+    failed = []
+    for image in images:
+        try:
+            present = (
+                subprocess.run(
+                    ["docker", "image", "inspect", image],
+                    capture_output=True,
+                    timeout=60,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            logger.warning(
+                "Cannot inspect docker image %s (%s); not pre-pulling", image, e
+            )
+            failed.append(image)
+            continue
+        if present:
+            logger.info("Docker image %s is already local", image)
+            continue
+        pulled = False
+        for attempt in range(1, attempts + 1):
+            logger.info(
+                "Pre-pulling docker image %s (attempt %d/%d)", image, attempt, attempts
+            )
+            try:
+                pulled = (
+                    subprocess.run(
+                        ["docker", "pull", image], timeout=timeout_sec
+                    ).returncode
+                    == 0
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "docker pull %s timed out after %.0f s", image, timeout_sec
+                )
+            except OSError as e:
+                logger.warning("docker pull %s failed to start: %s", image, e)
+                break
+            if pulled:
+                break
+            if attempt < attempts:
+                time.sleep(retry_delay_sec)
+        if not pulled:
+            logger.error(
+                "Could not pull docker image %s in %d attempt(s); trials that build on it may fail",
+                image,
+                attempts,
+            )
+            failed.append(image)
+    return failed
+
+
 def run(config: HarborRunConfig) -> int:
     interpreter = config.venv_python or Path(sys.executable)
     harbor_exec = Path(interpreter).parent / "harbor"
+
+    if config.prepull_images and config.environment_type == "docker":
+        prepull_images(
+            config.prepull_images, config.prepull_attempts, config.prepull_timeout_sec
+        )
 
     if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)
