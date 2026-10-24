@@ -499,6 +499,16 @@ templates:
         # ms at an unchanged device time in the generator test; the output
         # bit for bit the same.
         V41_DECODE_HOST_INPUTS: "packed"
+        # The mHC Sinkhorn lane-wise on the SFPU: the
+        # op 52 -> 18.5 us, twice a layer; comb nearer the reference.
+        V41_MHC_SINKHORN_SFPU: "1"
+        # The decode shared expert's partial summed before the MoE tail's TP
+        # reduce-scatter instead of reduce-scattered on its own, and that
+        # reduce-scatter on reduce_scatter_minimal_async:
+        # with the Sinkhorn above the 40-layer batched step 77.4 -> 73.4 ms
+        # of device at c32, 62.6 -> 59.1 at c1, 2,000 replays soaked.
+        V41_SHARED_IN_FFN: "rs"
+        V41_DECODE_TAIL_RS: "minimal"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
