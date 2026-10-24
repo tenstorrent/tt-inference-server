@@ -577,3 +577,57 @@ def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
     assert {"FL2VA/*", "Ref2VA/*", f"{skipped}/*"} <= set(excludes)
     assert f"{served}/*" not in excludes
     assert f"{served}/config.json" in spec.metadata["hf_required_globs"]
+
+
+def test_device_profile_can_narrow_the_template_modalities():
+    """``supported_modalities`` is template-wide; a device block that serves the
+    text model only narrows it for that profile, the others keep the template's."""
+    template = _build_template(
+        {
+            "weights": ["google/gemma-4-31B-it"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "supported_modalities": ["text", "image", "video"],
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "supported_modalities": ["text"],
+                },
+                {"device": "N300", "max_concurrency": 32, "max_context": 32768},
+            ],
+        },
+        "dev",
+    )
+    specs = {s.device_type: s for s in template.expand_to_specs()}
+    assert specs[DeviceTypes.N150].supported_modalities == ["text"]
+    assert specs[DeviceTypes.N300].supported_modalities == ["text", "image", "video"]
+    # The narrowing survives the JSON round trip the runtime reads the spec from.
+    assert specs[DeviceTypes.N150].get_serialized_dict()["supported_modalities"] == [
+        "text"
+    ]
+
+
+def test_gemma4_multimodal_entries_serve_images_only_where_configured():
+    """A template-wide image declaration must hold on every device block: the
+    block installs the multimodal serving config (``limit-mm-per-prompt``) or
+    narrows itself to text, so the eval and benchmark selection never sends
+    images to a profile that serves the text model only."""
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    checked = 0
+    for template in templates:
+        if not any(w.startswith("google/gemma-4") for w in template.weights):
+            continue
+        if "image" not in (template.supported_modalities or []):
+            continue
+        for spec in template.expand_to_specs():
+            device_spec = spec.device_model_spec
+            if device_spec.device.name == "GPU":
+                continue  # vLLM on GPU serves the HF multimodal model natively
+            checked += 1
+            if "image" in spec.supported_modalities:
+                assert "limit-mm-per-prompt" in device_spec.vllm_args, spec.model_id
+            else:
+                assert spec.supported_modalities == ["text"], spec.model_id
+    assert checked >= 8
