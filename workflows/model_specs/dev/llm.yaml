@@ -3164,7 +3164,7 @@ templates:
         # KV pool per lane: 24 users x 128K. The plugin fits a larger request to free DRAM (32 x 128K became
         # 3.78M tokens = 29 GB per chip) and the 4096-token prefill warmup then has no room for its
         # activations (OOM on a 184 MB buffer); 3.15M tokens leaves ~4 GB per chip for prefill and traces.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "5308416"  # 20 users at 256K (+ the output reservation and sliding-group charge); TP=8 per lane = ~2.7 KB/token/chip bfloat8_b, ~14 GB KV per chip; was 3145728 (11.94x)
+        GEMMA4_MAX_TOKENS_ALL_USERS: "3145728"  # 12 users at 256K: the known-good ceiling on the lane engine (10-24 07:31: 5308416 = 20 users OOMed vLLM's per-layer KV allocation at layer 24, 3.0 GB K buffer over 32 GB per chip; the real cost is ~7.7 KB/token/chip, 3.78M tokens = 29 GB per chip measured on 10-22).
         # Every layer allocates the pool unless the sliding layers live in vLLM-managed hybrid KV groups
         # (window-sized caches): without them 30 x 4.3 GB per chip at this pool (OOM at layer 4). bfp8 KV
         # halves the global layers' bytes, as on the 31B / 12B Galaxy entries.
