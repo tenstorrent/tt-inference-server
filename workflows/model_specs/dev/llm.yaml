@@ -486,6 +486,12 @@ templates:
         # merged: 140 -> 97 ms a step at the 1M pool,
         # soaked there; unchanged at the small pools.
         V41_DECODE_SINGLE_QUERY: "1"
+        # The decode step's host inputs packed into four uploads, the RoPE
+        # rows from host tables by position and the Engram rows gathered for
+        # the live chips only: the step wall 87 -> 73
+        # ms at an unchanged device time in the generator test; the output
+        # bit for bit the same.
+        V41_DECODE_HOST_INPUTS: "packed"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
