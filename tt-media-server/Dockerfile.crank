@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+# tt-crank image for the trainer runners; shared steps mirror Dockerfile.forge.
+# Ubuntu 24.04 because the tt-crank wheel needs glibc 2.38 / GLIBCXX_3.4.32. Build with:
+#   docker build --secret id=gh_token,env=GH_TOKEN -f tt-media-server/Dockerfile.crank .
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ARG CONTAINER_APP_UID=1000
+ARG HOME_DIR=/home/container_app_user
+
+ENV ENVIRONMENT=development
+ENV SHELL=/bin/bash
+ENV CONTAINER_APP_USERNAME=container_app_user
+ENV LOGURU_LEVEL=INFO
+ENV TT_METAL_LOGS_PATH=${HOME_DIR}/logs
+
+RUN apt-get update && apt-get install -y \
+    gosu \
+    libgl1 \
+    libsndfile1 \
+    wget \
+    git-lfs \
+    nano \
+    acl \
+    jq \
+    vim \
+    python3-pip \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    # pyluwen build dependencies (Rust package with protobuf)
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
+    htop \
+    screen \
+    tmux \
+    unzip \
+    zip \
+    curl \
+    libcurl4-openssl-dev \
+    iputils-ping \
+    rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && protoc --version
+
+# Ubuntu 24.04 images ship an `ubuntu` user holding UID 1000.
+RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
+    && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR}/logs /run/sshd \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && chmod 755 /run/sshd
+
+USER ${CONTAINER_APP_USERNAME}
+
+# tt-smi, in its own venv: Ubuntu 24.04's system Python refuses pip installs (PEP 668).
+RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
+    && python3.12 -m venv ${HOME_DIR}/tt-smi-venv \
+    && ${HOME_DIR}/tt-smi-venv/bin/pip install git+https://github.com/tenstorrent/tt-smi"
+ENV PATH="${PATH}:${HOME_DIR}/tt-smi-venv/bin"
+
+ARG APP_DIR="${HOME_DIR}/app"
+ENV APP_DIR=${APP_DIR}
+WORKDIR ${APP_DIR}
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
+# cpp_server is a private submodule the crank image does not use
+RUN rm -rf ${APP_DIR}/server/cpp_server
+
+# Worker venv. tt-crank is frozen at tt-mlir 40085d6; its wheel is only available as a
+# tt-mlir Actions artifact (needs a GitHub token, expires 2027-01-21). The wheel lacks
+# the SFPI toolchain tt-metal's kernel JIT needs, hence tt-crank-install-sfpi (root).
+USER root
+ARG TT_CRANK_ARTIFACT_ID=12493746911
+RUN --mount=type=secret,id=gh_token \
+    cd ${APP_DIR}/server \
+    && curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/gh_token)" -o /tmp/tt-crank.zip \
+        "https://api.github.com/repos/tenstorrent/tt-mlir/actions/artifacts/${TT_CRANK_ARTIFACT_ID}/zip" \
+    && unzip -q /tmp/tt-crank.zip -d /tmp/tt-crank \
+    && python3.12 -m venv venv-worker \
+    && venv-worker/bin/pip install --no-cache-dir /tmp/tt-crank/tt_crank-*.whl \
+        -r requirements.txt -r tt_model_runners/forge_training_runners/requirements.txt \
+    && venv-worker/bin/pip check \
+    && venv-worker/bin/tt-crank-install-sfpi \
+    && rm -rf /tmp/tt-crank /tmp/tt-crank.zip \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+USER ${CONTAINER_APP_USERNAME}
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
+ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
+
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version
+ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
+ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
+COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
+RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
+    "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
+
+WORKDIR "${APP_DIR}"
+EXPOSE 8000
+CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]
