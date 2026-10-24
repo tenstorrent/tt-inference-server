@@ -477,6 +477,13 @@ templates:
         # length that fits it replays instead of the 5,120-row chunk: 1,028
         # rows 229 -> 160 ms of device, the decode tokens the same.
         TT_V41_SHORT_CHUNK: "2048"
+        # A generic prefill chunk builds each index mask once per ratio and
+        # score width, row-major, shared by its index sources, which add it to
+        # the score kernel's row-major output directly and read a tiled twin
+        # of the index-K cache: the 1M-bucket chunk's
+        # kernel time -14 % on the profiled layers, the output bit for bit the
+        # same.
+        TT_V41_PREFILL_MASK_ONCE: "1"
         # Compressed-KV rows in the checkpoint's own fp8 format (528 B a row,
         # against 1,024 in bf16): 1.6x less cache memory per context token on
         # every chip.
