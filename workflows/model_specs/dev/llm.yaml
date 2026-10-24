@@ -474,6 +474,12 @@ templates:
         # against 1,024 in bf16): 1.6x less cache memory per context token on
         # every chip.
         TT_V41_KV_FORMAT: "scaled_fp8"
+        # The decode step's gate selection and routing setup on the 32-row
+        # tile (router_select, route_offsets on one all-gathered index tile)
+        # and the MoE tail on 80 cores:
+        # 154 -> 140 ms a step at the 1M pool, soaked there.
+        V41_DECODE_ROUTING: "1"
+        V41_DECODE_TAIL: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
