@@ -470,6 +470,13 @@ templates:
         # isl plus the 4 tokens the chat template adds. Any other length runs
         # eagerly; keep this list in step with the points and the template.
         TT_V41_TRACE_PREFILL_LENGTHS: "1028,2052,4100,8196,16388,32772,65540,131076,262148,524292,1048452"
+        # A second prefill geometry for the short prompts:
+        # a 2,048-row chunk (the smallest multiple of 32 x SP x TP that holds
+        # isl 1,024 plus the template's 4 tokens) with its own prefill state,
+        # MoE padding configs and per-length captures, which a listed prompt
+        # length that fits it replays instead of the 5,120-row chunk: 1,028
+        # rows 229 -> 160 ms of device, the decode tokens the same.
+        TT_V41_SHORT_CHUNK: "2048"
         # Compressed-KV rows in the checkpoint's own fp8 format (528 B a row,
         # against 1,024 in bf16): 1.6x less cache memory per context token on
         # every chip.
@@ -511,8 +518,9 @@ templates:
         fabric_config: FABRIC_2D_TORUS_XY
         fabric_router_max_payload_size: 14400
         # The decode capture, the joins' captures (one per prefill state and
-        # slot) and the prefill captures of TT_V41_TRACE_PREFILL_LENGTHS (one
-        # per chunk per length per prefill state).
+        # slot; the short chunk's state at one width) and the prefill captures
+        # of TT_V41_TRACE_PREFILL_LENGTHS (one per chunk per length, on the
+        # short chunk's state for the lengths that fit it).
         trace_region_size: 2147483648  # 2 * 1024 * 1024 * 1024
         # The decode step samples on device (ttnn.sampling over each row's
         # top-128 candidates) and returns token ids: the host sampler over
