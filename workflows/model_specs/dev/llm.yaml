@@ -3106,12 +3106,12 @@ templates:
       # 4 lanes x 4 users. The fast decode path (streaming MoE, compact SWA
       # attention, slot-parity-independent layer 0) serves at most 4 users per
       # replica; c=16 is the measured point (~1000 tok/s, TPOT ~13 ms).
-      max_concurrency: 64  # throwaway: 16 users per lane, to time 16-row decode steps
+      max_concurrency: 32  # throwaway: 8 users per lane on the 8-row decode kernels (mimo-v2.6/dflash)
       # Full 1M window: LongBench v2 sends up to 900K-token prompts. Each lane's
       # KV pool is capped by MIMO_KV_GB_PER_CHIP (6 GB -> ~1.27M tokens), so a
       # lane holds one 1M request or several shorter ones, not four 1M requests.
       # Above 128K the decode RoPE comes from the host instead of device tables.
-      max_context: 65536  # throwaway: 16 users x 64K fit one lane's KV pool
+      max_context: 65536  # throwaway: 8 users x 64K fit one lane's KV pool
       default_impl: true
       # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
       # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
@@ -3120,10 +3120,10 @@ templates:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_VLLM_TIMING: 1
-        MIMO_PREFILL_TRACE: 0  # throwaway: 16-user prefill-batch traces overflow the trace region; decode timing only
+        MIMO_PREFILL_TRACE: 0  # throwaway: prefill-batch traces may overflow the trace region; decode timing only
       override_tt_config:
         trace_mode: decode_only
-        trace_region_size: 1200000000  # throwaway: the 16-user decode trace needs 1.005 GB
+        trace_region_size: 1200000000  # throwaway: room for the 8-row decode trace
         l1_small_size: 65536
         dispatch_core_axis: col
         # Greedy decode rows sample in the decode trace; other rows fall back to
@@ -3136,7 +3136,7 @@ templates:
         prefill_gather_quiet_ms: 25
       vllm_args:
         data_parallel_size: 4
-        max_num_seqs: 16  # per lane (throwaway)
+        max_num_seqs: 8  # per lane (throwaway: 8-row decode kernels)
         block_size: 64  # required by the model
         enable_chunked_prefill: true
         max_num_batched_tokens: 2048

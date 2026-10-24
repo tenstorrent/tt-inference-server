@@ -64,7 +64,7 @@ SPEC_DECODE_TEMPERATURE_ENV = "SPEC_DECODE_TEMPERATURE"
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
 # ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a fixed length).
-SPEC_DECODE_MAX_COMPLETION_TOKENS = 1024  # throwaway: slots 4+ never stop, keep the phases short
+SPEC_DECODE_MAX_COMPLETION_TOKENS = 8192
 
 
 @dataclass(frozen=True)
@@ -159,8 +159,8 @@ _PRESETS = {
     "ci": _Preset(
         CI_QUALITATIVE_CATEGORIES, CI_THROUGHPUT_ISLS, CI_THROUGHPUT_CONCURRENCIES
     ),
-    # Throwaway: 1k at 4 / 8 / 16 users per lane, to time decode steps of 4, 8 and 16 rows.
-    "throughput": _Preset((), ("1k",), (16, 32, 64)),
+    # Throwaway: 1k at 2 / 4 / 8 users per lane on the 8-row decode kernels.
+    "throughput": _Preset((), ("1k",), (8, 16, 32)),
 }
 
 SPEC_DECODE_PRESETS = {name: preset.runs() for name, preset in _PRESETS.items()}
