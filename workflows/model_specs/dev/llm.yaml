@@ -480,6 +480,12 @@ templates:
         # 154 -> 140 ms a step at the 1M pool, soaked there.
         V41_DECODE_ROUTING: "1"
         V41_DECODE_TAIL: "1"
+        # The single-query scorer of the four densely scored index sources:
+        # one user's query against the visible prefix of its own keys, the
+        # bound read on device, the keys split over the cores and the top-k
+        # merged: 140 -> 97 ms a step at the 1M pool,
+        # soaked there; unchanged at the small pools.
+        V41_DECODE_SINGLE_QUERY: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
