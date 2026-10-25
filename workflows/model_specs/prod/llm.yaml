@@ -2751,7 +2751,7 @@ templates:
       vllm_args:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
-        max_num_seqs: 16
+        max_num_seqs: 32
         block_size: 512
         mamba_block_size: 512
         prefix_cache_retention_interval: 512
@@ -2768,6 +2768,7 @@ templates:
         tool_call_parser: qwen3_coder
         reasoning_parser: qwen3
       override_tt_config:
+        decode_interleave_prefill_steps: 1
         fabric_config: FABRIC_1D_RING
         sample_on_device_mode: all
         trace_mode: decode_only
