@@ -45,3 +45,32 @@ def test_goal12_agentic_route_provisions_and_runs_standard_harness_first():
         outcomes = workflow.run_tasks()
     assert events == ["gpqa", "harbor"]
     assert outcomes[0].exit_code == 0
+
+
+def test_occupancy32_manifest_and_handoff_exact_identities():
+    import hashlib
+    import json
+    from pathlib import Path
+    c = controls()
+    manifest_path = Path(c['selection_manifest'])
+    payload = manifest_path.read_bytes()
+    m = json.loads(payload)
+    assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
+    assert c['sample_count'] == c['max_concurrent'] == 32
+    assert c['full_suite'] is False
+    h = c['gpqa_handoff']
+    g = m['evals']['r1_gpqa_diamond']
+    assert h['manifest'] == c['selection_manifest']
+    assert h['manifest_sha256'] == c['selection_manifest_sha256']
+    assert h['doc_ids'] == g['doc_ids']
+    assert h['document_sha256'] == g['document_sha256']
+    assert h['population_sha256'] == g['population_sha256']
+    assert len(set(h['doc_ids'])) == len(h['document_sha256']) == 32
+    hashes = dict(zip(h['doc_ids'], h['document_sha256']))
+    assert [hashes[i] for i in g['frozen10_doc_ids']] == g['frozen10_document_sha256']
+    assert set(g['doc_ids']) == set(g['frozen10_doc_ids']) | set(g['additional22_doc_ids'])
+    for name in ('swe_bench_verified', 'terminal_bench_2'):
+        e = m['evals'][name]
+        assert c['task_names'][name] == e['task_names']
+        assert len(set(e['task_names'])) == 32
+        assert set(e['task_names']) == set(e['frozen10_task_names']) | set(e['additional22_task_names'])
