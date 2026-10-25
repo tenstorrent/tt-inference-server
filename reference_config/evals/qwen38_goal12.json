@@ -1,5 +1,5 @@
 {
-  "phase": "b32-cache512-occupancy32-control",
+  "phase": "b16-cache512-occupancy32-candidate",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
