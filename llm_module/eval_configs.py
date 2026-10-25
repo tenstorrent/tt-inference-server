@@ -129,6 +129,30 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     standard = [
         t for t in eval_config.tasks if t.workflow_venv_type in _STANDARD_EVAL_VENVS
     ]
+    # lmms-eval (EVALS_VISION) tasks send images. A serving profile that does not
+    # declare the image modality (a text-only device block of a multimodal entry)
+    # skips them, as the benchmarks workflow skips its image sweep.
+    modalities = [
+        str(m).lower()
+        for m in (getattr(model_spec, "supported_modalities", None) or [])
+    ]
+    if "image" not in modalities:
+        skipped = [
+            t.task_name
+            for t in standard
+            if t.workflow_venv_type == WorkflowVenvType.EVALS_VISION
+        ]
+        if skipped:
+            logger.info(
+                "Skipping image eval task(s) %s: %s serves no image modality",
+                skipped,
+                model_spec.model_name,
+            )
+            standard = [
+                t
+                for t in standard
+                if t.workflow_venv_type != WorkflowVenvType.EVALS_VISION
+            ]
     if not standard:
         logger.info(
             "Model %s has eval tasks but none use a standard (lm-eval/lmms-eval) "

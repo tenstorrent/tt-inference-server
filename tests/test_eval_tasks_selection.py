@@ -9,8 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_module.eval_configs import _select_tasks, eval_task_names
+from llm_module.eval_configs import _select_tasks, eval_task_names, get_llm_eval_tasks
 from llm_module.eval_command import _resolve_eval_samples
+from workflow_module.engine_types import WorkflowVenvType
 
 
 def _task(name):
@@ -45,3 +46,36 @@ def test_selected_tasks_keep_every_sample():
     """No --samples filter is produced: the split never caps a task."""
     task = SimpleNamespace(task_name="aime25", workflow_venv_type=None)
     assert _resolve_eval_samples(task, _rc("aime25")) is None
+
+
+def _spec(modalities):
+    return SimpleNamespace(
+        hf_model_repo="org/model",
+        model_name="model",
+        supported_modalities=modalities,
+        metadata={},
+    )
+
+
+def _venv_task(name, venv):
+    return SimpleNamespace(task_name=name, workflow_venv_type=venv)
+
+
+def test_image_eval_tasks_run_only_where_the_profile_serves_images(monkeypatch):
+    """An lmms-eval (EVALS_VISION) task sends images: a profile narrowed to text
+    skips it, a profile that declares the image modality keeps it."""
+    tasks = [
+        _venv_task("gpqa", WorkflowVenvType.EVALS_COMMON),
+        _venv_task("mmmu_pro", WorkflowVenvType.EVALS_VISION),
+    ]
+    pack = SimpleNamespace(
+        eval_config=lambda repo: SimpleNamespace(tasks=tasks),
+        resolve_eval_task_for_device=lambda t, device: t,
+    )
+    import workflow_module.target_pack as target_pack
+
+    monkeypatch.setattr(target_pack, "get_target_pack", lambda: pack)
+    text_only = get_llm_eval_tasks(_spec(["text"]), _rc(None))
+    assert [t.task_name for t in text_only] == ["gpqa"]
+    with_images = get_llm_eval_tasks(_spec(["text", "image"]), _rc(None))
+    assert [t.task_name for t in with_images] == ["gpqa", "mmmu_pro"]
