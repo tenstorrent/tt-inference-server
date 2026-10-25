@@ -1,5 +1,5 @@
 {
-  "phase": "paired-baseline-cache512",
+  "phase": "b16-cache512-invariant-proof",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
@@ -7,7 +7,7 @@
     "swe_bench_verified",
     "terminal_bench_2"
   ],
-  "sample_count": 10,
+  "sample_count": 2,
   "max_concurrent": 32,
   "agent_timeout_sec": 900,
   "llm_timeout_sec": 600,
@@ -15,28 +15,12 @@
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
-      "astropy__astropy-13398",
-      "django__django-11333",
-      "django__django-11749",
-      "django__django-16333",
-      "sphinx-doc__sphinx-8035",
-      "sphinx-doc__sphinx-9230",
-      "sympy__sympy-18698",
-      "sympy__sympy-21379",
-      "sympy__sympy-21612",
-      "sympy__sympy-24066"
+      "django__django-11299",
+      "astropy__astropy-14096"
     ],
     "terminal_bench_2": [
-      "terminal-bench/adaptive-rejection-sampler",
-      "terminal-bench/build-pmars",
-      "terminal-bench/cobol-modernization",
-      "terminal-bench/code-from-image",
-      "terminal-bench/compile-compcert",
-      "terminal-bench/constraints-scheduling",
-      "terminal-bench/password-recovery",
-      "terminal-bench/rstan-to-pystan",
-      "terminal-bench/video-processing",
-      "terminal-bench/write-compressor"
+      "terminal-bench/break-filter-js-from-html",
+      "terminal-bench/cobol-modernization"
     ]
   },
   "gpqa_handoff": {
