@@ -70,7 +70,8 @@
         "preserve_thinking": true
       }
     },
-    "requirement": "Goal12 comparison must reuse these exact frozen documents; report any harness/prompt/scorer differences, not a claim of identical recipe."
+    "requirement": "Goal12 comparison must reuse these exact frozen documents; report any harness/prompt/scorer differences, not a claim of identical recipe.",
+    "population_sha256": "2ed8c1e6bb9d79c67848407d60c89eadc23fa3cb8ab1d8e1e65230aea0953bbf"
   },
   "full_suite": false,
   "terminal_dataset_ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",

@@ -581,6 +581,9 @@ def _run_eval_task(
         tokenizer_path=tokenizer,
     )
     env = dict(os.environ)
+    if ctx.model_spec.hf_model_repo == "Qwen/Qwen3.8-27B" and task.task_name == "r1_gpqa_diamond":
+        env["QWEN38_GPQA_HANDOFF"] = str(Path(__file__).resolve().parents[2] / "reference_config/evals/qwen38_goal12.json")
+        env["QWEN38_GPQA_IDENTITY_EVIDENCE"] = str(output_path / "goal12-gpqa-document-identity.json")
     if auth_token:
         # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
         env["OPENAI_API_KEY"] = auth_token

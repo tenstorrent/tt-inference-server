@@ -1,0 +1,169 @@
+{
+  "status": "prepared_not_activated",
+  "seed": 1234,
+  "algorithm": "sorted(random.Random(1234).sample(sorted(unique task names), 10)); independent fresh RNG per eval",
+  "harbor_commit": "9973a7edc2d9950a03de6aeebafebb8f7b0a5f1e",
+  "evals": {
+    "swe_bench_verified": {
+      "dataset": "swebench-verified",
+      "ref": "1.0",
+      "population": 500,
+      "population_names_sha256": "0821947fc741ed1cd8039af0fcfdf5c6ec69e4f6e4c96bd79c97e50a19a2fd52",
+      "population_sources_sha256": "41482a7f48605870c12e1f3dd46d656740ea40fb9df71e08bdf552e267cf21e4",
+      "task_names": [
+        "astropy__astropy-13398",
+        "django__django-11333",
+        "django__django-11749",
+        "django__django-16333",
+        "sphinx-doc__sphinx-8035",
+        "sphinx-doc__sphinx-9230",
+        "sympy__sympy-18698",
+        "sympy__sympy-21379",
+        "sympy__sympy-21612",
+        "sympy__sympy-24066"
+      ],
+      "selected_sources": {
+        "astropy__astropy-13398": {
+          "name": "astropy__astropy-13398",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/astropy__astropy-13398"
+        },
+        "django__django-11333": {
+          "name": "django__django-11333",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/django__django-11333"
+        },
+        "django__django-11749": {
+          "name": "django__django-11749",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/django__django-11749"
+        },
+        "django__django-16333": {
+          "name": "django__django-16333",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/django__django-16333"
+        },
+        "sphinx-doc__sphinx-8035": {
+          "name": "sphinx-doc__sphinx-8035",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sphinx-doc__sphinx-8035"
+        },
+        "sphinx-doc__sphinx-9230": {
+          "name": "sphinx-doc__sphinx-9230",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sphinx-doc__sphinx-9230"
+        },
+        "sympy__sympy-18698": {
+          "name": "sympy__sympy-18698",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-18698"
+        },
+        "sympy__sympy-21379": {
+          "name": "sympy__sympy-21379",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-21379"
+        },
+        "sympy__sympy-21612": {
+          "name": "sympy__sympy-21612",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-21612"
+        },
+        "sympy__sympy-24066": {
+          "name": "sympy__sympy-24066",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-24066"
+        }
+      }
+    },
+    "terminal_bench_2": {
+      "dataset": "terminal-bench/terminal-bench-2",
+      "ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+      "population": 89,
+      "population_names_sha256": "711c09441348676a7c68adcd9914c4d42006350748c9fedb62120af3097f189a",
+      "population_sources_sha256": "f5ccc25eccc2a8668e1b8eca90ede3c0f871e72de40ac985165adcecd7d2e855",
+      "task_names": [
+        "terminal-bench/adaptive-rejection-sampler",
+        "terminal-bench/build-pmars",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/code-from-image",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/constraints-scheduling",
+        "terminal-bench/password-recovery",
+        "terminal-bench/rstan-to-pystan",
+        "terminal-bench/video-processing",
+        "terminal-bench/write-compressor"
+      ],
+      "selected_sources": {
+        "terminal-bench/adaptive-rejection-sampler": {
+          "content_hash": "a3cc947ba81ea6be1e7255c7b398a30f8017e280d586c2e09eccfaf67a18d35d"
+        },
+        "terminal-bench/build-pmars": {
+          "content_hash": "796773c1d8b991b9b936b3513308b1a4d2ea1772ae9d9b29103f58748d6e2c17"
+        },
+        "terminal-bench/cobol-modernization": {
+          "content_hash": "0200cda78ffff33320d78d3cdc871e33d5b88f017c8956f4b6e1b6ad21cf9b0d"
+        },
+        "terminal-bench/code-from-image": {
+          "content_hash": "6b96c7a7eefcf3e655db93ac5e5278c1d6f0b98c9bf47c2ba03c53e5f157f132"
+        },
+        "terminal-bench/compile-compcert": {
+          "content_hash": "59b8bdc7ad56243291afbc14cc1947d996db745a488ac018be4936643a47a999"
+        },
+        "terminal-bench/constraints-scheduling": {
+          "content_hash": "757c2b9672df2db1ca879878e6c13dcad20222381694a29920eb452276a69d90"
+        },
+        "terminal-bench/password-recovery": {
+          "content_hash": "ee9fe20f22d6f2bcf67b52571ea9ce7a8048bc49dc4f5bb3a78ff40149b0c02c"
+        },
+        "terminal-bench/rstan-to-pystan": {
+          "content_hash": "c14ad3926606b96140a60b842cd875268879354512e7457ce9a6101a02d61c15"
+        },
+        "terminal-bench/video-processing": {
+          "content_hash": "59730f0ccdc323eb45aa433d094cd7c2f29a0084d3670ce7cc93acee9b516ade"
+        },
+        "terminal-bench/write-compressor": {
+          "content_hash": "102167adfe1e831e220cf1e045b4b70fb01a816351fa5cc629b61e2f745fbedc"
+        }
+      }
+    },
+    "r1_gpqa_diamond": {
+      "algorithm": "reuse stage11 frozen subset, no reselection",
+      "doc_ids": [
+        1,
+        2,
+        5,
+        6,
+        7,
+        9,
+        11,
+        12,
+        13,
+        15
+      ],
+      "document_sha256": [
+        "46b474e2ce3fed9fb712152fd0c5609dbf2c0c902f6c878b4c2c8bd7efef5249",
+        "b3ac809b712f04ac18383743e04c51f904eecc04df48ab375ea909b287136572",
+        "c21ef60ba0d6e5f609971b78c31267d48dce06a569b2f7bf22e4a80c67d4be40",
+        "97119ebb342140447e645b8c38828cb917be82681d38a3cbd6ad8b6f51f97497",
+        "d252410497721ab73806dc0bc70b97da330904759755e4870289e1a95ba06f2e",
+        "d13f7643721fd3b4ddc9e7732ac7ab8afe40757a5e05bf128d3e4b807a22d266",
+        "f2d6751756e501ef39e0286637916d63bc50a27f09c57bed9e451da473b15c5b",
+        "dd524cfa81f54fe949c7cb0ef5e47795055d085ec97320e24cc7736f8e50aff8",
+        "f9856978c27aa7bb83f78aced76d68fc2abe32171603a16c0cb2e6624e101aa5",
+        "4168cf6665c1e75a2b4983659fa5c768f1f3933915d685c7f1a8eb8a2dc9c428"
+      ],
+      "population": 198,
+      "population_sha256": "2ed8c1e6bb9d79c67848407d60c89eadc23fa3cb8ab1d8e1e65230aea0953bbf"
+    }
+  }
+}

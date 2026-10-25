@@ -146,6 +146,9 @@ def require_patched_adapter(model_name: str) -> None:
 
 def main() -> None:
     opts, lm_eval_argv = parse_argv(sys.argv[1:])
+    if os.getenv("QWEN38_GPQA_HANDOFF"):
+        from qwen38_gpqa_handoff import install
+        install(os.environ["QWEN38_GPQA_HANDOFF"], os.environ["QWEN38_GPQA_IDENTITY_EVIDENCE"])
     if opts.preserve_reasoning:
         os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
     patched = patch_api_adapters(opts.body, opts.drop_server_seed)
