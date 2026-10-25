@@ -1672,6 +1672,7 @@ templates:
         max_num_seqs: 32
         block_size: 512
         mamba_block_size: 512
+        prefix_cache_retention_interval: 512
         mamba_cache_mode: align
         max_num_batched_tokens: 131072
         long_prefill_token_threshold: 4096
