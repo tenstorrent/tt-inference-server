@@ -90,5 +90,8 @@
       "value": null,
       "reason": "Existing 73.0 reference is attached to TIS terminal_bench_2_1; equivalence to requested 2.0 unverified."
     }
-  }
+  },
+  "gpqa_llm_timeout_sec": 3600,
+  "gpqa_suite_timeout_sec": 4500,
+  "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded."
 }

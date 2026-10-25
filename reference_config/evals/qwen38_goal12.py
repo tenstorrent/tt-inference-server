@@ -27,8 +27,8 @@ def configure(config, limit_mode):
         if original.agentic_eval_config is None:
             common.update(max_concurrent=c["max_concurrent"], capture_reasoning=True,
                           doc_ids=None if c["full_suite"] else c["gpqa_handoff"]["doc_ids"][:c["sample_count"]],
-                          wall_clock_timeout_seconds=c["suite_timeout_sec"],
-                          model_kwargs={**original.model_kwargs, "timeout": c["llm_timeout_sec"]},
+                          wall_clock_timeout_seconds=c.get("gpqa_suite_timeout_sec", c["suite_timeout_sec"]),
+                          model_kwargs={**original.model_kwargs, "timeout": c.get("gpqa_llm_timeout_sec", c["llm_timeout_sec"])},
                           gen_kwargs={**{k: v for k, v in c["gpqa_handoff"]["generation"].items() if k != "chat_template_kwargs"}, "stream": "false", "max_gen_toks": c["output_tokens"]},
                           request_body={"chat_template_kwargs": c["gpqa_handoff"]["generation"]["chat_template_kwargs"]})
         else:
