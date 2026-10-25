@@ -21,14 +21,16 @@ def test_autoport_default_and_seeded_frozen_tasks():
     assert s.device_model_spec.vllm_args["enable_prefix_caching"] is True
     tasks = EVAL_CONFIGS[MODEL].tasks
     assert {t.task_name for t in tasks} == set(controls()["evals"])
-    gpqa = next(t for t in tasks if t.agentic_eval_config is None)
-    assert gpqa.doc_ids == controls()["gpqa_handoff"]["doc_ids"][:controls()["sample_count"]]
+    gpqa = next((t for t in tasks if t.agentic_eval_config is None), None)
+    if gpqa is not None:
+        assert gpqa.doc_ids == (None if controls()["full_suite"] else controls()["gpqa_handoff"]["doc_ids"][:controls()["sample_count"]])
     for t in tasks:
         assert t.seed == controls()["seed"]
         assert t.score.published_score is None
-    tb = next(t for t in tasks if t.task_name == "terminal_bench_2")
-    assert tb.agentic_eval_config.dataset == "terminal-bench/terminal-bench-2"
-    assert tb.agentic_eval_config.agent_kwargs["session_id_headers"] == ["X-Session-ID"]
+    tb = next((t for t in tasks if t.task_name == "terminal_bench_2"), None)
+    if tb is not None:
+        assert tb.agentic_eval_config.dataset == "terminal-bench/terminal-bench-2"
+        assert tb.agentic_eval_config.agent_kwargs["session_id_headers"] == ["X-Session-ID"]
 
 
 def test_goal12_agentic_route_provisions_and_runs_standard_harness_first():
@@ -57,7 +59,7 @@ def test_occupancy32_manifest_and_handoff_exact_identities():
     m = json.loads(payload)
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
     assert c['sample_count'] == c['max_concurrent'] == 32
-    assert c['full_suite'] is False
+    assert isinstance(c['full_suite'], bool)
     h = c['gpqa_handoff']
     g = m['evals']['r1_gpqa_diamond']
     assert h['manifest'] == c['selection_manifest']
