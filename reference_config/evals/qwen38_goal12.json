@@ -1,10 +1,8 @@
 {
-  "phase": "harness-proof",
+  "phase": "session-header-proof",
   "seed": 1234,
-  "include_standard_evals": true,
+  "include_standard_evals": false,
   "evals": [
-    "r1_gpqa_diamond",
-    "swe_bench_verified",
     "terminal_bench_2"
   ],
   "sample_count": 2,
