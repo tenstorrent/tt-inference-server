@@ -210,6 +210,8 @@ class LLMBenchOptions:
     # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
     # aiperf driver consumes it; other tools ignore it.
     goodput: Optional[str] = None
+    # Select model-scoped release workloads without changing standalone sweeps.
+    release_scope: bool = False
 
 
 @dataclass(frozen=True)

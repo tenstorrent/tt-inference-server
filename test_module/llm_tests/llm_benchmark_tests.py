@@ -62,6 +62,7 @@ def run_llm_bench(
     auth_token: str = "",
     venv_python: Optional[Path] = None,
     goodput: Optional[str] = None,
+    release_scope: bool = False,
 ) -> RunnerResult:
     """Run the LLM performance sweep for ``tools`` and emit Blocks.
 
@@ -118,7 +119,8 @@ def run_llm_bench(
         from llm_module.benchmark_configs import get_llm_configs
 
         configs = get_llm_configs(
-            ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode
+            ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode,
+            release_scope=release_scope,
         )
     if not configs:
         logger.error(

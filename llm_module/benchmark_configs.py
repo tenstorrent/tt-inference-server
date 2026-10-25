@@ -22,6 +22,7 @@ def get_llm_configs(
     device,
     *,
     limit_samples_mode: Optional[str] = None,
+    release_scope: bool = False,
 ) -> List[LLMRunConfig]:
     """Return the text-benchmark sweep for ``model_spec`` on ``device``.
 
@@ -32,6 +33,21 @@ def get_llm_configs(
     """
     from workflow_module.engine_types import EvalLimitMode
     from workflow_module.target_pack import get_target_pack
+
+    # Goal12 final release repeats the surviving stage11 workload profiles.
+    # Client concurrency does not change the resident server's selected batch.
+    # These shapes have no matching numeric performance reference; do not copy
+    # the unrelated 128/128 target onto them.
+    if (
+        release_scope
+        and model_spec.hf_model_repo == "Qwen/Qwen3.8-27B"
+        and model_spec.impl.impl_name == "qwen38-autoport"
+        and getattr(device, "name", None) == "P300X2"
+    ):
+        return [
+            LLMRunConfig(isl=4096, osl=128, max_concurrency=c, num_prompts=n)
+            for c, n in ((1, 8), (8, 24), (16, 48), (32, 96))
+        ]
 
     pack = get_target_pack()
     benchmark_config = pack.benchmark_config(model_spec)

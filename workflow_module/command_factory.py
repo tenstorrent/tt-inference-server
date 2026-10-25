@@ -265,6 +265,7 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
     ):
         return None
     return LLMBenchOptions(
+        release_scope=getattr(args, "workflow", None) == "release",
         tools=getattr(args, "tools", None) or "vllm",
         auth_token=_resolve_auth_token(args),
         venv_python=_release_bench_venv_python(args),
