@@ -547,8 +547,8 @@ templates:
         DSV41_ENGRAM_RAM: "1"
         DSV41_POOL_DTYPE: fp8
         DSV41_TRACE_REGION: "800000000"
-        DSV41_CKPT: /ckpt  # container path: mount the HF checkpoint at /ckpt (read-only)
-        DSV41_WEIGHT_CACHE: /cache/weights  # container path: mount a host-local NVMe dir at /cache (weights/ unified/ kernels/), written by the first run
+        DSV41_CKPT: /ckpt  # container path: mount the DeepSeek-V4.1-Flash-1017 HF checkpoint (deepseek-ai/DeepSeek-V4.1-Flash-1017) at /ckpt (read-only)
+        DSV41_WEIGHT_CACHE: /cache/weights  # container path: mount a host-local NVMe dir at /cache (weights/ unified/ kernels/), written by the first run; one dir per checkpoint (use .../tt-metal-cache/1017 for 1017; the weight cache is stamped with the checkpoint id and the server refuses a cache of another checkpoint)
         DSV41_UNIFIED_CACHE: /cache/unified
         TT_METAL_CACHE: /cache/kernels
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos/blackhole
@@ -606,8 +606,8 @@ templates:
         DSV41_ENGRAM_RAM: "1"
         DSV41_POOL_DTYPE: fp8
         DSV41_TRACE_REGION: "1200000000"  # B=4 / 1M: adaptive speculative decode (two verify runners, k=3 and k=5) boots at 1.2 GB (906-912 MB failed; fixed k=5 alone needs about 766 MB), bf16 KV pool of paged read
-        DSV41_CKPT: /ckpt  # container path: mount the HF checkpoint at /ckpt (read-only)
-        DSV41_WEIGHT_CACHE: /cache/weights  # container path: mount a host-local NVMe dir at /cache (weights/ unified/ kernels/), written by the first run
+        DSV41_CKPT: /ckpt  # container path: mount the DeepSeek-V4.1-Flash-1017 HF checkpoint (deepseek-ai/DeepSeek-V4.1-Flash-1017) at /ckpt (read-only)
+        DSV41_WEIGHT_CACHE: /cache/weights  # container path: mount a host-local NVMe dir at /cache (weights/ unified/ kernels/), written by the first run; one dir per checkpoint (use .../tt-metal-cache/1017 for 1017; the weight cache is stamped with the checkpoint id and the server refuses a cache of another checkpoint)
         DSV41_UNIFIED_CACHE: /cache/unified
         TT_METAL_CACHE: /cache/kernels
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos/blackhole

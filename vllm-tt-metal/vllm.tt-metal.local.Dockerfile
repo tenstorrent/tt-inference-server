@@ -244,10 +244,10 @@ ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs \
     DSV41_ENGRAM_RAM=1 \
     DSV41_POOL_DTYPE=fp8 \
     DSV41_TRACE_REGION=1600000000 \
-    DSV41_CKPT=/mnt/tt-data/ssinghal/deepseek-v41-flash \
-    DSV41_WEIGHT_CACHE=/home/ttuser/ssinghal/tt-metal-cache/weights \
-    DSV41_UNIFIED_CACHE=/home/ttuser/ssinghal/tt-metal-cache/unified \
-    TT_METAL_CACHE=/home/ttuser/ssinghal/tt-metal-cache/kernels \
+    DSV41_CKPT=/mnt/tt-data/ssinghal/deepseek-v41-flash-1017 \
+    DSV41_WEIGHT_CACHE=/home/ttuser/ssinghal/tt-metal-cache/1017/weights \
+    DSV41_UNIFIED_CACHE=/home/ttuser/ssinghal/tt-metal-cache/1017/unified \
+    TT_METAL_CACHE=/home/ttuser/ssinghal/tt-metal-cache/1017/kernels \
     EXTRA_MODELS_DIR=../../tt-metal/models/demos/blackhole
 
 RUN mkdir -p ${CACHE_ROOT} /home/container_app_user/model_specs

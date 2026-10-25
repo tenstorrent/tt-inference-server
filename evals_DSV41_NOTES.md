@@ -4,7 +4,7 @@ Branch `ssinghal/dsv4p1-evals2` (on `ssinghal/dsv4p1`). Nothing here has been ru
 parsing, dataset loading, prompt formatting and answer extraction were dry-run on the shell machine
 (`tests/test_dsv41_eval_tasks.py`, `/mnt/tt-data/ssinghal/datasets/dsv41_evals/dryrun_*.py`).
 
-Source of every number: the model card (`/mnt/tt-data/ssinghal/deepseek-v41-flash/README.md`, same as
+Source of every number: the model card (`/mnt/tt-data/ssinghal/deepseek-v41-flash-1017/README.md`, same as
 https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash). **All numbers below are from the card's "Base Model" table**
 (card's internal framework, base model, few-shot, no chat template). Our runs use the instruct/chat server (non-thinking
 chat template, temperature 1.0 / top-p 0.95 for the text tasks, greedy for the lmms-eval image tasks), so none is like for
@@ -65,7 +65,7 @@ these are all 2D (the 3D ones come last; the aggregate then falls back to 2D).
 
 ## Commands (against a running server)
 
-Host-side (from this worktree; flags as in tt-metal `assets/run_gsm8k_eval.sh`; `CKPT=/mnt/tt-data/ssinghal/deepseek-v41-flash`):
+Host-side (from this worktree; flags as in tt-metal `assets/run_gsm8k_eval.sh`; `CKPT=/mnt/tt-data/ssinghal/deepseek-v41-flash-1017`):
 
 ```
 export MODEL_SPECS_ENV=dev HF_HOME=/mnt/tt-data/ssinghal/datasets/hf_home HF_HUB_OFFLINE=1

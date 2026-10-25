@@ -600,7 +600,7 @@ QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 # (https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash, "Base Model" table, card's internal framework);
 # these runs use the chat template / the lmms-eval prompt, so they are not like for like (see
 # evals_DSV41_NOTES.md). The gate is the workflow's: accuracy >= published * (1 - 0.05).
-_DSV41_CKPT_PATH = "/mnt/tt-data/ssinghal/deepseek-v41-flash"
+_DSV41_CKPT_PATH = "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017"
 _DSV41_VISION_MODEL_KWARGS = {
     "max_retries": 1,
     "tokenized_requests": "False",
@@ -13169,7 +13169,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 67584,
                         "timeout": 14400,
                     },
@@ -13199,7 +13199,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 67584,
                         "timeout": 14400,
                     },
@@ -13230,7 +13230,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 67584,
                         "timeout": 14400,
                     },
@@ -13259,7 +13259,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 67584,
                         "timeout": 14400,
                     },
@@ -13275,7 +13275,7 @@ _eval_config_list = [
                     custom_dataset_kwargs={
                         "minimum_isl": 0,
                         "maximum_isl": 62000,
-                        "pretrained": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "pretrained": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "tokenizer_num_proc": 16,
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 4, EvalLimitMode.CI_NIGHTLY: 16},
@@ -13304,7 +13304,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 40000,
                         "timeout": 14400,
                     },
@@ -13340,7 +13340,7 @@ _eval_config_list = [
                         },
                     ),
                     model_kwargs={
-                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash-1017",
                         "max_length": 40000,
                         "timeout": 14400,
                     },
