@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import hashlib
 import io
 import json
 import logging
@@ -543,6 +544,27 @@ def _docker_ipc_args(model_spec) -> List[str]:
     return ["--ipc", "host"]
 
 
+def _qwen38_audit_mount(repo_root_path, model_spec, dev_mode):
+    """Bind the single published audit module onto the compatible immutable image.
+
+    The fixed source path is owned by this TIS checkout; neither model metadata
+    nor runtime CLI options can select arbitrary code or a destination.
+    """
+    if (model_spec.impl.impl_id != "qwen38_autoport"
+            or model_spec.hf_model_repo != "Qwen/Qwen3.8-27B"):
+        return []
+    root = Path(repo_root_path).resolve()
+    source = root / "vllm-tt-metal/src/qwen38_agentic_audit.py"
+    if not source.is_file() or source.is_symlink() or not source.resolve().is_relative_to(root):
+        raise FileNotFoundError(f"Required published Qwen audit module is missing or unsafe: {source}")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    logger.info("Qwen goal12 audit source=%s sha256=%s", source, digest)
+    if dev_mode:
+        # Existing dev-mode source-directory mount already supplies this file.
+        return []
+    return ["--mount", f"type=bind,src={source},dst=/home/container_app_user/app/src/qwen38_agentic_audit.py,readonly"]
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -766,6 +788,8 @@ def generate_docker_run_command(
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
         # fmt: on
+
+    docker_command += _qwen38_audit_mount(repo_root_path, model_spec, runtime_config.dev_mode)
 
     for key, value in docker_env_vars.items():
         if value:
