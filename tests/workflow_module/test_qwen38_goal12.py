@@ -28,6 +28,7 @@ def test_autoport_default_and_seeded_frozen_tasks():
         assert t.score.published_score is None
     tb = next(t for t in tasks if t.task_name == "terminal_bench_2")
     assert tb.agentic_eval_config.dataset == "terminal-bench/terminal-bench-2"
+    assert tb.agentic_eval_config.agent_kwargs["session_id_headers"] == ["X-Session-ID"]
 
 
 def test_goal12_agentic_route_provisions_and_runs_standard_harness_first():

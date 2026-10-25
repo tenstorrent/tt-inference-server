@@ -35,6 +35,7 @@ def configure(config, limit_mode):
             cfg = original.agentic_eval_config
             kwargs = copy.deepcopy(cfg.agent_kwargs)
             if cfg.agent == "terminus-2":
+                kwargs["session_id_headers"] = ["X-Session-ID"]
                 kwargs["model_info"]["max_output_tokens"] = c["output_tokens"]
                 kwargs["llm_kwargs"].update(seed=c["seed"], max_tokens=c["output_tokens"], timeout=c["llm_timeout_sec"])
             else:
