@@ -181,7 +181,18 @@ class AgenticWorkflow(WorkflowExecution):
         self.logger.info("→ task=agentic")
         started = time.time()
         try:
-            blocks = run_llm_agentic_eval(self.ctx)
+            from reference_config.evals.qwen38_goal12 import MODEL, controls
+            from workflow_module.engine_types import WorkflowVenvType
+            blocks = []
+            if self.ctx.model_spec.hf_model_repo == MODEL and controls()["include_standard_evals"]:
+                from workflow_module.venv_provisioner import get_venv_provisioner
+                from test_module.llm_tests.llm_eval_tests import run_llm_eval
+                from test_module.llm_tests.agentic_eval_tests import _configure_openai_env
+                _configure_openai_env(self.ctx)
+                if not get_venv_provisioner().provision(WorkflowVenvType.EVALS_COMMON, self.ctx.model_spec):
+                    raise RuntimeError("Could not provision goal-12 GPQA harness")
+                blocks.extend(run_llm_eval(self.ctx))
+            blocks.extend(run_llm_agentic_eval(self.ctx))
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception("❌ agentic raised after %.1fs: %s", elapsed, e)

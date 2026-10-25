@@ -119,6 +119,7 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && if [ -f '${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/deployment/vllm-tt-plugin.patch' ]; then git apply --check '${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/deployment/vllm-tt-plugin.patch' && git apply '${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/deployment/vllm-tt-plugin.patch'; fi \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \

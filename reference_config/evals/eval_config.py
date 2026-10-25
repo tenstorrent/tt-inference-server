@@ -13001,6 +13001,12 @@ _eval_config_list = [
 ]
 
 
+from reference_config.evals.qwen38_goal12 import MODEL as _GOAL12_MODEL, configure as _configure_goal12
+_eval_config_list = [
+    _configure_goal12(c, EvalLimitMode) if c.hf_model_repo == _GOAL12_MODEL else c
+    for c in _eval_config_list
+]
+
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )

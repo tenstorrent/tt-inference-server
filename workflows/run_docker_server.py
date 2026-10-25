@@ -677,6 +677,12 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+        # Goal-12 counters share the persistent log volume and its existing artifact collector.
+        # A unique file avoids mixing requests from earlier users of the volume.
+        if model_spec.impl.impl_id == "qwen38_autoport":
+            docker_env_vars["QWEN38_SERVING_EVENTS"] = (
+                f"{setup_config.cache_root}/logs/qwen38-goal12-{time.time_ns()}.jsonl"
+            )
         # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
         # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
         # writable ephemeral default rather than the host-owned volume. See #4255.

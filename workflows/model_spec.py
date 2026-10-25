@@ -463,6 +463,11 @@ kolibri_1_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
+qwen38_autoport_impl = ImplSpec(
+    impl_id="qwen38_autoport", impl_name="qwen38-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
@@ -482,6 +487,7 @@ k2_horizon_7b_qb2_impl = ImplSpec(
 )
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "qwen38_autoport": qwen38_autoport_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,
