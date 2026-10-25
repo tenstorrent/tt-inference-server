@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from llm_module import HttpServerController, RemoteOpenAIController
+from llm_module.attempt_timing import timed_attempt
 from llm_module.request_overrides import resolve_request_body
 from llm_module.eval_command import _resolve_eval_samples, build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
@@ -714,7 +715,10 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         output_path = Path(ctx.output_path) / f"eval-attempt-{uuid.uuid4().hex}"
         output_path.mkdir(parents=True)
         started_at = time.perf_counter()
-        rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
+        with timed_attempt(output_path / "attempt_timing.json", task.task_name, "lm_eval_harness",
+                           enabled=ctx.model_spec.hf_model_repo == "Qwen/Qwen3.8-27B") as timing:
+            rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
+            timing["rc"] = rc
         elapsed_seconds = time.perf_counter() - started_at
         if rc == _DEADLINE_RC:
             # A task killed at its deadline is incomplete, not a score. Never

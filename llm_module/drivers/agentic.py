@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
+from llm_module.attempt_timing import timed_attempt
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
@@ -149,7 +150,13 @@ class HarborAgenticDriver(AgenticEvalDriver):
             venv_python=self.venv_python,
             run_stamp=self._run_stamp,
         )
-        rc = run_harbor(run_config)
+        # Keep the receipt beside Harbor's unique config, without precreating
+        # its job directory (the harness owns that directory's lifecycle).
+        timing_path = run_config.jobs_dir / f"{run_config.task_name}_attempt_timing.json"
+        with timed_attempt(timing_path, self.task.task_name, "harbor_harness",
+                           enabled=server.model == "Qwen/Qwen3.8-27B") as timing:
+            rc = run_harbor(run_config)
+            timing["rc"] = rc
         return self._load_result(rc, self.result_path(server, context))
 
 
