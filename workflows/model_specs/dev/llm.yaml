@@ -1676,6 +1676,8 @@ templates:
         max_logprobs: -1
         async_scheduling: true
         enable_prefix_caching: true
+        enable_prompt_tokens_details: true
+        middleware: qwen38_agentic_audit.AgenticAuditMiddleware
         language_model_only: true
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_coder

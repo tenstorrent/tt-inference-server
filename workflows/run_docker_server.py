@@ -683,6 +683,9 @@ def generate_docker_run_command(
             docker_env_vars["QWEN38_SERVING_EVENTS"] = (
                 f"{setup_config.cache_root}/logs/qwen38-goal12-{time.time_ns()}.jsonl"
             )
+            docker_env_vars["QWEN38_HTTP_AUDIT"] = (
+                f"{setup_config.cache_root}/logs/qwen38-http-{time.time_ns()}.jsonl"
+            )
         # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
         # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
         # writable ephemeral default rather than the host-owned volume. See #4255.
