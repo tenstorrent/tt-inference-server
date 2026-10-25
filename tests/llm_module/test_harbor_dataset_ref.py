@@ -84,3 +84,16 @@ def test_job_ownership_label_is_written_for_harbor_main(tmp_path, monkeypatch):
     overlay = Path(config["environment"]["extra_docker_compose"][0])
     assert json.loads(overlay.read_text())["services"]["main"]["labels"] == {
         "com.tenstorrent.agentic-owner": "goal12-123-1-0"}
+
+
+def test_qwen_swe_uses_frozen_legacy_registry_not_hub_ref(tmp_path):
+    from dataclasses import replace
+    config = replace(_run_config(tmp_path), dataset="swebench-verified",
+                     model_name="openai/Qwen/Qwen3.8-27B")
+    assert harbor._needs_config_file(config)
+    path = harbor._write_harbor_config(config)
+    dataset = _datasets(path)[0]
+    assert dataset["version"] == "1.0"
+    assert Path(dataset["registry_path"]).is_file()
+    assert "ref" not in dataset
+    assert (config.jobs_dir / "tb_dataset_identity.json").is_file()

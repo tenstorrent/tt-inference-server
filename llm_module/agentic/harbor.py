@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from llm_module.qwen38_swe_handoff import selected as frozen_swe_selected, frozen_dataset
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
     make_terminal_bench_probe,
@@ -204,6 +205,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_config: dict[str, Any] = {"name": config.dataset}
+    if frozen_swe_selected(config):
+        dataset_config.update(frozen_dataset(config))
     if config.dataset_ref:
         dataset_config["ref"] = config.dataset_ref
     if config.n_tasks is not None:
@@ -295,6 +298,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
         or bool(config.environment_kwargs)
         # The Hub ref is only expressible in the config file's datasets block.
         or bool(config.dataset_ref)
+        or frozen_swe_selected(config)
     )
 
 
