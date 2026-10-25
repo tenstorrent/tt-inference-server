@@ -33,6 +33,7 @@ class AgenticAuditMiddleware:
         self.path = path or os.getenv("QWEN38_HTTP_AUDIT")
         self.sessions = OrderedDict()
         self.session_inflight = {}
+        self.overlapping_sessions = set()
         self.active = 0
         self.stored_tokens = 0
         self.evictions = 0
@@ -70,6 +71,11 @@ class AgenticAuditMiddleware:
         self.stored_tokens += len(ids)
         return True
 
+    def forget(self, key):
+        previous = self.sessions.pop(key, None)
+        if previous is not None:
+            self.stored_tokens -= len(previous[0])
+
     async def __call__(self, scope, receive, send):
         if not self.path or scope.get("type") != "http" or scope.get("path") != "/v1/chat/completions":
             return await self.app(scope, receive, send)
@@ -104,6 +110,11 @@ class AgenticAuditMiddleware:
         overlap = bool(session and self.session_inflight.get(session, 0))
         if session:
             self.session_inflight[session] = self.session_inflight.get(session, 0) + 1
+            if overlap:
+                # Both requests lose an unambiguous immediate predecessor,
+                # including the earlier request if it completes last.
+                self.overlapping_sessions.add(session)
+                self.forget(session)
         base = {"audit_id": uuid.uuid4().hex, "session_sha256": session, "started_unix": time.time(),
                 "seed": number((request or {}).get("seed")), "max_tokens": number((request or {}).get("max_completion_tokens", (request or {}).get("max_tokens"))),
                 "stream": streaming, "active_http_at_start": self.active,
@@ -155,15 +166,23 @@ class AgenticAuditMiddleware:
                 self.session_inflight[session] -= 1
                 if not self.session_inflight[session]:
                     del self.session_inflight[session]
-            record.update(event="request_end", finished_unix=time.time(), elapsed_s=time.monotonic() - started,
-                          active_http_after=self.active, state_evictions=self.evictions, stored_prefix_tokens=self.stored_tokens,
-                          audit_write_failures=self.audit_write_failures)
+                    self.overlapping_sessions.discard(session)
             if streaming:
                 record["missing_reason"] = "streaming passed through unchanged; no token or usage inspection"
             elif request and request.get("echo") and not request.get("return_token_ids"):
                 record["prefix_missing_reason"] = "echo request passed through without token-ID injection"
             elif request is None:
                 record["missing_reason"] = "malformed JSON request passed through unchanged"
+            if session and (not record.get("prefix_state_saved") or record.get("exception_type")):
+                self.forget(session)
+                record["prefix_state_saved"] = False
+                record["prefix_state_invalidated"] = True
+                record.setdefault("prefix_missing_reason",
+                    "session prefix state invalidated after request exception" if record.get("exception_type")
+                    else "session prefix state invalidated: no usable response prompt metadata or state not retained")
+            record.update(event="request_end", finished_unix=time.time(), elapsed_s=time.monotonic() - started,
+                          active_http_after=self.active, state_evictions=self.evictions, stored_prefix_tokens=self.stored_tokens,
+                          audit_write_failures=self.audit_write_failures)
             self.emit(record)
 
     def observe(self, response, session, started, overlap, record):
@@ -181,13 +200,15 @@ class AgenticAuditMiddleware:
         record["prompt_ids_count"] = len(ids)
         record["prompt_token_count_matches_usage"] = len(ids) == record["prompt_tokens"]
         record["prompt_ids_sha256"] = hashlib.sha256(array("I", ids).tobytes()).hexdigest()
+        if not record["prompt_token_count_matches_usage"]:
+            record["prefix_missing_reason"] = "prompt token IDs disagree with response usage"
+            return
         previous = self.sessions.get(session) if session else None
         if not session:
             record["prefix_missing_reason"] = "no X-Session-ID; independent request"
-        elif overlap or self.session_inflight.get(session, 0) > 1:
+        elif overlap or session in self.overlapping_sessions or self.session_inflight.get(session, 0) > 1:
             record["prefix_missing_reason"] = "overlapping requests in same session"
-            self.sessions.pop(session, None)
-            self.stored_tokens = sum(len(v[0]) for v in self.sessions.values())
+            self.forget(session)
         else:
             if previous:
                 prior = previous[0]
