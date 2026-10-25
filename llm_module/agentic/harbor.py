@@ -214,19 +214,16 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    service_overlay = {}
     if _mini_swe_needs_host_gateway(config):
-        overlay_path = (
-            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
-        )
+        service_overlay["extra_hosts"] = [f"{_DOCKER_HOST_NAME}:host-gateway"]
+    owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    if owner and config.environment_type == "docker":
+        service_overlay["labels"] = {"com.tenstorrent.agentic-owner": owner}
+    if service_overlay:
+        overlay_path = config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
         overlay_path.write_text(
-            json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                    }
-                },
-                indent=2,
-            ),
+            json.dumps({"services": {"main": service_overlay}}, indent=2),
             encoding="utf-8",
         )
         environment_config["extra_docker_compose"] = [str(overlay_path)]

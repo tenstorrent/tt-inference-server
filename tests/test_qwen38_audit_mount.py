@@ -60,3 +60,11 @@ def test_prepare_logs_before_engine_without_device_access(monkeypatch, tmp_path)
     _prepare_qwen38_audit_directory(spec(), SimpleNamespace(image_user=None), setup)
     assert (tmp_path / "logs").is_dir()
     assert len(calls) == 1
+
+
+def test_server_carries_exact_job_ownership_label(monkeypatch):
+    monkeypatch.setenv("TT_AGENTIC_CONTAINER_OWNER", "goal12-123-1-0")
+    runtime = RuntimeConfig(model="Qwen3.8-27B", workflow="server", device="p300x2",
+                            impl="qwen38_autoport", engine="vLLM", docker_server=True)
+    command, _ = generate_docker_run_command(spec(), runtime)
+    assert command[command.index("--label") + 1] == "com.tenstorrent.agentic-owner=goal12-123-1-0"

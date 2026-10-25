@@ -75,3 +75,12 @@ def test_dataset_ref_forces_config_file_mode(tmp_path):
         harbor._needs_config_file(_run_config(tmp_path, dataset_ref="sha256:abc"))
         is True
     )
+
+
+def test_job_ownership_label_is_written_for_harbor_main(tmp_path, monkeypatch):
+    monkeypatch.setenv("TT_AGENTIC_CONTAINER_OWNER", "goal12-123-1-0")
+    path = harbor._write_harbor_config(_run_config(tmp_path))
+    config = json.loads(path.read_text())
+    overlay = Path(config["environment"]["extra_docker_compose"][0])
+    assert json.loads(overlay.read_text())["services"]["main"]["labels"] == {
+        "com.tenstorrent.agentic-owner": "goal12-123-1-0"}
