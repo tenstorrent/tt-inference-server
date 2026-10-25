@@ -42,3 +42,21 @@ def test_fixed_selection_and_no_duplicate_dev_mount(tmp_path):
     path.parent.mkdir(parents=True)
     path.write_text("pass")
     assert _qwen38_audit_mount(tmp_path, spec(), True) == []
+
+
+def test_prepare_logs_before_engine_without_device_access(monkeypatch, tmp_path):
+    from workflows.run_docker_server import _prepare_qwen38_audit_directory
+    calls = []
+    monkeypatch.setattr("workflows.run_docker_server.subprocess.run", lambda command, **kw: calls.append((command, kw)))
+    monkeypatch.setattr("workflows.run_docker_server.generate_docker_volume_name", lambda model: "owned-volume")
+    setup = SimpleNamespace(host_model_volume_root=None, cache_root=Path("/home/container_app_user/cache_root"))
+    _prepare_qwen38_audit_directory(spec(), SimpleNamespace(image_user=None), setup)
+    command, kwargs = calls[0]
+    assert command == ["docker", "run", "--rm", "--entrypoint", "mkdir", "--volume",
+                       "owned-volume:/home/container_app_user/cache_root", spec().docker_image,
+                       "-p", "/home/container_app_user/cache_root/logs"]
+    assert kwargs == {"check": True, "timeout": 60}
+    setup.host_model_volume_root = tmp_path
+    _prepare_qwen38_audit_directory(spec(), SimpleNamespace(image_user=None), setup)
+    assert (tmp_path / "logs").is_dir()
+    assert len(calls) == 1

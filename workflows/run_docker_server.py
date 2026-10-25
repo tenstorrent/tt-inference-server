@@ -907,6 +907,24 @@ def run_docker_command(
     }
 
 
+def _prepare_qwen38_audit_directory(model_spec, runtime_config, setup_config):
+    """Create persistent evidence storage before engine warmup emits events."""
+    if (model_spec.impl.impl_id != "qwen38_autoport"
+            or model_spec.hf_model_repo != "Qwen/Qwen3.8-27B"
+            or setup_config is None):
+        return
+    if setup_config.host_model_volume_root:
+        ensure_readwriteable_dir(Path(setup_config.host_model_volume_root) / "logs")
+        return
+    command = ["docker", "run", "--rm", "--entrypoint", "mkdir"]
+    if runtime_config.image_user and str(runtime_config.image_user) != "1000":
+        command += ["--user", str(runtime_config.image_user)]
+    command += ["--volume", f"{generate_docker_volume_name(model_spec)}:{setup_config.cache_root}",
+                model_spec.docker_image, "-p", f"{setup_config.cache_root}/logs"]
+    # No devices are exposed to this short-lived storage preparation container.
+    subprocess.run(command, check=True, timeout=60)
+
+
 def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     """Orchestrate docker server: ensure image, generate command, run container.
 
@@ -940,6 +958,8 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     assert ensure_docker_image(model_spec.docker_image), (
         f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
     )
+
+    _prepare_qwen38_audit_directory(model_spec, runtime_config, setup_config)
 
     docker_command, container_name = generate_docker_run_command(
         model_spec, runtime_config, setup_config, json_fpath
