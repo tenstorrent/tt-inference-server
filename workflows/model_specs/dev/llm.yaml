@@ -3228,6 +3228,27 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# Remote-served P/D model (tt-orchestration ttop-pmix-disaggregated-dgen,
+# values.llama31-8b.yaml): 4-galaxy blaze decode + 1-galaxy prefill behind
+# the dynamo frontend. Limits follow that chart: global.pd.maxSlots: 2 and
+# global.model.maxSeqLen: 33792 (32K context + 1K headroom).
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 2
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      remote_api_model: meta-llama/Llama-3.1-8B-Instruct
+      tool_call_parser_name: llama3_json
+
 - weights:
     - moonshotai/Kimi-K2.7-Code
   impl: blaze
