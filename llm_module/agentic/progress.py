@@ -118,6 +118,7 @@ def run_with_progress(
     log_interval_s: float,
     hard_timeout_s: Optional[float] = None,
     enforce_deadlines: bool = True,
+    on_process_settled: Optional[Callable[[], None]] = None,
     log: Optional[logging.Logger] = None,
 ) -> int:
     """Run ``cmd`` while logging wave-aware progress and enforcing deadlines.
@@ -284,6 +285,9 @@ def run_with_progress(
                 )
                 _terminate(proc, log)
             raise
+        finally:
+            if on_process_settled is not None and proc.poll() is not None and not _process_group_exists(proc):
+                on_process_settled()
     finally:
         _restore_sigterm_handler(previous_sigterm_handler)
 
@@ -377,7 +381,8 @@ def _process_group_exists(proc: subprocess.Popen) -> bool:
         except ProcessLookupError:
             return False
         except OSError:
-            return proc.poll() is None
+            # Permission/inspection failure is not proof the group is gone.
+            return True
     return proc.poll() is None
 
 

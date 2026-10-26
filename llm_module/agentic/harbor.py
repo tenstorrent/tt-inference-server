@@ -223,6 +223,18 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
     if owner and config.environment_type == "docker":
         service_overlay["labels"] = {"com.tenstorrent.agentic-owner": owner}
+        from .owned_network import checked_owner
+        from urllib.parse import urlparse
+        import hashlib
+        checked_owner(owner)
+        environment_config['import_path'] = 'llm_module.agentic.owned_docker_environment:OwnedDockerEnvironment'
+        environment_config['kwargs'] = {
+            'owned_owner': owner,
+            'owned_job': hashlib.sha256((str(config.jobs_dir.resolve()) + '/' + config.task_name).encode()).hexdigest()[:24],
+            'owned_journal_dir': str((config.jobs_dir / 'owned_networks').resolve()),
+            'owned_endpoint_host': urlparse(_get_agent_endpoint(config)).hostname,
+        }
+
     if service_overlay:
         overlay_path = config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
         overlay_path.write_text(
@@ -235,7 +247,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
     if config.environment_kwargs:
-        environment_config["kwargs"] = config.environment_kwargs
+        if set(config.environment_kwargs) & set(environment_config.get("kwargs", {})):
+            raise ValueError("Environment kwargs cannot override owned network identity")
+        environment_config.setdefault("kwargs", {}).update(config.environment_kwargs)
 
     agent_config: dict[str, Any] = {
         "model_name": config.model_name,
@@ -289,6 +303,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
+        or (config.environment_type == "docker" and bool(os.getenv("TT_AGENTIC_CONTAINER_OWNER")))
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
@@ -317,6 +332,30 @@ def _annotate_result_file(result_file: Path) -> None:
         )
         logger.error(msg)
         raise RuntimeError(msg) from e
+
+
+def _owned_job_closed_callback(config):
+    owner = os.environ.get('TT_AGENTIC_CONTAINER_OWNER')
+    if config.environment_type != 'docker' or not owner:
+        return None
+    from .owned_network import checked_owner
+    import hashlib
+    from datetime import datetime, timezone
+    checked_owner(owner)
+    job = hashlib.sha256((str(config.jobs_dir.resolve()) + '/' + config.task_name).encode()).hexdigest()[:24]
+    directory = (config.jobs_dir / 'owned_networks').resolve()
+    def closed():
+        directory.mkdir(parents=True, exist_ok=True)
+        receipt = {'schema_version': 1, 'owner': owner, 'job': job,
+                   'journal_root': str(directory), 'process_group_settled': True,
+                   'closed_at': datetime.now(timezone.utc).isoformat()}
+        path = directory / ('closed-' + job + '.json')
+        path.write_text(json.dumps(receipt, indent=2) + '\n')
+    # A new invocation must not reuse a previous invocation's closure proof.
+    stale = directory / ('closed-' + job + '.json')
+    if stale.exists():
+        raise ValueError('Closed owned job identity cannot be reused; choose a fresh run stamp')
+    return closed
 
 
 def run(config: HarborRunConfig) -> int:
@@ -395,6 +434,9 @@ def run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
+    if config.environment_type == "docker" and process_env.get("TT_AGENTIC_CONTAINER_OWNER"):
+        source_root = str(Path(__file__).resolve().parents[2])
+        process_env["PYTHONPATH"] = os.pathsep.join([source_root] + ([process_env["PYTHONPATH"]] if process_env.get("PYTHONPATH") else []))
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(
@@ -410,6 +452,7 @@ def run(config: HarborRunConfig) -> int:
         log_interval_s=config.progress_log_interval_sec,
         hard_timeout_s=config.harbor_timeout_sec,
         enforce_deadlines=config.enforce_agent_deadline,
+        on_process_settled=_owned_job_closed_callback(config),
         log=logger,
     )
     # A watchdog timeout can still leave useful per-trial diagnostics in

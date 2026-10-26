@@ -152,6 +152,8 @@ class HarborAgenticDriver(AgenticEvalDriver):
         )
         # Keep the receipt beside Harbor's unique config, without precreating
         # its job directory (the harness owns that directory's lifecycle).
+        from llm_module.agentic.network_preflight import run_once as network_preflight
+        network_preflight(run_config)
         timing_path = run_config.jobs_dir / f"{run_config.task_name}_attempt_timing.json"
         with timed_attempt(timing_path, self.task.task_name, "harbor_harness",
                            enabled=server.model == "Qwen/Qwen3.8-27B") as timing:
