@@ -77,6 +77,11 @@ components:
         References: at most 12 in total, and at least one image or video (audio
         alone is rejected with 422). Video and audio clips are 2–15 s each and
         at most 15 s combined per kind.
+
+        A reference video's soundtrack is audio conditioning: it counts toward
+        the audio limits (at most 3 audio references, at most 15 s of audio
+        combined) as well as the video ones. A video with sound counts once
+        toward the 12-reference total.
       properties:
         prompt:
           type: string
@@ -106,7 +111,9 @@ components:
           items:
             $ref: "../../common.yaml#/components/schemas/VideoMedia"
           description: |
-            Reference video clips, 2–15 s each, at most 15 s combined.
+            Reference video clips, 2–15 s each, at most 15 s combined. A clip's
+            soundtrack, if it has one, is also audio conditioning and counts
+            toward the audio limits (see `audios`).
 
             **Elsewhere:** MiniMax `role: reference_video` (at most 3), fal
             `reference_video_urls`, tt-media-server today `references.videos`.
@@ -116,7 +123,9 @@ components:
           items:
             $ref: "../../common.yaml#/components/schemas/AudioMedia"
           description: |
-            Reference audio clips, 2–15 s each, at most 15 s combined.
+            Reference audio clips, 2–15 s each. The audio limits cover these
+            clips plus the soundtrack of every reference video that has one: at
+            most 3 audio references and at most 15 s of audio combined, or 422.
 
             **Elsewhere:** MiniMax `role: reference_audio` (at most 3), fal
             `reference_audio_urls`, tt-media-server today `references.audios`.
