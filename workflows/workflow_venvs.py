@@ -47,6 +47,8 @@ EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 # VBench (I2V and quality dimensions) for scoring saved video-eval clips.
 VBENCH_REPO = "https://github.com/Vchitect/VBench.git"
 VBENCH_COMMIT = "fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490"
+# 4.12 needs numpy 2; VBench's pins hold numpy below it. Same spec as vbench-i2v.txt.
+VBENCH_OPENCV_HEADLESS = "opencv-python-headless<4.12"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -827,7 +829,21 @@ def setup_vbench_i2v(
     venv_config: "VenvConfig",
     model_spec: "ModelSpec",
 ) -> bool:
-    """Hook for VBENCH_I2V: check VBench out at VBENCH_COMMIT next to the venv."""
+    """Hook for VBENCH_I2V: headless OpenCV, and VBench checked out at VBENCH_COMMIT.
+
+    pyiqa and facexlib depend on opencv-python, whose cv2 needs libGL, which CI
+    hosts lack. Both packages install the same cv2 module, so drop opencv-python
+    and reinstall the headless build over the files it removed.
+    """
+    python = venv_config.venv_python
+    steps = (
+        f"{UV_EXEC} pip uninstall --python {python} opencv-python",
+        f"{UV_EXEC} pip install --managed-python --python {python} --no-deps "
+        f"--reinstall-package opencv-python-headless '{VBENCH_OPENCV_HEADLESS}'",
+    )
+    for step in steps:
+        if run_command(step, logger=logger) != 0:
+            return False
     return checkout_pinned_repo(
         venv_config.venv_path / "VBench", VBENCH_REPO, VBENCH_COMMIT
     )
