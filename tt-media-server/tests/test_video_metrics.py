@@ -594,6 +594,28 @@ class TestExecutedVsRequestedSteps:
             == 5
         )
 
+    @pytest.mark.parametrize(
+        ("runner", "model"),
+        [
+            ("TT_MINIMAX_H3_FL2VA_HYPERFLOW", "MINIMAX_H3_FL2VA_HYPERFLOW"),
+            ("TT_MINIMAX_H3_REF2VA_HYPERFLOW", "MINIMAX_H3_REF2VA_HYPERFLOW"),
+        ],
+    )
+    def test_helper_forces_hyperflow_to_its_grid(self, runner, model):
+        from config.constants import (
+            ModelNames,
+            ModelRunners,
+            video_executed_inference_steps,
+        )
+
+        assert video_executed_inference_steps(20, ModelRunners[runner].value) == 9
+        assert (
+            video_executed_inference_steps(
+                20, ModelRunners.SP_RUNNER.value, ModelNames[model].value
+            )
+            == 9
+        )
+
     def test_helper_forces_anisora_to_8(self):
         from config.constants import (
             ModelRunners,

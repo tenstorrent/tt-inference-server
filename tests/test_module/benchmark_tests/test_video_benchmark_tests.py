@@ -231,3 +231,43 @@ def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
     (status,) = mod._run_video_generation_benchmark(ctx, 1)
     assert seen["image_b64"] == "a2V5"
     assert status.num_inference_steps == 4
+
+
+@pytest.mark.parametrize(
+    "model_name, endpoint",
+    [
+        ("MiniMax-H3-FL2VA-HyperFlow", "v1/videos/generations/i2v"),
+        ("MiniMax-H3-Ref2VA-HyperFlow", "v1/videos/generations/ref2va"),
+    ],
+)
+def test_minimax_h3_hyperflow_uses_its_tasks_route_and_eight_steps(
+    monkeypatch, model_name, endpoint
+):
+    assert mod.VIDEO_INFERENCE_STEPS[f"MiniMaxAI/{model_name}"] == 8
+    captured = {}
+
+    class _Resp:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {"id": "job-hf"}
+
+    def _fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    monkeypatch.setattr(mod.requests, "post", _fake_post)
+    monkeypatch.setattr(mod, "_poll_video_completion", lambda *a, **k: "/tmp/hf.mp4")
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(model_name=model_name),
+        base_url="http://localhost:8000",
+    )
+    ok, _elapsed, _job, _path = mod._generate_video(
+        ctx, prompt="a volcano erupting", num_inference_steps=8, image_b64="ZmFrZQ=="
+    )
+
+    assert ok is True
+    assert captured["url"].endswith(endpoint)
+    assert "num_inference_steps" not in captured["payload"]
