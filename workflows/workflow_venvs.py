@@ -40,7 +40,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # review before merging changes. Switch to a specific commit once development
 # is stable.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+HARBOR_REF = "ipastalTT/deepswe-docker-fixes"
 # Patches carried on top of HARBOR_REF until they land on the fork; files apply
 # to the repository root in sorted order after every checkout.
 _HARBOR_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "harbor"
