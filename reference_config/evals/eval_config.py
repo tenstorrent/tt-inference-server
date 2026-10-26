@@ -10730,6 +10730,23 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 64 * 1024,
                 },
+                # QuietBox 2 runs aime25 the way the GPU reference was measured (OpenAI's
+                # gpt_oss.evals harness: max_tokens 131072, no stop strings). At 64K tokens
+                # 8 of 30 answers ran out of budget mid-reasoning, and the task's stop
+                # string "Question:" cut one inside its reasoning. max_gen_toks is clamped
+                # to max_context minus the prompt reserve; "stop": [] replaces the task's
+                # until list in every request.
+                device_overrides={
+                    "P300X2": {
+                        "gen_kwargs": {
+                            "reasoning_effort": "high",
+                            "do_sample": "true",
+                            "temperature": 1.0,
+                            "max_gen_toks": 128 * 1024,
+                        },
+                        "request_body": {"stop": []},
+                    },
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
