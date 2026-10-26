@@ -58,11 +58,35 @@ class TestServerConnection:
     def test_remote_url_preserves_full_url(self):
         conn = ServerConnection(
             base_url="https://console.tenstorrent.com/openai",
-            service_port=8000,
+            service_port=443,
             model="m",
             is_remote=True,
         )
         assert conn.url_with_port == "https://console.tenstorrent.com/openai"
+
+    def test_remote_url_honors_separate_service_port(self):
+        conn = ServerConnection(
+            base_url="http://127.0.0.1", service_port=8012, model="m", is_remote=True
+        )
+        assert conn.url_with_port == "http://127.0.0.1:8012"
+
+    def test_remote_url_preserves_path_with_nondefault_port(self):
+        conn = ServerConnection(
+            base_url="https://host/openai", service_port=8443, model="m", is_remote=True
+        )
+        assert conn.url_with_port == "https://host:8443/openai"
+
+    def test_remote_embedded_port_wins(self):
+        conn = ServerConnection(
+            base_url="http://host:9000/openai", service_port=8012, model="m", is_remote=True
+        )
+        assert conn.url_with_port == "http://host:9000/openai"
+
+    def test_remote_ipv6_honors_separate_port(self):
+        conn = ServerConnection(
+            base_url="http://[::1]", service_port=8012, model="m", is_remote=True
+        )
+        assert conn.url_with_port == "http://[::1]:8012"
 
     def test_host_strips_scheme_and_embedded_port(self):
         conn = ServerConnection(

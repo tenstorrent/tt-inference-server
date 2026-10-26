@@ -114,11 +114,16 @@ class ServerConnection:
         host = self.base_url.rstrip("/")
         if "://" not in host:
             host = f"http://{host}"
-        if self.is_remote:
+        parsed = urlparse(host)
+        if parsed.port is not None:
             return host
-        if urlparse(host).port is not None:
+        # Remote endpoints also honor --service-port. Keep URL paths in place
+        # and let an explicitly embedded port take precedence over this fallback.
+        if self.is_remote and (parsed.scheme, self.service_port) in {
+            ("http", 80), ("https", 443)
+        }:
             return host
-        return f"{host}:{self.service_port}"
+        return parsed._replace(netloc=f"{parsed.netloc}:{self.service_port}").geturl()
 
     @property
     def host(self) -> str:
