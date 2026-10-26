@@ -212,8 +212,12 @@ def _provision_and_reexec(argv: list[str]) -> int:
     """Set up the VBENCH_I2V venv, then run this file under its python."""
     sys.path.insert(0, str(REPO_ROOT))
     from workflow_module.engine_types import WorkflowVenvType
+    from workflows.bootstrap_uv import UV_EXEC, bootstrap_uv
     from workflows.workflow_venvs import VENV_CONFIGS
 
+    # run.py bootstraps uv in CI; a standalone run (e.g. on a GPU box) may not have.
+    if not UV_EXEC.exists():
+        bootstrap_uv()
     venv = VENV_CONFIGS[WorkflowVenvType.VBENCH_I2V]
     venv.setup(model_spec=None)
     # Run the file, not the module: the venv lacks test_module's package imports.
