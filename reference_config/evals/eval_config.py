@@ -2710,13 +2710,15 @@ _eval_config_list = [
                     },
                     task_names_map={
                         # Shortest expert-time tasks, plus one multi-container
-                        # (Compose) task so the nightly covers that path.
+                        # (Compose) task so the nightly covers that path. The
+                        # Compose task must run under KIX1's compose_strategy=
+                        # "pods" (payments-pipeline-fix, e.g., cannot).
                         EvalLimitMode.CI_NIGHTLY: [
                             "terminal-bench/html-js-filter",
                             "terminal-bench/photonic-waveguide-routing",
                             "terminal-bench/music-harmony",
                             "terminal-bench/bun-sourcemap-leak",
-                            "terminal-bench/payments-pipeline-fix",
+                            "terminal-bench/intrastat-meldung",
                         ],
                     },
                 ),
