@@ -35,6 +35,8 @@ HIDDEN_COLUMNS = frozenset(
         "description",
         "elapsed_seconds",
         "logs",
+        "timing_protocol",
+        "timing_limitations",
     }
 )
 
@@ -447,6 +449,11 @@ def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
         notes.append(BENCHMARK_TIER_NOTE)
     if ungraded:
         notes.append(UNGRADED_SWEEP_NOTE)
+    timing_notes = dict.fromkeys(
+        f"Timing protocol: `{row['timing_protocol']}`. {row.get('timing_limitations', '')}"
+        for row in _extract_records(block) if row.get("timing_protocol")
+    )
+    notes.extend(timing_notes)
     return "\n\n".join([table, *notes])
 
 

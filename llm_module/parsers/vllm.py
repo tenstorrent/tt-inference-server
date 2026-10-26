@@ -47,6 +47,9 @@ class VLLMBenchParser(LLMResultParser):
             "goodput_pct": _goodput_pct(raw),
             "error_request_count": _errors(raw.get("failed")),
         }
+        if raw.get("tt_timing_protocol"):
+            record["timing_protocol"] = raw["tt_timing_protocol"]
+            record["timing_limitations"] = raw.get("tt_timing_limitations", "")
         output_block_size = _num_int(raw.get("tt_output_block_size")) or 1
         if output_block_size > 1:
             blocks_per_request = _blocks_per_request(
