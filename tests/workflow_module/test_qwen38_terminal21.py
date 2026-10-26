@@ -57,24 +57,24 @@ def test_calibration_effective_bounds(agent_seconds,request_seconds):
     assert a.task_names_map[EvalLimitMode.CI_NIGHTLY]==c['task_names']['terminal_bench_2_1']
 
 
-def test_gpqa32_effective_identity_limits_and_policy():
-    c=controls()
-    assert c['evals']==['r1_gpqa_diamond']
-    assert c['sample_count']==32 and c['max_concurrent']==8
+def test_swe8_effective_identity_limits_and_policy():
+    c=controls();assert c['evals']==['swe_bench_verified']
+    assert c['sample_count']==c['max_concurrent']==8
     assert c['seed']==1234 and c['output_tokens']==16384
-    h=c['gpqa_handoff']; assert len(h['doc_ids'])==len(h['document_sha256'])==32
-    assert len(set(h['doc_ids']))==32 and h['concurrency']==8
-    manifest=Path(h['manifest']); assert hashlib.sha256(manifest.read_bytes()).hexdigest()==h['manifest_sha256']
-    task=configure(EVAL_CONFIGS[MODEL],EvalLimitMode).tasks[0]
-    assert task.task_name=='r1_gpqa_diamond' and task.agentic_eval_config is None
-    assert task.doc_ids==h['doc_ids'] and task.max_concurrent==8
-    assert task.wall_clock_timeout_seconds==10000
-    assert task.model_kwargs['timeout']==3600
-    assert task.gen_kwargs['max_gen_toks']==16384
-    assert task.request_body['chat_template_kwargs']==h['generation']['chat_template_kwargs']
-    assert task.request_body['chat_template_kwargs']==dict(enable_thinking=True,reasoning_effort='xhigh',preserve_thinking=True)
-    for k,v in h['generation'].items():
-        if k!='chat_template_kwargs': assert task.gen_kwargs[k]==v
+    task=configure(EVAL_CONFIGS[MODEL],EvalLimitMode).tasks[0]; a=task.agentic_eval_config
+    assert task.task_name=='swe_bench_verified' and a.agent=='mini-swe-agent'
+    assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(2700,1800,3300)
+    assert a.n_concurrent_trials==8 and a.n_attempts==1
+    assert a.agent_kwargs['max_tokens']==16384
+    assert a.agent_kwargs['config']['model']['model_kwargs']['seed']==1234
+    assert a.task_names_map[EvalLimitMode.CI_NIGHTLY]==c['task_names']['swe_bench_verified']
+    m=json.loads(Path(c['selection_manifest']).read_text())['evals']['swe_bench_verified']
+    assert len(m['task_names'])==8 and m['task_names']==c['task_names']['swe_bench_verified']
+    original=next(t for t in RAW_MODEL_CONFIG.tasks if t.task_name=='swe_bench_verified').agentic_eval_config
+    expected=copy.deepcopy(original.agent_kwargs)
+    expected['max_tokens']=16384
+    expected['config']['model']['model_kwargs'].update(seed=1234)
+    assert a.agent_kwargs==expected
     assert task.score.published_score is None and task.score.gpu_reference_score is None
 
 
@@ -89,3 +89,24 @@ def test_b8_pilot_serving_geometry():
         assert args['block_size']==args['mamba_block_size']==args['prefix_cache_retention_interval']==256
         assert env['QWEN38_SHARED_RECURRENT_SNAPSHOTS']=='1'
         assert env['QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE']=='23661297664'
+
+
+def test_swe8_actual_harbor_command_bounds(tmp_path):
+    from llm_module import DriverContext, ServerConnection
+    from llm_module.agentic.harbor import _write_harbor_config
+    from llm_module.drivers.agentic import build_harbor_config, resolve_n_tasks
+    from tests.workflow_module.test_qwen38_full_suite_path import runtime
+    task=EVAL_CONFIGS[MODEL].tasks[0]; rc=runtime(True)
+    h=build_harbor_config(task,ServerConnection(base_url='http://127.0.0.1',service_port=8000,model=MODEL),DriverContext(output_dir=tmp_path,device='P300X2'),runtime_config=rc,n_tasks=resolve_n_tasks(task,rc),run_stamp='host-only-swe8')
+    body=json.loads(_write_harbor_config(h).read_text())
+    assert body['n_concurrent_trials']==8
+    assert body['agents'][0]['override_timeout_sec']==2700
+    assert body['agent_timeout_multiplier']==1.0
+    assert h.llm_timeout_sec==1800 and h.harbor_timeout_sec==3300
+    assert body['datasets'][0]['task_names']==controls()['task_names']['swe_bench_verified']
+    assert body['datasets'][0]['n_tasks']==8
+    assert 'verifier' not in body
+    kwargs=body['agents'][0]['kwargs']
+    assert kwargs['max_tokens']==16384
+    assert kwargs['config']['model']['model_kwargs']['timeout']==1800
+    assert kwargs['config']['model']['model_kwargs']['seed']==1234

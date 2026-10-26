@@ -1,15 +1,15 @@
 {
-  "phase": "gpqa32-c8-b8-shared256",
+  "phase": "swe8-c8-b8-shared256-progressive",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
-    "r1_gpqa_diamond"
+    "swe_bench_verified"
   ],
-  "sample_count": 32,
+  "sample_count": 8,
   "max_concurrent": 8,
-  "agent_timeout_sec": 1800,
-  "llm_timeout_sec": 1200,
-  "suite_timeout_sec": 2400,
+  "agent_timeout_sec": 2700,
+  "llm_timeout_sec": 1800,
+  "suite_timeout_sec": 3300,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
@@ -17,34 +17,10 @@
       "astropy__astropy-13453",
       "astropy__astropy-14309",
       "astropy__astropy-7166",
-      "astropy__astropy-7606",
-      "django__django-11276",
-      "django__django-11333",
-      "django__django-11433",
-      "django__django-11532",
-      "django__django-11749",
-      "django__django-11820",
-      "django__django-13670",
-      "django__django-15128",
-      "django__django-15277",
-      "django__django-16333",
-      "django__django-16493",
-      "pydata__xarray-3677",
-      "pytest-dev__pytest-7982",
       "scikit-learn__scikit-learn-13135",
-      "sphinx-doc__sphinx-7910",
-      "sphinx-doc__sphinx-8035",
       "sphinx-doc__sphinx-8459",
-      "sphinx-doc__sphinx-8595",
-      "sphinx-doc__sphinx-9230",
-      "sphinx-doc__sphinx-9591",
       "sympy__sympy-18698",
-      "sympy__sympy-19954",
-      "sympy__sympy-21379",
-      "sympy__sympy-21612",
-      "sympy__sympy-23262",
-      "sympy__sympy-23534",
-      "sympy__sympy-24066"
+      "sympy__sympy-21612"
     ],
     "terminal_bench_2_1": [
       "terminal-bench/adaptive-rejection-sampler",
@@ -186,7 +162,7 @@
   "gpqa_llm_timeout_sec": 3600,
   "gpqa_suite_timeout_sec": 10000,
   "gpqa_timeout_basis": "Matched GPQA32 C8 B32/B8 batch experiment: request3600 preserves original generation allowance; suite10000 covers projected four full16384-token B32 waves (~8793s) plus suite overhead. Outer root watchdog cancel10800, hard11700 includes900s collection reserve; prediction is not measuredC8 performance.",
-  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
-  "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
+  "selection_manifest": "reference_config/evals/qwen38_goal12_combined8_subset.json",
+  "selection_manifest_sha256": "aeb6ce9d79fad83597848f5ae9d29f2ac272b64bd10848b5a1a63d1d5f286b3c",
   "record_suite_metrics": true
 }
