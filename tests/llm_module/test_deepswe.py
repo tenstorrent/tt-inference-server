@@ -58,6 +58,15 @@ def test_checks_out_the_pinned_commit_once_then_reuses_it(tmp_path):
     assert not list(first.parent.parent.glob("*.tmp-*"))
 
 
+def test_deepswe_caps_test_workers_for_agent_and_verifier():
+    deepswe_configs = [c for c in _harbor_configs() if c.dataset == DEEPSWE_DATASET]
+
+    assert deepswe_configs
+    for config in deepswe_configs:
+        assert config.environment_env.items() >= DEEPSWE_TEST_WORKER_ENV.items()
+        assert config.verifier_env.items() >= DEEPSWE_TEST_WORKER_ENV.items()
+
+
 def test_test_worker_cap_is_deepswe_only():
     for config in _harbor_configs():
         if config.dataset == DEEPSWE_DATASET:

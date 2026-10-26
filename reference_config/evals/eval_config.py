@@ -2840,7 +2840,11 @@ _eval_config_list = [
                 ),
                 model_kwargs={
                     "max_length": 1024 * 1024,
-                    "timeout": 7200,
+                    # A request may stream max_gen_toks (400K): ~1.5 h at the
+                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
+                    # at 30 ms/token. At 7200 s three CI streams were cut short
+                    # and lm_eval failed the task.
+                    "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
                     "max_gen_toks": 400 * 1024,
@@ -2877,7 +2881,12 @@ _eval_config_list = [
                 ),
                 model_kwargs={
                     "max_length": 1048576,
-                    "timeout": 7200,
+                    # A request's time includes its queue on the server: a
+                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
+                    # concurrent 256K-900K prompts each lane prefills a few in
+                    # turn (~45 min for a 900K prompt) before decoding up to 64K
+                    # tokens. At 7200 s three CI requests were cut short.
+                    "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
                     "max_gen_toks": 64 * 1024,
@@ -2998,6 +3007,9 @@ _eval_config_list = [
                     environment_env={
                         "TAU2_USER_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
                     },
+                    # Every trial's environment builds FROM it; on the Galaxy
+                    # runner the four CI trials' concurrent pulls all failed.
+                    prepull_images=["python:3.12-slim"],
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
                     },
@@ -3020,8 +3032,9 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=67.9,
                     published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-                    gpu_reference_score=56.05,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6288668031",
+                    # MOPD weights, 3 attempts per task, with the DeepSWE harness env fixes.
+                    gpu_reference_score=65.49,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6317472058",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3036,6 +3049,9 @@ _eval_config_list = [
                     agent="mini-swe-agent",
                     # Tasks block agent egress; let the agent reach the server.
                     allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=None,
