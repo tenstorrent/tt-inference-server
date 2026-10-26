@@ -303,6 +303,8 @@ def test_any_image_model_routes_to_v2(model_name, workflow):
         "Wan2.2-I2V-LoRA",
         "MiniMax-H3-FL2VA-LightX2V",
         "MiniMax-H3-Ref2VA-LightX2V",
+        "MiniMax-H3-FL2VA-HyperFlow",
+        "MiniMax-H3-Ref2VA-HyperFlow",
     ],
 )
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
