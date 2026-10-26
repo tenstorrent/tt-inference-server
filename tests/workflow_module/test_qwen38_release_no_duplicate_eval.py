@@ -26,7 +26,8 @@ def setup_leaves(monkeypatch, include_standard):
     monkeypatch.setattr(llm_eval_tests, 'run_llm_eval', lambda ctx, **kwargs: leaf(ctx, WorkflowVenvType.EVALS_COMMON))
     monkeypatch.setattr(agentic_eval_tests, 'run_llm_agentic_eval', lambda ctx: leaf(ctx, WorkflowVenvType.EVALS_AGENTIC))
     monkeypatch.setattr(agentic_eval_tests, '_configure_openai_env', lambda ctx: None)
-    monkeypatch.setattr(qwen38_goal12, 'controls', lambda: {'include_standard_evals': include_standard})
+    monkeypatch.setattr(qwen38_goal12, 'controls', lambda: {'include_standard_evals': include_standard,
+        'evals': [task.task_name for task in tasks]})
     monkeypatch.setattr(venv_provisioner, 'get_venv_provisioner', lambda: SimpleNamespace(provision=lambda *a: True))
     def marker(name):
         def run(self):
