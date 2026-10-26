@@ -27,9 +27,10 @@ def test_autoport_default_and_seeded_frozen_tasks():
     for t in tasks:
         assert t.seed == controls()["seed"]
         assert t.score.published_score is None
-    tb = next((t for t in tasks if t.task_name == "terminal_bench_2"), None)
+    tb = next((t for t in tasks if t.task_name in ("terminal_bench_2", "terminal_bench_2_1")), None)
     if tb is not None:
-        assert tb.agentic_eval_config.dataset == "terminal-bench/terminal-bench-2"
+        assert tb.agentic_eval_config.dataset == ("terminal-bench/terminal-bench-2-1" if tb.task_name == "terminal_bench_2_1" else "terminal-bench/terminal-bench-2")
+        assert tb.agentic_eval_config.dataset_ref == controls()["terminal_dataset_ref"]
         assert tb.agentic_eval_config.agent_kwargs["session_id_headers"] == ["X-Session-ID"]
 
 
@@ -71,7 +72,7 @@ def test_occupancy32_manifest_and_handoff_exact_identities():
     hashes = dict(zip(h['doc_ids'], h['document_sha256']))
     assert [hashes[i] for i in g['frozen10_doc_ids']] == g['frozen10_document_sha256']
     assert set(g['doc_ids']) == set(g['frozen10_doc_ids']) | set(g['additional22_doc_ids'])
-    for name in ('swe_bench_verified', 'terminal_bench_2'):
+    for name in ('swe_bench_verified', 'terminal_bench_2_1'):
         e = m['evals'][name]
         assert c['task_names'][name] == e['task_names']
         assert len(set(e['task_names'])) == 32

@@ -19,7 +19,10 @@ def configure(config, limit_mode):
     c = controls()
     tasks = []
     for original in config.tasks:
-        name = original.task_name.replace("terminal_bench_2_1", "terminal_bench_2")
+        name = original.task_name
+        # Preserve the requested version; old immutable TB2 runs remain reproducible.
+        if name == "terminal_bench_2_1" and name not in c["evals"] and "terminal_bench_2" in c["evals"]:
+            name = "terminal_bench_2"
         if name not in c["evals"]:
             continue
         # Scores remain measurements; reference comparison belongs to the report.
@@ -47,7 +50,7 @@ def configure(config, limit_mode):
             names = c["task_names"][name]
             common["agentic_eval_config"] = replace(
                 cfg, dataset="terminal-bench/terminal-bench-2" if name == "terminal_bench_2" else cfg.dataset,
-                dataset_ref=c["terminal_dataset_ref"] if name == "terminal_bench_2" else cfg.dataset_ref, n_tasks=None, n_concurrent_trials=c["max_concurrent"],
+                dataset_ref=c["terminal_dataset_ref"] if name in ("terminal_bench_2", "terminal_bench_2_1") else cfg.dataset_ref, n_tasks=None, n_concurrent_trials=c["max_concurrent"],
                 agent_timeout_sec=c["agent_timeout_sec"], llm_timeout_sec=c["llm_timeout_sec"],
                 harbor_timeout_sec=c["suite_timeout_sec"], agent_kwargs=kwargs,
                 task_names_map={limit_mode.CI_NIGHTLY: names, limit_mode.SMOKE_TEST: names},

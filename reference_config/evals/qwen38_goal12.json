@@ -1,11 +1,11 @@
 {
-  "phase": "settled-harness-frozen32-b32-shared256",
+  "phase": "tb21-frozen32-b32-shared256",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
     "r1_gpqa_diamond",
     "swe_bench_verified",
-    "terminal_bench_2"
+    "terminal_bench_2_1"
   ],
   "sample_count": 32,
   "max_concurrent": 32,
@@ -48,45 +48,45 @@
       "sympy__sympy-23534",
       "sympy__sympy-24066"
     ],
-    "terminal_bench_2": [
+    "terminal_bench_2_1": [
       "terminal-bench/adaptive-rejection-sampler",
       "terminal-bench/bn-fit-modify",
+      "terminal-bench/break-filter-js-from-html",
       "terminal-bench/build-cython-ext",
       "terminal-bench/build-pmars",
       "terminal-bench/build-pov-ray",
-      "terminal-bench/caffe-cifar-10",
-      "terminal-bench/cancel-async-tasks",
-      "terminal-bench/circuit-fibsqrt",
+      "terminal-bench/chess-best-move",
       "terminal-bench/cobol-modernization",
       "terminal-bench/code-from-image",
       "terminal-bench/compile-compcert",
       "terminal-bench/constraints-scheduling",
-      "terminal-bench/count-dataset-tokens",
-      "terminal-bench/crack-7z-hash",
-      "terminal-bench/custom-memory-heap-crash",
-      "terminal-bench/db-wal-recovery",
-      "terminal-bench/dna-assembly",
-      "terminal-bench/hf-model-inference",
-      "terminal-bench/mteb-leaderboard",
-      "terminal-bench/mteb-retrieve",
+      "terminal-bench/distribution-search",
+      "terminal-bench/extract-moves-from-video",
+      "terminal-bench/fix-ocaml-gc",
+      "terminal-bench/gcode-to-text",
+      "terminal-bench/git-leak-recovery",
+      "terminal-bench/install-windows-3.11",
+      "terminal-bench/kv-store-grpc",
+      "terminal-bench/mailman",
+      "terminal-bench/make-doom-for-mips",
+      "terminal-bench/make-mips-interpreter",
       "terminal-bench/password-recovery",
+      "terminal-bench/polyglot-c-py",
       "terminal-bench/portfolio-optimization",
-      "terminal-bench/prove-plus-comm",
-      "terminal-bench/pytorch-model-recovery",
-      "terminal-bench/qemu-startup",
+      "terminal-bench/protein-assembly",
+      "terminal-bench/pypi-server",
+      "terminal-bench/reshard-c4-data",
       "terminal-bench/rstan-to-pystan",
-      "terminal-bench/sanitize-git-repo",
       "terminal-bench/sparql-university",
-      "terminal-bench/torch-tensor-parallelism",
       "terminal-bench/train-fasttext",
       "terminal-bench/video-processing",
-      "terminal-bench/write-compressor"
+      "terminal-bench/winning-avg-corewars"
     ]
   },
   "gpqa_handoff": {
     "eval": "r1_gpqa_diamond",
-    "manifest": "reference_config/evals/qwen38_goal12_occupancy32.json",
-    "manifest_sha256": "2faa7e48e18bad53b6de2443c9ae53fde4a4fe0032e31e956d1ba4b3f8e3d313",
+    "manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
+    "manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
     "doc_ids": [
       1,
       2,
@@ -190,7 +190,7 @@
     ]
   },
   "full_suite": false,
-  "terminal_dataset_ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+  "terminal_dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
   "reference_scores": {
     "r1_gpqa_diamond": {
       "value": 89.2,
@@ -202,15 +202,17 @@
       "value": null,
       "reason": "Existing 61.7 reference is SWE-bench Pro, not Verified."
     },
-    "terminal_bench_2": {
-      "value": null,
-      "reason": "Existing 73.0 reference is attached to TIS terminal_bench_2_1; equivalence to requested 2.0 unverified."
+    "terminal_bench_2_1": {
+      "value": 73.0,
+      "unit": "percent",
+      "source": "reference_config/evals/eval_config.py Qwen/Qwen3.8-27B terminal_bench_2_1 catalog; https://huggingface.co/Qwen/Qwen3.8-27B",
+      "limitation": "Catalog reference; exact published scaffold/dataset revision equivalence not established; report scores without gating."
     }
   },
   "gpqa_llm_timeout_sec": 3600,
   "gpqa_suite_timeout_sec": 4500,
   "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
-  "selection_manifest": "reference_config/evals/qwen38_goal12_occupancy32.json",
-  "selection_manifest_sha256": "2faa7e48e18bad53b6de2443c9ae53fde4a4fe0032e31e956d1ba4b3f8e3d313",
+  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
+  "selection_manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
   "record_suite_metrics": true
 }
