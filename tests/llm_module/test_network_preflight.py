@@ -4,8 +4,8 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from llm_module.agentic import network_preflight as proof
-from llm_module.agentic.owned_network import OWNER, JOB, ATTEMPT
+from agentic_owned_networks import preflight as proof
+from agentic_owned_networks.allocator import OWNER, JOB, ATTEMPT
 
 
 @pytest.mark.parametrize('failed_check', [False, True])
@@ -86,3 +86,19 @@ def test_preflight_disabled_does_not_inspect_docker(tmp_path, monkeypatch):
     monkeypatch.delenv('TT_AGENTIC_NETWORK_PREFLIGHT',raising=False)
     monkeypatch.setattr(proof.subprocess,'run',lambda *a,**k:pytest.fail('Docker must not run'))
     proof.run_once(_run_config(tmp_path))
+
+
+def test_standalone_preflight_never_imports_tis_driver_stack():
+    import subprocess
+    result=subprocess.run([sys.executable,'-c', '''
+import sys,importlib.abc
+class BlockTIS(importlib.abc.MetaPathFinder):
+ def find_spec(self,name,path=None,target=None):
+  if name.split('.')[0] in ('llm_module','report_module','ttnn','vllm'):
+   raise AssertionError('Standalone preflight imported '+name)
+sys.meta_path.insert(0,BlockTIS())
+import agentic_owned_networks.preflight
+import agentic_owned_networks.allocator
+assert 'llm_module' not in sys.modules
+'''],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stderr

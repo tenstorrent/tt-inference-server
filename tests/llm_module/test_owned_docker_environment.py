@@ -8,7 +8,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 from tests.llm_module.test_owned_network import FakeDaemon, TestAllocator
-from llm_module.agentic.owned_network import OwnershipError
+from agentic_owned_networks.allocator import OwnershipError
 
 
 @pytest.fixture
@@ -42,8 +42,8 @@ def adapter(monkeypatch,tmp_path):
     docker=ModuleType('harbor.environments.docker.docker');docker.DockerEnvironment=Base
     base=ModuleType('harbor.environments.base');base.ExecResult=lambda **k:SimpleNamespace(**k)
     monkeypatch.setitem(sys.modules,docker.__name__,docker);monkeypatch.setitem(sys.modules,base.__name__,base)
-    path=Path('llm_module/agentic/owned_docker_environment.py')
-    spec=importlib.util.spec_from_file_location('llm_module.agentic.fixture_owned_environment',path)
+    path=Path('agentic_owned_networks/docker_environment.py')
+    spec=importlib.util.spec_from_file_location('agentic_owned_networks.fixture_owned_environment',path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     daemon=FakeDaemon()
     original=daemon.run

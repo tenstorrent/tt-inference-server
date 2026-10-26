@@ -5,7 +5,7 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-from llm_module.agentic.owned_network import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, candidates, topology
+from agentic_owned_networks.allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, candidates, topology
 from tests.llm_module.test_harbor_dataset_ref import _run_config
 from llm_module.agentic import harbor
 

@@ -14,7 +14,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 
-from .owned_network import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner
+from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner
 
 CHECK = r'''
 import json,socket,sys,urllib.request
@@ -40,7 +40,7 @@ def run_once(config):
     import os
     import sys
     from urllib.parse import urlsplit, urlunsplit
-    from .harbor import _get_agent_endpoint
+    from llm_module.agentic.harbor import _get_agent_endpoint
     if os.environ.get('TT_AGENTIC_NETWORK_PREFLIGHT') != '1':
         return
     if config.environment_type != 'docker':
@@ -76,14 +76,14 @@ def run_once(config):
         translated='host.docker.internal'if host in ('127.0.0.1','localhost','::1')else host
         if ':' in translated:translated='['+translated+']'
         health=urlunsplit((endpoint.scheme,translated+(':'+str(endpoint.port)if endpoint.port else ''),'/health','',''))
-        env=os.environ.copy();source=str(Path(__file__).resolve().parents[2])
+        env=os.environ.copy();source=str(Path(__file__).resolve().parents[1])
         env['PYTHONPATH']=os.pathsep.join([source]+([env['PYTHONPATH']]if env.get('PYTHONPATH')else []))
         interpreter=str(config.venv_python or sys.executable)
         subprocess.run([interpreter,'-c',
-            'from harbor.utils.import_path import import_class; import_class("llm_module.agentic.owned_docker_environment:OwnedDockerEnvironment")'],
+            'from harbor.utils.import_path import import_class; import_class("agentic_owned_networks.docker_environment:OwnedDockerEnvironment")'],
             env=env,timeout=30,check=True)
         # No outer kill: the bounded module must finish exact-ID cleanup/receipt.
-        result=subprocess.run([interpreter,'-m','llm_module.agentic.network_preflight',
+        result=subprocess.run([interpreter,'-m','agentic_owned_networks.preflight',
             '--owner',owner,'--image',servers[0]['image'],'--model-endpoint',health,
             '--inventory-model-host',host,'--output',str(root)],env=env,check=False)
         if result.returncode:

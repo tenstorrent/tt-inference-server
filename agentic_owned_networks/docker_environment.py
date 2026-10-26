@@ -7,7 +7,7 @@ import uuid
 
 from harbor.environments.docker.docker import DockerEnvironment
 from harbor.environments.base import ExecResult
-from .owned_network import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology
+from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology
 
 
 async def settled(function, *args):

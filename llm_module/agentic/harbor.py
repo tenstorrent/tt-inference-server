@@ -223,11 +223,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
     if owner and config.environment_type == "docker":
         service_overlay["labels"] = {"com.tenstorrent.agentic-owner": owner}
-        from .owned_network import checked_owner
+        from agentic_owned_networks.allocator import checked_owner
         from urllib.parse import urlparse
         import hashlib
         checked_owner(owner)
-        environment_config['import_path'] = 'llm_module.agentic.owned_docker_environment:OwnedDockerEnvironment'
+        environment_config['import_path'] = 'agentic_owned_networks.docker_environment:OwnedDockerEnvironment'
         environment_config['kwargs'] = {
             'owned_owner': owner,
             'owned_job': hashlib.sha256((str(config.jobs_dir.resolve()) + '/' + config.task_name).encode()).hexdigest()[:24],
@@ -338,7 +338,7 @@ def _owned_job_closed_callback(config):
     owner = os.environ.get('TT_AGENTIC_CONTAINER_OWNER')
     if config.environment_type != 'docker' or not owner:
         return None
-    from .owned_network import checked_owner
+    from agentic_owned_networks.allocator import checked_owner
     import hashlib
     from datetime import datetime, timezone
     checked_owner(owner)
