@@ -500,6 +500,14 @@ class HostSetupManager:
             check_path = str(self.setup_config.host_model_volume_root)
         else:
             return True
+        if self.model_spec.min_disk_gb is None:
+            # No requirement to check against: min_disk_gb is inferred from the param count in the HF repo name
+            # ("...-70B"), so a spec whose name has none must set min_disk_gb (or param_count) itself.
+            logger.warning(
+                f"⚠️ No min_disk_gb for {self.model_spec.model_name}: skipping the disk space check "
+                "(set min_disk_gb or param_count in its model spec)."
+            )
+            return True
         total, used, free = shutil.disk_usage(check_path)
         free_gb = free // (1024**3)
         if free_gb >= self.model_spec.min_disk_gb:
@@ -513,6 +521,13 @@ class HostSetupManager:
         return False
 
     def check_ram(self) -> bool:
+        if self.model_spec.min_ram_gb is None:
+            # As for min_disk_gb: inferred from the param count in the HF repo name unless the spec sets it.
+            logger.warning(
+                f"⚠️ No min_ram_gb for {self.model_spec.model_name}: skipping the host RAM check "
+                "(set min_ram_gb or param_count in its model spec)."
+            )
+            return True
         try:
             with open("/proc/meminfo", "r") as f:
                 for line in f:

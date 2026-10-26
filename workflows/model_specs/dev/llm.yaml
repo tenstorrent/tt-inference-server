@@ -3181,8 +3181,8 @@ templates:
 # MiMo-V2.6-Flash-MOPD on Blackhole Galaxy (tt-metal models/experimental/mimo_v2_6_flash,
 # tenstorrent/vllm-tt-plugin#216). Dev specs omit tt_metal_commit/vllm_commit: pass an
 # image built from tt-metal mimo-v2.6/* and vllm-tt-plugin mimo-v2.6-flash/* via
-# --override-docker-image. The vLLM adapter (tt/generator_vllm.py) lands with
-# tt-metal#61678. Launch settings follow that PR's doc/vllm_integration/README.md.
+# --override-docker-image. Launch settings follow the model's
+# doc/vllm_integration/README.md on tt-metal mimo-v2.6/dev.
 - weights:
     - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
   impl: mimo_v2_6_flash
@@ -3201,6 +3201,9 @@ templates:
       # Above 128K the decode RoPE comes from the host instead of device tables.
       max_context: 1048576  # 1024 * 1024
       default_impl: true
+      # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
+      # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
+      tensor_cache_timeout: 10800.0
       env_vars:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3209,9 +3212,14 @@ templates:
         trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
         l1_small_size: 65536
         dispatch_core_axis: col
-        # sample_on_device_mode: decode_only and prefill_gather_ms: 200 /
-        # prefill_gather_quiet_ms: 25 need vllm-tt-plugin#235; add them once the
-        # plugin branch has it.
+        # Greedy decode rows sample in the decode trace; other rows fall back to
+        # host sampling.
+        sample_on_device_mode: decode_only
+        # Lane-DP: hold a prefill step until the oldest waiting request is 200 ms
+        # old, every slot is filled, or no request arrived for 25 ms, so prompts
+        # prefill together.
+        prefill_gather_ms: 200
+        prefill_gather_quiet_ms: 25
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 4  # per lane
@@ -3225,6 +3233,12 @@ templates:
         tool-call-parser: mimo
   status: EXPERIMENTAL
   has_builtin_warmup: true
+  # The repo name has no "<N>B", so the param-count defaults do not apply (and would assume fp16
+  # weights: 309B x 2.5 = 772 GB of RAM). Disk: the 178 GB checkpoint plus the ~186 GB TTNN cache.
+  # RAM: the cache conversion holds one MoE layer at a time (256 dequantized experts, ~13 GB in bf16,
+  # plus their device-layout copies).
+  min_disk_gb: 450
+  min_ram_gb: 128
   metadata:
     XiaomiMiMo/MiMo-V2.6-Flash-MOPD:
       reasoning_parser_name: mimo

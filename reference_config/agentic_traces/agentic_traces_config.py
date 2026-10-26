@@ -475,6 +475,20 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # MiMo-V2.6-Flash-MOPD on BLACKHOLE_GALAXY (dev catalog). InferenceX agentx
+    # replay only. Full (1M) dataset to match the spec's 1048576 max_context,
+    # and concurrency at its max_concurrency of 16 (4 lanes x 4 users).
+    *for_model_ids(
+        ["id_mimo-v2.6-flash_MiMo-V2.6-Flash-MOPD_blackhole_galaxy"],
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(16),
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(

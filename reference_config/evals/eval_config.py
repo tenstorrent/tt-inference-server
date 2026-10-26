@@ -3073,12 +3073,14 @@ _eval_config_list = [
                     },
                     task_names_map={
                         # One task per language family: Go, Python,
-                        # TypeScript, Rust.
+                        # TypeScript, Rust. Picked from tasks MiMo solves
+                        # reliably (9/9 over three GPU runs; Rust 8/9), so a
+                        # nightly miss flags breakage rather than sampling.
                         EvalLimitMode.CI_NIGHTLY: [
                             "abs-module-cache-flags",
-                            "httpx-streaming-json-iteration",
-                            "ts-pattern-match-each",
-                            "wasmi-trap-coredumps",
+                            "mobly-grouped-test-barriers",
+                            "ofetch-per-origin-circuit-breaker",
+                            "fd-deterministic-multi-key-sorting",
                         ],
                     },
                 ),

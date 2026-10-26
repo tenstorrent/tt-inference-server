@@ -1523,6 +1523,8 @@ def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
     assert spec.device_model_spec.env_vars["MESH_DEVICE"] == "(4, 8)"
     tt_config = json.loads(vllm_args["additional_config"])["tt"]
     assert tt_config["trace_region_size"] == 1000000000
+    assert tt_config["sample_on_device_mode"] == "decode_only"
+    assert tt_config["prefill_gather_ms"] == 200
     assert spec.metadata["model_path_env"] == "MIMO_MODEL_PATH"
     assert spec.metadata["tt_cache_env"] == "MIMO_TT_CACHE"
 

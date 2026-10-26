@@ -12,7 +12,11 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
+import textwrap
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -1606,3 +1610,73 @@ class TestSpecDrivenHfDownload:
         partial.mkdir(parents=True)
         (partial / "abc.incomplete").write_text("")
         assert manager.check_model_weights_dir(root) is False
+
+
+class TestResourceChecksWithoutRequirement:
+    """min_ram_gb / min_disk_gb are inferred from a "<N>B" in the HF repo name; without one they stay None."""
+
+    @pytest.fixture
+    def unsized_model_spec(self, tiny_impl, tiny_device_model_spec):
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=tiny_impl,
+            hf_model_repo=TINY_HF_REPO,
+            model_id=f"id_tt-transformers_{TINY_MODEL_NAME}_n150",
+            model_name=TINY_MODEL_NAME,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=tiny_device_model_spec,
+            docker_image="test-image:latest",
+        )
+        assert spec.min_ram_gb is None and spec.min_disk_gb is None
+        return spec
+
+    def test_check_ram_skips_unknown_requirement(
+        self, unsized_model_spec, mock_ram_check
+    ):
+        assert HostSetupManager(
+            model_spec=unsized_model_spec, automatic=True
+        ).check_ram()
+
+    def test_check_disk_space_skips_unknown_requirement(
+        self, unsized_model_spec, temp_dir
+    ):
+        manager = HostSetupManager(
+            model_spec=unsized_model_spec,
+            automatic=True,
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        assert manager.check_disk_space()
+
+    def test_check_ram_still_enforces_a_set_requirement(
+        self, tiny_model_spec, mock_ram_check
+    ):
+        spec = replace(
+            tiny_model_spec, min_ram_gb=10**6
+        )  # mock_ram_check reports 50 GB available
+        assert not HostSetupManager(model_spec=spec, automatic=True).check_ram()
+
+
+def test_mimo_blackhole_galaxy_dev_spec_sets_host_minimums():
+    """The MiMo repo name has no "<N>B": its dev spec sets the host minimums and the first-run cache timeout."""
+    script = textwrap.dedent(
+        """
+        import json
+        from workflows.model_spec import MODEL_SPECS
+        spec = next(
+            s for s in MODEL_SPECS.values()
+            if s.hf_model_repo == "XiaomiMiMo/MiMo-V2.6-Flash-MOPD" and s.device_type.name == "BLACKHOLE_GALAXY"
+        )
+        print(json.dumps([spec.min_ram_gb, spec.min_disk_gb, spec.device_model_spec.tensor_cache_timeout]))
+        """
+    )
+    env = {**os.environ, "MODEL_SPECS_ENV": "dev", "PYTHONDONTWRITEBYTECODE": "1"}
+    out = subprocess.check_output(
+        [sys.executable, "-c", script], cwd=get_repo_root_path(), env=env, text=True
+    )
+    min_ram_gb, min_disk_gb, tensor_cache_timeout = json.loads(
+        out.strip().splitlines()[-1]
+    )
+    assert min_ram_gb and min_disk_gb
+    assert tensor_cache_timeout > 3600.0
