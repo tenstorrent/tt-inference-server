@@ -211,5 +211,6 @@
   "gpqa_suite_timeout_sec": 4500,
   "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
   "selection_manifest": "reference_config/evals/qwen38_goal12_occupancy32.json",
-  "selection_manifest_sha256": "2faa7e48e18bad53b6de2443c9ae53fde4a4fe0032e31e956d1ba4b3f8e3d313"
+  "selection_manifest_sha256": "2faa7e48e18bad53b6de2443c9ae53fde4a4fe0032e31e956d1ba4b3f8e3d313",
+  "record_suite_metrics": true
 }
