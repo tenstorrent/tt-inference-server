@@ -157,6 +157,10 @@ class ModeReferenceScore:
     ref: str = ""
     # Falls back to EvalTaskScore.tolerance when None.
     tolerance: Optional[float] = None
+    # Minimum number of correct samples, regardless of the scored sample count.
+    # Agentic runs grade on the trials that produced a score, so an errored trial
+    # shrinks n and the integer floor can reach 0; this keeps "at least k solved".
+    min_correct: int = 0
 
 
 @dataclass(frozen=True)
@@ -210,6 +214,7 @@ def resolve_eval_reference(score_obj, limit_mode):
             if mode_ref.tolerance is not None
             else score_obj.tolerance,
             "is_subset_reference": True,
+            "min_correct": mode_ref.min_correct,
         }
 
     return {
@@ -230,7 +235,8 @@ def accept_eval_score(ref, score, n_total=None):
     check is sample-count-aware:
 
         n_correct_obs = round(score/100 * n_total)
-        threshold     = floor(n_total * reference/100 * (1 - tolerance))
+        threshold     = max(floor(n_total * reference/100 * (1 - tolerance)),
+                            min_correct)
         PASS iff n_correct_obs >= threshold
 
     The integer floor lets tiny subsets tolerate one flipped item without a
@@ -245,7 +251,10 @@ def accept_eval_score(ref, score, n_total=None):
     assert reference > 0, "Reference score is not > 0"
     if ref.get("is_subset_reference") and n_total:
         ref_rate = reference / 100.0
-        threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
+        threshold = max(
+            math.floor(n_total * ref_rate * (1.0 - tolerance)),
+            ref.get("min_correct", 0),
+        )
         observed = round(score / 100.0 * n_total)
         return observed >= threshold
     return (score / reference) >= (1.0 - tolerance)
@@ -8520,6 +8529,7 @@ _eval_config_list = [
                             score=20.0,
                             ref="CI floor: at least 1 of 5 tasks solved",
                             tolerance=0.0,
+                            min_correct=1,
                         ),
                     },
                 ),
@@ -8585,6 +8595,7 @@ _eval_config_list = [
                             score=20.0,
                             ref="CI floor: at least 1 of 5 tasks solved",
                             tolerance=0.0,
+                            min_correct=1,
                         ),
                     },
                 ),
