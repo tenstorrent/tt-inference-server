@@ -1,5 +1,5 @@
 {
-  "phase": "unscored-new-image-b16-independent512-qualification",
+  "phase": "unscored-exec-settlement-b32-shared256-qualification",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
