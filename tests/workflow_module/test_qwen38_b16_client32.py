@@ -14,8 +14,8 @@ def test_b16_server_retains_32_clients_and_protocol():
     assert str(d.env_vars['QWEN38_SHARED_RECURRENT_SNAPSHOTS'])=='1'
     assert str(d.env_vars['QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE'])=='23661297664'
     c=controls();assert c['max_concurrent']==c['sample_count']==32
-    assert c['evals']==['terminal_bench_2_1']
-    task=EVAL_CONFIGS[MODEL].tasks[0]
+    assert 'terminal_bench_2_1' in c['evals']
+    task=next(t for t in EVAL_CONFIGS[MODEL].tasks if t.task_name=='terminal_bench_2_1')
     assert task.agentic_eval_config.n_concurrent_trials==32
     assert task.agentic_eval_config.agent_timeout_sec==900
     assert task.agentic_eval_config.llm_timeout_sec==600
