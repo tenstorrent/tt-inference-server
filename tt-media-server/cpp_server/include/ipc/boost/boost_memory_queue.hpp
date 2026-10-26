@@ -170,9 +170,8 @@ class MemoryQueue {
       bi_ipc::ibufferstream stream(buf.data(), recv_size);
       out = MsgType::deserialize(stream);
     } else {
-      if (!queue_->timed_receive(reinterpret_cast<char*>(&out),
-                                 sizeof(MsgType), recv_size, priority,
-                                 deadline))
+      if (!queue_->timed_receive(reinterpret_cast<char*>(&out), sizeof(MsgType),
+                                 recv_size, priority, deadline))
         return false;
     }
     return true;
