@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
-import socket
+import sys
 import subprocess
 import time
 
@@ -92,7 +92,8 @@ class Allocator:
     def local_daemon(self):
         if os.environ.get('DOCKER_HOST','unix:///var/run/docker.sock')!='unix:///var/run/docker.sock':raise ValueError('Only local rootful Docker socket supported')
         if Path('/.dockerenv').exists()or Path('/run/.containerenv').exists():raise ValueError('Allocator must run on daemon host, not in a container')
-        if os.stat('/proc/self/ns/net').st_ino!=os.stat('/proc/1/ns/net').st_ino:raise ValueError('Host network namespace required')
+        # Route inventory is proven through a separately owned host-network helper.
+        # The collector's PID1 namespace is not treated as Docker's namespace.
         context=self.data(['docker','context','inspect','--format','{{json .Endpoints.docker.Host}}'])
         if context!='unix:///var/run/docker.sock':raise ValueError('Remote/alternate Docker context unsupported')
         info=self.data(['docker','info','--format','{"id":{{json .ID}},"os":{{json .OSType}},"security":{{json .SecurityOptions}}}'])
@@ -122,22 +123,23 @@ class Allocator:
             if ident==skip:continue
             for config in network.get('IPAM',{}).get('Config')or[]:add(config.get('Subnet'))
         bridge='br-'+skip[:12]if skip else None
-        routes=self.data(['ip','-j','-4','route','show','table','all'])
-        addresses=self.data(['ip','-j','-4','addr','show'])
+        from .host_inventory import collect
+        provider=collect(self)
+        local=self.data([sys.executable,str(Path(__file__).with_name('netlink_inventory.py')),self.endpoint_host])
+        routes=local['routes']+provider['routes']
+        addresses=local['addresses']+provider['addresses']
+        for address in provider['dns']+provider['model_addresses']:add(address)
         if not isinstance(routes,list)or not routes or not isinstance(addresses,list)or not addresses:raise ValueError('Incomplete host IP inventory')
         for route in routes:
-            if route.get('dev')==bridge:continue
+            if bridge is not None and route.get('dev')==bridge:continue
             if route.get('dst')!='default':add(route.get('dst'))
             add(route.get('gateway'))
             for hop in route.get('nexthops',[]):add(hop.get('gateway'))
         for interface in addresses:
-            if interface.get('ifname')==bridge:continue
+            if bridge is not None and interface.get('ifname')==bridge:continue
             for addr in interface.get('addr_info',[]):
                 if addr.get('family')=='inet':add(str(addr['local'])+'/'+str(addr['prefixlen']))
-        for line in Path('/etc/resolv.conf').read_text().splitlines():
-            parts=line.split()
-            if parts and parts[0]=='nameserver':add(parts[1])
-        for result in socket.getaddrinfo(self.endpoint_host,None,socket.AF_INET):add(result[4][0])
+        for value in local['dns']+local['model_addresses']:add(value)
         return exclusions
 
     def verify(self,network):
