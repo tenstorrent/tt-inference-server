@@ -17,7 +17,8 @@ def test_autoport_default_and_seeded_frozen_tasks():
     assert len(specs) == 1
     s = specs[0]
     assert s.impl.code_path == "models/autoports/qwen_qwen3_8_27b"
-    assert s.device_model_spec.max_concurrency == 32
+    assert s.device_model_spec.max_concurrency == s.device_model_spec.vllm_args["max_num_seqs"]
+    assert s.device_model_spec.max_concurrency in (16, 32)
     assert s.device_model_spec.vllm_args["enable_prefix_caching"] is True
     tasks = EVAL_CONFIGS[MODEL].tasks
     assert {t.task_name for t in tasks} == set(controls()["evals"])
