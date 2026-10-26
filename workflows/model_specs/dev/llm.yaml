@@ -7255,6 +7255,9 @@ templates:
         hf-overrides: '{"architectures":["TTGraniteForCausalLM"]}'
         revision: 9e668ce1c538387ef24d3644e9b0606647762636
         tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        # Keep SWE output capped while vLLM shrinks it to the remaining context.
+        # An explicit request max_tokens would reject otherwise valid long prompts.
+        override_generation_config: '{"max_new_tokens": 32768}'
         block_size: 32
         max_num_seqs: 16
         enable-prefix-caching: true

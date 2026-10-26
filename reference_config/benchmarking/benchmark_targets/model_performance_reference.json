@@ -8100,7 +8100,7 @@
                 "targets": {}
             },
             {
-                "_comment": "User-specified release targets for ISL/OSL128, concurrency1.",
+                "_comment": "Provisional user-specified QB2 estimates for ISL/OSL128, concurrency1; not measured or formally established performance targets.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,

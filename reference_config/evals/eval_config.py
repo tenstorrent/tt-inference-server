@@ -613,11 +613,12 @@ _eval_config_list = [
                     gpu_reference_score_ref=None,
                     tolerance=0.0,
                     mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                        mode: ModeReferenceScore(
                             score=60.0,
                             ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
                             tolerance=0.0,
                         )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
                     },
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -641,62 +642,35 @@ _eval_config_list = [
                 thinking=True,
                 request_body={"chat_template_kwargs": {"low_effort": False}},
                 capture_reasoning=True,
-            )
-        ]
-        + [
+            ),
             EvalTask(
-                task_name=name,
+                task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=target,
+                    published_score=57.0,
                     published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     tolerance=0.0,
                     mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=ci_target,
+                        mode: ModeReferenceScore(
+                            score=40.0,
                             ref="User-approved first-five SWE CI gate: 2/5 (40%); published 57% is full-set context, not a matched GPU reference",
                             tolerance=0.0,
                         )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
                     },
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
                 ),
                 agentic_eval_config=HarborEvalConfig(
-                    dataset=dataset.split("@", 1)[0],
-                    agent=agent,
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
                     n_attempts=1,
                     agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
-                    agent_kwargs=kwargs,
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: names,
-                        EvalLimitMode.SMOKE_TEST: names,
-                    },
-                    dataset_ref=dataset.split("@", 1)[1] if "@" in dataset else None,
-                    agent_env={
-                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
-                    }
-                    if name == "swe_bench_verified"
-                    else {},
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 5,
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-                thinking=True,
-                request_body={"chat_template_kwargs": {"low_effort": False}},
-            )
-            for name, dataset, agent, target, ci_target, kwargs, names in [
-                (
-                    "swe_bench_verified",
-                    "swebench-verified",
-                    "mini-swe-agent",
-                    57.0,
-                    40.0,
-                    {
+                    agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         "config": {
                             "environment": {
@@ -708,17 +682,28 @@ _eval_config_list = [
                                 "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
                             },
                         },
-                        "max_tokens": 32768,
                     },
-                    [
-                        "django__django-11299",
-                        "astropy__astropy-14096",
-                        "matplotlib__matplotlib-25332",
-                        "sympy__sympy-13551",
-                        "scikit-learn__scikit-learn-14629",
-                    ],
+                    task_names_map={
+                        mode: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ]
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
+                    },
                 ),
-            ]
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+            ),
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
