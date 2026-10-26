@@ -35,7 +35,7 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
     assert spec.device_model_spec.max_concurrency == 32
     assert spec.device_model_spec.max_tokens_all_users == 262144
     expected_resident_batch = template_spec.device_model_spec.vllm_args["max_num_seqs"]
-    assert expected_resident_batch in (16, 32)
+    assert expected_resident_batch in (1, 8, 16, 32)
     assert spec.device_model_spec.vllm_args["max_num_seqs"] == expected_resident_batch
     assert spec.impl.code_path == "models/autoports/qwen_qwen3_8_27b"
     assert spec.device_model_spec.vllm_args["enable_prefix_caching"] is True

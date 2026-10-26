@@ -1,0 +1,286 @@
+{
+  "purpose": "Frozen provisional subset; no serving selection, calibrated limits, full-suite go or dispatch implied.",
+  "selection_algorithm": "For each eval, random.Random(1234).sample(existing frozen32 identities, 32); take first requested count, then sort. Eight is nested in sixteen. No outcome-based replacement.",
+  "seed": 1234,
+  "source_manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
+  "source_manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
+  "swe_registry_manifest": "reference_config/evals/qwen38_goal12_swe_registry.json",
+  "swe_registry_sha256": "91831a45aee22f7f299f84077c5d79ae8225a7cefedf6a65359231790a81a3b0",
+  "harbor_commit": "9973a7edc2d9950a03de6aeebafebb8f7b0a5f1e",
+  "evals": {
+    "r1_gpqa_diamond": {
+      "population": 198,
+      "population_sha256": "2ed8c1e6bb9d79c67848407d60c89eadc23fa3cb8ab1d8e1e65230aea0953bbf",
+      "sample_count": 32,
+      "doc_ids": [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        9,
+        10,
+        11,
+        12,
+        13,
+        15,
+        17,
+        18,
+        31,
+        33,
+        35,
+        39,
+        48,
+        70,
+        98,
+        100,
+        122,
+        128,
+        133,
+        159,
+        167,
+        169,
+        175,
+        181,
+        185,
+        187
+      ],
+      "document_sha256": [
+        "46b474e2ce3fed9fb712152fd0c5609dbf2c0c902f6c878b4c2c8bd7efef5249",
+        "b3ac809b712f04ac18383743e04c51f904eecc04df48ab375ea909b287136572",
+        "3dd5de824bb2526a5e354bd23b1ef3149f4c64b6818df47cdfad2ed7d79c2a9a",
+        "c21ef60ba0d6e5f609971b78c31267d48dce06a569b2f7bf22e4a80c67d4be40",
+        "97119ebb342140447e645b8c38828cb917be82681d38a3cbd6ad8b6f51f97497",
+        "d252410497721ab73806dc0bc70b97da330904759755e4870289e1a95ba06f2e",
+        "d13f7643721fd3b4ddc9e7732ac7ab8afe40757a5e05bf128d3e4b807a22d266",
+        "c05afa73e4a4c8f788469e7b95067747d15d6856f09d53aa72ab24afdcc8fdbe",
+        "f2d6751756e501ef39e0286637916d63bc50a27f09c57bed9e451da473b15c5b",
+        "dd524cfa81f54fe949c7cb0ef5e47795055d085ec97320e24cc7736f8e50aff8",
+        "f9856978c27aa7bb83f78aced76d68fc2abe32171603a16c0cb2e6624e101aa5",
+        "4168cf6665c1e75a2b4983659fa5c768f1f3933915d685c7f1a8eb8a2dc9c428",
+        "d42fa8326038e2a391c19abf234216c4244a95eb25ace209616925055ed902dd",
+        "7ee6796f95909f07622ede67b3b0f16e724aa78dae4e0012a336922a27a09e80",
+        "6d959969ff779ff55e3fb4b7296450851910e01638ab5e43467a651fd03910cc",
+        "837b9010032d717e827748fd2a969fda1c5ea1485825748cc1f046a1fd075549",
+        "5e9c2c366f51dfa00483ccf4e3c4eeffc388e5430a573d15191c9558d0bda0c5",
+        "81ed3e2d91e63032a870ff920da14def073184555373757c893694104715f06e",
+        "663cf19ec059ebfa51852c6d567139a1934e20776ae9629db9384d92d7ae34ac",
+        "77938bf00b6ab6c74b1d1a3ca60ce04731ab35c64dfc7b19cc04999949756ead",
+        "c290ec4c8829b29593b3acb2f2f7ba794eaffee75fa83105721a694bbabf7736",
+        "15ec84461d7f409a33e119b6c982809ddbbb3e1c9e99b5afc24d45f14662a28f",
+        "244dc47a2af9a8cc9faca16bd9c027baf96c3e1bb89ed4a8d1baf104f73b1063",
+        "b939e57bd7c08528883279e280fea33fcd73d8fabb93ee8a5c4ecfe48c4917a7",
+        "7fbb0b78ecab7f9700e78a1a71bb8241b8b34c458bf6a3fc5745fb6e1062e391",
+        "81d8b97b1bb60596f1023a455ea07886dae9789710641920f23264e98d8d557b",
+        "67b8fcdcea459e0692b46da805efe82fb94c3b7993a425a8a623743fe2380faf",
+        "bcdf6901c2860829accdeb06ffcf6b031e9a65fedc763c1a9d4c7b77f436fb1c",
+        "f8de8ce7d69866accb95dd1e90f7b99f7c486c19594ab0a95d39517a84b691e5",
+        "1e345a1401057541ba49dcd23fd60b01dc5e288d448972b0fa6c24c0850a87ea",
+        "7835f4e547dd815de20d77cc398be9d29bcbc8c0be353040f9fd0fa980698cd0",
+        "cf9c0b0db588d7f8216b781b9410d3d7cc8e1cb0594b786f67b9db9534b5732d"
+      ]
+    },
+    "swe_bench_verified": {
+      "dataset": "swebench-verified",
+      "ref": "1.0",
+      "population": 500,
+      "population_names_sha256": "0821947fc741ed1cd8039af0fcfdf5c6ec69e4f6e4c96bd79c97e50a19a2fd52",
+      "population_sources_sha256": "41482a7f48605870c12e1f3dd46d656740ea40fb9df71e08bdf552e267cf21e4",
+      "sample_count": 16,
+      "task_names": [
+        "astropy__astropy-13398",
+        "astropy__astropy-13453",
+        "astropy__astropy-14309",
+        "astropy__astropy-7166",
+        "django__django-11433",
+        "django__django-13670",
+        "pytest-dev__pytest-7982",
+        "scikit-learn__scikit-learn-13135",
+        "sphinx-doc__sphinx-8459",
+        "sphinx-doc__sphinx-8595",
+        "sympy__sympy-18698",
+        "sympy__sympy-19954",
+        "sympy__sympy-21612",
+        "sympy__sympy-23262",
+        "sympy__sympy-23534",
+        "sympy__sympy-24066"
+      ],
+      "selected_sources": {
+        "astropy__astropy-13398": {
+          "name": "astropy__astropy-13398",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/astropy__astropy-13398"
+        },
+        "astropy__astropy-13453": {
+          "name": "astropy__astropy-13453",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/astropy__astropy-13453"
+        },
+        "astropy__astropy-14309": {
+          "name": "astropy__astropy-14309",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/astropy__astropy-14309"
+        },
+        "astropy__astropy-7166": {
+          "name": "astropy__astropy-7166",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/astropy__astropy-7166"
+        },
+        "django__django-11433": {
+          "name": "django__django-11433",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/django__django-11433"
+        },
+        "django__django-13670": {
+          "name": "django__django-13670",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/django__django-13670"
+        },
+        "pytest-dev__pytest-7982": {
+          "name": "pytest-dev__pytest-7982",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/pytest-dev__pytest-7982"
+        },
+        "scikit-learn__scikit-learn-13135": {
+          "name": "scikit-learn__scikit-learn-13135",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/scikit-learn__scikit-learn-13135"
+        },
+        "sphinx-doc__sphinx-8459": {
+          "name": "sphinx-doc__sphinx-8459",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sphinx-doc__sphinx-8459"
+        },
+        "sphinx-doc__sphinx-8595": {
+          "name": "sphinx-doc__sphinx-8595",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sphinx-doc__sphinx-8595"
+        },
+        "sympy__sympy-18698": {
+          "name": "sympy__sympy-18698",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-18698"
+        },
+        "sympy__sympy-19954": {
+          "name": "sympy__sympy-19954",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-19954"
+        },
+        "sympy__sympy-21612": {
+          "name": "sympy__sympy-21612",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-21612"
+        },
+        "sympy__sympy-23262": {
+          "name": "sympy__sympy-23262",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-23262"
+        },
+        "sympy__sympy-23534": {
+          "name": "sympy__sympy-23534",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-23534"
+        },
+        "sympy__sympy-24066": {
+          "name": "sympy__sympy-24066",
+          "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+          "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+          "path": "datasets/swebench-verified/sympy__sympy-24066"
+        }
+      },
+      "selected_sources_sha256": "92dea62112ad32222a19fd0f8b87fa640ec3829f5639065cc8c15185174dc54a"
+    },
+    "terminal_bench_2_1": {
+      "dataset": "terminal-bench/terminal-bench-2-1",
+      "ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+      "population": 89,
+      "population_manifest": "reference_config/evals/qwen38_goal12_terminal21_population.json",
+      "sample_count": 16,
+      "task_names": [
+        "terminal-bench/adaptive-rejection-sampler",
+        "terminal-bench/bn-fit-modify",
+        "terminal-bench/break-filter-js-from-html",
+        "terminal-bench/build-cython-ext",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/distribution-search",
+        "terminal-bench/kv-store-grpc",
+        "terminal-bench/mailman",
+        "terminal-bench/password-recovery",
+        "terminal-bench/polyglot-c-py",
+        "terminal-bench/pypi-server",
+        "terminal-bench/reshard-c4-data",
+        "terminal-bench/sparql-university",
+        "terminal-bench/train-fasttext",
+        "terminal-bench/video-processing",
+        "terminal-bench/winning-avg-corewars"
+      ],
+      "selected_sources": {
+        "terminal-bench/adaptive-rejection-sampler": {
+          "content_hash": "bcaa2399985cd57666018025846289ab25e193ae0dd8fb7f0ffab2410c24d4de"
+        },
+        "terminal-bench/bn-fit-modify": {
+          "content_hash": "b5f9644970c17ad9ddb46b7266f7bcd87c761d77d7e6f55d7cfe7284d5ff66e9"
+        },
+        "terminal-bench/break-filter-js-from-html": {
+          "content_hash": "678008d1a4fd1e6e1b9b3cc9a327219fe4b410a31eafc52e9099bbf947eea600"
+        },
+        "terminal-bench/build-cython-ext": {
+          "content_hash": "35dc561790e73f13e59837828ac0863c0893edc6b71d42cf7d58656c843adf12"
+        },
+        "terminal-bench/cobol-modernization": {
+          "content_hash": "e03aa03965eee48c9f772d566ff9bcd741fceeac9693123f82a13fdd46be0d88"
+        },
+        "terminal-bench/distribution-search": {
+          "content_hash": "8787d3004ac4dd9d78f0c14f5b5ef94a4ad3e69d8828d7d35b9fbd7828a69ed1"
+        },
+        "terminal-bench/kv-store-grpc": {
+          "content_hash": "973c5d4c111fb61a344457936f1c36400acd2d9e44389e7b319586fe23a7a307"
+        },
+        "terminal-bench/mailman": {
+          "content_hash": "831b3ed00807153963c05f91599443e4839099521d1d56db811c5547ab280dbe"
+        },
+        "terminal-bench/password-recovery": {
+          "content_hash": "9b5c6bdce0cf03f075b21f6a7af5030b825ce07d7b16b37610f3964217ab84a4"
+        },
+        "terminal-bench/polyglot-c-py": {
+          "content_hash": "25570ccacf63f573a252eaa2a9c62ee8b55f5aa228cc803b5beb39dd6d8afeb7"
+        },
+        "terminal-bench/pypi-server": {
+          "content_hash": "1a1e0542f58e2d3362fec17a9bbb98667717d9a4a3e9a4c8413d3150a4fa0ff1"
+        },
+        "terminal-bench/reshard-c4-data": {
+          "content_hash": "a402bbfede73dd04168d697de9b9146026f69e14c8cd333b6a91fc87e44ecd4b"
+        },
+        "terminal-bench/sparql-university": {
+          "content_hash": "02aeca67b6c5b0d2d72c91ab471beb51ded6f42f0dc3dec580e20d489f09a867"
+        },
+        "terminal-bench/train-fasttext": {
+          "content_hash": "460fc0818971ec83545a76805267b65459128fad52e68c26a199a0d74022badb"
+        },
+        "terminal-bench/video-processing": {
+          "content_hash": "d3f02e177b49e5768b6ce6709fc4ae3ef2ce0cdecb63b09fc9b07f9d3ddb7203"
+        },
+        "terminal-bench/winning-avg-corewars": {
+          "content_hash": "a9f2c630fb7d656e96f3a42ade600a8abcb500631d153d62d5ceb2df073bc256"
+        }
+      },
+      "selected_sources_sha256": "52177269e9106eee37f5d4b317a0aa3eca7ce35affa4ac043aebc9b9955bc4a3"
+    }
+  }
+}

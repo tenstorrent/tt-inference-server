@@ -39,7 +39,9 @@ def test_goal12_agentic_route_provisions_and_runs_standard_harness_first():
     ctx.model_spec.hf_model_repo = MODEL
     block = Block(kind="evals", task_type="llm", title="measured", data={"accuracy": 0.0})
     events = []
-    with patch("test_module.llm_tests.agentic_eval_tests._configure_openai_env"), \
+    ordinary_controls = {**controls(), "include_standard_evals": True}
+    with patch("reference_config.evals.qwen38_goal12.controls", return_value=ordinary_controls), \
+         patch("test_module.llm_tests.agentic_eval_tests._configure_openai_env"), \
          patch("workflow_module.venv_provisioner.get_venv_provisioner") as provisioner, \
          patch("test_module.llm_tests.llm_eval_tests.run_llm_eval", side_effect=lambda *a, **kw: events.append("gpqa") or [block]), \
          patch("test_module.llm_tests.agentic_eval_tests.run_llm_agentic_eval", side_effect=lambda *a: events.append("harbor") or [block]):

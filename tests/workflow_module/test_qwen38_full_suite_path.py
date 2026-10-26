@@ -61,7 +61,7 @@ def test_gpqa_full198_vs_frozen32_actual_command(full,ci,tmp_path):
     assert len(c['gpqa_handoff']['doc_ids'])==len(c['gpqa_handoff']['document_sha256'])==32
 
 
-@pytest.mark.parametrize('name,population',[('swe_bench_verified',500),('terminal_bench_2',89)])
+@pytest.mark.parametrize('name,population',[('swe_bench_verified',500),('terminal_bench_2_1',89)])
 @pytest.mark.parametrize('full,ci',[(False,True),(True,False)])
 def test_harbor_full_population_vs_frozen32_config(name,population,full,ci,tmp_path):
     config,c=configured(full)
@@ -91,7 +91,7 @@ def test_harbor_full_population_vs_frozen32_config(name,population,full,ci,tmp_p
         assert dataset['ref']==c['terminal_dataset_ref']
 
 
-@pytest.mark.parametrize('selected',['r1_gpqa_diamond','swe_bench_verified','terminal_bench_2'])
+@pytest.mark.parametrize('selected',['r1_gpqa_diamond','swe_bench_verified','terminal_bench_2_1'])
 def test_full_one_eval_controls_route_actual_selectors(selected):
     config,c=configured(True,selected)
     assert [t.task_name for t in config.tasks]==[selected]

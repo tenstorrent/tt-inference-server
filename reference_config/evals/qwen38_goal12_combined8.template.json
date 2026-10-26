@@ -1,0 +1,147 @@
+{
+  "phase": "prepared-combined8-requires-calibrated-bounds-and-selection",
+  "seed": 1234,
+  "include_standard_evals": true,
+  "evals": [
+    "r1_gpqa_diamond",
+    "swe_bench_verified",
+    "terminal_bench_2_1"
+  ],
+  "sample_count": 32,
+  "max_concurrent": 32,
+  "agent_timeout_sec": 900,
+  "llm_timeout_sec": 600,
+  "suite_timeout_sec": 2400,
+  "output_tokens": 16384,
+  "task_names": {
+    "swe_bench_verified": [
+      "astropy__astropy-13398",
+      "astropy__astropy-13453",
+      "astropy__astropy-14309",
+      "astropy__astropy-7166",
+      "scikit-learn__scikit-learn-13135",
+      "sphinx-doc__sphinx-8459",
+      "sympy__sympy-18698",
+      "sympy__sympy-21612"
+    ],
+    "terminal_bench_2_1": [
+      "terminal-bench/adaptive-rejection-sampler",
+      "terminal-bench/bn-fit-modify",
+      "terminal-bench/break-filter-js-from-html",
+      "terminal-bench/build-cython-ext",
+      "terminal-bench/mailman",
+      "terminal-bench/password-recovery",
+      "terminal-bench/pypi-server",
+      "terminal-bench/sparql-university"
+    ]
+  },
+  "gpqa_handoff": {
+    "eval": "r1_gpqa_diamond",
+    "manifest": "reference_config/evals/qwen38_goal12_combined8_subset.json",
+    "manifest_sha256": "aeb6ce9d79fad83597848f5ae9d29f2ac272b64bd10848b5a1a63d1d5f286b3c",
+    "doc_ids": [
+      1,
+      2,
+      3,
+      5,
+      48,
+      100,
+      159,
+      175
+    ],
+    "document_sha256": [
+      "46b474e2ce3fed9fb712152fd0c5609dbf2c0c902f6c878b4c2c8bd7efef5249",
+      "b3ac809b712f04ac18383743e04c51f904eecc04df48ab375ea909b287136572",
+      "3dd5de824bb2526a5e354bd23b1ef3149f4c64b6818df47cdfad2ed7d79c2a9a",
+      "c21ef60ba0d6e5f609971b78c31267d48dce06a569b2f7bf22e4a80c67d4be40",
+      "663cf19ec059ebfa51852c6d567139a1934e20776ae9629db9384d92d7ae34ac",
+      "15ec84461d7f409a33e119b6c982809ddbbb3e1c9e99b5afc24d45f14662a28f",
+      "81d8b97b1bb60596f1023a455ea07886dae9789710641920f23264e98d8d557b",
+      "f8de8ce7d69866accb95dd1e90f7b99f7c486c19594ab0a95d39517a84b691e5"
+    ],
+    "population": 198,
+    "concurrency": null,
+    "generation": {
+      "max_gen_toks": 16384,
+      "do_sample": true,
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repetition_penalty": 1.0,
+      "until": [],
+      "chat_template_kwargs": {
+        "enable_thinking": true,
+        "reasoning_effort": "xhigh",
+        "preserve_thinking": true
+      }
+    },
+    "requirement": "Preserve these exact frozen normalized documents and the full population digest; this prepared CI subset does not claim full-set accuracy.",
+    "population_sha256": "2ed8c1e6bb9d79c67848407d60c89eadc23fa3cb8ab1d8e1e65230aea0953bbf",
+    "normalization_source_task": "gpqa_diamond_cot_zeroshot",
+    "stage11_frozen_doc_ids": [
+      1,
+      2,
+      5,
+      6,
+      7,
+      9,
+      11,
+      12,
+      13,
+      15
+    ],
+    "concurrency_basis": "Pending calibration; final publication must copy effective per_eval.r1_gpqa_diamond.max_concurrent and forecast its queue waves."
+  },
+  "full_suite": false,
+  "terminal_dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+  "reference_scores": {
+    "r1_gpqa_diamond": {
+      "value": 89.2,
+      "unit": "percent",
+      "source": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "limitation": "Published full dataset; exact recipe equivalence not established."
+    },
+    "swe_bench_verified": {
+      "value": null,
+      "reason": "Existing 61.7 reference is SWE-bench Pro, not Verified."
+    },
+    "terminal_bench_2_1": {
+      "value": 73.0,
+      "unit": "percent",
+      "source": "reference_config/evals/eval_config.py Qwen/Qwen3.8-27B terminal_bench_2_1 catalog; https://huggingface.co/Qwen/Qwen3.8-27B",
+      "limitation": "Catalog reference; exact published scaffold/dataset revision equivalence not established; report scores without gating."
+    }
+  },
+  "gpqa_llm_timeout_sec": 3600,
+  "gpqa_suite_timeout_sec": 4500,
+  "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
+  "selection_manifest": "reference_config/evals/qwen38_goal12_combined8_subset.json",
+  "selection_manifest_sha256": "aeb6ce9d79fad83597848f5ae9d29f2ac272b64bd10848b5a1a63d1d5f286b3c",
+  "record_suite_metrics": true,
+  "release_benchmark_timeout_sec": 1800,
+  "_preparation_status": "Inactive template; null per-eval bounds intentionally reject execution until coordinator supplies measured choices.",
+  "per_eval": {
+    "r1_gpqa_diamond": {
+      "sample_count": 8,
+      "max_concurrent": null,
+      "llm_timeout_sec": null,
+      "suite_timeout_sec": null
+    },
+    "swe_bench_verified": {
+      "sample_count": 8,
+      "max_concurrent": null,
+      "llm_timeout_sec": null,
+      "suite_timeout_sec": null,
+      "agent_timeout_sec": null
+    },
+    "terminal_bench_2_1": {
+      "sample_count": 8,
+      "max_concurrent": null,
+      "llm_timeout_sec": null,
+      "suite_timeout_sec": null,
+      "agent_timeout_sec": null
+    }
+  }
+}
