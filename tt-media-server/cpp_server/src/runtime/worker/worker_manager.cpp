@@ -54,7 +54,7 @@ namespace {
 }
 
 /** Sentinel for awaitWorkersWarmup(): wait for warmup/exit with no deadline. */
-constexpr unsigned kNoWarmupDeadline = 0;
+constexpr unsigned NO_WARMUP_DEADLINE = 0;
 
 unsigned defaultWarmupTimeoutMs() {
   if (tt::config::isEmbeddingService()) {
@@ -73,7 +73,7 @@ unsigned defaultWarmupTimeoutMs() {
   // budgets (PM_CONNECT_TIMEOUT_MS for connect, WARMUP_TIMEOUT_MS per
   // ALLOCATE / first-token / EVICT phase) and exit on failure, which the
   // coordinator detects via checkWorkerAlive().
-  return kNoWarmupDeadline;
+  return NO_WARMUP_DEADLINE;
 }
 
 void populateCommonWorkerEnv(tt::worker::WorkerConfig& cfg, int workerId) {
@@ -383,7 +383,7 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
       return true;
     }
 
-    if (timeoutMs != kNoWarmupDeadline &&
+    if (timeoutMs != NO_WARMUP_DEADLINE &&
         std::chrono::steady_clock::now() >= deadline) {
       for (size_t idx : pending) {
         TT_LOG_ERROR(
