@@ -1401,3 +1401,75 @@ def test_noise_rule_lives_in_a_dependency_free_module():
     )
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "1.96"
+
+
+class TestEvalSubprocessEnv:
+    """What _run_eval_task hands the lm-eval / lmms-eval subprocess."""
+
+    def _env_for(self, task, auth_token, tmp_path, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("LMMS_EVAL_PLUGINS", raising=False)
+        ctx = SimpleNamespace(
+            model_spec=SimpleNamespace(model_id="m", hf_model_repo="org/m"),
+            runtime_config=SimpleNamespace(),
+            server_port=8000,
+            server_host="127.0.0.1",
+            device="N150",
+        )
+        seen = {}
+
+        def run_command(command, logger, env, **kwargs):
+            seen["env"] = env
+            return 0
+
+        with patch(f"{_MOD}._prepare_eval_tokenizer", return_value=None), patch(
+            f"{_MOD}.build_eval_command", return_value=["cmd"]
+        ), patch(f"{_MOD}.run_command", side_effect=run_command):
+            assert mod._run_eval_task(ctx, task, auth_token, output_path=tmp_path) == 0
+        return seen["env"]
+
+    def test_vision_task_without_auth_gets_a_placeholder_key_and_the_plugin(
+        self, tmp_path, monkeypatch
+    ):
+        task = SimpleNamespace(
+            task_name="mmmu_pro_standard",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            eval_class="openai_compatible_tt",
+        )
+        env = self._env_for(task, "", tmp_path, monkeypatch)
+        assert env["OPENAI_API_KEY"] == "EMPTY"
+        assert "tt_lmms_plugins" in env["LMMS_EVAL_PLUGINS"]
+        assert any(
+            p.endswith("llm_module/lmms_plugins")
+            for p in env["PYTHONPATH"].split(os.pathsep)
+        )
+
+    def test_stock_client_vision_task_does_not_load_the_plugin(
+        self, tmp_path, monkeypatch
+    ):
+        task = SimpleNamespace(
+            task_name="chartqa",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            eval_class="openai_compatible",
+        )
+        env = self._env_for(task, "", tmp_path, monkeypatch)
+        assert env["OPENAI_API_KEY"] == "EMPTY"
+        assert "LMMS_EVAL_PLUGINS" not in env
+
+    def test_auth_token_wins_over_the_placeholder(self, tmp_path, monkeypatch):
+        task = SimpleNamespace(
+            task_name="mmmu_pro_standard",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            eval_class="openai_compatible_tt",
+        )
+        env = self._env_for(task, "secret", tmp_path, monkeypatch)
+        assert env["OPENAI_API_KEY"] == "secret"
+
+    def test_text_task_env_is_untouched(self, tmp_path, monkeypatch):
+        task = SimpleNamespace(
+            task_name="r1_gpqa_diamond",
+            workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+        )
+        env = self._env_for(task, "", tmp_path, monkeypatch)
+        assert "OPENAI_API_KEY" not in env
+        assert "LMMS_EVAL_PLUGINS" not in env
