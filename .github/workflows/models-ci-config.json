@@ -233,11 +233,6 @@
                     "devices": [
                         "T3K"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "T3K"
-                    ]
                 }
             }
         },
@@ -259,11 +254,6 @@
                     "devices": [
                         "T3K"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "T3K"
-                    ]
                 }
             }
         },
@@ -271,12 +261,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "T3K",
-                        "GALAXY"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "T3K",
                         "GALAXY"
@@ -293,12 +277,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "T3K",
-                        "GALAXY"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "T3K",
                         "GALAXY"
@@ -373,11 +351,6 @@
                         "P300X2",
                         "P150X4"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P150X4"
-                    ]
                 }
             }
         },
@@ -385,11 +358,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "P150X4"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "P150X4"
                     ]
@@ -615,11 +583,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "P300X2"
                     ]
@@ -869,11 +832,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "P300X2"
                     ]
