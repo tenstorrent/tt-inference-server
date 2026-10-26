@@ -1,5 +1,5 @@
 {
-  "phase": "swe8-c8-b32-shared256-progressive",
+  "phase": "swe8-c8-b32-shared256-headroom",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
@@ -7,9 +7,9 @@
   ],
   "sample_count": 8,
   "max_concurrent": 8,
-  "agent_timeout_sec": 2700,
-  "llm_timeout_sec": 1800,
-  "suite_timeout_sec": 3300,
+  "agent_timeout_sec": 3600,
+  "llm_timeout_sec": 3600,
+  "suite_timeout_sec": 4200,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [

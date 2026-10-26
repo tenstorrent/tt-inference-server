@@ -63,7 +63,7 @@ def test_swe8_effective_identity_limits_and_policy():
     assert c['seed']==1234 and c['output_tokens']==16384
     task=configure(EVAL_CONFIGS[MODEL],EvalLimitMode).tasks[0]; a=task.agentic_eval_config
     assert task.task_name=='swe_bench_verified' and a.agent=='mini-swe-agent'
-    assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(2700,1800,3300)
+    assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(3600,3600,4200)
     assert a.n_concurrent_trials==8 and a.n_attempts==1
     assert a.agent_kwargs['max_tokens']==16384
     assert a.agent_kwargs['config']['model']['model_kwargs']['seed']==1234
@@ -100,13 +100,13 @@ def test_swe8_actual_harbor_command_bounds(tmp_path):
     h=build_harbor_config(task,ServerConnection(base_url='http://127.0.0.1',service_port=8000,model=MODEL),DriverContext(output_dir=tmp_path,device='P300X2'),runtime_config=rc,n_tasks=resolve_n_tasks(task,rc),run_stamp='host-only-swe8')
     body=json.loads(_write_harbor_config(h).read_text())
     assert body['n_concurrent_trials']==8
-    assert body['agents'][0]['override_timeout_sec']==2700
+    assert body['agents'][0]['override_timeout_sec']==3600
     assert body['agent_timeout_multiplier']==1.0
-    assert h.llm_timeout_sec==1800 and h.harbor_timeout_sec==3300
+    assert h.llm_timeout_sec==3600 and h.harbor_timeout_sec==4200
     assert body['datasets'][0]['task_names']==controls()['task_names']['swe_bench_verified']
     assert body['datasets'][0]['n_tasks']==8
     assert 'verifier' not in body
     kwargs=body['agents'][0]['kwargs']
     assert kwargs['max_tokens']==16384
-    assert kwargs['config']['model']['model_kwargs']['timeout']==1800
+    assert kwargs['config']['model']['model_kwargs']['timeout']==3600
     assert kwargs['config']['model']['model_kwargs']['seed']==1234
