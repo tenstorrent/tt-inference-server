@@ -41,6 +41,7 @@ _AGENTIC_BENCHMARK_EXACT_ALIASES = {
     "tb2.0": "terminal_bench_2",
     "tb2.1": "terminal_bench_2_1",
     "tb4": "terminal_bench_4",
+    "automationbench": "automation_bench",
 }
 
 
