@@ -30,8 +30,8 @@ model's request schema: the same API, a different route.
 
 - `common.yaml`: the `/v1/jobs` API and everything the models share: schemas
   (`Media`, `VideoMedia`, `AudioMedia`, `Seed`, `ImageFormat`, `Job`,
-  outputs, errors), responses and
-  auth. Its description covers the API as a whole.
+  outputs, errors), responses and auth. Its description covers the API as a
+  whole.
 - `models/{org}/{model}.yaml`: one complete OpenAPI file per model, describing
   what that model's deployment serves: its submit endpoint and request schema,
   plus `/v1/jobs` by reference to `common.yaml`.
