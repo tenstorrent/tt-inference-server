@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: MiniMax-H3 FL2VA generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `minimaxai/minimax-h3-fl2va` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/minimaxai/minimax-h3-fl2va:
+    post:
+      operationId: submitMiniMaxH3FL2VA
+      tags: [MiniMax-H3 FL2VA]
+      summary: Submit a MiniMax-H3 FL2VA job
+      description: |
+        Video with sound from text, optionally pinned to a first and/or last
+        frame. Runs the `FL2VA` checkpoint of `MiniMaxAI/MiniMax-H3`; without
+        frames it is text-to-video.
+
+        **Elsewhere:** MiniMax `POST /v2/video_generation` (`content` with
+        `role: first_frame` / `last_frame`, or text only); fal `POST
+        /minimax/h3/text-to-video` and `POST /minimax/h3/image-to-video`;
+        tt-media-server today `POST /v1/videos/generations` and `POST
+        /v1/videos/generations/i2v`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MiniMaxH3FL2VARequest"
+            example:
+              prompt: >-
+                The woman turns toward the window and smiles as rain begins to
+                tap on the glass.
+              first_frame: https://storage.internal/inputs/woman.png
+              duration: 5
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  schemas:
+    MiniMaxH3FL2VARequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        Shared by every MiniMax-H3 FL2VA deployment, whatever its sampling
+        (e.g. `tenstorrent/minimax-h3-fl2va-lightx2v`).
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            **Elsewhere:** MiniMax `content` text item (at most 7000
+            characters), fal `prompt`.
+        first_frame:
+          $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            The frame the video starts on. 256–5760 pixels per side, aspect
+            ratio from 1:4 to 4:1.
+
+            **Elsewhere:** MiniMax `role: first_frame`, fal `image_url`,
+            tt-media-server today `image_prompts[]` with `frame_pos: 0`.
+        last_frame:
+          $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            The frame the video ends on. Allowed with or without `first_frame`.
+            Same limits as `first_frame`.
+
+            **Elsewhere:** MiniMax `role: last_frame`, fal `end_image_url`,
+            tt-media-server today `image_prompts[]` with `frame_pos: -1`.
+        aspect_ratio:
+          type: string
+          enum: [adaptive, "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          description: |
+            Output shape.
+
+            - With a frame: only `adaptive` (the default), meaning the output
+              follows the first frame's shape, or the last frame's when there is
+              no first frame. Any other value is rejected with 422.
+            - Without frames: one of the listed ratios, default `16:9`;
+              `adaptive` is rejected with 422.
+
+            Each output reports its exact size.
+
+            **Elsewhere:** MiniMax `ratio` (same values; text-to-video requires
+            a ratio, image-to-video is always `adaptive` and ignores other
+            values); fal `aspect_ratio` (default `16:9`) on text-to-video, none
+            on image-to-video.
+        size:
+          type: string
+          enum: [768p]
+          default: 768p
+          description: |
+            Size tier: a short edge of 768, the area capped at 768×1344, sides
+            multiples of 32. For the listed ratios:
+
+            | `aspect_ratio` | `768p`    |
+            | -------------- | --------- |
+            | `21:9`         | 1536×672  |
+            | `16:9`         | 1344×768  |
+            | `4:3`          | 1024×768  |
+            | `1:1`          | 768×768   |
+            | `3:4`          | 768×1024  |
+            | `9:16`         | 768×1344  |
+
+            `adaptive` applies the same rule to the frame's own shape. Only
+            `768p` for now; kept so other tiers can be added without a schema
+            change.
+
+            **Elsewhere:** MiniMax `resolution` (`768P`, `2K`, and `480P` on
+            other tiers), fal `resolution` (`480P`, `768P`, `2K`, `4K`).
+        duration:
+          type: integer
+          minimum: 4
+          maximum: 15
+          default: 5
+          description: |
+            Seconds. The video runs at 24 fps and its length is rounded up to the
+            frame counts the model generates (17k + 5), so it is slightly longer:
+            5 s gives 124 frames (5.17 s), 15 s gives 362 frames (15.08 s). Each
+            output reports its exact `duration` and `num_frames`.
+
+            **Elsewhere:** MiniMax `duration` (4–15, required), fal `duration`
+            (5–15, default 5).
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"

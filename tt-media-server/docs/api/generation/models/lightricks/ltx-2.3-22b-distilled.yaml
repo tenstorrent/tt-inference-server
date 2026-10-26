@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: LTX-2.3 22B distilled generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `lightricks/ltx-2.3-22b-distilled` deployment serves: its submit
+    endpoint and the common `/v1/jobs` API. Shared schemas, responses and auth
+    live in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/lightricks/ltx-2.3-22b-distilled:
+    post:
+      operationId: submitLtx23Distilled
+      tags: [LTX-2.3 22B distilled]
+      summary: Submit an LTX-2.3 22B distilled job
+      description: |
+        Video with sound from text. Runs the distilled checkpoint of
+        `Lightricks/LTX-2.3` (`ltx-2.3-22b-distilled-1.1`).
+
+        **Elsewhere:** fal `POST /fal-ai/ltx-2.3-22b/distilled/text-to-video`
+        (the same open checkpoint); LTX API `POST /v2/text-to-video` and fal
+        `POST /fal-ai/ltx-2.3/text-to-video` (Lightricks' hosted tiers);
+        tt-media-server today `POST /v1/videos/generations`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Ltx23DistilledRequest"
+            example:
+              prompt: >-
+                A fishing boat rocks in a harbour at dawn as gulls call overhead
+                and waves slap against the hull.
+              seed: 42
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  schemas:
+    Ltx23DistilledRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        One output shape for now: 1920×1080, 6 s at 25 fps. The shape fields
+        are kept so more can be allowed later without a schema change.
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            **Elsewhere:** LTX API `prompt` (at most 5000 characters), fal
+            `prompt`.
+        aspect_ratio:
+          type: string
+          enum: ["16:9"]
+          default: "16:9"
+          description: |
+            Output shape. Only `16:9` for now.
+
+            **Elsewhere:** fal (Lightricks-hosted) `aspect_ratio` (`16:9`,
+            `9:16`); LTX API `resolution` (`1920x1080`, `1080x1920`, …).
+        size:
+          type: string
+          enum: [1080p]
+          default: 1080p
+          description: |
+            Size tier: `1080p` is 1920×1080 at `16:9`.
+
+            **Elsewhere:** LTX API `resolution` (720p to 4K), fal
+            (Lightricks-hosted) `resolution` (`1080p`, `1440p`, `2160p`), fal
+            open-weights `video_size`.
+        duration:
+          type: integer
+          enum: [6]
+          default: 6
+          description: |
+            Seconds. 6 s is 153 frames at 25 fps (6.12 s): the frame count must
+            be 8k + 1. Each output reports its exact `duration`, `num_frames`
+            and `fps`.
+
+            **Elsewhere:** LTX API `duration` (6–20 s) and `fps` (24, 25, 48,
+            50); fal (Lightricks-hosted) `duration` (6, 8, 10) and `fps`; fal
+            open-weights `num_frames` and `fps`; tt-media-server today
+            `duration`, `num_frames` and `fps`, each accepted only at the served
+            value.
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"

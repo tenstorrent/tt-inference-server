@@ -29,6 +29,15 @@ there.
   `completed_at`, and report it as `expires_at`. The console copies outputs
   into its own storage when a job completes, so this only has to outlast its
   download and retries.
+- **Video and audio inputs** (`VideoMedia`, `AudioMedia`) go through the same
+  downloader and data-URI parsing as images, with their own caps: 50 MB per
+  video, 15 MB per audio clip (images stay at 30 MB). Today's downloader has
+  one cap; `MediaTooLarge` covers all three.
+- **Variants share a request model.** Deployments of the same checkpoint with
+  different sampling (e.g. `minimaxai/minimax-h3-fl2va` and
+  `tenstorrent/minimax-h3-fl2va-lightx2v`) use one Pydantic request model and
+  separate routes; `Job.model` reports the route's `{org}/{model}`. Further
+  distillations follow the same pattern, as `tenstorrent/{base}-{variant}`.
 - **Unknown fields are rejected** (`extra="forbid"` on every request model),
   with FastAPI's default 422 body.
 - **One router and one Pydantic request model per model**, mounted by
@@ -74,6 +83,44 @@ there.
   takes up to 4,096 tokens (padded to multiples of 80 in the reference).
 - **Moderation is the console's job**, as for Ideogram: the reference code
   refuses flagged prompts, references and outputs; the runner doesn't.
+
+## MiniMax-H3 (FL2VA and Ref2VA)
+
+- **Checkpoints and variants.** FL2VA runs the `FL2VA` checkpoint of
+  `MiniMaxAI/MiniMax-H3` (`transformer/` in the diffusers layout; text-only
+  requests run as t2va), Ref2VA the `Ref2VA` checkpoint (`transformer_ref/`).
+  Base deployments sample 50 steps; the LightX2V ones load lightx2v's per-task
+  Turbo adapter (`MINIMAX_H3_LORA_PATH`) and sample 5. The Ref2VA adapter was
+  trained at 544p and is served at 768p.
+- **`adaptive`.** FL2VA already sizes the canvas from the keyframe (first,
+  else last). Ref2VA's `adaptive` is new: snap the first image's ratio (else
+  the first video's) to the closest of the 6 listed ratios. Reject an explicit
+  ratio with keyframes, and `adaptive` without them, with 422.
+- **Input limits** (422): keyframes 256–5760 px per side, ratio 1:4 to 4:1;
+  references at most 9 images, 3 videos, 3 audio clips, 12 total, not audio
+  alone; video and audio clips 2–15 s each, at most 15 s combined per kind;
+  reference videos must report a frame rate; audio mono or stereo. All as
+  `minimax_h3_policy` / tt-metal's `minimax_h3/policy.py` enforce today.
+- **Long prompts.** Up to `MINIMAX_H3_MAX_TEXT_TOKENS` (3,008 by default)
+  text tokens; longer gets 422.
+- **No cold compiles after ready** across 6 ratios plus adaptive keyframe
+  canvases (any ratio from 1:4 to 4:1), 12 durations (4–15 s, 107–362
+  frames), 0–2 keyframes, and the Ref2VA reference mixes.
+- **Output audio**: AAC, 32 kHz stereo, reported in `VideoOutput.audio`.
+
+## LTX-2.3 22B distilled
+
+- **Output exactly 1920×1080.** The two-stage pipeline needs sides divisible
+  by 64, so it runs at 1920×1088; the tt-metal model implementation must pad
+  and crop internally so callers (and tt-media-server) see 1920×1080. Today
+  the runner serves and reports 1088.
+- **One served shape**: 153 frames at 25 fps (6.12 s), the only shape the
+  traces are captured for. fps sets the audio latent length and the A/V
+  cross-PE, so it cannot vary per request; the old API's `fps`, `num_frames`,
+  `height` and `width` (accepted only at the served values) have no
+  equivalent here.
+- **Output audio**: AAC, reported in `VideoOutput.audio` with its actual
+  sample rate.
 
 ## Ideogram 4
 
@@ -155,3 +202,9 @@ Not in the first version of the spec; add once the need is real.
   Whichever is chosen, validate the LLM's output against `Ideogram4Caption`
   (retry once on invalid JSON) and keep the LLM behind an OpenAI-compatible
   endpoint so it can be swapped by configuration.
+- **LTX-2.3: image-to-video and more shapes.** The distilled pipeline can
+  condition on a first frame (`images` with frame 0); the runner turns it off
+  today. Also portrait (`9:16`), last frame, and other durations or frame
+  rates, each needing its own traces.
+- **MiniMax-H3: other size tiers** (`480p`, and `2K`, which isn't in the open
+  release).

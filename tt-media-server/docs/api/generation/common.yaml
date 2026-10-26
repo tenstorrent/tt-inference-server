@@ -114,7 +114,8 @@ paths:
       summary: Download one output file
       description: |
         The file behind `outputs[index].url`. Videos are MP4: H.264 (High
-        profile, yuv420p), no audio track, faststart.
+        profile, yuv420p), faststart, with an AAC audio track when the model
+        generates sound (see `VideoOutput.audio`).
 
         **Elsewhere:** tt-media-server today `GET
         /v1/videos/generations/{job_id}/download` (one file only).
@@ -228,8 +229,9 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     MediaTooLarge:
-      description: An image, inline or fetched, is over the per-image limit (30 
-        MB).
+      description: |
+        An input, inline or fetched, is over its limit: 30 MB per image, 50 MB
+        per video, 15 MB per audio clip.
       content:
         application/json:
           schema:
@@ -309,6 +311,28 @@ components:
 
         **Elsewhere:** fal, Replicate, OpenAI, OpenRouter: URL or data URI.
         BFL and tt-media-server today: URL or bare base64.
+    VideoMedia:
+      type: string
+      description: |
+        A video clip: an `https://` URL or a data URI
+        (`data:video/mp4;base64,…`), fetched and checked as for `Media`.
+
+        MP4 or MOV, H.264 or H.265 video, optionally with an AAC or MP3 audio
+        track; at most 50 MB. Each model states the durations it accepts.
+
+        **Elsewhere:** MiniMax `video_url` (same formats and limit), fal
+        `reference_video_urls`.
+    AudioMedia:
+      type: string
+      description: |
+        An audio clip: an `https://` URL or a data URI
+        (`data:audio/wav;base64,…`), fetched and checked as for `Media`.
+
+        WAV or MP3, mono or stereo; at most 15 MB. Each model states the
+        durations it accepts.
+
+        **Elsewhere:** MiniMax `audio_url` (same formats and limit), fal
+        `reference_audio_urls`.
     Seed:
       type: integer
       minimum: 0
@@ -477,7 +501,9 @@ components:
               type: integer
     VideoOutput:
       description: |
-        An MP4 file: H.264 (High profile, yuv420p), no audio track, faststart.
+        An MP4 file: H.264 (High profile, yuv420p), faststart. When the model
+        generates sound, an AAC track described by `audio`; otherwise no audio
+        track and `audio` is null.
       allOf:
         - $ref: "#/components/schemas/OutputBase"
         - type: object
@@ -496,6 +522,24 @@ components:
             duration:
               type: number
               description: Seconds.
+            audio:
+              oneOf:
+                - $ref: "#/components/schemas/AudioTrack"
+                - type: "null"
+    AudioTrack:
+      type: object
+      required: [codec, sample_rate, channels]
+      properties:
+        codec:
+          type: string
+          enum: [aac]
+        sample_rate:
+          type: integer
+          description: Hz.
+          examples: [32000]
+        channels:
+          type: integer
+          examples: [2]
     Deleted:
       type: object
       required: [id, deleted]
