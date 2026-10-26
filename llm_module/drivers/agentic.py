@@ -20,6 +20,7 @@ from llm_module.request_overrides import (
     agent_kwargs_with_request_body,
     resolve_request_body,
 )
+from ..agentic import automation_bench
 from ..agentic.harbor import HarborRunConfig, run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
@@ -153,6 +154,97 @@ class HarborAgenticDriver(AgenticEvalDriver):
         return self._load_result(rc, self.result_path(server, context))
 
 
+class AutomationBenchAgenticDriver(AgenticEvalDriver):
+    """Runs zapier/AutomationBench's ``auto-bench`` CLI against the endpoint.
+
+    Its tools are simulated in-process, so there is no Harbor job: the driver
+    provisions the AUTOMATION_BENCH venv on first use, runs one auto-bench
+    process, and the runner rewrites its export as a Harbor-shaped
+    ``result.json`` for :class:`AgenticEvalParser`.
+    """
+
+    name = "automation_bench"
+
+    def run(
+        self,
+        config: LLMRunConfig,
+        server: ServerConnection,
+        context: DriverContext,
+    ) -> DriverResult:
+        n_tasks = resolve_n_tasks(self.task, self.runtime_config)
+        if n_tasks == 0:
+            logger.info(
+                "Skipping agentic task %s: n_tasks=0 for this limit mode",
+                self.task.task_name,
+            )
+            return DriverResult(return_code=0, raw=None, raw_path=None)
+        self._run_stamp = _run_timestamp()
+        run_config = build_automation_bench_config(
+            self.task,
+            server,
+            context,
+            runtime_config=self.runtime_config,
+            n_tasks=n_tasks,
+            run_stamp=self._run_stamp,
+        )
+        logger.info(
+            "[agentic] starting %r: domains=%s n_tasks=%s max_concurrent=%s model=%s",
+            self.task.task_name,
+            run_config.domains,
+            n_tasks,
+            run_config.max_concurrent,
+            run_config.model_name,
+        )
+        rc = automation_bench.run(run_config)
+        return self._load_result(rc, self.result_path(server, context))
+
+
+def build_automation_bench_config(
+    task: Any,
+    server: ServerConnection,
+    context: DriverContext,
+    *,
+    runtime_config: Any = None,
+    n_tasks: Optional[int] = None,
+    run_stamp: Optional[str] = None,
+) -> automation_bench.AutomationBenchRunConfig:
+    from workflow_module.engine_types import WorkflowVenvType
+    from workflow_module.venv_provisioner import get_venv_provisioner
+    from workflows.workflow_venvs import AUTOMATION_BENCH_DIR_NAME
+
+    provisioner = get_venv_provisioner()
+    if not provisioner.provision(WorkflowVenvType.AUTOMATION_BENCH):
+        raise RuntimeError("Failed to provision the AUTOMATION_BENCH venv.")
+    cfg = task.agentic_eval_config
+    agent_kwargs = cfg.agent_kwargs or {}
+    return automation_bench.AutomationBenchRunConfig(
+        task_name=task.task_name,
+        # auto-bench talks to the server directly (no LiteLLM), so the model ID
+        # goes out unprefixed.
+        model_name=server.model,
+        api_base=f"{server.url_with_port}/v1",
+        job_dir=_agentic_output_dir(
+            context.output_dir,
+            server.model,
+            task,
+            release_layout=context.agentic_release_layout,
+            run_stamp=run_stamp,
+        ),
+        venv_python=Path(provisioner.venv_python(WorkflowVenvType.AUTOMATION_BENCH)),
+        checkout_dir=provisioner.venv_path(WorkflowVenvType.AUTOMATION_BENCH)
+        / AUTOMATION_BENCH_DIR_NAME,
+        domains=list(cfg.domains),
+        toolset=cfg.toolset,
+        max_steps=cfg.max_steps,
+        max_concurrent=_n_concurrent_trials(cfg),
+        n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
+        task_names=resolve_task_names(task, runtime_config),
+        reasoning_effort=agent_kwargs.get("reasoning_effort"),
+        extra_body=dict(agent_kwargs.get("extra_body") or {}),
+        timeout_sec=cfg.timeout_sec,
+    )
+
+
 def _agentic_venv_python() -> Optional[Path]:
     """Interpreter of the EVALS_AGENTIC venv whose bin/ holds harbor/sweagent.
 
@@ -177,6 +269,10 @@ def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEval
         raise RuntimeError(
             f"EVALS_AGENTIC task {task.task_name!r} has no agentic_eval_config set."
         )
+    from reference_config.evals.eval_config import AutomationBenchEvalConfig
+
+    if isinstance(task.agentic_eval_config, AutomationBenchEvalConfig):
+        return AutomationBenchAgenticDriver(task, runtime_config=runtime_config)
     return HarborAgenticDriver(task, runtime_config=runtime_config)
 
 
@@ -331,7 +427,9 @@ def _agentic_output_dir(
 
 __all__ = [
     "AgenticEvalDriver",
+    "AutomationBenchAgenticDriver",
     "HarborAgenticDriver",
+    "build_automation_bench_config",
     "build_harbor_config",
     "make_agentic_driver",
     "resolve_n_tasks",
