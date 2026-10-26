@@ -53,12 +53,12 @@ def test_calibration_effective_bounds(agent_seconds,request_seconds):
 
 def test_b8_pilot_effective_bounds_and_verifiers():
     c=controls()
-    assert c['sample_count']==c['max_concurrent']==2
-    assert c['task_names']['terminal_bench_2_1']==['terminal-bench/bn-fit-modify','terminal-bench/pypi-server']
+    assert c['sample_count']==c['max_concurrent']==8
+    assert len(c['task_names']['terminal_bench_2_1'])==8
     task=configure(EVAL_CONFIGS[MODEL],EvalLimitMode).tasks[0]
     a=task.agentic_eval_config
     assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(1800,1200,2400)
-    assert a.n_concurrent_trials==2
+    assert a.n_concurrent_trials==8
     assert a.agent_kwargs['llm_kwargs']['timeout']==1200
     assert a.agent_kwargs['llm_kwargs']['max_tokens']==16384
     assert a.agent_kwargs['model_info']['max_output_tokens']==16384
