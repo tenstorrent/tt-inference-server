@@ -13063,17 +13063,34 @@ _eval_config_list = [
     ),
 ]
 
+
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse M3's GPQA task (scores are M3 references until M3.1-Flash has its own).
+# reuse M3's GPQA and Terminal-Bench 4.0 tasks (GPQA scores are M3 references
+# until M3.1-Flash has its own).
+def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    if task.task_name != "terminal_bench_4":
+        return task
+    # AA runs TB 4.0 with mini-swe-agent, 3 repeats, on all 66 tasks; we run
+    # terminus-2 once on 63, so this is a reference point, not a like-for-like.
+    return replace(
+        task,
+        score=replace(
+            task.score,
+            published_score=25.8,
+            published_score_ref="https://openrouter.ai/minimax/minimax-m3.1-flash:free#benchmarks",
+        ),
+    )
+
+
 _eval_config_list.append(
     EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M3.1-Flash",
         tasks=[
-            task
+            _minimax_m31_flash_task(task)
             for config in _eval_config_list
             if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
             for task in config.tasks
-            if task.task_name == "r1_gpqa_diamond"
+            if task.task_name in ("r1_gpqa_diamond", "terminal_bench_4")
         ],
     )
 )
