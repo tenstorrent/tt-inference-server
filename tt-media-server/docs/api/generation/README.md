@@ -35,8 +35,6 @@ model's request schema: the same API, a different route.
 - `models/{org}/{model}.yaml`: one complete OpenAPI file per model, describing
   what that model's deployment serves: its submit endpoint and request schema,
   plus `/v1/jobs` by reference to `common.yaml`.
-- `REQUIREMENTS.md`: behavior the runner must have that the spec deliberately
-  leaves out, and follow-ups.
 
 ## Lifecycle
 
