@@ -1,11 +1,11 @@
 {
-  "phase": "terminal21-b8-shared256-capacity8",
+  "phase": "gpqa32-c8-b8-shared256",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
-    "terminal_bench_2_1"
+    "r1_gpqa_diamond"
   ],
-  "sample_count": 8,
+  "sample_count": 32,
   "max_concurrent": 8,
   "agent_timeout_sec": 1800,
   "llm_timeout_sec": 1200,
@@ -130,7 +130,7 @@
       "cf9c0b0db588d7f8216b781b9410d3d7cc8e1cb0594b786f67b9db9534b5732d"
     ],
     "population": 198,
-    "concurrency": 32,
+    "concurrency": 8,
     "generation": {
       "max_gen_toks": 16384,
       "do_sample": true,
@@ -184,8 +184,8 @@
     }
   },
   "gpqa_llm_timeout_sec": 3600,
-  "gpqa_suite_timeout_sec": 4500,
-  "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
+  "gpqa_suite_timeout_sec": 10000,
+  "gpqa_timeout_basis": "Matched GPQA32 C8 B32/B8 batch experiment: request3600 preserves original generation allowance; suite10000 covers projected four full16384-token B32 waves (~8793s) plus suite overhead. Outer root watchdog cancel10800, hard11700 includes900s collection reserve; prediction is not measuredC8 performance.",
   "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
   "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
   "record_suite_metrics": true
