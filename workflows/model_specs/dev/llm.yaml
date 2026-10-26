@@ -1663,6 +1663,7 @@ templates:
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
         QWEN38_CACHE_BLOCK_SIZE: "512"
+        QWEN38_SHARED_RECURRENT_SNAPSHOTS: "0"
         QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE: "23661297664"
         TT_METAL_TRACE_ALLOC_TRACKING: "0"
         TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
