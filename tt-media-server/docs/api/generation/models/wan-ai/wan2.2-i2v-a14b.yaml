@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: Wan2.2 I2V A14B generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `wan-ai/wan2.2-i2v-a14b` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/wan-ai/wan2.2-i2v-a14b:
+    post:
+      operationId: submitWan22i2vA14b
+      tags: [Wan2.2 I2V A14B]
+      summary: Submit a Wan2.2 image-to-video job
+      description: |
+        **Elsewhere:** fal `POST /fal-ai/wan/v2.2-a14b/image-to-video`,
+        Replicate `wan-video/wan-2.2-i2v-a14b`, tt-media-server today `POST
+        /v1/videos/generations/i2v`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Wan22i2vA14bRequest"
+            example:
+              prompt: the boat drifts out of the harbour at dawn
+              first_frame: data:image/png;base64,iVBORw0KGgo…
+              last_frame: https://storage.internal/inputs/end.png
+              aspect_ratio: "16:9"
+              size: 720p
+              frames: 81
+              seed: 1234
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1content~1{index}
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1cancel
+components:
+  schemas:
+    Wan22i2vA14bRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt, first_frame, aspect_ratio, size]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            **Elsewhere:** fal, Replicate `prompt`.
+        negative_prompt:
+          type: string
+          default: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+          description: |
+            Omitted = Wan2.2's reference default (`sample_neg_prompt` in
+            `wan/configs/shared_config.py`), a list of common defects in
+            Chinese: oversaturated, overexposed, static, blurry details,
+            subtitles, worst quality, JPEG artifacts, deformed hands and faces,
+            extra fingers, three legs, cluttered background, walking backwards,
+            and similar. A request's `negative_prompt` replaces it rather than
+            adding to it.
+
+            **Elsewhere:** fal `negative_prompt`; Replicate has none;
+            tt-media-server today defaults to none.
+        first_frame:
+          $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            The image the video starts from. Resized and center-cropped to the
+            output size.
+
+            **Elsewhere:** fal `image_url`, Replicate `image`, tt-media-server
+            today `image_prompts[]` with `frame_pos: 0`.
+        last_frame:
+          $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            The image the video ends on. Resized and center-cropped to the
+            output size.
+
+            **Elsewhere:** fal `end_image_url`; Replicate has none;
+            tt-media-server today `image_prompts[]` with `frame_pos` = last
+            frame.
+        aspect_ratio:
+          type: string
+          enum: ["16:9", "9:16"]
+          description: |
+            Output shape. With `size`, it fixes the output size (see `size`).
+
+            **Elsewhere:** fal `aspect_ratio` (`auto`, `16:9`, `9:16`, `1:1`);
+            Replicate and Wan2.2's reference code follow the image's shape.
+        size:
+          type: string
+          enum: [480p, 720p]
+          description: |
+            Size tier. With `aspect_ratio`, it fixes the output size:
+
+            | `aspect_ratio` | `480p`  | `720p`   |
+            | -------------- | ------- | -------- |
+            | `16:9`         | 832×480 | 1280×720 |
+            | `9:16`         | 480×832 | 720×1280 |
+
+            These are Wan2.2's reference sizes.
+
+            **Elsewhere:** fal `resolution` (`480p`, `580p`, `720p`), Replicate
+            `resolution` (`480p`, `720p`).
+        frames:
+          type: integer
+          minimum: 81
+          maximum: 81
+          default: 81
+          description: |
+            Number of frames. Only 81 for now, the default of Wan2.2's reference
+            config. Played at a fixed 16 fps (the reference config's), so about
+            5 s; the output reports `fps` and `duration`.
+
+            **Elsewhere:** fal `num_frames` (17–161, default 81), Replicate
+            `num_frames` (81–100).
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"
+

@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: FLUX.3 Image klein generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `black-forest-labs/flux-3-image-klein` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/black-forest-labs/flux-3-image-klein:
+    post:
+      operationId: submitFlux3ImageKlein
+      tags: [FLUX.3 Image klein]
+      summary: Submit a FLUX.3 Image klein job
+      description: |
+        Text to image, or editing and combining up to 10 references when
+        `images` is given. Every prompt is rewritten by the model's prompt
+        upsampler first.
+
+        **Elsewhere:** BFL `POST /v1/flux-3-image-klein` (one endpoint, as
+        here); fal `POST /blackforestlabs/flux-3/klein/text-to-image` and
+        `POST /blackforestlabs/flux-3/klein/edit-image`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Flux3ImageKleinRequest"
+            example:
+              prompt: >-
+                Hot-air balloons <balloon_1> <balloon_2> over a green valley at
+                sunrise. [{"id": "balloon_1", "bbox": [80, 60, 480, 380],
+                "desc": "A red and yellow striped hot-air balloon."}, {"id":
+                "balloon_2", "bbox": [200, 620, 420, 800], "desc": "A small blue
+                hot-air balloon."}]
+              aspect_ratio: "16:9"
+              size: 2K
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1content~1{index}
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1cancel
+components:
+  schemas:
+    Flux3ImageKleinRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            What to generate or how to edit, in plain words. The model's prompt
+            upsampler always rewrites it into the detailed caption the model
+            was trained on, and each output reports that caption as its
+            `prompt`.
+
+            Refer to `images` by tag: `<ref_image_0>` is the first.
+
+            Bounding boxes go at the end of the prompt, as in BFL's API: tag
+            each element in the text (`<balloon_1>`), then add one space and a
+            JSON list with a row per tag. Coordinates are `[top, left, bottom,
+            right]` on a 0–1000 grid with (0, 0) at the top left, whatever the
+            output shape.
+
+            - New element: `{"id": "balloon_1", "bbox": [80, 60, 480, 380],
+              "desc": "…"}`.
+            - Element of a reference (edits): `{"id": "knight_1", "from":
+              "ref_image_0", "src_bbox": […], "tgt_bbox": […], "desc": "…"}`.
+              The same box in both keeps it; different boxes move or resize it;
+              `"tgt_bbox": null` removes it; `"from": null, "src_bbox": null`
+              adds a new element.
+
+            **Elsewhere:** BFL `prompt` (same box format, upsampled); fal
+            `prompt` with `enable_prompt_expansion` (default on) and a separate
+            `bounding_boxes` field (0–1 fractions).
+        images:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            References to edit or combine. Omitted = text to image. The first
+            image is the one edited and sets the default shape.
+
+            **Elsewhere:** BFL `images` (1–10), fal `image_urls` (1–10, edit
+            endpoint).
+        count:
+          type: integer
+          minimum: 1
+          maximum: 1
+          default: 1
+          description: |
+            Number of images. Only 1 for now; kept so more can be allowed later
+            without a schema change.
+
+            **Elsewhere:** fal `num_images` (1–4); BFL has none.
+        aspect_ratio:
+          type: string
+          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          description: |
+            Output shape. Omitted = the ratio here closest to the first image's,
+            or `1:1` without images. Each output reports its exact size. Boxes
+            are placed on the output's grid, so set the shape they were drawn
+            for.
+
+            **Elsewhere:** BFL `aspect_ratio` (15 ratios and `auto`, which picks
+            from the prompt or the first image); fal `image_size` presets.
+        size:
+          type: string
+          enum: [1K, 2K, 4K]
+          default: 2K
+          description: |
+            Size tier. With `aspect_ratio`, it fixes the output size. `1K` and
+            `2K` match FLUX.2 klein; `4K` has a long side of 4096, the open
+            model's maximum:
+
+            | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
+            | -------------- | --------- | --------- | --------- |
+            | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
+            | `16:9`         | 1376×768  | 2752×1536 | 4096×2304 |
+            | `9:16`         | 768×1376  | 1536×2752 | 2304×4096 |
+            | `4:3`          | 1184×896  | 2368×1792 | 4096×3072 |
+            | `3:4`          | 896×1184  | 1792×2368 | 3072×4096 |
+            | `3:2`          | 1248×832  | 2496×1664 | 4096×2720 |
+            | `2:3`          | 832×1248  | 1664×2496 | 2720×4096 |
+
+            **Elsewhere:** BFL `resolution` (`768sq`, `1k`, `1.5k`, `2k`, `4k`,
+            equal area; default `1k`), fal `image_size` (256–4096 per side).
+        format:
+          $ref: "../../common.yaml#/components/schemas/ImageFormat"
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"
+
