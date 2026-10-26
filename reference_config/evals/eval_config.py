@@ -690,12 +690,24 @@ def _gemma4_31b_lmms_task(
     enable_thinking: bool,
     gen_kwargs: Dict[str, str],
     ci_limit: int,
+    search_rounds: int = 0,
 ) -> EvalTask:
     """A Gemma 4 card eval with image input, run through lmms-eval on the TT
     client (llm_module/lmms_plugins), from the plugin's task directory.
     A server that serves text only rejects every request that carries an
     image, so those documents score as empty answers. ``unit`` "percent" for a
-    0-1 metric, anything else for one already in points."""
+    0-1 metric, anything else for one already in points. ``search_rounds`` > 0
+    gives the client its Wikipedia search tool (tt_lmms_plugins.search) and
+    must match the task YAML's own search_rounds, which the prompt states."""
+    model_kwargs = {
+        # One attempt: a rejected image request fails at once instead of
+        # sleeping between retries.
+        "max_retries": 1,
+        "request_timeout": 3600,
+        "enable_thinking": "true" if enable_thinking else "false",
+    }
+    if search_rounds:
+        model_kwargs["search_rounds"] = str(search_rounds)
     return EvalTask(
         task_name=task_name,
         eval_class="openai_compatible_tt",
@@ -716,13 +728,7 @@ def _gemma4_31b_lmms_task(
             score_func=score_task_single_key,
             score_func_kwargs={"result_keys": [result_key], "unit": unit},
         ),
-        model_kwargs={
-            # One attempt: a rejected image request fails at once instead of
-            # sleeping between retries.
-            "max_retries": 1,
-            "request_timeout": 3600,
-            "enable_thinking": "true" if enable_thinking else "false",
-        },
+        model_kwargs=model_kwargs,
         gen_kwargs=gen_kwargs,
         limit_samples_map={
             EvalLimitMode.CI_NIGHTLY: ci_limit,
@@ -12017,6 +12023,20 @@ _eval_config_list = [
                 enable_thinking=True,
                 gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
                 ci_limit=40,
+            ),
+            # HLE with search: hle_no_tools plus up to 5 Wikipedia SEARCH / OPEN
+            # turns per question, run by the client. The card's search tool is
+            # not published; this one is keyless English Wikipedia.
+            _gemma4_31b_lmms_task(
+                "hle_with_search",
+                published_score=26.5,
+                published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                result_key="hle_accuracy,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=30,
+                search_rounds=5,
             ),
         ],
     ),

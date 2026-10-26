@@ -16,6 +16,9 @@ changes, each marked "TT":
 - no 4096-token clamp on ``max_new_tokens``: thinking models need more;
 - ``request_timeout`` replaces the OpenAI SDK's 600 s read timeout (and its
   silent retries, which regenerate a long reply from scratch);
+- ``search_rounds`` > 0 answers up to that many ``SEARCH:`` / ``OPEN:`` replies
+  with Wikipedia results as the next turn (``tt_lmms_plugins.search``) and
+  scores the reply that follows;
 - the replies go back in the requests' original order (``get_original``):
   upstream returns them in the collator's length-sorted order, so any task
   whose prompts differ in length scores each reply against another document;
@@ -40,6 +43,7 @@ from tqdm import tqdm
 from tt_lmms_plugins.audio_parts import audio_content_part, is_audio_visual
 from tt_lmms_plugins.responses import parse_enable_thinking, thread_cap
 from tt_lmms_plugins.responses import response_text as tt_response_text
+from tt_lmms_plugins.search import LIMIT_REACHED, find_request, run_request
 
 VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".flv", ".wmv")
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp")
@@ -53,6 +57,7 @@ class OpenAICompatibleTT(OpenAICompatible):
         num_concurrent=None,
         enable_thinking=None,
         request_timeout=None,
+        search_rounds=None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -71,6 +76,34 @@ class OpenAICompatibleTT(OpenAICompatible):
         # TT: replies that carried no content (an unclosed thought under the
         # reasoning parser) are scored as "" and counted here for the log.
         self.no_content = 0
+        # TT: tool turns per document (0 = a single plain completion).
+        self.search_rounds = int(search_rounds) if search_rounds else 0
+
+    def _complete(self, payload):
+        """TT: one chat completion, or a search conversation when
+        ``search_rounds`` is set: each SEARCH/OPEN reply gets its results as
+        the next user turn, and the first reply without one is returned."""
+        response = self.client.chat.completions.create(**payload)
+        if not self.search_rounds:
+            return response
+        messages = list(payload["messages"])
+        for used in range(self.search_rounds + 1):
+            text = tt_response_text(response)
+            request = find_request(text)
+            if request is None:
+                return response
+            result = (
+                run_request(*request) if used < self.search_rounds else LIMIT_REACHED
+            )
+            eval_logger.debug(f"Search turn {used + 1}: {request[0]} {request[1]!r}")
+            messages += [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": result},
+            ]
+            response = self.client.chat.completions.create(
+                **{**payload, "messages": messages}
+            )
+        return response
 
     def generate_until(self, requests) -> List[str]:
         res = []
@@ -186,7 +219,7 @@ class OpenAICompatibleTT(OpenAICompatible):
 
                 for attempt in range(self.max_retries):
                     try:
-                        response = self.client.chat.completions.create(**payload)
+                        response = self._complete(payload)
                         # TT: "" rather than None for a thought that never closed.
                         # (the name is distinct from upstream's response_text local, which
                         # the cache branch rebinds inside this method).
