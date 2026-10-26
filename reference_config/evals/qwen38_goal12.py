@@ -9,7 +9,10 @@ from pathlib import Path
 MODEL = "Qwen/Qwen3.8-27B"
 
 def controls():
-    return json.loads(Path(__file__).with_suffix(".json").read_text())
+    c = json.loads(Path(__file__).with_suffix(".json").read_text())
+    if type(c.get("record_suite_metrics", False)) is not bool:
+        raise ValueError("record_suite_metrics must be a boolean")
+    return c
 
 
 def configure(config, limit_mode):
