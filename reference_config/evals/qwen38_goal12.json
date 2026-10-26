@@ -1,5 +1,5 @@
 {
-  "phase": "terminal21-calibration8-control",
+  "phase": "terminal21-calibration8-conditional2700",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
@@ -7,8 +7,8 @@
   ],
   "sample_count": 8,
   "max_concurrent": 8,
-  "agent_timeout_sec": 900,
-  "llm_timeout_sec": 600,
+  "agent_timeout_sec": 2700,
+  "llm_timeout_sec": 1800,
   "suite_timeout_sec": 4500,
   "output_tokens": 16384,
   "task_names": {
