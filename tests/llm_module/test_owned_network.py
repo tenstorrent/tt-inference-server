@@ -206,3 +206,26 @@ def test_missing_network_is_distinguished_from_inspection_failure(tmp_path):
 def test_network_absence_requires_matching_identity(message,absent):
     from agentic_owned_networks.allocator import resource_absent
     assert resource_absent(SimpleNamespace(returncode=1,stderr=message),'target','network')is absent
+
+
+@pytest.mark.parametrize('exhaust',[False,True])
+def test_post_create_inventory_retry_never_recreates_and_retains_owned_cleanup(tmp_path,exhaust):
+    from agentic_owned_networks.allocator import InventoryChanged
+    class Retrying(TestAllocator):
+        inventory=Allocator.inventory
+        def _inventory_snapshot(self,skip=None):
+            if skip is not None:
+                self.post_create_calls.append(skip)
+                if exhaust or len(self.post_create_calls)==1:
+                    raise InventoryChanged('Known read-only snapshot invalidation')
+            return TestAllocator.inventory(self,skip)
+    daemon=FakeDaemon();labels={OWNER:'owner',MANAGED:POLICY,ATTEMPT:'a',JOB:'j'}
+    a=Retrying(labels,'retry',tmp_path/'retry.json','localhost',daemon.run);a.post_create_calls=[]
+    if exhaust:
+        with pytest.raises(InventoryChanged):a.acquire()
+    else:a.acquire()
+    assert daemon.created==1
+    assert a.post_create_calls==[a.record['network_id']]*(3 if exhaust else 2)
+    assert a.record['state']=='created' and a.record['network_id']in daemon.networks
+    a.remove_empty()
+    assert not daemon.networks and a.record['state']=='removed'

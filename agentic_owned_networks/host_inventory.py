@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import uuid
 
-from .allocator import OWNER, MANAGED, ATTEMPT, JOB, OwnershipError, container_absent, inspection_failure, error_record
+from .allocator import OWNER, MANAGED, ATTEMPT, JOB, OwnershipError, container_absent, inspection_failure, error_record, inventory_result
 
 POLICY = 'host-inventory-v1'
 # No dynamic shell or device imports. Docker start is bounded by command(timeout30).
@@ -81,12 +81,10 @@ def collect(allocator):
             raise
         verify(inspect(ident))
         record['state']='running';save()
-        response=allocator.command(['docker','start','--attach',ident])
+        response=allocator.command(['docker','start','--attach',ident],check=False)
         after=inspect(ident);verify(after)
         if after['running']:raise OwnershipError('Inventory helper did not settle')
-        result=json.loads(response.stdout)
-        if not all(isinstance(result.get(k),list)and result[k]for k in ('routes','addresses','model_addresses')) or not isinstance(result.get('dns'),list):
-            raise ValueError('Incomplete daemon-host route/address inventory')
+        result=inventory_result(response,'host_inventory')
         current=inspect(server['id'])
         if not current or current['id']!=server['id']or current['image']!=image or not current['running']or (current.get('labels')or{}).get(OWNER)!=labels[OWNER]:
             raise OwnershipError('Owned server changed during inventory')

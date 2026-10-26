@@ -1,4 +1,5 @@
 """Explicit per-attempt Docker bridges. No daemon mutation or global cleanup."""
+import errno
 import hashlib
 import ipaddress as ip
 import json
@@ -51,13 +52,66 @@ def error_record(error):
     result={'type':type(error).__name__}
     if isinstance(error,(OwnershipError,ValueError,RuntimeError)):
         result['message']=str(error).replace('\n',' ')[:320]
-    for key in ('operation','reason','returncode'):
+    for key in ('operation','reason','returncode','collector_phase','collector_exception_type','errno'):
         if hasattr(error,key):result[key]=getattr(error,key)
     return result
 
 
 class InventoryChanged(ValueError):
-    """A listed network vanished; discard the snapshot and rescan."""
+    """A known read-only inventory invalidation; discard the whole snapshot."""
+
+
+def inventory_result(response, operation):
+    """Strict collector protocol; only explicit valid invalidation is retryable."""
+    def failure(reason, diagnostic=None):
+        error=RuntimeError('Network inventory collector failed: ' + reason)
+        error.operation=operation;error.reason=reason;error.returncode=response.returncode
+        if diagnostic:
+            error.collector_phase=diagnostic['phase']
+            error.collector_exception_type=diagnostic['exception_type']
+            error.errno=diagnostic['errno']
+        return error
+    if len(response.stdout.encode())>16*1024*1024:raise failure('oversize_result')
+    def unique_object(pairs):
+        value={}
+        for key,item in pairs:
+            if key in value:raise ValueError('Duplicate result key')
+            value[key]=item
+        return value
+    try:value=json.loads(response.stdout,object_pairs_hook=unique_object)
+    except (ValueError,TypeError):raise failure('invalid_json')from None
+    if not isinstance(value,dict)or type(value.get('schema_version'))is not int or value['schema_version']!=1:
+        raise failure('invalid_result_schema')
+    status=value.get('status')
+    if status=='ok':
+        if response.returncode or set(value)!={'schema_version','status','inventory'}:raise failure('invalid_success_result')
+        data=value['inventory']
+        if (not isinstance(data,dict)or set(data)-{'routes','addresses','dns','model_addresses','network_namespace'}
+                or not all(isinstance(data.get(k),list)and data[k]for k in ('routes','addresses','model_addresses'))
+                or not isinstance(data.get('dns'),list)):
+            raise failure('incomplete_inventory')
+        return data
+    if status not in ('invalidated','error')or set(value)!={'schema_version','status','diagnostic'}:
+        raise failure('invalid_result_status')
+    diagnostic=value['diagnostic']
+    if (not isinstance(diagnostic,dict)or set(diagnostic)!={'phase','reason','exception_type','errno'}
+            or diagnostic['phase']not in ('collect','routes','addresses','netlink_dump','interface_lookup','resolver','namespace')
+            or not isinstance(diagnostic['exception_type'],str)
+            or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}',diagnostic['exception_type'])
+            or (diagnostic['errno']is not None and type(diagnostic['errno'])is not int)):
+        raise failure('invalid_diagnostic')
+    if status=='error':
+        if diagnostic['reason']!='collector_failure':raise failure('invalid_fatal_reason')
+        raise failure('collector_failure',diagnostic)
+    valid=(diagnostic['exception_type']=='InventoryInvalidated'and
+           ((diagnostic['reason']=='dump_interrupted'and diagnostic['phase']=='netlink_dump'and diagnostic['errno']is None)
+            or (diagnostic['reason']=='interface_disappeared'and diagnostic['phase']=='interface_lookup'
+                and diagnostic['errno']in (errno.ENXIO,errno.ENODEV))))
+    if response.returncode or not valid:raise failure('invalid_invalidation_result')
+    error=InventoryChanged('Network inventory invalidated: '+diagnostic['reason'])
+    error.operation=operation;error.reason=diagnostic['reason'];error.returncode=response.returncode
+    error.collector_phase=diagnostic['phase'];error.collector_exception_type=diagnostic['exception_type'];error.errno=diagnostic['errno']
+    raise error
 
 
 def checked_owner(owner):
@@ -165,7 +219,9 @@ class Allocator:
     def inventory(self, skip=None):
         for retry in range(3):
             try:return self._inventory_snapshot(skip)
-            except InventoryChanged:
+            except InventoryChanged as error:
+                self.record.setdefault('inventory_invalidations',[]).append({'attempt':retry+1,'skip_id':skip,'cause':error_record(error)})
+                self.save()
                 if retry==2:raise
         raise AssertionError('Unreachable inventory retry state')
 
@@ -184,7 +240,7 @@ class Allocator:
         bridge='br-'+skip[:12]if skip else None
         from .host_inventory import collect
         provider=collect(self)
-        local=self.data([sys.executable,str(Path(__file__).with_name('netlink_inventory.py')),self.endpoint_host])
+        local=inventory_result(self.command([sys.executable,str(Path(__file__).with_name('netlink_inventory.py')),self.endpoint_host],check=False),'local_inventory')
         routes=local['routes']+provider['routes']
         addresses=local['addresses']+provider['addresses']
         for address in provider['dns']+provider['model_addresses']:add(address)

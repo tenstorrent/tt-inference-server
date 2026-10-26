@@ -72,7 +72,7 @@ class FakeAllocator:
             if self.escape:self.helper[self.escape]=True if self.escape=='privileged'else'bridge'
             out=self.helper['id']
         elif args[:2]==['docker','start']:
-            out=json.dumps({'routes':[{'dst':'10.1.0.0/16'}],'addresses':[{'ifname':'eth0','addr_info':[]}],'dns':['127.0.0.53'],'model_addresses':['127.0.0.1']})
+            out=json.dumps({'schema_version':1,'status':'ok','inventory':{'routes':[{'dst':'10.1.0.0/16'}],'addresses':[{'ifname':'eth0','addr_info':[]}],'dns':['127.0.0.53'],'model_addresses':['127.0.0.1']}})
         elif args[:2]==['docker','rm']:self.helper=None
         else:raise AssertionError(args)
         return SimpleNamespace(stdout=out,stderr=err,returncode=rc)
@@ -99,8 +99,8 @@ def test_allocator_unions_host_provider_and_collector_without_pid1_assumption(tm
     from agentic_owned_networks.allocator import Allocator
     labels={OWNER:'fixture',MANAGED:'isolated-harbor-v1',JOB:'job',ATTEMPT:'outer'}
     a=Allocator(labels,'test',tmp_path/'allocation.json','model')
-    a.command=lambda args:SimpleNamespace(stdout='')
-    a.data=lambda args:{'routes':[{'dst':'10.1.0.0/16'}],'addresses':[{'ifname':'eth0','addr_info':[{'family':'inet','local':'10.2.0.1','prefixlen':24}]}],'dns':['10.3.0.1'],'model_addresses':['10.4.0.1']}
+    local={'routes':[{'dst':'10.1.0.0/16'}],'addresses':[{'ifname':'eth0','addr_info':[{'family':'inet','local':'10.2.0.1','prefixlen':24}]}],'dns':['10.3.0.1'],'model_addresses':['10.4.0.1']}
+    a.command=lambda args,check=True:SimpleNamespace(stdout=''if args[0]=='docker'else json.dumps({'schema_version':1,'status':'ok','inventory':local}),returncode=0,stderr='')
     monkeypatch.setattr(provider,'collect',lambda a:{'routes':[{'dst':'172.20.0.0/16'}],'addresses':[{'ifname':'ens1','addr_info':[{'family':'inet','local':'192.168.2.1','prefixlen':24}]}],'dns':['192.168.3.1'],'model_addresses':['192.168.4.1']})
     excluded={str(n)for n in a.inventory()}
     assert {'10.1.0.0/16','10.2.0.0/24','10.3.0.1/32','10.4.0.1/32','172.20.0.0/16','192.168.2.0/24','192.168.3.1/32','192.168.4.1/32'}<=excluded
