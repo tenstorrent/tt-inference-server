@@ -13000,6 +13000,21 @@ _eval_config_list = [
     ),
 ]
 
+# MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
+# reuse M3's GPQA task (scores are M3 references until M3.1-Flash has its own).
+_eval_config_list.append(
+    EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-M3.1-Flash",
+        tasks=[
+            task
+            for config in _eval_config_list
+            if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
+            for task in config.tasks
+            if task.task_name == "r1_gpqa_diamond"
+        ],
+    )
+)
+
 
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
