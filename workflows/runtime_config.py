@@ -99,6 +99,7 @@ class RuntimeConfig:
     # Speculative-decoding benchmark
     spec_decode: bool = False
     spec_decode_preset: str = "full"
+    spec_decode_temperature: Optional[float] = None
     spec_decode_warmup_requests: Optional[int] = None
     spec_decode_metrics_url: Optional[List[str]] = None
 
@@ -215,6 +216,7 @@ class RuntimeConfig:
             served_model=getattr(args, "served_model", None),
             spec_decode=getattr(args, "spec_decode", False),
             spec_decode_preset=getattr(args, "spec_decode_preset", "full"),
+            spec_decode_temperature=getattr(args, "spec_decode_temperature", None),
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),

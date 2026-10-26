@@ -29,6 +29,7 @@ from .runs import (
     build_runs,
     parse_concurrencies,
     parse_isls,
+    parse_temperature,
     summarize_runs,
 )
 
@@ -45,6 +46,7 @@ __all__ = [
     "parse_concurrencies",
     "parse_isls",
     "parse_prometheus_text",
+    "parse_temperature",
     "scrape_spec_decode_metrics",
     "scrape_spec_decode_metrics_multi",
     "summarize_runs",

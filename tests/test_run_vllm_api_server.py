@@ -1529,6 +1529,27 @@ def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
     assert spec.metadata["tt_cache_env"] == "MIMO_TT_CACHE"
 
 
+def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash_mtp"
+    )
+    (spec,) = template.expand_to_specs()
+    vllm_args = spec.device_model_spec.vllm_args
+    assert not spec.device_model_spec.default_impl
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
+    # The model declares supports_async_spec_decode, so async scheduling stays on.
+    assert "no-async-scheduling" not in vllm_args
+    assert vllm_args["max_num_seqs"] == 4 and vllm_args["data_parallel_size"] == 4
+    speculative = json.loads(vllm_args["speculative_config"])
+    assert speculative == {
+        "method": "custom_class",
+        "model": "vllm_tt_plugin.model_owned_drafter",
+        "num_speculative_tokens": 3,
+    }
+
+
 def _llama_qb2_spec():
     template = next(
         t

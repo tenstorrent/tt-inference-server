@@ -380,6 +380,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--spec-decode-temperature",
+        type=float,
+        default=None,
+        help=(
+            "Temperature sent with every spec-decode request (default: none, "
+            "the server's default; SPEC_DECODE_TEMPERATURE env var)."
+        ),
+    )
+    parser.add_argument(
         "--spec-decode-warmup-requests",
         type=int,
         default=4,
@@ -590,7 +599,9 @@ def parse_args() -> argparse.Namespace:
         from llm_module.spec_decode.runs import build_runs
 
         try:
-            build_runs(args.spec_decode_preset)
+            build_runs(
+                args.spec_decode_preset, temperature=args.spec_decode_temperature
+            )
         except ValueError as e:
             parser.error(str(e))
     if args.serving_bench_suites and args.workflow != "serving_bench":
