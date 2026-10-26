@@ -135,12 +135,27 @@ def run_llm_bench(
         driver.name,
         len(configs),
     )
+    performance_kwargs = {}
+    if (
+        release_scope
+        and ctx.model_spec.hf_model_repo == "Qwen/Qwen3.8-27B"
+        and ctx.model_spec.impl.impl_name == "qwen38-autoport"
+    ):
+        from reference_config.evals.qwen38_goal12 import controls
+
+        timeout = controls()["release_benchmark_timeout_sec"]
+        if type(timeout) is not int or not 0 < timeout <= 7200:
+            raise ValueError("Qwen release benchmark timeout must be 1..7200 seconds")
+        # Bound every unchanged benchmark profile so a stalled client cannot
+        # consume the time reserved for agentic suites and artifact collection.
+        performance_kwargs["per_run_timeout_s"] = timeout
     return run_llm_performance(
         ctx,
         driver=driver,
         configs=configs,
         auth_token=auth_token,
         goodput=goodput,
+        **performance_kwargs,
     )
 
 

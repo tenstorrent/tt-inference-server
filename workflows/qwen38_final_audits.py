@@ -15,13 +15,16 @@ import zipfile
 OWNER='com.tenstorrent.agentic-owner'
 MANAGED='com.tenstorrent.agentic-managed'
 POLICY='stable-audit-export-v1'
-MAX_BYTES=128*1024*1024
-MAX_ZIP=64*1024*1024
+# Longer bounded release runs can exceed the earlier 128 MiB input budget.
+# Keep the helper and host validator on the same finite limits.
+MAX_BYTES=512*1024*1024
+MAX_ZIP=256*1024*1024
+HELPER_TIMEOUT_SECONDS=240
 IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:182a91996c8104cb1373503bf9326deb5d98e01347655bb1305840165262950e'
 
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
-COLLECTOR=r'''
+COLLECTOR=f'MAX_BYTES = {MAX_BYTES}\nMAX_ZIP = {MAX_ZIP}\n'+r'''
 import hashlib,io,json,os,stat,sys,time,zipfile
 plan=json.loads(sys.argv[1]);rows=[];contents=[];total=0
 rootfd=os.open('/evidence',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
@@ -33,7 +36,7 @@ for name in plan['filenames']:
   before=os.fstat(fd)
   if not stat.S_ISREG(before.st_mode):raise ValueError('nonregular source')
   total+=before.st_size
-  if total>128*1024*1024:raise ValueError('input size bound')
+  if total>MAX_BYTES:raise ValueError('input size bound')
   chunks=[];remaining=before.st_size
   while remaining:
    data=os.read(fd,min(1048576,remaining))
@@ -60,7 +63,7 @@ buf=io.BytesIO()
 with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
  for name,data in contents:z.writestr(name,data)
  z.writestr('audit-recovery-manifest.json',json.dumps(manifest,indent=2)+'\n')
-if buf.tell()>64*1024*1024:raise ValueError('compressed size bound')
+if buf.tell()>MAX_ZIP:raise ValueError('compressed size bound')
 sys.stdout.buffer.write(buf.getvalue())
 '''
 
@@ -124,7 +127,7 @@ def export_one(plan,out,owner):
         ident=command(args).stdout.decode().strip()
         if not re.fullmatch('[0-9a-f]{64}',ident):raise ValueError('invalid full helper ID')
         state.update(id=ident,image_id=image_id,daemon_id=daemon,state='created');save();verify(ident)
-        started=subprocess.run(['docker','start','-a',ident],capture_output=True,timeout=90)
+        started=subprocess.run(['docker','start','-a',ident],capture_output=True,timeout=HELPER_TIMEOUT_SECONDS)
         raw=started.stdout;code=verify(ident)['State']['ExitCode']
         state['helper_exit_code']=code
         if started.returncode or code:

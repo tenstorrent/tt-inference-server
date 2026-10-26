@@ -53,6 +53,7 @@ def run_llm_performance(
     output_subdir: str = "llm",
     auth_token: str = "",
     goodput: Optional[str] = None,
+    per_run_timeout_s: Optional[float] = 7200.0,
 ) -> RunnerResult:
     """Run an LLM perf sweep and forward the Blocks to workflow_module.
 
@@ -86,7 +87,10 @@ def run_llm_performance(
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    context = DriverContext(output_dir=output_dir, device=device_label, goodput=goodput)
+    context = DriverContext(
+        output_dir=output_dir, device=device_label, goodput=goodput,
+        per_run_timeout_s=per_run_timeout_s,
+    )
 
     if server_controller is None:
         if ctx.remote_server:

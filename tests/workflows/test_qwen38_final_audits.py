@@ -16,11 +16,15 @@ def plan():
     return dict(source_run_id=123,source_owner='goal12-123-1-0',host_aliases=['120-qb2-p05t01','qb2-120-p05t01'],runner_name='120-qb2-p05t01',volume='volume_id_qwen38_autoport-Qwen3.8-27B',image=m.IMAGE,filenames=['qwen38-http-123.jsonl','qwen38-goal12-456.jsonl'])
 
 
-def collect(tmp_path,edit=None):
+def collect(tmp_path,edit=None,*,max_bytes=None,max_zip=None):
     logs=tmp_path/'logs';logs.mkdir()
     for name in plan()['filenames']:(logs/name).write_bytes(b'{"event":"fixture"}\n')
     if edit:edit(logs)
     code=m.COLLECTOR.replace("'/evidence'",repr(str(tmp_path)))
+    if max_bytes is not None:
+        code=code.replace(f'MAX_BYTES = {m.MAX_BYTES}\n',f'MAX_BYTES = {max_bytes}\n',1)
+    if max_zip is not None:
+        code=code.replace(f'MAX_ZIP = {m.MAX_ZIP}\n',f'MAX_ZIP = {max_zip}\n',1)
     return subprocess.run([sys.executable,'-c',code,json.dumps(plan())],capture_output=True,timeout=5)
 
 
@@ -30,6 +34,47 @@ def test_real_stdlib_collector_exact_stable_zip(tmp_path):
     assert receipt['required_paths']==[r['source_path'] for r in receipt['files']]
     assert receipt['serving_interval_complete'] is None
     assert all(r['stable_two_reads'] for r in receipt['files'])
+
+
+def test_release_limits_are_shared_with_the_isolated_helper():
+    assert m.MAX_BYTES == 512*1024*1024
+    assert m.MAX_ZIP == 256*1024*1024
+    assert m.HELPER_TIMEOUT_SECONDS == 240
+    assert m.COLLECTOR.startswith(f'MAX_BYTES = {m.MAX_BYTES}\nMAX_ZIP = {m.MAX_ZIP}\n')
+
+
+def test_collector_bounds_combined_input_before_export(tmp_path):
+    fixture_bytes=len(b'{"event":"fixture"}\n')
+    r=collect(tmp_path,max_bytes=2*fixture_bytes-1)
+    assert r.returncode != 0
+    assert b'ValueError: input size bound' in r.stderr
+    assert not r.stdout
+
+
+def test_collector_bounds_compressed_output(tmp_path):
+    r=collect(tmp_path,max_zip=1)
+    assert r.returncode != 0
+    assert b'ValueError: compressed size bound' in r.stderr
+    assert not r.stdout
+
+
+def test_host_rejects_oversized_archive(tmp_path,monkeypatch):
+    r=collect(tmp_path)
+    assert r.returncode == 0,r.stderr
+    raw=r.stdout
+    monkeypatch.setattr(m,'MAX_ZIP',len(raw)-1)
+    with pytest.raises(ValueError,match='ZIP size bound'):
+        m.validate_archive(raw,plan())
+
+
+def test_host_rejects_excessive_expansion(tmp_path,monkeypatch):
+    def edit(logs):
+        (logs/plan()['filenames'][0]).write_text(json.dumps({'payload':'x'*70000})+'\n')
+    r=collect(tmp_path,edit)
+    assert r.returncode == 0,r.stderr
+    monkeypatch.setattr(m,'MAX_BYTES',1)
+    with pytest.raises(ValueError,match='ZIP expansion bound'):
+        m.validate_archive(r.stdout,plan())
 
 
 @pytest.mark.parametrize('mode',['missing','partial','invalid','symlink','fifo'])

@@ -54,7 +54,7 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 
     assert [task.task_name for task in tasks] == [
         "r1_gpqa_diamond",
-        "terminal_bench_2",
+        "terminal_bench_2_1",
         "swe_bench_verified",
     ]
     assert [task.workflow_venv_type for task in tasks] == [
@@ -69,7 +69,7 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config
-    assert terminal.dataset == "terminal-bench/terminal-bench-2"
+    assert terminal.dataset == "terminal-bench/terminal-bench-2-1"
     assert terminal.dataset_ref == c["terminal_dataset_ref"]
     for task, agent in ((tasks[1], terminal), (tasks[2], swe)):
         assert agent.task_names_map[EvalLimitMode.CI_NIGHTLY] == c["task_names"][task.task_name]

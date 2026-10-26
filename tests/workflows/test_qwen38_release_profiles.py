@@ -3,6 +3,7 @@ from argparse import Namespace
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
+import pytest
 
 from llm_module.benchmark_configs import get_llm_configs
 from tests.workflows.test_qwen38_minimal_release import _qwen38_spec
@@ -49,3 +50,36 @@ def test_factory_and_runner_forward_release_scope(monkeypatch):
         assert options.release_scope is (workflow == "release")
         runner.run_llm_bench(ctx, release_scope=options.release_scope)
         assert len(captured.call_args.kwargs["configs"]) == count
+        if workflow == "release":
+            assert captured.call_args.kwargs["per_run_timeout_s"] == 1800
+        else:
+            assert "per_run_timeout_s" not in captured.call_args.kwargs
+
+
+@pytest.mark.parametrize("timeout", [0, -1, 7201, None, True])
+def test_release_rejects_unbounded_or_invalid_benchmark_timeout(monkeypatch,timeout):
+    from test_module.llm_tests import llm_benchmark_tests as runner
+    from reference_config.evals import qwen38_goal12
+    spec = _spec()
+    ctx = SimpleNamespace(model_spec=spec, device=spec.device_type, runtime_config=None)
+    monkeypatch.setattr(qwen38_goal12, "controls", lambda: {"release_benchmark_timeout_sec": timeout})
+    captured = Mock()
+    monkeypatch.setattr(runner, "run_llm_performance", captured)
+    with pytest.raises(ValueError, match="timeout must be"):
+        runner.run_llm_bench(ctx, release_scope=True)
+    captured.assert_not_called()
+
+
+def test_profile_deadline_reaches_the_driver_context(monkeypatch,tmp_path):
+    from test_module.llm_tests import llm_performance_tests as runner
+    spec = _spec()
+    ctx = SimpleNamespace(model_spec=spec, device=spec.device_type,
+                          remote_server=False, server_host="127.0.0.1",
+                          server_port=8000, output_path=tmp_path)
+    result = SimpleNamespace(return_codes=[], ok=True, blocks=[])
+    captured = Mock(return_value=result)
+    monkeypatch.setattr(runner.LLMPerformanceRunner,"run",captured)
+    monkeypatch.setattr(runner,"report_model_fields",lambda spec: {})
+    runner.run_llm_performance(ctx,driver=Mock(),configs=[SimpleNamespace(token_timing=False)],
+                               server_controller=Mock(),per_run_timeout_s=1800)
+    assert captured.call_args.args[2].per_run_timeout_s == 1800
