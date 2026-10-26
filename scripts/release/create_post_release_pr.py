@@ -173,13 +173,18 @@ def jobs_that_ran(attempts: list[dict]) -> list[dict]:
     has no artifacts, so nothing was collected under its id. A job that started
     before its own attempt did is such a copy and is dropped. Of the executions
     left, a later attempt replaces an earlier one unless the earlier passed and the
-    later did not. Two jobs of one name in one attempt are both kept, so a caller
-    that needs one job per name still sees the ambiguity.
+    later did not. A name listed twice in any attempt (copies included) is ambiguous:
+    which of its jobs a re-run replaced is unknowable, so every execution of it is
+    kept, and a caller that needs one job per name still sees the ambiguity.
     """
     chosen: dict[str, list[dict]] = {}
+    every: dict[str, list[dict]] = {}
+    duplicated: set[str] = set()
     for attempt in attempts:
         started = attempt.get("run_started_at")
         ran: dict[str, list[dict]] = {}
+        names = [job["name"] for job in attempt.get("jobs") or []]
+        duplicated |= {name for name in names if names.count(name) > 1}
         for job in attempt.get("jobs") or []:
             if (
                 started
@@ -188,6 +193,7 @@ def jobs_that_ran(attempts: list[dict]) -> list[dict]:
             ):
                 continue
             ran.setdefault(job["name"], []).append(job)
+            every.setdefault(job["name"], []).append(job)
         for name, executions in ran.items():
             earlier = chosen.get(name)
             passed = any(j.get("conclusion") == "success" for j in executions)
@@ -196,7 +202,11 @@ def jobs_that_ran(attempts: list[dict]) -> list[dict]:
             )
             if passed or not passed_earlier:
                 chosen[name] = executions
-    return [job for executions in chosen.values() for job in executions]
+    return [
+        job
+        for name, executions in chosen.items()
+        for job in (every[name] if name in duplicated else executions)
+    ]
 
 
 def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:

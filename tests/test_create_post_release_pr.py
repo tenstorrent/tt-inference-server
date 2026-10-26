@@ -488,6 +488,28 @@ def test_two_jobs_of_one_name_in_an_attempt_are_both_kept_for_build_rows_to_refu
     assert _ids(jobs_that_ran([{"run_started_at": ATTEMPT_1, "jobs": jobs}])) == [1, 2]
 
 
+@pytest.mark.parametrize("rerun", ["success", "failure"])
+def test_a_partial_rerun_of_a_duplicated_name_stays_ambiguous(rerun):
+    # Which of the two the re-run replaced is unknowable: every execution stays.
+    attempts = [
+        {
+            "run_started_at": ATTEMPT_1,
+            "jobs": [
+                _job(1, "a", "success", RAN_IN_1),
+                _job(2, "a", "failure", RAN_IN_1),
+            ],
+        },
+        {
+            "run_started_at": ATTEMPT_2,
+            "jobs": [
+                _job(11, "a", "success", RAN_IN_1),
+                _job(12, "a", rerun, RAN_IN_2),
+            ],
+        },
+    ]
+    assert _ids(jobs_that_ran(attempts)) == [1, 2, 12]
+
+
 class _FakeApi:
     """The GitHub REST paths fetch_run_jobs reads, for one run with two attempts."""
 
