@@ -1,15 +1,15 @@
 {
-  "phase": "terminal21-calibration8-conditional2700",
+  "phase": "terminal21-difficult2-b32",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
     "terminal_bench_2_1"
   ],
-  "sample_count": 8,
-  "max_concurrent": 8,
-  "agent_timeout_sec": 2700,
-  "llm_timeout_sec": 1800,
-  "suite_timeout_sec": 4500,
+  "sample_count": 2,
+  "max_concurrent": 2,
+  "agent_timeout_sec": 5400,
+  "llm_timeout_sec": 3600,
+  "suite_timeout_sec": 6000,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
@@ -48,13 +48,7 @@
     ],
     "terminal_bench_2_1": [
       "terminal-bench/adaptive-rejection-sampler",
-      "terminal-bench/bn-fit-modify",
-      "terminal-bench/break-filter-js-from-html",
-      "terminal-bench/build-cython-ext",
-      "terminal-bench/mailman",
-      "terminal-bench/password-recovery",
-      "terminal-bench/pypi-server",
-      "terminal-bench/sparql-university"
+      "terminal-bench/build-cython-ext"
     ]
   },
   "gpqa_handoff": {
@@ -186,7 +180,7 @@
   "gpqa_llm_timeout_sec": 3600,
   "gpqa_suite_timeout_sec": 4500,
   "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
-  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
-  "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
+  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_difficult2.json",
+  "selection_manifest_sha256": "a09fb52d69c616b46605d44e09ae7fd659eaebc427733e4d9d767404b1054fc6",
   "record_suite_metrics": true
 }

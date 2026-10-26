@@ -1,0 +1,29 @@
+{
+  "purpose": "Predetermined difficult two-task diagnostic: B32 versus B16 at client2 and identical extended empirical bounds",
+  "selection_algorithm": "Predetermined difficult tasks from frozen seed1234 sample; diagnostic, not representative population score",
+  "seed": 1234,
+  "hash_encoding": "SHA256 of json.dumps(value, sort_keys=True, ensure_ascii=False, default=str), UTF-8",
+  "source_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
+  "source_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
+  "harbor_commit": "9973a7edc2d9950a03de6aeebafebb8f7b0a5f1e",
+  "evals": {
+    "terminal_bench_2_1": {
+      "dataset": "terminal-bench/terminal-bench-2-1",
+      "ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+      "population": 89,
+      "task_names": [
+        "terminal-bench/adaptive-rejection-sampler",
+        "terminal-bench/build-cython-ext"
+      ],
+      "selected_sources": {
+        "terminal-bench/adaptive-rejection-sampler": {
+          "content_hash": "bcaa2399985cd57666018025846289ab25e193ae0dd8fb7f0ffab2410c24d4de"
+        },
+        "terminal-bench/build-cython-ext": {
+          "content_hash": "35dc561790e73f13e59837828ac0863c0893edc6b71d42cf7d58656c843adf12"
+        }
+      },
+      "population_manifest": "reference_config/evals/qwen38_goal12_terminal21_population.json"
+    }
+  }
+}
