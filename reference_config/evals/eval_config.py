@@ -13161,8 +13161,8 @@ _eval_config_list = [
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse M3's GPQA, Terminal-Bench 4.0 and AutomationBench task definitions. No
-# targets yet: the M3.1-Flash eval set and its GPU reference runs aren't
+# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
+# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the M3.1-Flash eval set and its GPU reference runs aren't
 # confirmed, so scores are measurements only (no published, GPU or limit-mode
 # references; the card's AutomationBench 62.8 states no harness or effort).
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
@@ -13187,8 +13187,6 @@ _eval_config_list.append(
             for config in _eval_config_list
             if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
             for task in config.tasks
-            if task.task_name
-            in ("r1_gpqa_diamond", "terminal_bench_4", "automation_bench")
         ],
     )
 )
