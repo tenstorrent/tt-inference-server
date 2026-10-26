@@ -184,7 +184,18 @@ class AgenticWorkflow(WorkflowExecution):
             from reference_config.evals.qwen38_goal12 import MODEL, controls
             from workflow_module.engine_types import WorkflowVenvType
             blocks = []
-            if self.ctx.model_spec.hf_model_repo == MODEL and controls()["include_standard_evals"]:
+            goal12 = controls() if self.ctx.model_spec.hf_model_repo == MODEL else None
+            standard_only = bool(goal12 and goal12["include_standard_evals"]
+                                 and goal12["evals"] == ["r1_gpqa_diamond"])
+            if standard_only:
+                tasks = getattr(self.ctx.all_params, "tasks", []) or []
+                selection = getattr(getattr(self.ctx, "runtime_config", None),
+                                    "agentic_benchmark", None)
+                if (len(tasks) != 1 or tasks[0].task_name != "r1_gpqa_diamond"
+                        or tasks[0].workflow_venv_type != WorkflowVenvType.EVALS_COMMON
+                        or (isinstance(selection, str) and selection.strip())):
+                    raise RuntimeError("Goal-12 GPQA-only controls do not match effective task selection")
+            if goal12 and goal12["include_standard_evals"]:
                 from workflow_module.venv_provisioner import get_venv_provisioner
                 from test_module.llm_tests.llm_eval_tests import run_llm_eval
                 from test_module.llm_tests.agentic_eval_tests import _configure_openai_env
@@ -192,7 +203,8 @@ class AgenticWorkflow(WorkflowExecution):
                 if not get_venv_provisioner().provision(WorkflowVenvType.EVALS_COMMON, self.ctx.model_spec):
                     raise RuntimeError("Could not provision goal-12 GPQA harness")
                 blocks.extend(run_llm_eval(self.ctx))
-            blocks.extend(run_llm_agentic_eval(self.ctx))
+            if not standard_only:
+                blocks.extend(run_llm_agentic_eval(self.ctx))
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception("❌ agentic raised after %.1fs: %s", elapsed, e)
