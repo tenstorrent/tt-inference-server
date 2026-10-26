@@ -14,7 +14,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 
-from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner
+from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, error_record
 
 CHECK = r'''
 import json,socket,sys,urllib.request
@@ -158,6 +158,7 @@ def main():
         receipt['status']='connectivity_pass'
     except BaseException as exc:
         receipt['status']='failed';receipt['errors'].append(type(exc).__name__)
+        receipt.setdefault('error_details',[]).append(error_record(exc))
     finally:
         cleanup=[]
         for a,cid in containers:
@@ -166,12 +167,12 @@ def main():
                 item=json.loads(a.command(['docker','inspect','--format',fmt,cid]).stdout)
                 if item['id']!=cid or any(item['labels'].get(k)!=v for k,v in a.labels.items()):raise OwnershipError('Container ownership mismatch')
                 a.command(['docker','stop','--time','10',cid]);a.command(['docker','rm',cid])
-            except BaseException as exc:cleanup.append({'container':cid,'error':type(exc).__name__})
+            except BaseException as exc:cleanup.append({'container':cid,'error':type(exc).__name__,'cause':error_record(exc)})
         for a in allocators:
             try:
                 if a.record['state']=='needs_reconciliation':raise OwnershipError('Uncertain create retained')
                 a.remove_empty()
-            except BaseException as exc:cleanup.append({'attempt':a.record['attempt'],'error':type(exc).__name__})
+            except BaseException as exc:cleanup.append({'attempt':a.record['attempt'],'error':type(exc).__name__,'cause':error_record(exc)})
         receipt['cleanup_errors']=cleanup
         receipt['wall_seconds']=time.monotonic()-started
         receipt['work_budget_seconds']=900

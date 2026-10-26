@@ -21,6 +21,41 @@ class OwnershipError(ValueError):
     """Not RuntimeError: Harbor must not swallow failed ownership checks."""
 
 
+def resource_absent(response, ident, resource):
+    """Only a resource/identity-specific Docker not-found response proves absence."""
+    prefix=r'(?:Error(?: response from daemon)?:\s*)?'
+    identity=re.escape(ident)
+    if resource=='container':body=r'No such (?:object|container):\s*'+identity
+    elif resource=='network':body=r'(?:No such network:\s*'+identity+r'|network\s+'+identity+r'\s+not found)'
+    else:raise ValueError('Unsupported absence resource')
+    return bool(response.returncode and re.fullmatch(prefix+body,response.stderr.strip(),re.IGNORECASE))
+
+
+def container_absent(response, ident):
+    return resource_absent(response,ident,'container')
+
+
+def inspection_failure(response, operation="docker.inspect"):
+    error=OwnershipError('Container inspection unavailable; absence not established')
+    error.operation=operation
+    error.returncode=response.returncode
+    message=response.stderr.lower()
+    error.reason=('permission_denied'if 'permission denied'in message else
+                  'daemon_unavailable'if 'cannot connect'in message or 'connection refused'in message else
+                  'unrecognized_inspection_error')
+    return error
+
+
+def error_record(error):
+    """Compact cause without stderr, argv, environment or arbitrary raw logs."""
+    result={'type':type(error).__name__}
+    if isinstance(error,(OwnershipError,ValueError,RuntimeError)):
+        result['message']=str(error).replace('\n',' ')[:320]
+    for key in ('operation','reason','returncode'):
+        if hasattr(error,key):result[key]=getattr(error,key)
+    return result
+
+
 class InventoryChanged(ValueError):
     """A listed network vanished; discard the snapshot and rescan."""
 
@@ -108,8 +143,8 @@ class Allocator:
     def inspect(self,ident):
         result=self.command(['docker','network','inspect',ident],check=False)
         if result.returncode:
-            if 'No such network'in result.stderr or ('network 'in result.stderr and ' not found'in result.stderr):return None
-            raise RuntimeError('Network inspection unavailable')
+            if resource_absent(result,ident,'network'):return None
+            raise inspection_failure(result,'docker.network.inspect')
         objects=json.loads(result.stdout)
         if len(objects)!=1:raise OwnershipError('Ambiguous network identity')
         return objects[0]

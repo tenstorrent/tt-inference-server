@@ -41,7 +41,7 @@ class FakeDaemon:
             elif args[:3]==['docker','network','inspect']:
                 n=self.networks.get(args[-1]) or next((n for n in self.networks.values()if n['Name']==args[-1]),None)
                 if n:stdout=json.dumps([n])
-                else:rc=1;stderr='No such network'
+                else:rc=1;stderr='Error response from daemon: network '+args[-1]+' not found'
             elif args[:3]==['docker','network','rm']:self.networks.pop(args[-1])
             else:raise AssertionError(args)
             return SimpleNamespace(returncode=rc,stdout=stdout,stderr=stderr)
@@ -193,3 +193,16 @@ def test_missing_network_is_distinguished_from_inspection_failure(tmp_path):
     def unavailable(ident):raise RuntimeError('inspection unavailable')
     a.inspect=unavailable
     with pytest.raises(RuntimeError):a.inventory()
+
+
+@pytest.mark.parametrize('message,absent',[
+    ('Error: No such network: target',True),
+    ('error: no such network: target',True),
+    ('Error response from daemon: network target not found',True),
+    ('Error response from daemon: network another not found',False),
+    ('Cannot connect to the Docker daemon',False),
+    ('permission denied: network target not found',False),
+])
+def test_network_absence_requires_matching_identity(message,absent):
+    from agentic_owned_networks.allocator import resource_absent
+    assert resource_absent(SimpleNamespace(returncode=1,stderr=message),'target','network')is absent

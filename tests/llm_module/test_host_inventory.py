@@ -64,7 +64,7 @@ class FakeAllocator:
         elif args[:2]==['docker','inspect']:
             item=self.server if args[-1]==self.server['id']else self.helper
             if item:out=json.dumps(item)
-            else:rc=1;err='No such object'
+            else:rc=1;err='Error: No such object: '+args[-1]
         elif args[:2]==['docker','create']:
             labels={args[i+1].split('=',1)[0]:args[i+1].split('=',1)[1]for i,x in enumerate(args)if x=='--label'}
             assert '--read-only'in args and '--cap-drop'in args and '--security-opt'in args and '--device'not in args and '--mount'not in args
@@ -114,8 +114,41 @@ def test_server_inventory_filters_out_disappearing_helpers(tmp_path):
                 if 'name=tt-inference-server-'not in args:
                     return SimpleNamespace(stdout=self.server['id']+'\n'+'d'*64,stderr='',returncode=0)
             if args[:2]==['docker','inspect']and args[-1]=='d'*64:
-                return SimpleNamespace(stdout='',stderr='No such object',returncode=1)
+                return SimpleNamespace(stdout='',stderr='Error: No such object: '+args[-1],returncode=1)
             return super().command(args,check)
     a=Interleaved(tmp_path)
     assert provider.collect(a)['routes']
     assert a.helper is None
+
+
+@pytest.mark.parametrize('wording',['Error: No such object: ','error: no such object: ','Error response from daemon: No such container: '])
+def test_post_removal_absence_wordings_complete_helper_receipt(tmp_path,wording):
+    class DockerWording(FakeAllocator):
+        def command(self,args,check=True):
+            result=super().command(args,check)
+            if args[:2]==['docker','inspect']and result.returncode:
+                result.stderr=wording+args[-1]+'\n'
+            return result
+    a=DockerWording(tmp_path)
+    assert provider.collect(a)['routes']
+    receipt=json.loads(next((tmp_path/'inventory_helpers').glob('*.json')).read_text())
+    assert receipt['state']=='removed'and receipt['cleanup_phase']=='confirm_absence'
+
+
+@pytest.mark.parametrize('failure,reason',[
+    ('permission denied while trying to connect','permission_denied'),
+    ('Cannot connect to the Docker daemon','daemon_unavailable'),
+    ('Error: No such container: wrong-id','unrecognized_inspection_error'),
+])
+def test_post_removal_unavailable_inspection_remains_unconfirmed(tmp_path,failure,reason):
+    class Unavailable(FakeAllocator):
+        def command(self,args,check=True):
+            result=super().command(args,check)
+            if args[:2]==['docker','inspect']and result.returncode:result.stderr=failure
+            return result
+    with pytest.raises(OwnershipError):provider.collect(Unavailable(tmp_path))
+    receipt=json.loads(next((tmp_path/'inventory_helpers').glob('*.json')).read_text())
+    assert receipt['state']=='cleanup_unconfirmed'
+    assert receipt['cleanup_error']['reason']==reason
+    assert receipt['cleanup_error']['operation']=='docker.inspect'
+    assert 'stderr'not in receipt['cleanup_error']

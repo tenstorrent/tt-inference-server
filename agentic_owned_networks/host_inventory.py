@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import uuid
 
-from .allocator import OWNER, MANAGED, ATTEMPT, JOB, OwnershipError
+from .allocator import OWNER, MANAGED, ATTEMPT, JOB, OwnershipError, container_absent, inspection_failure, error_record
 
 POLICY = 'host-inventory-v1'
 # No dynamic shell or device imports. Docker start is bounded by command(timeout30).
@@ -27,8 +27,8 @@ def collect(allocator):
     def inspect(ident):
         response=allocator.command(['docker','inspect','--format',FORMAT,ident],check=False)
         if response.returncode:
-            if 'No such object'in response.stderr:return None
-            raise OwnershipError('Inventory container inspection unavailable')
+            if container_absent(response,ident):return None
+            raise inspection_failure(response)
         return json.loads(response.stdout)
     for ident in ids:
         item=inspect(ident)
@@ -92,19 +92,27 @@ def collect(allocator):
             raise OwnershipError('Owned server changed during inventory')
         record['counts']={k:len(result[k])for k in ('routes','addresses','dns','model_addresses')}
         record['network_namespace']=result.get('network_namespace');save()
+    except BaseException as exc:
+        record['failure']=error_record(exc);save();raise
     finally:
         ident=record['container_id']
-        if ident:
-            item=inspect(ident);verify(item)
-            if item['running']:
-                allocator.command(['docker','stop','--time','2',ident]);verify(inspect(ident))
-            allocator.command(['docker','rm',ident])
-            if inspect(ident)is not None:raise OwnershipError('Host inventory helper removal unconfirmed')
-            record['state']='removed';save()
-        elif uncertain:
-            record['state']='needs_reconciliation';save()
-        else:
-            record['state']='not_created';save()
+        try:
+            if ident:
+                item=inspect(ident);verify(item)
+                if item['running']:
+                    allocator.command(['docker','stop','--time','2',ident]);verify(inspect(ident))
+                record['cleanup_phase']='remove_verified_id';save()
+                allocator.command(['docker','rm',ident])
+                record['cleanup_phase']='confirm_absence';save()
+                if inspect(ident)is not None:raise OwnershipError('Host inventory helper removal unconfirmed')
+                record['state']='removed';save()
+            elif uncertain:
+                record['state']='needs_reconciliation';save()
+            else:
+                record['state']='not_created';save()
+        except BaseException as exc:
+            record['state']='cleanup_unconfirmed'
+            record['cleanup_error']=error_record(exc);save();raise
     allocator.record['inventory_provider']={'kind':'owned_host_network_helper','daemon_id':daemon,
         'server_id':server['id'],'image_id':image,'last_helper_journal':str(path),'cleanup_verified':True}
     allocator.save()

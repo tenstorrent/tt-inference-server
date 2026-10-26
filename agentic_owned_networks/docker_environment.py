@@ -7,7 +7,7 @@ import uuid
 
 from harbor.environments.docker.docker import DockerEnvironment
 from harbor.environments.base import ExecResult
-from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology
+from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology, container_absent, inspection_failure
 
 
 async def settled(function, *args):
@@ -80,8 +80,8 @@ class OwnedDockerEnvironment(DockerEnvironment):
         fmt='{"id":{{json .Id}},"labels":{{json .Config.Labels}}}'
         response=await settled(self._owned_allocator.command,['docker','inspect','--format',fmt,ident],False)
         if response.returncode:
-            if 'No such object'in response.stderr:return None
-            raise OwnershipError('Container inspection unavailable')
+            if container_absent(response,ident):return None
+            raise inspection_failure(response)
         item=json.loads(response.stdout)
         if item['id']!=ident or (item.get('labels')or{}).get('com.docker.compose.project')!=self.session_id or any((item.get('labels')or{}).get(k)!=v for k,v in self._owned_labels.items()):
             raise OwnershipError('Foreign container in attempt project; no teardown')
