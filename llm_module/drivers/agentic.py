@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from llm_module.attempt_timing import timed_attempt
+from llm_module.suite_metrics import suite_metrics, enabled as suite_metrics_enabled
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
@@ -155,10 +156,16 @@ class HarborAgenticDriver(AgenticEvalDriver):
         from agentic_owned_networks.preflight import run_once as network_preflight
         network_preflight(run_config)
         timing_path = run_config.jobs_dir / f"{run_config.task_name}_attempt_timing.json"
-        with timed_attempt(timing_path, self.task.task_name, "harbor_harness",
-                           enabled=server.model == "Qwen/Qwen3.8-27B") as timing:
-            rc = run_harbor(run_config)
-            timing["rc"] = rc
+        collect_metrics = suite_metrics_enabled(server.model, self.task.task_name)
+        with suite_metrics(
+            run_config.jobs_dir / f"{run_config.task_name}_suite_metrics.json",
+            self.task.task_name, server.url_with_port if collect_metrics else "", server.auth_token,
+            enabled=collect_metrics,
+        ):
+            with timed_attempt(timing_path, self.task.task_name, "harbor_harness",
+                               enabled=server.model == "Qwen/Qwen3.8-27B") as timing:
+                rc = run_harbor(run_config)
+                timing["rc"] = rc
         return self._load_result(rc, self.result_path(server, context))
 
 
