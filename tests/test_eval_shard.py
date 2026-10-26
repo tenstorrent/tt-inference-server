@@ -310,12 +310,27 @@ def _ifeval_plan():
 
 
 def _write_shard(
-    root: Path, index: int, count: int, plan, prov=PROV, correct=CORRECT, configs=None
+    root: Path,
+    index: int,
+    count: int,
+    plan,
+    prov=PROV,
+    correct=CORRECT,
+    configs=None,
+    run_id="default",
+    model=MODEL,
 ):
     attempt = root / f"run-{index}" / "evals" / f"eval-attempt-{index}"
     out = attempt / "eval_x" / "org__model"
     out.mkdir(parents=True)
-    record = shard_record(TASK, plan, index, count, {**prov, "hf_model_repo": MODEL})
+    record = shard_record(
+        TASK,
+        plan,
+        index,
+        count,
+        {**prov, "hf_model_repo": model},
+        run_id=f"run-{index}/{count}" if run_id == "default" else run_id,
+    )
     (attempt / f"eval_shard_{TASK}.json").write_text(json.dumps(record))
     docs = shard_indices(N_DOCS, index, count)
     rows = [
@@ -512,7 +527,9 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
     task = EvalTask(
         task_name="gpqa_x", custom_dataset_kwargs={"max_seq_lengths": [4096]}
     )
-    rc = SimpleNamespace(eval_shard="1/3", eval_samples=None, limit_samples_mode=None)
+    rc = SimpleNamespace(
+        eval_shard="1/3", eval_samples=None, limit_samples_mode=None, run_id="run-7"
+    )
     cmd = eval_command.build_eval_command(
         task, model_spec, "P300X2", str(tmp_path), 8000, runtime_config=rc
     )
@@ -520,6 +537,8 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
     assert "--limit" not in cmd
     record = json.loads((tmp_path / "eval_shard_gpqa_x.json").read_text())
     assert record["shard"] == "1/3"
+    # The run that wrote it: the merge binds this run's runtime spec by it.
+    assert record["run_id"] == "run-7"
     assert record["provenance"]["package_manifest_sha256"] == "man"
     assert record["provenance"]["ttis_ref"] == "deadbeef"
     # The planner sees the eval's own lm_eval arguments verbatim, so the
@@ -1171,3 +1190,389 @@ def test_a_shard_whose_expected_set_disagrees_with_its_plan_is_refused():
     records[1]["expected_doc_ids_sha"] = {"sub_a": "x", "sub_b": "y", "sub_c": "z"}
     with pytest.raises(ShardError, match="expected_doc_ids_sha|expected doc set"):
         check_shard_set(records)
+
+
+# --- the merge writes run.py's report layout ----------------------------------
+# Review on tt-shield#1283: CI collects a run.py run from
+# reports_output/evals/data/report_data_*.json and runtime_model_specs/
+# runtime_model_spec_*.json. The merge writes the same two files with run.py's
+# writers (ReportGenerator, RuntimeConfig.to_json), so CI copies them as it
+# copies a run.py run instead of rebuilding the layout itself.
+
+RUN_SPEC = {
+    "model_id": "id_tt-transformers_Qwen2.5-7B_p300x2",
+    "hf_model_repo": MODEL,
+    "model_name": "Qwen2.5-7B",
+    "inference_engine": "vLLM",
+    "impl": {"impl_name": "tt-transformers"},
+    "status": "EXPERIMENTAL",
+    "tt_metal_commit": "78e87bd9",
+    "vllm_commit": "0a76258",
+    "docker_image": "img",
+    "device_type": "P300X2",
+    "device_model_spec": {"env_vars": {"QUETZAL_BUNDLE_MANIFEST_SHA256": "m"}},
+}
+
+
+def _write_runtime_spec(shard_dir: Path, shard: str, spec=None, **config):
+    """A shard run's runtime model spec, as run.py writes it (run id as the
+    shard record's in _write_shard)."""
+    from workflows.runtime_config import RuntimeConfig
+
+    run_config = RuntimeConfig(
+        model=MODEL,
+        workflow="evals",
+        device="p300x2",
+        eval_tasks=TASK,
+        eval_shard=shard,
+        quetzal_package_root="/pkg",
+        run_id=f"run-{shard}",
+    )
+    for key, value in config.items():
+        setattr(run_config, key, value)
+    return run_config.to_json(
+        merge_cli._SerializedModelSpec(dict(spec or RUN_SPEC)),
+        "2026-10-19_00-00-00",
+        RUN_SPEC["model_id"],
+        str(shard_dir / "runtime_model_specs"),
+    )
+
+
+def _merge_with_specs(tmp_path, count=2, **spec_kwargs):
+    dirs = [_write_shard(tmp_path, i, count, _ifeval_plan()) for i in range(count)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/{count}", **spec_kwargs)
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    return rc, out
+
+
+def test_merge_writes_the_run_py_runtime_model_spec(tmp_path):
+    from workflows.runtime_config import RuntimeConfig
+
+    rc, out = _merge_with_specs(tmp_path)
+    assert rc == 0
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    written = json.loads(spec_path.read_text())
+    assert set(written) == {"runtime_model_spec", "runtime_config"}
+    assert written["runtime_model_spec"] == RUN_SPEC  # the shards' spec, unchanged
+    config = written["runtime_config"]
+    assert config["eval_shard"] is None
+    assert config["eval_tasks"] == TASK
+    assert config["quetzal_package_root"] == "/pkg"  # the shards' run config
+    merge_info = config["eval_shard_merge"]
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    assert merge_info == json.loads(json.dumps(report["eval_shard_merge"]))
+    assert merge_info["shard_count"] == 2
+    assert [s["shard"] for s in merge_info["sources"]] == ["0/2", "1/2"]
+    # run.py's reader takes it back.
+    loaded = RuntimeConfig.from_json(str(spec_path))
+    assert loaded.eval_shard is None and loaded.eval_shard_merge == merge_info
+
+
+def test_merge_writes_the_run_py_report_data(tmp_path):
+    from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
+
+    rc, out = _merge_with_specs(tmp_path)
+    assert rc == 0
+    (data_path,) = (out / "reports_output" / "evals" / "data").glob(
+        "report_data_*.json"
+    )
+    assert list((out / "reports_output" / "evals").glob("report_*.md"))
+    data = json.loads(data_path.read_text())
+    # ReportGenerator's layout: acceptance export at the top, not in metadata.
+    assert set(data) == {"metadata", "sections", *ACCEPTANCE_EXPORT_KEYS}
+    assert data["acceptance_criteria"] is True
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    for key in ACCEPTANCE_EXPORT_KEYS:
+        assert data[key] == json.loads(json.dumps(report[key]))
+    meta = data["metadata"]
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    # The evals workflow's metadata injection, from the merged runtime spec.
+    assert meta["workflow"] == "evals"
+    assert meta["report_partial"] is False
+    assert meta["runtime_model_spec_json"] == str(spec_path)
+    assert meta["model_repo"] == MODEL
+    assert meta["model_id"] == RUN_SPEC["model_id"]
+    assert meta["model_impl"] == "tt-transformers"
+    assert meta["tt_metal_commit"] == RUN_SPEC["tt_metal_commit"]
+    assert meta["device"] == PROV["device"]
+    assert meta["run_command"].startswith("python -m report_module.merge_eval_shards")
+    (section,) = data["sections"]
+    assert section["kind"] == "evals"
+    assert section["data"]["task_name"] == TASK
+    assert section["data"]["score"] == pytest.approx(100 * CORRECT / N_DOCS)
+    assert section["data"]["eval_shard_merge"]["shard_count"] == 2
+
+
+def test_merge_without_a_shard_runtime_spec_writes_no_run_layout(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    assert rc == 0  # the grade does not depend on it
+    assert (out / merge_cli.MERGED_REPORT_NAME).exists()
+    assert not (out / "reports_output").exists()
+    assert not (out / "runtime_model_specs").exists()
+    assert "runtime_model_spec_*.json" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("spec_kwargs", "message"),
+    (
+        (
+            {"spec": {**RUN_SPEC, "hf_model_repo": "org/other"}},
+            "spec is for org/other, not Qwen/Qwen2.5-7B",
+        ),
+        ({"eval_shard": None}, "eval_shard None != '0/2'"),
+        ({"eval_shard": "0/3"}, "eval_shard '0/3' != '0/2'"),
+    ),
+)
+def test_merge_refuses_a_foreign_runtime_spec(tmp_path, capsys, spec_kwargs, message):
+    rc, out = _merge_with_specs(tmp_path, **spec_kwargs)
+    assert rc == 2
+    assert message in capsys.readouterr().err
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+
+
+# --- review on #5424: a runtime spec is bound to the results it describes -----
+# find_shard_runtime_model_spec used to take any spec of the same model and
+# shard count, by shard index and path. An aborted attempt's 0/2 spec (another
+# device, image, commit) next to valid P300X2 shards then gave the merged PASS
+# that attempt's identity. The spec is now bound by run id to the shard
+# attempt whose results were merged, checked against the merged provenance,
+# and anything unbound, missing, ambiguous or disagreeing is refused.
+
+ABORTED_SPEC = {
+    **RUN_SPEC,
+    "model_id": "id_tt-transformers_Qwen2.5-7B_n150",
+    "device_type": "N150",
+    "docker_image": "other-img",
+    "tt_metal_commit": "0ther",
+}
+
+
+def _valid_shards(tmp_path, count=2):
+    dirs = [_write_shard(tmp_path, i, count, _ifeval_plan()) for i in range(count)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/{count}")
+    return dirs
+
+
+def _run_merge(tmp_path, dirs):
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    return rc, out
+
+
+def test_merge_refuses_an_aborted_attempts_spec_next_to_valid_shards(tmp_path, capsys):
+    dirs = _valid_shards(tmp_path)
+    # An attempt of shard 0 that died before results: its spec, no results.
+    aborted = _write_runtime_spec(
+        dirs[0] / "aborted", "0/2", spec=ABORTED_SPEC, run_id="run-aborted"
+    )
+    rc, out = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"{aborted}: run 'run-aborted' contributed no merged shard" in err
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+    assert not (out / "runtime_model_specs").exists()
+
+
+def test_merge_refuses_a_bound_spec_whose_identity_is_not_the_shards(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2", spec=ABORTED_SPEC)
+    _write_runtime_spec(dirs[1], "1/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "device 'N150' != shards' 'P300X2'" in err
+    assert "docker_image 'other-img' != shards' 'img'" in err
+
+
+def test_merge_refuses_two_specs_for_one_shard_run(tmp_path, capsys):
+    dirs = _valid_shards(tmp_path)
+    _write_runtime_spec(dirs[0] / "again", "0/2", spec=ABORTED_SPEC)
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "expected one runtime model spec, found 2" in capsys.readouterr().err
+
+
+def test_merge_refuses_a_merged_shard_without_its_spec(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert (
+        "shard 1/2 (run 'run-1/2'): expected one runtime model spec, found 0"
+        in capsys.readouterr().err
+    )
+
+
+def test_merge_refuses_shard_specs_that_disagree_beyond_the_shard_id(tmp_path, capsys):
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan()) for i in range(2)]
+    _write_runtime_spec(dirs[0], "0/2")
+    _write_runtime_spec(dirs[1], "1/2", quetzal_package_root="/other-pkg")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "runtime config differs" in capsys.readouterr().err
+
+
+def test_merge_refuses_specs_it_cannot_bind_to_shard_records(tmp_path, capsys):
+    # Shard records from before run ids were recorded: no spec can be bound.
+    dirs = [_write_shard(tmp_path, i, 2, _ifeval_plan(), run_id=None) for i in range(2)]
+    for i, shard_dir in enumerate(dirs):
+        _write_runtime_spec(shard_dir, f"{i}/2")
+    rc, _ = _run_merge(tmp_path, dirs)
+    assert rc == 2
+    assert "contributed no merged shard" in capsys.readouterr().err
+
+
+def test_merged_identity_is_the_bound_shards(tmp_path):
+    rc, out = _run_merge(tmp_path, _valid_shards(tmp_path))
+    assert rc == 0
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    written = json.loads(spec_path.read_text())
+    assert written["runtime_model_spec"] == RUN_SPEC
+    sources = written["runtime_config"]["eval_shard_merge"]["sources"]
+    assert [(s["shard"], s["run_id"]) for s in sources] == [
+        ("0/2", "run-0/2"),
+        ("1/2", "run-1/2"),
+    ]
+
+
+# --- review on #5424: specs exactly as run.py writes them ---------------------
+# run.py's populate_model_spec_cli_args copies the whole run config into the
+# model spec's legacy cli_args, eval_shard included, so two valid shards'
+# runtime_model_spec differ at cli_args.eval_shard. Comparing whole specs
+# refused every real merge. These specs are produced by run.py's own sequence
+# (catalog spec, RuntimeConfig, apply_overrides, populate_model_spec_cli_args,
+# run_id, RuntimeConfig.to_json), not hand-built.
+
+REAL_MODEL, REAL_DEVICE = "meta-llama/Llama-3.2-1B", "n150"
+
+
+def _run_py_shard(root: Path, index: int, count: int):
+    """A shard of REAL_MODEL as run.py writes it: shard record + runtime spec."""
+    from llm_module.eval_command import _shard_provenance
+    from run import populate_model_spec_cli_args
+    from workflows.model_spec import get_runtime_model_spec
+    from workflows.runtime_config import RuntimeConfig
+
+    model_spec, impl, engine = get_runtime_model_spec(
+        model=REAL_MODEL, device=REAL_DEVICE
+    )
+    config = RuntimeConfig(
+        model=REAL_MODEL,
+        workflow="evals",
+        device=REAL_DEVICE,
+        impl=impl,
+        engine=engine,
+        docker_server=True,
+        dev_mode=True,
+        ci_mode=True,
+        eval_tasks=TASK,
+        eval_shard=f"{index}/{count}",
+    )
+    model_spec.apply_overrides(config)  # resolve_runtime
+    populate_model_spec_cli_args(model_spec, config)
+    config.runtime_model_spec = model_spec.get_serialized_dict()
+    config.run_id = f"2026-10-19_00-00-0{index}_{model_spec.model_id}_evals_{index}"
+    prov = _shard_provenance(
+        model_spec, model_spec.device_type, ["lm_eval", "--tasks", TASK], "out"
+    )
+    shard_dir = _write_shard(
+        root,
+        index,
+        count,
+        _ifeval_plan(),
+        prov=prov,
+        run_id=config.run_id,
+        model=REAL_MODEL,
+    )
+    config.to_json(
+        model_spec,
+        f"2026-10-19_00-00-0{index}",
+        model_spec.model_id,
+        str(shard_dir / "runtime_model_specs"),
+    )
+    return shard_dir
+
+
+def _diff_paths(a, b, prefix=()):
+    if isinstance(a, dict) and isinstance(b, dict):
+        for key in sorted(set(a) | set(b)):
+            yield from _diff_paths(a.get(key), b.get(key), prefix + (key,))
+    elif a != b:
+        yield ".".join(map(str, prefix))
+
+
+def test_run_py_shard_specs_differ_only_in_per_shard_keys(tmp_path):
+    # What makes the review's case: the only per-shard values run.py writes
+    # are the run config's eval_shard / run_id and the cli_args copy of
+    # eval_shard -- nothing else in the spec carries a shard's identity.
+    dirs = [_run_py_shard(tmp_path, i, 2) for i in range(2)]
+    docs = [
+        json.loads(next(d.rglob("runtime_model_spec_*.json")).read_text()) for d in dirs
+    ]
+    assert sorted(_diff_paths(*docs)) == [
+        "runtime_config.eval_shard",
+        "runtime_config.run_id",
+        "runtime_model_spec.cli_args.eval_shard",
+    ]
+
+
+def test_merge_accepts_valid_run_py_shards(tmp_path):
+    dirs = [_run_py_shard(tmp_path, i, 2) for i in range(2)]
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", REAL_MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    assert rc in (0, 1)  # graded; 2 would be the refusal the review found
+    (spec_path,) = (out / "runtime_model_specs").glob("runtime_model_spec_*.json")
+    written = json.loads(spec_path.read_text())
+    shard0 = json.loads(next(dirs[0].rglob("runtime_model_spec_*.json")).read_text())
+    # No shard's id survives in the merged spec, in either copy of the config.
+    assert written["runtime_config"]["eval_shard"] is None
+    assert written["runtime_config"]["run_id"] is None
+    assert written["runtime_model_spec"]["cli_args"]["eval_shard"] is None
+    assert sorted(
+        _diff_paths(shard0["runtime_model_spec"], written["runtime_model_spec"])
+    ) == ["cli_args.eval_shard"]
+    assert [
+        s["run_id"] for s in written["runtime_config"]["eval_shard_merge"]["sources"]
+    ] == [
+        json.loads(next(d.rglob("runtime_model_spec_*.json")).read_text())[
+            "runtime_config"
+        ]["run_id"]
+        for d in dirs
+    ]
+    assert list((out / "reports_output" / "evals" / "data").glob("report_data_*.json"))
+
+
+def test_merge_still_refuses_run_py_shards_of_another_build(tmp_path, capsys):
+    # The cli_args normalization drops only the per-shard keys: a shard whose
+    # cli_args differ elsewhere (here another override image) is still refused.
+    dirs = [_run_py_shard(tmp_path, i, 2) for i in range(2)]
+    path = next(dirs[1].rglob("runtime_model_spec_*.json"))
+    doc = json.loads(path.read_text())
+    doc["runtime_model_spec"]["cli_args"]["override_docker_image"] = "other-img"
+    path.write_text(json.dumps(doc))
+    rc = merge_cli.main(
+        [
+            "--model",
+            REAL_MODEL,
+            "--task",
+            TASK,
+            "--out",
+            str(tmp_path / "m"),
+            *map(str, dirs),
+        ]
+    )
+    assert rc == 2
+    assert "runtime model spec differs" in capsys.readouterr().err

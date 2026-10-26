@@ -42,20 +42,15 @@ def setup_runner_environment(
         get_telemetry_client()
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-    # Add MPI rank suffix to the cache path to avoid conflicts between ranks when JiT compiling.
-    mpi_rank = os.environ.get("OMPI_COMM_WORLD_RANK")
-    rank_suffix = f"_rank{mpi_rank}" if mpi_rank is not None else ""
-    os.environ["TT_METAL_CACHE"] = (
-        f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}{rank_suffix}"
-    )
 
     _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {
         ModelRunners.TT_WHISPER.value,
         ModelRunners.TT_SPEECHT5_TTS.value,
-        # Training runners init a tt-metal device directly (via torch-xla). On a
-        # single Blackhole chip of a P300 board, tt-metal otherwise selects the
-        # CUSTOM cluster type and asserts that a fabric mesh graph descriptor
-        # path is set. Providing the BH mesh descriptor avoids that.
+        # Training runners init a tt-metal device directly (via torch-xla or
+        # tt-crank). On a single Blackhole chip of a P300 board, tt-metal
+        # otherwise selects the CUSTOM cluster type and asserts that a fabric
+        # mesh graph descriptor path is set. Providing the BH mesh descriptor
+        # avoids that.
         ModelRunners.TRAINING_LORA.value,
         ModelRunners.TRAINER_TRAINING_LORA.value,
     }

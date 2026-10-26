@@ -371,7 +371,7 @@ def parse_arguments():
         type=str,
         choices=["vllm", "genai", "aiperf", "guidellm"],
         default="vllm",
-        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
+        help="Benchmarking tool to use: 'vllm' for vLLM `vllm bench serve` (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
         "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
     )
@@ -557,7 +557,8 @@ def parse_arguments():
         "--agentic-benchmark",
         type=str,
         default=None,
-        help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
+        help="Comma-separated agentic benchmark(s) to run under --workflow agentic, "
+        "or by the agentic child of --workflow release. "
         "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
         "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
         "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
@@ -893,10 +894,10 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
-    if args.agentic_benchmark and args.workflow != "agentic":
+    if args.agentic_benchmark and args.workflow not in ("agentic", "release"):
         parser.error(
             "--agentic-benchmark selects which agentic eval(s) to run and requires "
-            f"--workflow agentic (got --workflow {args.workflow})."
+            f"--workflow agentic or --workflow release (got --workflow {args.workflow})."
         )
 
     if args.repeat_evals is not None and args.repeat_evals < 1:

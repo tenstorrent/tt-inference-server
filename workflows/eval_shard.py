@@ -208,8 +208,14 @@ def shard_record(
     index: int,
     count: int,
     provenance: Mapping[str, Any],
+    run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The per-shard record written next to the shard's lm-eval output."""
+    """The per-shard record written next to the shard's lm-eval output.
+
+    ``run_id`` is the run.py run (``RuntimeConfig.run_id``) that wrote it: the
+    merge binds each shard's runtime model spec to its results by it. It is not
+    provenance (every shard has its own) and is not compared across shards.
+    """
     samples = shard_samples(plan, index, count)
     expected = {leaf: leaf_doc_ids(info) for leaf, info in plan["leaves"].items()}
     return {
@@ -231,6 +237,7 @@ def shard_record(
             leaf: len(ids) for leaf, ids in sorted(expected.items())
         },
         "provenance": dict(provenance),
+        "run_id": run_id,
     }
 
 

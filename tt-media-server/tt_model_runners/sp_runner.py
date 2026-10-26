@@ -47,8 +47,6 @@ from utils.decorators import log_execution_time
 # SPRunner.warmup() is blocked on the pipeline's ack.
 _WARMUP_HEARTBEAT_SECONDS: float = 7.0
 
-DEFAULT_VIDEO_HEIGHT = 480
-DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
@@ -734,9 +732,11 @@ class SPRunner(BaseDeviceRunner):
             negative_prompt=request.negative_prompt or "",
             num_inference_steps=request.num_inference_steps or 20,
             seed=int(request.seed or 0),
-            # `or DEFAULT`: these fields exist on the request and default to None.
-            height=getattr(request, "height", None) or DEFAULT_VIDEO_HEIGHT,
-            width=getattr(request, "width", None) or DEFAULT_VIDEO_WIDTH,
+            # 0 = unset canvas: MiniMax-H3 resolves it from aspect_ratio; other models
+            # take their size from the served config.
+            height=getattr(request, "height", None) or 0,
+            width=getattr(request, "width", None) or 0,
+            # `or DEFAULT`: this field exists on the request and defaults to None.
             num_frames=getattr(request, "num_frames", None) or DEFAULT_VIDEO_NUM_FRAMES,
             guidance_scale=getattr(
                 request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
@@ -749,7 +749,14 @@ class SPRunner(BaseDeviceRunner):
 
     @staticmethod
     def _write_image_side_file(request, task_id: str) -> str:
-        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs.
+        """Spill ``request.image_prompts`` (and the request fields the SHM
+        ``VideoRequest`` cannot carry: ``aspect_ratio``, ``duration``,
+        ``references``) to a JSON side-file on tmpfs.
+
+        Wire formats the runner peer accepts (``_read_image_prompts_side_file``):
+        a bare list of ``{"image", "frame_pos"}`` (i2v, nothing else set), or an
+        object with any of ``image_prompts`` / ``references`` / ``aspect_ratio`` /
+        ``duration``. Returns "" when there is nothing to send.
 
         Atomic publish: write to a temp file in the same directory and then
         ``os.rename`` to the final path. The runner peer never observes a
@@ -757,7 +764,41 @@ class SPRunner(BaseDeviceRunner):
         the fully-written JSON.
         """
         image_prompts = getattr(request, "image_prompts", None)
-        if not image_prompts:
+        references = getattr(request, "references", None)
+        # The SHM ``VideoRequest`` has no slot for ``aspect_ratio`` /
+        # ``duration``, so they ride in the side-file for EVERY task
+        # that sets them, not only ref2va. Without this a t2va/fl2va
+        # ``duration: 9`` was accepted (202) and the worker generated
+        # the 5 s default (quad1, 2026-09-05).
+        extras = {
+            key: value
+            for key, value in (
+                ("aspect_ratio", getattr(request, "aspect_ratio", None)),
+                ("duration", getattr(request, "duration", None)),
+            )
+            if value is not None
+        }
+        if references:
+            refs_payload = (
+                references.model_dump(exclude_none=True)
+                if hasattr(references, "model_dump")
+                else references
+            )
+            payload = {
+                "aspect_ratio": getattr(request, "aspect_ratio", None),
+                "duration": getattr(request, "duration", None),
+                "references": refs_payload,
+            }
+        elif image_prompts:
+            entries = [
+                {"image": entry.image, "frame_pos": entry.frame_pos}
+                for entry in image_prompts
+            ]
+            # A bare list stays the wire format when nothing else rides along.
+            payload = {**extras, "image_prompts": entries} if extras else entries
+        elif extras:
+            payload = extras
+        else:
             return ""
 
         final_path = image_prompts_path(task_id)
@@ -768,11 +809,6 @@ class SPRunner(BaseDeviceRunner):
                 f"({path_bytes} > {MAX_IMAGE_PATH_LEN} bytes); "
                 f"reduce TT_VIDEO_FILE_DIR length"
             )
-
-        payload = [
-            {"image": entry.image, "frame_pos": entry.frame_pos}
-            for entry in image_prompts
-        ]
         fd, tmp_path = tempfile.mkstemp(
             prefix=f"tt_img_{task_id}.",
             suffix=".json.tmp",

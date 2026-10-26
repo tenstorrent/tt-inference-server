@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from typing import List
 
@@ -25,6 +26,17 @@ _STANDARD_EVAL_VENVS = frozenset(
         WorkflowVenvType.EVALS_VISION,
     }
 )
+
+
+def _apply_profile_request_body_overrides(tasks: list, model_spec) -> list:
+    """Apply request bodies owned by the resolved model profile."""
+    overrides = model_spec.metadata.get("eval_task_request_body_overrides", {})
+    return [
+        replace(task, request_body=overrides[task.task_name])
+        if task.task_name in overrides
+        else task
+        for task in tasks
+    ]
 
 
 def eval_task_names(runtime_config):
@@ -127,6 +139,8 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
 
     if device is not None:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
+
+    standard = _apply_profile_request_body_overrides(standard, model_spec)
 
     return _select_tasks(standard, runtime_config)
 
