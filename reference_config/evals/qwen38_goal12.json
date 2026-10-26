@@ -1,5 +1,5 @@
 {
-  "phase": "b32-shared512-candidate",
+  "phase": "b32-shared256-candidate",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
