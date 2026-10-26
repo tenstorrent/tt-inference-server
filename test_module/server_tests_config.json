@@ -103,7 +103,8 @@
       "allenai/Olmo-3.1-32B-Instruct",
       "mistralai/Devstral-Small-2-24B-Instruct-2512",
       "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-      "IFM/K2-Horizon-MoVA-36B-A4B"
+      "IFM/K2-Horizon-MoVA-36B-A4B",
+      "IFM/K2-Horizon-7B"
     ]
   },
   "available_markers": {
@@ -1110,6 +1111,16 @@
       "id_name": "IFM--K2-Horizon-MoVA-36B-A4B",
       "weights": [
         "IFM/K2-Horizon-MoVA-36B-A4B"
+      ]
+    },
+    "IFM/K2-Horizon-7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "IFM--K2-Horizon-7B",
+      "weights": [
+        "IFM/K2-Horizon-7B"
       ]
     }
   },
