@@ -13161,20 +13161,20 @@ _eval_config_list = [
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse M3's GPQA, Terminal-Bench 4.0 and AutomationBench tasks (GPQA scores
-# are M3 references until M3.1-Flash has its own; AutomationBench has none:
-# the card's 62.8 has no stated harness or reasoning effort).
+# reuse M3's GPQA, Terminal-Bench 4.0 and AutomationBench task definitions. No
+# targets yet: the M3.1-Flash eval set and its GPU reference runs aren't
+# confirmed, so scores are measurements only (no published, GPU or limit-mode
+# references; the card's AutomationBench 62.8 states no harness or effort).
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
-    if task.task_name != "terminal_bench_4":
-        return task
-    # AA runs TB 4.0 with mini-swe-agent, 3 repeats, on all 66 tasks; we run
-    # terminus-2 once on 63, so this is a reference point, not a like-for-like.
     return replace(
         task,
         score=replace(
             task.score,
-            published_score=25.8,
-            published_score_ref="https://openrouter.ai/minimax/minimax-m3.1-flash:free#benchmarks",
+            published_score=None,
+            published_score_ref=None,
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            mode_reference_scores={},
         ),
     )
 
