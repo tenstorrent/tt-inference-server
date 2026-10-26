@@ -544,6 +544,28 @@ def _docker_ipc_args(model_spec) -> List[str]:
     return ["--ipc", "host"]
 
 
+def _write_qwen38_audit_source(setup_config, model_spec, container_name, docker_env_vars):
+    """Persist only generated evidence paths for post-owned-cleanup export."""
+    owner = os.environ.get("TT_AGENTIC_CONTAINER_OWNER")
+    runner = os.environ.get("RUNNER_NAME")
+    if not owner or not runner or model_spec.impl.impl_id != "qwen38_autoport":
+        return
+    if setup_config.host_model_volume_root:
+        return  # Final named-volume exporter must not guess a host-bind source.
+    suffix = runner.rsplit("-", 1)[-1]
+    names = [Path(docker_env_vars[k]).name for k in ("QWEN38_HTTP_AUDIT", "QWEN38_SERVING_EVENTS")]
+    receipt = {
+        "schema_version": 1, "source_run_id": int(os.environ["GITHUB_RUN_ID"]),
+        "source_owner": owner, "host_aliases": ["120-qb2-" + suffix, "qb2-120-" + suffix],
+        "container_name": container_name, "volume": setup_config.docker_volume_name,
+        "image": model_spec.docker_image, "filenames": names,
+        "source": "generate_docker_run_command exact generated audit paths; launch intent, not proof of execution",
+    }
+    directory = get_default_workflow_root_log_dir() / "qwen38_audit_sources"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / (container_name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
+
+
 def _qwen38_audit_mount(repo_root_path, model_spec, dev_mode):
     """Bind the single published audit module onto the compatible immutable image.
 
@@ -794,6 +816,9 @@ def generate_docker_run_command(
         # fmt: on
 
     docker_command += _qwen38_audit_mount(repo_root_path, model_spec, runtime_config.dev_mode)
+
+    if setup_config and "QWEN38_HTTP_AUDIT" in docker_env_vars:
+        _write_qwen38_audit_source(setup_config, model_spec, container_name, docker_env_vars)
 
     for key, value in docker_env_vars.items():
         if value:
