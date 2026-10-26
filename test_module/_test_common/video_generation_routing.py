@@ -28,7 +28,7 @@ I2V_EVAL_DATASETS_DIR = Path("test_fixtures") / "datasets"
 I2V_EVAL_PAIRS_DIR = I2V_EVAL_DATASETS_DIR / "coco_i2v"
 I2V_EVAL_PAIR_SETS = {"coco_i2v": 5, "vbench_i2v": 15}
 I2V_EVAL_PAIRS_ENV = "I2V_EVAL_PAIRS"
-DEFAULT_I2V_EVAL_PAIRS = "coco_i2v"
+DEFAULT_I2V_EVAL_PAIRS = "vbench_i2v"
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 
