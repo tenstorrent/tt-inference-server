@@ -22,7 +22,7 @@ def collect(allocator):
     """Return host route/address/DNS data only after verified helper cleanup."""
     allocator.local_daemon()
     daemon=allocator.record['daemon_id']
-    ids=allocator.command(['docker','ps','-q','--no-trunc','--filter','label='+OWNER+'='+allocator.labels[OWNER]]).stdout.split()
+    ids=allocator.command(['docker','ps','-q','--no-trunc','--filter','label='+OWNER+'='+allocator.labels[OWNER],'--filter','name=tt-inference-server-']).stdout.split()
     servers=[]
     def inspect(ident):
         response=allocator.command(['docker','inspect','--format',FORMAT,ident],check=False)

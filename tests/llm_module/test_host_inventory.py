@@ -104,3 +104,18 @@ def test_allocator_unions_host_provider_and_collector_without_pid1_assumption(tm
     monkeypatch.setattr(provider,'collect',lambda a:{'routes':[{'dst':'172.20.0.0/16'}],'addresses':[{'ifname':'ens1','addr_info':[{'family':'inet','local':'192.168.2.1','prefixlen':24}]}],'dns':['192.168.3.1'],'model_addresses':['192.168.4.1']})
     excluded={str(n)for n in a.inventory()}
     assert {'10.1.0.0/16','10.2.0.0/24','10.3.0.1/32','10.4.0.1/32','172.20.0.0/16','192.168.2.0/24','192.168.3.1/32','192.168.4.1/32'}<=excluded
+
+
+def test_server_inventory_filters_out_disappearing_helpers(tmp_path):
+    class Interleaved(FakeAllocator):
+        def command(self,args,check=True):
+            if args[:2]==['docker','ps']:
+                # A helper is listed only if the caller omitted the server filter.
+                if 'name=tt-inference-server-'not in args:
+                    return SimpleNamespace(stdout=self.server['id']+'\n'+'d'*64,stderr='',returncode=0)
+            if args[:2]==['docker','inspect']and args[-1]=='d'*64:
+                return SimpleNamespace(stdout='',stderr='No such object',returncode=1)
+            return super().command(args,check)
+    a=Interleaved(tmp_path)
+    assert provider.collect(a)['routes']
+    assert a.helper is None

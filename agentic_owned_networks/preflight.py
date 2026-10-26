@@ -58,7 +58,7 @@ def run_once(config):
             raise RuntimeError('Existing network proof is incomplete/failed or belongs to another owner')
         def command(args):
             return subprocess.run(args,capture_output=True,text=True,timeout=30,check=True).stdout
-        ids=command(['docker','ps','-q','--no-trunc','--filter','label='+OWNER+'='+owner]).split()
+        ids=command(['docker','ps','-q','--no-trunc','--filter','label='+OWNER+'='+owner,'--filter','name=tt-inference-server-']).split()
         servers=[]
         fmt='{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Image}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}}}'
         for ident in ids:

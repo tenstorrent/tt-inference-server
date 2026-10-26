@@ -21,6 +21,10 @@ class OwnershipError(ValueError):
     """Not RuntimeError: Harbor must not swallow failed ownership checks."""
 
 
+class InventoryChanged(ValueError):
+    """A listed network vanished; discard the snapshot and rescan."""
+
+
 def checked_owner(owner):
     if not isinstance(owner,str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',owner):
         raise ValueError('Owned Docker mode requires a validated CI owner')
@@ -111,6 +115,13 @@ class Allocator:
         return objects[0]
 
     def inventory(self, skip=None):
+        for retry in range(3):
+            try:return self._inventory_snapshot(skip)
+            except InventoryChanged:
+                if retry==2:raise
+        raise AssertionError('Unreachable inventory retry state')
+
+    def _inventory_snapshot(self, skip=None):
         exclusions=[]
         def add(value):
             if not value:return
@@ -119,7 +130,7 @@ class Allocator:
         ids=self.command(['docker','network','ls','-q','--no-trunc']).stdout.split()
         for ident in ids:
             network=self.inspect(ident)
-            if network is None:raise ValueError('Network inventory changed; retry whole attempt')
+            if network is None:raise InventoryChanged('Listed network disappeared; discard whole inventory')
             if ident==skip:continue
             for config in network.get('IPAM',{}).get('Config')or[]:add(config.get('Subnet'))
         bridge='br-'+skip[:12]if skip else None

@@ -160,3 +160,36 @@ def test_unknown_create_and_foreign_same_name_never_claim_removed(tmp_path):
     foreign=allocator(tmp_path,daemon,1);foreign.project=a.project;foreign.record['network_name']=a.record['network_name'];foreign.acquire()
     with pytest.raises(OwnershipError):a.reconcile_created_identity()
     assert a.record['network_id']is None and len(daemon.networks)==1
+
+
+def test_disappeared_network_rescans_whole_snapshot_bounded(tmp_path,monkeypatch):
+    from agentic_owned_networks.allocator import InventoryChanged
+    a=Allocator({OWNER:'owner',MANAGED:POLICY,ATTEMPT:'a',JOB:'j'},'p',tmp_path/'a.json','localhost')
+    calls=[]
+    def snapshot(skip):
+        calls.append(skip)
+        if len(calls)==1:raise InventoryChanged('Confirmed disappearance')
+        return [ip.ip_network('10.0.0.0/8')]
+    monkeypatch.setattr(a,'_inventory_snapshot',snapshot)
+    assert a.inventory()==[ip.ip_network('10.0.0.0/8')]and len(calls)==2
+    calls.clear()
+    def unstable(skip):calls.append(skip);raise InventoryChanged('Confirmed disappearance')
+    monkeypatch.setattr(a,'_inventory_snapshot',unstable)
+    with pytest.raises(InventoryChanged):a.inventory()
+    assert len(calls)==3
+    calls.clear()
+    def invalid(skip):calls.append(skip);raise ValueError('Incomplete routes')
+    monkeypatch.setattr(a,'_inventory_snapshot',invalid)
+    with pytest.raises(ValueError,match='Incomplete routes'):a.inventory()
+    assert len(calls)==1
+
+
+def test_missing_network_is_distinguished_from_inspection_failure(tmp_path):
+    from agentic_owned_networks.allocator import InventoryChanged
+    a=Allocator({OWNER:'owner',MANAGED:POLICY,ATTEMPT:'a',JOB:'j'},'p',tmp_path/'a.json','localhost')
+    a.command=lambda args:SimpleNamespace(stdout='a'*64)
+    a.inspect=lambda ident:None
+    with pytest.raises(InventoryChanged):a._inventory_snapshot()
+    def unavailable(ident):raise RuntimeError('inspection unavailable')
+    a.inspect=unavailable
+    with pytest.raises(RuntimeError):a.inventory()
