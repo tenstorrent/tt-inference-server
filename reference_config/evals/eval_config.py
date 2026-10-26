@@ -9691,6 +9691,14 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                # The cookbook task yaml sets until: [] and lm-eval 0.4.4 sends it
+                # verbatim as "stop"; the remote dynamo frontend rejects an empty
+                # stop array (HTTP 400). <|eot_id|> is where generation ends anyway.
+                device_overrides={
+                    "SUPER_CLUSTER": {
+                        "gen_kwargs": {"stream": "False", "until": "<|eot_id|>"},
+                    },
+                },
                 score=EvalTaskScore(
                     published_score=80.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
@@ -9712,6 +9720,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                device_overrides={
+                    "SUPER_CLUSTER": {
+                        "gen_kwargs": {"stream": "False", "until": "<|eot_id|>"},
+                    },
+                },
                 score=EvalTaskScore(
                     published_score=30.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
