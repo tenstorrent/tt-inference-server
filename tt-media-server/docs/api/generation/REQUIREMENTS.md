@@ -116,9 +116,9 @@ there.
   the runner serves and reports 1088.
 - **One served shape**: 153 frames at 25 fps (6.12 s), the only shape the
   traces are captured for. fps sets the audio latent length and the A/V
-  cross-PE, so it cannot vary per request; the old API's `fps`, `num_frames`,
-  `height` and `width` (accepted only at the served values) have no
-  equivalent here.
+  cross-PE, so it cannot vary per request: the spec's `fps` allows only 25.
+  The old API's `num_frames`, `height` and `width` (accepted only at the
+  served values) have no equivalent here.
 - **Output audio**: AAC, reported in `VideoOutput.audio` with its actual
   sample rate.
 

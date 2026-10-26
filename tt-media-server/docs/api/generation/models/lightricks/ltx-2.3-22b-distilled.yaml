@@ -98,14 +98,26 @@ components:
           enum: [6]
           default: 6
           description: |
-            Seconds. 6 s is 153 frames at 25 fps (6.12 s): the frame count must
-            be 8k + 1. Each output reports its exact `duration`, `num_frames`
-            and `fps`.
+            Seconds. 6 s at 25 fps is 153 frames (6.12 s): the frame count must
+            be 8k + 1. Each output reports its exact `duration` and
+            `num_frames`.
 
             **Elsewhere:** LTX API `duration` (6–20 s) and `fps` (24, 25, 48,
             50); fal (Lightricks-hosted) `duration` (6, 8, 10) and `fps`; fal
             open-weights `num_frames` and `fps`; tt-media-server today
             `duration`, `num_frames` and `fps`, each accepted only at the served
             value.
+        fps:
+          type: integer
+          enum: [25]
+          default: 25
+          description: |
+            Frames per second. Only 25 for now: it sets the audio length and the
+            audio-video alignment, both fixed when the pipeline starts.
+
+            **Elsewhere:** LTX API `fps` (24, 25, 48, 50; default 24), fal
+            (Lightricks-hosted) `fps` (same values, default 25), fal
+            open-weights `fps` (1–60); tt-media-server today `fps`, accepted
+            only at 25.
         seed:
           $ref: "../../common.yaml#/components/schemas/Seed"
