@@ -2410,6 +2410,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 16  # 16 users: 4 mesh rows x 4 users per row
       max_context: 262144  # per request (prompt + output) = max_model_len
+      max_tokens_all_users_override: 4194304  # total KV token budget across users = max_concurrency x max_context (each user owns a full max_context slot); without it the budget defaults to ONE max_context and benchmark sweep points above max_context/2 collapse to concurrency 1
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
@@ -2470,6 +2471,7 @@ templates:
       max_concurrency: 4  # 4 users: 4 mesh rows x 1 users per row
       max_context: 1048576  # per request (prompt + output) = max_model_len
       default_impl: false  # B=4 / 1M (previous production default; select with `--impl deepseek-v41-flash-1m`)
+      max_tokens_all_users_override: 4194304  # total KV token budget across users = max_concurrency x max_context (each user owns a full max_context slot); without it the budget defaults to ONE max_context and benchmark sweep points above max_context/2 collapse to concurrency 1
       tensor_cache_timeout: 7200.0
       env_vars:
         HF_MODEL: deepseek-ai/DeepSeek-V4.1-Flash

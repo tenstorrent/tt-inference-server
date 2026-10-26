@@ -138,7 +138,21 @@ MODEL_EXTRA_ISL_OSL_PAIRS = {
         (393216, 128),  # 384K
         (524288 - 128, 128),  # 512K
     ],
+    # 1M-context B=4 (and 256K B=16) autoport: extend the sweep to the full window.
+    # Near-max pairs (isl + osl == max_context for the 1M spec); the 256K-context
+    # default spec keeps only the 256K point, the others are filtered by max_context.
+    # Needs the spec's max_tokens_all_users_override (max_concurrency x max_context)
+    # so these points run at full concurrency (one full-context user per slot).
+    "DeepSeek-V4.1-Flash": [
+        (262144 - 128, 128),  # 256K
+        (524288 - 128, 128),  # 512K
+        (1048576 - 128, 128),  # 1M
+    ],
 }
+# Models whose long sweep points need more requests than get_num_prompts gives
+# (1x concurrency above 16K ISL): floor the prompt count of every concurrency > 1
+# point at this multiple of the spec's max_concurrency (2x = two waves of users).
+MODEL_MIN_NUM_PROMPTS_BATCH_MULTIPLE = {"DeepSeek-V4.1-Flash": 2}
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -664,6 +678,11 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             bench_concurrencies = powers_of_two_up_to(model_max_concurrency)
     sweep_min_num_prompts = 0
     text_isl_osl_pairs += MODEL_EXTRA_ISL_OSL_PAIRS.get(model_spec.model_name, [])
+    if model_spec.model_name in MODEL_MIN_NUM_PROMPTS_BATCH_MULTIPLE:
+        sweep_min_num_prompts = (
+            MODEL_MIN_NUM_PROMPTS_BATCH_MULTIPLE[model_spec.model_name]
+            * model_max_concurrency
+        )
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (
