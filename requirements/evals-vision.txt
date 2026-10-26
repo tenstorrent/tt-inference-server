@@ -9,7 +9,13 @@
 
 -c constraints.txt
 
-git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
+# The [audio] extra (editdistance, zhconv, librosa, soundfile) is what the fleurs /
+# librispeech tasks and HF Audio-column decoding need; the TT audio client plugin
+# (llm_module/lmms_plugins) runs in this venv.
+lmms-eval[audio] @ git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
+# datasets 4+ decodes Audio columns through torchcodec, which needs FFmpeg shared
+# libraries on the host; 3.x decodes them with soundfile from the extra above.
+datasets<4
 pyjwt
 pillow
 qwen_vl_utils

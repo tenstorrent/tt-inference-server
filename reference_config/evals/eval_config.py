@@ -665,6 +665,19 @@ _CARD_EVALS_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "card_evals"
 )
 
+# lmms-eval tasks of the TT plugin package (llm_module/lmms_plugins): MMMU-Pro and
+# MATH-Vision in a fixed shuffled order, HLE and OmniDocBench v1.5. lmms-eval v0.4.1
+# builds its task index before it adds the LMMS_EVAL_PLUGINS task directories, so
+# the plugin's tasks only resolve through --include_path. Absolute, like
+# _K2_HORIZON_LM_EVAL_TASKS.
+_TT_LMMS_PLUGIN_TASKS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "llm_module",
+    "lmms_plugins",
+    "tt_lmms_plugins",
+    "tasks",
+)
+
 # Gemma 4 sampling (model card / HF README) for the gemma-4-31B-it chat tasks; top_k
 # stays at 20 (not the card's 64) so it fits the QB2 device sampler's 1..32 range.
 _GEMMA4_SAMPLING_GEN_KWARGS = {
@@ -738,6 +751,57 @@ def _gemma4_31b_tau2_task(domain: str, n_tasks: int, ci_tasks: List[str]) -> Eva
             },
         ),
         limit_samples_map={EvalLimitMode.SMOKE_TEST: 1},
+    )
+
+
+def _gemma4_31b_lmms_task(
+    task_name: str,
+    published_score: float,
+    published_score_ref: str,
+    result_key: str,
+    unit: str,
+    enable_thinking: bool,
+    gen_kwargs: Dict[str, str],
+    ci_limit: int,
+) -> EvalTask:
+    """A Gemma 4 card eval with image input, run through lmms-eval on the TT
+    client (llm_module/lmms_plugins), from the plugin's task directory.
+    A server that serves text only rejects every request that carries an
+    image, so those documents score as empty answers. ``unit`` "percent" for a
+    0-1 metric, anything else for one already in points."""
+    return EvalTask(
+        task_name=task_name,
+        eval_class="openai_compatible_tt",
+        priority="should",
+        workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+        include_path=_TT_LMMS_PLUGIN_TASKS,
+        apply_chat_template=False,
+        use_chat_api=True,
+        # One request at a time on the single-user gemma4_31b_qb2 server (the
+        # device's max_concurrency clamps both anyway).
+        batch_size=1,
+        max_concurrent=1,
+        score=EvalTaskScore(
+            published_score=published_score,
+            published_score_ref=published_score_ref,
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": [result_key], "unit": unit},
+        ),
+        model_kwargs={
+            # One attempt: a rejected image request fails at once instead of
+            # sleeping between retries.
+            "max_retries": 1,
+            "request_timeout": 3600,
+            "enable_thinking": "true" if enable_thinking else "false",
+        },
+        gen_kwargs=gen_kwargs,
+        limit_samples_map={
+            EvalLimitMode.CI_NIGHTLY: ci_limit,
+            EvalLimitMode.CI_LONG: ci_limit,
+            EvalLimitMode.SMOKE_TEST: 2,
+        },
     )
 
 
@@ -12456,6 +12520,56 @@ _eval_config_list = [
                     "mms-issue-airplane-mode-on-break-app-both-permissions-persona-hard",
                     "mobile-data-issue-bad-network-preference-bad-vpn-data-mode-off-data-saver-mode-on-data-usage-exceeded-user-abroad-roaming-enabled-off-persona-easy",
                 ],
+            ),
+            # ---- Model-card evals with image input (lmms-eval). The
+            # gemma4_31b_qb2 server is text only, so these run but score low
+            # there until it serves images. CI sizes assume ~38 tok/s single-user
+            # decode (a few hours each once images are served).
+            # MMMU-Pro, standard (10 options) CoT, thinking on.
+            _gemma4_31b_lmms_task(
+                "mmmu_pro_standard_cot_shuffled",
+                published_score=76.9,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                result_key="mmmu_acc,none",
+                unit="percent",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "16384"},
+                ci_limit=120,
+            ),
+            # MATH-Vision test, rule-based boxed-answer scoring, thinking on.
+            _gemma4_31b_lmms_task(
+                "mathvision_test_shuffled",
+                published_score=85.6,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                result_key="mathvision_standard_eval,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=120,
+            ),
+            # OmniDocBench v1.5 page-to-Markdown; the card's 0.131 overall edit
+            # distance is graded as (1 - 0.131) * 100 = 86.9 edit score.
+            _gemma4_31b_lmms_task(
+                "omnidocbench_v15",
+                published_score=86.9,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4 (overall edit distance 0.131)",
+                result_key="omnidocbench_edit_score,none",
+                unit="points",
+                enable_thinking=False,
+                gen_kwargs={"temperature": "0", "max_new_tokens": "16384"},
+                ci_limit=100,
+            ),
+            # HLE without tools: text and image questions, judged by the served
+            # model (thinking off) with the official judge prompt.
+            _gemma4_31b_lmms_task(
+                "hle_no_tools",
+                published_score=19.5,
+                published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                result_key="hle_accuracy,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=40,
             ),
         ],
     ),
