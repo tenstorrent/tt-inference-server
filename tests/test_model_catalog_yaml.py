@@ -519,11 +519,12 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "weights, runner, adapter_file, served, skipped",
+    "weights, runner, adapter_repo, adapter_file, served, skipped",
     [
         (
             "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V",
             "tt-minimax-h3-fl2va-lightx2v",
+            "lightx2v/Minimax-h3-Turbo",
             "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors",
             "transformer",
             "transformer_ref",
@@ -531,14 +532,31 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
         (
             "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V",
             "tt-minimax-h3-ref2va-lightx2v",
+            "lightx2v/Minimax-h3-Turbo",
             "minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors",
+            "transformer_ref",
+            "transformer",
+        ),
+        (
+            "MiniMaxAI/MiniMax-H3-FL2VA-HyperFlow",
+            "tt-minimax-h3-fl2va-hyperflow",
+            "VideoRebirthAI/hyperflow",
+            "minimax_h3_hyperflow_8step_v1.0.safetensors",
+            "transformer",
+            "transformer_ref",
+        ),
+        (
+            "MiniMaxAI/MiniMax-H3-Ref2VA-HyperFlow",
+            "tt-minimax-h3-ref2va-hyperflow",
+            "VideoRebirthAI/hyperflow",
+            "minimax_h3_hyperflow_8step_v1.0.safetensors",
             "transformer_ref",
             "transformer",
         ),
     ],
 )
-def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
-    weights, runner, adapter_file, served, skipped
+def test_minimax_h3_adapter_dev_spec_serves_its_runner(
+    weights, runner, adapter_repo, adapter_file, served, skipped
 ):
     templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "video.yaml")
     template = next(t for t in templates if t.weights == [weights])
@@ -558,7 +576,7 @@ def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
 
     # The adapter path the runner reads is where setup_host puts the extra file.
     (adapter,) = spec.metadata["hf_extra_files"]
-    assert adapter["repo"] == "lightx2v/Minimax-h3-Turbo"
+    assert adapter["repo"] == adapter_repo
     assert adapter["filename"] == adapter_file
     assert env["MINIMAX_H3_LORA_PATH"] == (
         f"{weights_dir}/{adapter['local_subdir']}/{adapter['filename']}"

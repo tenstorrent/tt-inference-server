@@ -367,3 +367,114 @@ templates:
         ARCH_NAME: blackhole
         MESH_DEVICE: "(4, 8)"
   status: EXPERIMENTAL
+
+# MiniMax-H3 FL2VA with the HyperFlow 8-step adapter, on one Blackhole Galaxy. Same layout as the
+# FL2VA LightX2V entry; the adapter fixes its own 9-point grid and shifts 12/3, which the runner pins.
+- weights:
+    - MiniMaxAI/MiniMax-H3-FL2VA-HyperFlow
+  impl: tt_transformers
+  min_disk_gb: 300
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-fl2va-hyperflow
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA-HyperFlow
+    MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA-HyperFlow/hyperflow/minimax_h3_hyperflow_8step_v1.0.safetensors
+    MINIMAX_H3_VAE_OUTPUT: yuv420
+    # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
+    MINIMAX_H3_TOPOLOGY: linear
+    TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
+    VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
+  metadata:
+    MiniMaxAI/MiniMax-H3-FL2VA-HyperFlow:
+      hf_download_excludes:
+        - "FL2VA/*"
+        - "Ref2VA/*"
+        - "transformer_ref/*"
+        - "assets/*"
+        - "docs/*"
+        - "scripts/*"
+      hf_required_globs:
+        - "model_index.json"
+        - "transformer/config.json"
+        - "transformer/*.safetensors"
+        - "text_encoder/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "audio_vae/*"
+      hf_extra_files:
+        - repo: VideoRebirthAI/hyperflow
+          filename: minimax_h3_hyperflow_8step_v1.0.safetensors
+          local_subdir: hyperflow
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      # A cold boot compiles every warmup shape before /health answers: ~1.5 h for fl2va on a
+      # 4x8, longer for ref2va's bucket ladder. The readiness deadline is this plus 30 min.
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL
+
+# MiniMax-H3 Ref2VA with the same HyperFlow file, which also lists transformer_ref/ among its targets.
+- weights:
+    - MiniMaxAI/MiniMax-H3-Ref2VA-HyperFlow
+  impl: tt_transformers
+  min_disk_gb: 300
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-ref2va-hyperflow
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-HyperFlow
+    MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-HyperFlow/hyperflow/minimax_h3_hyperflow_8step_v1.0.safetensors
+    MINIMAX_H3_VAE_OUTPUT: yuv420
+    # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
+    MINIMAX_H3_TOPOLOGY: linear
+    TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
+    VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
+  metadata:
+    MiniMaxAI/MiniMax-H3-Ref2VA-HyperFlow:
+      hf_download_excludes:
+        - "FL2VA/*"
+        - "Ref2VA/*"
+        - "transformer/*"
+        - "assets/*"
+        - "docs/*"
+        - "scripts/*"
+      hf_required_globs:
+        - "model_index.json"
+        - "transformer_ref/config.json"
+        - "transformer_ref/*.safetensors"
+        - "text_encoder/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "audio_vae/*"
+      hf_extra_files:
+        - repo: VideoRebirthAI/hyperflow
+          filename: minimax_h3_hyperflow_8step_v1.0.safetensors
+          local_subdir: hyperflow
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      # A cold boot compiles every warmup shape before /health answers: ~1.5 h for fl2va on a
+      # 4x8, longer for ref2va's bucket ladder. The readiness deadline is this plus 30 min.
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL

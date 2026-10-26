@@ -1074,6 +1074,8 @@ class TestLTXShapeValidation:
         [
             ModelRunners.TT_MINIMAX_H3_T2VA,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+            ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW,
+            ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW,
         ],
     )
     @pytest.mark.parametrize(
@@ -1266,6 +1268,8 @@ class TestMiniMaxH3Admission:
             "MiniMax-H3-FastH3",
             "MiniMax-H3-FL2VA-LightX2V",
             "MiniMax-H3-Ref2VA-LightX2V",
+            "MiniMax-H3-FL2VA-HyperFlow",
+            "MiniMax-H3-Ref2VA-HyperFlow",
         ],
     )
     @patch("domain.video_generate_request.get_settings")

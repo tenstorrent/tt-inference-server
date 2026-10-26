@@ -50,12 +50,16 @@ VIDEO_INFERENCE_STEPS = {
     # Pinned by the runner and refused in the request; labels the rows only.
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
     "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
+    "MiniMaxAI/MiniMax-H3-FL2VA-HyperFlow": 8,
+    "MiniMaxAI/MiniMax-H3-Ref2VA-HyperFlow": 8,
 }
 # MiniMax-H3 rejects num_inference_steps and negative_prompt (422), and each deployment serves
 # one route, so H3 gets its own request shape. Keyed by the served model name (the MODEL env).
 MINIMAX_H3_SUBMIT_ENDPOINTS = {
     "MiniMax-H3-FL2VA-LightX2V": VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
     "MiniMax-H3-Ref2VA-LightX2V": "v1/videos/generations/ref2va",
+    "MiniMax-H3-FL2VA-HyperFlow": VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
+    "MiniMax-H3-Ref2VA-HyperFlow": "v1/videos/generations/ref2va",
 }
 MINIMAX_H3_DURATION_SECONDS = 5
 # 16:9; an explicit canvas keeps the clip shape independent of the keyframe's aspect ratio.
@@ -81,7 +85,7 @@ def _minimax_h3_payload(model_name: str, prompt: str, image_b64: str) -> dict:
             image_prompts=[{"image": image_b64, "frame_pos": 0}],
         )
     else:
-        # The Ref2VA adapter is 544p-trained; let the server pick the canvas for 16:9.
+        # Leave the canvas to the server; it resolves 16:9 for the deployed task.
         payload.update(aspect_ratio="16:9", references={"images": [{"b64": image_b64}]})
     return payload
 
