@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
-"""Scoring helpers of the lmms-eval card tasks in llm_module/lmms_plugins.
+"""Scoring helpers of the lmms-eval card tasks in llm_module/lmms_plugins, and
+the TT client's Wikipedia search tool.
 
 The task utils run inside the EVALS_VISION venv; the tests skip when its
 dependencies (scipy, loguru) are missing from the test environment.
@@ -154,3 +155,66 @@ def test_hle_prompt_and_empty_response(hle, monkeypatch):
     out = hle.process_results(doc, ["Exact Answer: 4"])["hle_accuracy"]
     assert out["correct"] is False and out["judge_failed"] is True
     assert hle.aggregate_accuracy([{"correct": True}, {"correct": False}]) == 50.0
+
+
+@pytest.fixture(scope="module")
+def search():
+    return _load("tt_search", "../search.py")
+
+
+@pytest.mark.parametrize(
+    "reply, request_",
+    [
+        ("SEARCH: boiling point of tungsten", ("SEARCH", "boiling point of tungsten")),
+        ("Let me look.\n**OPEN:** Tungsten  ", ("OPEN", "Tungsten")),
+        ("`SEARCH: x`", ("SEARCH", "x")),
+        ("Explanation: ...\nExact Answer: 5555 K\nConfidence: 80%", None),
+        ("SEARCH: x\nExact Answer: 4", None),  # a final answer wins
+        ("SEARCH:", None),
+        ("", None),
+    ],
+)
+def test_search_request_line(search, reply, request_):
+    assert search.find_request(reply) == request_
+
+
+def test_search_results_formatting(search, monkeypatch):
+    pages = [
+        {"index": 2, "title": "B", "extract": "second  page\n text"},
+        {"index": 1, "title": "A", "extract": "x" * 2000},
+    ]
+    monkeypatch.setattr(search, "_api", lambda params: {"query": {"pages": pages}})
+    out = search.run_request("SEARCH", "q")
+    assert out.startswith("Wikipedia results for: q\n\n1. A\n")
+    assert "2. B\nsecond page text" in out
+    assert "x" * (search.SUMMARY_CHARS + 1) not in out
+    monkeypatch.setattr(search, "_api", lambda params: {"query": {"pages": []}})
+    assert search.run_request("SEARCH", "q") == "No Wikipedia results for: q"
+
+
+def test_search_open_and_failure(search, monkeypatch):
+    page = {"title": "Tungsten", "extract": "y" * (search.ARTICLE_CHARS + 10)}
+    monkeypatch.setattr(search, "_api", lambda params: {"query": {"pages": [page]}})
+    out = search.run_request("OPEN", "tungsten")
+    assert out.startswith("Wikipedia article: Tungsten\n\n")
+    assert out.endswith("[... truncated]")
+    monkeypatch.setattr(
+        search, "_api", lambda params: {"query": {"pages": [{"missing": True}]}}
+    )
+    assert search.run_request("OPEN", "nope") == "No Wikipedia article titled: nope"
+
+    def boom(params):
+        raise OSError("network down")
+
+    monkeypatch.setattr(search, "_api", boom)
+    assert (
+        search.run_request("SEARCH", "q") == "The search request failed: network down"
+    )
+
+
+def test_hle_search_prompt(hle, monkeypatch):
+    monkeypatch.syspath_prepend(str(TASKS.parents[1]))
+    doc = {"question": "Q?", "answer_type": "multipleChoice"}
+    text = hle.doc_to_text_search(doc, {"search_rounds": 3})
+    assert text.startswith(hle.SYSTEM_MC)
+    assert "up to 3 times" in text and text.endswith("Q?")

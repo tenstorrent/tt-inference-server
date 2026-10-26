@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
-"""Humanity's Last Exam, no tools (centerforaisafety/hle's hle_eval protocol).
+"""Humanity's Last Exam (centerforaisafety/hle's hle_eval protocol), without
+tools and with a Wikipedia search tool.
 
 Each question goes out with the official answer-format instruction (exact
 answer or multiple choice) ahead of the question text, plus its image when it
@@ -10,6 +11,10 @@ model (the only model on the eval host) with thinking off, and its verdict is
 read from the prompt's "correct: yes|no" line rather than a JSON schema, which
 the TT samplers do not enforce. HLE_JUDGE_MODEL / HLE_JUDGE_BASE_URL /
 HLE_JUDGE_API_KEY point it at another OpenAI-compatible judge.
+
+hle_with_search adds the search tool's instructions (tt_lmms_plugins.search)
+to the prompt; the TT client's ``search_rounds`` model arg runs the tool turns,
+and the judge sees only the final reply.
 """
 
 import base64
@@ -88,6 +93,17 @@ def doc_to_text(doc, lmms_eval_specific_kwargs=None):
         SYSTEM_MC if doc["answer_type"] == "multipleChoice" else SYSTEM_EXACT_ANSWER
     )
     return f"{system}\n\n{doc['question']}"
+
+
+def doc_to_text_search(doc, lmms_eval_specific_kwargs=None):
+    from tt_lmms_plugins.search import INSTRUCTIONS
+
+    rounds = (lmms_eval_specific_kwargs or {}).get("search_rounds", 5)
+    system = (
+        SYSTEM_MC if doc["answer_type"] == "multipleChoice" else SYSTEM_EXACT_ANSWER
+    )
+    tools = INSTRUCTIONS.format(rounds=rounds)
+    return f"{system}\n\n{tools}\n\n{doc['question']}"
 
 
 @lru_cache(maxsize=1)
