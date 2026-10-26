@@ -97,3 +97,23 @@ def test_qwen_swe_uses_frozen_legacy_registry_not_hub_ref(tmp_path):
     assert Path(dataset["registry_path"]).is_file()
     assert "ref" not in dataset
     assert (config.jobs_dir / "tb_dataset_identity.json").is_file()
+
+
+def test_owned_mini_swe_hook_preserves_recipe_and_endpoint(tmp_path, monkeypatch):
+    from dataclasses import replace
+    monkeypatch.delenv("TT_AGENTIC_CONTAINER_OWNER", raising=False)
+    config = replace(_run_config(tmp_path), agent="mini-swe-agent", agent_timeout_sec=900)
+    before = json.loads(harbor._write_harbor_config(config).read_text())["agents"][0]
+    monkeypatch.setenv("TT_AGENTIC_CONTAINER_OWNER", "goal12-123-1-0")
+    after = json.loads(harbor._write_harbor_config(config).read_text())["agents"][0]
+    assert before.pop("name") == "mini-swe-agent"
+    assert after.pop("import_path") == "agentic_owned_networks.mini_swe_agent:OwnedMiniSweAgent"
+    assert after == before
+
+
+def test_owned_custom_agent_import_remains_explicit(tmp_path, monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setenv("TT_AGENTIC_CONTAINER_OWNER", "goal12-123-1-0")
+    config = replace(_run_config(tmp_path), agent="mini-swe-agent", agent_import_path="custom:Agent")
+    result = json.loads(harbor._write_harbor_config(config).read_text())["agents"][0]
+    assert result["import_path"] == "custom:Agent"

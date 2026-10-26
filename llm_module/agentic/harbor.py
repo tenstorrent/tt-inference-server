@@ -258,6 +258,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     }
     if config.agent_import_path:
         agent_config["import_path"] = config.agent_import_path
+    elif owner and config.environment_type == "docker" and config.agent == _MINI_SWE_AGENT:
+        agent_config["import_path"] = 'agentic_owned_networks.mini_swe_agent:OwnedMiniSweAgent'
     else:
         agent_config["name"] = config.agent
     agent_env = _get_agent_env(config)
