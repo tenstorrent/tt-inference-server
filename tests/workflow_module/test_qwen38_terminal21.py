@@ -83,7 +83,7 @@ def test_b8_pilot_serving_geometry():
     for path in ['workflows/model_specs/prod/llm.yaml','workflows/model_specs/dev/llm.yaml']:
         spec=next(s for s in yaml.safe_load(Path(path).read_text())['templates'] if s.get('weights')==['Qwen/Qwen3.8-27B'])
         device=spec['device_model_specs'][0]; args=device['vllm_args']; env=device['env_vars']
-        assert args['max_num_seqs']==8
+        assert args['max_num_seqs']==32
         assert device['max_concurrency']==args['max_num_seqs']
         assert device['max_context']==262144
         assert args['block_size']==args['mamba_block_size']==args['prefix_cache_retention_interval']==256

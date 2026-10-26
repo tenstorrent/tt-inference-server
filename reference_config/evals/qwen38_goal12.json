@@ -1,5 +1,5 @@
 {
-  "phase": "swe8-c8-b8-shared256-progressive",
+  "phase": "swe8-c8-b32-shared256-progressive",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
