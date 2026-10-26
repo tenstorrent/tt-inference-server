@@ -30,6 +30,7 @@ Runs as its own CI step after the tests, over the clips the video eval saved
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
 import os
@@ -61,6 +62,8 @@ DEFAULT_DIMENSIONS = (
 PER_CLIP_SCALE = {"imaging_quality": 0.01}
 # VBench's own RAFT fetch shells out to `unzip`, which CI hosts lack.
 RAFT_URL = "https://dl.dropboxusercontent.com/s/4j4z58wuv8o0mfz/models.zip"
+# CLIP's weight download sometimes arrives corrupt; clip.load refetches on retry.
+DOWNLOAD_ATTEMPTS = 3
 
 
 def build_full_info(
@@ -88,6 +91,11 @@ def per_clip_scores(dimension: str, video_results: list[dict]) -> dict[str, floa
         for r in video_results
         if isinstance(r.get("video_results"), (int, float))
     }
+
+
+def is_corrupt_download(error: Exception) -> bool:
+    """A weight download that failed its checksum, which a fresh fetch can fix."""
+    return "checksum" in str(error).lower()
 
 
 def ensure_raft_weights(cache_dir: Path) -> None:
@@ -147,29 +155,39 @@ def score_directory(
         ],
         "dimensions": {},
     }
-    for dimension in dimensions:
+
+    def run_dimension(dimension: str) -> dict:
         package = "vbench2_beta_i2v" if dimension in I2V_DIMENSIONS else "vbench"
+        if dimension == "dynamic_degree":
+            ensure_raft_weights(Path(CACHE_DIR))
+        # Per dimension: VBench fetches each one's models here, and one failed
+        # fetch should cost only that dimension.
+        submodules = init_submodules([dimension], local=False, read_frame=False)
+        module = importlib.import_module(f"{package}.{dimension}")
+        if dimension == "i2v_background":
+            # VBench builds DreamSim without a device, and DreamSim defaults to cuda.
+            module.dreamsim = functools.partial(module.dreamsim, device=device)
+        score, video_results = getattr(module, f"compute_{dimension}")(
+            str(info_path), torch.device(device), submodules[dimension]
+        )
+        return {
+            "score": round(float(score), 4),
+            "per_clip": per_clip_scores(dimension, video_results),
+        }
+
+    for dimension in dimensions:
         started = time.monotonic()
-        try:
-            if dimension == "dynamic_degree":
-                ensure_raft_weights(Path(CACHE_DIR))
-            # Per dimension: VBench fetches each one's models here, and one failed
-            # fetch should cost only that dimension.
-            submodules = init_submodules([dimension], local=False, read_frame=False)
-            compute = getattr(
-                importlib.import_module(f"{package}.{dimension}"),
-                f"compute_{dimension}",
-            )
-            score, video_results = compute(
-                str(info_path), torch.device(device), submodules[dimension]
-            )
-            record = {
-                "score": round(float(score), 4),
-                "per_clip": per_clip_scores(dimension, video_results),
-            }
-        except Exception as e:  # one broken dimension should not hide the rest
-            logger.exception("VBench %s failed", dimension)
-            record = {"error": f"{type(e).__name__}: {e}"[:500]}
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                record = run_dimension(dimension)
+                break
+            except Exception as e:  # one broken dimension should not hide the rest
+                if is_corrupt_download(e) and attempt < DOWNLOAD_ATTEMPTS:
+                    logger.warning("VBench %s: %s; retrying", dimension, e)
+                    continue
+                logger.exception("VBench %s failed", dimension)
+                record = {"error": f"{type(e).__name__}: {e}"[:500]}
+                break
         record["seconds"] = round(time.monotonic() - started, 1)
         result["dimensions"][dimension] = record
         logger.info(

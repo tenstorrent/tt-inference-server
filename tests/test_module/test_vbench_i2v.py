@@ -131,3 +131,14 @@ def test_raft_weights_are_unpacked_without_an_unzip_binary(tmp_path, monkeypatch
     # Already there: no second download.
     monkeypatch.setattr(mod.urllib.request, "urlretrieve", None)
     mod.ensure_raft_weights(tmp_path)
+
+
+def test_only_checksum_failures_count_as_a_corrupt_download():
+    assert mod.is_corrupt_download(
+        RuntimeError(
+            "Model has been downloaded but the SHA256 checksum does not not match"
+        )
+    )
+    assert not mod.is_corrupt_download(
+        AssertionError("Torch not compiled with CUDA enabled")
+    )
