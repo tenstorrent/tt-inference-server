@@ -1,8 +1,9 @@
 {
-  "phase": "owned-network-harness-proof",
+  "phase": "unscored-new-image-b16-shared256-qualification",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
+    "r1_gpqa_diamond",
     "swe_bench_verified",
     "terminal_bench_2"
   ],
