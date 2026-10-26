@@ -1,5 +1,5 @@
 {
-  "phase": "settled-harness-frozen32-b32-shared512",
+  "phase": "settled-harness-frozen32-b32-shared256",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
