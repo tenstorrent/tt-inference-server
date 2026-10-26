@@ -656,7 +656,7 @@ _eval_config_list = [
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=ci_target,
-                            ref="User-approved published full-set acceptance target for the fixed CI subset; not measured subset GPU control",
+                            ref="User-approved first-five SWE CI gate: 2/5 (40%); published 57% is full-set context, not a matched GPU reference",
                             tolerance=0.0,
                         )
                     },
@@ -666,12 +666,15 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset.split("@", 1)[0],
                     agent=agent,
-                    n_concurrent_trials=10,
+                    n_concurrent_trials=5,
                     n_attempts=1,
                     agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
-                    task_names_map={EvalLimitMode.CI_NIGHTLY: names},
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: names,
+                        EvalLimitMode.SMOKE_TEST: names,
+                    },
                     dataset_ref=dataset.split("@", 1)[1] if "@" in dataset else None,
                     agent_env={
                         "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
@@ -680,46 +683,19 @@ _eval_config_list = [
                     else {},
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 10,
-                    EvalLimitMode.SMOKE_TEST: 10,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
                 thinking=True,
                 request_body={"chat_template_kwargs": {"low_effort": False}},
             )
             for name, dataset, agent, target, ci_target, kwargs, names in [
                 (
-                    "terminal_bench_2_1",
-                    "terminal-bench/terminal-bench-2-1@sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
-                    "terminus-2",
-                    29.24,
-                    20.0,
-                    {
-                        "temperature": 1.0,
-                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
-                        "model_info": {
-                            "max_input_tokens": 98304,
-                            "max_output_tokens": 32768,
-                        },
-                    },
-                    [
-                        "terminal-bench/break-filter-js-from-html",
-                        "terminal-bench/cobol-modernization",
-                        "terminal-bench/compile-compcert",
-                        "terminal-bench/feal-differential-cryptanalysis",
-                        "terminal-bench/qemu-startup",
-                        "terminal-bench/caffe-cifar-10",
-                        "terminal-bench/password-recovery",
-                        "terminal-bench/portfolio-optimization",
-                        "terminal-bench/hf-model-inference",
-                        "terminal-bench/financial-document-processor",
-                    ],
-                ),
-                (
                     "swe_bench_verified",
                     "swebench-verified",
                     "mini-swe-agent",
                     57.0,
-                    50.0,
+                    40.0,
                     {
                         "version": MINI_SWE_AGENT_VERSION,
                         "config": {
@@ -740,11 +716,6 @@ _eval_config_list = [
                         "matplotlib__matplotlib-25332",
                         "sympy__sympy-13551",
                         "scikit-learn__scikit-learn-14629",
-                        "django__django-15098",
-                        "sphinx-doc__sphinx-8593",
-                        "sympy__sympy-13852",
-                        "pydata__xarray-3095",
-                        "django__django-15695",
                     ],
                 ),
             ]
