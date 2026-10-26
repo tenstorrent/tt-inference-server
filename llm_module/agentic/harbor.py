@@ -213,6 +213,13 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if config.dataset_path is not None:
         # A locally generated copy has no registry version, so dataset_ref
         # does not apply.
+        if config.dataset_ref:
+            logger.warning(
+                "Ignoring dataset_ref %r for %s: running the local copy at %s",
+                config.dataset_ref,
+                config.dataset,
+                config.dataset_path,
+            )
         dataset_config: dict[str, Any] = {"path": str(config.dataset_path)}
         task_names = [local_task_pattern(config.dataset, p) for p in task_names]
         exclude_task_names = [
@@ -335,9 +342,13 @@ def _annotate_result_file(result_file: Path) -> None:
         raise RuntimeError(msg) from e
 
 
+def harbor_python(config: HarborRunConfig) -> Path:
+    """The interpreter whose bin/ holds the harbor CLI for *config*."""
+    return Path(config.venv_python or sys.executable)
+
+
 def run(config: HarborRunConfig) -> int:
-    interpreter = config.venv_python or Path(sys.executable)
-    harbor_exec = Path(interpreter).parent / "harbor"
+    harbor_exec = harbor_python(config).parent / "harbor"
 
     if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)

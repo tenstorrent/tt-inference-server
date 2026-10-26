@@ -5,6 +5,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from llm_module.agentic import local_datasets
 from llm_module.agentic.local_datasets import local_task_pattern, prepare_local_dataset
 
@@ -22,6 +24,19 @@ class TestLocalTaskPattern:
 
     def test_leaves_other_patterns_alone(self):
         assert local_task_pattern(_DATASET, "tau3-airline-*") == "tau3-airline-*"
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            # Another dataset's prefix.
+            "terminal-bench/terminal-bench-2__hello-world",
+            # A single underscore after the dataset name.
+            "sierra-research/tau3-bench_tau3-banking_knowledge-*",
+        ],
+    )
+    def test_rejects_patterns_that_cannot_match_a_local_copy(self, pattern):
+        with pytest.raises(ValueError, match="cannot match a local copy"):
+            local_task_pattern(_DATASET, pattern)
 
 
 class TestPrepareLocalDataset:
