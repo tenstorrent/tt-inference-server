@@ -51,15 +51,15 @@ def test_calibration_effective_bounds(agent_seconds,request_seconds):
     assert a.task_names_map[EvalLimitMode.CI_NIGHTLY]==c['task_names']['terminal_bench_2_1']
 
 
-def test_difficult_pair_effective_bounds_and_verifiers():
+def test_b8_pilot_effective_bounds_and_verifiers():
     c=controls()
     assert c['sample_count']==c['max_concurrent']==2
-    assert c['task_names']['terminal_bench_2_1']==['terminal-bench/adaptive-rejection-sampler','terminal-bench/build-cython-ext']
+    assert c['task_names']['terminal_bench_2_1']==['terminal-bench/bn-fit-modify','terminal-bench/pypi-server']
     task=configure(EVAL_CONFIGS[MODEL],EvalLimitMode).tasks[0]
     a=task.agentic_eval_config
-    assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(5400,3600,6000)
+    assert (a.agent_timeout_sec,a.llm_timeout_sec,a.harbor_timeout_sec)==(1800,1200,2400)
     assert a.n_concurrent_trials==2
-    assert a.agent_kwargs['llm_kwargs']['timeout']==3600
+    assert a.agent_kwargs['llm_kwargs']['timeout']==1200
     assert a.agent_kwargs['llm_kwargs']['max_tokens']==16384
     assert a.agent_kwargs['model_info']['max_output_tokens']==16384
     assert a.task_names_map[EvalLimitMode.CI_NIGHTLY]==c['task_names']['terminal_bench_2_1']
@@ -68,12 +68,12 @@ def test_difficult_pair_effective_bounds_and_verifiers():
     assert all(selected['selected_sources'][n]==original['selected_sources'][n] for n in selected['task_names'])
 
 
-def test_difficult_pair_serving_geometry():
+def test_b8_pilot_serving_geometry():
     import yaml
     for path in ['workflows/model_specs/prod/llm.yaml','workflows/model_specs/dev/llm.yaml']:
         spec=next(s for s in yaml.safe_load(Path(path).read_text())['templates'] if s.get('weights')==['Qwen/Qwen3.8-27B'])
         device=spec['device_model_specs'][0]; args=device['vllm_args']; env=device['env_vars']
-        assert args['max_num_seqs'] in (16,32)
+        assert args['max_num_seqs']==8
         assert device['max_concurrency']==args['max_num_seqs']
         assert device['max_context']==262144
         assert args['block_size']==args['mamba_block_size']==args['prefix_cache_retention_interval']==256
