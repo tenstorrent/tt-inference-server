@@ -110,6 +110,19 @@ def topology(graph, project):
     return list(services)
 
 
+def validate_external_network(graph, name):
+    """Compose may synthesize empty IPAM for an otherwise external network."""
+    networks=graph.get('networks')
+    if not isinstance(networks,dict)or set(networks)!={'default'}:
+        raise OwnershipError('Merged external network contains unsupported attributes')
+    network=networks['default']
+    if not isinstance(network,dict):raise OwnershipError('Invalid merged external network')
+    normalized=dict(network)
+    if normalized.get('ipam')=={}:normalized.pop('ipam')
+    if normalized.get('external')is not True or normalized!={'name':name,'external':True}:
+        raise OwnershipError('Merged external network contains unsupported attributes')
+
+
 class Allocator:
     def __init__(self, labels, project, journal, endpoint_host, run=subprocess.run):
         self.labels=labels;self.project=project;self.journal=Path(journal);self.endpoint_host=endpoint_host;self.run=run

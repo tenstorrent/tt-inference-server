@@ -7,7 +7,7 @@ import uuid
 
 from harbor.environments.docker.docker import DockerEnvironment
 from harbor.environments.base import ExecResult
-from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology, container_absent, inspection_failure
+from .allocator import Allocator, OWNER, MANAGED, ATTEMPT, JOB, POLICY, OwnershipError, checked_owner, topology, container_absent, inspection_failure, validate_external_network
 
 
 async def settled(function, *args):
@@ -66,8 +66,16 @@ class OwnedDockerEnvironment(DockerEnvironment):
             'networks':{'default':{'external':True,'name':record['network_name']}}},indent=2))
         final=await super()._run_docker_compose_command(['config','--format','json'])
         graph=json.loads(final.stdout)
-        if graph.get('networks')!={'default':{'name':record['network_name'],'external':True}}:
-            raise OwnershipError('Merged external network contains unsupported attributes')
+        networks=graph.get('networks')or{}
+        default=networks.get('default')or{}
+        allocator.record['compose_network_validation']={
+            'network_keys':sorted(networks), 'default_keys':sorted(default),
+            'expected_name_matches':default.get('name')==record['network_name'],
+            'external_is_true':default.get('external')is True,
+            'ipam_empty':default.get('ipam')=={},
+        }
+        allocator.save()
+        validate_external_network(graph,record['network_name'])
         self._owned_ready=True
 
     async def _project_containers(self):
