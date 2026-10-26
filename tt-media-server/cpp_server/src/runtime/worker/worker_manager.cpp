@@ -53,6 +53,9 @@ namespace {
   _exit(1);
 }
 
+/** Sentinel for awaitWorkersWarmup(): wait for warmup/exit with no deadline. */
+constexpr unsigned kNoWarmupDeadline = 0;
+
 unsigned defaultWarmupTimeoutMs() {
   if (tt::config::isEmbeddingService()) {
     return tt::config::embeddingWarmupTimeoutMs();
@@ -65,11 +68,12 @@ unsigned defaultWarmupTimeoutMs() {
                .weights_distribution_timeout_seconds *
            1000u;
   }
-  // LLM workers: the startup deadline spans both the pipeline-manager
-  // connect phase and runner warmup. WARMUP_TIMEOUT_MS alone only budgets the
-  // latter (first token), while PM_CONNECT_TIMEOUT_MS is set to hours on real
-  // deployments (see DEPLOYMENT.md).
-  return tt::config::pmConnectTimeoutMs() + tt::config::warmupTimeoutMs();
+  // LLM workers: no supervisor-side deadline (unchanged from before the
+  // embedding/image warmup coordination). The Blaze runners enforce their own
+  // budgets (PM_CONNECT_TIMEOUT_MS for connect, WARMUP_TIMEOUT_MS per
+  // ALLOCATE / first-token / EVICT phase) and exit on failure, which the
+  // coordinator detects via checkWorkerAlive().
+  return kNoWarmupDeadline;
 }
 
 void populateCommonWorkerEnv(tt::worker::WorkerConfig& cfg, int workerId) {
@@ -379,7 +383,8 @@ bool WorkerManager::awaitWorkersWarmup(std::vector<size_t> pending,
       return true;
     }
 
-    if (std::chrono::steady_clock::now() >= deadline) {
+    if (timeoutMs != kNoWarmupDeadline &&
+        std::chrono::steady_clock::now() >= deadline) {
       for (size_t idx : pending) {
         TT_LOG_ERROR(
             "[WorkerManager] Worker {} timed out in warmup after {}ms; "
