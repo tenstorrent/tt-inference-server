@@ -52,11 +52,11 @@ paths:
   /v1/jobs:
     $ref: ../../common.yaml#/paths/~1v1~1jobs
   /v1/jobs/{job_id}:
-    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
   /v1/jobs/{job_id}/content/{index}:
-    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1content~1{index}
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
   /v1/jobs/{job_id}/cancel:
-    $ref: ../../common.yaml#/paths/~1v1~1jobs~1{job_id}~1cancel
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
 components:
   schemas:
     Wan22i2vA14bRequest:
