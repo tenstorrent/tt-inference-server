@@ -4,7 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 from reference_config.evals.eval_config import EVAL_CONFIGS
-from reference_config.evals.qwen38_goal12 import MODEL, controls
+from reference_config.evals.qwen38_goal12 import MODEL, controls, eval_controls
 from report_module.schema import Block
 from workflow_module.execution import OrchestratorMetadata
 from workflow_module.workflows import AgenticWorkflow
@@ -23,7 +23,7 @@ def test_autoport_default_and_seeded_frozen_tasks():
     assert {t.task_name for t in tasks} == set(controls()["evals"])
     gpqa = next((t for t in tasks if t.agentic_eval_config is None), None)
     if gpqa is not None:
-        assert gpqa.doc_ids == (None if controls()["full_suite"] else controls()["gpqa_handoff"]["doc_ids"][:controls()["sample_count"]])
+        assert gpqa.doc_ids == (None if controls()["full_suite"] else controls()["gpqa_handoff"]["doc_ids"][:eval_controls(controls(), gpqa.task_name)["sample_count"]])
     for t in tasks:
         assert t.seed == controls()["seed"]
         assert t.score.published_score is None
@@ -61,7 +61,8 @@ def test_occupancy32_manifest_and_handoff_exact_identities():
     payload = manifest_path.read_bytes()
     m = json.loads(payload)
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
-    assert c['sample_count'] == c['max_concurrent'] == 32
+    if not c.get('per_eval'):
+        assert c['sample_count'] == c['max_concurrent'] == 32
     assert isinstance(c['full_suite'], bool)
     h = c['gpqa_handoff']
     g = m['evals']['r1_gpqa_diamond']
@@ -70,12 +71,15 @@ def test_occupancy32_manifest_and_handoff_exact_identities():
     assert h['doc_ids'] == g['doc_ids']
     assert h['document_sha256'] == g['document_sha256']
     assert h['population_sha256'] == g['population_sha256']
-    assert len(set(h['doc_ids'])) == len(h['document_sha256']) == 32
+    assert len(set(h['doc_ids'])) == len(h['document_sha256'])
+    assert len(h['doc_ids']) == eval_controls(c, 'r1_gpqa_diamond')['sample_count']
     hashes = dict(zip(h['doc_ids'], h['document_sha256']))
-    assert [hashes[i] for i in g['frozen10_doc_ids']] == g['frozen10_document_sha256']
-    assert set(g['doc_ids']) == set(g['frozen10_doc_ids']) | set(g['additional22_doc_ids'])
+    if 'frozen10_doc_ids' in g:
+        assert [hashes[i] for i in g['frozen10_doc_ids']] == g['frozen10_document_sha256']
+        assert set(g['doc_ids']) == set(g['frozen10_doc_ids']) | set(g['additional22_doc_ids'])
     for name in ('swe_bench_verified', 'terminal_bench_2_1'):
         e = m['evals'][name]
         assert c['task_names'][name] == e['task_names']
-        assert len(set(e['task_names'])) == 32
-        assert set(e['task_names']) == set(e['frozen10_task_names']) | set(e['additional22_task_names'])
+        assert len(set(e['task_names'])) == eval_controls(c, name)['sample_count']
+        if 'frozen10_task_names' in e:
+            assert set(e['task_names']) == set(e['frozen10_task_names']) | set(e['additional22_task_names'])

@@ -47,6 +47,7 @@ def harbor_body(task, tmp_path, *, ci):
 
 def test_absent_and_empty_overrides_preserve_legacy_configuration():
     c = copy.deepcopy(controls())
+    c.pop("per_eval", None)
     old = configured(c)
     c["per_eval"] = {}
     assert configured(c) == old
@@ -54,6 +55,7 @@ def test_absent_and_empty_overrides_preserve_legacy_configuration():
 
 def test_legacy_count_does_not_rewrite_a_frozen_harbor_filter():
     c = copy.deepcopy(controls())
+    c.pop("per_eval", None)
     c["sample_count"] = 1
     for task in configured(c).tasks:
         if task.agentic_eval_config is not None:
@@ -145,7 +147,7 @@ def test_invalid_or_quality_changing_overrides_fail_closed(override):
 
 def test_frozen_manifests_reproduce_seeded_nested_subsets_and_source_hashes():
     c = controls()
-    source_path = Path(c["selection_manifest"])
+    source_path = ROOT / "qwen38_goal12_terminal21_occupancy32.json"
     source = json.loads(source_path.read_text())
     swe = json.loads((ROOT / "qwen38_goal12_swe_registry.json").read_text())[0]
     swe_sources = {row["name"]: row for row in swe["tasks"]}

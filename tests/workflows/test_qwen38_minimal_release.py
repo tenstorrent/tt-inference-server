@@ -4,7 +4,7 @@
 from llm_module.benchmark_configs import get_llm_configs
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from reference_config.evals.eval_config import _eval_config_map
-from reference_config.evals.qwen38_goal12 import controls
+from reference_config.evals.qwen38_goal12 import controls, eval_controls
 from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import EvalLimitMode, ModelStatusTypes, WorkflowVenvType
@@ -63,18 +63,20 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
         WorkflowVenvType.EVALS_AGENTIC,
     ]
     c = controls()
-    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == c["sample_count"]
-    assert tasks[0].model_kwargs["timeout"] == c["gpqa_llm_timeout_sec"]
-    assert tasks[0].wall_clock_timeout_seconds == c["gpqa_suite_timeout_sec"]
+    gpqa = eval_controls(c, tasks[0].task_name)
+    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == gpqa["sample_count"]
+    assert tasks[0].model_kwargs["timeout"] == gpqa["llm_timeout_sec"]
+    assert tasks[0].wall_clock_timeout_seconds == gpqa["suite_timeout_sec"]
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config
     assert terminal.dataset == "terminal-bench/terminal-bench-2-1"
     assert terminal.dataset_ref == c["terminal_dataset_ref"]
     for task, agent in ((tasks[1], terminal), (tasks[2], swe)):
+        e = eval_controls(c, task.task_name)
         assert agent.task_names_map[EvalLimitMode.CI_NIGHTLY] == c["task_names"][task.task_name]
-        assert agent.n_concurrent_trials == c["max_concurrent"]
-        assert agent.agent_timeout_sec == c["agent_timeout_sec"]
-        assert agent.llm_timeout_sec == c["llm_timeout_sec"]
-        assert agent.harbor_timeout_sec == c["suite_timeout_sec"]
+        assert agent.n_concurrent_trials == e["max_concurrent"]
+        assert agent.agent_timeout_sec == e["agent_timeout_sec"]
+        assert agent.llm_timeout_sec == e["llm_timeout_sec"]
+        assert agent.harbor_timeout_sec == e["suite_timeout_sec"]
     assert all(t.score.published_score is None and t.score.gpu_reference_score is None for t in tasks)
