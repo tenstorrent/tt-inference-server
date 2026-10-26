@@ -76,6 +76,16 @@ MINIMAX_VERIFIER_PATHS = (
     "output-dir/MiniMax-M3/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
+# zapier/AutomationBench, run by the automation_bench agentic eval. There are
+# no git tags: this commit is the "1.0.6 release" (pyproject version 1.0.6,
+# 2026-08-04). Its dependencies are pinned from the repo's uv.lock in
+# requirements/automation-bench.txt, so move both together.
+AUTOMATION_BENCH_REPO = "https://github.com/zapier/AutomationBench.git"
+AUTOMATION_BENCH_COMMIT = "6d210543b7a046f0f451c828cd2dadef774276eb"
+AUTOMATION_BENCH_DIR_NAME = "AutomationBench"
+# The package only (tasks, simulated tools and rubrics all live in it); the
+# visualizer and tests are not needed to run auto-bench.
+AUTOMATION_BENCH_PATHS = ("automationbench", "pyproject.toml")
 TARBALL_TIMEOUT_S = 300
 # Written next to the exported files: the commit they came from.
 SOURCE_COMMIT_FILE = ".source_commit"
@@ -384,6 +394,24 @@ def setup_minimax_verifier(
         MINIMAX_VERIFIER_REPO,
         MINIMAX_VERIFIER_COMMIT,
         MINIMAX_VERIFIER_PATHS,
+    )
+
+
+def setup_automation_bench(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for AUTOMATION_BENCH: export AutomationBench at its pinned commit.
+
+    Nothing is installed from the checkout: the driver runs
+    ``python -m automationbench.scripts.eval`` from it with this venv's python,
+    and the dependencies come from requirements/automation-bench.txt.
+    """
+    return export_repo_commit(
+        venv_config.venv_path / AUTOMATION_BENCH_DIR_NAME,
+        AUTOMATION_BENCH_REPO,
+        AUTOMATION_BENCH_COMMIT,
+        AUTOMATION_BENCH_PATHS,
     )
 
 
@@ -1007,6 +1035,13 @@ _venv_config_list = [
         requirements_file="minimax-verifier.txt",
         python_version="3.12",
         setup_function=setup_minimax_verifier,
+    ),
+    # 3.13: AutomationBench's pyproject requires >=3.13.
+    VenvConfig(
+        venv_type=WorkflowVenvType.AUTOMATION_BENCH,
+        requirements_file="automation-bench.txt",
+        python_version="3.13",
+        setup_function=setup_automation_bench,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
