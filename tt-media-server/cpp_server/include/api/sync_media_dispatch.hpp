@@ -87,8 +87,8 @@ void dispatchJsonRequest(
           std::move(callback));
   try {
     service->submitRequestAsync(
-        std::move(request), [callbackPtr, reqNum, startTime, logTag,
-                             endpointTag](auto&& response) {
+        std::move(request),
+        [callbackPtr, reqNum, startTime, logTag, endpointTag](auto&& response) {
           auto& callback = *callbackPtr;
           const double totalMs =
               std::chrono::duration<double, std::milli>(
