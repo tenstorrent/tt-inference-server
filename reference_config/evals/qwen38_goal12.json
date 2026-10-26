@@ -1,5 +1,5 @@
 {
-  "phase": "tb21-release32-shared256",
+  "phase": "goal12-final-release32-16-selected-b32",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
@@ -19,30 +19,14 @@
       "astropy__astropy-13453",
       "astropy__astropy-14309",
       "astropy__astropy-7166",
-      "astropy__astropy-7606",
-      "django__django-11276",
-      "django__django-11333",
       "django__django-11433",
-      "django__django-11532",
-      "django__django-11749",
-      "django__django-11820",
       "django__django-13670",
-      "django__django-15128",
-      "django__django-15277",
-      "django__django-16333",
-      "django__django-16493",
-      "pydata__xarray-3677",
       "pytest-dev__pytest-7982",
       "scikit-learn__scikit-learn-13135",
-      "sphinx-doc__sphinx-7910",
-      "sphinx-doc__sphinx-8035",
       "sphinx-doc__sphinx-8459",
       "sphinx-doc__sphinx-8595",
-      "sphinx-doc__sphinx-9230",
-      "sphinx-doc__sphinx-9591",
       "sympy__sympy-18698",
       "sympy__sympy-19954",
-      "sympy__sympy-21379",
       "sympy__sympy-21612",
       "sympy__sympy-23262",
       "sympy__sympy-23534",
@@ -53,30 +37,14 @@
       "terminal-bench/bn-fit-modify",
       "terminal-bench/break-filter-js-from-html",
       "terminal-bench/build-cython-ext",
-      "terminal-bench/build-pmars",
-      "terminal-bench/build-pov-ray",
-      "terminal-bench/chess-best-move",
       "terminal-bench/cobol-modernization",
-      "terminal-bench/code-from-image",
-      "terminal-bench/compile-compcert",
-      "terminal-bench/constraints-scheduling",
       "terminal-bench/distribution-search",
-      "terminal-bench/extract-moves-from-video",
-      "terminal-bench/fix-ocaml-gc",
-      "terminal-bench/gcode-to-text",
-      "terminal-bench/git-leak-recovery",
-      "terminal-bench/install-windows-3.11",
       "terminal-bench/kv-store-grpc",
       "terminal-bench/mailman",
-      "terminal-bench/make-doom-for-mips",
-      "terminal-bench/make-mips-interpreter",
       "terminal-bench/password-recovery",
       "terminal-bench/polyglot-c-py",
-      "terminal-bench/portfolio-optimization",
-      "terminal-bench/protein-assembly",
       "terminal-bench/pypi-server",
       "terminal-bench/reshard-c4-data",
-      "terminal-bench/rstan-to-pystan",
       "terminal-bench/sparql-university",
       "terminal-bench/train-fasttext",
       "terminal-bench/video-processing",
@@ -85,8 +53,8 @@
   },
   "gpqa_handoff": {
     "eval": "r1_gpqa_diamond",
-    "manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
-    "manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
+    "manifest": "reference_config/evals/qwen38_goal12_release32_16_subset.json",
+    "manifest_sha256": "c12af7d3058c85a5fa834dd00a21eb163ab74392f6d0567ba8fa392a35d813f0",
     "doc_ids": [
       1,
       2,
@@ -173,7 +141,7 @@
         "preserve_thinking": true
       }
     },
-    "requirement": "Preserve original ten stage11 documents plus22 frozen additional population documents for occupancy32; all32 identities validated before scoring. Stage11 normalization reused; r1 prompt/scorer differs. No claim all32 were measured in stage11.",
+    "requirement": "Preserve these exact frozen normalized documents and the full population digest; this prepared CI subset does not claim full-set accuracy.",
     "population_sha256": "2ed8c1e6bb9d79c67848407d60c89eadc23fa3cb8ab1d8e1e65230aea0953bbf",
     "normalization_source_task": "gpqa_diamond_cot_zeroshot",
     "stage11_frozen_doc_ids": [
@@ -187,7 +155,8 @@
       12,
       13,
       15
-    ]
+    ],
+    "concurrency_basis": "Selected B32/C32; all32 frozen GPQA documents form one admitted wave. Harbor suites explicitly use C8 per_eval overrides."
   },
   "full_suite": false,
   "terminal_dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
@@ -211,9 +180,34 @@
   },
   "gpqa_llm_timeout_sec": 3600,
   "gpqa_suite_timeout_sec": 4500,
-  "gpqa_timeout_basis": "Stage11 same10 frozen documents/output16384 took2226s at B32.600s would truncate valid long-reasoning requests; request3600s and suite4500s retain margin. Agent tool-smoke deadlines remain separately bounded.",
-  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
-  "selection_manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
+  "gpqa_timeout_basis": "Selected unchanged B32/C32 combined32 measured2267.484s suite; preserve request3600/suite4500/output16384. Eleven outputs capped; no full-set or matched-reference claim.",
+  "selection_manifest": "reference_config/evals/qwen38_goal12_release32_16_subset.json",
+  "selection_manifest_sha256": "c12af7d3058c85a5fa834dd00a21eb163ab74392f6d0567ba8fa392a35d813f0",
   "record_suite_metrics": true,
-  "release_benchmark_timeout_sec": 1800
+  "release_benchmark_timeout_sec": 1800,
+  "_preparation_status": "Activated bounded final release controls; all full-suite decisions stop. Publication and once-only dispatch follow coordinator review.",
+  "per_eval": {
+    "r1_gpqa_diamond": {
+      "sample_count": 32,
+      "max_concurrent": 32,
+      "agent_timeout_sec": 900,
+      "llm_timeout_sec": 3600,
+      "suite_timeout_sec": 4500
+    },
+    "swe_bench_verified": {
+      "sample_count": 16,
+      "max_concurrent": 8,
+      "agent_timeout_sec": 6300,
+      "llm_timeout_sec": 3600,
+      "suite_timeout_sec": 16000
+    },
+    "terminal_bench_2_1": {
+      "sample_count": 16,
+      "max_concurrent": 8,
+      "agent_timeout_sec": 5400,
+      "llm_timeout_sec": 3600,
+      "suite_timeout_sec": 15000
+    }
+  },
+  "_effective_controls_note": "Every selected eval has complete per_eval overrides; legacy global defaults are not final runtime recommendations. GPQA agent_timeout_sec900 is unused metadata, not an enforced QA deadline. SWE6300 and TB5400 remain bounded measured protocols with residual task timeouts, not universal completion guarantees."
 }
