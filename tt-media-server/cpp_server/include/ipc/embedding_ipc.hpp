@@ -198,6 +198,7 @@ class EmbeddingTaskQueue {
       : queue(Queue::openExisting(name)) {}
 
   void push(const EmbeddingIpcTask& task) { queue->push(task); }
+  bool tryPush(const EmbeddingIpcTask& task) { return queue->tryPush(task); }
 
   bool tryPop(EmbeddingIpcTask& out) { return queue->tryPop(out); }
 

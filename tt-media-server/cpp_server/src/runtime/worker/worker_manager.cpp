@@ -65,7 +65,11 @@ unsigned defaultWarmupTimeoutMs() {
                .weights_distribution_timeout_seconds *
            1000u;
   }
-  return tt::config::warmupTimeoutMs();
+  // LLM workers: the startup deadline spans both the pipeline-manager
+  // connect phase and runner warmup. WARMUP_TIMEOUT_MS alone only budgets the
+  // latter (first token), while PM_CONNECT_TIMEOUT_MS is set to hours on real
+  // deployments (see DEPLOYMENT.md).
+  return tt::config::pmConnectTimeoutMs() + tt::config::warmupTimeoutMs();
 }
 
 void populateCommonWorkerEnv(tt::worker::WorkerConfig& cfg, int workerId) {

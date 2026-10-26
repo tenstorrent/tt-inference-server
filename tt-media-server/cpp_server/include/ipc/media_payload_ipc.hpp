@@ -112,6 +112,7 @@ class MediaPayloadTaskQueue {
       : queue(Queue::openExisting(name)) {}
 
   void push(const MediaPayloadTask& task) { queue->push(task); }
+  bool tryPush(const MediaPayloadTask& task) { return queue->tryPush(task); }
 
   bool tryPop(MediaPayloadTask& out) { return queue->tryPop(out); }
 

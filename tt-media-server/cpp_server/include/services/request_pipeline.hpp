@@ -153,10 +153,17 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
     }
 
     TT_LOG_INFO("[{}] Stopping...", serviceName_);
+    // Non-blocking: the task queue may be full (e.g. requests accepted during
+    // warmup when no worker ever drained them). Workers that miss the done
+    // task still exit via WorkerManager::stop() and the timed task poll.
     if (workerManager_ && queueSet_ && queueSet_->taskQueue) {
       for (size_t i = 0; i < workerManager_->numWorkers(); ++i) {
         try {
-          queueSet_->taskQueue->push(IpcTask::done());
+          if (!queueSet_->taskQueue->tryPush(IpcTask::done())) {
+            TT_LOG_WARN("[{}] Task queue full; skipping done task",
+                        serviceName_);
+            break;
+          }
         } catch (const std::exception& e) {
           TT_LOG_WARN("[{}] Failed to push done task: {}", serviceName_,
                       e.what());

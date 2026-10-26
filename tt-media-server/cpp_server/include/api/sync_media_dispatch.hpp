@@ -80,10 +80,16 @@ void dispatchJsonRequest(
   const uint64_t reqNum = counter.fetch_add(1);
   TT_LOG_INFO("[{}] {} req={} started", logTag, endpointTag, reqNum);
 
+  // Shared so the catch block below can still answer when submitRequestAsync
+  // throws (e.g. queue full) before the completion lambda is ever stored.
+  auto callbackPtr =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
   try {
     service->submitRequestAsync(
-        std::move(request), [callback = std::move(callback), reqNum, startTime,
-                             logTag, endpointTag](auto&& response) {
+        std::move(request), [callbackPtr, reqNum, startTime, logTag,
+                             endpointTag](auto&& response) {
+          auto& callback = *callbackPtr;
           const double totalMs =
               std::chrono::duration<double, std::milli>(
                   std::chrono::steady_clock::now() - startTime)
@@ -102,14 +108,14 @@ void dispatchJsonRequest(
           callback(resp);
         });
   } catch (const tt::services::QueueFullException& e) {
-    callback(errorResponse(drogon::k429TooManyRequests, e.what(),
-                           "rate_limit_exceeded"));
+    (*callbackPtr)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                                 "rate_limit_exceeded"));
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[{}] {} req={} threw: {}", logTag, endpointTag, reqNum,
                  e.what());
-    callback(errorResponse(drogon::k500InternalServerError,
-                           std::string("Internal error: ") + e.what(),
-                           "server_error"));
+    (*callbackPtr)(errorResponse(drogon::k500InternalServerError,
+                                 std::string("Internal error: ") + e.what(),
+                                 "server_error"));
   }
 }
 
