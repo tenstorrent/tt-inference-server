@@ -25,7 +25,6 @@ dreamsim
 pyiqa
 openai-clip
 decord
-opencv-python-headless
 scikit-image
 scipy
 easydict

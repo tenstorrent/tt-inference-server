@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 from test_module._test_common import vbench_i2v as mod
@@ -113,3 +114,20 @@ def test_default_images_dir_is_the_eval_fixture_set():
     manifest = json.loads((mod.DEFAULT_IMAGES_DIR / "manifest.json").read_text())
     assert manifest
     assert isinstance(mod.DEFAULT_IMAGES_DIR, Path)
+
+
+def test_raft_weights_are_unpacked_without_an_unzip_binary(tmp_path, monkeypatch):
+    def _fake_download(url, dest):
+        assert url == mod.RAFT_URL
+        with zipfile.ZipFile(dest, "w") as zf:
+            zf.writestr("models/raft-things.pth", b"weights")
+
+    monkeypatch.setattr(mod.urllib.request, "urlretrieve", _fake_download)
+    mod.ensure_raft_weights(tmp_path)
+    target = tmp_path / "raft_model" / "models" / "raft-things.pth"
+    assert target.read_bytes() == b"weights"
+    assert not (tmp_path / "raft_model" / "models.zip").exists()
+
+    # Already there: no second download.
+    monkeypatch.setattr(mod.urllib.request, "urlretrieve", None)
+    mod.ensure_raft_weights(tmp_path)

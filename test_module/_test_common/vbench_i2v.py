@@ -35,6 +35,8 @@ import logging
 import os
 import sys
 import time
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +59,8 @@ DEFAULT_DIMENSIONS = (
 # VBench reports imaging_quality's aggregate on a 0-1 scale but each clip's
 # score on MUSIQ's 0-100; per-clip scores here use the aggregate's scale.
 PER_CLIP_SCALE = {"imaging_quality": 0.01}
+# VBench's own RAFT fetch shells out to `unzip`, which CI hosts lack.
+RAFT_URL = "https://dl.dropboxusercontent.com/s/4j4z58wuv8o0mfz/models.zip"
 
 
 def build_full_info(
@@ -86,6 +90,19 @@ def per_clip_scores(dimension: str, video_results: list[dict]) -> dict[str, floa
     }
 
 
+def ensure_raft_weights(cache_dir: Path) -> None:
+    """Put RAFT where VBench looks for it, so it skips its own `unzip` fetch."""
+    target = cache_dir / "raft_model" / "models" / "raft-things.pth"
+    if target.is_file():
+        return
+    archive = cache_dir / "raft_model" / "models.zip"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(RAFT_URL, archive)
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(archive.parent)
+    archive.unlink()
+
+
 def score_directory(
     videos_dir: Path,
     *,
@@ -109,7 +126,7 @@ def score_directory(
     sys.path.insert(0, str(vbench_dir.resolve()))
     # VBench resolves some third-party configs relative to its repo root.
     os.chdir(vbench_dir)
-    from vbench2_beta_i2v.utils import init_submodules
+    from vbench2_beta_i2v.utils import CACHE_DIR, init_submodules
 
     index = json.loads((videos_dir / "index.json").read_text())
     info_path = out.with_name("vbench_full_info.json")
@@ -130,11 +147,15 @@ def score_directory(
         ],
         "dimensions": {},
     }
-    submodules = init_submodules(dimensions, local=False, read_frame=False)
     for dimension in dimensions:
         package = "vbench2_beta_i2v" if dimension in I2V_DIMENSIONS else "vbench"
         started = time.monotonic()
         try:
+            if dimension == "dynamic_degree":
+                ensure_raft_weights(Path(CACHE_DIR))
+            # Per dimension: VBench fetches each one's models here, and one failed
+            # fetch should cost only that dimension.
+            submodules = init_submodules([dimension], local=False, read_frame=False)
             compute = getattr(
                 importlib.import_module(f"{package}.{dimension}"),
                 f"compute_{dimension}",
