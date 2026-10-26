@@ -332,6 +332,52 @@ class HarborEvalConfig:
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
+# AutomationBench's six scored domains (100 public tasks each). The
+# ``simple`` domain (200 one- or two-step tasks) is a tool-use sanity
+# baseline that is not part of the official pass rate.
+AUTOMATION_BENCH_DOMAINS = [
+    "sales",
+    "marketing",
+    "operations",
+    "support",
+    "finance",
+    "hr",
+]
+
+
+@dataclass(frozen=True)
+class AutomationBenchEvalConfig:
+    """One zapier/AutomationBench run through its ``auto-bench`` CLI.
+
+    Not a Harbor job: AutomationBench simulates its 47 SaaS tools in-process
+    and grades by assertions on the final world state, so it needs no sandbox
+    and no judge, only the model endpoint. The field names Harbor tooling
+    reads off any agentic config (``agent``, ``agent_kwargs``,
+    ``n_concurrent_trials``, ``n_tasks``, ``task_names``...) keep their
+    meaning here; ``n_concurrent_trials`` is auto-bench's ``--max-concurrent``.
+    """
+
+    agent: str = "auto-bench"
+    domains: List[str] = field(default_factory=lambda: list(AUTOMATION_BENCH_DOMAINS))
+    # ``api`` is the toolset official scores use; ``zapier`` and
+    # ``limited_zapier`` are experimental.
+    toolset: str = "api"
+    max_steps: int = 50
+    n_concurrent_trials: int = 32
+    n_attempts: int = 1
+    # ``--num-examples`` (first N tasks of the combined domain dataset).
+    n_tasks: Optional[int] = None
+    task_names: List[str] = field(default_factory=list)
+    exclude_task_names: List[str] = field(default_factory=list)
+    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    # ``reasoning_effort`` -> ``--reasoning-effort``; ``extra_body`` is merged
+    # into every chat completion request (``--extra-body``), which is where
+    # sampling parameters go.
+    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Wall-clock ceiling for the whole auto-bench process. None = no limit.
+    timeout_sec: Optional[float] = None
+
+
 MINI_SWE_AGENT_VERSION = "2.2.8"
 
 # Docker's ``cpus`` limit is a quota, so Node still reports every host core and
@@ -445,7 +491,9 @@ class EvalTask:
     # Let this task's scorer execute model-generated code on the eval host.
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
-    agentic_eval_config: Optional[HarborEvalConfig] = None
+    agentic_eval_config: Optional[
+        Union[HarborEvalConfig, AutomationBenchEvalConfig]
+    ] = None
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -2792,6 +2840,52 @@ _eval_config_list = [
                             "terminal-bench/music-harmony",
                             "terminal-bench/bun-sourcemap-leak",
                             "terminal-bench/intrastat-meldung",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="automation_bench",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # No targets yet (tt-blaze#5867). The MiniMax-M3.1-Flash card
+                # reports 62.8 on the 600 public tasks, harness and reasoning
+                # effort unstated.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=AutomationBenchEvalConfig(
+                    domains=list(AUTOMATION_BENCH_DOMAINS),
+                    toolset="api",
+                    max_steps=50,
+                    # One in-flight request per task: fill the 62 slots.
+                    n_concurrent_trials=62,
+                    agent_kwargs={
+                        "extra_body": {"temperature": 1.0, "top_p": 0.95},
+                    },
+                    task_names_map={
+                        # The first two tasks of each scored domain.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sales.multi_hop_lookup",
+                            "sales.negative_selection",
+                            "marketing.social_engagement_response",
+                            "marketing.lead_enrichment",
+                            "operations.asana_fire_drill",
+                            "operations.trello_basecamp_compliance",
+                            "support.zendesk_sf_case_sync",
+                            "support.helpscout_jira_bugs",
+                            "finance.invoice_email_extract",
+                            "finance.expense_anomaly_detection",
+                            "hr.offboarding_automation",
+                            "hr.training_compliance",
                         ],
                     },
                 ),
