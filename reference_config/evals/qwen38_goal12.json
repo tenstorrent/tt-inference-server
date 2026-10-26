@@ -1,12 +1,12 @@
 {
-  "phase": "terminal21-calibration8-long1800",
+  "phase": "terminal21-calibration8-client4-agent1800-request1200",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
     "terminal_bench_2_1"
   ],
   "sample_count": 8,
-  "max_concurrent": 8,
+  "max_concurrent": 4,
   "agent_timeout_sec": 1800,
   "llm_timeout_sec": 1200,
   "suite_timeout_sec": 4500,
