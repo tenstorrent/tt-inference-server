@@ -17,8 +17,10 @@ scored the same way and compared dimension by dimension:
 - aesthetic_quality, imaging_quality, temporal_flickering: per-frame aesthetics
   (LAION), technical quality (MUSIQ) and flicker
 
-camera_motion is left out by default: it only means something when the prompt
-asks for a camera move. Informational: nothing gates on it yet.
+- camera_motion: the camera makes the move the prompt asks for (CoTracker),
+  scored only on clips whose index entry names one (``camera_motion``)
+
+Informational: nothing gates on it yet.
 
 Runs as its own CI step after the tests, over the clips the video eval saved
 (``<run output>/videos/evals/index.json``). It provisions the VBENCH_I2V venv
@@ -35,6 +37,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -44,7 +47,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_IMAGES_DIR = REPO_ROOT / "test_fixtures" / "datasets" / "coco_i2v"
+# Conditioning images are found by name in whichever eval pair set has them.
+DATASETS_DIR = REPO_ROOT / "test_fixtures" / "datasets"
 I2V_DIMENSIONS = ("i2v_subject", "i2v_background", "camera_motion")
 DEFAULT_DIMENSIONS = (
     "i2v_subject",
@@ -56,7 +60,18 @@ DEFAULT_DIMENSIONS = (
     "aesthetic_quality",
     "imaging_quality",
     "temporal_flickering",
+    "camera_motion",
 )
+# VBench's camera_motion reads the expected move from the video's file name.
+CAMERA_PHRASES = {
+    "pan_left": "camera pans left",
+    "pan_right": "camera pans right",
+    "tilt_up": "camera tilts up",
+    "tilt_down": "camera tilts down",
+    "zoom_in": "camera zooms in",
+    "zoom_out": "camera zooms out",
+    "static": "camera static",
+}
 # VBench reports imaging_quality's aggregate on a 0-1 scale but each clip's
 # score on MUSIQ's 0-100; per-clip scores here use the aggregate's scale.
 PER_CLIP_SCALE = {"imaging_quality": 0.01}
@@ -66,21 +81,59 @@ RAFT_URL = "https://dl.dropboxusercontent.com/s/4j4z58wuv8o0mfz/models.zip"
 DOWNLOAD_ATTEMPTS = 3
 
 
+def find_conditioning_image(name: str, images_dir: Path | None = None) -> Path:
+    """The conditioning image: in ``images_dir`` if given, else in the pair set that has it."""
+    candidates = (
+        [images_dir / name] if images_dir else sorted(DATASETS_DIR.glob(f"*/{name}"))
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"conditioning image {name} not found in {images_dir or DATASETS_DIR}"
+    )
+
+
 def build_full_info(
-    index: list[dict], videos_dir: Path, images_dir: Path, dimensions: list[str]
+    index: list[dict],
+    videos_dir: Path,
+    images_dir: Path | None,
+    dimensions: list[str],
 ) -> list[dict]:
-    """VBench's custom-input full-info list: one entry per saved clip."""
+    """VBench's custom-input full-info list: one entry per saved clip.
+
+    camera_motion is left out: it scores only some clips, under other names.
+    """
+    dimensions = [d for d in dimensions if d != "camera_motion"]
     entries = []
     for entry in index:
         record = {
             "prompt_en": entry["prompt"],
-            "dimension": list(dimensions),
+            "dimension": dimensions,
             "video_list": [str(videos_dir / entry["file"])],
         }
         if entry.get("conditioning_image"):
-            record["custom_image_path"] = str(images_dir / entry["conditioning_image"])
+            record["custom_image_path"] = str(
+                find_conditioning_image(entry["conditioning_image"], images_dir)
+            )
         entries.append(record)
     return entries
+
+
+def link_camera_clips(index: list[dict], videos_dir: Path, links_dir: Path) -> dict:
+    """Link each clip that asks for a camera move under a name VBench reads it from.
+
+    Returns link name to the clip's own file name.
+    """
+    names = {}
+    for entry in index:
+        phrase = CAMERA_PHRASES.get(entry.get("camera_motion") or "")
+        if not phrase:
+            continue
+        link = links_dir / f"{Path(entry['file']).stem} {phrase}.mp4"
+        link.symlink_to((videos_dir / entry["file"]).resolve())
+        names[link.name] = entry["file"]
+    return names
 
 
 def per_clip_scores(dimension: str, video_results: list[dict]) -> dict[str, float]:
@@ -115,7 +168,7 @@ def score_directory(
     videos_dir: Path,
     *,
     vbench_dir: Path,
-    images_dir: Path = DEFAULT_IMAGES_DIR,
+    images_dir: Path | None = None,
     dimensions: tuple[str, ...] | list[str] = DEFAULT_DIMENSIONS,
     device: str | None = None,
     out: Path | None = None,
@@ -129,7 +182,8 @@ def score_directory(
     import torch
 
     # Resolve before the chdir below.
-    videos_dir, images_dir = videos_dir.resolve(), images_dir.resolve()
+    videos_dir = videos_dir.resolve()
+    images_dir = images_dir.resolve() if images_dir else None
     out = (out or videos_dir / "vbench.json").resolve()
     sys.path.insert(0, str(vbench_dir.resolve()))
     # VBench resolves some third-party configs relative to its repo root.
@@ -150,13 +204,54 @@ def score_directory(
                 "file": e["file"],
                 "prompt": e["prompt"],
                 "conditioning_image": e.get("conditioning_image"),
+                "camera_motion": e.get("camera_motion"),
             }
             for e in index
         ],
         "dimensions": {},
     }
 
+    def run_camera_motion() -> dict:
+        links_dir = Path(tempfile.mkdtemp(prefix="vbench_camera_"))
+        names = link_camera_clips(index, videos_dir, links_dir)
+        if not names:
+            return {"skipped": "no clip asks for a camera move"}
+        camera_info = out.with_name("vbench_camera_info.json")
+        camera_info.write_text(
+            json.dumps(
+                [
+                    {
+                        "prompt_en": link,
+                        "dimension": ["camera_motion"],
+                        "video_list": [str(links_dir / link)],
+                    }
+                    for link in names
+                ],
+                indent=1,
+            )
+        )
+        submodules = init_submodules(["camera_motion"], local=False, read_frame=False)
+        module = importlib.import_module("vbench2_beta_i2v.camera_motion")
+        score, _, video_results = module.compute_camera_motion(
+            str(camera_info), torch.device(device), submodules["camera_motion"]
+        )
+        return {
+            "score": round(float(score), 4),
+            "per_clip": {
+                names[link]: value
+                for link, value in per_clip_scores(
+                    "camera_motion", video_results
+                ).items()
+            },
+            "predicted": {
+                names[Path(r["video_path"]).name]: r.get("predict_type")
+                for r in video_results
+            },
+        }
+
     def run_dimension(dimension: str) -> dict:
+        if dimension == "camera_motion":
+            return run_camera_motion()
         package = "vbench2_beta_i2v" if dimension in I2V_DIMENSIONS else "vbench"
         if dimension == "dynamic_degree":
             ensure_raft_weights(Path(CACHE_DIR))
@@ -216,12 +311,15 @@ def to_markdown(result: dict, title: str) -> str:
                 f"| {name} | error: {record['error'][:80]} | | {record['seconds']} |"
             )
             continue
+        if "skipped" in record:
+            lines.append(f"| {name} | skipped: {record['skipped']} | | |")
+            continue
         clip_scores = list(record["per_clip"].values())
         low = f"{min(clip_scores):.4f}" if clip_scores else ""
         lines.append(
             f"| {name} | {record['score']:.4f} | {low} | {record['seconds']} |"
         )
-    scored = [n for n, r in dims.items() if "error" not in r]
+    scored = [n for n, r in dims.items() if "per_clip" in r]
     if scored:
         lines += ["", "| Clip | Prompt | " + " | ".join(scored) + " |"]
         lines.append("|---|---|" + "---|" * len(scored))
@@ -270,7 +368,11 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--videos-dir", type=Path, required=True)
-    parser.add_argument("--images-dir", type=Path, default=DEFAULT_IMAGES_DIR)
+    parser.add_argument(
+        "--images-dir",
+        type=Path,
+        help="default: whichever test_fixtures/datasets pair set has each image",
+    )
     parser.add_argument(
         "--dimensions",
         default=",".join(DEFAULT_DIMENSIONS),

@@ -99,9 +99,7 @@ class VideoGenerationEvalsTest(BaseTest):
         # video is conditioned on the image its prompt describes.
         conditioning = None
         if is_i2v_video_model(request.model_name):
-            logger.info(
-                f"Step 1: Loading {request.num_prompts} COCO image-caption pairs"
-            )
+            logger.info(f"Step 1: Loading {request.num_prompts} image-caption pairs")
             conditioning = load_i2v_eval_pairs(request.num_prompts)
             prompts = [pair["prompt"] for pair in conditioning]
         else:
@@ -264,6 +262,9 @@ class VideoGenerationEvalsTest(BaseTest):
                             "video_path": video_path,
                             "job_id": job_id,
                             "image": pair["image"] if pair else None,
+                            "camera_motion": pair.get("camera_motion")
+                            if pair
+                            else None,
                         }
                     )
                     logger.info(f"✅ Video generated successfully: {video_path}")

@@ -32,10 +32,11 @@ from typing import Any
 
 import requests
 
+from .vbench_i2v import find_conditioning_image
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "anthropic/claude-sonnet-4-6"
-DEFAULT_IMAGES_DIR = Path("test_fixtures") / "datasets" / "coco_i2v"
 NUM_FRAMES = 9
 FRAME_WIDTH = 512
 REQUEST_TIMEOUT_SECONDS = 300
@@ -183,9 +184,13 @@ def judge_directory(
     api_key: str,
     base_url: str,
     model: str = DEFAULT_MODEL,
-    images_dir: Path = DEFAULT_IMAGES_DIR,
+    images_dir: Path | None = None,
 ) -> dict:
-    """Judge every clip in a saved eval folder's index.json; one failure skips one clip."""
+    """Judge every clip in a saved eval folder's index.json; one failure skips one clip.
+
+    Conditioning images come from ``images_dir``, or else from whichever eval pair
+    set in test_fixtures/datasets has them.
+    """
     index = json.loads((videos_dir / "index.json").read_text())
     clips = []
     for entry in index:
@@ -203,7 +208,9 @@ def judge_directory(
                     api_key=api_key,
                     base_url=base_url,
                     model=model,
-                    image_path=images_dir / image_name if image_name else None,
+                    image_path=find_conditioning_image(image_name, images_dir)
+                    if image_name
+                    else None,
                 )
             )
         except Exception as e:  # noqa: BLE001 - recorded per clip; the rest still run
@@ -251,7 +258,11 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--videos-dir", type=Path, required=True)
-    parser.add_argument("--images-dir", type=Path, default=DEFAULT_IMAGES_DIR)
+    parser.add_argument(
+        "--images-dir",
+        type=Path,
+        help="default: whichever test_fixtures/datasets pair set has each image",
+    )
     parser.add_argument("--out", type=Path, help="default: <videos-dir>/llm_judge.json")
     parser.add_argument("--summary-md", type=Path, help="append a markdown table here")
     args = parser.parse_args(argv)

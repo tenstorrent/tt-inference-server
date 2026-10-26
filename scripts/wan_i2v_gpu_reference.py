@@ -22,7 +22,8 @@
 """Generate GPU reference clips for the Wan2.2 I2V eval, like-for-like with TT.
 
 Runs upstream diffusers on a CUDA GPU over the same image-caption pairs the TT
-video eval uses (test_fixtures/datasets/coco_i2v), with the request the eval
+video eval uses (``--pairs``: the five COCO pairs in test_fixtures/datasets/coco_i2v,
+or the fifteen VBench-I2V pairs in .../vbench_i2v), with the request the eval
 sends and the settings the TT pipeline runs (tt-media-server dit_runners.py,
 tt-metal models/tt_dit/pipelines/wan):
 
@@ -37,6 +38,7 @@ It writes the clips and an index.json in the layout the video eval saves, so
 the VBench scorer runs on them unchanged:
 
     uv run scripts/wan_i2v_gpu_reference.py --out gpu_ref_720p --resolution 720p
+    uv run scripts/wan_i2v_gpu_reference.py --out gpu_ref_720p_vbench --pairs vbench_i2v
     python3 -m test_module._test_common.vbench_i2v --videos-dir gpu_ref_720p
 """
 
@@ -50,7 +52,8 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PAIRS_DIR = REPO_ROOT / "test_fixtures" / "datasets" / "coco_i2v"
+DATASETS_DIR = REPO_ROOT / "test_fixtures" / "datasets"
+PAIR_SETS = ("coco_i2v", "vbench_i2v")
 MODEL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
 RESOLUTIONS = {"720p": (1280, 720), "480p": (832, 480)}
 NUM_FRAMES = 81
@@ -120,6 +123,7 @@ def provenance(args, width: int, height: int) -> dict:
         sha = None
     return {
         "model": MODEL,
+        "pairs": args.pairs,
         "gpu": torch.cuda.get_device_name(0),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
@@ -145,6 +149,7 @@ def provenance(args, width: int, height: int) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--pairs", choices=PAIR_SETS, default="coco_i2v")
     parser.add_argument("--resolution", choices=sorted(RESOLUTIONS), default="720p")
     parser.add_argument("--schedule", choices=("tt", "checkpoint"), default="tt")
     parser.add_argument("--steps", type=int, default=STEPS)
@@ -161,7 +166,8 @@ def main() -> int:
     from diffusers.utils import export_to_video
 
     width, height = RESOLUTIONS[args.resolution]
-    pairs = json.loads((PAIRS_DIR / "manifest.json").read_text())[: args.limit]
+    pairs_dir = DATASETS_DIR / args.pairs
+    pairs = json.loads((pairs_dir / "manifest.json").read_text())[: args.limit]
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "provenance.json").write_text(
         json.dumps(provenance(args, width, height), indent=2) + "\n"
@@ -172,7 +178,7 @@ def main() -> int:
     for i, pair in enumerate(pairs):
         started = time.monotonic()
         frames = pipe(
-            image=conditioning_image(PAIRS_DIR / pair["image"], width, height),
+            image=conditioning_image(pairs_dir / pair["image"], width, height),
             prompt=pair["caption"],
             negative_prompt=NEGATIVE_PROMPT,
             height=height,
@@ -186,14 +192,15 @@ def main() -> int:
         name = f"{i:02d}_gpu.mp4"
         export_to_video(frames, str(args.out / name), fps=FPS)
         seconds = round(time.monotonic() - started, 1)
-        index.append(
-            {
-                "file": name,
-                "prompt": pair["caption"],
-                "conditioning_image": pair["image"],
-                "seconds": seconds,
-            }
-        )
+        entry = {
+            "file": name,
+            "prompt": pair["caption"],
+            "conditioning_image": pair["image"],
+            "seconds": seconds,
+        }
+        if pair.get("camera_motion"):
+            entry["camera_motion"] = pair["camera_motion"]
+        index.append(entry)
         # Rewritten after every clip, so a run cut short is still scoreable.
         (args.out / "index.json").write_text(json.dumps(index, indent=2) + "\n")
         print(f"{name}: {seconds} s  {pair['caption']}", flush=True)

@@ -1,0 +1,246 @@
+[
+  {
+    "image": "pexels_1604869.jpg",
+    "caption": "a man on a surfboard riding a wave in the ocean",
+    "vbench_caption": "a man on a surfboard riding a wave in the ocean",
+    "vbench_category": "single-human",
+    "source_url": "https://www.pexels.com/photo/man-kite-surfing-1604869",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a man on a surfboard",
+      "an ocean wave"
+    ]
+  },
+  {
+    "image": "pexels_13578635.jpg",
+    "caption": "an older man playing a saxophone on the street",
+    "vbench_caption": "an older man playing a saxophone on the street",
+    "vbench_category": "single-human",
+    "source_url": "https://www.pexels.com/photo/a-man-playing-a-saxophone-13578635",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "an older man",
+      "a saxophone"
+    ]
+  },
+  {
+    "image": "pexels_1277397.jpg",
+    "caption": "a man swinging a tennis racquet at a tennis ball",
+    "vbench_caption": "a man swinging a tennis racquet at a tennis ball",
+    "vbench_category": "single-human",
+    "source_url": "https://www.pexels.com/photo/man-playing-tennis-1277397",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a man swinging a tennis racquet",
+      "a tennis ball"
+    ]
+  },
+  {
+    "image": "pexels_8611942.jpg",
+    "caption": "a man and a woman are boxing in a boxing ring",
+    "vbench_caption": "a man and a woman are boxing in a boxing ring",
+    "vbench_category": "multiple-human",
+    "source_url": "https://www.pexels.com/photo/man-and-woman-during-a-kickboxing-workout-8611942",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "two people boxing",
+      "a boxing ring"
+    ]
+  },
+  {
+    "image": "pexels_12210669.jpg",
+    "caption": "a group of people riding bikes down a street",
+    "vbench_caption": "a group of people riding bikes down a street",
+    "vbench_category": "multiple-human",
+    "source_url": "https://www.pexels.com/photo/photo-of-a-city-street-12210669",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "people riding bikes",
+      "a street"
+    ]
+  },
+  {
+    "image": "pexels_2263936.jpg",
+    "caption": "a tiger walking through a wooded area",
+    "vbench_caption": "a tiger walking through a wooded area",
+    "vbench_category": "animal",
+    "source_url": "https://www.pexels.com/photo/photo-of-tiger-2263936",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a tiger walking",
+      "a forest"
+    ]
+  },
+  {
+    "image": "pexels_12026138.jpg",
+    "caption": "a sea turtle swimming in the ocean under the water",
+    "vbench_caption": "a sea turtle swimming in the ocean under the water",
+    "vbench_category": "animal",
+    "source_url": "https://www.pexels.com/photo/baby-turtle-swimming-underwater-12026138",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a sea turtle swimming",
+      "underwater"
+    ]
+  },
+  {
+    "image": "pexels_3054690.jpg",
+    "caption": "a person is cooking food in a wok on a stove",
+    "vbench_caption": "a person is cooking food in a wok on a stove",
+    "vbench_category": "food",
+    "source_url": "https://www.pexels.com/photo/person-cooking-noodles-3054690",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a wok",
+      "a stove",
+      "a person cooking"
+    ]
+  },
+  {
+    "image": "pexels_2790396.jpg",
+    "caption": "a steam train traveling through the woods",
+    "vbench_caption": "a steam train traveling through the woods",
+    "vbench_category": "transportation",
+    "source_url": "https://www.pexels.com/photo/train-in-railway-2790396",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a steam train",
+      "woods"
+    ]
+  },
+  {
+    "image": "pexels_362956.jpg",
+    "caption": "reeds blowing in the wind against a cloudy sky",
+    "vbench_caption": "reeds blowing in the wind against a cloudy sky",
+    "vbench_category": "plant",
+    "source_url": "https://www.pexels.com/photo/tall-grass-under-cloudy-day-sky-362956",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "reeds",
+      "a cloudy sky"
+    ]
+  },
+  {
+    "image": "pexels_1474928.jpg",
+    "caption": "a book on fire with flames coming out of it",
+    "vbench_caption": "a book on fire with flames coming out of it",
+    "vbench_category": "other",
+    "source_url": "https://www.pexels.com/photo/burning-book-page-1474928",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a burning book",
+      "flames"
+    ]
+  },
+  {
+    "image": "pexels_11117140.jpg",
+    "caption": "a large wave crashes over a rocky cliff, camera pans left",
+    "vbench_caption": "a large wave crashes over a rocky cliff",
+    "vbench_category": "scenery",
+    "source_url": "https://www.pexels.com/photo/huge-waves-breaking-on-the-seashore-11117140",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a crashing wave",
+      "a rocky cliff"
+    ],
+    "camera_motion": "pan_left"
+  },
+  {
+    "image": "pexels_2385898.jpg",
+    "caption": "a city street at night during a snow storm, camera zooms in",
+    "vbench_caption": "a city street at night during a snow storm",
+    "vbench_category": "architecture",
+    "source_url": "https://www.pexels.com/photo/street-lights-turned-on-near-buildings-at-night-2385898",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a city street at night",
+      "falling snow"
+    ],
+    "camera_motion": "zoom_in"
+  },
+  {
+    "image": "pexels_3968056.jpg",
+    "caption": "a table and chairs in a room with sunlight coming through the window, camera pans right",
+    "vbench_caption": "a table and chairs in a room with sunlight coming through the window",
+    "vbench_category": "indoor",
+    "source_url": "https://www.pexels.com/photo/brown-wooden-dining-table-and-chairs-3968056",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "a table and chairs",
+      "sunlight through a window"
+    ],
+    "camera_motion": "pan_right"
+  },
+  {
+    "image": "pexels_604684.jpg",
+    "caption": "a blue and white smoke is swirly in the dark, camera static",
+    "vbench_caption": "a blue and white smoke is swirly in the dark",
+    "vbench_category": "abstract",
+    "source_url": "https://www.pexels.com/photo/blue-and-white-smoke-digital-wallpaper-604684",
+    "crop": "VBench-I2V 16:9 crop, resized",
+    "size": [
+      1280,
+      720
+    ],
+    "concepts": [
+      "swirling smoke"
+    ],
+    "camera_motion": "static"
+  }
+]

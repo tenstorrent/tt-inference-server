@@ -17,6 +17,7 @@ from .test_classes import TestCase, TestConfig, TestReport, TestTarget
 from .video_generation_routing import (
     _load_fixture_image_base64,
     build_video_generation_payload,
+    i2v_eval_num_pairs,
     load_i2v_eval_pairs,
     get_video_generation_submit_endpoint,
     is_i2v_video_model,
@@ -42,6 +43,7 @@ __all__ = [
     "_load_fixture_image_base64",
     "block_id",
     "build_video_generation_payload",
+    "i2v_eval_num_pairs",
     "load_i2v_eval_pairs",
     "get_video_generation_submit_endpoint",
     "is_i2v_video_model",

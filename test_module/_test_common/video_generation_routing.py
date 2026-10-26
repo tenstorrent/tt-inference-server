@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
@@ -20,8 +21,14 @@ FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 # Image-caption pairs for the I2V eval: each image with the caption that
-# describes it (see its ATTRIBUTION.md).
-I2V_EVAL_PAIRS_DIR = Path("test_fixtures") / "datasets" / "coco_i2v"
+# describes it (see each set's ATTRIBUTION.md). I2V_EVAL_PAIRS picks the set,
+# and each set is evaluated in full at its own size: five COCO pairs by
+# default, or fifteen from VBench-I2V's image suite (four with a camera move).
+I2V_EVAL_DATASETS_DIR = Path("test_fixtures") / "datasets"
+I2V_EVAL_PAIRS_DIR = I2V_EVAL_DATASETS_DIR / "coco_i2v"
+I2V_EVAL_PAIR_SETS = {"coco_i2v": 5, "vbench_i2v": 15}
+I2V_EVAL_PAIRS_ENV = "I2V_EVAL_PAIRS"
+DEFAULT_I2V_EVAL_PAIRS = "coco_i2v"
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 
@@ -41,29 +48,53 @@ def _load_fixture_image_base64() -> str:
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 
 
+def i2v_eval_pair_set() -> str:
+    """The I2V eval's pair set: ``I2V_EVAL_PAIRS``, or COCO when unset."""
+    name = os.getenv(I2V_EVAL_PAIRS_ENV) or DEFAULT_I2V_EVAL_PAIRS
+    if name not in I2V_EVAL_PAIR_SETS:
+        raise ValueError(
+            f"{I2V_EVAL_PAIRS_ENV}={name!r}; expected one of {sorted(I2V_EVAL_PAIR_SETS)}"
+        )
+    return name
+
+
+def i2v_eval_pairs_dir() -> Path:
+    return I2V_EVAL_DATASETS_DIR / i2v_eval_pair_set()
+
+
+def i2v_eval_num_pairs() -> int:
+    """How many pairs the I2V eval runs: the whole selected set."""
+    return I2V_EVAL_PAIR_SETS[i2v_eval_pair_set()]
+
+
 def load_i2v_eval_pairs(num_pairs: int) -> list[dict]:
     """The first ``num_pairs`` I2V eval pairs: ``{prompt, image, image_b64, concepts}``.
 
     ``prompt`` is the caption of ``image``, so the video is scored against text
     that describes what it was conditioned on; ``concepts`` are the things in it
-    the video should keep showing, each scored separately.
+    the video should keep showing, each scored separately. A pair that asks for
+    a camera move also carries ``camera_motion`` (VBench's name for the move).
     """
-    manifest = json.loads((I2V_EVAL_PAIRS_DIR / "manifest.json").read_text())
+    pairs_dir = i2v_eval_pairs_dir()
+    manifest = json.loads((pairs_dir / "manifest.json").read_text())
     if num_pairs > len(manifest):
         raise ValueError(
-            f"I2V eval wants {num_pairs} pairs; {I2V_EVAL_PAIRS_DIR} has {len(manifest)}"
+            f"I2V eval wants {num_pairs} pairs; {pairs_dir} has {len(manifest)}"
         )
-    return [
-        {
+    pairs = []
+    for entry in manifest[:num_pairs]:
+        pair = {
             "prompt": entry["caption"],
             "image": entry["image"],
             "concepts": entry.get("concepts", []),
             "image_b64": base64.b64encode(
-                (I2V_EVAL_PAIRS_DIR / entry["image"]).read_bytes()
+                (pairs_dir / entry["image"]).read_bytes()
             ).decode("ascii"),
         }
-        for entry in manifest[:num_pairs]
-    ]
+        if entry.get("camera_motion"):
+            pair["camera_motion"] = entry["camera_motion"]
+        pairs.append(pair)
+    return pairs
 
 
 def build_video_generation_payload(

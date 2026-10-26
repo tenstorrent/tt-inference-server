@@ -27,7 +27,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
     from .._test_common import TestConfig
 
-    from .._test_common import is_i2v_video_model
+    from .._test_common import i2v_eval_num_pairs, is_i2v_video_model
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
@@ -43,7 +43,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         generation_mode,
     )
 
-    num_prompts = 5
+    num_prompts = i2v_eval_num_pairs() if generation_mode == "I2V" else 5
     num_inference_steps = 40
     start_from = 0
     frame_sample_rate = 8
@@ -155,6 +155,8 @@ def _save_eval_clips(ctx: MediaContext, videos: list[dict]) -> None:
             entry = {"file": name, "prompt": video.get("prompt")}
             if video.get("image"):
                 entry["conditioning_image"] = video["image"]
+            if video.get("camera_motion"):
+                entry["camera_motion"] = video["camera_motion"]
             if video.get("concept_scores"):
                 entry["concept_scores"] = video["concept_scores"]
             index.append(entry)

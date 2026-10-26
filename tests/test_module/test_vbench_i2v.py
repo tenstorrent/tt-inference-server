@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import zipfile
-from pathlib import Path
 
 from test_module._test_common import vbench_i2v as mod
 from workflow_module.engine_types import WorkflowVenvType
@@ -29,9 +28,15 @@ INDEX = [
 
 
 def test_full_info_pairs_each_clip_with_its_conditioning_image(tmp_path):
-    info = mod.build_full_info(INDEX, tmp_path / "v", tmp_path / "img", ["i2v_subject"])
+    (tmp_path / "img").mkdir()
+    for name in ("bird.jpg", "lake.jpg"):
+        (tmp_path / "img" / name).write_bytes(b"jpg")
+    info = mod.build_full_info(
+        INDEX, tmp_path / "v", tmp_path / "img", ["i2v_subject", "camera_motion"]
+    )
     assert info[0] == {
         "prompt_en": "A bird on a feeder.",
+        # camera_motion runs separately, on the clips that ask for a move.
         "dimension": ["i2v_subject"],
         "video_list": [str(tmp_path / "v" / "00_a.mp4")],
         "custom_image_path": str(tmp_path / "img" / "bird.jpg"),
@@ -103,17 +108,56 @@ def test_vbench_venv_is_registered_with_its_requirements():
     assert venv.setup_function is not None
 
 
-def test_default_dimensions_leave_out_camera_motion():
-    # Our eval prompts ask for no camera move, so camera_motion would score noise.
-    assert "camera_motion" not in mod.DEFAULT_DIMENSIONS
-    assert set(mod.DEFAULT_DIMENSIONS) >= {"i2v_subject", "i2v_background"}
+def test_conditioning_images_are_found_in_either_pair_set():
+    for pair_set in ("coco_i2v", "vbench_i2v"):
+        manifest = json.loads(
+            (mod.DATASETS_DIR / pair_set / "manifest.json").read_text()
+        )
+        found = mod.find_conditioning_image(manifest[0]["image"])
+        assert found == mod.DATASETS_DIR / pair_set / manifest[0]["image"]
 
 
-def test_default_images_dir_is_the_eval_fixture_set():
-    assert (mod.DEFAULT_IMAGES_DIR / "manifest.json").is_file()
-    manifest = json.loads((mod.DEFAULT_IMAGES_DIR / "manifest.json").read_text())
-    assert manifest
-    assert isinstance(mod.DEFAULT_IMAGES_DIR, Path)
+def test_every_manifest_camera_move_is_one_vbench_reads():
+    manifest = json.loads(
+        (mod.DATASETS_DIR / "vbench_i2v" / "manifest.json").read_text()
+    )
+    moves = [e["camera_motion"] for e in manifest if "camera_motion" in e]
+    assert len(moves) == 4
+    for entry in manifest:
+        if "camera_motion" in entry:
+            assert entry["caption"].endswith(mod.CAMERA_PHRASES[entry["camera_motion"]])
+
+
+def test_camera_clips_are_linked_under_names_carrying_the_move(tmp_path):
+    videos, links = tmp_path / "v", tmp_path / "links"
+    videos.mkdir()
+    links.mkdir()
+    for name in ("00_a.mp4", "01_b.mp4"):
+        (videos / name).write_bytes(b"mp4")
+    index = [
+        {"file": "00_a.mp4", "prompt": "a wave"},
+        {
+            "file": "01_b.mp4",
+            "prompt": "a wave, camera pans left",
+            "camera_motion": "pan_left",
+        },
+    ]
+    names = mod.link_camera_clips(index, videos, links)
+    assert names == {"01_b camera pans left.mp4": "01_b.mp4"}
+    assert (links / "01_b camera pans left.mp4").resolve() == (
+        videos / "01_b.mp4"
+    ).resolve()
+
+
+def test_markdown_shows_a_skipped_dimension():
+    result = _result()
+    result["dimensions"]["camera_motion"] = {
+        "skipped": "no clip asks for a camera move",
+        "seconds": 0.0,
+    }
+    md = mod.to_markdown(result, "x")
+    assert "| camera_motion | skipped: no clip asks for a camera move | | |" in md
+    assert "camera_motion |" not in md.split("| Clip | Prompt |")[1].splitlines()[0]
 
 
 def test_raft_weights_are_unpacked_without_an_unzip_binary(tmp_path, monkeypatch):
