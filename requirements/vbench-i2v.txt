@@ -9,10 +9,10 @@
 # CUDA); setup_vbench_i2v() checks the repo out at VBENCH_COMMIT and the scorer
 # imports it from there. These are the packages its I2V and quality dimensions
 # import. CPU torch by default; a CUDA host scores faster with the same pins.
-# transformers is held at VBench's pin. peft 0.10.0 is the release that both
-# imports under it (later ones import transformers.Cache) and reads DreamSim's
-# LoRA adapter config (earlier ones reject its layer_replication field). setup_vbench_i2v() swaps the
-# opencv-python that pyiqa pulls in for opencv-python-headless (no libGL).
+# transformers is held at VBench's pin. peft 0.10.0 imports under it (current
+# peft imports transformers.Cache, which 4.33 lacks) and reads DreamSim's LoRA
+# config (0.6.2 rejects its layer_replication field). setup_vbench_i2v() swaps
+# the opencv-python that pyiqa pulls in for opencv-python-headless (no libGL).
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
