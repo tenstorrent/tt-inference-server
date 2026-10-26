@@ -102,7 +102,8 @@
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
       "Qwen/Qwen3.5-9B-Base",
-      "IFM/K2-Horizon-7B"
+      "IFM/K2-Horizon-7B",
+      "zai-org/GLM-5.3-Flash"
     ]
   },
   "available_markers": {
@@ -1099,6 +1100,16 @@
       "id_name": "IFM--K2-Horizon-7B",
       "weights": [
         "IFM/K2-Horizon-7B"
+      ]
+    },
+    "zai-org/GLM-5.3-Flash": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p150x8"
+      ],
+      "id_name": "zai-org--GLM-5.3-Flash",
+      "weights": [
+        "zai-org/GLM-5.3-Flash"
       ]
     }
   },
