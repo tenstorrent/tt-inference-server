@@ -1,5 +1,5 @@
 {
-  "phase": "gpqa32-c8-b8-shared256",
+  "phase": "gpqa32-c8-b32-shared256",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
