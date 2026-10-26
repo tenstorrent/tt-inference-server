@@ -1,10 +1,8 @@
 {
-  "phase": "tb21-frozen32-b32-shared256",
+  "phase": "tb21-32-shared256",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
-    "r1_gpqa_diamond",
-    "swe_bench_verified",
     "terminal_bench_2_1"
   ],
   "sample_count": 32,
