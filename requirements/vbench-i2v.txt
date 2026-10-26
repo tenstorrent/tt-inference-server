@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the VBENCH_I2V workflow venv.
+# Used by: setup_vbench_i2v() in workflows/workflow_venvs.py
+#
+# VBench itself is not pip-installed (its setup.py refuses to install without
+# CUDA); setup_vbench_i2v() checks the repo out at VBENCH_COMMIT and the scorer
+# imports it from there. These are the packages its I2V and quality dimensions
+# import. CPU torch by default; a CUDA host scores faster with the same pins.
+# transformers is held at VBench's pin, and peft at the last release that
+# imports under it (dreamsim needs peft).
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.5.1
+torchvision==0.20.1
+numpy<2
+timm>=0.9,<=1.0.12
+transformers==4.33.2
+peft==0.6.2
+dreamsim
+pyiqa
+openai-clip
+decord
+opencv-python-headless
+scikit-image
+scipy
+easydict
+omegaconf
+pyyaml
+einops
+tqdm
+pillow
+setuptools<70

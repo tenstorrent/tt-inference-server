@@ -44,6 +44,10 @@ HARBOR_REF = "tt-inference-server"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
+# VBench (I2V and quality dimensions) for scoring saved video-eval clips.
+VBENCH_REPO = "https://github.com/Vchitect/VBench.git"
+VBENCH_COMMIT = "fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490"
+
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
@@ -819,6 +823,16 @@ def fetch_structured_output_scripts_forge(
     return _fetch_structured_output_scripts(venv_config, FORGE_VLLM_PIN_VERSION)
 
 
+def setup_vbench_i2v(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for VBENCH_I2V: check VBench out at VBENCH_COMMIT next to the venv."""
+    return checkout_pinned_repo(
+        venv_config.venv_path / "VBench", VBENCH_REPO, VBENCH_COMMIT
+    )
+
+
 _venv_config_list = [
     # Pure pip install
     VenvConfig(
@@ -849,6 +863,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
         requirements_file="evals-vision.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.VBENCH_I2V,
+        requirements_file="vbench-i2v.txt",
+        setup_function=setup_vbench_i2v,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_AUDIO,
