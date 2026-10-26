@@ -646,6 +646,19 @@ TERMINAL_BENCH_2_DATASET_REF = (
     "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
 )
 
+# Terminal-Bench 4.0 (terminal-bench/terminal-bench tag 4.0.0 = rev 4,
+# 66 tasks, flat 8 h agent timeout): https://www.tbench.ai/news/terminal-bench-4-0
+TERMINAL_BENCH_4_DATASET_REF = (
+    "sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732"
+)
+# The three TB 4.0 tasks that request an H100. Excluding them means a TB 4.0
+# score here is over 63 tasks and not directly comparable to the leaderboard.
+TERMINAL_BENCH_4_GPU_TASKS = [
+    "terminal-bench/fp8-rmsnorm-gemm",
+    "terminal-bench/jax-speedrun-gpu",
+    "terminal-bench/math-eval-grader",
+]
+
 # Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
 # pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
 # venv that include_path is normally joined with.
@@ -2727,6 +2740,56 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_4",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench",
+                    dataset_ref=TERMINAL_BENCH_4_DATASET_REF,
+                    agent="terminus-2",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    exclude_task_names=TERMINAL_BENCH_4_GPU_TASKS,
+                    # TB 4.0 sets a flat 8 h agent timeout on every task.
+                    agent_timeout_sec=8 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 500 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        # Shortest expert-time tasks, plus one multi-container
+                        # (Compose) task so the nightly covers that path.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/html-js-filter",
+                            "terminal-bench/photonic-waveguide-routing",
+                            "terminal-bench/music-harmony",
+                            "terminal-bench/bun-sourcemap-leak",
+                            "terminal-bench/payments-pipeline-fix",
                         ],
                     },
                 ),

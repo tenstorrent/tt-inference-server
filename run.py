@@ -560,7 +560,8 @@ def parse_arguments():
         help="Comma-separated agentic benchmark(s) to run under --workflow agentic, "
         "or by the agentic child of --workflow release. "
         "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
-        "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
+        "(terminal_bench_2_1), tb4 (terminal_bench_4), swebench (swe_bench_*). Raw "
+        "task names are also "
         "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
         "for the model.",
     )
