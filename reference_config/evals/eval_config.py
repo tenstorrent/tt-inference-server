@@ -13420,6 +13420,14 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
+
+# DISPATCH-ONLY BRANCH (do not merge): gemma-4-31B-it runs only omnidocbench_v15,
+# so a manual tt-shield dispatch of this ref measures that eval on its own.
+_gemma4_31b_config = _eval_config_map["google/gemma-4-31B-it"]
+_eval_config_map["google/gemma-4-31B-it"] = replace(
+    _gemma4_31b_config,
+    tasks=[t for t in _gemma4_31b_config.tasks if t.task_name in {"omnidocbench_v15"}],
+)
 # Keyed by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") so
 # lookups are unambiguous even when two repos share a basename.
 EVAL_CONFIGS = {
