@@ -161,14 +161,19 @@ def _target_checks(ctx: MediaContext, rows: list[dict]):
     return target_checks, target_check
 
 
-def _sweep_args(output_path: Path) -> argparse.Namespace:
-    """Arguments consumed by :func:`tts_load_harness.sweep`."""
+def _sweep_args(output_path: Path, prewarm: bool = False) -> argparse.Namespace:
+    """Arguments consumed by :func:`tts_load_harness.sweep`.
+
+    ``prewarm`` (the ``--prewarm`` run.py flag) gates the pre-sweep warmup burst:
+    off by default (0 s, no burst); when set, a ``TTS_CI_WARMUP_CONCURRENCY``-wide
+    burst runs for ``TTS_CI_PREWARM_SECONDS`` and is discarded before the sweep.
+    """
     return argparse.Namespace(
         concurrency=",".join(str(value) for value in TTS_CI_CONCURRENCY),
         duration=TTS_CI_DURATION_SECONDS,
         warmup=TTS_CI_WARMUP_SECONDS,
         warmup_concurrency=TTS_CI_WARMUP_CONCURRENCY,
-        prewarm=TTS_CI_PREWARM_SECONDS,
+        prewarm=TTS_CI_PREWARM_SECONDS if prewarm else 0.0,
         settle=TTS_CI_SETTLE_SECONDS,
         arrival="closed",
         rate=None,
@@ -202,7 +207,8 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     output_path = Path(ctx.output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    document = tts_load_harness.sweep(_sweep_args(output_path), _target(ctx))
+    prewarm = bool(getattr(getattr(ctx, "runtime_config", None), "prewarm", False))
+    document = tts_load_harness.sweep(_sweep_args(output_path, prewarm), _target(ctx))
     rows, chars_per_request = tts_load_harness.aggregate(document)
     report_rows = _report_rows(rows)
     target_checks, target_check = _target_checks(ctx, report_rows)

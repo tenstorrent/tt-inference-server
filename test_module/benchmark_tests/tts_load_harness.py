@@ -884,9 +884,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--prewarm",
         type=float,
-        default=60.0,
+        default=0.0,
         help="seconds of a discarded prewarm burst at --warmup-concurrency before "
-        "the sweep, to burn off TTS cold start (0 disables)",
+        "the sweep, to burn off TTS cold start (default 0 = off; set e.g. 60)",
     )
     p.add_argument(
         "--settle", type=float, default=5, help="idle seconds between levels"

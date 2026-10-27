@@ -231,6 +231,13 @@ def parse_arguments():
         help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
     parser.add_argument(
+        "--prewarm",
+        action="store_true",
+        help="Before the TTS benchmark sweep, run a warmup burst of concurrent "
+        "requests (discarded, never measured) to burn off cold start. Off by "
+        "default; when set, the burst runs to completion and then the sweep starts.",
+    )
+    parser.add_argument(
         "--dev-mode",
         action="store_true",
         help=(
