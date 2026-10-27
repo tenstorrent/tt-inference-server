@@ -2407,9 +2407,9 @@ templates:
     - text
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 32  # = users per row at 128 K; 256 after the row-ownership flip
+      max_concurrency: 28  # = users per row at 128 K (7 slots per chip; 32 ran out of DRAM in the prefill warm-up); 224 after the row-ownership flip
       max_context: 131072  # 128 * 1024
-      max_tokens_all_users_override: 4194304  # 32 x 131072
+      max_tokens_all_users_override: 3670016  # 28 x 131072
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
@@ -2432,7 +2432,7 @@ templates:
         prefill_chunk_alignment: 256
         decode_interleave_enabled: false
       vllm_args:
-        max_num_seqs: 32
+        max_num_seqs: 28
         block_size: 32
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 16384
