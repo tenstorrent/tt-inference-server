@@ -525,7 +525,7 @@ templates:
 
 # DeepSeek-V4.1-Flash, vision profile (model_type VLM: selects the vision eval tasks) on Blackhole Galaxy (32x P150, (4,8) mesh). Same tt-metal package and the same production
 # settings as the text entry in dev/llm.yaml (16 users, 262,144 tokens, k=5, prefix caching on, paged prefill, chunked prefill budget 67584, DSV41_VISION=1); select with `--impl deepseek-v41-flash-vlm`.
-# Images: up to 16 per prompt (limit-mm-per-prompt), <= 1026 tokens each; chat content parts of type image_url (vllm_config/chat_template.jinja).
+# Images: up to 250 per prompt (limit-mm-per-prompt), <= 1026 tokens each; chat content parts of type image_url (vllm_config/chat_template.jinja).
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
   impl: deepseek_v41_flash_vlm
@@ -567,7 +567,7 @@ templates:
         max_model_len: "262144"
         max_num_batched_tokens: "67584"  # chunked prefill token budget per step: the ONE place to set it (67584 = effectively one large prefill, 4096 = real interleaving with decode; value with APC on to be decided after measurement)
         enable-prefix-caching: true  # APC on by default (with DSV41_APC=1 and DSV41_PF_PAGED=read above); --no-enable-prefix-caching turns it off
-        limit-mm-per-prompt: '{"image": 16}'
+        limit-mm-per-prompt: '{"image": 250}'
         mm-processor-cache-gb: 0
         tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
         enable-auto-tool-choice: true
@@ -627,7 +627,7 @@ templates:
         max_num_batched_tokens: "16384"  # chunked prefill token budget per step: 4 users x 4096 (threshold below); with the single prefill chunk trace and per-row chunk starts 4 concurrent 32k / 64k / 128k prompts reach 25.8 / 49.2 / 100.5 s (demo 22.9-26.5 / 45.6-49.7 / 98.0-99.9)
         long_prefill_token_threshold: 4096  # per-request prefill tokens per scheduler step (vLLM applies it while more than one request is eligible); needed so that concurrent prompts advance together
         enable-prefix-caching: true  # APC on by default (with DSV41_APC=1 and DSV41_PF_PAGED=read above); --no-enable-prefix-caching turns it off
-        limit-mm-per-prompt: '{"image": 16}'
+        limit-mm-per-prompt: '{"image": 250}'
         mm-processor-cache-gb: 0
         tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
         enable-auto-tool-choice: true
