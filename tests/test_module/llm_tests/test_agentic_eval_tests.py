@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from pathlib import Path
@@ -688,6 +688,92 @@ class TestHarborHarness:
             "image_mode": "prebuilt",
             "node_selector": {"tt-pool": "shield"},
         }
+
+    def test_local_dataset_replaces_the_registry_name(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        task.agentic_eval_config.task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-*"
+        ]
+        task.agentic_eval_config.exclude_task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002"
+        ]
+        cfg = replace(
+            build_harbor_config(
+                task,
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=97,
+            ),
+            dataset_path=tmp_path / "tasks" / "tau3-bench",
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+
+            assert run_harbor(cfg) == 17
+
+        assert "--config" in run_cmd.call_args.args[0]
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        assert json.loads(config_path.read_text())["datasets"] == [
+            {
+                "path": str(tmp_path / "tasks" / "tau3-bench"),
+                "n_tasks": 97,
+                "task_names": ["tau3-banking_knowledge-*"],
+                "exclude_task_names": ["tau3-banking_knowledge-task-002"],
+            }
+        ]
+
+    def test_local_dataset_drops_the_registry_ref(self, tmp_path, caplog):
+        """A generated copy has no registry version to pin."""
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        cfg = replace(
+            build_harbor_config(
+                task, _server(), DriverContext(output_dir=tmp_path, device="N150")
+            ),
+            dataset_ref="1.0",
+            dataset_path=tmp_path / "tasks" / "tau3-bench",
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+            with caplog.at_level("WARNING", logger="llm_module.agentic.harbor"):
+                run_harbor(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        (dataset,) = json.loads(config_path.read_text())["datasets"]
+        assert dataset["path"] == str(tmp_path / "tasks" / "tau3-bench")
+        assert "ref" not in dataset and "name" not in dataset
+        assert "Ignoring dataset_ref '1.0'" in caplog.text
+        assert str(tmp_path / "tasks" / "tau3-bench") in caplog.text
+
+    @pytest.mark.parametrize("local", [False, True])
+    def test_driver_runs_a_generated_dataset_from_its_local_path(self, tmp_path, local):
+        task = _harbor_task()
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        driver = HarborAgenticDriver(task)
+        driver.venv_python = tmp_path / "venv" / "bin" / "python"
+        local_path = tmp_path / "tasks" / "tau3-bench" if local else None
+
+        prepare_patch = patch(
+            "llm_module.drivers.agentic.prepare_local_dataset", return_value=local_path
+        )
+        run_patch = patch("llm_module.drivers.agentic.run_harbor", return_value=1)
+        with prepare_patch as prepare, run_patch as run:
+            result = driver.run(
+                None, _server(), DriverContext(output_dir=tmp_path, device="N150")
+            )
+
+        assert result.return_code == 1
+        prepare.assert_called_once_with(
+            "sierra-research/tau3-bench", tmp_path / "venv" / "bin" / "python"
+        )
+        (run_config,) = run.call_args.args
+        assert run_config.dataset == "sierra-research/tau3-bench"
+        assert run_config.dataset_path == local_path
 
     def test_harbor_timeout_is_passed_to_the_watchdog(self, tmp_path):
         # ``harbor_timeout_sec`` is forwarded to the progress watchdog as the
