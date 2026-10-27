@@ -1,12 +1,12 @@
 {
-  "phase": "completion-pilot8-b32-81920",
+  "phase": "frozen32-shard2-b32-c4-81920",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
     "r1_gpqa_diamond"
   ],
   "sample_count": 8,
-  "max_concurrent": 8,
+  "max_concurrent": 4,
   "agent_timeout_sec": 1800,
   "llm_timeout_sec": 1200,
   "suite_timeout_sec": 2400,
@@ -62,27 +62,27 @@
     "manifest": "reference_config/evals/qwen38_goal12_terminal21_occupancy32.json",
     "manifest_sha256": "e14e14fa3ef3682134686a489f9a856613c6a5f96965bc9406e1561fffd28f1d",
     "doc_ids": [
-      1,
-      3,
-      5,
-      10,
+      11,
       12,
-      48,
-      128,
-      185
+      13,
+      15,
+      17,
+      18,
+      31,
+      33
     ],
     "document_sha256": [
-      "46b474e2ce3fed9fb712152fd0c5609dbf2c0c902f6c878b4c2c8bd7efef5249",
-      "3dd5de824bb2526a5e354bd23b1ef3149f4c64b6818df47cdfad2ed7d79c2a9a",
-      "c21ef60ba0d6e5f609971b78c31267d48dce06a569b2f7bf22e4a80c67d4be40",
-      "c05afa73e4a4c8f788469e7b95067747d15d6856f09d53aa72ab24afdcc8fdbe",
+      "f2d6751756e501ef39e0286637916d63bc50a27f09c57bed9e451da473b15c5b",
       "dd524cfa81f54fe949c7cb0ef5e47795055d085ec97320e24cc7736f8e50aff8",
-      "663cf19ec059ebfa51852c6d567139a1934e20776ae9629db9384d92d7ae34ac",
-      "b939e57bd7c08528883279e280fea33fcd73d8fabb93ee8a5c4ecfe48c4917a7",
-      "7835f4e547dd815de20d77cc398be9d29bcbc8c0be353040f9fd0fa980698cd0"
+      "f9856978c27aa7bb83f78aced76d68fc2abe32171603a16c0cb2e6624e101aa5",
+      "4168cf6665c1e75a2b4983659fa5c768f1f3933915d685c7f1a8eb8a2dc9c428",
+      "d42fa8326038e2a391c19abf234216c4244a95eb25ace209616925055ed902dd",
+      "7ee6796f95909f07622ede67b3b0f16e724aa78dae4e0012a336922a27a09e80",
+      "6d959969ff779ff55e3fb4b7296450851910e01638ab5e43467a651fd03910cc",
+      "837b9010032d717e827748fd2a969fda1c5ea1485825748cc1f046a1fd075549"
     ],
     "population": 198,
-    "concurrency": 8,
+    "concurrency": 4,
     "generation": {
       "max_gen_toks": 81920,
       "do_sample": true,
@@ -135,10 +135,11 @@
       "limitation": "Catalog reference; exact published scaffold/dataset revision equivalence not established; report scores without gating."
     }
   },
-  "gpqa_llm_timeout_sec": 13200,
-  "gpqa_suite_timeout_sec": 13800,
-  "gpqa_timeout_basis": "B32 prior observed ~7.2 tokens/s; 80K upper estimate81920/7 plus1200 startup and900 cleanup. Request budgets7200/13200. Generation suite7500/13800.",
+  "gpqa_llm_timeout_sec": 20400,
+  "gpqa_suite_timeout_sec": 41400,
+  "gpqa_timeout_basis": "One HTTP attempt20400s, C4 admission beforeHTTPtimer,8tasks<=2waves40800s plus600suiteoverhead; outer42600cancel leaves1200startup and900cleanup to43500hard. Actual80Kmax9602s on7.1TPS;20400covers80K at4.02TPS, slowerthanobserved4.87host.",
   "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
   "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
-  "record_suite_metrics": true
+  "record_suite_metrics": true,
+  "gpqa_max_retries": 1
 }
