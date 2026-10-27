@@ -38,13 +38,19 @@ def test_m31_flash_tasks_match_m3_apart_from_targets_and_concurrency():
         assert expected == task, name
 
 
-def test_m31_flash_terminal_bench_fills_the_deployment():
-    # Virtu's P/D deployment serves 62 agentic users without slowing down; M3
-    # stays at 8 (its IAD deployment did not).
+def test_m31_flash_agentic_concurrency_fits_kix1():
+    # Sized to the KIX1 shield-evals pool (3 x 64 CPUs): trials that don't fit fail
+    # Harbor's pod-ready timeout. M3 keeps its IAD-era values.
     flash, m3 = _tasks(M31_FLASH), _tasks(M3)
-    for name in ("terminal_bench_2_1", "terminal_bench_4"):
-        assert flash[name].agentic_eval_config.n_concurrent_trials == 62
-        assert m3[name].agentic_eval_config.n_concurrent_trials == 8
+    expected = {
+        "terminal_bench_2_1": (21, 8),
+        "terminal_bench_4": (21, 8),
+        "tau3_bench_banking": (32, 4),
+        "swe_bench_verified": (62, 8),
+    }
+    for name, (flash_n, m3_n) in expected.items():
+        assert flash[name].agentic_eval_config.n_concurrent_trials == flash_n, name
+        assert m3[name].agentic_eval_config.n_concurrent_trials == m3_n, name
 
 
 def test_m31_flash_has_no_targets():
