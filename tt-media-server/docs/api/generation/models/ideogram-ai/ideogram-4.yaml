@@ -14,10 +14,6 @@ paths:
       operationId: submitIdeogram4
       tags: [Ideogram 4.0]
       summary: Submit an Ideogram 4.0 text-to-image job
-      description: |
-        **Elsewhere:** Ideogram `POST /v2/image/generate/ideogram-4`, Replicate
-        `ideogram-ai/ideogram-v4-turbo`, `-balanced`, `-quality` (one model per
-        speed).
       requestBody:
         required: true
         content:
@@ -90,25 +86,19 @@ components:
           description: |
             Number of images. Only 1 for now; kept so more can be allowed later
             without a schema change.
-
-            **Elsewhere:** Ideogram `num_images` (1–8); Replicate has none.
         aspect_ratio:
           type: string
           enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
           default: "1:1"
           description: |
             Output shape. Each output reports its exact size.
-
-            **Elsewhere:** Ideogram's API has no ratio field, only 38 exact
-            `resolution` values (omitted = picked from the prompt); fal
-            `image_size` presets (`square_hd`, `landscape_16_9`, …).
         size:
           type: string
           enum: [1K, 2K]
           default: 2K
           description: |
             Size tier. With `aspect_ratio`, it fixes the output size. `1K` uses
-            Ideogram's sizes of about 1 MP; `2K` has a long side of 2048, the
+            the model's native sizes of about 1 MP; `2K` has a long side of 2048, the
             open model's maximum (256–2048 per side, multiples of 16):
 
             | `aspect_ratio` | `1K`      | `2K`      |
@@ -120,9 +110,6 @@ components:
             | `3:4`          | 864×1152  | 1536×2048 |
             | `3:2`          | 1248×832  | 2048×1360 |
             | `2:3`          | 832×1248  | 1360×2048 |
-
-            **Elsewhere:** Ideogram `resolution` (exact sizes, some beyond the
-            open model's 2048 limit), Replicate `resolution` (exact sizes only).
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:
@@ -134,10 +121,6 @@ components:
           description: |
             Speed and quality preset: `turbo` is fastest, `quality` gives the
             best images, `default` is in between.
-
-            **Elsewhere:** Ideogram `rendering_speed` (same values and default),
-            fal `rendering_speed` (`TURBO`/`BALANCED`/`QUALITY`, default
-            `BALANCED`); Replicate offers them as three models.
 
     Ideogram4Caption:
       type: object
@@ -152,11 +135,7 @@ components:
         this, and turning plain text into one takes an LLM ("magic prompt"),
         which this API doesn't run yet.
 
-        **Elsewhere:** Ideogram takes it as JSON inside `prompt`, plain text
-        expanded by `magic_prompt` (`auto`/`on`/`off`); fal `prompt` with
-        `expansion_model` (`None`/`Medium`/`Large`); Replicate `json_prompt` (a
-        string holding JSON) or `prompt` (magic prompt always on). Format:
-        `docs/prompting.md` in `ideogram-oss/ideogram4`.
+        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.
       properties:
         high_level_description:
           type: string

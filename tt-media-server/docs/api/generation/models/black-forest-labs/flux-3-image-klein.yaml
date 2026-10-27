@@ -18,10 +18,6 @@ paths:
         Text to image, or editing and combining up to 10 references when
         `images` is given. Every prompt is rewritten by the model's prompt
         upsampler first.
-
-        **Elsewhere:** BFL `POST /v1/flux-3-image-klein` (one endpoint, as
-        here); fal `POST /blackforestlabs/flux-3/klein/text-to-image` and
-        `POST /blackforestlabs/flux-3/klein/edit-image`.
       requestBody:
         required: true
         content:
@@ -83,7 +79,7 @@ components:
 
             Refer to `images` by tag: `<ref_image_0>` is the first.
 
-            Bounding boxes go at the end of the prompt, as in BFL's API: tag
+            Bounding boxes go at the end of the prompt: tag
             each element in the text (`<balloon_1>`), then add one space and a
             JSON list with a row per tag. Coordinates are `[top, left, bottom,
             right]` on a 0–1000 grid with (0, 0) at the top left, whatever the
@@ -96,10 +92,6 @@ components:
               The same box in both keeps it; different boxes move or resize it;
               `"tgt_bbox": null` removes it; `"from": null, "src_bbox": null`
               adds a new element.
-
-            **Elsewhere:** BFL `prompt` (same box format, upsampled); fal
-            `prompt` with `enable_prompt_expansion` (default on) and a separate
-            `bounding_boxes` field (0–1 fractions).
         images:
           type: array
           maxItems: 10
@@ -108,9 +100,6 @@ components:
           description: |
             References to edit or combine. Omitted = text to image. The first
             image is the one edited and sets the default shape.
-
-            **Elsewhere:** BFL `images` (1–10), fal `image_urls` (1–10, edit
-            endpoint).
         count:
           type: integer
           minimum: 1
@@ -119,8 +108,6 @@ components:
           description: |
             Number of images. Only 1 for now; kept so more can be allowed later
             without a schema change.
-
-            **Elsewhere:** fal `num_images` (1–4); BFL has none.
         aspect_ratio:
           type: string
           enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
@@ -129,9 +116,6 @@ components:
             or `1:1` without images. Each output reports its exact size. Boxes
             are placed on the output's grid, so set the shape they were drawn
             for.
-
-            **Elsewhere:** BFL `aspect_ratio` (15 ratios and `auto`, which picks
-            from the prompt or the first image); fal `image_size` presets.
         size:
           type: string
           enum: [1K, 2K, 4K]
@@ -150,9 +134,6 @@ components:
             | `3:4`          | 896×1184  | 1792×2368 | 3072×4096 |
             | `3:2`          | 1248×832  | 2496×1664 | 4096×2720 |
             | `2:3`          | 832×1248  | 1664×2496 | 2720×4096 |
-
-            **Elsewhere:** BFL `resolution` (`768sq`, `1k`, `1.5k`, `2k`, `4k`,
-            equal area; default `1k`), fal `image_size` (256–4096 per side).
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

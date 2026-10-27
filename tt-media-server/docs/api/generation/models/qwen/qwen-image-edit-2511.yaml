@@ -15,9 +15,8 @@ paths:
       tags: [Qwen-Image-Edit-2511]
       summary: Submit a Qwen-Image-Edit-2511 job
       description: |
-        **Elsewhere:** fal `POST /fal-ai/qwen-image-edit-2511`, Replicate
-        `qwen/qwen-image-edit-2511`, tt-media-server today `POST
-        /v1/images/edits` (returns the images directly).
+        **tt-media-server today:** `POST /v1/images/edits` (returns the images
+        directly).
       requestBody:
         required: true
         content:
@@ -72,17 +71,12 @@ components:
           minLength: 1
           description: |
             The edit instruction.
-
-            **Elsewhere:** fal, Replicate `prompt`.
         negative_prompt:
           type: string
           default: " "
           description: |
             Omitted = `" "` (a single space), the model card's default, so
             classifier-free guidance always applies.
-
-            **Elsewhere:** fal `negative_prompt`; Replicate has none. In
-            diffusers, omitting it turns guidance off.
         images:
           type: array
           minItems: 1
@@ -92,10 +86,9 @@ components:
           description: |
             The image(s) to edit or combine. Each is resized to the supported
             size closest to its aspect ratio. At most 3, as in tt_dit's
-            Qwen-Image-Edit-2511 pipeline; no provider spec gives a maximum.
+            Qwen-Image-Edit-2511 pipeline.
 
-            **Elsewhere:** fal `image_urls`, Replicate `image` (a list),
-            tt-media-server today `image` (one).
+            **tt-media-server today:** `image` (one).
         count:
           type: integer
           minimum: 1
@@ -104,8 +97,6 @@ components:
           description: |
             Number of images. Only 1 for now; kept so more can be allowed later
             without a schema change.
-
-            **Elsewhere:** fal `num_images` (1–4); Replicate has none.
         aspect_ratio:
           type: string
           enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
@@ -115,10 +106,6 @@ components:
             `2:3` 832×1248 (diffusers' edit sizes, as in tt_dit's pipeline).
             Omitted = the ratio closest to the last image's, as in diffusers'
             reference pipeline. Each output reports its exact size.
-
-            **Elsewhere:** Replicate `aspect_ratio` (the first five plus
-            `match_input_image`, the default); fal `image_size` (omitted = input
-            size).
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

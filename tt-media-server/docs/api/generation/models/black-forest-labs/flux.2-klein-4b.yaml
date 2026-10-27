@@ -16,11 +16,6 @@ paths:
       summary: Submit a FLUX.2 klein 4B job
       description: |
         Text to image, or editing when `images` is given.
-
-        **Elsewhere:** BFL `POST /v1/flux-2-klein-4b`, fal `POST
-        /fal-ai/flux-2/klein/4b` (text to image) and `POST
-        /fal-ai/flux-2/klein/4b/edit` (with images), Replicate
-        `black-forest-labs/flux-2-klein-4b`.
       requestBody:
         required: true
         content:
@@ -70,8 +65,6 @@ components:
         prompt:
           type: string
           minLength: 1
-          description: |
-            **Elsewhere:** BFL, fal, Replicate `prompt`.
         images:
           type: array
           maxItems: 4
@@ -79,9 +72,6 @@ components:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
             Images to edit or draw from. Omitted = text to image.
-
-            **Elsewhere:** BFL `input_image` … `input_image_4`, fal `image_urls`
-            (max 4, edit endpoint), Replicate `images` (max 5).
         count:
           type: integer
           minimum: 1
@@ -90,19 +80,12 @@ components:
           description: |
             Number of images. Only 1 for now; kept so more can be allowed later
             without a schema change.
-
-            **Elsewhere:** fal `num_images` (1–4); BFL, Replicate have none.
         aspect_ratio:
           type: string
           enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
           description: |
             Output shape. Omitted = the ratio here closest to the first image's,
             or `1:1` without images. Each output reports its exact size.
-
-            **Elsewhere:** Replicate `aspect_ratio` (more ratios plus
-            `match_input_image`), fal `image_size` presets (`landscape_16_9`,
-            …); BFL: `width`/`height` only. diffusers uses the first image's
-            own size when none is given.
         size:
           type: string
           enum: [1K, 2K]
@@ -119,10 +102,6 @@ components:
             | `3:4`          | 896×1184          | 1792×2368         |
             | `3:2`          | 1248×832          | 2496×1664         |
             | `2:3`          | 832×1248          | 1664×2496         |
-
-            **Elsewhere:** Replicate `output_megapixels` (`0.25` … `4`), BFL
-            `width`/`height`, fal `image_size: {width, height}`, OpenRouter
-            `resolution` (`1K`, `2K`, …).
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

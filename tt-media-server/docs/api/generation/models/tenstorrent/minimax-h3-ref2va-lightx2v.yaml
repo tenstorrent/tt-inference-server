@@ -19,9 +19,7 @@ paths:
         request as `minimaxai/minimax-h3-ref2va`, generated in far fewer
         denoising steps, so faster, with somewhat different output.
 
-        **Elsewhere:** tt-media-server today `MiniMax-H3-Ref2VA-LightX2V`; fal's
-        `minimax/h3-max-turbo` is a different, fal-trained distillation and has no
-        reference-to-video endpoint.
+        **tt-media-server today:** `MiniMax-H3-Ref2VA-LightX2V`.
       requestBody:
         required: true
         content:

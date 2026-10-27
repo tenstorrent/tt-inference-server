@@ -26,9 +26,9 @@ info:
     returns 404. The request schemas are generated from the Pydantic models
     each pipeline declares; this file is the design for them.
 
-    **Elsewhere:** tt-media-server today `POST /v1/videos/generations/i2v` +
-    `GET /v1/videos/generations/{job_id}` (+ `/download`, `/cancel`,
-    `DELETE`), `GET /v1/videos/jobs`.
+    **tt-media-server today:** `POST /v1/videos/generations/i2v` + `GET
+    /v1/videos/generations/{job_id}` (+ `/download`, `/cancel`, `DELETE`), `GET
+    /v1/videos/jobs`.
 
     This file holds what every model shares: the `/v1/jobs` API and the shared
     schemas, responses and auth. Each model has its own complete file under
@@ -45,7 +45,7 @@ paths:
       description: |
         Every job this deployment still holds, any status.
 
-        **Elsewhere:** tt-media-server today `GET /v1/videos/jobs`.
+        **tt-media-server today:** `GET /v1/videos/jobs`.
       responses:
         "200":
           description: The jobs.
@@ -66,9 +66,7 @@ paths:
         Poll until the status is final (`completed`, `failed`, `cancelled`).
         A completed job carries its `outputs`, so no second call is needed.
 
-        **Elsewhere:** fal `GET …/requests/{id}/status` then `GET
-        …/requests/{id}`, tt-media-server today `GET
-        /v1/videos/generations/{job_id}`.
+        **tt-media-server today:** `GET /v1/videos/generations/{job_id}`.
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -90,8 +88,8 @@ paths:
         Only a job in a final state can be deleted; cancel an active one
         first.
 
-        **Elsewhere:** tt-media-server today `DELETE
-        /v1/videos/generations/{job_id}` (same rules).
+        **tt-media-server today:** `DELETE /v1/videos/generations/{job_id}`
+        (same rules).
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -117,7 +115,7 @@ paths:
         profile, yuv420p), faststart, with an AAC audio track when the model
         generates sound (see `VideoOutput.audio`).
 
-        **Elsewhere:** tt-media-server today `GET
+        **tt-media-server today:** `GET
         /v1/videos/generations/{job_id}/download` (one file only).
       parameters:
         - $ref: "#/components/parameters/JobId"
@@ -162,9 +160,9 @@ paths:
         A queued job is cancelled at once (`cancelled`). A running one moves
         to `cancelling`, then to `cancelled` once the pipeline stops.
 
-        **Elsewhere:** tt-media-server today `POST
+        **tt-media-server today:** `POST
         /v1/videos/generations/{job_id}/cancel`, which returns 404 for a job
-        that already finished; here that is 409.
+        that already finished.
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -189,8 +187,7 @@ components:
         `Authorization: Bearer <API_KEY>`, one key per deployment, held by the
         console. Off when the server runs with `NO_AUTH`.
 
-        **Elsewhere:** tt-media-server today (same,
-        `security/api_key_checker.py`).
+        **tt-media-server today:** same, `security/api_key_checker.py`.
   parameters:
     JobId:
       name: job_id
@@ -308,8 +305,7 @@ components:
         image is too large, and 422 if a URL can't be fetched (expired, network
         error, timeout) or doesn't hold a supported image.
 
-        **Elsewhere:** fal, Replicate, OpenAI, OpenRouter: URL or data URI.
-        BFL and tt-media-server today: URL or bare base64.
+        **tt-media-server today:** URL or bare base64.
     VideoMedia:
       type: string
       description: |
@@ -318,9 +314,6 @@ components:
 
         MP4 or MOV, H.264 or H.265 video, optionally with an AAC or MP3 audio
         track; at most 50 MB. Each model states the durations it accepts.
-
-        **Elsewhere:** MiniMax `video_url` (same formats and limit), fal
-        `reference_video_urls`.
     AudioMedia:
       type: string
       description: |
@@ -329,28 +322,20 @@ components:
 
         WAV or MP3, mono or stereo; at most 15 MB. Each model states the
         durations it accepts.
-
-        **Elsewhere:** MiniMax `audio_url` (same formats and limit), fal
-        `reference_audio_urls`.
     Seed:
       type: integer
       minimum: 0
       maximum: 2147483647
       description: |
         Omitted = random. Each output reports the seed it was made with.
-
-        **Elsewhere:** same name at fal, BFL, Ideogram and Replicate (none for
-        Replicate's Ideogram 4.0).
     ImageFormat:
       type: string
       enum: [png, jpeg, webp]
       default: png
       description: |
-        Output image format. Default as at fal; the models don't specify one.
+        Output image format.
 
-        **Elsewhere:** `output_format` at fal (`jpeg`/`png`/`webp`), BFL,
-        Replicate (`webp`/`jpg`/`png`); tt-media-server today
-        `image_return_format` (`JPEG`/`PNG`).
+        **tt-media-server today:** `image_return_format` (`JPEG`/`PNG`).
 
     Job:
       type: object
@@ -364,14 +349,14 @@ components:
           description: |
             The `{org}/{model}` it was submitted to.
 
-            **Elsewhere:** tt-media-server today `model` (plus `job_type`).
+            **tt-media-server today:** `model` (plus `job_type`).
         status:
           type: string
           enum: [queued, in_progress, cancelling, completed, failed, cancelled]
           description: |
             Final states are `completed`, `failed` and `cancelled`.
 
-            **Elsewhere:** tt-media-server today (same values).
+            **tt-media-server today:** same values.
         created_at:
           type: integer
           description: Unix seconds.
@@ -386,8 +371,7 @@ components:
             24 hours by default. Applies to completed, failed and cancelled jobs
             alike. Download outputs before then; after it, the job returns 404.
 
-            **Elsewhere:** Replicate reports when output data is removed;
-            tt-media-server today deletes finished jobs 24 hours after
+            **tt-media-server today:** deletes finished jobs 24 hours after
             completion but doesn't report when.
         error:
           oneOf:
@@ -404,8 +388,7 @@ components:
           description: |
             Set when `completed`: one per image (`count` of them) or one video.
 
-            **Elsewhere:** fal `images`/`video`, Replicate `output`, Ideogram
-            `data`; tt-media-server today has none, only `GET
+            **tt-media-server today:** no outputs field, only `GET
             /v1/videos/generations/{job_id}/download`.
     JobError:
       type: object
@@ -431,8 +414,7 @@ components:
           type: string
           description: Human-readable.
       description: |
-        **Elsewhere:** tt-media-server today (same codes, set in
-        `utils/job_manager.py`).
+        **tt-media-server today:** same codes, set in `utils/job_manager.py`.
     Output:
       oneOf:
         - $ref: "#/components/schemas/ImageOutput"
@@ -475,17 +457,12 @@ components:
             The same for every output of a job, since a batch is generated from
             one seed: resubmitting with this seed and the same request,
             `count` included, reproduces all of them.
-
-            **Elsewhere:** fal once per result; Ideogram per image.
         prompt:
           type: string
           description: |
             The prompt as the model received it. For Ideogram 4, the
             `structured_prompt` caption as compact JSON, in the model's key
             order.
-
-            **Elsewhere:** Ideogram `data[].prompt`; fal `prompt` once per
-            result.
     ImageOutput:
       allOf:
         - $ref: "#/components/schemas/OutputBase"
@@ -548,7 +525,7 @@ components:
         deleted:
           const: true
       description: |
-        **Elsewhere:** tt-media-server today (same, plus `object`).
+        **tt-media-server today:** same, plus `object`.
     ValidationError:
       type: object
       required: [detail]

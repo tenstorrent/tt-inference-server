@@ -18,10 +18,7 @@ paths:
         Video with sound from text. Runs the distilled checkpoint of
         `Lightricks/LTX-2.3` (`ltx-2.3-22b-distilled-1.1`).
 
-        **Elsewhere:** fal `POST /fal-ai/ltx-2.3-22b/distilled/text-to-video`
-        (the same open checkpoint); LTX API `POST /v2/text-to-video` and fal
-        `POST /fal-ai/ltx-2.3/text-to-video` (Lightricks' hosted tiers);
-        tt-media-server today `POST /v1/videos/generations`.
+        **tt-media-server today:** `POST /v1/videos/generations`.
       requestBody:
         required: true
         content:
@@ -74,28 +71,18 @@ components:
         prompt:
           type: string
           minLength: 1
-          description: |
-            **Elsewhere:** LTX API `prompt` (at most 5000 characters), fal
-            `prompt`.
         aspect_ratio:
           type: string
           enum: ["16:9"]
           default: "16:9"
           description: |
             Output shape. Only `16:9` for now.
-
-            **Elsewhere:** fal (Lightricks-hosted) `aspect_ratio` (`16:9`,
-            `9:16`); LTX API `resolution` (`1920x1080`, `1080x1920`, …).
         size:
           type: string
           enum: [1080p]
           default: 1080p
           description: |
             Size tier: `1080p` is 1920×1080 at `16:9`.
-
-            **Elsewhere:** LTX API `resolution` (720p to 4K), fal
-            (Lightricks-hosted) `resolution` (`1080p`, `1440p`, `2160p`), fal
-            open-weights `video_size`.
         duration:
           type: integer
           enum: [6]
@@ -105,11 +92,8 @@ components:
             be 8k + 1. Each output reports its exact `duration` and
             `num_frames`.
 
-            **Elsewhere:** LTX API `duration` (6–20 s) and `fps` (24, 25, 48,
-            50); fal (Lightricks-hosted) `duration` (6, 8, 10) and `fps`; fal
-            open-weights `num_frames` and `fps`; tt-media-server today
-            `duration`, `num_frames` and `fps`, each accepted only at the served
-            value.
+            **tt-media-server today:** `duration`, `num_frames` and `fps`, each
+            accepted only at the served value.
         fps:
           type: integer
           enum: [25]
@@ -118,9 +102,6 @@ components:
             Frames per second. Only 25 for now: it sets the audio length and the
             audio-video alignment, both fixed when the pipeline starts.
 
-            **Elsewhere:** LTX API `fps` (24, 25, 48, 50; default 24), fal
-            (Lightricks-hosted) `fps` (same values, default 25), fal
-            open-weights `fps` (1–60); tt-media-server today `fps`, accepted
-            only at 25.
+            **tt-media-server today:** `fps`, accepted only at 25.
         seed:
           $ref: "../../common.yaml#/components/schemas/Seed"

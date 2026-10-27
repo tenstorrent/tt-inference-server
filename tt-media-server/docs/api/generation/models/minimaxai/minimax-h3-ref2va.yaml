@@ -18,10 +18,7 @@ paths:
         Video with sound from text plus reference images, videos and audio
         clips. Runs the `Ref2VA` checkpoint of `MiniMaxAI/MiniMax-H3`.
 
-        **Elsewhere:** MiniMax `POST /v2/video_generation` (`content` with
-        `role: reference_image` / `reference_video` / `reference_audio`); fal
-        `POST /minimax/h3/reference-to-video`; tt-media-server today `POST
-        /v1/videos/generations/ref2va`.
+        **tt-media-server today:** `POST /v1/videos/generations/ref2va`.
       requestBody:
         required: true
         content:
@@ -94,9 +91,6 @@ components:
             order given: `Picture 1` (the first of `images`), `Video 1`, `Audio
             1`. The model sees each reference under that label. A video's own
             sound track counts as an audio reference too.
-
-            **Elsewhere:** MiniMax `content` text item (at most 7000
-            characters); fal `prompt` ("Image 1", "Video 1", "Audio 1").
         images:
           type: array
           maxItems: 9
@@ -105,9 +99,7 @@ components:
           description: |
             Reference images, aspect ratio from 1:4 to 4:1.
 
-            **Elsewhere:** MiniMax `role: reference_image` (at most 9), fal
-            `reference_image_urls`, tt-media-server today
-            `references.images`.
+            **tt-media-server today:** `references.images`.
         videos:
           type: array
           maxItems: 3
@@ -118,8 +110,7 @@ components:
             soundtrack, if it has one, is also audio conditioning and counts
             toward the audio limits (see `audios`).
 
-            **Elsewhere:** MiniMax `role: reference_video` (at most 3), fal
-            `reference_video_urls`, tt-media-server today `references.videos`.
+            **tt-media-server today:** `references.videos`.
         audios:
           type: array
           maxItems: 3
@@ -130,8 +121,7 @@ components:
             clips plus the soundtrack of every reference video that has one: at
             most 3 audio references and at most 15 s of audio combined, or 422.
 
-            **Elsewhere:** MiniMax `role: reference_audio` (at most 3), fal
-            `reference_audio_urls`, tt-media-server today `references.audios`.
+            **tt-media-server today:** `references.audios`.
         aspect_ratio:
           type: string
           enum: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
@@ -140,10 +130,8 @@ components:
             Output shape, as for text-to-video: the references don't set it.
             Each output reports its exact size.
 
-            **Elsewhere:** tt-media-server today (same values, default `16:9`,
-            or explicit `height`/`width`); SGLang (`auto` falls back to `16:9`);
-            MiniMax `ratio` and fal `aspect_ratio` also take `adaptive` (their
-            default), which MiniMax picks from the inputs.
+            **tt-media-server today:** same values, default `16:9`, or explicit
+            `height`/`width`.
         size:
           type: string
           enum: [768p]
@@ -163,8 +151,6 @@ components:
 
             Only `768p` for now; kept so other tiers can be added without a
             schema change.
-
-            **Elsewhere:** MiniMax `resolution`, fal `resolution`.
         duration:
           type: integer
           minimum: 4
@@ -175,8 +161,5 @@ components:
             frame counts the model generates (17k + 5): 5 s gives 124 frames
             (5.17 s). Each output reports its exact `duration` and
             `num_frames`.
-
-            **Elsewhere:** MiniMax `duration` (4–15, required), fal `duration`
-            (5–15, default 5).
         seed:
           $ref: "../../common.yaml#/components/schemas/Seed"

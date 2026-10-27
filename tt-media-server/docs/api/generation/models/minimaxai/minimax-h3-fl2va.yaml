@@ -19,10 +19,7 @@ paths:
         frame. Runs the `FL2VA` checkpoint of `MiniMaxAI/MiniMax-H3`; without
         frames it is text-to-video.
 
-        **Elsewhere:** MiniMax `POST /v2/video_generation` (`content` with
-        `role: first_frame` / `last_frame`, or text only); fal `POST
-        /minimax/h3/text-to-video` and `POST /minimax/h3/image-to-video`;
-        tt-media-server today `POST /v1/videos/generations` and `POST
+        **tt-media-server today:** `POST /v1/videos/generations` and `POST
         /v1/videos/generations/i2v`.
       requestBody:
         required: true
@@ -77,25 +74,20 @@ components:
         prompt:
           type: string
           minLength: 1
-          description: |
-            **Elsewhere:** MiniMax `content` text item (at most 7000
-            characters), fal `prompt`.
         first_frame:
           $ref: "../../common.yaml#/components/schemas/Media"
           description: |
             The frame the video starts on. 256–5760 pixels per side, aspect
             ratio from 1:4 to 4:1.
 
-            **Elsewhere:** MiniMax `role: first_frame`, fal `image_url`,
-            tt-media-server today `image_prompts[]` with `frame_pos: 0`.
+            **tt-media-server today:** `image_prompts[]` with `frame_pos: 0`.
         last_frame:
           $ref: "../../common.yaml#/components/schemas/Media"
           description: |
             The frame the video ends on. Allowed with or without `first_frame`.
             Same limits as `first_frame`.
 
-            **Elsewhere:** MiniMax `role: last_frame`, fal `end_image_url`,
-            tt-media-server today `image_prompts[]` with `frame_pos: -1`.
+            **tt-media-server today:** `image_prompts[]` with `frame_pos: -1`.
         aspect_ratio:
           type: string
           enum: [adaptive, "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
@@ -109,11 +101,6 @@ components:
               `adaptive` is rejected with 422.
 
             Each output reports its exact size.
-
-            **Elsewhere:** MiniMax `ratio` (same values; text-to-video requires
-            a ratio, image-to-video is always `adaptive` and ignores other
-            values); fal `aspect_ratio` (default `16:9`) on text-to-video, none
-            on image-to-video.
         size:
           type: string
           enum: [768p]
@@ -134,9 +121,6 @@ components:
             `adaptive` applies the same rule to the frame's own shape. Only
             `768p` for now; kept so other tiers can be added without a schema
             change.
-
-            **Elsewhere:** MiniMax `resolution` (`768P`, `2K`, and `480P` on
-            other tiers), fal `resolution` (`480P`, `768P`, `2K`, `4K`).
         duration:
           type: integer
           minimum: 4
@@ -147,8 +131,5 @@ components:
             frame counts the model generates (17k + 5), so it is slightly longer:
             5 s gives 124 frames (5.17 s), 15 s gives 362 frames (15.08 s). Each
             output reports its exact `duration` and `num_frames`.
-
-            **Elsewhere:** MiniMax `duration` (4–15, required), fal `duration`
-            (5–15, default 5).
         seed:
           $ref: "../../common.yaml#/components/schemas/Seed"
