@@ -18,3 +18,9 @@
 pyjwt==2.7.0
 pillow==11.1
 open-clip-torch==2.26.1
+# pyarrow 26.0.0 (released after the stock venv was made) requires NumPy 2,
+# but aiperf/datasets resolve numpy 1.26.4 alongside it: a fresh
+# .venv_llm_aiperf then fails at `import aiperf.server_metrics`
+# (`pyarrow requires NumPy 2.0 or newer`) on every sweep point and run.py
+# reports no blocks. The stock venv has 25.0.1.
+pyarrow<26
