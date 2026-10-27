@@ -1,5 +1,5 @@
 {
-  "phase": "swe8-b8-c8-medium-20261027",
+  "phase": "swe8-grouped-b16-p512-c8-medium-20261027",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
