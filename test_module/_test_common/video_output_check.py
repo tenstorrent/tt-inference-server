@@ -59,11 +59,14 @@ def check_video_output(
     hf_model_repo: str,
     device_name: str,
     resolution: str | None = None,
+    shape: tuple[int, int] | None = None,
 ) -> str | None:
     """Return why a downloaded clip is unusable, or None when it is fine.
 
     A completed job whose mp4 is black, flat, frozen or the wrong shape is a failed
     generation: without this, any file that downloads counts as a success.
+    ``shape`` is the ``(width, height)`` the request asked for; without it the
+    clip must have the deployment's shape.
     """
     path = Path(video_path)
     try:
@@ -82,7 +85,11 @@ def check_video_output(
             "pairs unchanged)"
         )
 
-    expected = expected_video_shape(hf_model_repo, device_name, resolution)
+    expected = (
+        (WAN22_NUM_FRAMES, *shape)
+        if shape is not None
+        else expected_video_shape(hf_model_repo, device_name, resolution)
+    )
     if expected is not None:
         num_frames, width, height = expected
         decoded = structural["total_decoded_frames"]

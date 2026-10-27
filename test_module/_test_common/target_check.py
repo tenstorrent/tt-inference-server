@@ -98,13 +98,17 @@ def _load_reference() -> Dict[str, Any]:
 
 
 def get_performance_targets(
-    hf_model_repo: str, device_str: Optional[str]
+    hf_model_repo: str,
+    device_str: Optional[str],
+    shape: Optional[tuple[int, int]] = None,
 ) -> PerformanceTargets:
     """Look up performance targets for ``hf_model_repo`` on ``device_str``.
 
     ``hf_model_repo`` is the full HF repo id (e.g.
     ``"meta-llama/Llama-3.1-8B-Instruct"``), matching the keys in
-    ``model_performance_reference.json``.
+    ``model_performance_reference.json``. ``shape`` is a video output
+    ``(width, height)``: the device entry with that ``width`` and ``height``
+    is used instead of the first one.
 
     Returns an empty ``PerformanceTargets`` (all ``None``) if no entry is
     found; callers handle that as ``ReportCheckTypes.NA``.
@@ -118,15 +122,36 @@ def get_performance_targets(
     reference = _load_reference()
     model_data = reference.get(hf_model_repo, {})
     device_list = model_data.get(device_key, [])
+    if shape is not None:
+        device_list = [
+            entry
+            for entry in device_list
+            if (entry.get("width"), entry.get("height")) == tuple(shape)
+        ]
+    where = f"device '{device_key}'" + (
+        f" at {shape[0]}x{shape[1]}" if shape is not None else ""
+    )
     if device_list:
-        logger.info(
-            f"Found performance targets for model '{hf_model_repo}' on device '{device_key}'"
-        )
+        logger.info(f"Found performance targets for model '{hf_model_repo}' on {where}")
         return PerformanceTargets.from_device_config(device_list[0])
     logger.warning(
-        f"No performance targets found for model '{hf_model_repo}' on device '{device_key}'"
+        f"No performance targets found for model '{hf_model_repo}' on {where}"
     )
     return PerformanceTargets()
+
+
+def performance_target_shapes(
+    hf_model_repo: str, device_str: Optional[str]
+) -> list[tuple[int, int]]:
+    """The video output shapes ``(width, height)`` with their own targets, in file order."""
+    if not device_str:
+        return []
+    device_list = _load_reference().get(hf_model_repo, {}).get(device_str.lower(), [])
+    return [
+        (entry["width"], entry["height"])
+        for entry in device_list
+        if entry.get("width") and entry.get("height")
+    ]
 
 
 @dataclass
@@ -146,9 +171,11 @@ class MetricSpec:
     field_name: str
 
 
-def load_targets(ctx: "MediaContext") -> PerformanceTargets:
+def load_targets(
+    ctx: "MediaContext", shape: Optional[tuple[int, int]] = None
+) -> PerformanceTargets:
     device_str = ctx.model_spec.cli_args.get("device")
-    targets = get_performance_targets(ctx.model_spec.hf_model_repo, device_str)
+    targets = get_performance_targets(ctx.model_spec.hf_model_repo, device_str, shape)
     logger.info(f"Performance targets: {targets}")
     return targets
 
@@ -238,10 +265,12 @@ def _log_tiered(target_checks: dict[str, dict]) -> None:
 
 
 def run_tiered_check(
-    ctx: "MediaContext", specs: Sequence[MetricSpec]
+    ctx: "MediaContext",
+    specs: Sequence[MetricSpec],
+    shape: Optional[tuple[int, int]] = None,
 ) -> tuple[dict[str, dict], ReportCheckTypes]:
     """Convenience wrapper: load targets, build 3-tier dict, log and summarise."""
-    targets = load_targets(ctx)
+    targets = load_targets(ctx, shape)
     target_checks = evaluate_tiered(targets, specs)
     _log_tiered(target_checks)
     summary = summary_from_tiered(target_checks)
@@ -256,6 +285,7 @@ __all__ = [
     "evaluate_tiered",
     "get_performance_targets",
     "load_targets",
+    "performance_target_shapes",
     "run_tiered_check",
     "summary_from_tiered",
 ]

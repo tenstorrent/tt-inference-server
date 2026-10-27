@@ -33,6 +33,10 @@ from .._test_common import (
     is_i2v_video_model,
     run_tiered_check,
 )
+from .._test_common.target_check import (
+    performance_target_shapes,
+    summary_from_tiered,
+)
 from .._test_common.video_output_check import (
     check_video_output,
     deployment_resolution,
@@ -147,6 +151,7 @@ def _generate_video(
     prompt: str,
     num_inference_steps: int = 20,
     image_b64: str | None = None,
+    shape: tuple[int, int] | None = None,
 ) -> tuple[bool, float, str, str]:
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
@@ -161,6 +166,7 @@ def _generate_video(
         num_inference_steps=num_inference_steps,
         model_name=model_name,
         image_b64=image_b64,
+        shape=shape,
     )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
@@ -206,19 +212,30 @@ def _expected_video_shape(ctx: MediaContext) -> tuple[int, int, int] | None:
     )
 
 
-def _check_video_output(ctx: MediaContext, video_path: str) -> str | None:
+def _check_video_output(
+    ctx: MediaContext, video_path: str, shape: tuple[int, int] | None = None
+) -> str | None:
     return check_video_output(
         video_path,
         hf_model_repo=ctx.model_spec.hf_model_repo,
         device_name=ctx.device.name,
         resolution=deployment_resolution(ctx.model_spec),
+        shape=shape,
+    )
+
+
+def _benchmark_shapes(ctx: MediaContext) -> list[tuple[int, int]]:
+    """Output shapes with their own targets on this device; empty means one run as served."""
+    return performance_target_shapes(
+        ctx.model_spec.hf_model_repo, ctx.model_spec.cli_args.get("device")
     )
 
 
 def _run_video_generation_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, shape: tuple[int, int] | None = None
 ) -> list[VideoGenerationTestStatus]:
-    logger.info("Running video generation benchmark.")
+    where = f" at {shape[0]}x{shape[1]}" if shape else ""
+    logger.info(f"Running video generation benchmark{where}.")
     model_name = ctx.model_spec.hf_model_repo
     inference_steps = VIDEO_INFERENCE_STEPS[model_name]
     logger.info(f"Inference steps: {inference_steps}")
@@ -234,10 +251,11 @@ def _run_video_generation_benchmark(
             prompt=f"Test video generation {i + 1}",
             num_inference_steps=inference_steps,
             image_b64=image_b64,
+            shape=shape,
         )
         logger.info(f"Generated video in {elapsed:.2f} seconds.")
         if status:
-            problem = _check_video_output(ctx, video_path)
+            problem = _check_video_output(ctx, video_path, shape)
             if problem:
                 logger.error(
                     f"❌ Video output check failed for job {job_id}: {problem}"
@@ -270,25 +288,108 @@ def _video_ttft(status_list: list[VideoGenerationTestStatus]) -> float:
 
 
 def _video_target_checks(
-    ctx: MediaContext, ttft_seconds: float, tput_user: float
+    ctx: MediaContext,
+    ttft_seconds: float,
+    tput_user: float,
+    shape: tuple[int, int] | None = None,
 ) -> tuple[dict, ReportCheckTypes]:
     # ttft is captured in seconds (time.time() deltas); targets.ttft_ms is ms.
     ttft_ms = ttft_seconds * 1000 if ttft_seconds else None
-    logger.info("Computing 3-tier target checks for TTFT, tput_user")
+    # Per-shape fields are suffixed, so one block can grade every shape.
+    suffix = f"_{shape[0]}x{shape[1]}" if shape else ""
+    logger.info(f"Computing 3-tier target checks for TTFT, tput_user{suffix}")
     return run_tiered_check(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
+                "TTFT",
+                ttft_ms,
+                "ttft_ms",
+                lower_is_better=True,
+                field_name=f"ttft{suffix}",
             ),
             MetricSpec(
                 "tput_user",
                 tput_user,
                 "tput_user",
                 lower_is_better=False,
-                field_name="tput_user",
+                field_name=f"tput_user{suffix}",
             ),
         ],
+        shape,
+    )
+
+
+def _summarize(status_list: list[VideoGenerationTestStatus]) -> dict:
+    """Counts and timings over the generations that succeeded."""
+    successful = [s for s in status_list if s.status]
+    return {
+        "num_requests": len(status_list),
+        "num_successful": len(successful),
+        "ttft": _video_ttft(successful),
+        "inference_steps_per_second": (
+            sum(s.inference_steps_per_second for s in successful) / len(successful)
+            if successful
+            else 0
+        ),
+    }
+
+
+def _run_video_benchmark_by_shape(
+    ctx: MediaContext, num_calls: int, shapes: list[tuple[int, int]]
+) -> Block:
+    """Benchmark each output shape against its own targets, in one block.
+
+    Every shape runs even when the deployment cannot serve it yet: a clip of
+    the wrong shape fails that shape's generations, which fails the block.
+    """
+    records = []
+    target_checks: dict[str, dict] = {}
+    for shape in shapes:
+        status_list = _run_video_generation_benchmark(ctx, num_calls, shape)
+        summary = _summarize(status_list)
+        checks, check = _video_target_checks(
+            ctx, summary["ttft"], summary["inference_steps_per_second"], shape
+        )
+        for tier, fields in checks.items():
+            target_checks.setdefault(tier, {}).update(fields)
+        records.append(
+            {
+                "shape": f"{shape[0]}x{shape[1]}",
+                **summary,
+                "tput_user": summary["inference_steps_per_second"],
+                "target_check": check,
+            }
+        )
+
+    num_total = sum(r["num_requests"] for r in records)
+    num_successful = sum(r["num_successful"] for r in records)
+    inference_steps = VIDEO_INFERENCE_STEPS[ctx.model_spec.hf_model_repo]
+    block_data: dict = {
+        "records": records,
+        "num_requests": num_total,
+        "num_successful": num_successful,
+        "num_inference_steps": inference_steps,
+        "target_check": summary_from_tiered(target_checks),
+        "target_checks": target_checks,
+    }
+    if num_successful != num_total:
+        logger.error(
+            f"Video benchmark: only {num_successful}/{num_total} generations "
+            f"succeeded across {len(shapes)} shapes; marking benchmark as FAILED."
+        )
+        block_data["status"] = TestStatus.FAIL.value
+    return Block(
+        kind="benchmarks",
+        task_type="video",
+        title="Video Benchmark",
+        id=block_id(ctx) or None,
+        targets={
+            "num_prompts": num_total,
+            "num_inference_steps": inference_steps,
+            "shapes": [r["shape"] for r in records],
+        },
+        data=block_data,
     )
 
 
@@ -304,6 +405,10 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             f"supported: {sorted(VIDEO_INFERENCE_STEPS)}"
         )
     require_health(ctx)
+
+    shapes = _benchmark_shapes(ctx)
+    if shapes:
+        return _run_video_benchmark_by_shape(ctx, get_num_calls(ctx), shapes)
 
     try:
         num_calls = get_num_calls(ctx)

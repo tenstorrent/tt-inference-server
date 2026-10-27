@@ -31,6 +31,15 @@ I2V_EVAL_PAIRS_ENV = "I2V_EVAL_PAIRS"
 DEFAULT_I2V_EVAL_PAIRS = "coco_i2v"
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
+# Wan2.2 I2V output shapes, as the generation API spec requests them
+# (tt-media-server docs/api/generation/models/wan-ai/wan2.2-i2v-a14b.yaml):
+# (width, height) -> (aspect_ratio, size).
+WAN22_I2V_SHAPES = {
+    (832, 480): ("16:9", "480p"),
+    (480, 832): ("9:16", "480p"),
+    (1280, 720): ("16:9", "720p"),
+    (720, 1280): ("9:16", "720p"),
+}
 
 
 def is_i2v_video_model(model_name: str) -> bool:
@@ -103,8 +112,14 @@ def build_video_generation_payload(
     num_inference_steps: int,
     model_name: str,
     image_b64: str | None = None,
+    shape: tuple[int, int] | None = None,
 ) -> dict:
-    """Build a T2V or I2V submit payload for ``model_name``."""
+    """Build a T2V or I2V submit payload for ``model_name``.
+
+    ``shape`` asks for an output ``(width, height)`` with the spec's
+    ``aspect_ratio`` and ``size``. Today's server ignores both and returns its
+    deployment's shape, which the caller's output check then catches.
+    """
     payload = {
         "prompt": prompt,
         "num_inference_steps": num_inference_steps,
@@ -122,6 +137,9 @@ def build_video_generation_payload(
             "image_prompts": [{"image": image_b64, "frame_pos": 0}],
         }
     )
+    if shape is not None:
+        aspect_ratio, size = WAN22_I2V_SHAPES[tuple(shape)]
+        payload.update({"aspect_ratio": aspect_ratio, "size": size})
     return payload
 
 
