@@ -15,8 +15,9 @@ import zipfile
 OWNER='com.tenstorrent.agentic-owner'
 MANAGED='com.tenstorrent.agentic-managed'
 POLICY='stable-audit-export-v1'
-MAX_BYTES=128*1024*1024
+MAX_BYTES=2*1024*1024*1024
 MAX_ZIP=64*1024*1024
+MAX_LINE=16*1024*1024
 IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:182a91996c8104cb1373503bf9326deb5d98e01347655bb1305840165262950e'
 # Published source-only overlay from run40530898912, Metal805f873d19d8.
 # Keep the export helper itself on IMAGE; only serving attribution gains this
@@ -28,45 +29,51 @@ MASKED_OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-s
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
 COLLECTOR=r'''
-import hashlib,io,json,os,stat,sys,time,zipfile
-plan=json.loads(sys.argv[1]);rows=[];contents=[];total=0
+import hashlib,io,json,os,stat,sys,zipfile
+MAX_BYTES=2*1024*1024*1024
+MAX_ZIP=64*1024*1024
+MAX_LINE=16*1024*1024
+plan=json.loads(sys.argv[1]);rows=[];total=0
 rootfd=os.open('/evidence',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
 logsfd=os.open('logs',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=rootfd)
-for name in plan['filenames']:
- path='/evidence/logs/'+name
- fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=logsfd)
- try:
-  before=os.fstat(fd)
-  if not stat.S_ISREG(before.st_mode):raise ValueError('nonregular source')
-  total+=before.st_size
-  if total>128*1024*1024:raise ValueError('input size bound')
-  chunks=[];remaining=before.st_size
-  while remaining:
-   data=os.read(fd,min(1048576,remaining))
-   if not data:raise ValueError('source truncated')
-   chunks.append(data);remaining-=len(data)
-  data=b''.join(chunks)
-  if os.read(fd,1):raise ValueError('source grew')
-  os.lseek(fd,0,os.SEEK_SET);h=hashlib.sha256();remaining=before.st_size
-  while remaining:
-   part=os.read(fd,min(1048576,remaining))
-   if not part:raise ValueError('source truncated on verification')
-   h.update(part);remaining-=len(part)
-  after=os.fstat(fd);current=os.stat(name,dir_fd=logsfd,follow_symlinks=False)
-  sig=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
-  digest=hashlib.sha256(data).hexdigest()
-  if sig(before)!=sig(after) or sig(after)!=sig(current) or h.hexdigest()!=digest:raise ValueError('source changed')
-  if not data or not data.endswith(b'\n'):raise ValueError('empty or incomplete JSONL')
-  for line in data.splitlines():
-   if line.strip():json.loads(line)
-  dest='tt_triage/'+name;contents.append((dest,data));rows.append({'source_path':'/home/container_app_user/cache_root/logs/'+name,'archive_path':dest,'bytes':len(data),'sha256':digest,'mtime_ns_before':before.st_mtime_ns,'mtime_ns_after':after.st_mtime_ns,'stable_two_reads':True})
- finally:os.close(fd)
-manifest={**plan,'schema_version':1,'status':'stable_exact_file_set','files':rows,'required_paths':['/home/container_app_user/cache_root/logs/'+n for n in plan['filenames']],'all_required_files_present':True,'serving_interval_complete':None,'limits':['Exact required files were stable across two reads; request/harness-window completeness must be independently checked.','No device operation or source mutation.']}
 buf=io.BytesIO()
 with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
- for name,data in contents:z.writestr(name,data)
+ for name in plan['filenames']:
+  fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=logsfd)
+  try:
+   before=os.fstat(fd)
+   if not stat.S_ISREG(before.st_mode):raise ValueError('nonregular source')
+   total+=before.st_size
+   if total>MAX_BYTES:raise ValueError('input size bound')
+   if not before.st_size:raise ValueError('empty JSONL')
+   dest='tt_triage/'+name;h=hashlib.sha256();count=0
+   with os.fdopen(fd,'rb',closefd=False) as source,z.open(dest,'w') as target:
+    while True:
+     line=source.readline(MAX_LINE+1)
+     if not line:break
+     if len(line)>MAX_LINE:raise ValueError('JSONL line size bound')
+     if not line.endswith(b'\n'):raise ValueError('incomplete JSONL')
+     count+=len(line)
+     if count>before.st_size:raise ValueError('source grew')
+     if line.strip():json.loads(line)
+     h.update(line);target.write(line)
+     if buf.tell()>MAX_ZIP:raise ValueError('compressed size bound')
+   if count!=before.st_size:raise ValueError('source truncated')
+   digest=h.hexdigest()
+   os.lseek(fd,0,os.SEEK_SET);h=hashlib.sha256();remaining=before.st_size
+   while remaining:
+    part=os.read(fd,min(1048576,remaining))
+    if not part:raise ValueError('source truncated on verification')
+    h.update(part);remaining-=len(part)
+   if os.read(fd,1):raise ValueError('source grew on verification')
+   after=os.fstat(fd);current=os.stat(name,dir_fd=logsfd,follow_symlinks=False)
+   sig=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+   if sig(before)!=sig(after) or sig(after)!=sig(current) or h.hexdigest()!=digest:raise ValueError('source changed')
+   rows.append({'source_path':'/home/container_app_user/cache_root/logs/'+name,'archive_path':dest,'bytes':count,'sha256':digest,'mtime_ns_before':before.st_mtime_ns,'mtime_ns_after':after.st_mtime_ns,'stable_two_reads':True})
+  finally:os.close(fd)
+ manifest={**plan,'schema_version':1,'status':'stable_exact_file_set','files':rows,'required_paths':['/home/container_app_user/cache_root/logs/'+n for n in plan['filenames']],'all_required_files_present':True,'serving_interval_complete':None,'limits':['Exact required files were stable across two reads; request/harness-window completeness must be independently checked.','No device operation or source mutation.']}
  z.writestr('audit-recovery-manifest.json',json.dumps(manifest,indent=2)+'\n')
-if buf.tell()>64*1024*1024:raise ValueError('compressed size bound')
+if buf.tell()>MAX_ZIP:raise ValueError('compressed size bound')
 sys.stdout.buffer.write(buf.getvalue())
 '''
 
@@ -90,6 +97,7 @@ def validate_archive(raw,plan):
         required={'tt_triage/'+n for n in plan['filenames']}|{'audit-recovery-manifest.json'}
         if len(z.namelist())!=len(required) or set(z.namelist())!=required:raise ValueError('unexpected archive members')
         if sum(x.file_size for x in z.infolist())>MAX_BYTES+65536:raise ValueError('ZIP expansion bound')
+        if z.getinfo('audit-recovery-manifest.json').file_size>65536:raise ValueError('manifest size bound')
         manifest=json.loads(z.read('audit-recovery-manifest.json'))
         for k in ('source_run_id','source_owner','volume','filenames','image','runner_name'):
             if manifest.get(k)!=plan.get(k):raise ValueError('archive attribution mismatch')
@@ -99,8 +107,13 @@ def validate_archive(raw,plan):
         if {r['archive_path'] for r in manifest['files']}!=required-{'audit-recovery-manifest.json'}:raise ValueError('manifest path mismatch')
         for r in manifest['files']:
             if r['source_path']!='/home/container_app_user/cache_root/logs/'+PurePosixPath(r['archive_path']).name:raise ValueError('source path mismatch')
-            data=z.read(r['archive_path'])
-            if len(data)!=r['bytes'] or hashlib.sha256(data).hexdigest()!=r['sha256'] or not r['stable_two_reads'] or r['mtime_ns_before']!=r['mtime_ns_after']:raise ValueError('file integrity mismatch')
+            h=hashlib.sha256();count=0
+            with z.open(r['archive_path']) as source:
+                while True:
+                    part=source.read(1048576)
+                    if not part:break
+                    count+=len(part);h.update(part)
+            if count!=r['bytes'] or h.hexdigest()!=r['sha256'] or not r['stable_two_reads'] or r['mtime_ns_before']!=r['mtime_ns_after']:raise ValueError('file integrity mismatch')
         return manifest
 
 
@@ -130,7 +143,7 @@ def export_one(plan,out,owner):
         ident=command(args).stdout.decode().strip()
         if not re.fullmatch('[0-9a-f]{64}',ident):raise ValueError('invalid full helper ID')
         state.update(id=ident,image_id=image_id,daemon_id=daemon,state='created');save();verify(ident)
-        started=subprocess.run(['docker','start','-a',ident],capture_output=True,timeout=90)
+        started=subprocess.run(['docker','start','-a',ident],capture_output=True,timeout=300)
         raw=started.stdout;code=verify(ident)['State']['ExitCode']
         state['helper_exit_code']=code
         if started.returncode or code:
