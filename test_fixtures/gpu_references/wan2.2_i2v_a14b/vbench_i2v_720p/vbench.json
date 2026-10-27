@@ -1,0 +1,317 @@
+{
+  "device": "cpu",
+  "num_clips": 15,
+  "clips": [
+    {
+      "file": "00_gpu.mp4",
+      "prompt": "a man on a surfboard riding a wave in the ocean",
+      "conditioning_image": "pexels_1604869.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "01_gpu.mp4",
+      "prompt": "an older man playing a saxophone on the street",
+      "conditioning_image": "pexels_13578635.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "02_gpu.mp4",
+      "prompt": "a man swinging a tennis racquet at a tennis ball",
+      "conditioning_image": "pexels_1277397.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "03_gpu.mp4",
+      "prompt": "a man and a woman are boxing in a boxing ring",
+      "conditioning_image": "pexels_8611942.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "04_gpu.mp4",
+      "prompt": "a group of people riding bikes down a street",
+      "conditioning_image": "pexels_12210669.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "05_gpu.mp4",
+      "prompt": "a tiger walking through a wooded area",
+      "conditioning_image": "pexels_2263936.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "06_gpu.mp4",
+      "prompt": "a sea turtle swimming in the ocean under the water",
+      "conditioning_image": "pexels_12026138.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "07_gpu.mp4",
+      "prompt": "a person is cooking food in a wok on a stove",
+      "conditioning_image": "pexels_3054690.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "08_gpu.mp4",
+      "prompt": "a steam train traveling through the woods",
+      "conditioning_image": "pexels_2790396.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "09_gpu.mp4",
+      "prompt": "reeds blowing in the wind against a cloudy sky",
+      "conditioning_image": "pexels_362956.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "10_gpu.mp4",
+      "prompt": "a book on fire with flames coming out of it",
+      "conditioning_image": "pexels_1474928.jpg",
+      "camera_motion": null
+    },
+    {
+      "file": "11_gpu.mp4",
+      "prompt": "a large wave crashes over a rocky cliff, camera pans left",
+      "conditioning_image": "pexels_11117140.jpg",
+      "camera_motion": "pan_left"
+    },
+    {
+      "file": "12_gpu.mp4",
+      "prompt": "a city street at night during a snow storm, camera zooms in",
+      "conditioning_image": "pexels_2385898.jpg",
+      "camera_motion": "zoom_in"
+    },
+    {
+      "file": "13_gpu.mp4",
+      "prompt": "a table and chairs in a room with sunlight coming through the window, camera pans right",
+      "conditioning_image": "pexels_3968056.jpg",
+      "camera_motion": "pan_right"
+    },
+    {
+      "file": "14_gpu.mp4",
+      "prompt": "a blue and white smoke is swirly in the dark, camera static",
+      "conditioning_image": "pexels_604684.jpg",
+      "camera_motion": "static"
+    }
+  ],
+  "dimensions": {
+    "i2v_subject": {
+      "score": 0.988,
+      "per_clip": {
+        "00_gpu.mp4": 0.9836,
+        "01_gpu.mp4": 0.9782,
+        "02_gpu.mp4": 0.9903,
+        "03_gpu.mp4": 0.988,
+        "04_gpu.mp4": 0.9856,
+        "05_gpu.mp4": 0.996,
+        "06_gpu.mp4": 0.9865,
+        "07_gpu.mp4": 0.986,
+        "08_gpu.mp4": 0.9957,
+        "09_gpu.mp4": 0.9972,
+        "10_gpu.mp4": 0.9874,
+        "11_gpu.mp4": 0.985,
+        "12_gpu.mp4": 0.9829,
+        "13_gpu.mp4": 0.9822,
+        "14_gpu.mp4": 0.9949
+      },
+      "seconds": 103.2
+    },
+    "i2v_background": {
+      "score": 0.9887,
+      "per_clip": {
+        "00_gpu.mp4": 0.9865,
+        "01_gpu.mp4": 0.9801,
+        "02_gpu.mp4": 0.9853,
+        "03_gpu.mp4": 0.9833,
+        "04_gpu.mp4": 0.9865,
+        "05_gpu.mp4": 0.9909,
+        "06_gpu.mp4": 0.9848,
+        "07_gpu.mp4": 0.9863,
+        "08_gpu.mp4": 0.9929,
+        "09_gpu.mp4": 0.9971,
+        "10_gpu.mp4": 0.9937,
+        "11_gpu.mp4": 0.9924,
+        "12_gpu.mp4": 0.9898,
+        "13_gpu.mp4": 0.9846,
+        "14_gpu.mp4": 0.9958
+      },
+      "seconds": 151.7
+    },
+    "subject_consistency": {
+      "score": 0.9392,
+      "per_clip": {
+        "00_gpu.mp4": 0.8828,
+        "01_gpu.mp4": 0.8887,
+        "02_gpu.mp4": 0.9496,
+        "03_gpu.mp4": 0.9497,
+        "04_gpu.mp4": 0.9309,
+        "05_gpu.mp4": 0.9746,
+        "06_gpu.mp4": 0.8991,
+        "07_gpu.mp4": 0.8797,
+        "08_gpu.mp4": 0.9788,
+        "09_gpu.mp4": 0.9883,
+        "10_gpu.mp4": 0.9435,
+        "11_gpu.mp4": 0.9547,
+        "12_gpu.mp4": 0.9642,
+        "13_gpu.mp4": 0.9356,
+        "14_gpu.mp4": 0.9678
+      },
+      "seconds": 75.2
+    },
+    "background_consistency": {
+      "score": 0.9519,
+      "per_clip": {
+        "00_gpu.mp4": 0.946,
+        "01_gpu.mp4": 0.9281,
+        "02_gpu.mp4": 0.9434,
+        "03_gpu.mp4": 0.9221,
+        "04_gpu.mp4": 0.935,
+        "05_gpu.mp4": 0.976,
+        "06_gpu.mp4": 0.9559,
+        "07_gpu.mp4": 0.9327,
+        "08_gpu.mp4": 0.9737,
+        "09_gpu.mp4": 0.9812,
+        "10_gpu.mp4": 0.9715,
+        "11_gpu.mp4": 0.9709,
+        "12_gpu.mp4": 0.9471,
+        "13_gpu.mp4": 0.912,
+        "14_gpu.mp4": 0.9823
+      },
+      "seconds": 17.0
+    },
+    "motion_smoothness": {
+      "score": 0.9843,
+      "per_clip": {
+        "00_gpu.mp4": 0.9684,
+        "01_gpu.mp4": 0.9809,
+        "02_gpu.mp4": 0.9817,
+        "03_gpu.mp4": 0.989,
+        "04_gpu.mp4": 0.9863,
+        "05_gpu.mp4": 0.9823,
+        "06_gpu.mp4": 0.9714,
+        "07_gpu.mp4": 0.9817,
+        "08_gpu.mp4": 0.9878,
+        "09_gpu.mp4": 0.9894,
+        "10_gpu.mp4": 0.9941,
+        "11_gpu.mp4": 0.9895,
+        "12_gpu.mp4": 0.9816,
+        "13_gpu.mp4": 0.9859,
+        "14_gpu.mp4": 0.9944
+      },
+      "seconds": 809.5
+    },
+    "dynamic_degree": {
+      "score": 0.6,
+      "per_clip": {
+        "00_gpu.mp4": 1.0,
+        "01_gpu.mp4": 1.0,
+        "02_gpu.mp4": 1.0,
+        "03_gpu.mp4": 1.0,
+        "04_gpu.mp4": 1.0,
+        "05_gpu.mp4": 0.0,
+        "06_gpu.mp4": 1.0,
+        "07_gpu.mp4": 1.0,
+        "08_gpu.mp4": 0.0,
+        "09_gpu.mp4": 0.0,
+        "10_gpu.mp4": 1.0,
+        "11_gpu.mp4": 0.0,
+        "12_gpu.mp4": 0.0,
+        "13_gpu.mp4": 1.0,
+        "14_gpu.mp4": 0.0
+      },
+      "seconds": 1095.9
+    },
+    "aesthetic_quality": {
+      "score": 0.6171,
+      "per_clip": {
+        "00_gpu.mp4": 0.7218,
+        "01_gpu.mp4": 0.6193,
+        "02_gpu.mp4": 0.5009,
+        "03_gpu.mp4": 0.5872,
+        "04_gpu.mp4": 0.5722,
+        "05_gpu.mp4": 0.7279,
+        "06_gpu.mp4": 0.646,
+        "07_gpu.mp4": 0.5979,
+        "08_gpu.mp4": 0.7329,
+        "09_gpu.mp4": 0.6323,
+        "10_gpu.mp4": 0.6765,
+        "11_gpu.mp4": 0.5923,
+        "12_gpu.mp4": 0.5412,
+        "13_gpu.mp4": 0.6158,
+        "14_gpu.mp4": 0.4927
+      },
+      "seconds": 168.5
+    },
+    "imaging_quality": {
+      "score": 0.6977,
+      "per_clip": {
+        "00_gpu.mp4": 0.7293,
+        "01_gpu.mp4": 0.6738,
+        "02_gpu.mp4": 0.6499,
+        "03_gpu.mp4": 0.7368,
+        "04_gpu.mp4": 0.7871,
+        "05_gpu.mp4": 0.7379,
+        "06_gpu.mp4": 0.7203,
+        "07_gpu.mp4": 0.5866,
+        "08_gpu.mp4": 0.7054,
+        "09_gpu.mp4": 0.6397,
+        "10_gpu.mp4": 0.6606,
+        "11_gpu.mp4": 0.7342,
+        "12_gpu.mp4": 0.6402,
+        "13_gpu.mp4": 0.7715,
+        "14_gpu.mp4": 0.6922
+      },
+      "seconds": 58.6
+    },
+    "temporal_flickering": {
+      "score": 0.9647,
+      "per_clip": {
+        "00_gpu.mp4": 0.9373,
+        "01_gpu.mp4": 0.9574,
+        "02_gpu.mp4": 0.9647,
+        "03_gpu.mp4": 0.9772,
+        "04_gpu.mp4": 0.9741,
+        "05_gpu.mp4": 0.9383,
+        "06_gpu.mp4": 0.9434,
+        "07_gpu.mp4": 0.9621,
+        "08_gpu.mp4": 0.9752,
+        "09_gpu.mp4": 0.9821,
+        "10_gpu.mp4": 0.9837,
+        "11_gpu.mp4": 0.9817,
+        "12_gpu.mp4": 0.9646,
+        "13_gpu.mp4": 0.9452,
+        "14_gpu.mp4": 0.9835
+      },
+      "seconds": 5.2
+    },
+    "camera_motion": {
+      "score": 0.5,
+      "per_clip": {
+        "11_gpu.mp4": 1.0,
+        "12_gpu.mp4": 0.0,
+        "13_gpu.mp4": 1.0,
+        "14_gpu.mp4": 0.0
+      },
+      "predicted": {
+        "11_gpu.mp4": [
+          "tilt_up",
+          "pan_left"
+        ],
+        "12_gpu.mp4": [
+          "tilt_down",
+          "pan_right"
+        ],
+        "13_gpu.mp4": [
+          "tilt_up",
+          "zoom_in",
+          "pan_right"
+        ],
+        "14_gpu.mp4": [
+          "tilt_down",
+          "zoom_in",
+          "pan_right"
+        ]
+      },
+      "seconds": 227.2
+    }
+  }
+}

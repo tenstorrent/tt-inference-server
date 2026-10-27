@@ -1,0 +1,132 @@
+{
+  "device": "cpu",
+  "num_clips": 5,
+  "clips": [
+    {
+      "file": "00_gpu.mp4",
+      "prompt": "A small bird is perched on an empty bird feeder.",
+      "conditioning_image": "coco_000000412355.jpg"
+    },
+    {
+      "file": "01_gpu.mp4",
+      "prompt": "A man holding one water ski at the lake.",
+      "conditioning_image": "coco_000000128675.jpg"
+    },
+    {
+      "file": "02_gpu.mp4",
+      "prompt": "A group of people ski and snowboard together",
+      "conditioning_image": "coco_000000286036.jpg"
+    },
+    {
+      "file": "03_gpu.mp4",
+      "prompt": "Two trains running along a set of tracks.",
+      "conditioning_image": "coco_000000112232.jpg"
+    },
+    {
+      "file": "04_gpu.mp4",
+      "prompt": "A young man riding a bike past a car while talking on a cell phone.",
+      "conditioning_image": "coco_000000310278.jpg"
+    }
+  ],
+  "dimensions": {
+    "i2v_subject": {
+      "score": 0.9901,
+      "per_clip": {
+        "00_gpu.mp4": 0.9958,
+        "01_gpu.mp4": 0.9826,
+        "02_gpu.mp4": 0.991,
+        "03_gpu.mp4": 0.9949,
+        "04_gpu.mp4": 0.9864
+      },
+      "seconds": 16.1
+    },
+    "i2v_background": {
+      "score": 0.9892,
+      "per_clip": {
+        "00_gpu.mp4": 0.9957,
+        "01_gpu.mp4": 0.9829,
+        "02_gpu.mp4": 0.9899,
+        "03_gpu.mp4": 0.9945,
+        "04_gpu.mp4": 0.9829
+      },
+      "seconds": 53.5
+    },
+    "subject_consistency": {
+      "score": 0.9717,
+      "per_clip": {
+        "00_gpu.mp4": 0.9774,
+        "01_gpu.mp4": 0.9554,
+        "02_gpu.mp4": 0.9774,
+        "03_gpu.mp4": 0.9851,
+        "04_gpu.mp4": 0.9635
+      },
+      "seconds": 27.3
+    },
+    "background_consistency": {
+      "score": 0.9522,
+      "per_clip": {
+        "00_gpu.mp4": 0.9803,
+        "01_gpu.mp4": 0.9371,
+        "02_gpu.mp4": 0.9606,
+        "03_gpu.mp4": 0.9385,
+        "04_gpu.mp4": 0.9446
+      },
+      "seconds": 8.0
+    },
+    "motion_smoothness": {
+      "score": 0.982,
+      "per_clip": {
+        "00_gpu.mp4": 0.9957,
+        "01_gpu.mp4": 0.9856,
+        "02_gpu.mp4": 0.9677,
+        "03_gpu.mp4": 0.9887,
+        "04_gpu.mp4": 0.9724
+      },
+      "seconds": 222.5
+    },
+    "dynamic_degree": {
+      "score": 0.4,
+      "per_clip": {
+        "00_gpu.mp4": 0.0,
+        "01_gpu.mp4": 0.0,
+        "02_gpu.mp4": 0.0,
+        "03_gpu.mp4": 1.0,
+        "04_gpu.mp4": 1.0
+      },
+      "seconds": 409.1
+    },
+    "aesthetic_quality": {
+      "score": 0.6011,
+      "per_clip": {
+        "00_gpu.mp4": 0.6266,
+        "01_gpu.mp4": 0.5978,
+        "02_gpu.mp4": 0.6172,
+        "03_gpu.mp4": 0.6528,
+        "04_gpu.mp4": 0.5111
+      },
+      "seconds": 71.3
+    },
+    "imaging_quality": {
+      "score": 0.6971,
+      "per_clip": {
+        "00_gpu.mp4": 0.5336,
+        "01_gpu.mp4": 0.7467,
+        "02_gpu.mp4": 0.7518,
+        "03_gpu.mp4": 0.6893,
+        "04_gpu.mp4": 0.7642
+      },
+      "seconds": 21.0
+    },
+    "temporal_flickering": {
+      "score": 0.9644,
+      "per_clip": {
+        "00_gpu.mp4": 0.9925,
+        "01_gpu.mp4": 0.9695,
+        "02_gpu.mp4": 0.9325,
+        "03_gpu.mp4": 0.9802,
+        "04_gpu.mp4": 0.9472
+      },
+      "seconds": 1.7
+    }
+  }
+}

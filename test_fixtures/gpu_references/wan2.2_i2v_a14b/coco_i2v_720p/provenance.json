@@ -1,0 +1,23 @@
+{
+  "model": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+  "pairs": "coco_i2v",
+  "gpu": "NVIDIA H100 NVL",
+  "torch": "2.11.0+cu128",
+  "cuda": "12.8",
+  "diffusers": "0.39.0",
+  "python": "3.12.13",
+  "tt_inference_server_sha": "b06c6e6044c0693293abef3df8782723cb4ddc8a",
+  "width": 1280,
+  "height": 720,
+  "num_frames": 81,
+  "fps": 16,
+  "steps": 40,
+  "seed": 42,
+  "negative_prompt": "blurry, low quality, distorted",
+  "guidance_scale": 4.0,
+  "guidance_scale_2": 3.0,
+  "schedule": "tt",
+  "flow_shift": 12.0,
+  "boundary_ratio": 0.875,
+  "cpu_offload": false
+}

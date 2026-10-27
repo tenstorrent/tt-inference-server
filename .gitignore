@@ -95,6 +95,8 @@ test_fixtures/datasets/*
 !test_fixtures/datasets/coco_i2v/manifest.json
 !test_fixtures/datasets/vbench_i2v/
 !test_fixtures/datasets/vbench_i2v/manifest.json
+# GPU reference clips and scores the VBench scorer compares TT against
+!test_fixtures/gpu_references/**/*.json
 
 # ignore generated files
 model_spec.json

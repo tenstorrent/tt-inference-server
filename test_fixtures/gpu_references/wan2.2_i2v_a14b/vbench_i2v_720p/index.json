@@ -1,0 +1,96 @@
+[
+  {
+    "file": "00_gpu.mp4",
+    "prompt": "a man on a surfboard riding a wave in the ocean",
+    "conditioning_image": "pexels_1604869.jpg",
+    "seconds": 2033.8
+  },
+  {
+    "file": "01_gpu.mp4",
+    "prompt": "an older man playing a saxophone on the street",
+    "conditioning_image": "pexels_13578635.jpg",
+    "seconds": 2020.0
+  },
+  {
+    "file": "02_gpu.mp4",
+    "prompt": "a man swinging a tennis racquet at a tennis ball",
+    "conditioning_image": "pexels_1277397.jpg",
+    "seconds": 2020.3
+  },
+  {
+    "file": "03_gpu.mp4",
+    "prompt": "a man and a woman are boxing in a boxing ring",
+    "conditioning_image": "pexels_8611942.jpg",
+    "seconds": 2023.7
+  },
+  {
+    "file": "04_gpu.mp4",
+    "prompt": "a group of people riding bikes down a street",
+    "conditioning_image": "pexels_12210669.jpg",
+    "seconds": 2038.4
+  },
+  {
+    "file": "05_gpu.mp4",
+    "prompt": "a tiger walking through a wooded area",
+    "conditioning_image": "pexels_2263936.jpg",
+    "seconds": 2047.9
+  },
+  {
+    "file": "06_gpu.mp4",
+    "prompt": "a sea turtle swimming in the ocean under the water",
+    "conditioning_image": "pexels_12026138.jpg",
+    "seconds": 2139.1
+  },
+  {
+    "file": "07_gpu.mp4",
+    "prompt": "a person is cooking food in a wok on a stove",
+    "conditioning_image": "pexels_3054690.jpg",
+    "seconds": 2079.7
+  },
+  {
+    "file": "08_gpu.mp4",
+    "prompt": "a steam train traveling through the woods",
+    "conditioning_image": "pexels_2790396.jpg",
+    "seconds": 2040.3
+  },
+  {
+    "file": "09_gpu.mp4",
+    "prompt": "reeds blowing in the wind against a cloudy sky",
+    "conditioning_image": "pexels_362956.jpg",
+    "seconds": 2023.6
+  },
+  {
+    "file": "10_gpu.mp4",
+    "prompt": "a book on fire with flames coming out of it",
+    "conditioning_image": "pexels_1474928.jpg",
+    "seconds": 2085.1
+  },
+  {
+    "file": "11_gpu.mp4",
+    "prompt": "a large wave crashes over a rocky cliff, camera pans left",
+    "conditioning_image": "pexels_11117140.jpg",
+    "seconds": 2030.0,
+    "camera_motion": "pan_left"
+  },
+  {
+    "file": "12_gpu.mp4",
+    "prompt": "a city street at night during a snow storm, camera zooms in",
+    "conditioning_image": "pexels_2385898.jpg",
+    "seconds": 2011.6,
+    "camera_motion": "zoom_in"
+  },
+  {
+    "file": "13_gpu.mp4",
+    "prompt": "a table and chairs in a room with sunlight coming through the window, camera pans right",
+    "conditioning_image": "pexels_3968056.jpg",
+    "seconds": 2012.3,
+    "camera_motion": "pan_right"
+  },
+  {
+    "file": "14_gpu.mp4",
+    "prompt": "a blue and white smoke is swirly in the dark, camera static",
+    "conditioning_image": "pexels_604684.jpg",
+    "seconds": 2017.3,
+    "camera_motion": "static"
+  }
+]

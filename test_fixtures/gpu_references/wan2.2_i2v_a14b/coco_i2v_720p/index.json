@@ -1,0 +1,32 @@
+[
+  {
+    "file": "00_gpu.mp4",
+    "prompt": "A small bird is perched on an empty bird feeder.",
+    "conditioning_image": "coco_000000412355.jpg",
+    "seconds": 1935.4
+  },
+  {
+    "file": "01_gpu.mp4",
+    "prompt": "A man holding one water ski at the lake.",
+    "conditioning_image": "coco_000000128675.jpg",
+    "seconds": 1934.8
+  },
+  {
+    "file": "02_gpu.mp4",
+    "prompt": "A group of people ski and snowboard together",
+    "conditioning_image": "coco_000000286036.jpg",
+    "seconds": 1940.0
+  },
+  {
+    "file": "03_gpu.mp4",
+    "prompt": "Two trains running along a set of tracks.",
+    "conditioning_image": "coco_000000112232.jpg",
+    "seconds": 1940.8
+  },
+  {
+    "file": "04_gpu.mp4",
+    "prompt": "A young man riding a bike past a car while talking on a cell phone.",
+    "conditioning_image": "coco_000000310278.jpg",
+    "seconds": 1939.9
+  }
+]
