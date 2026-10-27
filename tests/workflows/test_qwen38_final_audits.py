@@ -66,6 +66,17 @@ def test_wrong_host_rejected():
     with pytest.raises(ValueError):m.validate_plan(plan(),'120-qb2-p04t05')
 
 
+def test_published_exact_overlay_attribution_accepted():
+    p={**plan(),'image':m.OVERLAY_IMAGE}
+    assert m.validate_plan(p,p['runner_name'],expected_owner=p['source_owner'])==p
+
+
+def test_other_overlay_digest_still_rejected():
+    p={**plan(),'image':m.OVERLAY_IMAGE[:-1]+'0'}
+    with pytest.raises(ValueError,match='unexpected immutable image'):
+        m.validate_plan(p,p['runner_name'],expected_owner=p['source_owner'])
+
+
 def test_launch_receipt_only_generated_paths_no_env(tmp_path,monkeypatch):
     monkeypatch.setenv('TT_AGENTIC_CONTAINER_OWNER','goal12-123-1-0');monkeypatch.setenv('GITHUB_RUN_ID','123');monkeypatch.setenv('RUNNER_NAME','120-qb2-p05t01')
     monkeypatch.setattr('workflows.run_docker_server.get_default_workflow_root_log_dir',lambda:tmp_path)

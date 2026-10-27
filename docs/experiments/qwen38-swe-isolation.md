@@ -65,3 +65,24 @@ their previous behavior. The regression test builds the actual Qwen eval task,
 passes it through build_harbor_config, then serializes the final Harbor config.
 The one-task smoke must be repeated and actual network journals inspected before
 running matched isolated SWE8 arms.
+
+## Actual isolated protocol smoke, 27 October
+
+CI40543287655 (TTI18dc75300434736c2a3df1a23d54709c6ffe0f91) passed the
+collected protocol gate. Saved Harbor config enables isolation; the actual
+astropy14309 primary network is internal, its linked setup network is public,
+and verified transitions are [setup egress on, agent off, verifier on]. Both
+networks were removed and supervised workloads settled. The model submitted
+normally with verifier reward1,18responses/zero missing calls,3910saved output
+tokens and308.155seconds trial envelope. Trajectory review found local diagnosis,
+edits and tests with no upstream-fix retrieval. This is one protocol smoke,
+not an eight-task accuracy estimate or GPU parity result.
+
+The auxiliary stable audit export was incomplete because its exact image
+allowlist accepted only the old base. The serving overlay is now explicitly
+accepted by its published immutable digest47319d8b...; mutable/other images
+remain rejected. The no-network/no-device/read-only export helper itself still
+uses the original pinned base. The real smoke source plan passes the repaired
+validation and59 focused export/isolation tests pass. Actual fixed post-cleanup
+export remains to be checked in the clean8 run; original workflow audit files
+already contain all18 recorded responses and are retained locally.

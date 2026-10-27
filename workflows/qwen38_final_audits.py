@@ -18,6 +18,10 @@ POLICY='stable-audit-export-v1'
 MAX_BYTES=128*1024*1024
 MAX_ZIP=64*1024*1024
 IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:182a91996c8104cb1373503bf9326deb5d98e01347655bb1305840165262950e'
+# Published source-only overlay from run40530898912, Metal805f873d19d8.
+# Keep the export helper itself on IMAGE; only serving attribution gains this
+# additional exact digest. Mutable tags and arbitrary overlays remain rejected.
+OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:47319d8b11749575cc921bae9c03458d37be2667433d7e8e7e0faa3be7a3d895'
 
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
@@ -67,7 +71,7 @@ sys.stdout.buffer.write(buf.getvalue())
 
 def validate_plan(p,runner,expected_owner=None):
     if p.get('volume')!='volume_id_qwen38_autoport-Qwen3.8-27B':raise ValueError('unexpected volume')
-    if p.get('image')!=IMAGE:raise ValueError('unexpected immutable image')
+    if p.get('image') not in (IMAGE,OVERLAY_IMAGE):raise ValueError('unexpected immutable image')
     if runner not in p.get('host_aliases',[]):raise ValueError('wrong assigned host')
     if not re.fullmatch(r'goal12-[0-9]+-[0-9]+-[0-9]+',p.get('source_owner','')):raise ValueError('invalid source owner')
     if str(p.get('source_run_id'))!=p['source_owner'].split('-')[1]:raise ValueError('source run/owner mismatch')
