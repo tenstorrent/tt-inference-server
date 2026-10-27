@@ -13631,7 +13631,25 @@ _eval_config_list = [
 # M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
 # measurements only (no published, GPU or limit-mode references; the card's
 # AutomationBench 62.8 states no harness or effort).
+# Harbor trial concurrency for M3.1-Flash. M3 runs Terminal-Bench at 8 because its
+# IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's Virtu P/D
+# deployment held 10-12 ms inter-token latency at 56 agentic users, so its
+# Terminal-Bench runs fill the deployment's 62 slots instead.
+_MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
+    "terminal_bench_2_1": 62,
+    "terminal_bench_4": 62,
+}
+
+
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
+    if concurrency is not None:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config, n_concurrent_trials=concurrency
+            ),
+        )
     return replace(
         task,
         score=replace(
