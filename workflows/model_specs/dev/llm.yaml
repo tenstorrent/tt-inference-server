@@ -199,400 +199,6 @@ templates:
 
 - weights:
     - google/gemma-4-31B-it
-  impl: gemma4_mtp
-  # TT-native MTP speculative serving (it-assistant KV-shared drafter, K=5).
-  # B=1 latency profile: speculation only pays bandwidth-bound (measured 4k:
-  # code 67.5 tok/s/u vs 28.8 plain; prose is checkpoint-bound ~parity). The
-  # plugin routes Gemma4 to Gemma4MTPForCausalLM via TT_MODEL_CLASS_OVERRIDES; each
-  # engine step emits a VARIABLE accepted-prefix+bonus row (<= K+1), padded on
-  # the wire and stripped by the runner (tt_spec_variable_output).
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
-      max_context: 262144  # 256K bounded (requires the tt-metal MTP bounded page-table install)
-      env_vars:
-        MESH_DEVICE: "P150x8"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
-        GEMMA4_SPEC_DRAFT_LEN: "5"
-        GEMMA4_MTP_SERVE_HORIZON: "2048"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # B=1 x max_context pool
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Eager chunked prefill: the dFlash tap hook is python-side; traced replays skip it.
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        max_num_seqs: 1
-        # Sync default: the async submit/accept split is in place and coherent,
-        # but block-output disables the steady-decode overlap (output_tokens set)
-        # and dFlash's step is serially dependent, so async gives no gain yet.
-        # NOTE: an earlier version of this comment cited "~135ms/iter vLLM host
-        # overhead" as the lever. That figure was wrong (a per-STEP number read
-        # as per-iteration). Measured on the 31B dFlash P150X8 server by fitting
-        # step_time = H + (B/acceptance)*D across block sizes 64/32/8: H = 39.4 ms
-        # per vLLM STEP, D = 59.9 ms per spec iteration -- so a whole iteration is
-        # ~60 ms and 135 ms/iter was impossible. Most of H is wall-clock waiting
-        # (plugin CPU work is ~4 ms by viztracer), not compute.
-        no-async-scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
-        # Single-forward prefill: the stateful drafter's tap hook needs the whole
-        # prompt at once (the model chunks internally via GEMMA4_GEN_PREFILL_CHUNK).
-        enable_chunked_prefill: false
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-- weights:
-    - google/gemma-4-12B-it
-  impl: gemma4_mtp
-  # 12B MTP speculative serving (google/gemma-4-12B-it-assistant KV-shared
-  # drafter, K=5). Same B=1 profile as 31B MTP. 12B has no z-lab dFlash
-  # checkpoint, so MTP is the only spec path for this size.
-  #
-  # RESOLVED 2026-09-21. The earlier note here said this entry emitted DEGENERATE
-  # text ("The capital of France is" -> "11") and scored 0 on r1_gpqa_diamond with
-  # every response empty. The degenerate text is gone; the empty responses were a
-  # thinking-budget artifact, not a broken text path:
-  #   * The served text is coherent and correct -- the 3 non-empty GPQA responses
-  #     in the 2026-09-20 run were 3/3 correct, with clean derivations and boxed
-  #     answers.
-  #   * The other 7 returned "" because the thought channel never closed within
-  #     max_gen_toks=32768 and lm-eval scores message.content only. The requests
-  #     ran the full budget (~380 s each), still mid-chain at 32k.
-  #   * Ruled out as causes: speculation (two concurrent requests take the batched
-  #     baseline path and loop identically), sampling (temperature 1.0 / 0.6 and
-  #     greedy all run to the cap), and the reasoning parser (it routes correctly
-  #     whenever the model does close the block).
-  #   * With enable_thinking=false (set in vllm_args below) the same 10 items each
-  #     finish in 505-1003 tokens and score 8/10 = 80.0 vs published 78.8.
-  # So the 12B text path is healthy on this stack. Note that a throughput
-  # benchmark counts tokens without reading them, and EXPERIMENTAL waives the eval
-  # block, so neither one would have caught this -- read the eval SCORE.
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 32  # adaptive engine: solo=MTP spec, batch=baseline
-      max_context: 262144  # full 256K bounded, same as the 31B MTP entry. The earlier device hang on the FIRST bootstrap capture did NOT reproduce on 2026-09-14: sessions arm and a 35-point 256K sweep runs rc=0.
-      env_vars:
-        MESH_DEVICE: "P150x8"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
-        GEMMA4_SPEC_DRAFT_LEN: "5"
-        GEMMA4_SPEC_ASYNC: "1"
-        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
-        GEMMA4_MTP_SERVE_HORIZON: "2048"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # B=1 x max_context pool
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Eager chunked prefill: the dFlash tap hook is python-side; traced replays skip it.
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        max_num_seqs: 32
-        # Async ON: MTP gates supports_async_decode on GEMMA4_SPEC_ASYNC (set
-        # below); both the env and this flag are required or the platform
-        # clears async_scheduling and warns.
-        async_scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        # The gemma4 template defaults enable_thinking=true. On the 12B that makes
-        # plain requests burn max_tokens inside the thought channel and return
-        # content=None: measured 2026-09-21, 7/10 r1_gpqa_diamond items never close
-        # the block within max_gen_toks=32768 (still mid-chain at 32k, ~380 s each),
-        # so lm-eval -- which scores message.content only -- saw empty strings and
-        # the task scored 30. Not a speculation bug: two concurrent requests take
-        # the batched baseline path and loop identically, and temperature 1.0 / 0.6
-        # / greedy all run to the cap. With thinking off the same 10 items finish in
-        # 505-1003 tokens each and score 8/10 = 80.0 (published 78.8). Same reason
-        # as the Qwen3 entry below. Request-level chat_template_kwargs still win, so
-        # callers that want thinking just ask for it.
-        default-chat-template-kwargs: '{"enable_thinking": false}'
-        reasoning-parser: gemma4
-        # Single-forward prefill: the stateful drafter's tap hook needs the whole
-        # prompt at once (the model chunks internally via GEMMA4_GEN_PREFILL_CHUNK).
-        enable_chunked_prefill: false
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-    # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery, same
-    # per-engine profile as P150X8.
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-# BH Galaxy 12B MTP adaptive server on its own entry. Stays EXPERIMENTAL: at
-# max_concurrency 128 MTP still captures its fused trace inside decode steps
-# (worker RPC timeout), and no 12B Galaxy benchmark targets exist yet.
-- weights:
-    - google/gemma-4-12B-it
-  impl: gemma4_mtp
-  # 12B MTP speculative serving (it-assistant KV-shared drafter, K=5); 12B has
-  # no dFlash checkpoint, so MTP is its only spec path. Thinking is off by
-  # default: with it on, GPQA answers overrun max_gen_toks mid-thought and
-  # lm-eval scores the empty content (80.0 with it off vs published 78.8).
-  inference_engine: VLLM
-  device_model_specs:
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
-      max_context: 262144
-      env_vars:
-        GEMMA4_CCL_TOPOLOGY: "linear"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
-        GEMMA4_SPEC_DRAFT_LEN: "5"
-        GEMMA4_SPEC_ASYNC: "1"
-        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
-        GEMMA4_MTP_SERVE_HORIZON: "2048"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 32
-        async_scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        # Thinking off by default (see entry comment); request-level chat_template_kwargs still win.
-        default-chat-template-kwargs: '{"enable_thinking": false}'
-        reasoning-parser: gemma4
-        enable_chunked_prefill: false
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-- weights:
-    - google/gemma-4-31B-it
-  impl: gemma4_dflash
-  # REQUIRES a SECOND checkpoint the workflow does not download: the z-lab
-  # drafter, resolved from the HF cache by glob (models--z-lab--gemma-4-31B-it-
-  # DFlash) or from GEMMA4_DFLASH_DRAFTER. It is loaded lazily at the FIRST
-  # request, so a box missing it boots healthy and then kills the engine on
-  # request 1 (EngineDeadError, no useful traceback). Fetch it before serving:
-  #   hf download z-lab/gemma-4-31B-it-DFlash
-  # TT-native dFlash speculative serving (z-lab block-diffusion drafter,
-  # verify V=7). B=1 latency profile; strongest on code-like content (4k:
-  # 68.4 tok/s/u vs 28.8 plain; prose ~parity -- acceptance is content/
-  # checkpoint-bound). Prefill runs UNTRACED for this profile (the residual
-  # tap hook is python-side; traced prefill replays skip it) and each request
-  # pays a one-time fused-trace capture (~3 s) at first decode.
-  #
-  # OPERATING POINTS (one impl, two configs):
-  #   * LATENCY (this entry): block-output spec, max_num_seqs=1. B=1 spec
-  #     speedup -- server-measured 42 tok/s/u @128/128, 92 @128/1024 (up to
-  #     3.4x vs baseline). Aggregate does NOT scale with concurrency (B=1).
-  #   * THROUGHPUT: set env GEMMA4_DFLASH_SERVE_BLOCK=1 (turns block-output OFF)
-  #     and vllm_args max_num_seqs=32 (+ max_concurrency=32). The impl then
-  #     serves EVERY request via the plain baseline batched path -- "baseline
-  #     picks up for concurrency>1" -- measured 437 agg tok/s @128/128 conc-32.
-  #     A batched decode always falls back to baseline regardless of this env
-  #     (decode_forward gates on batch>1), so the spec path is never asked to
-  #     run B>1. (Speculation only pays bandwidth-bound / low batch anyway.)
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 32  # adaptive engine: solo=spec, batch=baseline
-      max_context: 262144  # full 256K: spec <=131072, baseline >131072 (see GEMMA4_DFLASH_MAX_SPEC_ISL)
-      env_vars:
-        MESH_DEVICE: "P150x8"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
-        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
-        GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
-        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec-capture DRAM frontier @ max_num_seqs=32; prompts above serve as plain baseline (the model declares this as tt_adaptive_block_max_prompt_tokens so the scheduler reserves width-1 for them)
-        GEMMA4_DFLASH_VERIFY: "5"
-        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Eager chunked prefill: the dFlash tap hook is python-side; traced replays skip it.
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        max_num_seqs: 32
-        # Async overlaps host scheduling with the device decode for the BATCHED
-        # baseline fallback (conc>1) -- baseline-entry parity; sync cost it
-        # ~20-35% at conc-32. The solo spec block step returns committed host
-        # tokens (no read to overlap) and stays correct under the async
-        # schedule/commit lag because TTScheduler carries each step's block
-        # decision on its SchedulerOutput. Requires the model to declare
-        # supports_async_decode (Gemma4DFlash does).
-        async_scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
-        # Single-forward prefill: the stateful drafter's tap hook needs the whole
-        # prompt at once (the model chunks internally via GEMMA4_GEN_PREFILL_CHUNK).
-        enable_chunked_prefill: false
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-    # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery, same
-    # per-engine profile as P150X8.
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
-      max_context: 262144
-      env_vars:
-        GEMMA4_CCL_TOPOLOGY: "linear"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
-        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
-        GEMMA4_DFLASH_SERVE_BLOCK: "64"
-        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"
-        GEMMA4_DFLASH_VERIFY: "5"
-        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 32
-        async_scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
-        enable_chunked_prefill: false
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-
-# dFlash on the plugin's speculative contract rail (vllm-tt-plugin#131): vLLM
-# schedules drafts via speculative_config and every step streams.
-- weights:
-    - google/gemma-4-31B-it
-  impl: gemma4_dflash_contract
-  # Needs the z-lab drafter checkpoint (hf download z-lab/gemma-4-31B-it-DFlash);
-  # it loads at the first request. Answers temperature>0 with HTTP 400.
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 32  # adaptive engine: solo=spec, batch=baseline
-      max_context: 262144
-      env_vars:
-        MESH_DEVICE: "P150x8"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM"
-        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
-        GEMMA4_DFLASH_SERVE_BLOCK: "64"
-        GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling on this rail
-        GEMMA4_DFLASH_VERIFY: "5"
-        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
-        GEMMA4_CONTRACT_ASYNC: "1"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Eager chunked prefill: the dFlash tap hook is python-side; traced replays skip it.
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        # Default to the device sampler's top-k limit. Requests can override this value.
-        override_generation_config: '{"top_k": 32}'
-        max_num_seqs: 32
-        # Async overlaps host scheduling with device decode on the batched baseline fallback.
-        async_scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
-        # Single-forward prefill: the stateful drafter's tap hook needs the whole
-        # prompt at once (the model chunks internally via GEMMA4_GEN_PREFILL_CHUNK).
-        enable_chunked_prefill: false
-        # "model_owned_drafter" is a sentinel read by vllm-tt-plugin#131.
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-    # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery, same
-    # per-engine profile as P150X8.
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-# BH Galaxy adaptive server on the contract rail (own entry; no graded run yet).
-- weights:
-    - google/gemma-4-31B-it
-  impl: gemma4_dflash_contract
-  # Needs the z-lab drafter checkpoint (hf download z-lab/gemma-4-31B-it-DFlash);
-  # it loads at the first request. Answers temperature>0 with HTTP 400.
-  inference_engine: VLLM
-  device_model_specs:
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
-      max_context: 262144
-      env_vars:
-        GEMMA4_CCL_TOPOLOGY: "linear"
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM"
-        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
-        GEMMA4_DFLASH_SERVE_BLOCK: "64"
-        GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling on this rail
-        GEMMA4_DFLASH_VERIFY: "5"
-        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
-        GEMMA4_CONTRACT_ASYNC: "1"
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-      vllm_args:
-        # Default to the device sampler's top-k limit. Requests can override this value.
-        override_generation_config: '{"top_k": 32}'
-        data_parallel_size: 4
-        max_num_seqs: 32
-        # DP>1: vLLM's custom_class check rejects async_scheduling + speculative_config;
-        # the explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
-        enable_chunked_prefill: false
-        # "model_owned_drafter" is a sentinel read by vllm-tt-plugin#131.
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
-        no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-- weights:
-    - google/gemma-4-31B-it
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
   # them; only prod specs carry commits). The image is supplied at runtime via
@@ -610,9 +216,15 @@ templates:
       default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
-        # Text + image + video: the multimodal serving class for the checkpoint's architecture
-        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
+        # speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractVisionForConditionalGeneration"
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
         # laid the TP collectives over the wrong fabric links and corrupted decode
@@ -643,8 +255,11 @@ templates:
       vllm_args:
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         # Sampling defaults come from the HF generation_config; the gemma4 tool
         # parser ships in vllm-tt-plugin.
         enable-auto-tool-choice: true
@@ -726,9 +341,15 @@ templates:
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
-        # Text + image + video: the multimodal serving class for the checkpoint's architecture
-        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
+        # speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractVisionForConditionalGeneration"
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
@@ -767,8 +388,11 @@ templates:
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1325,9 +949,15 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
-        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's
-        # architecture (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
+        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
+        # with the MTP speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractUnifiedVisionForConditionalGeneration"
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
@@ -1352,8 +982,11 @@ templates:
       vllm_args:
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         # Sampling defaults come from the HF generation_config; the gemma4 tool
         # parser ships in vllm-tt-plugin.
         enable-auto-tool-choice: true
@@ -1383,9 +1016,15 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
-        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's
-        # architecture (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
+        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
+        # with the MTP speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractUnifiedVisionForConditionalGeneration"
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"  # 110 cores / 32 rows, one kv head per device at TP=8
@@ -1418,8 +1057,11 @@ templates:
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -3118,9 +2760,15 @@ templates:
       default_impl: false  # the dedicated gemma4_26b_a4b_qb2 profile is the QB2 default; select this one with --impl tt-transformers
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights takes ~95 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
-        # Text + image + video: the multimodal serving class for the checkpoint's architecture
-        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
+        # speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractVisionForConditionalGeneration"
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -3152,8 +2800,11 @@ templates:
         block_size: 128
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -3220,6 +2871,8 @@ templates:
         # next MoE token-dispatch prefill op on the ring fabric hangs (tt-triage 2026-10-25 23:15). With the ladder the
         # local replay passed that point (0 re-captures); ~40 s of boot.
         GEMMA4_WARMUP_PREFILL_ISLS: "512,1024,2048,4096,8192,16384,32768"
+        # Plain decode on the lane engine for now: MTP speculation here is a follow-up (the plugin's lane
+        # speculation PR and the model's lane verify path); the other five Blackhole entries speculate.
         # Text + image + video: the multimodal serving class for the checkpoint's architecture
         # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"

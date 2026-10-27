@@ -408,40 +408,9 @@ quetzal_impl = ImplSpec(
     code_path="serving",
 )
 
-# --- Gemma4 speculative-decoding serving profiles (same tt-metal code path) ---
-#
-# Same namespacing pattern as the qwen36 profiles above: these are NOT separate
-# implementations -- both point at models/demos/gemma4 -- but a model spec is
-# keyed by (impl_name, model_name, device), so offering the MTP (it-assistant
-# KV-shared drafter) and dFlash (z-lab block-diffusion drafter) speculative
-# profiles for the same weights needs distinct impl ids. The profile selects
-# the TT decode class via the plugin's TT_GEMMA4_SPEC env (set in the yaml
-# entry); speculation is TT-native (draft+verify inside one device step,
-# variable tokens/step) and does not use vLLM's speculative_config.
-gemma4_mtp_impl = ImplSpec(
-    impl_id="gemma4_mtp",
-    impl_name="gemma4-mtp",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/gemma4",
-)
-gemma4_dflash_impl = ImplSpec(
-    impl_id="gemma4_dflash",
-    impl_name="gemma4-dflash",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/gemma4",
-)
-# dFlash on the plugin's speculative contract (vLLM-scheduled drafts, every
-# step streams); a separate impl so run reports name the rail.
-gemma4_dflash_contract_impl = ImplSpec(
-    impl_id="gemma4_dflash_contract",
-    impl_name="gemma4-dflash-contract",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/gemma4",
-)
-# Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765. Unlike the
-# two profiles above this is a separate code path (models/demos/gemma4_31b_qb2,
-# architectures TTGemma4QB2ForCausalLM), not another speculative profile over
-# models/demos/gemma4.
+# Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765: a separate
+# code path (models/demos/gemma4_31b_qb2, architectures TTGemma4QB2ForCausalLM),
+# not a profile over models/demos/gemma4 (which the tt_transformers impl serves).
 gemma4_31b_qb2_impl = ImplSpec(
     impl_id="gemma4_31b_qb2",
     impl_name="gemma4-31b-qb2",
@@ -505,9 +474,6 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
-    "gemma4_mtp": gemma4_mtp_impl,
-    "gemma4_dflash": gemma4_dflash_impl,
-    "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
