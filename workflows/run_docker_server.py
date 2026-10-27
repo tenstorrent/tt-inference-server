@@ -556,7 +556,7 @@ def _write_qwen38_audit_source(setup_config, model_spec, container_name, docker_
     names = [Path(docker_env_vars[k]).name for k in ("QWEN38_HTTP_AUDIT", "QWEN38_SERVING_EVENTS")]
     receipt = {
         "schema_version": 1, "source_run_id": int(os.environ["GITHUB_RUN_ID"]),
-        "source_owner": owner, "host_aliases": ["120-qb2-" + suffix, "qb2-120-" + suffix],
+        "source_owner": owner, "host_aliases": list(dict.fromkeys([runner, "120-qb2-" + suffix, "qb2-120-" + suffix])),
         "container_name": container_name, "volume": setup_config.docker_volume_name,
         "image": model_spec.docker_image, "filenames": names,
         "source": "generate_docker_run_command exact generated audit paths; launch intent, not proof of execution",

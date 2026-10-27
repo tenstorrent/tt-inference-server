@@ -22,6 +22,12 @@ MAX_ZIP=256*1024*1024
 HELPER_TIMEOUT_SECONDS=240
 IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:182a91996c8104cb1373503bf9326deb5d98e01347655bb1305840165262950e'
 
+def expected_image():
+    image = os.environ.get('QWEN38_FINAL_IMAGE', IMAGE)
+    if image != IMAGE and not re.fullmatch(r'ghcr\.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22\.04-amd64@sha256:[0-9a-f]{64}', image):
+        raise ValueError('unexpected immutable image')
+    return image
+
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
 COLLECTOR=f'MAX_BYTES = {MAX_BYTES}\nMAX_ZIP = {MAX_ZIP}\n'+r'''
@@ -70,7 +76,7 @@ sys.stdout.buffer.write(buf.getvalue())
 
 def validate_plan(p,runner,expected_owner=None):
     if p.get('volume')!='volume_id_qwen38_autoport-Qwen3.8-27B':raise ValueError('unexpected volume')
-    if p.get('image')!=IMAGE:raise ValueError('unexpected immutable image')
+    if p.get('image')!=expected_image():raise ValueError('unexpected immutable image')
     if runner not in p.get('host_aliases',[]):raise ValueError('wrong assigned host')
     if not re.fullmatch(r'goal12-[0-9]+-[0-9]+-[0-9]+',p.get('source_owner','')):raise ValueError('invalid source owner')
     if str(p.get('source_run_id'))!=p['source_owner'].split('-')[1]:raise ValueError('source run/owner mismatch')
@@ -122,7 +128,7 @@ def export_one(plan,out,owner):
         # Inspect first: Docker must never silently create an absent named volume.
         v=json.loads(command(['docker','volume','inspect',plan['volume']]).stdout)[0]
         if v['Name']!=plan['volume']:raise ValueError('volume identity mismatch')
-        image_id=json.loads(command(['docker','image','inspect','--format','{{json .Id}}',IMAGE]).stdout)
+        image_id=json.loads(command(['docker','image','inspect','--format','{{json .Id}}',expected_image()]).stdout)
         args=['docker','create','--name',name,'--label',OWNER+'='+owner,'--label',MANAGED+'='+POLICY,'--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt','no-new-privileges','--volume',plan['volume']+':/evidence:ro','--entrypoint','python3',image_id,'-c',COLLECTOR,json.dumps(plan)]
         ident=command(args).stdout.decode().strip()
         if not re.fullmatch('[0-9a-f]{64}',ident):raise ValueError('invalid full helper ID')

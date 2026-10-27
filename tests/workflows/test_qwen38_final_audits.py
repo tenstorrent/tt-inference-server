@@ -16,6 +16,20 @@ def plan():
     return dict(source_run_id=123,source_owner='goal12-123-1-0',host_aliases=['120-qb2-p05t01','qb2-120-p05t01'],runner_name='120-qb2-p05t01',volume='volume_id_qwen38_autoport-Qwen3.8-27B',image=m.IMAGE,filenames=['qwen38-http-123.jsonl','qwen38-goal12-456.jsonl'])
 
 
+def test_shield_image_is_pinned_and_matches_plan(monkeypatch):
+    image = 'ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:' + 'a' * 64
+    monkeypatch.setenv('QWEN38_FINAL_IMAGE', image)
+    p = plan()
+    with pytest.raises(ValueError, match='immutable image'):
+        m.validate_plan(p, p['runner_name'])
+    p['image'] = image
+    m.validate_plan(p, p['runner_name'])
+    for bad in [image.split('@')[0] + ':latest', 'other@sha256:' + 'a' * 64]:
+        monkeypatch.setenv('QWEN38_FINAL_IMAGE', bad)
+        with pytest.raises(ValueError, match='immutable image'):
+            m.expected_image()
+
+
 def collect(tmp_path,edit=None,*,max_bytes=None,max_zip=None):
     logs=tmp_path/'logs';logs.mkdir()
     for name in plan()['filenames']:(logs/name).write_bytes(b'{"event":"fixture"}\n')
