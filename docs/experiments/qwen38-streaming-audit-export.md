@@ -26,3 +26,11 @@ Validation includes the actual stdlib collector on over 136 MiB of JSONL under
 above the limit, oversized line, compressed-size failure, missing files,
 symlinks/FIFO, incomplete or invalid JSONL, tampered archive and attribution.
 Generated fixtures, ZIPs and runtime logs remain outside Git.
+
+Observed capacity check: stable audit archives for clean SWE8 control40554052639
+contain55,672,460 raw bytes in2,218,555 compressed bytes; grouped candidate
+40559423498 contains48,168,108 raw bytes in1,922,572 compressed bytes. Linear
+100-task forecasts are respectively663.67/574.21 MiB raw and26.45/22.92 MiB
+compressed, within the new bounds. These are volume forecasts, not guarantees:
+check the frozen25 evidence before launching100, retain failures rather than
+truncating records, and use independently attributed100-task shards for500.
