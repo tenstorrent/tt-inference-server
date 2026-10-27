@@ -84,3 +84,25 @@ def test_canonical_driver_keeps_docker_isolation_through_harbor_serialization(mo
     assert body["environment"]["kwargs"]["owned_agent_isolation"] is True
     assert "namespace" not in body["environment"]["kwargs"]
     assert body["agents"][0]["import_path"].endswith(":OwnedMiniSweAgent")
+
+
+@pytest.mark.parametrize("provider", ["daytona", "kubernetes"])
+def test_canonical_driver_rejects_isolation_before_provider_filtering(tmp_path, provider):
+    task = copy.deepcopy(EVAL_CONFIGS[goal.MODEL].tasks[0])
+    task = replace(task, agentic_eval_config=replace(
+        task.agentic_eval_config, environment_type=provider,
+        environment_kwargs={"owned_agent_isolation": True}))
+    with pytest.raises(ValueError, match="requires Docker"):
+        build_harbor_config(
+            task, ServerConnection(base_url="http://127.0.0.1", service_port=8000, model=goal.MODEL),
+            DriverContext(output_dir=tmp_path))
+
+
+def test_canonical_driver_rejects_nonboolean_isolation(tmp_path):
+    task = copy.deepcopy(EVAL_CONFIGS[goal.MODEL].tasks[0])
+    task = replace(task, agentic_eval_config=replace(
+        task.agentic_eval_config, environment_kwargs={"owned_agent_isolation": "false"}))
+    with pytest.raises(ValueError, match="must be a boolean"):
+        build_harbor_config(
+            task, ServerConnection(base_url="http://127.0.0.1", service_port=8000, model=goal.MODEL),
+            DriverContext(output_dir=tmp_path))
