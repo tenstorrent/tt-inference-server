@@ -52,6 +52,42 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# gpt-oss-20b DFlash on the plugin's speculative contract (docs/SPEC_DECODE_CONTRACT.md
+# in vllm-tt-plugin): the z-lab drafter proposes 7 tokens per round, the target
+# verifies [last token, 7 drafts] in one pass (models/demos/gpt_oss/tt/dflash/).
+# Greedy requests speculate; sampled ones (temperature > 0, penalties, logprobs)
+# decode plain. Needs the drafter checkpoint: hf download z-lab/gpt-oss-20b-DFlash
+- weights:
+    - openai/gpt-oss-20b
+  impl: gpt_oss_dflash
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1  # one drafter session on the fused batch-1 decode
+      max_context: 131072  # 128 * 1024
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "TTGptOssForCausalLM=models.demos.gpt_oss.tt.dflash.vllm_model:GptOssDFlashForCausalLM"
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 100000000  # the plain decode's and prefill's traces plus the DFlash round's
+        # 48 KB more kernel-config ring per worker (from the L1 allocator, Blackhole default 1461120 B): dispatch
+        # stages the next DFlash program's binaries while one runs (dflash_demo.py WORKER_L1_SIZE)
+        worker_l1_size: 1411968
+        sample_on_device_mode: decode_only
+      vllm_args:
+        override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
+        # the model's own drafter (vllm-tt-plugin model_owned_drafter); 7 drafts per round
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 7}'
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-20b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss

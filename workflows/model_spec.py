@@ -297,6 +297,15 @@ gpt_oss_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gpt_oss",
 )
+# gpt-oss DFlash on the plugin's speculative contract (z-lab drafter, vLLM-scheduled
+# drafts); the same models/demos/gpt_oss code, a separate impl so a model spec can
+# offer it next to plain decode for the same (model, device).
+gpt_oss_dflash_impl = ImplSpec(
+    impl_id="gpt_oss_dflash",
+    impl_name="gpt-oss-dflash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gpt_oss",
+)
 deepseek_r1_galaxy_impl = ImplSpec(
     impl_id="deepseek_r1_galaxy",
     impl_name="deepseek-r1-galaxy",
@@ -495,6 +504,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
+    "gpt_oss_dflash": gpt_oss_dflash_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
