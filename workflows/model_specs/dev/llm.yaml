@@ -522,6 +522,12 @@ templates:
         # 71.1 ms of device, tput_user +4.6 % at points 1, 5, 8; the replay
         # state, production-order L1 and generator gates unchanged.
         V41_DECODE_C1_MOE: "1"
+        # The decode step's sublayer norms on a core grid instead of the
+        # interleaved ops' one core: served, the one-row
+        # step 71.2 -> 67.0 ms of device, tput_user +5.3 to +6.3 % at points
+        # 1, 5, 8, TTFT unchanged; the replay-state, production-order L1 and
+        # generator gates as before.
+        V41_DECODE_NORM: "sharded"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
