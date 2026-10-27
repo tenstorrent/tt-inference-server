@@ -449,6 +449,12 @@ templates:
         # busiest chip reads half as much, 13 GB of DRAM a chip instead of 22).
         TT_V41_EXPERT_DTYPE: "bfp4"
         TT_V41_ENGRAM_MMAP: "0"
+        # After the build the generator drops the weight cache's page cache
+        # (posix_fadvise) and swaps the resident Engram tables back in: the
+        # layers' weight files pushed 7 GB of one table into swap, 5 to 6 ms a
+        # row gather on 13 % of the steps and a 4 s TTFT on one request: served, inputs_s 3.9 -> 2.9 ms, point 1's
+        # TTFT 236 -> 211 ms, no stall.
+        TT_V41_UNSWAP: "1"
         # Prefill states: requests prefill through them into their decode
         # slot. One: under the plugin's prefill-first scheduling one request
         # prefills at a time, and the generic prefill captures (below), the
