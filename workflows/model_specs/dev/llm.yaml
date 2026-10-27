@@ -544,6 +544,204 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
+# 31B dFlash candidate drafter on the plugin's speculative contract (impl gemma4_dflash_contract, not a
+# default): a twin of the two Blackhole tt_transformers default entries above (same modalities, pools,
+# hybrid KV groups, chunked prefill, warmup ladder, mm limits and targets), measured against the MTP
+# default by the shield release flow; the better one becomes the 31B default. dFlash is the faster
+# drafter at batch 1 and its scaling is unknown.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_dflash_contract
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
+      # micro-batched ≤4 users inside the generator.
+      max_concurrency: 32
+      # Metal policy (generator_trace 31B/_QB2): auto-bounded at ≥64k; at
+      # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
+      # Scheduler tokens must match the resolved metal chunk (2048 here).
+      max_context: 262144  # 256 * 1024
+      default_impl: false  # candidate drafter (--impl gemma4-dflash-contract); the MTP tt_transformers entry stays the 31B default until the shield numbers pick one
+      tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
+      env_vars:
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the dFlash
+        # speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractVisionForConditionalGeneration"
+        # dFlash speculative decoding (the z-lab block-diffusion drafter z-lab/gemma-4-31B-it-DFlash, resolved
+        # from the HF cache or fetched when the cache is writable) on the plugin's speculative contract; vLLM
+        # schedules the drafts (speculative_config below). The adapter speculates only while one request is
+        # live today (a shared step continues as plain decode), so the MTP entries' GEMMA4_SPEC_K_BY_ROWS /
+        # GEMMA4_SPEC_MAX_ROWS table does not apply here; batched dFlash is the follow-up. The class pins
+        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps), so the plugin serves
+        # this entry without vLLM prefix caching although the knobs below mirror the default entry.
+        GEMMA4_DFLASH_VERIFY: "5"  # verify positions per draft: the contract K (= num_speculative_tokens below)
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
+        # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone) and no ring-headroom knob: this entry runs
+        # unbounded sliding KV (GEMMA4_BOUNDED_SLIDING_KV_CACHE=0), so there is no device ring to reserve in.
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # KV pool: 3 users at 256K at max_num_batched_tokens 16384. Each pool block id costs 1.39 MB per chip
+        # (the full-attention group runs 128-token blocks, vLLM unifying its page size with the sliding group),
+        # so 13,600 blocks = 19 GB of the 21.8 GB free after weights; a larger pool OOMs at the KV allocation.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "606208"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"  # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
+        # On-device decode sampling is required on the TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
+        # The speculative contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
+        # Sampling defaults come from the HF generation_config; the gemma4 tool
+        # parser ships in vllm-tt-plugin.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
+        # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
+        # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
+        # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
+        # rounds starved decode under async scheduling. 65536/4096 measured
+        # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
+        enable_chunked_prefill: true
+        # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+        # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: test_penalties
+        reason: 'test_penalties fails two repeat_trap cases at seed 1234 / temperature 0.1 although every
+          penalty changes the output: repetition_penalty=1.5 raises the unique-word ratio 0.21 -> 0.42
+          (the 446-word robotic story becomes 666 words of prose) but the rule compares the ABSOLUTE
+          most-common-word count (56 -> 79), which grows with length; presence_penalty=1.2 yields a
+          different repetitive story (the prompt asks for one) whose ratio drops 0.211 -> 0.186, past the
+          90%-of-baseline rule. Identical numbers on two tt-shield runs (37495434533, 37560947407); the
+          other 7 cases pass. Same exemption as Llama-3.3-70B P300X2 (#3888). Measured 2026-10-07.'
+    # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery
+    # (TT_VISIBLE_DEVICES per rank, no descriptor override).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128  # 32 x 4 engines
+      max_context: 262144
+      default_impl: false  # candidate drafter (--impl gemma4-dflash-contract); see the P300X2 note
+      tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      env_vars:
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the dFlash
+        # speculative contract class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractVisionForConditionalGeneration"
+        # dFlash speculative decoding (the z-lab block-diffusion drafter z-lab/gemma-4-31B-it-DFlash, resolved
+        # from the HF cache or fetched when the cache is writable) on the plugin's speculative contract; vLLM
+        # schedules the drafts (speculative_config below). The adapter speculates only while one request is
+        # live today (a shared step continues as plain decode), so the MTP entries' GEMMA4_SPEC_K_BY_ROWS /
+        # GEMMA4_SPEC_MAX_ROWS table does not apply here; batched dFlash is the follow-up. The class pins
+        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps), so the plugin serves
+        # this entry without vLLM prefix caching although the knobs below mirror the default entry.
+        GEMMA4_DFLASH_VERIFY: "5"  # verify positions per draft: the contract K (= num_speculative_tokens below)
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
+        # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone) and no ring-headroom knob: this entry runs
+        # unbounded sliding KV (GEMMA4_BOUNDED_SLIDING_KV_CACHE=0), so there is no device ring to reserve in.
+        GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        GEMMA4_KV_BFP8: "1"
+        # Decode graphs for 1, 4, 8 and 32 residents: the fastest set measured (2-8 residents per
+        # engine decode up to 2x faster than in the 32-row graph alone). Seeded requests must
+        # reproduce whichever graph they decode in (spec test_non_uniform_seeding at DP=4), so two
+        # things are held identical across the graphs (tt-metal#59300, measured 2026-10-06 22/22):
+        #  - RoPE: the batch-1 graph used a different op than the wider graphs (PCC 0.99999, not
+        #    bitwise); GEMMA4_ROPE_PERUSER_B1 keeps every graph on the elementwise form.
+        #  - Decode SDPA core split: the op splits its cores per padded row, so each graph reduced
+        #    a row in a different order; GEMMA4_SDPA_MAX_CORES_PER_HEAD pins the split to the
+        #    widest graph's value (3 on 110 cores, one kv head per device). Cost: a lone user's
+        #    decode is -29% at 64K and -43% at 128K prompts (none at <=4K, 8 users unchanged);
+        #    a reduction order fixed by the KV chunks (kernel follow-up) removes that cost.
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off. Traced chunked prefill still carries one chunk
+        # table for all layers; keep it untraced until per-layer traced chunk tables land.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"  # one eager prefill per benchmark ISL at boot (sweep max 128K; has_builtin_warmup skips the generic trace-capture warmup); needs tt-metal #59743
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 960000000  # four resident decode-bucket traces
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
+      vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # The speculative contract classes ship synchronous in this phase (supports_async_decode off); the
+        # explicit negative flag is needed because False booleans are dropped.
+        no-async-scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill. vLLM charges each sliding-window group
+        # window + max_num_batched_tokens per request, so the 65536 budget used
+        # elsewhere would reserve the whole context per request under hybrid groups.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
+  status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
 # models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
 # Shield sweep is directly comparable with the existing autoport benchmark run.
