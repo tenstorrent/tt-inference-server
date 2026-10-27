@@ -6145,6 +6145,24 @@
             }
         ]
     },
+    "openai/whisper-large-v2": {
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2700.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 47.0,
+                        "rtr": 11.5,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ]
+    },
     "openai/whisper-large-v3": {
         "n150": [
             {

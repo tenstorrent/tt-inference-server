@@ -38,6 +38,7 @@ class SupportedModels(Enum):
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
+    OPENAI_WHISPER_LARGE_V2 = "openai/whisper-large-v2"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_0_6B = "Qwen/Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
@@ -95,6 +96,7 @@ class ModelNames(Enum):
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMax-H3-Ref2VA-LightX2V"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
+    OPENAI_WHISPER_LARGE_V2 = "whisper-large-v2"
     MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
@@ -423,6 +425,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
+        ModelNames.OPENAI_WHISPER_LARGE_V2,
     },
     ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
