@@ -481,6 +481,27 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     code_path="models/demos/k2_horizon_7b_qb2",
 )
 
+# --- GLM-5.3-Flash on the Blackhole Galaxy: two serving profiles, one code path ---
+#
+# Same profile pattern as above: both point at models/demos/glm53_flash
+# (tt-metal branch arg/glm-53-flash). The profiles differ only in the served
+# context (1 M vs 128 K), which fixes the slot geometry the mesh model is built
+# with (users per row x context per slot) and cannot be expressed by one
+# (model_name, device) spec. Selectable via --impl glm53-flash (default) /
+# glm53-flash-128k.
+glm53_flash_impl = ImplSpec(
+    impl_id="glm53_flash",
+    impl_name="glm53-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+glm53_flash_128k_impl = ImplSpec(
+    impl_id="glm53_flash_128k",
+    impl_name="glm53-flash-128k",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -491,6 +512,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "glm53_flash": glm53_flash_impl,
+    "glm53_flash_128k": glm53_flash_128k_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,

@@ -2329,6 +2329,127 @@ templates:
     openai/gpt-oss-120b:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
+# GLM-5.3-Flash on the Blackhole Galaxy (8x4 = TP4 x DP8, one engine per mesh):
+# the release pins of the dev entry (workflows/model_specs/dev/llm.yaml carries
+# the full rationale: capacity table, admission = users per row, the warm-up
+# ladder). tt_metal_commit = the validated frozen snapshot of
+# models/demos/glm53_flash on branch arg/glm-53-flash; vllm_commit = the
+# vllm-tt-plugin main head that carries prefill_chunk_alignment /
+# decode_interleave_enabled and the model fabric capability (no plugin edit:
+# the model registers through TT_MODEL_CLASS_OVERRIDES). No release image is
+# built for it yet: serve with --dev-mode + --override-docker-image, or the
+# no-docker path.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  version: "0.21.0"
+  tt_metal_commit: "c816b59"
+  vllm_commit: "5d12f0b"
+  impl: glm53_flash
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 4  # = users per row at 1 M (distinct requests); 32 after the row-ownership flip
+      max_context: 1048576  # 1024 * 1024
+      max_tokens_all_users_override: 4194304  # 4 x 1048576
+      default_impl: true
+      tensor_cache_timeout: 7200.0  # cold tensorbin conversion of the 45 layers (~300 GB of experts) budgeted at 2 h
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
+        # for a single generation step") trips on long-context prefill: an eager 16 K chunk
+        # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
+        # can exceed 5 s without any hang (observed as "TIMEOUT: device timeout in fetch
+        # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
+        GLM53_MODEL_TRACE_MB: "512"
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912
+        l1_small_size: 32768
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 256
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 4
+        block_size: 32
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+# The 128 K profile (256 slots = 32 users per row x 8 rows; admission 32 today).
+- weights:
+    - zai-org/GLM-5.3-Flash
+  version: "0.21.0"
+  tt_metal_commit: "c816b59"
+  vllm_commit: "5d12f0b"
+  impl: glm53_flash_128k
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # = users per row at 128 K; 256 after the row-ownership flip
+      max_context: 131072  # 128 * 1024
+      max_tokens_all_users_override: 4194304  # 32 x 131072
+      default_impl: false
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
+        # for a single generation step") trips on long-context prefill: an eager 16 K chunk
+        # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
+        # can exceed 5 s without any hang (observed as "TIMEOUT: device timeout in fetch
+        # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
+        GLM53_MODEL_TRACE_MB: "512"
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912
+        l1_small_size: 32768
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 256
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 32
+        block_size: 32
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
 - weights:
     - google/gemma-4-31B-it
   impl: tt_transformers

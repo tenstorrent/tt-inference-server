@@ -1046,6 +1046,123 @@ _eval_config_list = [
             # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
+    # =========================================================================
+    # GLM-5.3-Flash on the Blackhole Galaxy (tt-metal models/demos/glm53_flash):
+    # the text evals the Gemma 4 Galaxy entry runs (r1_gpqa_diamond,
+    # terminal_bench_2, swe_bench_verified), with GLM's sampling (model card:
+    # temperature 1.0 / top_p 0.95, no top_k) and the 1 M served context. The
+    # chat template thinks by default ("Reasoning Effort: Max" + <think>), so no
+    # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
+    # the thought channel into reasoning_content. Published scores are the model
+    # card's (.eval_results/GLM-5.3-Flash.yaml): Terminal-Bench 2.1 84.3 (Claude
+    # Code harness, not terminus-2), DeepSWE 63.4 (not SWE-bench Verified), no
+    # GPQA; GPU references are not measured yet.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3-Flash",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint: the server applies the chat template (thinking on
+                # by default) and the reasoning parser.
+                use_chat_api=True,
+                # Admission is 4 distinct requests at 1 M today (users per row);
+                # the Galaxy decodes every slot in one step, so 4 concurrent
+                # thinking generations cost nothing extra.
+                max_concurrent=4,
+                model_kwargs={
+                    "max_length": 1048576,
+                    # Long thinking generations exceed lm-eval's 1800 s default.
+                    "timeout": 7200,
+                },
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Model card: Terminal-Bench 2.1 in Claude Code 2.1.207 (temp
+                    # 1.0, top_p 1, 64 K new tokens, 6 h) -- a different harness
+                    # than this terminus-2 TB2 run; kept as the published number.
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=4,  # = the engine's admission at 1 M
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # The served context is 1 M; the agent sends about
+                            # max_input + max_output per request.
+                            "max_input_tokens": 512 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            # swe_bench_verified returns when the SWE-bench eval type (SWEbenchEvalConfig, on the
+            # Gemma 4 server branch) lands on main; the model card reports DeepSWE, not SWE-bench Verified.
+        ],
+    ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="TinyLlama/TinyLlama_v1.1",

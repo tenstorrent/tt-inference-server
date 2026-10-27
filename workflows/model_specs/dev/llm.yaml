@@ -197,6 +197,189 @@ templates:
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
+# =============================================================================
+# GLM-5.3-Flash on the Blackhole Galaxy (tt-metal models/demos/glm53_flash,
+# branch arg/glm-53-flash @ c816b59b942): the 8x4 mesh = TP4 over the columns x
+# 8 data-parallel rows, ONE vLLM engine per mesh (the rows are the model's own
+# data parallelism; no data_parallel_size). Galaxy only: the model is not
+# registered on any other device (QB2 / LoudBox / (2,4) blocks are bring-up
+# configs, not serving ones).
+#
+# Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
+# profile pattern): glm53_flash = the 1 M-context profile (the default),
+# glm53_flash_128k = the 128 K-context profile.
+#
+# Capacity (tt/memory_plan.py, user-partitioned DSA cache, heads2users prefill,
+# 512 MB trace region, 31.33 GiB DRAM per chip). The routed experts are held in
+# ONE layout at these contexts (the regions per-expert lists; decode runs
+# through them, as the README's 1 M rows did): the second layout (the streaming
+# decode copy next to the regions lists) costs 9.41 GiB per chip and leaves no
+# 1 M user. The model keeps that second copy only where the planner says it
+# fits (GLM53_PREFILL_EXPERTS=auto in tt/mesh_model.py), so nothing is forced.
+#   context  users/row  slots on the mesh (8 rows x users/row)  free after caches
+#   1 M      4          32                                       0.12 GiB
+#   512 K    8          64
+#   256 K    16         128
+#   128 K    32         256
+#   with both expert layouts (fast decode): 64 slots at 128 K, 32 at 256 K, none above.
+#
+# max_num_seqs = DISTINCT requests = users per row, NOT the slot count: the
+# sequence-parallel prefill writes a prompt into slot `user` of EVERY row
+# (tt/functional_decoder.py prefill_forward; tests/test_mesh_long_context.py
+# "the SP prefill writes slot user of every row"), so the 8 rows hold replicas
+# and the engine admits users_per_row requests (4 at 1 M, 32 at 128 K).
+# Admission at the slot count (32 at 1 M, 256 at 128 K) needs the model-side
+# per-row prefill ownership (_agents/vllm_glm53/ROW_OWNERSHIP.md:
+# GLM53MeshModel.prefill_wave); when it lands, flip max_num_seqs /
+# max_concurrency / max_tokens_all_users_override to the slot count and add
+# GLM53_VLLM_ROWS_INDEPENDENT: "1" -- nothing else changes.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  impl: glm53_flash
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # = the engine's admission (users per row at 1 M). The perf reference keeps
+      # the README's 32-user rows; the sweep caps them to this until the flip.
+      max_concurrency: 4
+      max_context: 1048576  # 1024 * 1024: the advertised context (doc/context_contract.json)
+      # The logical KV pool: every slot owns a full context on device, so the pool
+      # is max_num_seqs x max_model_len (the adapter's get_max_tokens_all_users);
+      # the benchmark concurrency cap derives from it.
+      max_tokens_all_users_override: 4194304  # 4 x 1048576
+      default_impl: true
+      # Cold boot converts the checkpoint into the tensorbin weight cache
+      # (GLM53_MESH_CACHE, default $TT_CACHE_PATH/glm53_mesh): ~60 s of host
+      # conversion per MoE layer on the 8x4 plus the writes, budgeted at 2 h; a
+      # warm cache boots in ~10 min (45 layers x 5-11 s + the traces).
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): bare
+        # + TT-prefixed names (the plugin prefixes every checkpoint architecture
+        # with "TT" before it resolves the class). vLLM has no upstream Glm5Next
+        # model, so this override IS the registration (no plugin edit).
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        # The Galaxy mesh: MESH_DEVICE=BH-Galaxy is inferred from the device type
+        # (the plugin opens (8, 4)); GLM53_MESH_SHAPE pins the model's own view
+        # of it (fabric capability, planner) to the same shape.
+        GLM53_MESH_SHAPE: "8,4"
+        # The model's validated Galaxy defaults apply (tt/moe.py, mhc.py, dsa.py:
+        # stream experts, sharded mHC norm, regions prefill, ...); only the
+        # serving-side knobs are set here.
+        GLM53_MODEL_TRACE_MB: "512"  # the planner's trace-region term (= trace_region_size below)
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
+        # for a single generation step") trips on long-context prefill: an eager 16 K chunk
+        # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
+        # can exceed 5 s without any hang (observed as "TIMEOUT: device timeout in fetch
+        # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
+        # Eager warm-up prefill ladder (the adapter walks each length in 16 K
+        # device chunks at boot): 128 = the short-prompt programs, 32768 = a full
+        # 16 K chunk AND its continuation at start 16384, so the first long
+        # request compiles nothing mid-session. The traced short-prompt ladder
+        # (256 / 512 / 1024 / 2048 on 8 rows: tt/trace_prefill.py
+        # supported_prefill_lengths) is captured at boot by the adapter.
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        # 2D torus on the Blackhole Galaxy (the plugin's hardware default and the
+        # model's mesh_device_params); relaxed init as the model tests run.
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912  # 512 MiB: the 45-layer decode trace + the per-length prefill traces
+        l1_small_size: 32768  # the composite collectives' L1-small region (tt/mesh.py mesh_device_params)
+        # The head's greedy argmax is the only device sampler (max_device_top_k 1):
+        # greedy rows sample on device, other rows on host from the returned logits.
+        sample_on_device_mode: all
+        # vLLM's chunk boundaries must keep the model's 32-row chunk contract;
+        # 256 = 32 x 8 rows keeps every intermediate chunk tile-aligned per row.
+        prefill_chunk_alignment: 256
+        # The traced decode step updates EVERY slot's KDA state in place: no
+        # decode may run while a chunked prefill is mid-prompt (DESIGN.md s.4).
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 4  # = users per row (distinct requests); 32 after the row-ownership flip
+        block_size: 32  # = the latent page (TtLatentCache.block_size); the adapter rejects other sizes
+        # One device prefill chunk per engine step: the model walks long prompts
+        # in 16 K-token chunks (tt/mesh_model.py prefill_chunked; 32 K exceeds the
+        # KDA owner cores on 8 rows), so the scheduler hands the adapter exactly
+        # that; the threshold keeps a long prompt on 16 K steps when short
+        # prompts share the budget.
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true  # no shared pages exist on device (supports_prefix_caching False)
+        no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+# The 128 K profile: the README envelope's 256-slot cell (32 users per row x 8
+# rows at 128 K). Admission today = 32 distinct requests (see the note above),
+# 256 after the row-ownership flip. Same env / tt config as the 1 M profile.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  impl: glm53_flash_128k
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # = users per row at 128 K; 256 after the row-ownership flip
+      max_context: 131072  # 128 * 1024
+      max_tokens_all_users_override: 4194304  # 32 x 131072
+      default_impl: false
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
+        # for a single generation step") trips on long-context prefill: an eager 16 K chunk
+        # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
+        # can exceed 5 s without any hang (observed as "TIMEOUT: device timeout in fetch
+        # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
+        GLM53_MODEL_TRACE_MB: "512"
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912
+        l1_small_size: 32768
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 256
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 32  # = users per row; 256 after the row-ownership flip
+        block_size: 32
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_mtp

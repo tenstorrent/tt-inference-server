@@ -1,4 +1,123 @@
 {
+    "GLM-5.3-Flash": {
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 265,
+                        "tput_user": 60,
+                        "tput": 60
+                    },
+                    "measured": {
+                        "ttft_ms": 265,
+                        "tput_user": 12.5,
+                        "tput": 12.5,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 135,
+                        "tput_user": 33,
+                        "tput": 1056
+                    },
+                    "measured": {
+                        "ttft_ms": 135,
+                        "tput_user": 14.5,
+                        "tput": 463,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 256,
+                "num_prompts": 512,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 145,
+                        "tput_user": 19,
+                        "tput": 4864
+                    },
+                    "measured": {
+                        "ttft_ms": 145,
+                        "tput_user": 8.9,
+                        "tput": 2280,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25400,
+                        "tput_user": 33,
+                        "tput": 1056
+                    },
+                    "measured": {
+                        "ttft_ms": 25400,
+                        "tput_user": 10.9,
+                        "tput": 348,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 1047612,
+                "osl": 160,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 489000,
+                        "tput_user": 33,
+                        "tput": 1056
+                    },
+                    "measured": {
+                        "ttft_ms": 489000,
+                        "tput_user": 6.6,
+                        "tput": 210,
+                        "tolerance": 0.1
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-4-31b-it": {
         "p300x2": [
             {
