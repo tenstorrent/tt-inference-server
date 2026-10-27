@@ -1,5 +1,5 @@
 {
-  "phase": "gpqa-pilot8-ci-b32-32768",
+  "phase": "gpqa-pilot8-ci-b32-32768-headbf16",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [

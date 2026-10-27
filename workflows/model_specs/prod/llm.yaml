@@ -2744,6 +2744,7 @@ templates:
         MESH_DEVICE: P300x2
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
+        QWEN38_PRECISION_CONFIG: "/home/container_app_user/tt-metal/models/autoports/qwen_qwen3_8_27b/tt/gpqa_head_bf16_hifi4.json"
         QWEN38_CACHE_BLOCK_SIZE: "256"
         QWEN38_SHARED_RECURRENT_SNAPSHOTS: "1"
         QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE: "23661297664"
