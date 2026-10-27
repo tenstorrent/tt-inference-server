@@ -236,6 +236,11 @@ def build_harbor_config(
     run_stamp: Optional[str] = None,
 ) -> HarborRunConfig:
     cfg = task.agentic_eval_config
+    isolated = cfg.environment_kwargs.get("owned_agent_isolation", False)
+    if type(isolated) is not bool:
+        raise ValueError("owned_agent_isolation must be a boolean")
+    if isolated and cfg.environment_type != "docker":
+        raise ValueError("Owned agent isolation requires Docker")
     task_output_dir = _agentic_output_dir(
         context.output_dir,
         server.model,
