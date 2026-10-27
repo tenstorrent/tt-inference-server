@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from llm_module.agentic import harbor
+from llm_module.config import DriverContext, ServerConnection
+from llm_module.drivers.agentic import build_harbor_config
 from reference_config.evals import qwen38_goal12 as goal
 from reference_config.evals.eval_config import EVAL_CONFIGS, EvalLimitMode
 from tests.llm_module.test_harbor_dataset_ref import _run_config
@@ -66,3 +68,19 @@ def test_isolation_requires_the_installed_phase_hook(monkeypatch, tmp_path, over
                      agent="mini-swe-agent")
     with pytest.raises(ValueError, match="requires standard mini-swe-agent"):
         harbor._write_harbor_config(replace(config, **override))
+
+
+def test_canonical_driver_keeps_docker_isolation_through_harbor_serialization(monkeypatch, tmp_path):
+    monkeypatch.setenv("TT_AGENTIC_CONTAINER_OWNER", "owner")
+    task = copy.deepcopy(EVAL_CONFIGS[goal.MODEL].tasks[0])
+    config = replace(task.agentic_eval_config,
+                     environment_kwargs={"owned_agent_isolation": True, "namespace": "kube-only"})
+    task = replace(task, agentic_eval_config=config)
+    run = build_harbor_config(
+        task, ServerConnection(base_url="http://127.0.0.1", service_port=8000, model=goal.MODEL),
+        DriverContext(output_dir=tmp_path), run_stamp="isolation-proof")
+    assert run.environment_kwargs == {"owned_agent_isolation": True}
+    body = json.loads(harbor._write_harbor_config(run).read_text())
+    assert body["environment"]["kwargs"]["owned_agent_isolation"] is True
+    assert "namespace" not in body["environment"]["kwargs"]
+    assert body["agents"][0]["import_path"].endswith(":OwnedMiniSweAgent")

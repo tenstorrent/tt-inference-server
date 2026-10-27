@@ -272,7 +272,9 @@ def build_harbor_config(
         environment_env=_runtime_environment_env(cfg.environment_env),
         verifier_env=cfg.verifier_env,
         environment_kwargs=(
-            cfg.environment_kwargs if cfg.environment_type == "kubernetes" else {}
+            cfg.environment_kwargs if cfg.environment_type == "kubernetes" else
+            {key: cfg.environment_kwargs[key] for key in ("owned_agent_isolation",)
+             if key in cfg.environment_kwargs} if cfg.environment_type == "docker" else {}
         ),
         harbor_timeout_sec=cfg.harbor_timeout_sec,
         llm_timeout_sec=cfg.llm_timeout_sec,

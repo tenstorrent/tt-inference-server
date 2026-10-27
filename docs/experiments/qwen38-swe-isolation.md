@@ -54,3 +54,14 @@ model context262144 or grant a reference-score parity claim.
 
 Raw logs, trajectories, CSVs, Tracy captures and probe dumps stay local/CI;
 Git contains code and compact documentation only.
+
+The first attempted isolated CI smoke40536968443 completed its one task
+(reward1, no exception,321.24061s) but failed the protocol gate: its saved
+Harbor config had no isolation flag and its bridges were public. It is not a
+clean score. The canonical agentic driver previously forwarded environment
+kwargs only for Kubernetes and discarded them for Docker. It now forwards only
+the owned-agent isolation selector for Docker; unrelated provider kwargs retain
+their previous behavior. The regression test builds the actual Qwen eval task,
+passes it through build_harbor_config, then serializes the final Harbor config.
+The one-task smoke must be repeated and actual network journals inspected before
+running matched isolated SWE8 arms.
