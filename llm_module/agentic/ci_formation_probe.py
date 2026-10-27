@@ -113,6 +113,8 @@ def run_probe(server, context):
     wire.deadline = time.monotonic() + 2700
     try:
         summary, summary_path = execute(wire, root, Path(__file__).parent / 'r9_data')
+        from .ci_kv_pack_probe import execute_kv_pack
+        execute_kv_pack(server, Path(context.output_dir) / 'UNSCORED-kv-pack')
         from .ci_returning_pressure import execute_pressure
         execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-mixed',
                          Path(__file__).parent / 'r9_data/c32-mixed-prefixes.json')

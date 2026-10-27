@@ -8898,8 +8898,9 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=44.94,
-                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it, 2026-06-17",
+                    # Dedicated unscored KV-packing fixture branch only.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
                 ),
@@ -8913,6 +8914,7 @@ _eval_config_list = [
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
+                        "gemma_formation_probe": "v1",
                         "parser_name": "json",
                         "temperature": 1.0,
                         "max_turns": 50,
