@@ -40,12 +40,25 @@ the VBench scorer runs on them unchanged:
     uv run scripts/wan_i2v_gpu_reference.py --out gpu_ref_720p --resolution 720p
     uv run scripts/wan_i2v_gpu_reference.py --out gpu_ref_720p_vbench --pairs vbench_i2v
     python3 -m test_module._test_common.vbench_i2v --videos-dir gpu_ref_720p
+
+A run resumes where it stopped: a clip whose record is in ``<out>/.clips`` is
+not made again, so rerunning the same command after an interruption finishes
+the set. ``--shard i/N`` splits a long set (the full VBench-I2V suite, from
+scripts/build_vbench_i2v_full_pairs.py) across GPUs or hosts; shards may share
+one folder, or their folders can be merged afterwards, ``.clips`` included:
+
+    for i in 0 1 2 3; do
+      CUDA_VISIBLE_DEVICES=$i uv run scripts/wan_i2v_gpu_reference.py \\
+        --out gpu_ref_480p_vbench_full --pairs vbench_i2v_full --resolution 480p \\
+        --shard $i/4 &
+    done
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import subprocess
 import time
@@ -53,7 +66,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATASETS_DIR = REPO_ROOT / "test_fixtures" / "datasets"
-PAIR_SETS = ("coco_i2v", "vbench_i2v")
 MODEL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
 RESOLUTIONS = {"720p": (1280, 720), "480p": (832, 480)}
 NUM_FRAMES = 81
@@ -67,6 +79,26 @@ GUIDANCE_SCALE_2 = 3.0
 # What the TT pipeline runs; the checkpoint ships 3.0 and 0.9 for I2V.
 TT_FLOW_SHIFT = 12.0
 TT_BOUNDARY_RATIO = 0.875
+# Per-clip records the index is built from (see write_index).
+CLIP_RECORDS = ".clips"
+# Provenance that must match for clips to share a folder: everything that
+# changes a clip. The GPU, versions and repo sha may differ between shards.
+SETTINGS_KEYS = (
+    "model",
+    "pairs",
+    "width",
+    "height",
+    "num_frames",
+    "fps",
+    "steps",
+    "seed",
+    "negative_prompt",
+    "guidance_scale",
+    "guidance_scale_2",
+    "schedule",
+    "flow_shift",
+    "boundary_ratio",
+)
 
 
 def load_pipeline(schedule: str, offload: bool):
@@ -146,15 +178,75 @@ def provenance(args, width: int, height: int) -> dict:
     }
 
 
+def pairs_dir_for(pairs: str) -> Path:
+    """A pair set by name under test_fixtures/datasets, or a folder with a manifest.json."""
+    folder = Path(pairs)
+    return folder if (folder / "manifest.json").is_file() else DATASETS_DIR / pairs
+
+
+def parse_shard(value: str) -> tuple[int, int]:
+    """``i/N``: this run makes every Nth clip, starting at clip i (0-based)."""
+    try:
+        i, n = (int(part) for part in value.split("/"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected i/N, got {value!r}") from None
+    if not 0 <= i < n:
+        raise argparse.ArgumentTypeError(f"need 0 <= i < N, got {value!r}")
+    return i, n
+
+
+def check_same_settings(path: Path, provenance_now: dict) -> None:
+    """Refuse to add clips to a folder made with other settings."""
+    if not path.is_file():
+        return
+    before = json.loads(path.read_text())
+    changed = {
+        key: (before.get(key), provenance_now[key])
+        for key in SETTINGS_KEYS
+        if before.get(key) != provenance_now[key]
+    }
+    if changed:
+        raise SystemExit(
+            f"{path.parent} was made with other settings: {changed}. "
+            "Use a new --out folder."
+        )
+
+
+def write_index(out: Path) -> None:
+    """index.json from every finished clip's record, in pair order.
+
+    Each clip's record is its own file, so shards sharing a folder never lose
+    each other's clips; the index is replaced in one rename.
+    """
+    records = sorted(
+        (json.loads(p.read_text()) for p in (out / CLIP_RECORDS).glob("*.json")),
+        key=lambda r: r["file"],
+    )
+    staged = out / f"index.json.{os.getpid()}.tmp"
+    staged.write_text(json.dumps(records, indent=2) + "\n")
+    staged.replace(out / "index.json")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--pairs", choices=PAIR_SETS, default="coco_i2v")
+    parser.add_argument(
+        "--pairs",
+        default="coco_i2v",
+        help="a pair set under test_fixtures/datasets (coco_i2v, vbench_i2v, "
+        "vbench_i2v_full once built), or a folder holding a manifest.json",
+    )
     parser.add_argument("--resolution", choices=sorted(RESOLUTIONS), default="720p")
     parser.add_argument("--schedule", choices=("tt", "checkpoint"), default="tt")
     parser.add_argument("--steps", type=int, default=STEPS)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--limit", type=int, help="first N pairs only")
+    parser.add_argument(
+        "--shard",
+        type=parse_shard,
+        default=(0, 1),
+        help="i/N: make only clips i, i+N, i+2N, ... (e.g. one shard per GPU)",
+    )
     parser.add_argument(
         "--offload",
         action="store_true",
@@ -166,16 +258,34 @@ def main() -> int:
     from diffusers.utils import export_to_video
 
     width, height = RESOLUTIONS[args.resolution]
-    pairs_dir = DATASETS_DIR / args.pairs
+    pairs_dir = pairs_dir_for(args.pairs)
+    args.pairs = pairs_dir.name
     pairs = json.loads((pairs_dir / "manifest.json").read_text())[: args.limit]
-    args.out.mkdir(parents=True, exist_ok=True)
+    # Two digits for the small sets, as the committed references have.
+    digits = max(2, len(str(len(pairs) - 1)))
+    shard, shards = args.shard
+    records = args.out / CLIP_RECORDS
+    records.mkdir(parents=True, exist_ok=True)
+    provenance_now = provenance(args, width, height)
+    check_same_settings(args.out / "provenance.json", provenance_now)
     (args.out / "provenance.json").write_text(
-        json.dumps(provenance(args, width, height), indent=2) + "\n"
+        json.dumps(provenance_now, indent=2) + "\n"
     )
+
+    # A clip is done once its record is written, after its video; anything
+    # else is made (again), so a run can be stopped and restarted at will.
+    todo = [
+        (i, pair)
+        for i, pair in enumerate(pairs)
+        if i % shards == shard and not (records / f"{i:0{digits}d}_gpu.json").is_file()
+    ]
+    print(f"{len(todo)} clips to make in shard {shard}/{shards}", flush=True)
+    if not todo:
+        write_index(args.out)
+        return 0
     pipe = load_pipeline(args.schedule, args.offload)
 
-    index = []
-    for i, pair in enumerate(pairs):
+    for i, pair in todo:
         started = time.monotonic()
         frames = pipe(
             image=conditioning_image(pairs_dir / pair["image"], width, height),
@@ -189,7 +299,7 @@ def main() -> int:
             guidance_scale_2=GUIDANCE_SCALE_2,
             generator=torch.Generator("cpu").manual_seed(args.seed),
         ).frames[0]
-        name = f"{i:02d}_gpu.mp4"
+        name = f"{i:0{digits}d}_gpu.mp4"
         export_to_video(frames, str(args.out / name), fps=FPS)
         seconds = round(time.monotonic() - started, 1)
         entry = {
@@ -200,9 +310,9 @@ def main() -> int:
         }
         if pair.get("camera_motion"):
             entry["camera_motion"] = pair["camera_motion"]
-        index.append(entry)
+        (records / f"{Path(name).stem}.json").write_text(json.dumps(entry) + "\n")
         # Rewritten after every clip, so a run cut short is still scoreable.
-        (args.out / "index.json").write_text(json.dumps(index, indent=2) + "\n")
+        write_index(args.out)
         print(f"{name}: {seconds} s  {pair['caption']}", flush=True)
     return 0
 
