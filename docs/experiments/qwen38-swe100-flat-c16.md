@@ -1,6 +1,6 @@
 # Prepared frozen SWE100 and SWE500 shard contract
 
-This arm uses the historical frozen Gemma SWE100 task sequence, with resident
+The shard0/SWE100 arm uses the historical frozen Gemma SWE100 task sequence, with resident
 batch16, block512, HTTP concurrency16 and reviewed grouped/masked/flat flags.
 Model/image/plugin references must match the validated flat-serving smoke.
 Dispatch remains gated on its actual serving result and the frozen25 C16
