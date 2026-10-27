@@ -504,8 +504,17 @@ templates:
         # rows from host tables by position and the Engram rows gathered for
         # the live chips only: the step wall 87 -> 73
         # ms at an unchanged device time in the generator test; the output
-        # bit for bit the same.
-        V41_DECODE_HOST_INPUTS: "packed"
+        # bit for bit the same. Now the integer, sampler
+        # and RoPE rows are one uint32 host tensor of one page per rank
+        # ("one": one host shard set and one copy a step instead of three
+        # mesh-mapped from_torch and three copies, the 14-page integer tensor
+        # 1.66 ms of them; bit for bit), the device sync between the staging
+        # and the replay is dropped (the one command queue orders them) and
+        # c1_select writes a persistent weight tile (-0.5 ms, bit for
+        # bit).
+        V41_DECODE_HOST_INPUTS: "one"
+        V41_DECODE_REPLAY_SYNC: "0"
+        V41_DECODE_C1_SELECT: "persist"
         # The mHC Sinkhorn lane-wise on the SFPU: the
         # op 52 -> 18.5 us, twice a layer; comb nearer the reference.
         V41_MHC_SINKHORN_SFPU: "1"
