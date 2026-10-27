@@ -3196,8 +3196,8 @@ templates:
       # replica; c=16 is the measured point (~1000 tok/s, TPOT ~13 ms).
       max_concurrency: 16
       # Full 1M window: LongBench v2 sends up to 900K-token prompts. Each lane's
-      # KV pool is capped by MIMO_KV_GB_PER_CHIP (6 GB -> ~1.27M tokens), so a
-      # lane holds one 1M request or several shorter ones, not four 1M requests.
+      # KV pool is capped by MIMO_KV_GB_PER_CHIP (6.6 GB below -> 2 x 1M tokens),
+      # so a lane holds two 1M requests or several shorter ones, not four 1M requests.
       # Above 128K the decode RoPE comes from the host instead of device tables.
       max_context: 1048576  # 1024 * 1024
       default_impl: true
@@ -3207,6 +3207,8 @@ templates:
       env_vars:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        # 2 x 1M requests per lane, sized in tt-metal #61745, so 1M x 8 runs concurrently.
+        MIMO_KV_GB_PER_CHIP: 6.6
       override_tt_config:
         trace_mode: decode_only
         trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
@@ -3225,7 +3227,11 @@ templates:
         max_num_seqs: 4  # per lane
         block_size: 64  # required by the model
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
+        # 4K is the model's native prefill chunk (the MoE prefill takes up to 4096
+        # tokens per call); standalone TTFT was measured at 4K chunks, and 2048
+        # measured ~1.4x slower TTFT at 4K/32K/128K. 8K does not fit L1 beside
+        # decode's buffers.
+        max_num_batched_tokens: 4096
         enable-prefix-caching: true
         trust-remote-code: true
         reasoning-parser: mimo
@@ -3268,6 +3274,7 @@ templates:
         MESH_DEVICE: "(4, 8)"
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
+        # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
         # The default entry's traces plus the verify step and the MTP draft program per replica.
@@ -3282,7 +3289,7 @@ templates:
         max_num_seqs: 4  # per lane; a verify fills the lane's 4 decode slots
         block_size: 64
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
+        max_num_batched_tokens: 4096  # 4K prefill chunks, as the default entry
         enable-prefix-caching: true
         trust-remote-code: true
         reasoning-parser: mimo

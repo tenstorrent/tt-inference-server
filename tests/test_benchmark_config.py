@@ -442,3 +442,44 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+def test_mimo_bh_galaxy_sweep_adds_long_context_concurrency_points(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    model_id = _find_model_id(
+        model_name="MiMo-V2.6-Flash-MOPD",
+        device=DeviceTypes.BLACKHOLE_GALAXY,
+        impl_name="mimo-v2.6-flash",
+    )
+    spec = MODEL_SPECS[model_id]
+    config = benchmark_config.get_benchmark_config(spec)
+    triplets = {
+        (p.isl, p.osl, p.max_concurrency, p.num_prompts)
+        for p in config.tasks[1].param_map[DeviceTypes.BLACKHOLE_GALAXY]
+    }
+
+    # The standard sweep is kept: 128K at the spec's 16 users.
+    assert (131072, 128, 16, 16) in triplets
+    # One wave per long-context point; ISL + OSL stays within the 1M max_model_len.
+    for isl, concurrencies in (
+        (262144 - 128, (1, 4, 8, 16)),
+        (524288 - 128, (1, 4, 8, 16)),
+        (1048576 - 128, (1, 4, 8)),
+    ):
+        for c in concurrencies:
+            assert (isl, 128, c, c) in triplets
+    assert (1048576 - 128, 128, 16, 16) not in triplets
+    assert all(
+        p.isl + p.osl <= spec.device_model_spec.max_context
+        and p.max_concurrency <= spec.device_model_spec.max_concurrency
+        for p in config.tasks[1].param_map[DeviceTypes.BLACKHOLE_GALAXY]
+    )
+
+
+def test_mimo_gpu_sweep_has_no_galaxy_long_context_points(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    model_id = _find_model_id(model_name="MiMo-V2.6-Flash-MOPD", device=DeviceTypes.GPU)
+    config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
+    assert max(p.isl for p in config.tasks[1].param_map[DeviceTypes.GPU]) == 131072
