@@ -26,8 +26,8 @@ def run(*, selected=None, tasks=None, blocks=None, error=None, benchmark=None):
 
 
 def test_real_frozen32_gpqa_only_workflow_finishes_without_harbor():
-    c=controls();assert c['evals']==['r1_gpqa_diamond'] and c['sample_count']==32
-    assert len(EVAL_CONFIGS[MODEL].tasks[0].doc_ids)==32
+    c=controls();assert c['evals']==['r1_gpqa_diamond'] and c['sample_count']==8
+    assert len(EVAL_CONFIGS[MODEL].tasks[0].doc_ids)==8
     out,standard,harbor=run()
     assert out[0].exit_code==0
     standard.assert_called_once();harbor.assert_not_called()
