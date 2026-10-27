@@ -207,7 +207,35 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     output_path = Path(ctx.output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    prewarm = bool(getattr(getattr(ctx, "runtime_config", None), "prewarm", False))
+    rc = getattr(ctx, "runtime_config", None)
+    prewarm_only = bool(getattr(rc, "prewarm_only", False))
+    prewarm = bool(getattr(rc, "prewarm", False)) or prewarm_only
+
+    if prewarm_only:
+        # Warm the server and stop -- no sweep, no latency metrics. Lets a caller
+        # prime the board once and then run measured sweeps separately.
+        requests_done = tts_load_harness.prewarm(
+            _target(ctx), TTS_CI_WARMUP_CONCURRENCY, TTS_CI_PREWARM_SECONDS
+        )
+        return Block(
+            kind="benchmarks",
+            task_type="text_to_speech",
+            title="Text-to-Speech Prewarm",
+            id=block_id(ctx) or None,
+            targets={
+                "warmup_concurrency": TTS_CI_WARMUP_CONCURRENCY,
+                "prewarm_seconds": TTS_CI_PREWARM_SECONDS,
+            },
+            data={
+                "Prewarm": {
+                    "warmup_concurrency": TTS_CI_WARMUP_CONCURRENCY,
+                    "prewarm_seconds": TTS_CI_PREWARM_SECONDS,
+                    "requests_completed": requests_done,
+                    "measured": False,
+                }
+            },
+        )
+
     document = tts_load_harness.sweep(_sweep_args(output_path, prewarm), _target(ctx))
     rows, chars_per_request = tts_load_harness.aggregate(document)
     report_rows = _report_rows(rows)

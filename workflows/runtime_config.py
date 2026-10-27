@@ -68,6 +68,7 @@ class RuntimeConfig:
     concurrency_sweeps: bool = False
     percentile_report: bool = False
     prewarm: bool = False
+    prewarm_only: bool = False
     streaming: Optional[str] = None
     preprocessing: Optional[str] = None
     workflow_args: Optional[str] = None
@@ -185,6 +186,7 @@ class RuntimeConfig:
             concurrency_sweeps=args.concurrency_sweeps,
             percentile_report=args.percentile_report,
             prewarm=getattr(args, "prewarm", False),
+            prewarm_only=getattr(args, "prewarm_only", False),
             streaming=args.streaming,
             preprocessing=args.preprocessing,
             workflow_args=args.workflow_args,

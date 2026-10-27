@@ -238,6 +238,13 @@ def parse_arguments():
         "default; when set, the burst runs to completion and then the sweep starts.",
     )
     parser.add_argument(
+        "--prewarm-only",
+        action="store_true",
+        help="Run ONLY the TTS warmup burst and then exit -- no concurrency sweep, "
+        "no latency metrics. Use to prime the server before running measured "
+        "sweeps separately.",
+    )
+    parser.add_argument(
         "--dev-mode",
         action="store_true",
         help=(
