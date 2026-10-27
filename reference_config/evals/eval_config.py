@@ -13307,24 +13307,71 @@ _eval_config_list = [
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
 # its GPQA, LongBench v2, Terminal-Bench 4.0 and AutomationBench tasks are M3's,
-# plus DeepSWE. No targets yet: the M3.1-Flash GPU reference runs aren't done,
-# so scores are measurements only (no published, GPU or limit-mode references;
-# the card's AutomationBench 62.8 states no harness or effort).
+# plus DeepSWE. Published scores are the model card's where it reports the
+# benchmark (not GPQA or LongBench v2); no GPU references yet.
+_MINIMAX_M31_FLASH_CARD = "https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash"
+_MINIMAX_M31_FLASH_PUBLISHED = {
+    # 600 publicly released tasks.
+    "automation_bench": 62.8,
+    "terminal_bench_4": 38.1,
+    "deepswe": 73.7,
+}
 _MINIMAX_M31_FLASH_M3_TASKS = (
     "r1_gpqa_diamond",
     "longbench2_generate",
     "terminal_bench_4",
     "automation_bench",
 )
+# Without an effort the chat template leaves thinking "adaptive". SGLang maps a
+# request's reasoning_effort onto the template's <effort> tag.
+_MINIMAX_M31_FLASH_REASONING_EFFORT = "max"
 
 
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    published = _MINIMAX_M31_FLASH_PUBLISHED.get(task.task_name)
+    effort = _MINIMAX_M31_FLASH_REASONING_EFFORT
+    if task.task_name == "terminal_bench_4":
+        # The card runs Terminal-Bench 4.0 with Codex 0.149.1, not terminus-2.
+        # Codex has no metadata for this model, so set its context window
+        # (auto-compaction keys off it), near M3's 500K terminus-2 input cap.
+        # Codex sends the effort itself, on /v1/responses (request_body is not
+        # wired for Codex).
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config,
+                agent="codex",
+                agent_kwargs={
+                    "version": "0.149.1",
+                    "reasoning_effort": effort,
+                    "config": {"model_context_window": 512 * 1024},
+                },
+            ),
+        )
+    elif task.task_name == "automation_bench":
+        # The GPU server captures CUDA graphs up to decode batch 64; past that
+        # decode runs eagerly. 56 leaves room for other clients.
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config,
+                n_concurrent_trials=56,
+                agent_kwargs={
+                    **task.agentic_eval_config.agent_kwargs,
+                    "reasoning_effort": effort,
+                },
+            ),
+        )
+    else:
+        task = replace(
+            task, request_body={**task.request_body, "reasoning_effort": effort}
+        )
     return replace(
         task,
         score=replace(
             task.score,
-            published_score=None,
-            published_score_ref=None,
+            published_score=published,
+            published_score_ref=_MINIMAX_M31_FLASH_CARD if published else None,
             gpu_reference_score=None,
             gpu_reference_score_ref=None,
             mode_reference_scores={},
@@ -13346,9 +13393,13 @@ _eval_config_list.append(
             EvalTask(
                 task_name="deepswe",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Reaches mini-swe-agent's model_kwargs.extra_body.
+                request_body={
+                    "reasoning_effort": _MINIMAX_M31_FLASH_REASONING_EFFORT
+                },
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=_MINIMAX_M31_FLASH_PUBLISHED["deepswe"],
+                    published_score_ref=_MINIMAX_M31_FLASH_CARD,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
