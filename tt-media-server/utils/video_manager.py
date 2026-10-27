@@ -295,6 +295,11 @@ class VideoManager:
         if preset:
             cmd.extend(["-preset", preset])
 
+        # A keyframe every second, so players can seek and scrub without decoding
+        # from the start of the clip; x264's default is one every 250 frames.
+        # fps may be fractional (24.0, 25.0), and -g takes a whole frame count.
+        cmd.extend(["-g", str(max(1, round(fps)))])
+
         cmd.extend(["-movflags", "+faststart", output_path])
         return cmd
 
