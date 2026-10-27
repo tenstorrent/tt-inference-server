@@ -63,6 +63,14 @@ class AuditTests(unittest.IsolatedAsyncioTestCase):
     def ends(self):
         return [r for r in map(json.loads, self.path.read_text().splitlines()) if r['event']=='request_end']
 
+    async def test_policy_selectors_are_recorded_without_arbitrary_template_values(self):
+        await self.request({'messages': [], 'chat_template_kwargs': {
+            'reasoning_effort': 'medium', 'enable_thinking': True,
+            'preserve_thinking': False, 'private': 'never-record-this'}})
+        assert self.ends()[-1]['requested_chat_template_policy'] == {
+            'reasoning_effort': 'medium', 'enable_thinking': True, 'preserve_thinking': False}
+        assert 'never-record-this' not in self.path.read_text()
+
     async def test_lcp_seed_and_response_semantics_without_raw_artifacts(self):
         output = await self.request()
         self.assertTrue(json.loads(self.received[0])["return_token_ids"])

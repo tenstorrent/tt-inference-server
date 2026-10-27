@@ -12,6 +12,8 @@ def controls():
     c = json.loads(Path(__file__).with_suffix(".json").read_text())
     if type(c.get("record_suite_metrics", False)) is not bool:
         raise ValueError("record_suite_metrics must be a boolean")
+    if c.get("swe_reasoning_effort") not in (None, "xhigh", "medium", "low"):
+        raise ValueError("swe_reasoning_effort must be xhigh, medium or low")
     return c
 
 
@@ -47,6 +49,10 @@ def configure(config, limit_mode):
             else:
                 kwargs["max_tokens"] = c["output_tokens"]
                 kwargs["config"]["model"]["model_kwargs"]["seed"] = c["seed"]
+                if c.get("swe_reasoning_effort") is not None:
+                    model_kwargs = kwargs["config"]["model"]["model_kwargs"]
+                    template_kwargs = model_kwargs.setdefault("extra_body", {}).setdefault("chat_template_kwargs", {})
+                    template_kwargs["reasoning_effort"] = c["swe_reasoning_effort"]
             names = c["task_names"][name]
             common["agentic_eval_config"] = replace(
                 cfg, dataset="terminal-bench/terminal-bench-2" if name == "terminal_bench_2" else cfg.dataset,

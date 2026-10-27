@@ -120,6 +120,14 @@ class AgenticAuditMiddleware:
                 "stream": streaming, "active_http_at_start": self.active,
                 "messages_sha256": opaque(json.dumps((request or {}).get("messages"), sort_keys=True)),
                 "request_id_sha256": opaque((request or {}).get("request_id")), "session_overlap": overlap}
+        # Retain only validated public policy selectors, never arbitrary template text.
+        template = (request or {}).get("chat_template_kwargs")
+        if isinstance(template, dict):
+            policy = {k: template[k] for k in ("enable_thinking", "preserve_thinking")
+                      if type(template.get(k)) is bool}
+            if template.get("reasoning_effort") in ("xhigh", "medium", "low"):
+                policy["reasoning_effort"] = template["reasoning_effort"]
+            base["requested_chat_template_policy"] = policy
         self.emit({"event": "request_start", **base})
         response_start, chunks = None, []
         record = {**base}
