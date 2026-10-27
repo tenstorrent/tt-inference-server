@@ -220,14 +220,14 @@ templates:
 #   1 M      4          32                                       0.12 GiB
 #   512 K    8          64
 #   256 K    16         128
-#   128 K    32         256
+#   128 K    28         224                                      (32 ran out of DRAM in the 16 K prefill warm-up)
 #   with both expert layouts (fast decode): 64 slots at 128 K, 32 at 256 K, none above.
 #
 # max_num_seqs = DISTINCT requests = users per row, NOT the slot count: the
 # sequence-parallel prefill writes a prompt into slot `user` of EVERY row
 # (tt/functional_decoder.py prefill_forward; tests/test_mesh_long_context.py
 # "the SP prefill writes slot user of every row"), so the 8 rows hold replicas
-# and the engine admits users_per_row requests (4 at 1 M, 32 at 128 K).
+# and the engine admits users_per_row requests (4 at 1 M, 28 at 128 K).
 # Admission at the slot count (32 at 1 M, 256 at 128 K) needs the model-side
 # per-row prefill ownership (_agents/vllm_glm53/ROW_OWNERSHIP.md:
 # GLM53MeshModel.prefill_wave); when it lands, flip max_num_seqs /
@@ -336,9 +336,9 @@ templates:
     - text
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 32  # = users per row at 128 K; 256 after the row-ownership flip
+      max_concurrency: 28  # = users per row at 128 K (7 slots per chip; 32 ran out of DRAM in the prefill warm-up); 224 after the row-ownership flip
       max_context: 131072  # 128 * 1024
-      max_tokens_all_users_override: 4194304  # 32 x 131072
+      max_tokens_all_users_override: 3670016  # 28 x 131072
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
@@ -361,7 +361,7 @@ templates:
         prefill_chunk_alignment: 256
         decode_interleave_enabled: false
       vllm_args:
-        max_num_seqs: 32  # = users per row; 256 after the row-ownership flip
+        max_num_seqs: 28  # = users per row; 224 after the row-ownership flip
         block_size: 32
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 16384
