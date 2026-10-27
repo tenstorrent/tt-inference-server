@@ -22,6 +22,8 @@ IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-2
 # Keep the export helper itself on IMAGE; only serving attribution gains this
 # additional exact digest. Mutable tags and arbitrary overlays remain rejected.
 OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:47319d8b11749575cc921bae9c03458d37be2667433d7e8e7e0faa3be7a3d895'
+# Source-only masked-state overlay: run40577849369, Metal543bac09167.
+MASKED_OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:5f4e1cb60794ee32df3d409bc6d57a0a0fcd019993273d574c5b56d00f9b85ce'
 
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
@@ -71,7 +73,7 @@ sys.stdout.buffer.write(buf.getvalue())
 
 def validate_plan(p,runner,expected_owner=None):
     if p.get('volume')!='volume_id_qwen38_autoport-Qwen3.8-27B':raise ValueError('unexpected volume')
-    if p.get('image') not in (IMAGE,OVERLAY_IMAGE):raise ValueError('unexpected immutable image')
+    if p.get('image') not in (IMAGE,OVERLAY_IMAGE,MASKED_OVERLAY_IMAGE):raise ValueError('unexpected immutable image')
     if runner not in p.get('host_aliases',[]):raise ValueError('wrong assigned host')
     if not re.fullmatch(r'goal12-[0-9]+-[0-9]+-[0-9]+',p.get('source_owner','')):raise ValueError('invalid source owner')
     if str(p.get('source_run_id'))!=p['source_owner'].split('-')[1]:raise ValueError('source run/owner mismatch')
