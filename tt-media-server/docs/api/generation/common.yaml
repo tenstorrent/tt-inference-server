@@ -297,8 +297,7 @@ components:
       description: |
         An `https://` URL, which the server fetches, or a data URI
         (`data:image/png;base64,…`). Inline images must be data URIs: bare
-        base64 without the `data:` prefix is rejected with 422. An earlier
-        output is passed by its `url`.
+        base64 without the `data:` prefix is rejected with 422.
 
         PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the
         job is submitted, so a URL only has to stay valid until then (a

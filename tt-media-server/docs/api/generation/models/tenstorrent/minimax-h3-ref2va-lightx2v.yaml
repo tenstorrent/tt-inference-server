@@ -64,3 +64,7 @@ paths:
     $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
   /v1/jobs/{job_id}/cancel:
     $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"

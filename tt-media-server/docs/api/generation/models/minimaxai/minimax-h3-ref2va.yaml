@@ -65,6 +65,9 @@ paths:
   /v1/jobs/{job_id}/cancel:
     $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
 components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"
   schemas:
     MiniMaxH3Ref2VARequest:
       type: object
