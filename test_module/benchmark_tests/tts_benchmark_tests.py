@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 from report_module.schema import Block
+from report_module.status import TestStatus
 from workflow_module.context_helpers import get_num_calls
 
 from .._test_common import (
@@ -227,12 +228,15 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
                 "prewarm_seconds": TTS_CI_PREWARM_SECONDS,
             },
             data={
+                # Not a measurement -- mark SKIP so acceptance does not grade it as
+                # a benchmark (it has no latency metrics or target checks).
+                "status": TestStatus.SKIP.value,
                 "Prewarm": {
                     "warmup_concurrency": TTS_CI_WARMUP_CONCURRENCY,
                     "prewarm_seconds": TTS_CI_PREWARM_SECONDS,
                     "requests_completed": requests_done,
                     "measured": False,
-                }
+                },
             },
         )
 
