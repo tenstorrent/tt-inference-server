@@ -475,6 +475,18 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # MiniMax-M3.1-Flash: same shape as M3 so the two are comparable.
+    AgenticTracesConfig(
+        model_id="id_blaze_MiniMax-M3.1-Flash_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(62),
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
