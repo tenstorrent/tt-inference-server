@@ -1,5 +1,5 @@
 {
-  "phase": "completion-pilot8-b32-81920",
+  "phase": "completion-pilot8-b32-16384",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
@@ -10,7 +10,7 @@
   "agent_timeout_sec": 1800,
   "llm_timeout_sec": 1200,
   "suite_timeout_sec": 2400,
-  "output_tokens": 81920,
+  "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
       "astropy__astropy-13398",
@@ -84,7 +84,7 @@
     "population": 198,
     "concurrency": 8,
     "generation": {
-      "max_gen_toks": 81920,
+      "max_gen_toks": 16384,
       "do_sample": true,
       "temperature": 1.0,
       "top_p": 0.95,
@@ -135,8 +135,8 @@
       "limitation": "Catalog reference; exact published scaffold/dataset revision equivalence not established; report scores without gating."
     }
   },
-  "gpqa_llm_timeout_sec": 13200,
-  "gpqa_suite_timeout_sec": 13800,
+  "gpqa_llm_timeout_sec": 3600,
+  "gpqa_suite_timeout_sec": 5400,
   "gpqa_timeout_basis": "B32 prior observed ~7.2 tokens/s; 80K upper estimate81920/7 plus1200 startup and900 cleanup. Request budgets7200/13200. Generation suite7500/13800.",
   "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
   "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
