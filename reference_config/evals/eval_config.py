@@ -13625,12 +13625,6 @@ _eval_config_list = [
 ]
 
 
-# MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
-# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
-# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
-# measurements only (no published, GPU or limit-mode references; the card's
-# AutomationBench 62.8 states no harness or effort).
 # Harbor trial concurrency for M3.1-Flash. M3 runs Terminal-Bench at 8 because its
 # IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's Virtu P/D
 # deployment held 10-12 ms inter-token latency at 56 agentic users, so its
@@ -13641,6 +13635,12 @@ _MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
 }
 
 
+# MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
+# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
+# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
+# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
+# measurements only (no published, GPU or limit-mode references; the card's
+# AutomationBench 62.8 states no harness or effort).
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
     concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
     if concurrency is not None:
