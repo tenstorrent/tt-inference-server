@@ -97,7 +97,11 @@ templates:
         MAX_BATCH_SIZE: "12"
         MAX_BATCH_DELAY_TIME_MS: "300"
         BENCHMARK_MAX_CONCURRENCY: "12"
-        BENCHMARK_NUM_PROMPTS: "120"
+        # Same load shape as the BGE-large Galaxy spec: 4 parallel clients and
+        # a long run (12k requests at 12 req/s ~ 17 min) so the reported
+        # average reflects steady state, not the startup transient.
+        BENCHMARK_NUM_PROMPTS: "12000"
+        BENCHMARK_NUM_CLIENTS: "4"
         BENCHMARK_NUM_WARMUPS: "12"
         DEFAULT_THROTTLE_LEVEL: "0"
     - device: T3K
