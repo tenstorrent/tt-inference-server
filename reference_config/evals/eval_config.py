@@ -13275,16 +13275,24 @@ _eval_config_list = [
 # because its IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's
 # Virtu P/D deployment held 10-12 ms inter-token latency at 56 agentic users, so the
 # limit is the KIX1 shield-evals pool instead: 3 nodes x 64 CPUs. Trials past it sit
-# Pending and fail Harbor's 300 s pod-ready timeout rather than queue.
-#   Terminal-Bench (8 CPU / 32 GiB per trial): 7 per node, 21 in all.
+# Pending and fail Harbor's 300 s pod-ready timeout rather than queue, so each value
+# keeps the worst case (the largest tasks running together) within the pool.
+#   Terminal-Bench 2.1: task-declared resources (83 of 89 tasks ask 1 CPU / 2 GiB;
+#     the 62 largest need ~74 CPUs), not M3's 8 CPU / 32 GiB override, which fit
+#     only 7 trials per node.
+#   Terminal-Bench 4.0: task-declared (mostly 2-4 CPUs, a few 8-16); the 40
+#     largest need ~170 CPUs.
 #   tau3-bench (4 CPU / 8 GiB + tau3-runtime sidecar): ~35-40 fit; 32.
-#   SWE-bench Verified (1 CPU / 4 GiB, task default): the deployment's 62.
+#   SWE-bench Verified (1 CPU / 4 GiB, task default): 62. Its test runs already
+#     drive the pool to ~100% CPU, so more trials would mostly slow them.
 _MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
-    "terminal_bench_2_1": 21,
-    "terminal_bench_4": 21,
+    "terminal_bench_2_1": 62,
+    "terminal_bench_4": 40,
     "tau3_bench_banking": 32,
     "swe_bench_verified": 62,
 }
+# Tasks that run with each task's declared CPU and memory instead of M3's override.
+_MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES = {"terminal_bench_2_1"}
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
@@ -13300,6 +13308,13 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
             task,
             agentic_eval_config=replace(
                 task.agentic_eval_config, n_concurrent_trials=concurrency
+            ),
+        )
+    if task.task_name in _MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config, override_cpus=None, override_memory_mb=None
             ),
         )
     return replace(
