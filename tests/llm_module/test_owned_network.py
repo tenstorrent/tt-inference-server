@@ -36,7 +36,7 @@ class FakeDaemon:
                 if any(ip.ip_network(subnet).overlaps(ip.ip_network(n['IPAM']['Config'][0]['Subnet']))for n in self.networks.values()):rc=1;stderr='Pool overlaps with other one on this address space'
                 else:
                     self.created+=1;ident=f'{self.created:064x}';labels={args[i+1].split('=',1)[0]:args[i+1].split('=',1)[1]for i,a in enumerate(args)if a=='--label'}
-                    self.networks[ident]={'Id':ident,'Name':args[-1],'Driver':'bridge','Scope':'local','Labels':labels,'Internal':False,'Options':{},'IPAM':{'Config':[{'Subnet':subnet,'Gateway':args[args.index('--gateway')+1]}]},'Containers':{}}
+                    self.networks[ident]={'Id':ident,'Name':args[-1],'Driver':'bridge','Scope':'local','Labels':labels,'Internal':'--internal' in args,'Options':{},'IPAM':{'Config':[{'Subnet':subnet,'Gateway':args[args.index('--gateway')+1]}]},'Containers':{}}
                     stdout=ident
             elif args[:3]==['docker','network','inspect']:
                 n=self.networks.get(args[-1]) or next((n for n in self.networks.values()if n['Name']==args[-1]),None)

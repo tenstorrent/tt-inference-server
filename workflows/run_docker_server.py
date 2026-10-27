@@ -640,7 +640,11 @@ def generate_docker_run_command(
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
 
-    if model_spec.inference_engine in (
+    if model_spec.env_vars.get("QWEN38_AGENT_ISOLATED_NETWORK") == "1":
+        if model_spec.hf_model_repo != "Qwen/Qwen3.8-27B" or model_spec.inference_engine != InferenceEngine.VLLM.value:
+            raise ValueError("Isolated SWE agent requires the Qwen vLLM host-native endpoint")
+        docker_command += ["--network", "host"]
+    elif model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
     ):

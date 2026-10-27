@@ -14,6 +14,8 @@ def controls():
         raise ValueError("record_suite_metrics must be a boolean")
     if c.get("swe_reasoning_effort") not in (None, "xhigh", "medium", "low"):
         raise ValueError("swe_reasoning_effort must be xhigh, medium or low")
+    if type(c.get("swe_agent_isolated_network", False)) is not bool:
+        raise ValueError("swe_agent_isolated_network must be a boolean")
     return c
 
 
@@ -60,6 +62,8 @@ def configure(config, limit_mode):
                 agent_timeout_sec=c["agent_timeout_sec"], llm_timeout_sec=c["llm_timeout_sec"],
                 harbor_timeout_sec=c["suite_timeout_sec"], agent_kwargs=kwargs,
                 task_names_map={limit_mode.CI_NIGHTLY: names, limit_mode.SMOKE_TEST: names},
-                task_names=[])
+                task_names=[],
+                environment_kwargs={**cfg.environment_kwargs,
+                    **({"owned_agent_isolation": True} if name == "swe_bench_verified" and c.get("swe_agent_isolated_network") else {})})
         tasks.append(replace(original, **common))
     return replace(config, tasks=tasks)

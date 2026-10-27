@@ -218,9 +218,15 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
     service_overlay = {}
-    if _mini_swe_needs_host_gateway(config):
+    if _mini_swe_needs_host_gateway(config) and not config.environment_kwargs.get('owned_agent_isolation'):
         service_overlay["extra_hosts"] = [f"{_DOCKER_HOST_NAME}:host-gateway"]
     owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    isolated=config.environment_kwargs.get('owned_agent_isolation',False)
+    if type(isolated) is not bool:raise ValueError('owned_agent_isolation must be a boolean')
+    if isolated:
+        if not owner:raise ValueError('Isolated SWE agents require an owned Docker job')
+        if config.environment_type!='docker' or config.agent!=_MINI_SWE_AGENT or config.agent_import_path is not None:
+            raise ValueError('Isolated agent requires standard mini-swe-agent in owned Docker')
     if owner and config.environment_type == "docker":
         service_overlay["labels"] = {"com.tenstorrent.agentic-owner": owner}
         from agentic_owned_networks.allocator import checked_owner
