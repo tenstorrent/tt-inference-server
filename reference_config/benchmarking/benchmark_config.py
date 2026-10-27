@@ -146,7 +146,22 @@ MODEL_EXTRA_ISL_OSL_PAIRS = {
     "DeepSeek-V4.1-Flash": [
         (262144 - 128, 128),  # 256K
         (524288 - 128, 128),  # 512K
-        (1048576 - 128, 128),  # 1M
+        (1048576 - 256, 128),  # 1M (the server counts one extra prompt token on top of truncate_prompt_tokens=isl: isl 1048448 was rejected with 1048577 total)
+        # OSL 1024 / 4096 grid (ISL x OSL combinations); the 1M rows keep isl + osl + 256 <= max_context.
+        (1024, 1024),
+        (32768, 1024),
+        (131072, 1024),
+        (262144, 1024),
+        (524288, 1024),
+        (1048576 - 256 - 1024, 1024),
+        (128, 4096),
+        (1024, 4096),
+        (8192, 4096),
+        (32768, 4096),
+        (131072, 4096),
+        (262144, 4096),
+        (524288, 4096),
+        (1048576 - 256 - 4096, 4096),
     ],
 }
 # Models whose long sweep points need more requests than get_num_prompts gives
