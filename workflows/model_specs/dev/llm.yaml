@@ -532,6 +532,16 @@ templates:
         # device, tput_user +15 % at points 1, 5, 8 (0.504x of the target),
         # TTFT unchanged; the three state gates as before.
         V41_DECODE_C1_INDEX: "1"
+        # Three exact-or-ulp-level decode changes served together: the c1 MoE's shared expert split over the 32
+        # chips (-0.5 ms, 1 to 2 bf16 ulps), the mHC site's TP sum as
+        # one gather and a sum (-0.4 ms, bit for bit) and the output
+        # projection's head concat folded into the QDQ (-1.1 ms, bit
+        # for bit): served, the one-row step 56.8 -> 54.6 ms of device,
+        # tput_user 14.66 -> 15.16 / 15.01 / 15.04 at points 1, 5, 8 (0.52x),
+        # TTFT unchanged; the three state gates as before.
+        V41_DECODE_C1_SHARED: "split"
+        V41_MHC_TP_SUM: "gather"
+        V41_DECODE_CONCAT: "qdq"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
