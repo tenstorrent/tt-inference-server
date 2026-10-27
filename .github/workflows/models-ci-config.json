@@ -877,7 +877,6 @@
         },
         "google/gemma-4-26B-A4B-it": {
             "inference_engine": "vLLM",
-            "impl": "tt-vllm-plugin",
             "ci": {
                 "nightly": {
                     "devices": [
@@ -893,7 +892,6 @@
         },
         "ibm-granite/granite-4.2-30b": {
             "inference_engine": "vLLM",
-            "impl": "tt-vllm-plugin",
             "ci": {
                 "nightly": {
                     "devices": [

@@ -231,13 +231,15 @@ def test_real_release_scope_matches_dev_runtime_subprocess():
 
 
 @pytest.mark.parametrize(
-    "model,architecture",
+    "model,architecture,implementation",
     [
-        ("google/gemma-4-26B-A4B-it", "TTGemma4A4BForCausalLM"),
-        ("ibm-granite/granite-4.2-30b", "TTGraniteForCausalLM"),
+        ("google/gemma-4-26B-A4B-it", "TTGemma4A4BForCausalLM", "gemma4-26b-a4b-qb2"),
+        ("ibm-granite/granite-4.2-30b", "TTGraniteForCausalLM", "granite42-30b-qb2"),
     ],
 )
-def test_qb2_release_selects_the_validated_demo_implementation(model, architecture):
+def test_qb2_release_selects_the_validated_demo_implementation(
+    model, architecture, implementation
+):
     config = json.loads(CI_CONFIG.read_text())
     assert config["models"][model]["ci"]["nightly"] == {"devices": ["P300X2"]}
     combos = collect_release_combos(config)
@@ -246,10 +248,11 @@ def test_qb2_release_selects_the_validated_demo_implementation(model, architectu
     combo = selected[0]
     assert combo.device == DeviceTypes.P300X2
     assert combo.engine == InferenceEngine.VLLM
-    assert combo.impl == "tt-vllm-plugin"
+    assert combo.impl is None
     resolved = resolve_release_combo(combo, load_dev_model_spec_sources(DEV_CATALOG))
     spec = resolved.model_spec
-    assert spec.impl.impl_name == "tt-vllm-plugin"
+    assert spec.impl.impl_name == implementation
+    assert spec.device_model_spec.default_impl is True
     assert json.loads(spec.device_model_spec.vllm_args["hf-overrides"]) == {
         "architectures": [architecture]
     }
