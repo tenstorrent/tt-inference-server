@@ -163,13 +163,16 @@ def _get_cpp_image_server_docker_env_vars(model_spec):
         "MODEL_RUNNER_TYPE": runner,
         "DEVICE_MESH_SHAPE": mesh_shape,
         "IS_GALAXY": "true" if is_galaxy else "false",
+        "DEVICE": device,
         "DEVICE_IDS": device_ids,
         "MAX_BATCH_SIZE": "1",
         "SDXL_IMAGE_RESOLUTION": "1024x1024",
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
     }
     logger.info(
         f"cpp_server environment variables: MODEL_SERVICE=image, "
-        f"MODEL_RUNNER_TYPE={runner}, DEVICE_MESH_SHAPE={mesh_shape}, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE={device}, DEVICE_MESH_SHAPE={mesh_shape}, "
         f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
     )
     return env_vars
@@ -533,6 +536,25 @@ def _resolve_training_store_root(setup_config) -> str:
     return _EPHEMERAL_TRAINING_STORE_ROOT
 
 
+def _media_pre_downloaded_weights_path(setup_config, model_spec):
+    """Container path of the weights run.py already fetched, or None.
+
+    Without MODEL_WEIGHTS_PATH every cpp_server SDXL worker resolves the HF repo
+    id itself (32 Galaxy workers racing one cold download)."""
+    if setup_config is None or not setup_config.container_model_weights_path:
+        return None
+    if setup_config.host_model_weights_mount_dir:
+        return str(setup_config.container_model_weights_path)
+    if not setup_config.host_model_volume_root:
+        return None
+    host_weights_dir = (
+        Path(setup_config.host_model_volume_root) / "weights" / model_spec.model_name
+    )
+    if not host_weights_dir.is_dir() or not any(host_weights_dir.iterdir()):
+        return None
+    return str(setup_config.container_model_weights_path)
+
+
 def _docker_ipc_args(model_spec) -> List[str]:
     """IPC namespace for the container: the host's by default; a private one with its own
     /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec)."""
@@ -692,6 +714,15 @@ def generate_docker_run_command(
         # effect. Runtime-derived values below override these.
         docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        if (
+            _is_cpp_media_spec(model_spec)
+            and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+        ):
+            sdxl_weights_path = _media_pre_downloaded_weights_path(
+                setup_config, model_spec
+            )
+            if sdxl_weights_path:
+                docker_env_vars["MODEL_WEIGHTS_PATH"] = sdxl_weights_path
         api_key = os.getenv("API_KEY")
         if runtime_config.no_auth:
             docker_env_vars["NO_AUTH"] = "1"
