@@ -12030,9 +12030,11 @@ _eval_config_list = [
                 # Use the chat endpoint so the server applies the chat template
                 # and the per-request chat_template_kwargs below.
                 use_chat_api=True,
-                # Thinking on per request (both references are thinking mode);
-                # every Gemma 4 eval pins its own mode per request.
-                thinking=True,
+                # Both references are thinking-mode runs. The mode is pinned per profile
+                # through the catalog's eval_task_request_body_overrides (two implementations
+                # share this task): the tt-transformers entries pin thinking on, the dedicated
+                # gemma4_26b_a4b_qb2 profile pins it off. No task-level pin, so neither
+                # profile's override conflicts.
                 model_kwargs={
                     "max_length": 131072,
                     # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent

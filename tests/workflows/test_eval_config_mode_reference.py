@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from llm_module.eval_configs import _apply_profile_request_body_overrides
 from llm_module.eval_command import build_eval_command
 from reference_config.evals.eval_config import (
     EvalTaskScore,
@@ -205,7 +206,9 @@ def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
         assert ref["is_subset_reference"] is False
         # The reference is a thinking-mode run; the task pins the mode per
         # request rather than relying on the serving default.
-        assert task.thinking is True
+        # The 31B / 12B tasks pin thinking on themselves; the 26B task is shared by
+        # two implementations, so its pin lives in each profile's override.
+        assert task.thinking is (None if model == "google/gemma-4-26B-A4B-it" else True)
 
 
 def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
@@ -284,7 +287,12 @@ def test_gemma4_evals_pin_thinking_per_request_over_the_serving_default(
             spec.device_model_spec.vllm_args["default-chat-template-kwargs"]
             == '{"enable_thinking": true}'
         ), spec.model_id
-        tasks = {t.task_name: t for t in _eval_config_map[spec.hf_model_repo].tasks}
+        tasks = {
+            t.task_name: t
+            for t in _apply_profile_request_body_overrides(
+                _eval_config_map[spec.hf_model_repo].tasks, spec
+            )
+        }
         mmmu = build_eval_command(
             tasks["mmmu_pro_standard_cot"], spec, spec.device_type, tmp_path, 8000
         )

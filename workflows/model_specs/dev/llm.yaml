@@ -3210,6 +3210,12 @@ templates:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+      # GPQA Diamond thinking mode for this implementation (the eval task carries no
+      # task-level pin because the dedicated gemma4_26b_a4b_qb2 profile pins it off).
+      eval_task_request_body_overrides:
+        r1_gpqa_diamond:
+          chat_template_kwargs:
+            enable_thinking: true
 
 - weights:
     - google/gemma-4-26B-A4B-it
@@ -3330,6 +3336,12 @@ templates:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+      # GPQA Diamond thinking mode for this implementation (the eval task carries no
+      # task-level pin because the dedicated gemma4_26b_a4b_qb2 profile pins it off).
+      eval_task_request_body_overrides:
+        r1_gpqa_diamond:
+          chat_template_kwargs:
+            enable_thinking: true
 
 - weights:
     - google/gemma-4-E4B-it
