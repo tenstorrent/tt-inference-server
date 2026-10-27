@@ -528,6 +528,10 @@ templates:
         # 1, 5, 8, TTFT unchanged; the replay-state, production-order L1 and
         # generator gates as before.
         V41_DECODE_NORM: "sharded"
+        # The one-live-row capture selects index rows for the live user alone: served, the one-row step 67.0 -> 56.8 ms of
+        # device, tput_user +15 % at points 1, 5, 8 (0.504x of the target),
+        # TTFT unchanged; the three state gates as before.
+        V41_DECODE_C1_INDEX: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
