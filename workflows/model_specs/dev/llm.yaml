@@ -3593,6 +3593,26 @@ templates:
       reasoning_parser_name: minimax_m3
       tool_call_parser_name: minimax_m3
 
+# MiniMax-M3.1-Flash: same architecture, tokenizer and parsers as M3. Only
+# tested as a remote endpoint (console.tenstorrent.com) for now.
+- weights:
+    - MiniMaxAI/MiniMax-M3.1-Flash
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 62
+      max_context: 1048576  # 1024 * 1024;
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    MiniMaxAI/MiniMax-M3.1-Flash:
+      remote_api_model: MiniMaxAI/MiniMax-M3.1-Flash
+      reasoning_parser_name: minimax_m3
+      tool_call_parser_name: minimax_m3
+
 - weights:
     - Qwen/Qwen3-4B
   impl: forge_vllm_plugin
