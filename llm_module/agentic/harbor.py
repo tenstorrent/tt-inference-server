@@ -409,7 +409,8 @@ def run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
-    if config.dataset == "swebench-verified" and config.environment_type == "docker":
+    if config.dataset in ("swebench-verified", "terminal-bench/terminal-bench-2") and config.environment_type == "docker":
+        # Harbor imports the custom trial environment from this source tree.
         source_root = str(Path(__file__).resolve().parents[2])
         process_env["PYTHONPATH"] = source_root + os.pathsep + process_env.get("PYTHONPATH", "")
     endpoint = _get_agent_endpoint(config)
