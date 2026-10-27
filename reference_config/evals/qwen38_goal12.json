@@ -1,19 +1,43 @@
 {
-  "phase": "swe1-isolated-grouped-masked-b16-p512-c1-medium-20261027",
+  "phase": "swe25-isolated-grouped-masked-b16-p512-c16-medium-20261027",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
     "swe_bench_verified"
   ],
-  "sample_count": 1,
-  "max_concurrent": 1,
+  "sample_count": 25,
+  "max_concurrent": 16,
   "agent_timeout_sec": 6300,
   "llm_timeout_sec": 3600,
-  "suite_timeout_sec": 7200,
+  "suite_timeout_sec": 14400,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
-      "astropy__astropy-14309"
+      "astropy__astropy-12907",
+      "astropy__astropy-14309",
+      "django__django-11099",
+      "django__django-11206",
+      "django__django-11433",
+      "django__django-11815",
+      "django__django-11964",
+      "django__django-13344",
+      "django__django-14238",
+      "django__django-14771",
+      "django__django-15104",
+      "django__django-15814",
+      "django__django-16642",
+      "django__django-16901",
+      "matplotlib__matplotlib-25332",
+      "psf__requests-2931",
+      "pydata__xarray-6938",
+      "pytest-dev__pytest-5631",
+      "scikit-learn__scikit-learn-10297",
+      "scikit-learn__scikit-learn-25931",
+      "sphinx-doc__sphinx-7889",
+      "sphinx-doc__sphinx-8638",
+      "sympy__sympy-13974",
+      "sympy__sympy-18763",
+      "sympy__sympy-20438"
     ]
   },
   "gpqa_handoff": {
@@ -97,9 +121,10 @@
   "gpqa_llm_timeout_sec": 13200,
   "gpqa_suite_timeout_sec": 13800,
   "gpqa_timeout_basis": "B32 prior observed ~7.2 tokens/s; 80K upper estimate81920/7 plus1200 startup and900 cleanup. Request budgets7200/13200. Generation suite7500/13800.",
-  "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
-  "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
+  "selection_manifest": "reference_config/evals/qwen38_swe_scaling_cohorts.json",
+  "selection_manifest_sha256": "4ef795e4f6c817624d996a7a78453bfa13869765a10ca3c14df39a1f9ca89aa4",
   "record_suite_metrics": true,
   "swe_reasoning_effort": "medium",
-  "swe_agent_isolated_network": true
+  "swe_agent_isolated_network": true,
+  "selection_basis": "Historical frozen Gemma SWE100; every fourth ordered identity for25, selected before Qwen outcomes."
 }

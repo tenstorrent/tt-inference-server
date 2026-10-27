@@ -54,7 +54,7 @@ def test_goal12_agentic_route_provisions_and_runs_standard_harness_first():
     assert outcomes[0].exit_code == 0
 
 
-def test_occupancy32_manifest_and_handoff_exact_identities():
+def test_active_manifest_and_handoff_exact_identities():
     import hashlib
     import json
     from pathlib import Path
@@ -63,6 +63,29 @@ def test_occupancy32_manifest_and_handoff_exact_identities():
     payload = manifest_path.read_bytes()
     m = json.loads(payload)
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
+    if 'swe25' in m:
+        assert c['evals'] == ['swe_bench_verified']
+        assert c['sample_count'] == 25
+        assert c['max_concurrent'] in (8, 16)
+        assert len(set(m['swe25'])) == 25
+        assert len(set(m['swe100'])) == 100
+        assert len(set(m['swe500'])) == 500
+        assert m['swe25'] == m['swe100'][::4]
+        assert set(m['swe100']) <= set(m['swe500'])
+        assert c['task_names']['swe_bench_verified'] == m['swe25']
+        assert c['agent_timeout_sec'] == 6300
+        assert c['llm_timeout_sec'] == 3600
+        assert c['output_tokens'] == 16384
+        assert c['swe_agent_isolated_network'] is True
+        assert c['suite_timeout_sec'] == ((25+c['max_concurrent']-1)//c['max_concurrent'])*6300+1800
+        task = EVAL_CONFIGS[MODEL].tasks[0]
+        from reference_config.evals.eval_config import EvalLimitMode
+        agent = task.agentic_eval_config
+        assert agent.task_names_map[EvalLimitMode.CI_NIGHTLY] == m['swe25']
+        assert agent.n_concurrent_trials == c['max_concurrent']
+        assert agent.agent_timeout_sec == 6300
+        assert agent.harbor_timeout_sec == c['suite_timeout_sec']
+        return
     assert c['sample_count'] == c['max_concurrent'] == 32
     assert isinstance(c['full_suite'], bool)
     h = c['gpqa_handoff']
