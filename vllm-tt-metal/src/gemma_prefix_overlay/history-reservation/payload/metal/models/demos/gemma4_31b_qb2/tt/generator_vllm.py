@@ -15,6 +15,27 @@ from models.demos.gemma4_31b_qb2.tt.decoder import Decoder
 from models.demos.gemma4_31b_qb2.tt.generator import CacheState, build_generator
 
 
+# Experimental tight full-attention packing. vLLM gives the single full
+# attention group 256-token scheduler blocks (two native 128-token pages) while
+# sliding groups keep 128-token blocks; every group page is one wide backing
+# row. A full block b owns the whole wide row b = native full rows 2b and 2b+1,
+# so the second half of each wide row is no longer idle. Ownership remains one
+# global scheduler ID per wide row, exactly as in the unpacked alias.
+PACKED_POOL_PROFILES = {"c32a32_p2_f412672": 5336}
+
+
+def full_pack_enabled():
+    value = os.environ.get("GEMMA_EXPERIMENT_FULL_PACK2", "0")
+    if value not in ("0", "1"):
+        raise RuntimeError("GEMMA_EXPERIMENT_FULL_PACK2 must be 0 or 1")
+    profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE")
+    if (value == "1") != (profile in PACKED_POOL_PROFILES):
+        raise RuntimeError("Full packing and packed pool profiles must be selected together")
+    if value == "1" and os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":
+        raise RuntimeError("Full packing requires the shared native backing alias")
+    return value == "1"
+
+
 class Gemma4ForCausalLM:
     _router = ttnn.FabricRouterConfig()
     _router.max_packet_payload_size_bytes = 8192
@@ -97,11 +118,18 @@ class Gemma4ForCausalLM:
         # hybrid groups. Different native geometries still use separate pools.
         # The runner divides these global head counts by the TP degree.
         page_bytes = 2 * block * config.num_key_value_heads * config.head_dim * 2
+        # Packed full pages hold 2*block tokens in the same accounting page:
+        # 2*256*4*512*2 bytes equals the sliding 2*128*16*256*2 bytes, so vLLM
+        # needs no padding and hybrid groups resolve to scheduler block 256.
+        full_block = 2 * block if full_pack_enabled() else block
         result = {}
         for i, kind in enumerate(config.layer_types):
             sliding = kind == "sliding_attention"
+            if not sliding and full_block != block and (
+                    2 * full_block * config.num_global_key_value_heads * config.global_head_dim * 2 != page_bytes):
+                raise ValueError("Packed full page must equal the sliding accounting page")
             common = dict(
-                block_size=block,
+                block_size=block if sliding else full_block,
                 num_kv_heads=config.num_key_value_heads if sliding else config.num_global_key_value_heads,
                 head_size=config.head_dim if sliding else config.global_head_dim,
                 dtype=torch.bfloat16,
@@ -137,6 +165,14 @@ class Gemma4ForCausalLM:
         if os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE") == "c32a24_f458752":
             if len(per_layer_specs) != 60 or any(type(shape[0]) is not int or shape[0] != 5336 for shape, dtype, pool_id in per_layer_specs):
                 raise RuntimeError("A24/F458752 requires exactly60 allocator specs with n5336 before TT access")
+        packed = full_pack_enabled()
+        if packed:
+            expected_n = PACKED_POOL_PROFILES[os.environ["GEMMA_SERIAL_PREPARED_POOL_PROFILE"]]
+            if len(per_layer_specs) != 60 or any(type(shape[0]) is not int or shape[0] != expected_n for shape, dtype, pool_id in per_layer_specs):
+                raise RuntimeError(f"Packed profile requires exactly60 allocator specs with n{expected_n} before TT access")
+            if self.admitted_request_limit != self.max_batch_size:
+                raise RuntimeError("Packed profile uses native physical admission")
+        self._kv_full_pack = packed
         before = ttnn.get_memory_view(self.generator.mesh, ttnn.BufferType.DRAM)
         print("KV_POOL_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}), flush=True)
         if os.environ.get("GEMMA_EXPERIMENT_NATIVE_ALIAS") != "1":
@@ -145,7 +181,8 @@ class Gemma4ForCausalLM:
             raise ValueError("The allocator must supply exactly one spec per layer")
         grouped = {}
         for i, (layer, (shape, dtype, pool_id)) in enumerate(zip(self.generator.model.layers, per_layer_specs)):
-            if tuple(shape[1:]) != (layer.kv_heads, 128, layer.head_dim) or dtype != torch.bfloat16:
+            tokens = 256 if packed and not layer.sliding else 128
+            if tuple(shape[1:]) != (layer.kv_heads, tokens, layer.head_dim) or dtype != torch.bfloat16:
                 raise ValueError(f"Unexpected allocator geometry or accounting dtype: {shape}, {dtype}")
             grouped.setdefault(pool_id, []).append((i, layer, int(shape[0])))
         pools, full_views, native_factors, scheduler_bounds = {}, {}, {}, {}
@@ -169,6 +206,8 @@ class Gemma4ForCausalLM:
                 scheduler_bounds[i] = n
         # Explicit roots outlive every native view and every trace using cache.
         self._kv_alias_pool_members = {pool: [i for i, _, _ in members] for pool, members in grouped.items()}
+        print("KV_FULL_PACK " + json.dumps({"enabled":packed,"full_scheduler_block_tokens":256 if packed else 128,
+            "native_full_rows_per_scheduler_id":2 if packed else 1,"scheduler_ids":sorted({n for _,_,n in sum(grouped.values(), [])})}), flush=True)
         print("KV_ALIAS_ROOTS " + json.dumps({"pools":len(pools), "roots":[{"pool":str(pool),"root_id":root.buffer_unique_id(),"view_id":full_views[pool][index].buffer_unique_id(),"address":root.buffer_address(),"wide_rows":int(root.shape[0]),"dtype":str(root.dtype),"tile_bytes":tile_bytes(root.dtype),"logical_backing_bytes":int(root.shape[0])*128*tile_bytes(root.dtype)} for pool,pair in pools.items() for index,root in enumerate(pair)]}), flush=True)
         self._kv_alias_roots = pools
         self._kv_alias_factors = native_factors
@@ -234,8 +273,9 @@ class Gemma4ForCausalLM:
                     if limits is None:
                         continue
                     sliding_begin, end = limits
+                    granule = 256 if full and self._kv_full_pack else 128
                     begin_page = 0 if full else sliding_begin // 128
-                    end_page = (end + 127) // 128
+                    end_page = (end + granule - 1) // granule
                     target.update(int(v) for v in source[row, begin_page:end_page].tolist() if int(v) > 0)
             overlap = full_ids & sliding_ids
             if overlap:
@@ -362,7 +402,22 @@ class Gemma4ForCausalLM:
                 live = source[: len(indices)].to(torch.int32).clamp_min(0)
                 if live.numel() and int(live.max()) >= bound:
                     raise ValueError("Scheduler ID enters private warmup storage")
-                dest[indices, :cols] = live if factor == 1 else live * 2
+                if factor == 1:
+                    dest[indices, :cols] = live
+                elif not self._kv_full_pack:
+                    dest[indices, :cols] = live * 2
+                else:
+                    # Scheduler block b (256 tokens) -> native pages 2b, 2b+1
+                    # (128 tokens each) of the [2P,1,128,512] full view.
+                    width = min(cols, (dest.shape[1] + 1) // 2)
+                    if cols > width and live.numel() and bool((live[:, width:] > 0).any()):
+                        raise ValueError("Packed full table has live blocks beyond the context")
+                    packed_ids = live[:, :width]
+                    expanded = torch.stack((packed_ids * 2, packed_ids * 2 + 1), dim=2).reshape(len(indices), 2 * width)
+                    # The null block (0) stays native null page 0 in both halves.
+                    expanded[expanded == 1] = 0
+                    span = min(2 * width, dest.shape[1])
+                    dest[indices, :span] = expanded[:, :span]
                 translated[key] = dest
             result[i] = translated[key]
         return result

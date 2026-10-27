@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "873fb9b9afbf55eb6e7097587faaddfa519dde9b72d4af0524db7445fd766429"
+      "target": "2b8315b12fd7183900b78026fdc065249c8bc8e181ba37e22573e99020c76c61"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "e7916d4392747a1b4dc189826f04fb0edb0ec0e17b97bbf231a1f38f057b543a"
+      "target": "77bc70c258b9f776e5adf48951d6b1428670978c7435a9fb462c55e70737a7a1"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "2313864746268c8c82944207c84950982a07f421057216d0eba481b1ac15107e"
+      "target": "0a53bc2f6e1cadd277f9f1931845f508d21c57516d670dca91beb91dea397a5e"
     },
     {
       "root": "purelib",
@@ -65,7 +65,7 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "307b771076324c2920bbdc6df6f58d822ddee82f929a74500cca4cb3feb9b1e8",
+  "attestation_sha256": "8246c65b3f2cad37dc027c575d06aef61d5e3effd3d8db89424b1699d3206c09",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -106,5 +106,13 @@
       "gemma_history_reservation.py"
     ],
     "core_composition": "Preserves accepted1b83 composed core exact4570fa; existing derived_core_composition describes that historical derivation, not the new whole attestation."
+  },
+  "full_pack2": {
+    "change": "Packed full-attention scheduler blocks (256 tokens = native full rows 2b,2b+1 of wide row b) and C32/A32/H3 profile c32a32_p2_f412672 at unchanged P5368 backing",
+    "changed_files": [
+      "models/demos/gemma4_31b_qb2/tt/generator.py",
+      "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
+      "gemma_history_reservation.py"
+    ]
   }
 }
