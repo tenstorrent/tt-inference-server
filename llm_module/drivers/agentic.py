@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
@@ -21,7 +22,8 @@ from llm_module.request_overrides import (
     resolve_request_body,
 )
 from ..agentic import automation_bench
-from ..agentic.harbor import HarborRunConfig, run as run_harbor
+from ..agentic.harbor import HarborRunConfig, harbor_python, run as run_harbor
+from ..agentic.local_datasets import prepare_local_dataset
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
 from .base import DriverResult, LLMDriver
@@ -150,6 +152,17 @@ class HarborAgenticDriver(AgenticEvalDriver):
             venv_python=self.venv_python,
             run_stamp=self._run_stamp,
         )
+        dataset_path = prepare_local_dataset(
+            run_config.dataset, harbor_python(run_config)
+        )
+        if dataset_path is not None:
+            logger.info(
+                "[agentic] %r runs %s from the local copy at %s",
+                self.task.task_name,
+                run_config.dataset,
+                dataset_path,
+            )
+            run_config = replace(run_config, dataset_path=dataset_path)
         rc = run_harbor(run_config)
         return self._load_result(rc, self.result_path(server, context))
 
@@ -361,6 +374,8 @@ def build_harbor_config(
         stall_grace_sec=cfg.stall_grace_sec,
         progress_log_interval_sec=cfg.progress_log_interval_sec,
         enforce_agent_deadline=cfg.enforce_agent_deadline,
+        allow_agent_endpoint=getattr(cfg, "allow_agent_endpoint", False),
+        prepull_images=list(getattr(cfg, "prepull_images", [])),
         venv_python=venv_python,
     )
 
