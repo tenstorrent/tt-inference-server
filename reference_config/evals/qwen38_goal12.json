@@ -1,5 +1,5 @@
 {
-  "phase": "completion-pilot8-b32-81920",
+  "phase": "gpqa-pilot8-ci-b32-81920-medium",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [
@@ -95,7 +95,7 @@
       "until": [],
       "chat_template_kwargs": {
         "enable_thinking": true,
-        "reasoning_effort": "xhigh",
+        "reasoning_effort": "medium",
         "preserve_thinking": true
       }
     },
@@ -135,9 +135,9 @@
       "limitation": "Catalog reference; exact published scaffold/dataset revision equivalence not established; report scores without gating."
     }
   },
-  "gpqa_llm_timeout_sec": 13200,
-  "gpqa_suite_timeout_sec": 13800,
-  "gpqa_timeout_basis": "B32 prior observed ~7.2 tokens/s; 80K upper estimate81920/7 plus1200 startup and900 cleanup. Request budgets7200/13200. Generation suite7500/13800.",
+  "gpqa_llm_timeout_sec": 19800,
+  "gpqa_suite_timeout_sec": 20700,
+  "gpqa_timeout_basis": "ObservedslowCI4.87TPS.81920/4.2=19505s;request19800/suite20700/hard22500 incl900cleanup. Mediumeffort predictedshorter but caps/failures retained. C8 match; iflongpoolpreemption ordeadline binds, do not attribute cleanrecipegain.",
   "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
   "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
   "record_suite_metrics": true
