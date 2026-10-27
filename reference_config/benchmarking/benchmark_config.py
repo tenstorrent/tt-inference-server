@@ -139,6 +139,26 @@ MODEL_EXTRA_ISL_OSL_PAIRS = {
         (524288 - 128, 128),  # 512K
     ],
 }
+# Model-scoped long-context points at explicit concurrencies, keyed by
+# (model_name, device): (isl, osl, concurrencies). The standard sweep runs each
+# pair at 1 and at the spec-derived max, whose token budget
+# (max_context * data_parallel_size) can undercount a model's real KV pool; these
+# points run the listed concurrencies instead, capped only by the spec's
+# max_concurrency and filtered by ``isl + osl <= max_context``. num_prompts
+# follows get_num_prompts (one wave per point at these ISLs).
+MODEL_EXTRA_CONCURRENCY_SWEEP_POINTS = {
+    # MiMo-V2.6-Flash on Blackhole Galaxy: 4 vLLM lanes (DP=4), max_concurrency 16
+    # (max_num_seqs 4 per lane), max_model_len 1M. Global-layer KV scales with
+    # total tokens per lane: a lane holds 2 x 1M requests with
+    # MIMO_KV_GB_PER_CHIP=6.6 (tt-metal #61745), so 8 users at 1M, 16 at 512K and
+    # 16 (the spec cap) at 256K. Prefill takes ~280 s per 1M request and ~100 s
+    # per 512K one, and a lane's requests prefill one after another.
+    ("MiMo-V2.6-Flash-MOPD", DeviceTypes.BLACKHOLE_GALAXY): [
+        (262144 - 128, 128, (1, 4, 8, 16)),  # 256K
+        (524288 - 128, 128, (1, 4, 8, 16)),  # 512K
+        (1048576 - 128, 128, (1, 4, 8)),  # 1M
+    ],
+}
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -202,6 +222,31 @@ def _expand_text_sweep_params(
             ),
         )
         for concurrency in concurrencies
+    ]
+
+
+def _explicit_concurrency_sweep_params(
+    points: Iterable[Tuple[int, int, Iterable[int]]],
+    max_context: int,
+    model_max_concurrency: int,
+    min_num_prompts: int = 0,
+) -> List[BenchmarkTaskParams]:
+    return [
+        BenchmarkTaskParams(
+            isl=isl,
+            osl=osl,
+            max_concurrency=concurrency,
+            num_prompts=get_num_prompts(
+                isl,
+                osl,
+                concurrency,
+                min_num_prompts=min_num_prompts if concurrency > 1 else 0,
+            ),
+        )
+        for isl, osl, concurrencies in points
+        if isl + osl <= max_context
+        for concurrency in concurrencies
+        if concurrency <= model_max_concurrency
     ]
 
 
@@ -690,6 +735,14 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             min_num_prompts=sweep_min_num_prompts,
                         )
                     ]
+                    + _explicit_concurrency_sweep_params(
+                        MODEL_EXTRA_CONCURRENCY_SWEEP_POINTS.get(
+                            (model_spec.model_name, device), []
+                        ),
+                        max_context=max_context,
+                        model_max_concurrency=model_max_concurrency,
+                        min_num_prompts=sweep_min_num_prompts,
+                    )
                     + (
                         # additional vision language model image + text benchmarks
                         [
