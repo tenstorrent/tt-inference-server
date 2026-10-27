@@ -54,8 +54,10 @@ def adapter(monkeypatch,tmp_path):
         def inventory(self,skip=None):
             import ipaddress
             with daemon.lock:return [ipaddress.ip_network(n['IPAM']['Config'][0]['Subnet'])for key,n in daemon.networks.items()if key!=skip]
-    monkeypatch.setattr(module,'Allocator',lambda labels,project,journal,host:FixtureAllocator(labels,project,journal,host,run))
-    def make():return module.OwnedDockerEnvironment(session_id='logical__env',owned_owner='owner',owned_job='job',owned_journal_dir=str(tmp_path),owned_endpoint_host='localhost')
+    monkeypatch.setattr(module,'Allocator',lambda labels,project,journal,host,**kw:FixtureAllocator(labels,project,journal,host,run,**kw))
+    def make(**overrides):
+        kwargs=dict(session_id='logical__env',owned_owner='owner',owned_job='job',owned_journal_dir=str(tmp_path),owned_endpoint_host='localhost')
+        return module.OwnedDockerEnvironment(**{**kwargs,**overrides})
     return module,daemon,make
 
 

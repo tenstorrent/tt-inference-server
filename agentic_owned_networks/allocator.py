@@ -178,10 +178,12 @@ def validate_external_network(graph, name):
 
 
 class Allocator:
-    def __init__(self, labels, project, journal, endpoint_host, run=subprocess.run):
+    def __init__(self, labels, project, journal, endpoint_host, run=subprocess.run, *, internal=False):
+        if type(internal) is not bool:raise ValueError('internal must be a boolean')
         self.labels=labels;self.project=project;self.journal=Path(journal);self.endpoint_host=endpoint_host;self.run=run
         self.record={'schema_version':1,'owner':labels[OWNER],'job':labels[JOB],'attempt':labels[ATTEMPT],
                      'project':project,'network_name':project+'-net','state':'intent','network_id':None}
+        if internal:self.record['internal']=True
         self.journal.parent.mkdir(parents=True,exist_ok=True)
         self.save()
 
@@ -262,7 +264,8 @@ class Allocator:
         if any((network.get('Labels')or{}).get(k)!=v for k,v in self.labels.items()):raise OwnershipError('Network ownership mismatch')
         config=network.get('IPAM',{}).get('Config')or[]
         if len(config)!=1 or config[0].get('Subnet')!=self.record['subnet'] or config[0].get('Gateway')!=self.record['gateway']:raise OwnershipError('Network CIDR mismatch')
-        if network.get('Internal') or network.get('Options'):raise OwnershipError('Unexpected network isolation options')
+        if bool(network.get('Internal')) != self.record.get('internal',False) or network.get('Options'):raise OwnershipError('Unexpected network isolation options')
+        if self.record.get('internal') and network.get('EnableIPv6'):raise OwnershipError('Unexpected IPv6 agent network')
 
     def reconcile_created_identity(self):
         """Recover a lost create response by exact identity, never by name alone.
@@ -300,6 +303,7 @@ class Allocator:
             if subnet is None:raise ValueError('No collision-free RFC1918 /28 available')
             self.record.update(subnet=str(subnet),gateway=str(subnet.network_address+1),state='intent');self.save()
             args=['docker','network','create','--driver','bridge','--subnet',str(subnet),'--gateway',self.record['gateway']]
+            if self.record.get('internal'):args+=['--internal','--ipv6=false']
             for key,value in self.labels.items():args+=['--label',key+'='+value]
             try:created=self.command(args+[self.record['network_name']],check=False)
             except BaseException:
