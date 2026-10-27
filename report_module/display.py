@@ -55,6 +55,8 @@ DISPLAY_NAMES: Dict[str, str] = {
     "sc_p95_ms": "SC P95 (ms)",
     "tc_p50_ms": "TC P50 (ms)",
     "tc_p95_ms": "TC P95 (ms)",
+    "c4_p50_ms": "4C+ P50 (ms)",
+    "c4_p95_ms": "4C+ P95 (ms)",
     # Throughput
     "mean_tps": "Tput User (TPS)",
     "std_tps": "Tput User Std (TPS)",
@@ -190,6 +192,8 @@ DECIMAL_PLACES: Dict[str, int] = {
     "sc_p95_ms": 1,
     "tc_p50_ms": 1,
     "tc_p95_ms": 1,
+    "c4_p50_ms": 1,
+    "c4_p95_ms": 1,
     "mean_tps": 2,
     "std_tps": 2,
     "tput_user": 2,

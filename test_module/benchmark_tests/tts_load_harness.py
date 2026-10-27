@@ -473,6 +473,43 @@ def _preflight(tgt: Target) -> dict:
     )
 
 
+def prewarm(tgt: Target, conc: int, duration: float) -> int:
+    """Prime the server before the measured sweep: run ``conc`` concurrent requests
+    for ``duration`` seconds and discard every result.
+
+    TTS cold start is severe -- the first request against a fresh server can take
+    >10 s to its first chunk while the tokenizer and IO threads spin up. Without a
+    dedicated warmup that cost lands in the measured window (chiefly as a huge FC
+    P95 tail), so it is burned off here at a fixed warmup concurrency first. The
+    records are never collected, so this never touches the reported metrics.
+    """
+    if conc <= 0 or duration <= 0:
+        return 0
+    logger.info(
+        "prewarm: %d concurrent requests for %.0fs (discarded) ...", conc, duration
+    )
+    stop = threading.Event()
+    done, lock = [0], threading.Lock()
+
+    def worker() -> None:
+        while not stop.is_set():
+            rec = {"uid": -1, "t_send": time.time(), "t_end": None}
+            request(tgt, -1, rec)
+            with lock:
+                done[0] += 1
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(conc)]
+    for t in threads:
+        t.start()
+    time.sleep(duration)
+    stop.set()
+    deadline = time.time() + tgt.timeout + 5
+    for t in threads:
+        t.join(max(0, deadline - time.time()))
+    logger.info("prewarm: done, %d requests completed", done[0])
+    return done[0]
+
+
 def sweep(args: argparse.Namespace, tgt: Target) -> dict:
     """Run every concurrency level and return the results document."""
     levels = sorted({int(x) for x in args.concurrency.split(",") if x.strip()})
@@ -490,6 +527,12 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
             tgt.max_chunks,
             tgt.max_chunks * CHUNK_TOKENS,
         )
+    # Burn off TTS cold start before anything is measured -- including the
+    # preflight probe, so its mean_service_s reflects a warm server.
+    prewarm_conc = int(getattr(args, "warmup_concurrency", 0) or 0)
+    prewarm_s = float(getattr(args, "prewarm", 0.0) or 0.0)
+    prewarmed = prewarm(tgt, prewarm_conc, prewarm_s) if prewarm_conc and prewarm_s else 0
+
     probe = _preflight(tgt)
 
     meta = {
@@ -498,6 +541,9 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         "chars_per_request": len(tgt.text),
         "duration_s": args.duration,
         "warmup_s": args.warmup,
+        "prewarm_concurrency": prewarm_conc if prewarmed else 0,
+        "prewarm_s": prewarm_s if prewarmed else 0.0,
+        "prewarm_requests": prewarmed,
         "arrival": args.arrival,
         "closed_loop": args.arrival == "closed",
         "started": time.time(),
@@ -828,6 +874,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--warmup", type=float, default=20, help="seconds discarded per level"
+    )
+    p.add_argument(
+        "--warmup-concurrency",
+        type=int,
+        default=100,
+        help="concurrency for the one-time prewarm burst before the sweep",
+    )
+    p.add_argument(
+        "--prewarm",
+        type=float,
+        default=60.0,
+        help="seconds of a discarded prewarm burst at --warmup-concurrency before "
+        "the sweep, to burn off TTS cold start (0 disables)",
     )
     p.add_argument(
         "--settle", type=float, default=5, help="idle seconds between levels"

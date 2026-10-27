@@ -30,7 +30,7 @@ from .._test_common import (
     block_id,
     run_tiered_check,
 )
-from ..context import MediaContext, require_health
+from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import TtsTestStatus
 from . import tts_load_harness
 
@@ -45,8 +45,14 @@ TT_TTS_IMPL = "tt-tts"
 TTS_CI_CONCURRENCY = (1, 2, 4, 8, 16)
 TTS_CI_DURATION_SECONDS = 60.0
 TTS_CI_WARMUP_SECONDS = 20.0
+# Dedicated prewarm burst run once before the sweep (results discarded) to burn off
+# the severe TTS cold start (first request can be >10 s to first chunk). The
+# per-level warmup above still applies on top of this.
+TTS_CI_WARMUP_CONCURRENCY = 100
+TTS_CI_PREWARM_SECONDS = 60.0
 TTS_CI_SETTLE_SECONDS = 5.0
-TTS_CI_TEXT_TOKENS = 1024
+# Default input length (ISL) for the TTS benchmark, in tokens.
+TTS_CI_TEXT_TOKENS = 128
 TTS_CI_CHARS_PER_TOKEN = 3.46
 TTS_CI_TIMEOUT_SECONDS = 300.0
 TTS_RAW_RESULTS_FILENAME = "tts_load_results.json"
@@ -59,6 +65,8 @@ _LATENCY_SPECS = (
     ("SC P95", "sc_p95_ms", "sc_p95_ms"),
     ("TC P50", "tc_p50_ms", "tc_p50_ms"),
     ("TC P95", "tc_p95_ms", "tc_p95_ms"),
+    ("4C+ P50", "c4_p50_ms", "c4_p50_ms"),
+    ("4C+ P95", "c4_p95_ms", "c4_p95_ms"),
 )
 
 
@@ -89,6 +97,8 @@ def _report_rows(rows: list[dict]) -> list[dict]:
                 "sc_p95_ms": _finite(row["ttfs_p95"]),
                 "tc_p50_ms": _finite(row["ttft_p50"]),
                 "tc_p95_ms": _finite(row["ttft_p95"]),
+                "c4_p50_ms": _finite(row["ttf4_p50"]),
+                "c4_p95_ms": _finite(row["ttf4_p95"]),
             }
         )
     return report_rows
@@ -157,6 +167,8 @@ def _sweep_args(output_path: Path) -> argparse.Namespace:
         concurrency=",".join(str(value) for value in TTS_CI_CONCURRENCY),
         duration=TTS_CI_DURATION_SECONDS,
         warmup=TTS_CI_WARMUP_SECONDS,
+        warmup_concurrency=TTS_CI_WARMUP_CONCURRENCY,
+        prewarm=TTS_CI_PREWARM_SECONDS,
         settle=TTS_CI_SETTLE_SECONDS,
         arrival="closed",
         rate=None,
@@ -183,7 +195,10 @@ def _target(ctx: MediaContext) -> tts_load_harness.Target:
 
 def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     """Run the chunk-aware FC/SC/TC concurrency sweep for a TTS model."""
-    require_health(ctx)
+    # The tt-tts server is single-worker (one worker owns the whole board), so the
+    # FULL_BOARD tier -- which expects `max_concurrency` ready workers -- can never
+    # pass here. ANY_CHIP (>=1 ready worker) IS the full board for this runner.
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
     output_path = Path(ctx.output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 

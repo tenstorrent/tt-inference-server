@@ -50,6 +50,8 @@ class PerformanceTargets:
     sc_p95_ms: Optional[float] = None
     tc_p50_ms: Optional[float] = None
     tc_p95_ms: Optional[float] = None
+    c4_p50_ms: Optional[float] = None
+    c4_p95_ms: Optional[float] = None
     tolerance: float = 0.05
     max_concurrency: Optional[int] = None
     num_eval_runs: Optional[int] = None
@@ -74,6 +76,8 @@ class PerformanceTargets:
             sc_p95_ms=theoretical.get("sc_p95_ms"),
             tc_p50_ms=theoretical.get("tc_p50_ms"),
             tc_p95_ms=theoretical.get("tc_p95_ms"),
+            c4_p50_ms=theoretical.get("c4_p50_ms"),
+            c4_p95_ms=theoretical.get("c4_p95_ms"),
             tolerance=theoretical.get("tolerance", 0.05),
             max_concurrency=device_config.get("max_concurrency"),
             num_eval_runs=device_config.get("num_eval_runs"),

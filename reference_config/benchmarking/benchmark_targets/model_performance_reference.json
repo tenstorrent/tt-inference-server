@@ -702,12 +702,14 @@
                 "task_type": "tts",
                 "targets": {
                     "theoretical": {
-                        "fc_p50_ms": 150,
-                        "fc_p95_ms": 350,
-                        "sc_p50_ms": 270,
-                        "sc_p95_ms": 270,
-                        "tc_p50_ms": 570,
-                        "tc_p95_ms": 570
+                        "fc_p50_ms": 100,
+                        "fc_p95_ms": 125,
+                        "sc_p50_ms": 180,
+                        "sc_p95_ms": 180,
+                        "tc_p50_ms": 360,
+                        "tc_p95_ms": 360,
+                        "c4_p50_ms": 680,
+                        "c4_p95_ms": 680
                     }
                 }
             }

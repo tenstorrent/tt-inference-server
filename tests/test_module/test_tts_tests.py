@@ -148,6 +148,8 @@ def _harness_row(concurrency=1, *, offset=0.0, errors=0):
         "ttfs_p95": 220.0 + offset,
         "ttft_p50": 500.0 + offset,
         "ttft_p95": 520.0 + offset,
+        "ttf4_p50": 540.0 + offset,
+        "ttf4_p95": 560.0 + offset,
     }
 
 
@@ -160,6 +162,8 @@ def test_report_rows_use_fc_sc_tc_names_and_normalize_nan():
     assert result["fc_p50_ms"] == 100.0
     assert result["sc_p95_ms"] is None
     assert result["tc_p95_ms"] == 520.0
+    assert result["c4_p50_ms"] == 540.0
+    assert result["c4_p95_ms"] == 560.0
     assert "ttfb_p50" not in result
 
 
@@ -175,6 +179,8 @@ def test_worst_latency_values_require_every_concurrency_to_pass():
         "sc_p95_ms": 295.0,
         "tc_p50_ms": 575.0,
         "tc_p95_ms": 595.0,
+        "c4_p50_ms": 615.0,
+        "c4_p95_ms": 635.0,
     }
 
 
@@ -198,12 +204,14 @@ def test_tts_latency_targets_are_inclusive():
         [
             {
                 **_harness_row(concurrency),
-                "ttfb_p50": 150.0,
-                "ttfb_p95": 350.0,
-                "ttfs_p50": 270.0,
-                "ttfs_p95": 270.0,
-                "ttft_p50": 570.0,
-                "ttft_p95": 570.0,
+                "ttfb_p50": 100.0,
+                "ttfb_p95": 125.0,
+                "ttfs_p50": 180.0,
+                "ttfs_p95": 180.0,
+                "ttft_p50": 360.0,
+                "ttft_p95": 360.0,
+                "ttf4_p50": 680.0,
+                "ttf4_p95": 680.0,
             }
             for concurrency in benchmark.TTS_CI_CONCURRENCY
         ]
@@ -276,7 +284,7 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     monkeypatch.setattr(
         benchmark,
         "require_health",
-        lambda actual: observed.setdefault("health", actual),
+        lambda actual, requirement=None: observed.setdefault("health", actual),
     )
     monkeypatch.setattr(benchmark, "_target", lambda actual: "target")
     monkeypatch.setattr(benchmark, "block_id", lambda actual: "tts-quad")
@@ -343,7 +351,7 @@ def test_legacy_tts_benchmark_keeps_previous_report_shape(monkeypatch):
         model_spec=SimpleNamespace(model_name="speecht5_tts"),
         device=SimpleNamespace(name="N150"),
     )
-    monkeypatch.setattr(benchmark, "require_health", lambda actual: None)
+    monkeypatch.setattr(benchmark, "require_health", lambda actual, requirement=None: None)
     monkeypatch.setattr(benchmark, "_tts_num_calls", lambda actual, is_eval=False: 2)
     monkeypatch.setattr(
         benchmark,

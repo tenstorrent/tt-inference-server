@@ -24,24 +24,40 @@ CHUNK_AUDIO_S = CHUNK_TOKENS * 960 / SAMPLE_RATE
 
 CHUNK_AUDIO_MS = CHUNK_AUDIO_S * 1000.0
 
-FC_P50_MS, FC_P95_MS, SC_DEADLINE_MS = 150.0, 350.0, 270.0
+# Explicit latency SLA targets (ms). The pair per metric is (P50, P95); for SC/TC/4C+
+# the two are equal. These are fixed acceptance targets, NOT derived from the per-chunk
+# audio duration (CHUNK_AUDIO_MS, which stays the physical chunk playback length).
+FC_P50_MS, FC_P95_MS, SC_DEADLINE_MS = 100.0, 125.0, 180.0
 
-TC_DEADLINE_MS = CHUNK_AUDIO_MS - 30.0
+TC_DEADLINE_MS = 360.0
+
+C4_DEADLINE_MS = 680.0
 
 TARGETS = {
     # key: (label, axis name, per-request field, p50 target ms, p95 target ms)
-    # The second threshold is the P95 acceptance target (FC p95 <= 350 ms), not P90.
-    "ttfb": ("TTFB", "TTFB — time to first audio chunk (ms)", "ttfb_s", 150.0, 350.0),
-    "ttfs": ("TTFS", "TTFS — first->second chunk gap (ms)", "sc_s", 270.0, 270.0),
+    # The second threshold is the P95 acceptance target; it equals the P99 SLA.
+    "ttfb": ("TTFB", "TTFB — time to first audio chunk (ms)", "ttfb_s", FC_P50_MS, FC_P95_MS),
+    "ttfs": ("TTFS", "TTFS — first->second chunk gap (ms)", "sc_s", SC_DEADLINE_MS, SC_DEADLINE_MS),
     "ttft": (
         "TTFT",
-        "TTFT — steady-state inter-chunk gap (ms)",
+        "TTFT — third-chunk inter-chunk gap (ms)",
         # "tc_gaps" is the SERIALIZED name (_serializable renames gaps -> tc_gaps),
         # and aggregate() always reads serialized records. _metric_samples also
-        # accepts the in-memory "gaps" so either shape works.
+        # accepts the in-memory "gaps" so either shape works. TC scores only the
+        # first gap (3rd chunk); _GAP_SLICE below selects it.
         "tc_gaps",
-        570.0,
-        570.0,
+        TC_DEADLINE_MS,
+        TC_DEADLINE_MS,
+    ),
+    "ttf4": (
+        "4C+",
+        "4C+ — steady-state inter-chunk gap, 4th chunk onward (ms)",
+        # Same per-request "tc_gaps" list as TC, but _GAP_SLICE selects gaps[1:]
+        # (4th chunk onward) so the 3rd chunk's settle cost is scored separately
+        # from the sustained streaming cadence.
+        "tc_gaps",
+        C4_DEADLINE_MS,
+        C4_DEADLINE_MS,
     ),
 }
 
@@ -56,20 +72,28 @@ def pct(vals, p: float) -> float:
     return v[lo] + (v[hi] - v[lo]) * (k - lo)
 
 
+# TC and 4C+ share the per-request ``tc_gaps`` list but score different slices:
+# TC is the 3rd-chunk gap (first element) and 4C+ is every later gap (4th chunk
+# onward). A metric with no entry here consumes the whole list.
+_GAP_SLICE = {"ttft": slice(0, 1), "ttf4": slice(1, None)}
+
+
 def _metric_samples(ok_recs: list[dict], key: str) -> list[float]:
-    """Milliseconds for one metric. ``tc_gaps`` is a LIST per request -- every gap is a
-    sample, matching how the TC deadline was always evaluated (per gap, not per
-    request), so one long request cannot hide many late chunks."""
+    """Milliseconds for one metric. ``tc_gaps`` is a LIST per request -- every gap in
+    the metric's slice is a sample, matching how the cadence deadline was always
+    evaluated (per gap, not per request), so one long request cannot hide many late
+    chunks."""
     field_name = TARGETS[key][2]
     aliases = {"tc_gaps": ("tc_gaps", "gaps"), "gaps": ("gaps", "tc_gaps")}
     names = aliases.get(field_name, (field_name,))
+    gap_slice = _GAP_SLICE.get(key)
     out = []
     for r in ok_recs:
         v = next((r[n] for n in names if r.get(n) is not None), None)
         if v is None:
             continue
         if isinstance(v, list):
-            out.extend(x * 1000.0 for x in v)
+            out.extend(x * 1000.0 for x in (v[gap_slice] if gap_slice else v))
         else:
             out.append(v * 1000.0)
     return out
@@ -180,6 +204,8 @@ SUMMARY_COLS = [
     ("ttfs_p90", "TTFS p90", 9),
     ("ttft_p50", "TTFT p50", 9),
     ("ttft_p90", "TTFT p90", 9),
+    ("ttf4_p50", "4C+ p50", 9),
+    ("ttf4_p90", "4C+ p90", 9),
     ("rtf_p50", "RTF", 6),
     ("n_ok", "ok", 6),
     ("n_err", "err", 5),
@@ -204,10 +230,10 @@ def summary_table(rows: list[dict], chars: int, closed_loop) -> str:
 
 def box_table(rows: list[dict]) -> str:
     """Compact percentile/target comparison; passing P95 is not zero violations."""
-    out = ["\nLatency targets (ms): FC P50/P95=150/350, SC=270, TC=570"]
+    out = ["\nLatency targets (ms): FC P50/P95=100/125, SC=180, TC=360, 4C+=680"]
     for row in rows:
         out.append(f"users={row['conc']}  C={row['C']:.1f}  chunks={row['chunks']:.1f}")
-        for key, label in (("ttfb", "FC"), ("ttfs", "SC"), ("ttft", "TC")):
+        for key, label in (("ttfb", "FC"), ("ttfs", "SC"), ("ttft", "TC"), ("ttf4", "4C+")):
             cells = []
             for percentile, target in ((50, TARGETS[key][3]), (95, TARGETS[key][4])):
                 value = row[f"{key}_p{percentile}"]
