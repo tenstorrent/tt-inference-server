@@ -516,6 +516,12 @@ templates:
         # of device at c32, 62.6 -> 59.1 at c1, 2,000 replays soaked.
         V41_SHARED_IN_FFN: "rs"
         V41_DECODE_TAIL_RS: "minimal"
+        # The one-live-row decode step on its own capture, the MoEs on that
+        # row broadcast to every chip (the shared expert
+        # taken from the tail): served, the one-row step 74.9 ->
+        # 71.1 ms of device, tput_user +4.6 % at points 1, 5, 8; the replay
+        # state, production-order L1 and generator gates unchanged.
+        V41_DECODE_C1_MOE: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
