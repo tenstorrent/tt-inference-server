@@ -1,19 +1,26 @@
 {
-  "phase": "swe1-isolated-smoke-b8-p256-medium-20261027",
+  "phase": "swe8-isolated-b8-p256-c8-medium-20261027",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
     "swe_bench_verified"
   ],
-  "sample_count": 1,
-  "max_concurrent": 1,
+  "sample_count": 8,
+  "max_concurrent": 8,
   "agent_timeout_sec": 6300,
   "llm_timeout_sec": 3600,
   "suite_timeout_sec": 7200,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
-      "astropy__astropy-14309"
+      "astropy__astropy-13398",
+      "astropy__astropy-13453",
+      "astropy__astropy-14309",
+      "astropy__astropy-7166",
+      "scikit-learn__scikit-learn-13135",
+      "sphinx-doc__sphinx-8459",
+      "sympy__sympy-18698",
+      "sympy__sympy-21612"
     ],
     "terminal_bench_2_1": [
       "terminal-bench/adaptive-rejection-sampler",
