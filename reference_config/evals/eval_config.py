@@ -656,6 +656,117 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
 _eval_config_list = [
+    # Fixed Granite release cohorts; published scores are context, not GPU controls.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=10,
+                use_chat_api=True,
+                num_fewshot=0,
+                seed=42,
+                score=EvalTaskScore(
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"max_length": 131072, "timeout": 7200},
+                gen_kwargs={
+                    "max_gen_toks": 32768,
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "do_sample": True,
+                    "stream": False,
+                    "until": [],
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+                capture_reasoning=True,
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=57.0,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=40.0,
+                            ref="User-approved first-five SWE CI gate: 2/5 (40%); published 57% is full-set context, not a matched GPU reference",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "config": {
+                            "environment": {
+                                "env": {
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/root/.local/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                }
+                            },
+                            "model": {
+                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                            },
+                        },
+                    },
+                    task_names_map={
+                        mode: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ]
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="microsoft/phi-1",
@@ -13160,12 +13271,31 @@ _eval_config_list = [
 ]
 
 
+# Harbor trial concurrency for M3.1-Flash. M3 runs Terminal-Bench at 8 because its
+# IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's Virtu P/D
+# deployment held 10-12 ms inter-token latency at 56 agentic users, so its
+# Terminal-Bench runs fill the deployment's 62 slots instead.
+_MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
+    "terminal_bench_2_1": 62,
+    "terminal_bench_4": 62,
+}
+
+
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
 # reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
-# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the M3.1-Flash eval set and its GPU reference runs aren't
-# confirmed, so scores are measurements only (no published, GPU or limit-mode
-# references; the card's AutomationBench 62.8 states no harness or effort).
+# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
+# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
+# measurements only (no published, GPU or limit-mode references; the card's
+# AutomationBench 62.8 states no harness or effort).
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
+    if concurrency is not None:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config, n_concurrent_trials=concurrency
+            ),
+        )
     return replace(
         task,
         score=replace(
