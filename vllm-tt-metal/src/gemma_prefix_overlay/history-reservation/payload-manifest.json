@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "2b8315b12fd7183900b78026fdc065249c8bc8e181ba37e22573e99020c76c61"
+      "target": "440ec11630b2d990554fd83af1c0e4c37615ce07426345f677c19492ba8b4f79"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "77bc70c258b9f776e5adf48951d6b1428670978c7435a9fb462c55e70737a7a1"
+      "target": "f4c0aaab270e1676b86743c05cbafe65b8b6161010541daf0b9001825984bc0e"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "0a53bc2f6e1cadd277f9f1931845f508d21c57516d670dca91beb91dea397a5e"
+      "target": "8fd785c8af4aa2cb122b3773ef2c5d757316d57334d882584bdef1d2e76e9ebe"
     },
     {
       "root": "purelib",
@@ -65,7 +65,7 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "8246c65b3f2cad37dc027c575d06aef61d5e3effd3d8db89424b1699d3206c09",
+  "attestation_sha256": "cf44507e84cdd4251c6089cd860c02e5504581ddb4817c8e37e265f975b53f88",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -113,6 +113,16 @@
       "models/demos/gemma4_31b_qb2/tt/generator.py",
       "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "gemma_history_reservation.py"
-    ]
+    ],
+    "larger_pool_profiles": {
+      "c32a32_p2_f443392": {
+        "n": 5576,
+        "P": 5608
+      },
+      "c32a32_p2_f458752": {
+        "n": 5696,
+        "P": 5728
+      }
+    }
   }
 }

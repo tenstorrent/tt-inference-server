@@ -39,7 +39,7 @@ def bank_mode():
     value = os.environ.get('GEMMA_HISTORY_RESERVATION_BANKS')
     if value is not None and value != '3':
         raise RuntimeError('GEMMA_HISTORY_RESERVATION_BANKS must be absent or exactly 3')
-    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') in ('c32a24_f458752', 'c32a32_p2_f412672'):
+    if value is None and os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE') in ('c32a24_f458752', 'c32a32_p2_f412672', 'c32a32_p2_f443392', 'c32a32_p2_f458752'):
         raise RuntimeError('A24/F458752 requires explicit attested history3')
     if value is not None and not enabled():
         raise RuntimeError('Reduced history requires enabled attested reservation')
@@ -47,7 +47,7 @@ def bank_mode():
 
 
 def check_reduced_bank_profile():
-    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368), 'c32a32_p2_f412672': (32, '412672', 5368)}
+    profiles = {'c32a20_f327680': (20, '327680', 4164), 'c32a24_f458752': (24, '458752', 5368), 'c32a32_p2_f412672': (32, '412672', 5368), 'c32a32_p2_f443392': (32, '443392', 5608), 'c32a32_p2_f458752': (32, '458752', 5728)}
     profile = os.environ.get('GEMMA_SERIAL_PREPARED_POOL_PROFILE')
     if profile not in profiles:
         raise RuntimeError('Unknown reduced history profile')
