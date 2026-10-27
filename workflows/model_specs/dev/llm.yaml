@@ -1614,6 +1614,7 @@ templates:
         QWEN36_MAX_TOKENS_ALL_USERS: "262144"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
         OMP_NUM_THREADS: "2"  # 32 ranks share 64 host cores
+        QWEN36_KV_BF8: "0"  # bf16 paged KV: the single-device prefill (ttnn_gated_attention) fills the cache without a K/V cast
       vllm_args:
         data_parallel_size: 32  # TP=1 x DP=32: max_concurrency 32 -> max_num_seqs 1 per rank
         enable_auto_tool_choice: true
