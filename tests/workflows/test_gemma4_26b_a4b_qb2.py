@@ -107,6 +107,7 @@ def test_gemma4_26b_release_eval_cohort():
     ]
 
     gpqa, terminal_task, _lcb, mmmu = tasks
+    assert all((task.priority or "must") == "must" for task in tasks)
     # GPQA runs in full in both presets and is graded against the full-set GPU
     # reference, not a subset reference.
     assert EvalLimitMode.CI_NIGHTLY not in gpqa.limit_samples_map

@@ -11520,7 +11520,6 @@ _eval_config_list = [
                 # reasoning model: its 5-shot examples demonstrate bare "(C)"
                 # answers, suppressing reasoning (gemma-4 scored only ~53%).
                 task_name="r1_gpqa_diamond",
-                priority="should",
                 score=EvalTaskScore(
                     published_score=84.3,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
@@ -11586,7 +11585,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="terminal_bench_2",
                 # Gating: graded against the published score with the 24-task preset wave.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=39.33,
@@ -11651,7 +11649,6 @@ _eval_config_list = [
                 # measured 78.6 on BLACKHOLE_GALAXY in 24 min.
                 task_name="livecodebench",
                 # Gating: graded against the published score on the full v6 window (131).
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=80.0,
@@ -11702,7 +11699,6 @@ _eval_config_list = [
                 # Graded against a same-protocol baseline GPU measurement of the preset subset:
                 # lmms-eval's standard CoT protocol scores ~12 points under the model card on this
                 # checkpoint on a GPU too (64.4 vs 76.9), so the published score is not the reference.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
@@ -12014,7 +12010,6 @@ _eval_config_list = [
                 # exact_match,none. Published ref is the official Gemma 4
                 # model-card score.
                 task_name="r1_gpqa_diamond",
-                priority="should",
                 score=EvalTaskScore(
                     published_score=82.3,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
@@ -12076,7 +12071,6 @@ _eval_config_list = [
                     },
                 },
                 # Gating: graded against the published score with the 24-task preset wave.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=14.0,
@@ -12143,7 +12137,6 @@ _eval_config_list = [
                 # settings as the 31B entry.
                 task_name="livecodebench",
                 # Gating: graded against the published score on the full v6 window (131).
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=77.1,
@@ -12190,7 +12183,6 @@ _eval_config_list = [
                 # Graded against a same-protocol baseline GPU measurement of the preset subset:
                 # lmms-eval's standard CoT protocol scores ~6 points under the model card on this
                 # checkpoint on a GPU too (67.5 vs 73.8), so the published score is not the reference.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
@@ -12257,7 +12249,6 @@ _eval_config_list = [
                 # note above). Thinking-mode GPQA; scores exact_match,none.
                 # Published ref is the official Gemma 4 model-card score.
                 task_name="r1_gpqa_diamond",
-                priority="should",
                 score=EvalTaskScore(
                     # Official Gemma 4 model card / HF README (12B Unified).
                     published_score=78.8,
@@ -12316,7 +12307,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="terminal_bench_2",
                 # Gating: graded against the published score with the 24-task preset wave.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=18.0,
@@ -12380,7 +12370,6 @@ _eval_config_list = [
                 # the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
                 task_name="livecodebench",
                 # Gating: graded against the published score on the full v6 window (131).
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=72.0,
@@ -12427,7 +12416,6 @@ _eval_config_list = [
                 # Graded against a same-protocol baseline GPU measurement of the preset subset:
                 # lmms-eval's standard CoT protocol scores ~8 points under the model card on this
                 # checkpoint on a GPU too (61.9 vs 69.1), so the published score is not the reference.
-                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,

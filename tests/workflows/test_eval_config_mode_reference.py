@@ -209,10 +209,11 @@ def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
 
 
 def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
-    """The entries carry exactly the model-card evals at priority "should" (reported,
-    never release-gating), so ci-nightly and ci-long run the same set at the same
-    sizes: GPQA Diamond in full, one 24-task Terminal-Bench 2.0 wave, the whole
-    LiveCodeBench v6 window and 865 MMMU-Pro questions."""
+    """The entries carry exactly the model-card evals, every one a blocking gate
+    (priority must, graded against the same-protocol GPU reference where one exists),
+    and ci-nightly and ci-long run the same set at the same sizes: GPQA Diamond in
+    full, one 24-task Terminal-Bench 2.0 wave, the whole LiveCodeBench v6 window and
+    865 MMMU-Pro questions."""
     for model in GEMMA4_RELEASE_MODELS:
         tasks = _eval_config_map[model].tasks
         assert [t.task_name for t in tasks] == [
@@ -221,7 +222,7 @@ def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
             "livecodebench",
             "mmmu_pro_standard_cot",
         ]
-        assert all(t.priority == "should" for t in tasks)
+        assert all((t.priority or "must") == "must" for t in tasks)
         terminal = _gemma4_task(model, "terminal_bench_2").agentic_eval_config
         names = terminal.task_names_map
         assert names[EvalLimitMode.CI_NIGHTLY] == names[EvalLimitMode.CI_LONG]
