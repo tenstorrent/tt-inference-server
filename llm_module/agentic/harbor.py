@@ -227,6 +227,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         from llm_module.agentic.agent_dependencies import dependency_source_proof
         dependency_source_proof()  # Fail once before scheduling if setup patch is absent.
         environment_config["import_path"] = "llm_module.agentic.swe500_mirror_environment:ExactMirrorDockerEnvironment"
+    elif config.dataset == "terminal-bench/terminal-bench-2" and config.environment_type == "docker":
+        # Harbor32 needs more trial bridges than Docker's ~31 default pool subnets.
+        environment_config["import_path"] = (
+            "llm_module.agentic.terminal_isolated_network_environment:IsolatedNetworkDockerEnvironment")
     if _mini_swe_needs_host_gateway(config):
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
