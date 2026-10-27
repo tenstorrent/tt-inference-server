@@ -42,7 +42,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
 HARBOR_REF = "tt-inference-server"
 # Patches carried on top of HARBOR_REF until they land on the fork; files apply
 # to the repository root in sorted order after every checkout.

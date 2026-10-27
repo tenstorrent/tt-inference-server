@@ -45,6 +45,8 @@ class MockEmbeddingRunner : public IEmbeddingRunner {
 
   void close() override;
 
+  const char* runnerType() const override { return "MockEmbeddingRunner"; }
+
  private:
   config::EmbeddingConfig config_;
 };
