@@ -1159,6 +1159,90 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
+            EvalTask(
+                # LiveCodeBench (coding) on the chat endpoint with server-side thinking, GLM's sampling
+                # (temperature 1.0 / top_p 0.95, no top_k) and the 1 M served context; scored on the
+                # "v6" window via doc_ids (LIVECODEBENCH_V6_DOC_IDS) as the Gemma 4 entries are. The
+                # model card publishes no LiveCodeBench number (.eval_results/GLM-5.3-Flash.yaml holds
+                # Terminal-Bench 2.1, DeepSWE and HLE only); GPU references are not measured yet.
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=4,  # = the engine's admission at 1 M
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 1048576,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Image understanding: the eval framework declares no MMMU-Pro task (no "mmmu_pro"
+                # anywhere in the repo), so the closest available image eval is used, lmms-eval's
+                # mmmu_val through the OpenAI-compatible chat endpoint as the Qwen VL entries run it
+                # (EVALS_VISION venv). Images reach the server through the vision tower on device
+                # (GLM53FlashForConditionalGeneration, the catalog's multimodal override). The chat
+                # template thinks by default and the reasoning parser strips the thought, so the
+                # answer budget covers a thinking trace. The model card publishes no MMMU number.
+                eval_class="openai_compatible",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 4,  # = the engine's admission at 1 M
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    "max_new_tokens": "16384",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             # swe_bench_verified returns when the SWE-bench eval type (SWEbenchEvalConfig, on the
             # Gemma 4 server branch) lands on main; the model card reports DeepSWE, not SWE-bench Verified.
         ],

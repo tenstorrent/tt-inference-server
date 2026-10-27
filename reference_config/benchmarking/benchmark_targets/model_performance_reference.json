@@ -168,6 +168,44 @@
                         "tolerance": 0.1
                     }
                 }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 448,
+                "image_width": 448,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 272,
+                        "tput_user": 10.6,
+                        "tput": 10.5
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one image, 128/128, c1 n8, as the gemma-4 entries): a 448x448 image is 256 vision tokens (grid 32x32 / 4), the demo's point; ceilings copied from this profile's measured text c1 point (the served image prompt takes the eager stream prefill padded to the 512 bucket plus the tower: ~60 ms on a (2,4) block, the 1 M profile adds the per-request tower upload) until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            },
+            {
+                "impl": "glm53_flash_128k",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 448,
+                "image_width": 448,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 228,
+                        "tput_user": 6.6,
+                        "tput": 6.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one image, 128/128, c1 n8, as the gemma-4 entries): a 448x448 image is 256 vision tokens (grid 32x32 / 4), the demo's point; ceilings copied from this profile's measured text c1 point (the served image prompt takes the eager stream prefill padded to the 512 bucket plus the tower: ~60 ms on a (2,4) block, the 1 M profile adds the per-request tower upload) until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },

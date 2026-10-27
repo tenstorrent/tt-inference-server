@@ -208,6 +208,9 @@ templates:
 # Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
 # profile pattern): glm53_flash = the 1 M-context profile (the default),
 # glm53_flash_128k = the 128 K-context profile.
+# Both serve text + image + video (GLM53FlashForConditionalGeneration: vLLM's
+# SupportsMultiModal with the upstream Glm5Next processor, the vision tower on
+# device at prefill; a multimodal prompt takes the eager stream prefill).
 #
 # Capacity (tt/memory_plan.py, user-partitioned DSA cache, heads2users prefill,
 # 512 MB trace region, 31.33 GiB DRAM per chip). The routed experts are held in
@@ -240,6 +243,8 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
+    - image
+    - video
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       # = the engine's admission (users per row at 1 M). The perf reference keeps
@@ -261,7 +266,7 @@ templates:
         # + TT-prefixed names (the plugin prefixes every checkpoint architecture
         # with "TT" before it resolves the class). vLLM has no upstream Glm5Next
         # model, so this override IS the registration (no plugin edit).
-        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration"
         # The Galaxy mesh: MESH_DEVICE=BH-Galaxy is inferred from the device type
         # (the plugin opens (8, 4)); GLM53_MESH_SHAPE pins the model's own view
         # of it (fabric capability, planner) to the same shape.
@@ -270,6 +275,16 @@ templates:
         # stream experts, sharded mHC norm, regions prefill, ...); only the
         # serving-side knobs are set here.
         GLM53_MODEL_TRACE_MB: "512"  # the planner's trace-region term (= trace_region_size below)
+        # Image + video serving (tt/generator_vllm.py GLM53FlashForConditionalGeneration, the
+        # override above): the vision tower runs on device at prefill. Resident, its weights cost
+        # 1.05 GiB per chip, which the 1 M x 4 point does not have (0.12 GiB spare after the
+        # caches: tt/memory_plan.py vision_tower_bytes), so this profile builds the tower per
+        # image request from host-cached weights inside the prefill reserve (the upload is the
+        # per-request cost) and runs one 448x448 window (1024 patches) per tower call, which keeps
+        # the per-request transient (1.13 GB + 68 MiB) under the reserve's 1 M whole-prefix copy.
+        GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_VISION_RESIDENT: "0"
+        GLM53_VLLM_VISION_BATCH_PATCHES: "1024"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
         # for a single generation step") trips on long-context prefill: an eager 16 K chunk
         # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
@@ -307,9 +322,13 @@ templates:
         # KDA owner cores on 8 rows), so the scheduler hands the adapter exactly
         # that; the threshold keeps a long prompt on 16 K steps when short
         # prompts share the budget.
-        max_num_batched_tokens: 16384
+        max_num_batched_tokens: 32768  # a multimodal item is never split across engine chunks (the plugin sets disable_chunked_mm_input), so the step must hold the largest one: a video of up to ~31.9 K tokens (vLLM's 30 000 vision-token cap + per-frame timestamps); the adapter walks the 32 K step in two 16 K device chunks (the 32768 warm-up ladder)
         long_prefill_token_threshold: 16384
         enable_chunked_prefill: true
+        # One image per 448x448 is 256 tokens (grid 32x32 / 4); up to 4 images and 1 video per prompt (the
+        # upstream Glm5Next processor's limits; video frames are sampled at 2 fps in 2-frame groups).
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
         no-enable-prefix-caching: true  # no shared pages exist on device (supports_prefix_caching False)
         no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
         enable-auto-tool-choice: true
@@ -334,6 +353,8 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
+    - image
+    - video
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 28  # = users per row at 128 K (7 slots per chip; 32 ran out of DRAM in the prefill warm-up); 224 after the row-ownership flip
@@ -342,7 +363,7 @@ templates:
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
-        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForCausalLM"
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration"
         GLM53_MESH_SHAPE: "8,4"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
         # for a single generation step") trips on long-context prefill: an eager 16 K chunk
@@ -351,6 +372,10 @@ templates:
         # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
         GLM53_MODEL_TRACE_MB: "512"
+        # Image + video serving with the vision tower resident on every chip (1.05 GiB per chip:
+        # the planner still fits 28 users per row at 128 K beside it; tt/memory_plan.py).
+        GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_VISION_RESIDENT: "1"
         GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
       override_tt_config:
         fabric_config: FABRIC_2D_TORUS_XY
@@ -363,9 +388,11 @@ templates:
       vllm_args:
         max_num_seqs: 28  # = users per row; 224 after the row-ownership flip
         block_size: 32
-        max_num_batched_tokens: 16384
+        max_num_batched_tokens: 32768  # holds the largest multimodal item whole (see the 1 M profile)
         long_prefill_token_threshold: 16384
         enable_chunked_prefill: true
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        mm-processor-cache-gb: 0
         no-enable-prefix-caching: true
         no-async-scheduling: true
         enable-auto-tool-choice: true
