@@ -448,6 +448,18 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+gemma4_26b_a4b_qb2_impl = ImplSpec(
+    impl_id="gemma4_26b_a4b_qb2",
+    impl_name="gemma4-26b-a4b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_26b_a4b_qb2",
+)
+granite42_30b_qb2_impl = ImplSpec(
+    impl_id="granite42_30b_qb2",
+    impl_name="granite42-30b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/granite42_30b_qb2",
+)
 qwen38_27b_qb2_impl = ImplSpec(
     impl_id="qwen38_27b_qb2",
     impl_name="qwen38-27b-qb2",
@@ -488,6 +500,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
+    "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,

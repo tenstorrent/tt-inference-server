@@ -25,7 +25,7 @@ def _gemma4_26b_specs():
     ]
 
 
-def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
+def test_dedicated_gemma4_profile_is_default_and_uses_the_demo_bundle():
     specs = _gemma4_26b_specs()
     default = resolve_model_spec(
         specs,
@@ -37,14 +37,24 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
         specs,
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
 
-    assert default.impl.impl_name == "tt-transformers"
-    assert dedicated.impl.impl_name == "tt-vllm-plugin"
+    assert default.impl.impl_name == "gemma4-26b-a4b-qb2"
+    assert dedicated.impl.impl_name == "gemma4-26b-a4b-qb2"
+    assert default == dedicated
+    assert dedicated.impl.code_path == "models/demos/gemma4_26b_a4b_qb2"
+    alternate = resolve_model_spec(
+        specs,
+        model="google/gemma-4-26B-A4B-it",
+        device="p300x2",
+        impl="tt-transformers",
+        catalog_name="Shield",
+    )
+    assert alternate.device_model_spec.default_impl is False
     assert dedicated.status == ModelStatusTypes.FUNCTIONAL
-    assert dedicated.device_model_spec.default_impl is False
+    assert dedicated.device_model_spec.default_impl is True
     assert dedicated.device_model_spec.max_concurrency == 1
     assert (
         dedicated.device_model_spec.env_vars["EXTRA_MODELS_DIR"]
@@ -67,7 +77,7 @@ def test_gemma4_profile_leaves_cache_paths_to_the_launch_environment():
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     # Runtime spec env vars overwrite existing settings, including local-server
@@ -121,12 +131,12 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
         assert accept_eval_score(reference, failing_score, n_total=total) is False
 
 
-def test_gemma4_26b_tt_vllm_plugin_uses_validated_gpqa_transport():
+def test_gemma4_26b_qb2_uses_validated_gpqa_transport():
     dedicated = resolve_model_spec(
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     gpqa = _apply_profile_request_body_overrides(
@@ -141,7 +151,7 @@ def test_gemma4_26b_release_grades_only_128_128_at_concurrency_one():
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     run_configs = get_llm_configs(dedicated, dedicated.device_type)

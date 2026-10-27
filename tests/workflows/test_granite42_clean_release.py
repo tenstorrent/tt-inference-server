@@ -21,7 +21,7 @@ from workflows.workflow_types import EvalLimitMode
 MODEL = "ibm-granite/granite-4.2-30b"
 
 
-def test_standard_plugin_resolves_granite_without_a_custom_implementation():
+def test_granite_dedicated_profile_is_the_default():
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
     )
@@ -35,10 +35,10 @@ def test_standard_plugin_resolves_granite_without_a_custom_implementation():
         specs,
         model=MODEL,
         device="p300x2",
-        impl="tt-vllm-plugin",
         catalog_name="Shield",
     )
-    assert spec.impl.impl_name == "tt-vllm-plugin"
+    assert spec.impl.impl_name == "granite42-30b-qb2"
+    assert spec.impl.code_path == "models/demos/granite42_30b_qb2"
     device = spec.device_model_spec
     assert device.max_context == 131072
     assert device.max_tokens_all_users == 655360
