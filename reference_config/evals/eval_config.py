@@ -11110,8 +11110,8 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=61.7,
-                    published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
+                    published_score=None,
+                    published_score_ref="No comparable Qwen3.8 SWE-bench Verified reference; model card reports Pro",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
