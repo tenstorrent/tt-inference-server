@@ -587,6 +587,25 @@ def _qwen38_audit_mount(repo_root_path, model_spec, dev_mode):
     return ["--mount", f"type=bind,src={source},dst=/home/container_app_user/app/src/qwen38_agentic_audit.py,readonly"]
 
 
+
+def _qwen38_precision_mount(repo_root_path, model_spec):
+    """Deliver the frozen diagnostic policy to the immutable serving image."""
+    destination = "/home/container_app_user/tt-metal/models/autoports/qwen_qwen3_8_27b/tt/gpqa_head_bf16_hifi4.json"
+    if (model_spec.impl.impl_id != "qwen38_autoport"
+            or model_spec.hf_model_repo != "Qwen/Qwen3.8-27B"
+            or model_spec.env_vars.get("QWEN38_PRECISION_CONFIG") != destination):
+        return []
+    root = Path(repo_root_path).resolve()
+    source = root / "vllm-tt-metal/src/gpqa_head_bf16_hifi4.json"
+    if not source.is_file() or source.is_symlink() or not source.resolve().is_relative_to(root):
+        raise FileNotFoundError(f"Required published Qwen precision policy is missing or unsafe: {source}")
+    policy = json.loads(source.read_text())
+    if policy["weight_groups"]["head"] != "bfloat16" or policy["compute_fidelities"]["head"] != "HiFi4":
+        raise ValueError("Unexpected GPQA head diagnostic policy")
+    logger.info("Qwen GPQA precision source=%s destination=%s sha256=%s", source, destination, hashlib.sha256(source.read_bytes()).hexdigest())
+    return ["--mount", f"type=bind,src={source},dst={destination},readonly"]
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -816,6 +835,7 @@ def generate_docker_run_command(
         # fmt: on
 
     docker_command += _qwen38_audit_mount(repo_root_path, model_spec, runtime_config.dev_mode)
+    docker_command += _qwen38_precision_mount(repo_root_path, model_spec)
 
     if setup_config and "QWEN38_HTTP_AUDIT" in docker_env_vars:
         _write_qwen38_audit_source(setup_config, model_spec, container_name, docker_env_vars)

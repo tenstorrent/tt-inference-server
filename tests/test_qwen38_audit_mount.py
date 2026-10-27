@@ -68,3 +68,19 @@ def test_server_carries_exact_job_ownership_label(monkeypatch):
                             impl="qwen38_autoport", engine="vLLM", docker_server=True)
     command, _ = generate_docker_run_command(spec(), runtime)
     assert command[command.index("--label") + 1] == "com.tenstorrent.agentic-owner=goal12-123-1-0"
+
+
+def test_precision_policy_delivery_matches_runtime_path(tmp_path):
+    from workflows.run_docker_server import _qwen38_precision_mount
+    model = spec()
+    destination = "/home/container_app_user/tt-metal/models/autoports/qwen_qwen3_8_27b/tt/gpqa_head_bf16_hifi4.json"
+    assert _qwen38_precision_mount(tmp_path, model) == []
+    model.env_vars["QWEN38_PRECISION_CONFIG"] = destination
+    with pytest.raises(FileNotFoundError):
+        _qwen38_precision_mount(tmp_path, model)
+    runtime = RuntimeConfig(model="Qwen3.8-27B", workflow="server", device="p300x2",
+                            impl="qwen38_autoport", engine="vLLM", docker_server=True)
+    command, _ = generate_docker_run_command(model, runtime)
+    root = Path(__file__).resolve().parents[1]
+    assert f"type=bind,src={root}/vllm-tt-metal/src/gpqa_head_bf16_hifi4.json,dst={destination},readonly" in command
+    assert model.env_vars["QWEN38_PRECISION_CONFIG"] == destination
