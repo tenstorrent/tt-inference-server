@@ -427,7 +427,7 @@ class Gemma4Generator:
         if os.environ.get("TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE", "0") != "0":
             raise RuntimeError("Program-cache allocations must remain tracked")
         pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-        c32_profiles = {"c32a24_f262144": (24, "262144"), "c32a20_f327680": (20, "327680"), "c32a24_f458752": (24, "458752"), "c32a32_p2_f412672": (32, "412672")}
+        c32_profiles = {"c32a24_f262144": (24, "262144"), "c32a20_f327680": (20, "327680"), "c32a24_f458752": (24, "458752"), "c32a32_p2_f412672": (32, "412672"), "c32a32_p2_f443392": (32, "443392"), "c32a32_p2_f458752": (32, "458752")}
         c32_profile = pool_profile in c32_profiles
         expected_batch = 32 if c32_profile else 16
         expected_admission = c32_profiles[pool_profile][0] if c32_profile else 16
@@ -453,7 +453,7 @@ class Gemma4Generator:
                 or self._serving_prefill_prepared_state is not None):
             raise RuntimeError("Experimental preparation requires fresh full60 declared-width serial state")
         pool_profile = os.environ.get("GEMMA_SERIAL_PREPARED_POOL_PROFILE", "f606208")
-        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832, "c32a20_f327680": 4164, "c32a24_f458752": 5368, "c32a32_p2_f412672": 5368}
+        pool_rows = {"f606208": 6128, "f262144": 3440, "f311296": 3824, "f393216": 4464, "c32a24_f262144": 3832, "c32a20_f327680": 4164, "c32a24_f458752": 5368, "c32a32_p2_f412672": 5368, "c32a32_p2_f443392": 5608, "c32a32_p2_f458752": 5728}
         if pool_profile not in pool_rows:
             raise RuntimeError("Unsupported serial prepared alias pool profile")
         if pool_profile == "f311296" and (
