@@ -3565,6 +3565,13 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=50.78,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # T3K release runs land at 48.2-48.9 (434-440 of 900), and the
+                    # 0.05 floor is 48.24 (435/900): one question of margin, so a
+                    # single flipped answer blocks the release (tt-shield run
+                    # 40366385918 failed at 48.22). 0.10 puts the floor at 45.7,
+                    # about 3 binomial SEs (1.67 pts at n=900) under the reference,
+                    # still far above the 25-30% chance level of MMMU.
+                    tolerance=0.10,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
