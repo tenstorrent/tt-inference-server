@@ -13271,13 +13271,19 @@ _eval_config_list = [
 ]
 
 
-# Harbor trial concurrency for M3.1-Flash. M3 runs Terminal-Bench at 8 because its
-# IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's Virtu P/D
-# deployment held 10-12 ms inter-token latency at 56 agentic users, so its
-# Terminal-Bench runs fill the deployment's 62 slots instead.
+# Harbor trial concurrency for M3.1-Flash. M3 runs its agentic evals at 4-8 trials
+# because its IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's
+# Virtu P/D deployment held 10-12 ms inter-token latency at 56 agentic users, so the
+# limit is the KIX1 shield-evals pool instead: 3 nodes x 64 CPUs. Trials past it sit
+# Pending and fail Harbor's 300 s pod-ready timeout rather than queue.
+#   Terminal-Bench (8 CPU / 32 GiB per trial): 7 per node, 21 in all.
+#   tau3-bench (4 CPU / 8 GiB + tau3-runtime sidecar): ~35-40 fit; 32.
+#   SWE-bench Verified (1 CPU / 4 GiB, task default): the deployment's 62.
 _MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
-    "terminal_bench_2_1": 62,
-    "terminal_bench_4": 62,
+    "terminal_bench_2_1": 21,
+    "terminal_bench_4": 21,
+    "tau3_bench_banking": 32,
+    "swe_bench_verified": 62,
 }
 
 
