@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import math
@@ -308,11 +309,44 @@ class HarborEvalConfig:
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
+    # Allow the agent to reach the inference endpoint when the task blocks
+    # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
+    # the endpoint's host joins Harbor's run-specific agent allowlist.
+    allow_agent_endpoint: bool = False
+    # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
+    # environment is docker and the image is not already local, e.g. the base
+    # image every trial's environment build starts FROM: concurrent trials
+    # otherwise each pull it inside their build, and on a slow registry link
+    # every build fails together.
+    prepull_images: List[str] = field(default_factory=list)
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
+
+# Docker's ``cpus`` limit is a quota, so Node still reports every host core and
+# vitest/jest start ~63 workers in a 2-CPU, 8 GB container: vitest times out
+# and jest gets OOM-killed. Report the 2 cores a cpuset would give, so both
+# pick 1 worker. jest has no worker-count env var, hence the NODE_OPTIONS
+# preload; the VITEST_* vars also cover vitest runs that replace NODE_OPTIONS.
+# vitest <4 reads the THREADS/FORKS pairs (min defaults to the core count, so
+# both bounds are needed); vitest 4 reads MAX_WORKERS.
+_DEEPSWE_NODE_CPU_PRELOAD = (
+    'import os from "node:os";'
+    'import {syncBuiltinESMExports} from "node:module";'
+    "os.availableParallelism=()=>2;"
+    "syncBuiltinESMExports();"
+)
+DEEPSWE_TEST_WORKER_ENV = {
+    "NODE_OPTIONS": "--import=data:text/javascript;base64,"
+    + base64.b64encode(_DEEPSWE_NODE_CPU_PRELOAD.encode()).decode(),
+    "VITEST_MAX_THREADS": "1",
+    "VITEST_MIN_THREADS": "1",
+    "VITEST_MAX_FORKS": "1",
+    "VITEST_MIN_FORKS": "1",
+    "VITEST_MAX_WORKERS": "1",
+}
 
 
 @dataclass(frozen=True)
