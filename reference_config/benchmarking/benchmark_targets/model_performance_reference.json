@@ -74,6 +74,30 @@
         }
       },
       {
+        "impl": "glm53_flash",
+        "isl": 1047612,
+        "osl": 160,
+        "max_concurrency": 1,
+        "num_prompts": 8,
+        "task_type": "text",
+        "image_height": null,
+        "image_width": null,
+        "images_per_prompt": null,
+        "targets": {
+          "theoretical": {
+            "ttft_ms": 504604,
+            "tput_user": 10.5,
+            "tput": 0.3
+          },
+          "measured": {
+            "ttft_ms": 504604,
+            "tput_user": 10.5,
+            "tput": 0.3,
+            "tolerance": 0.1
+          }
+        }
+      },
+      {
         "impl": "glm53_flash_128k",
         "isl": 128,
         "osl": 128,
