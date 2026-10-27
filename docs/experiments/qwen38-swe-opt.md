@@ -35,3 +35,8 @@ verifier results and cache/preemption behavior before scaling25→100→500.
 
 Only code and compact documentation belong in Git. Raw CSVs, Tracy captures,
 logs, token arrays and per-draw/probe artifacts stay local or in CI artifacts.
+
+The candidate also enables the same isolated-agent protocol as the clean B8
+control, including the canonical Docker driver forwarding fix and provider/type
+guards. Setup/verifier may use egress; agent execution uses the internal bridge
+and host API only. Dispatch waits for the actual one-task protocol smoke audit.

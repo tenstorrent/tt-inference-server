@@ -1,5 +1,5 @@
 {
-  "phase": "swe8-grouped-b16-p512-c8-medium-20261027",
+  "phase": "swe8-isolated-grouped-b16-p512-c8-medium-20261027",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
@@ -117,5 +117,6 @@
   "selection_manifest": "reference_config/evals/qwen38_goal12_terminal21_calibration8.json",
   "selection_manifest_sha256": "d81bb0b71e6cfba6db7d6504f79d86f4be6aa73d53dab7eccab1c236f6768cce",
   "record_suite_metrics": true,
-  "swe_reasoning_effort": "medium"
+  "swe_reasoning_effort": "medium",
+  "swe_agent_isolated_network": true
 }
