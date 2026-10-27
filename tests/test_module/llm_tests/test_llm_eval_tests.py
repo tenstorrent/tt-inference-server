@@ -224,6 +224,19 @@ def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
     assert timeout >= 2 * 32768 / 6.2
 
 
+def test_mimo_gpqa_request_timeout_covers_a_full_length_generation():
+    """MiMo-V2.6-Flash r1_gpqa_diamond streams up to max_gen_toks (400K) per
+    request. At 7200 s, Shield run 39472309296 cut three Blackhole Galaxy streams
+    short and lm_eval failed the task; the timeout must cover max_gen_toks at
+    30 ms/token, the Galaxy's host-sampled decode (13.5 ms/token on device)."""
+    task = next(
+        t
+        for t in _eval_config_map["XiaomiMiMo/MiMo-V2.6-Flash-MOPD"].tasks
+        if t.task_name == "r1_gpqa_diamond"
+    )
+    assert int(task.model_kwargs["timeout"]) >= task.gen_kwargs["max_gen_toks"] * 0.030
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])

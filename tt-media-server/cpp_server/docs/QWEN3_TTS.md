@@ -115,8 +115,7 @@ Python: the embedded interpreter must resolve the tt-metal venv that matches
 `TT_METAL_HOME` (`ttnn`, `torch`, `librosa`, `soundfile`, `safetensors`,
 `huggingface_hub`). Launch with that venv activated so its `python3` is first on
 `PATH`, and scrub any ambient `PYTHONPATH` that points at another tt-metal
-checkout; [`embedding_serving_guide.md`](embedding_serving_guide.md) explains
-both traps. Hub checkpoints (codec included) download on first use into the HF
+checkout. Hub checkpoints (codec included) download on first use into the HF
 cache, a few GB each.
 
 ### Shared memory

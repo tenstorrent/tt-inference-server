@@ -941,17 +941,16 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
-# Dedicated Gemma 4 26B A4B QB2 implementation. Keep it opt-in while the
-# canonical tt-transformers profile remains the default for these weights.
+# Dedicated Gemma 4 26B A4B implementation, the default on QB2.
 - weights:
     - google/gemma-4-26B-A4B-it
-  impl: tt_vllm_plugin
+  impl: gemma4_26b_a4b_qb2
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
       max_context: 262144
-      default_impl: false
+      default_impl: true
       env_vars:
         MESH_DEVICE: "P300x2"
         OMP_NUM_THREADS: "8"
@@ -3050,7 +3049,7 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: true
+      default_impl: false
       env_vars:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
@@ -3215,6 +3214,21 @@ templates:
     google/gemma-4-E2B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+
+# GPU reference spec (bring-your-own vLLM server; see docs/gpu_workflows.md).
+# No TT device entry yet.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 1048576  # 1024 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
@@ -7379,3 +7393,45 @@ templates:
     max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
+
+- weights:
+    - ibm-granite/granite-4.2-30b
+  impl: granite42_30b_qb2
+  inference_engine: VLLM
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 655360
+      default_impl: true
+      env_vars:
+        HF_MODEL: ibm-granite/granite-4.2-30b
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+      vllm_args:
+        hf-overrides: '{"architectures":["TTGraniteForCausalLM"]}'
+        revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        # Keep SWE output capped while vLLM shrinks it to the remaining context.
+        # An explicit request max_tokens would reject otherwise valid long prompts.
+        override_generation_config: '{"max_new_tokens": 32768}'
+        block_size: 32
+        max_num_seqs: 16
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_xml
+        reasoning_parser: qwen3
+        default-chat-template-kwargs: '{"enable_thinking": true, "low_effort": false}'
+        max_num_batched_tokens: 1024
+        enable-chunked-prefill: true
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 134217728
+        sample_on_device_mode: all
+  metadata:
+    ibm-granite/granite-4.2-30b:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_xml

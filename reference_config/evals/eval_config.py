@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import math
@@ -317,11 +318,44 @@ class HarborEvalConfig:
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
+    # Allow the agent to reach the inference endpoint when the task blocks
+    # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
+    # the endpoint's host joins Harbor's run-specific agent allowlist.
+    allow_agent_endpoint: bool = False
+    # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
+    # environment is docker and the image is not already local, e.g. the base
+    # image every trial's environment build starts FROM: concurrent trials
+    # otherwise each pull it inside their build, and on a slow registry link
+    # every build fails together.
+    prepull_images: List[str] = field(default_factory=list)
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
+
+# Docker's ``cpus`` limit is a quota, so Node still reports every host core and
+# vitest/jest start ~63 workers in a 2-CPU, 8 GB container: vitest times out
+# and jest gets OOM-killed. Report the 2 cores a cpuset would give, so both
+# pick 1 worker. jest has no worker-count env var, hence the NODE_OPTIONS
+# preload; the VITEST_* vars also cover vitest runs that replace NODE_OPTIONS.
+# vitest <4 reads the THREADS/FORKS pairs (min defaults to the core count, so
+# both bounds are needed); vitest 4 reads MAX_WORKERS.
+_DEEPSWE_NODE_CPU_PRELOAD = (
+    'import os from "node:os";'
+    'import {syncBuiltinESMExports} from "node:module";'
+    "os.availableParallelism=()=>2;"
+    "syncBuiltinESMExports();"
+)
+DEEPSWE_TEST_WORKER_ENV = {
+    "NODE_OPTIONS": "--import=data:text/javascript;base64,"
+    + base64.b64encode(_DEEPSWE_NODE_CPU_PRELOAD.encode()).decode(),
+    "VITEST_MAX_THREADS": "1",
+    "VITEST_MIN_THREADS": "1",
+    "VITEST_MAX_FORKS": "1",
+    "VITEST_MIN_FORKS": "1",
+    "VITEST_MAX_WORKERS": "1",
+}
 
 
 @dataclass(frozen=True)
@@ -604,6 +638,117 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
 _eval_config_list = [
+    # Fixed Granite release cohorts; published scores are context, not GPU controls.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=10,
+                use_chat_api=True,
+                num_fewshot=0,
+                seed=42,
+                score=EvalTaskScore(
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"max_length": 131072, "timeout": 7200},
+                gen_kwargs={
+                    "max_gen_toks": 32768,
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "do_sample": True,
+                    "stream": False,
+                    "until": [],
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+                capture_reasoning=True,
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=57.0,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=40.0,
+                            ref="User-approved first-five SWE CI gate: 2/5 (40%); published 57% is full-set context, not a matched GPU reference",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "config": {
+                            "environment": {
+                                "env": {
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/root/.local/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                }
+                            },
+                            "model": {
+                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                            },
+                        },
+                    },
+                    task_names_map={
+                        mode: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ]
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="microsoft/phi-1",
@@ -2670,6 +2815,288 @@ _eval_config_list = [
             ),
         ],
     ),
+    # MiMo-V2.6-Flash-MOPD: the RL checkpoint plus a short MOPD stage that
+    # curbs repeated tool calls in agent loops. Xiaomi publishes benchmark
+    # scores only for the RL checkpoint, so published scores cite that card.
+    # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
+    # (the chat template only disables it on enable_thinking=false).
+    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 (8
+    # for tau3) and one attempt per task.
+    EvalConfig(
+        hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=16,
+                use_chat_api=True,
+                # Thinking is on, so the answer can arrive in reasoning_content.
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # Neither model card nor the technical report reports GPQA
+                    # Diamond; the GPU reference is the only anchor.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=85.35,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1024 * 1024,
+                    # A request may stream max_gen_toks (400K): ~1.5 h at the
+                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
+                    # at 30 ms/token. At 7200 s three CI streams were cut short
+                    # and lm_eval failed the task.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 400 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep for MiMo's 1M window (max_position_embeddings).
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=66.15,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    # A request's time includes its queue on the server: a
+                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
+                    # concurrent 256K-900K prompts each lane prefills a few in
+                    # turn (~45 min for a 900K prompt) before decoding up to 64K
+                    # tokens. At 7200 s three CI requests were cut short.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (65536) before hitting the
+                # 1048576 window.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 64K gen)
+                    "pretrained": "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=87.6,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266196347",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=8,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 896 * 1024,
+                            "max_output_tokens": 128 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 128 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not on either model card; the GPU reference is the only
+                    # anchor until a published score is confirmed.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=48.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266198959",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 0.95}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    # Every trial's environment builds FROM it; on the Galaxy
+                    # runner the four CI trials' concurrent pulls all failed.
+                    prepull_images=["python:3.12-slim"],
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="deepswe",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=67.9,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    # MOPD weights, 3 attempts per task, with the DeepSWE harness env fixes.
+                    gpu_reference_score=65.49,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6317472058",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    # Checked out from datacurve-ai/deep-swe at v1.1 (see
+                    # llm_module/agentic/deepswe.py); not a registry dataset.
+                    dataset="datacurve/deep-swe",
+                    # The DeepSWE leaderboard runs every model with mini-swe-agent.
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # None keeps each task's own 3h agent timeout.
+                    agent_timeout_sec=None,
+                    agent_kwargs={
+                        # The leaderboard's published job (2026-06-06) ran an
+                        # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
+                        "version": "2.3.0",
+                        "max_tokens": 128 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        # One task per language family: Go, Python,
+                        # TypeScript, Rust.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "abs-module-cache-flags",
+                            "httpx-streaming-json-iteration",
+                            "ts-pattern-match-each",
+                            "wasmi-trap-coredumps",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
@@ -3463,6 +3890,13 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=50.78,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # T3K release runs land at 48.2-48.9 (434-440 of 900), and the
+                    # 0.05 floor is 48.24 (435/900): one question of margin, so a
+                    # single flipped answer blocks the release (tt-shield run
+                    # 40366385918 failed at 48.22). 0.10 puts the floor at 45.7,
+                    # about 3 binomial SEs (1.67 pts at n=900) under the reference,
+                    # still far above the 25-30% chance level of MMMU.
+                    tolerance=0.10,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
