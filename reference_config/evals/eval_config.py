@@ -13306,11 +13306,18 @@ _eval_config_list = [
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
-# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
-# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
-# measurements only (no published, GPU or limit-mode references; the card's
-# AutomationBench 62.8 states no harness or effort).
+# its GPQA, LongBench v2, Terminal-Bench 4.0 and AutomationBench tasks are M3's,
+# plus DeepSWE. No targets yet: the M3.1-Flash GPU reference runs aren't done,
+# so scores are measurements only (no published, GPU or limit-mode references;
+# the card's AutomationBench 62.8 states no harness or effort).
+_MINIMAX_M31_FLASH_M3_TASKS = (
+    "r1_gpqa_diamond",
+    "longbench2_generate",
+    "terminal_bench_4",
+    "automation_bench",
+)
+
+
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
     return replace(
         task,
@@ -13333,6 +13340,67 @@ _eval_config_list.append(
             for config in _eval_config_list
             if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
             for task in config.tasks
+            if task.task_name in _MINIMAX_M31_FLASH_M3_TASKS
+        ]
+        + [
+            EvalTask(
+                task_name="deepswe",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    # Checked out from datacurve-ai/deep-swe at v1.1 (see
+                    # llm_module/agentic/deepswe.py); not a registry dataset.
+                    dataset="datacurve/deep-swe",
+                    # The DeepSWE leaderboard runs every model with mini-swe-agent.
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # None keeps each task's own 3h agent timeout.
+                    agent_timeout_sec=None,
+                    agent_kwargs={
+                        # The M3.1-Flash card's DeepSWE v1.1 harness:
+                        # mini-SWE-agent 2.4.5 at 512K context (the server's
+                        # limit; mini-swe-agent has no input cap of its own).
+                        "version": "2.4.5",
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        # One task per language family: Go, Python,
+                        # TypeScript, Rust.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "abs-module-cache-flags",
+                            "httpx-streaming-json-iteration",
+                            "ts-pattern-match-each",
+                            "wasmi-trap-coredumps",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
         ],
     )
 )
