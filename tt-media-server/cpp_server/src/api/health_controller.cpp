@@ -31,10 +31,14 @@ void HealthController::health(
 
   bool hasAliveWorkers = false;
   bool hasReadyWorkers = false;
+  std::string deadWorkerId;
   if (service_) {
     try {
       auto status = service_->getSystemStatus();
       for (const auto& w : status.workerInfo) {
+        if (w.pid > 0 && !w.is_alive && deadWorkerId.empty()) {
+          deadWorkerId = w.worker_id;
+        }
         if (w.is_alive) {
           hasAliveWorkers = true;
         }
@@ -58,16 +62,19 @@ void HealthController::health(
                                                        : socket_->isConnected();
   }
 
-  if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
+  if (hasReadyWorkers && hasAliveWorkers && deadWorkerId.empty() &&
+      socketHealthy) {
     response["status"] = "healthy";
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
   } else if (!hasAliveWorkers) {
     response["status"] = "unhealthy";
-    if (!hasAliveWorkers) {
-      response["error"] = "no workers are alive";
-    } else {
-      response["error"] = "socket not connected";
-    }
+    response["error"] = "no workers are alive";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else if (!deadWorkerId.empty()) {
+    response["status"] = "unhealthy";
+    response["error"] = "worker " + deadWorkerId + " is dead";
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     resp->setStatusCode(drogon::k503ServiceUnavailable);
     callback(resp);
@@ -118,6 +125,7 @@ void HealthController::ready(
     }
 
     Json::Value workerInfo(Json::objectValue);
+    std::string deadWorkerId;
     for (const auto& w : status.workerInfo) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
@@ -125,8 +133,21 @@ void HealthController::ready(
       wj["is_alive"] = w.is_alive;
       wj["pid"] = static_cast<Json::Int64>(w.pid);
       workerInfo[w.worker_id] = wj;
+      if (w.pid > 0 && !w.is_alive && deadWorkerId.empty()) {
+        deadWorkerId = w.worker_id;
+      }
     }
     response["worker_info"] = workerInfo;
+
+    if (!deadWorkerId.empty()) {
+      response["status"] = "error";
+      response["model_ready"] = false;
+      response["error"] = "worker " + deadWorkerId + " is dead";
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+      resp->setStatusCode(drogon::k500InternalServerError);
+      callback(resp);
+      return;
+    }
 
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     if (!status.modelReady) {
