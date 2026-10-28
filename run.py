@@ -1182,6 +1182,9 @@ def handle_maintenance_args(args):
 def main():
     # step 00: handle maintenance args
     args = parse_arguments()
+    from utils.host_disk_preflight import check as host_disk_preflight
+
+    host_disk_preflight(getattr(args, "workflow", None))
     if args.requirements_doc is not None:
         # Overlay the document before anything resolves a spec or looks up
         # validation content; the dispatched child processes register it again
