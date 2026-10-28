@@ -586,16 +586,15 @@ templates:
         # tput_user 17.3 -> 17.8 at points 1, 5, 8
         TT_METAL_MESH_WRITE_INLINE: "1"
         # Speculative decode: the decode step is the verify decoder with the
-        # checkpoint's DSpark drafter in its capture; a greedy request's step
+        # checkpoint's DSpark drafter in its capture; a request's step
         # verifies TT_V41_SPEC drafts and the round's accepted tokens are
         # handed to the plugin through its ragged contract (the
-        # speculative-config below, K + 1 tokens a step). The benchmark's
-        # requests sample at temperature 1, which the round does not serve
-        # yet; TT_V41_SPEC_GREEDY_ALL verifies every request greedily (a
-        # smoke's knob, not a served sampler): the point is a timing smoke,
-        # not a sweep arm.
+        # speculative-config below, K + 1 tokens a step). A sampling request
+        # (the benchmark's: temperature 1, no top_k, top_p 1) draws the served
+        # sampler on every verify row and accepts while the draw equals the
+        # next draft: the committed stream has
+        # the same law as plain serving. TT_V41_SPEC_GREEDY_ALL=1 verified every request greedily instead.
         TT_V41_SPEC: "3"
-        TT_V41_SPEC_GREEDY_ALL: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
