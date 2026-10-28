@@ -2916,7 +2916,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 768000000  # was 1.2 GB for the B=1 + B=32 lean decode traces alone; budget now ~110 MB plain traces + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~37 MB = ~555 MB by the 31B estimate (the MoE record size is unmeasured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1500000000  # the former 1.2 GB covered the B=1 + B=32 lean MoE decode traces alone; + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) at an unmeasured MoE record size (~37 MB by the 31B estimate); ~9 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
