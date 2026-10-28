@@ -7688,11 +7688,11 @@ templates:
   supported_modalities:
     - text
   hf_weights_repo: tenstorrent/GLM-5.3-Flash-TTQ
-  # The plan0h TTQ (about 246 GB in 40 GiB parts) and the 4.3 GB MTP sidecar, downloaded once into
-  # the persistent volume and read through the page cache.
-  min_disk_gb: 270
-  # The page-cached TTQ, plus 32 GB of session records per group (four groups).
-  min_ram_gb: 450
+  # The plan0h TTQ (180,874,799,872 bytes in five 40 GiB parts) and the 4.3 GB MTP sidecar,
+  # downloaded once into the persistent volume and read through the page cache.
+  min_disk_gb: 200
+  # The page-cached TTQ (181 GB), plus 32 GB of session records per group (four groups).
+  min_ram_gb: 400
   uses_tensor_model_cache: false
   # glm-tt loads its weights and compiles nothing at run time, and /health answers 200 only once it serves.
   has_builtin_warmup: true
@@ -7747,12 +7747,11 @@ templates:
       # The repo has no safetensors: complete when these are present (see setup_host).
       checkpoint_files:
         - glm53-flash-plan0h.ttq.manifest
-        - glm53-flash-plan0h.ttq.00001-of-00006
-        - glm53-flash-plan0h.ttq.00002-of-00006
-        - glm53-flash-plan0h.ttq.00003-of-00006
-        - glm53-flash-plan0h.ttq.00004-of-00006
-        - glm53-flash-plan0h.ttq.00005-of-00006
-        - glm53-flash-plan0h.ttq.00006-of-00006
+        - glm53-flash-plan0h.ttq.00001-of-00005
+        - glm53-flash-plan0h.ttq.00002-of-00005
+        - glm53-flash-plan0h.ttq.00003-of-00005
+        - glm53-flash-plan0h.ttq.00004-of-00005
+        - glm53-flash-plan0h.ttq.00005-of-00005
         - glm53-flash-mtp-plan0h.ttq
         - GLM-5.3-Flash-vocab.gguf
         - glm-tt-ship2-e492dca3/SHA256SUMS

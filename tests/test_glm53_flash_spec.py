@@ -54,7 +54,7 @@ def test_glm_galaxy_catalog_row():
     # Weights and the glm-tt package come from the weights repo, not host packages.
     assert spec.hf_weights_repo
     assert not host_packages_provide_weights(spec)
-    assert spec.min_disk_gb >= 250
+    assert spec.min_disk_gb >= 190  # plan0h 181 GB, MTP 4.3 GB, package
     files = spec.metadata["checkpoint_files"]
     package = spec.env_vars["GLM_TT_PACKAGE"]
     assert package.startswith("glm-tt-")
