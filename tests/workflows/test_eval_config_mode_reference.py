@@ -249,6 +249,8 @@ def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
             "terminal_bench_2",
             "livecodebench",
             "mmmu_pro_standard_cot",
+            # The 12B also serves audio: the model card's FLEURS (WER) joins its set.
+            *(["fleurs_en"] if model == "google/gemma-4-12B-it" else []),
         ]
         assert all((t.priority or "must") == "must" for t in tasks)
         terminal = _gemma4_task(model, "terminal_bench_2").agentic_eval_config
@@ -279,6 +281,30 @@ def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
         assert refs[EvalLimitMode.CI_NIGHTLY].score == refs[EvalLimitMode.CI_LONG].score
         ref = resolve_eval_reference(mmmu.score, EvalLimitMode.CI_LONG)
         assert ref["is_subset_reference"] is True
+
+
+def test_gemma4_12b_fleurs_is_the_audio_gate_scored_as_100_minus_wer():
+    """FLEURS en_us runs on the stock lmms-eval client from the vision venv (the
+    wrapper encodes the clips), thinking off per request, the full 647 utterances
+    in both presets, and is graded as 100 - WER (the model card's 0.069 WER)."""
+    fleurs = _gemma4_task("google/gemma-4-12B-it", "fleurs_en")
+    assert fleurs.eval_class == "openai_compatible"
+    assert fleurs.workflow_venv_type == WorkflowVenvType.EVALS_VISION
+    assert fleurs.modalities == ["audio"]
+    assert fleurs.thinking is False and not fleurs.request_body
+    assert EvalLimitMode.CI_NIGHTLY not in fleurs.limit_samples_map
+    assert EvalLimitMode.CI_LONG not in fleurs.limit_samples_map
+    assert not fleurs.score.mode_reference_scores
+    assert fleurs.score.published_score == 100 - 6.9
+    score = fleurs.score.score_func(
+        {"fleurs_en": {"wer,none": 6.35}},
+        task_name="fleurs_en",
+        kwargs=fleurs.score.score_func_kwargs,
+    )
+    assert score == 100 - 6.35
+    # Other release models do not serve audio and carry no audio task.
+    for model in ("google/gemma-4-31B-it", "google/gemma-4-26B-A4B-it"):
+        assert "fleurs_en" not in {t.task_name for t in _eval_config_map[model].tasks}
 
 
 def _gemma4_multimodal_release_specs():
