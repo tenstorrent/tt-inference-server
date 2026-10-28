@@ -60,7 +60,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Private to the Tenstorrent org, so reading it needs HF_TOKEN. The revision is
 # pinned, so a new reference or image set reaches CI only through a commit here.
 I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs"
-I2V_EVAL_HF_REVISION = "51206b33c4877cbfec4cf06e70478666ead6e1de"
+I2V_EVAL_HF_REVISION = "31808112a4e0e3686dab167067b3cb3fedadf5ec"
 # The GPU run TT is compared with: Wan2.2's I2V settings, Cache-DiT off.
 GPU_REFERENCE_RUN = "refs/r1"
 # A reference run's small files: enough to match clips before fetching them.
