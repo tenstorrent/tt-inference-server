@@ -121,15 +121,36 @@ class Target:
     text: str = ""
     # Client-side audio chunk cap; 0 = uncapped. This does not limit server decoding.
     max_chunks: int = 0
+    # Voice reference WAV for voice cloning; empty = no voice. Sent as multipart.
+    voice_wav: bytes = field(default=b"", repr=False)
     request: bytes = field(default=b"", repr=False)
 
     def __post_init__(self) -> None:
-        body = json.dumps({"text": self.text}).encode()
+        if self.voice_wav:
+            boundary = b"ttsharness" + os.urandom(8).hex().encode()
+            body = (
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="text"\r\n\r\n'
+                + self.text.encode()
+                + b"\r\n--"
+                + boundary
+                + b"\r\n"
+                b'Content-Disposition: form-data; name="voice"; filename="voice.wav"\r\n'
+                b"Content-Type: audio/wav\r\n\r\n"
+                + self.voice_wav
+                + b"\r\n--"
+                + boundary
+                + b"--\r\n"
+            )
+            ctype = b"multipart/form-data; boundary=" + boundary
+        else:
+            body = json.dumps({"text": self.text}).encode()
+            ctype = b"application/json"
         self.request = (
             b"POST " + self.path.encode() + b" HTTP/1.1\r\n"
             b"Host: " + self.host.encode() + b"\r\n"
             b"Authorization: Bearer " + self.key.encode() + b"\r\n"
-            b"Content-Type: application/json\r\n"
+            b"Content-Type: " + ctype + b"\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n"
             b"Connection: keep-alive\r\n\r\n" + body
         )
