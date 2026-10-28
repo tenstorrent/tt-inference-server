@@ -50,15 +50,16 @@ VBench scorer runs on it unchanged:
     python3 -m test_module._test_common.vbench_i2v --videos-dir refs/r1/832x480 \\
         --images-dir hf_upload/images/832x480 --gpu-reference none
 
-``--cache-dit THRESHOLD`` turns on cache-dit's DBCache on both experts
+``--cache-dit PRESET`` turns on cache-dit's DBCache on both experts
 (``uv run --with cache-dit==1.5.3 ...``): a step whose first blocks' residual
 changes less than the threshold reuses the cached rest of the transformer.
-Every other DBCache setting is cache-dit's default, and all of them are in
-provenance.json. Each clip's record lists the steps each expert took from the
-cache, with the residual diffs:
+The presets are TT's own recipes (``tt``: tt-metal's I2V default; ``tt-quality``:
+its higher-fidelity setting), so a GPU run caches the way TT does. All the
+settings are in provenance.json. Each clip's record lists the steps each expert
+took from the cache, with the residual diffs:
 
     uv run --with cache-dit==1.5.3 scripts/wan_i2v_gpu_reference.py \\
-        --data hf_upload --out refs/r2/t0.08 --cache-dit 0.08 --noise-dir hf_upload/noise
+        --data hf_upload --out refs/r2/tt --cache-dit tt --noise-dir hf_upload/noise
 
 A run resumes where it stopped: a clip whose record is in its folder's
 ``.clips`` is not made again, so rerunning the same command after an
@@ -113,22 +114,41 @@ SCHEDULES = {
         "guidance_scale_2": 3.0,
     },
 }
-# The DBCache settings a Cache-DiT run records; all but the threshold are
-# cache-dit's defaults.
-CACHE_DIT_SETTINGS = (
-    "residual_diff_threshold",
-    "Fn_compute_blocks",
-    "Bn_compute_blocks",
-    "max_warmup_steps",
-    "warmup_interval",
-    "max_cached_steps",
-    "max_continuous_cached_steps",
-)
-# diffusers' Wan2.2 experts: transformer takes the high-noise steps.
+# TT's DBCache recipes as cache-dit settings: tt-metal 9b40b665
+# models/tt_dit/pipelines/wan/dbcache.py, WanDBCacheConfig.default() and its
+# documented quality override (threshold 0.06, no TaylorSeer, warmup interval 1).
+# taylorseer_order 0 runs without the TaylorSeer calibrator.
+CACHE_DIT_PRESETS = {
+    "tt": {
+        "residual_diff_threshold": 0.12,
+        "Fn_compute_blocks": 1,
+        "Bn_compute_blocks": 0,
+        "max_continuous_cached_steps": 2,
+        "warmup_interval": 2,
+        "cfg_diff_compute_separate": True,
+        "taylorseer_order": 1,
+    },
+    "tt-quality": {
+        "residual_diff_threshold": 0.06,
+        "Fn_compute_blocks": 1,
+        "Bn_compute_blocks": 0,
+        "max_continuous_cached_steps": 2,
+        "warmup_interval": 1,
+        "cfg_diff_compute_separate": True,
+        "taylorseer_order": 0,
+    },
+}
+# Each expert's own warmup and cached-step budget, the same in both presets.
+CACHE_DIT_EXPERT_BUDGETS = {
+    "high_noise": {"max_warmup_steps": 4, "max_cached_steps": 8},
+    "low_noise": {"max_warmup_steps": 2, "max_cached_steps": 20},
+}
+# diffusers' Wan2.2 experts: transformer takes the high-noise steps. cache-dit's
+# Wan2.2 adapter caches them in this order too.
 EXPERTS = (("high_noise", "transformer"), ("low_noise", "transformer_2"))
 
 
-def load_pipeline(schedule: str, offload: bool, cache_threshold: float | None):
+def load_pipeline(schedule: str, offload: bool, cache_preset: str | None):
     import torch
     from diffusers import (
         AutoencoderKLWan,
@@ -152,24 +172,38 @@ def load_pipeline(schedule: str, offload: bool, cache_threshold: float | None):
         pipe.enable_model_cpu_offload()
     else:
         pipe.to("cuda")
-    if cache_threshold is not None:
-        import cache_dit
-
-        cache_dit.enable_cache(pipe, cache_config=cache_dit_config(cache_threshold))
+    if cache_preset is not None:
+        enable_cache_dit(pipe, cache_preset)
     return pipe
 
 
-def cache_dit_config(threshold: float):
-    from cache_dit import DBCacheConfig
+def enable_cache_dit(pipe, preset: str) -> None:
+    import cache_dit
+    from cache_dit import DBCacheConfig, ParamsModifier, TaylorSeerCalibratorConfig
 
-    return DBCacheConfig(residual_diff_threshold=threshold)
+    shared = dict(CACHE_DIT_PRESETS[preset])
+    order = shared.pop("taylorseer_order")
+    cache_dit.enable_cache(
+        pipe,
+        cache_config=DBCacheConfig(**shared),
+        calibrator_config=(
+            TaylorSeerCalibratorConfig(taylorseer_order=order) if order else None
+        ),
+        # reset() leaves every other field None, so a modifier changes only the
+        # expert's budget and keeps the shared settings.
+        params_modifiers=[
+            ParamsModifier(
+                cache_config=DBCacheConfig().reset(**CACHE_DIT_EXPERT_BUDGETS[expert])
+            )
+            for expert, _ in EXPERTS
+        ],
+    )
 
 
-def cache_dit_settings(threshold: float | None) -> dict | None:
-    if threshold is None:
+def cache_dit_settings(preset: str | None) -> dict | None:
+    if preset is None:
         return None
-    config = cache_dit_config(threshold)
-    return {name: getattr(config, name) for name in CACHE_DIT_SETTINGS}
+    return {"preset": preset, **CACHE_DIT_PRESETS[preset], **CACHE_DIT_EXPERT_BUDGETS}
 
 
 def cache_log(pipe) -> dict:
@@ -430,9 +464,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, help="first N clips only")
     parser.add_argument(
         "--cache-dit",
-        type=float,
-        metavar="THRESHOLD",
-        help="cache-dit DBCache with this residual diff threshold (e.g. 0.08)",
+        choices=sorted(CACHE_DIT_PRESETS),
+        help="cache-dit DBCache with TT's recipe: tt (its I2V default) or tt-quality",
     )
     parser.add_argument(
         "--noise-dir",

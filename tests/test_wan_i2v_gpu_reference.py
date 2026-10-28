@@ -164,6 +164,31 @@ def test_a_cache_dit_run_does_not_resume_into_a_folder_made_without_it(tmp_path)
     assert ref.cache_dit_settings(None) is None
 
 
+def test_cache_dit_presets_are_tts_dbcache_recipes():
+    # tt-metal WanDBCacheConfig.default(): F1B0, 0.12, <= 2 in a row, warmup
+    # interval 2, TaylorSeer 1; high-noise 4 warmup / 8 cached, low-noise 2 / 20.
+    tt = ref.cache_dit_settings("tt")
+    assert tt == {
+        "preset": "tt",
+        "residual_diff_threshold": 0.12,
+        "Fn_compute_blocks": 1,
+        "Bn_compute_blocks": 0,
+        "max_continuous_cached_steps": 2,
+        "warmup_interval": 2,
+        "cfg_diff_compute_separate": True,
+        "taylorseer_order": 1,
+        "high_noise": {"max_warmup_steps": 4, "max_cached_steps": 8},
+        "low_noise": {"max_warmup_steps": 2, "max_cached_steps": 20},
+    }
+    quality = ref.cache_dit_settings("tt-quality")
+    assert {k: v for k, v in quality.items() if tt.get(k) != v} == {
+        "preset": "tt-quality",
+        "residual_diff_threshold": 0.06,
+        "warmup_interval": 1,
+        "taylorseer_order": 0,
+    }
+
+
 def test_initial_noise_is_the_seeded_cpu_draw():
     torch = pytest.importorskip("torch")
 
