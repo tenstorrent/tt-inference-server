@@ -428,6 +428,16 @@ def _has_target_checks(block: Block) -> bool:
     )
 
 
+VBENCH_KIND = "vbench"
+
+
+@register(VBENCH_KIND)
+def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
+    """VBench's tables, which the video eval renders when it scores its clips."""
+    data = block.data if isinstance(block.data, Mapping) else {}
+    return str(data.get("markdown") or "").strip()
+
+
 @register(BENCHMARKS_KIND)
 def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
     """Render a benchmark block plus whichever notes apply.

@@ -37,9 +37,10 @@ start out the same and the frame metrics show how far TT drifts from the GPU.
 
 Informational: nothing gates on it yet.
 
-Runs as its own CI step after the tests, over the clips the video eval saved
-(``<run output>/videos/evals/index.json``). It provisions the VBENCH_I2V venv
-(pinned deps plus a VBench checkout) and re-runs itself there:
+The video eval runs it over the clips it saved
+(``<run output>/videos/evals/index.json``) and puts the tables in the report.
+It provisions the VBENCH_I2V venv (pinned deps plus a VBench checkout) and
+re-runs itself there, so it also runs on its own:
 
     python -m test_module._test_common.vbench_i2v --videos-dir <dir>
 """
@@ -554,6 +555,7 @@ def score_directory(
         "clips": [
             {
                 "file": e["file"],
+                "video_id": e.get("video_id"),
                 "prompt": e["prompt"],
                 "conditioning_image": e.get("conditioning_image"),
                 "camera_motion": e.get("camera_motion"),
@@ -720,7 +722,7 @@ def to_markdown(result: dict, title: str) -> str:
                 for n in scored
             ]
             lines.append(
-                f"| {clip['file'][:2]} | {clip['prompt']} | " + " | ".join(cells) + " |"
+                f"| {clip_label(clip)} | {clip['prompt']} | " + " | ".join(cells) + " |"
             )
     if result.get("gpu_reference"):
         lines += reference_markdown(result["gpu_reference"], result["clips"])
@@ -763,7 +765,7 @@ def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
             continue
         if "error" in p:
             lines.append(
-                f"| {clip['file'][:2]} | {clip['prompt']} | error: {p['error'][:80]} "
+                f"| {clip_label(clip)} | {clip['prompt']} | error: {p['error'][:80]} "
                 "| | | | | |"
             )
             continue
@@ -784,7 +786,7 @@ def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
             cells += [f"error: {ff['error'][:60]}" if "error" in ff else "", ""]
         cells.append(noise_cell(reference.get("noise", {}).get(clip["file"])))
         lines.append(
-            f"| {clip['file'][:2]} | {clip['prompt']} | " + " | ".join(cells) + " |"
+            f"| {clip_label(clip)} | {clip['prompt']} | " + " | ".join(cells) + " |"
         )
     if reference.get("lpips_error"):
         lines += ["", f"LPIPS unavailable: {reference['lpips_error'][:200]}"]
@@ -797,6 +799,11 @@ def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
             f"saved noise bit for bit on this host (torch {noise[0]['torch']}).",
         ]
     return lines
+
+
+def clip_label(clip: dict) -> str:
+    """A clip's video id (e.g. vbi2v_0913_832x480), or its index for a T2V clip."""
+    return clip.get("video_id") or clip["file"][:2]
 
 
 def noise_cell(record: dict | None) -> str:

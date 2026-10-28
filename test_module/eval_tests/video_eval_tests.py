@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,8 +16,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
+from workflow_module import accept_blocks
 
-from .._test_common import ReportCheckTypes, block_id
+from .._test_common import ReportCheckTypes, block_id, sweep_envelope
 from .._test_common.video_output_check import save_clip
 from ..context import HardwareRequirement, MediaContext, require_health
 
@@ -179,6 +181,84 @@ def _save_eval_clips(
         index_path.write_text(json.dumps(index, indent=2))
 
 
+# VBench runs on the host CPU after the clips are made: about 2 min per clip and
+# dimension on a BH Galaxy host, so 20 clips fit with room to spare.
+VBENCH_TIMEOUT_SECONDS = 90 * 60
+
+
+def _strip_frames(record):
+    """``record`` without the per-frame lists, which stay in vbench.json."""
+    if isinstance(record, dict):
+        return {k: _strip_frames(v) for k, v in record.items() if k != "frames"}
+    return record
+
+
+def _run_vbench(ctx: MediaContext) -> Block | None:
+    """Score the saved eval clips with VBench, as a report section of its own.
+
+    None when the eval saved no clips. The scorer sets up its own pinned venv,
+    so it runs in a subprocess. A failure or timeout is reported in the section
+    instead of failing the eval: nothing gates on VBench yet.
+    """
+    from .._test_common import vbench_i2v
+
+    videos_dir = Path(ctx.output_path) / "videos" / "evals"
+    if not (videos_dir / "index.json").is_file():
+        return None
+    command = [
+        sys.executable,
+        "-m",
+        "test_module._test_common.vbench_i2v",
+        "--videos-dir",
+        str(videos_dir),
+    ]
+    logger.info("Scoring the eval clips with VBench: %s", " ".join(command))
+    problem = None
+    try:
+        code = subprocess.run(
+            command, cwd=_PROJECT_ROOT, timeout=VBENCH_TIMEOUT_SECONDS
+        ).returncode
+        if code:
+            problem = f"VBench exited with code {code}"
+    except subprocess.TimeoutExpired:
+        problem = f"VBench stopped at its {VBENCH_TIMEOUT_SECONDS // 60} min limit"
+    except Exception as e:
+        problem = f"VBench did not run: {type(e).__name__}: {e}"
+    if problem:
+        logger.error(problem)
+
+    # Written after each dimension, so a run cut short keeps what finished.
+    out = videos_dir / "vbench.json"
+    result = json.loads(out.read_text()) if out.is_file() else None
+    title = f"{ctx.model_spec.hf_model_repo} on {ctx.device.name}"
+    if result:
+        markdown = vbench_i2v.to_markdown(result, title)
+        if problem:
+            markdown += f"\n{problem}; the scores above are what finished.\n"
+    else:
+        markdown = f"### VBench: {title}\n\n{problem or 'VBench scored nothing.'}\n"
+
+    data: dict = {"markdown": markdown}
+    if problem:
+        data["error"] = problem
+    if result:
+        data.update(
+            num_clips=result.get("num_clips"),
+            device=result.get("device"),
+            scores=vbench_i2v.summarize(result),
+            dimensions=result.get("dimensions"),
+            gpu_reference=_strip_frames(result.get("gpu_reference")),
+        )
+    return Block(
+        kind="vbench",
+        task_type="video",
+        title="VBench",
+        id=block_id(ctx) or None,
+        targets={},
+        data=data,
+    )
+
+
 def run_video_eval(ctx: MediaContext) -> Block:
     """Run evaluations for a video model (Mochi, WAN, etc.)."""
     logger.info(
@@ -197,6 +277,10 @@ def run_video_eval(ctx: MediaContext) -> Block:
         (eval_result or {}).get("videos", []),
         (eval_result or {}).get("rejected_videos", []),
     )
+    # Its own report section, next to the eval's (the runner returns one block).
+    vbench = _run_vbench(ctx)
+    if vbench is not None:
+        accept_blocks([vbench], envelope=sweep_envelope(ctx))
 
     logger.info("Generating eval report...")
     task = ctx.all_params.tasks[0]
