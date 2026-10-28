@@ -35,3 +35,46 @@ def test_eval_clips_are_kept_with_their_prompts(tmp_path):
 def test_no_clips_writes_nothing(tmp_path):
     _save_eval_clips(SimpleNamespace(output_path=str(tmp_path)), [])
     assert not (tmp_path / "videos").exists()
+
+
+def test_validation_clips_keep_their_request_and_rejects_go_with_failed(tmp_path):
+    ok = tmp_path / "ok.mp4"
+    ok.write_bytes(b"ok")
+    bad = tmp_path / "bad.mp4"
+    bad.write_bytes(b"bad")
+    request = {
+        "video_id": "vbi2v_0913_1280x720",
+        "width": 1280,
+        "height": 720,
+        "seed": 913,
+    }
+    videos = [
+        {
+            "prompt": "camels",
+            "video_path": str(ok),
+            "image": "vbi2v_0913.jpg",
+            **request,
+        }
+    ]
+    rejected = [
+        {
+            "prompt": "neon",
+            "video_path": str(bad),
+            "video_id": "vbi2v_0048_480x832",
+            "problem": "1280x720, expected 480x832",
+        }
+    ]
+    _save_eval_clips(
+        SimpleNamespace(output_path=str(tmp_path / "out")), videos, rejected
+    )
+
+    out = tmp_path / "out/videos"
+    assert json.loads((out / "evals/index.json").read_text()) == [
+        {
+            "file": "00_vbi2v_0913_1280x720.mp4",
+            "prompt": "camels",
+            "conditioning_image": "vbi2v_0913.jpg",
+            **request,
+        }
+    ]
+    assert (out / "failed/evals/vbi2v_0048_480x832.mp4").read_bytes() == b"bad"

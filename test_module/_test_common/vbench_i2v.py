@@ -111,17 +111,37 @@ def hf_snapshot(patterns: list[str] | tuple[str, ...]) -> Path:
     )
 
 
-def find_conditioning_image(name: str, images_dir: Path | None = None) -> Path:
-    """The conditioning image: in ``images_dir`` if given, else in the pair set that has it."""
-    candidates = (
-        [images_dir / name] if images_dir else sorted(DATASETS_DIR.glob(f"*/{name}"))
-    )
+def find_conditioning_image(
+    name: str,
+    images_dir: Path | None = None,
+    shape: tuple[int, int] | None = None,
+) -> Path:
+    """The conditioning image: in ``images_dir`` if given, else where its set keeps it.
+
+    A validation-set clip names its ``shape``: its first frame is the one
+    prepared at that size, in the eval data on Hugging Face. Other sets' images
+    are in the repo, under the pair set that has them.
+    """
+    if images_dir:
+        candidates = [images_dir / name]
+    elif shape:
+        relative = f"images/{shape[0]}x{shape[1]}/{name}"
+        candidates = [hf_snapshot([relative]) / relative]
+    else:
+        candidates = sorted(DATASETS_DIR.glob(f"*/{name}"))
     for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(
         f"conditioning image {name} not found in {images_dir or DATASETS_DIR}"
     )
+
+
+def clip_shape(entry: dict) -> tuple[int, int] | None:
+    """The ``(width, height)`` a validation-set clip's index entry names, if any."""
+    if entry.get("width") and entry.get("height"):
+        return (entry["width"], entry["height"])
+    return None
 
 
 def build_full_info(
@@ -144,7 +164,9 @@ def build_full_info(
         }
         if entry.get("conditioning_image"):
             record["custom_image_path"] = str(
-                find_conditioning_image(entry["conditioning_image"], images_dir)
+                find_conditioning_image(
+                    entry["conditioning_image"], images_dir, clip_shape(entry)
+                )
             )
         entries.append(record)
     return entries

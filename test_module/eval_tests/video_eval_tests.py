@@ -142,15 +142,30 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     return combined_results
 
 
-def _save_eval_clips(ctx: MediaContext, videos: list[dict]) -> None:
+# What a validation-set clip's index entry carries beyond the prompt and image,
+# so the VBench scorer can find its first frame and GPU reference by shape.
+VALIDATION_CLIP_FIELDS = ("video_id", "width", "height", "seed")
+
+
+def _save_eval_clips(
+    ctx: MediaContext, videos: list[dict], rejected: list[dict] = ()
+) -> None:
     """Keep every eval clip, with its prompt, in the uploaded run output.
 
     These are the clips the quality score is about, so they are worth looking at
-    (and comparing with the GPU reference) on every run.
+    (and comparing with the GPU reference) on every run. Clips rejected for their
+    shape go with the failed clips, out of the index the scorers read.
     """
+    for video in rejected:
+        save_clip(
+            video.get("video_path"),
+            ctx.output_path,
+            "failed/evals",
+            f"{video.get('video_id') or video.get('job_id') or 'clip'}.mp4",
+        )
     index = []
     for i, video in enumerate(videos):
-        name = f"{i:02d}_{video.get('job_id') or 'clip'}.mp4"
+        name = f"{i:02d}_{video.get('video_id') or video.get('job_id') or 'clip'}.mp4"
         if save_clip(video.get("video_path"), ctx.output_path, "evals", name):
             entry = {"file": name, "prompt": video.get("prompt")}
             if video.get("image"):
@@ -159,6 +174,7 @@ def _save_eval_clips(ctx: MediaContext, videos: list[dict]) -> None:
                 entry["camera_motion"] = video["camera_motion"]
             if video.get("concept_scores"):
                 entry["concept_scores"] = video["concept_scores"]
+            entry.update({k: video[k] for k in VALIDATION_CLIP_FIELDS if k in video})
             index.append(entry)
     if index:
         index_path = Path(ctx.output_path) / "videos" / "evals" / "index.json"
@@ -178,7 +194,11 @@ def run_video_eval(ctx: MediaContext) -> Block:
         logger.error(f"Eval execution encountered an error: {e}")
         raise
 
-    _save_eval_clips(ctx, (eval_result or {}).get("videos", []))
+    _save_eval_clips(
+        ctx,
+        (eval_result or {}).get("videos", []),
+        (eval_result or {}).get("rejected_videos", []),
+    )
 
     logger.info("Generating eval report...")
     task = ctx.all_params.tasks[0]
@@ -193,6 +213,12 @@ def run_video_eval(ctx: MediaContext) -> Block:
         logger.info("Adding eval results from video generation test to benchmark data")
         data["num_prompts"] = eval_result.get("num_prompts", 0)
         data["num_generated"] = eval_result.get("num_generated", 0)
+        rejected = eval_result.get("rejected_videos") or []
+        if rejected:
+            data["num_rejected"] = len(rejected)
+            data["rejected"] = "; ".join(
+                f"{v.get('video_id')}: {v.get('problem')}" for v in rejected
+            )[:2000]
         data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
 
         clip_results = eval_result.get("clip_results", {})

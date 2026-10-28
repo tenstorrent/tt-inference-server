@@ -34,6 +34,7 @@ from .._test_common import (
     is_i2v_video_model,
     load_i2v_eval_pairs,
 )
+from .._test_common.video_output_check import check_video_output
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class VideoGenerationEvalsTest(BaseTest):
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
+        self.rejected_videos: list[dict] = []
 
     async def _run_specific_test_async(self):
         request = self.targets.get("request")
@@ -158,6 +160,9 @@ class VideoGenerationEvalsTest(BaseTest):
             "concept_results": concept_results,
             # {prompt, video_path, job_id, ...} per clip, so the caller can keep them.
             "videos": videos_info,
+            # Clips that came back the wrong shape (or unusable): not scored, kept
+            # by the caller with the failed clips.
+            "rejected_videos": self.rejected_videos,
         }
 
         self.eval_results = results
@@ -211,6 +216,7 @@ class VideoGenerationEvalsTest(BaseTest):
 
         base_url = server_url or SERVER_BASE_URL
         videos_info = []
+        self.rejected_videos = []
 
         headers = {
             "accept": "application/json",
@@ -227,6 +233,9 @@ class VideoGenerationEvalsTest(BaseTest):
                 num_inference_steps=num_inference_steps,
                 model_name=model_name,
                 image_b64=pair["image_b64"] if pair else fixture_image_b64,
+                shape=pair.get("shape") if pair else None,
+                seed=pair.get("seed") if pair else None,
+                negative_prompt=pair.get("negative_prompt") if pair else None,
             )
 
             generation_start = time.time()
@@ -256,17 +265,34 @@ class VideoGenerationEvalsTest(BaseTest):
 
                 generation_duration = time.time() - generation_start
                 if video_path:
-                    videos_info.append(
-                        {
-                            "prompt": prompt,
-                            "video_path": video_path,
-                            "job_id": job_id,
-                            "image": pair["image"] if pair else None,
-                            "camera_motion": pair.get("camera_motion")
-                            if pair
-                            else None,
-                        }
-                    )
+                    video = {
+                        "prompt": prompt,
+                        "video_path": video_path,
+                        "job_id": job_id,
+                        "image": pair["image"] if pair else None,
+                        "camera_motion": pair.get("camera_motion") if pair else None,
+                    }
+                    if pair and pair.get("shape"):
+                        width, height = pair["shape"]
+                        video.update(
+                            video_id=pair["video_id"],
+                            width=width,
+                            height=height,
+                            seed=pair["seed"],
+                        )
+                        # The clip must have the shape this video asked for; one
+                        # the deployment cannot serve yet comes back another size.
+                        problem = check_video_output(
+                            video_path,
+                            hf_model_repo=model_name,
+                            device_name="",
+                            shape=pair["shape"],
+                        )
+                        if problem:
+                            logger.error(f"❌ {pair['video_id']} rejected: {problem}")
+                            self.rejected_videos.append({**video, "problem": problem})
+                            continue
+                    videos_info.append(video)
                     logger.info(f"✅ Video generated successfully: {video_path}")
                 else:
                     logger.error(f"❌ Video generation failed for job: {job_id}")

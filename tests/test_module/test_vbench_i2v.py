@@ -290,3 +290,28 @@ def test_comparison_pairs_clips_by_request_not_file_name(tmp_path, monkeypatch):
     md = mod.to_markdown(result, "x")
     assert "| i2v_subject | 0.9500 | 0.9400 | +0.0100 | 1 / 1 of 2 |" in md
     assert "| 00 | A bird on a feeder. | 35.0 | 20.0 | 15.0 |" in md
+
+
+def test_validation_clip_first_frame_comes_from_hf_at_its_shape(tmp_path, monkeypatch):
+    image = tmp_path / "images" / "480x832" / "vbi2v_0048.jpg"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"jpg")
+    fetched = []
+
+    def fake_snapshot(patterns):
+        fetched.extend(patterns)
+        return tmp_path
+
+    monkeypatch.setattr(mod, "hf_snapshot", fake_snapshot)
+    index = [
+        {
+            "file": "00_vbi2v_0048_480x832.mp4",
+            "prompt": "neon",
+            "conditioning_image": "vbi2v_0048.jpg",
+            "width": 480,
+            "height": 832,
+        }
+    ]
+    [record] = mod.build_full_info(index, tmp_path, None, ["i2v_subject"])
+    assert record["custom_image_path"] == str(image)
+    assert fetched == ["images/480x832/vbi2v_0048.jpg"]
