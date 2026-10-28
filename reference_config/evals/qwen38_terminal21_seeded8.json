@@ -1,0 +1,45 @@
+{
+  "status": "prepared_only_not_dispatched",
+  "purpose": "Fixed seeded8 workload for completion and capacity estimates after short harness pilot; selection independent of pilot rewards",
+  "dataset": "terminal-bench/terminal-bench-2-1",
+  "ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+  "seed": 1234,
+  "population": 89,
+  "task_names": [
+    "terminal-bench/cancel-async-tasks",
+    "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/qemu-alpine-ssh",
+    "terminal-bench/model-extraction-relu-logits",
+    "terminal-bench/path-tracing",
+    "terminal-bench/dna-assembly",
+    "terminal-bench/feal-linear-cryptanalysis",
+    "terminal-bench/nginx-request-logging"
+  ],
+  "tasks": {
+    "terminal-bench/cancel-async-tasks": {
+      "content_hash": "a3d048d351136e48070696cda8bb79660dfd74db1fea3b6da88559f0332699c1"
+    },
+    "terminal-bench/fix-code-vulnerability": {
+      "content_hash": "d31348aa16b533a15f013420e4d9726dc529e6086adc7d6d48067d22cc18fe71"
+    },
+    "terminal-bench/qemu-alpine-ssh": {
+      "content_hash": "60b7050b0e0aa51641208cf65766743d340e59575db2c4d2f8628240846c2a28"
+    },
+    "terminal-bench/model-extraction-relu-logits": {
+      "content_hash": "1ae5045ad68b5d34c3398b612066a07c4a08b6dc330d28868ec4021e17c94b17"
+    },
+    "terminal-bench/path-tracing": {
+      "content_hash": "cf56094c881a488b27e9f204a638a7e78ed7d55e12dc3064108c93357190314c"
+    },
+    "terminal-bench/dna-assembly": {
+      "content_hash": "e41a8e94d86019949b08d3b5f88a85f6d943ba0fd85d5e1d5ebb95cb8f66223f"
+    },
+    "terminal-bench/feal-linear-cryptanalysis": {
+      "content_hash": "0f3234c5fde85f9dc610d94cfefd4c892afb75c9e571f21f18fee66972b67332"
+    },
+    "terminal-bench/nginx-request-logging": {
+      "content_hash": "9d1b8bebd989ea0bc8080c3b159480068caf183c5fd61385868b2574b206e097"
+    }
+  },
+  "hold": "Require prefix2 actual completion/identity/audits; derive output/timeout limits from observed lengths; capacity from observedlive-working-set and actual geometry, not max_context multiplication."
+}
