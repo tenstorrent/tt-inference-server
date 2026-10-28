@@ -1,0 +1,84 @@
+{
+  "run_id": 40685950043,
+  "tis_sha": "cc9a52be008e27ca1006d0e834a2792aede95a96",
+  "status": "two_task_harness_prefix_success_not_population_accuracy",
+  "dataset": "terminal-bench/terminal-bench-2-1",
+  "dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+  "tasks": [
+    {
+      "name": "terminal-bench/fix-git",
+      "ref": "sha256:16948b980df9d96de616a205f5acca1c5d395de83ff4f8ffabcafacb93226f2e",
+      "checksum": "d3220d70bc668ec6f4034fab51e62873dff724a61f824d764fd201d6f5e7a88a",
+      "reward": 1.0,
+      "exception": null,
+      "agent_seconds": 284.142954,
+      "turns": 9,
+      "input_tokens": 49688,
+      "output_tokens": 2589,
+      "command_count": 18,
+      "unique_commands": 15,
+      "repeated_exact_commands": {
+        "git status\n": 2,
+        "git merge c499730\n": 2,
+        "cat _includes/about.md\n": 2
+      },
+      "summaries": 0
+    },
+    {
+      "name": "terminal-bench/openssl-selfsigned-cert",
+      "ref": "sha256:d4afa2bd2a9ba1420db8d6cfde42ffdb4873ae2d955c35014e8da94444c83302",
+      "checksum": "2b70d5535b5873f644fad37b76dbef86a1e42162e018c7bc06316e5e2521929a",
+      "reward": 1.0,
+      "exception": null,
+      "agent_seconds": 382.890387,
+      "turns": 4,
+      "input_tokens": 16766,
+      "output_tokens": 3672,
+      "command_count": 12,
+      "unique_commands": 12,
+      "repeated_exact_commands": {},
+      "summaries": 0
+    }
+  ],
+  "http": {
+    "requests": 13,
+    "input_tokens": 66454,
+    "output_tokens": 6261,
+    "max_reply_tokens": 1815,
+    "max_prompt_tokens": 8042,
+    "max_request_seconds": 191.49567441036925,
+    "all_status_200": true,
+    "all_finished_stop": true
+  },
+  "prefix": {
+    "counts": {
+      "responses": 13,
+      "missing_prior_generated_continuity": 2,
+      "eligible_whole_turn_pairs": 11,
+      "full_whole_turn_preserved": 11
+    },
+    "totals": {
+      "exact_lcp_tokens": 56486,
+      "cached_within_lcp_tokens": 55296,
+      "uncached_exact_lcp_tokens": 1190
+    },
+    "all_hits_equal_whole_turn_lcp_rounded_down_to_block256": true,
+    "cache_over_exact_lcp": 0.9789328329143504
+  },
+  "engine": {
+    "preemptions": 0,
+    "output_caps": 0,
+    "repetition_stops": 0,
+    "captures_before_after": [
+      4,
+      4
+    ],
+    "retirements": 0,
+    "host_logits_reads": 0
+  },
+  "administrative_findings": [
+    "Agentic workflow rc0, original verifiers passed; optional AI-summary setup uv-cache permission error after evaluation (exit2), plus absent run_specs display exit1; hardwarejob overall success.",
+    "No paired scored retention-off run; observed continuity and short-task success, not an accuracy gain.",
+    "Short replies and low working-set do not qualify long-reply pressure behavior or larger concurrency."
+  ]
+}
