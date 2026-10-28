@@ -502,6 +502,8 @@ def test_main_probes_the_link_map_then_serves_auto_groups(tmp_path, galaxy_env, 
 def test_probe_only_serves_nothing(tmp_path, galaxy_env):
     home, record = _cube_package(tmp_path, [0], groups_status=5)
     galaxy_env.update(GLM_TT_HOME=str(home), GLM_TT_PROBE_ONLY="1")
+    # The probe needs no weights.
+    galaxy_env["GLM_TT_TTQ"] = str(tmp_path / "not-downloaded.ttq")
     assert run_glm_tt.main([], galaxy_env) == 5
     assert not record.exists()
 

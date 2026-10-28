@@ -534,6 +534,9 @@ def main(argv=None, environ=None):
             log(
                 "TT_LAB_LEGACY_KMD is set but glm-tt has no legacy KMD mode and ignores it"
             )
+        if _truthy(env.get("GLM_TT_PROBE_ONLY")) and "--groups G|auto" in usage:
+            # Needs no weights: the link map is read from the chips' base firmware.
+            return groups_probe(glm_tt, env)
         serve, updates = serve_command(env, usage, chips)
         ttq = serve[serve.index("--ttq") + 1] if "--ttq" in serve else ""
         if ttq.endswith(".manifest"):
@@ -567,9 +570,7 @@ def main(argv=None, environ=None):
     galaxy = "--groups" in serve
     # A glm-tt with --groups auto also has the read-only `groups` command.
     if galaxy and "--groups G|auto" in usage:
-        probe = groups_probe(glm_tt, env)
-        if _truthy(env.get("GLM_TT_PROBE_ONLY")):
-            return probe
+        groups_probe(glm_tt, env)
     log(f"glm-tt {' '.join(_redacted(serve))}")
     status = run_serve(glm_tt + serve, env)
     fallback = (env.get("GLM_TT_FALLBACK") or "pcie").lower()
