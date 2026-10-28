@@ -65,14 +65,13 @@
                 {
                     "template": "WanI2VCreateContractTest",
                     "enabled": true,
-                    "description": "Wan2.2 I2V create contract: auth and request validation refusals"
+                    "description": "Wan2.2 I2V generation API create contract: auth, request validation, image URL policy and size, and unserved-model refusals"
                 },
                 {
                     "template": "VideoGenerationI2VTest",
                     "enabled": true,
-                    "description": "Wan2.2 I2V end-to-end lifecycle: create, query, list, download, clip check",
+                    "description": "Wan2.2 I2V generation API lifecycle: submit, query, list, poll, outputs, content, clip and container check, cancel, delete",
                     "targets": {
-                        "num_inference_steps": 40,
                         "poll_timeout": 1200,
                         "poll_interval": 5
                     },
@@ -94,7 +93,7 @@
                 {
                     "template": "VideoGenerationI2VParamTest",
                     "enabled": true,
-                    "description": "Wan2.2 I2V parameter sweep"
+                    "description": "Wan2.2 I2V parameter sweep: seed, prompt, negative prompt, last frame, no seed, the four output shapes, a near-limit image"
                 }
             ]
         },

@@ -4,10 +4,10 @@
 
 """Large conditioning images for I2V size stress tests, made on demand.
 
-A real scene (the first I2V eval pair) upscaled to 5760x3240 with seeded film
-grain, so it compresses like a big photo, then JPEG-encoded at the quality that
-lands it just under or just over the server's image size limits. Generated
-rather than committed: a ~27 MB fixture would only ever test a rejection.
+The I2V fixture image (a volcano) upscaled to 7680x4320 with seeded film
+grain, so it compresses like a big photo, then JPEG-encoded at the quality
+that lands it just under or just over the API's 30 MB image limit. Generated
+rather than committed: a ~34 MB fixture would only ever test a rejection.
 """
 
 from __future__ import annotations
@@ -15,18 +15,15 @@ from __future__ import annotations
 import functools
 import io
 
-from .video_generation_routing import I2V_EVAL_PAIRS_DIR, load_i2v_eval_pairs
+from .video_generation_routing import FIXTURE_IMAGE_PATH
+from .wan_i2v_generation_api import MAX_IMAGE_MB
 
-# Server limits (tt-media-server): an image_prompts entry may be at most this
-# many base64 characters (domain/video_i2v_generate_request.py), so ~7.5 MB of
-# image; a multipart upload at most this many bytes (open_ai_api/video.py).
-MAX_BASE64_IMAGE_LEN = 10_000_000
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-LARGE_IMAGE_SIZE = (5760, 3240)
-# Under the base64 limit with ~1% to spare: 7_400_000 bytes -> 9_866_668 chars.
-NEAR_LIMIT_BYTES = 7_400_000
-# Over both limits.
-OVER_LIMIT_BYTES = 12 * 1024 * 1024
+LARGE_IMAGE_SIZE = (7680, 4320)
+# "30 MB" read either way: the near-limit image is under 30 * 10^6 bytes and
+# the over-limit one over 30 MiB, so neither verdict hangs on the unit.
+MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1_000_000
+NEAR_LIMIT_BYTES = MAX_IMAGE_BYTES - 500_000
+OVER_LIMIT_BYTES = 32 * 1024 * 1024
 
 
 @functools.lru_cache(maxsize=None)
@@ -39,9 +36,10 @@ def grainy_jpeg(target_bytes: int, *, under: bool, seed: int = 0) -> bytes:
     import numpy as np
     from PIL import Image
 
-    source = I2V_EVAL_PAIRS_DIR / load_i2v_eval_pairs(1)[0]["image"]
     base = np.asarray(
-        Image.open(source).convert("RGB").resize(LARGE_IMAGE_SIZE, Image.BICUBIC),
+        Image.open(FIXTURE_IMAGE_PATH)
+        .convert("RGB")
+        .resize(LARGE_IMAGE_SIZE, Image.BICUBIC),
         np.float32,
     )
     grain = np.random.default_rng(seed).normal(0, 24, base.shape)
@@ -70,19 +68,18 @@ def grainy_jpeg(target_bytes: int, *, under: bool, seed: int = 0) -> bytes:
 
 
 def near_limit_image() -> bytes:
-    """Just under the base64 limit: the largest image the I2V JSON API accepts."""
+    """Just under the 30 MB limit: about the largest image a request may carry."""
     return grainy_jpeg(NEAR_LIMIT_BYTES, under=True)
 
 
 def over_limit_image() -> bytes:
-    """Over both limits: refused by the JSON API (422) and the upload (413)."""
+    """Over the 30 MB limit: refused with 413."""
     return grainy_jpeg(OVER_LIMIT_BYTES, under=False)
 
 
 __all__ = [
     "LARGE_IMAGE_SIZE",
-    "MAX_BASE64_IMAGE_LEN",
-    "MAX_UPLOAD_BYTES",
+    "MAX_IMAGE_BYTES",
     "grainy_jpeg",
     "near_limit_image",
     "over_limit_image",

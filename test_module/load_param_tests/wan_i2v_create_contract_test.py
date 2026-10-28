@@ -2,13 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Create-contract checks for a Wan2.2 I2V deployment of the video V1 API.
+"""Create-contract checks for a Wan2.2 I2V deployment of the generation API.
 
-Every case is a request the server must refuse: bad auth, or a body that breaks
-``VideoI2VGenerateRequest`` (tt-media-server domain/video_i2v_generate_request.py),
-an image over the size limits (JSON and multipart upload), plus the text-only
-route an I2V deployment refuses. None of them should create a job, so the suite
-runs in seconds and holds no device time. Ported from the
+Every case is a submit the server must refuse, as the API spec says
+(``wan_i2v_generation_api`` names it; tt-media-server does not implement it
+yet, so today these fail): bad auth (401); a body that breaks the request
+schema (422, a ValidationError naming the field, every problem listed); an
+image URL the fetch policy forbids (400) or that cannot be fetched (422); an
+image over 30 MB (413); and another model's route (404). None of them should
+create a job, so the suite runs in seconds and holds no device time; a job a
+refused request did create is cancelled straight away. Ported from the
 MiniMax-H3 create-contract suite (zni/h3-ci-unified).
 """
 
@@ -16,10 +19,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 import logging
-import os
 import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -28,6 +29,15 @@ import aiohttp
 
 from .._test_common import BaseTest, HardwareRequirement, TestConfig
 from .._test_common.large_images import over_limit_image
+from .._test_common.wan_i2v_generation_api import (
+    CANCEL_PATH,
+    SEED_MAX,
+    SUBMIT_PATH,
+    UNSERVED_SUBMIT_PATH,
+    data_uri,
+    resolve_api_key,
+    validation_error_problems,
+)
 
 if TYPE_CHECKING:
     from report_module.schema import Block
@@ -36,127 +46,124 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-I2V_CREATE_PATH = "/v1/videos/generations/i2v"
-T2V_CREATE_PATH = "/v1/videos/generations"
-I2V_UPLOAD_PATH = "/v1/videos/generations/i2v/upload"
-# Responses longer than this are cut in the report: a 422 echoes its input,
-# which for the over-limit image is ~17M characters.
+# Responses longer than this are cut in the report: a 422 may echo its input,
+# which for the over-limit image is ~45M characters.
 MAX_REPORTED_RESPONSE_CHARS = 2000
-# Server-side bounds (tt-media-server config/constants.py); a unit test checks
-# these against that file so the cases cannot drift from what the server enforces.
-WAN22_NUM_FRAMES = 81
-MIN_VIDEO_INFERENCE_STEPS = 4
-MAX_VIDEO_INFERENCE_STEPS = 50
 # 1x1 PNG: decodes, so only the field under test makes a case invalid.
 TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+TINY_PNG_DATA_URI = f"data:image/png;base64,{TINY_PNG_BASE64}"
 PROMPT = "A volcano erupts at dusk while the camera slowly pushes in."
+# Never resolves (RFC 2606), so the fetch fails as a network error. A
+# deployment with a host allowlist answers 400 for it instead; the
+# ``unfetchable_image_url`` target points it at a missing object on an allowed host.
+DEFAULT_UNFETCHABLE_IMAGE_URL = "https://example.invalid/first_frame.png"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 300
-DEFAULT_API_KEY = "your-secret-key"
 
 
 @dataclass(frozen=True)
 class RequestCase:
     name: str
     payload: dict[str, Any]
-    # Missing auth is refused by FastAPI's APIKeyHeader before our checker runs,
-    # and that status is 403 or 401 depending on the FastAPI version.
-    expected_statuses: tuple[int, ...] = (422,)
+    expected_status: int = 422
     auth_mode: Literal["valid", "missing", "invalid"] = "valid"
-    path: str = I2V_CREATE_PATH
-    # A route refusal: the 422 carries a string detail, not a list of field errors.
-    expects_refusal: bool = False
-    # Sent as a multipart image file (with ``payload`` as form fields) instead of JSON.
-    upload: bytes | None = None
-
-
-def _image(frame_pos: int = 0, image: str = TINY_PNG_BASE64) -> dict[str, Any]:
-    return {"image": image, "frame_pos": frame_pos}
+    path: str = SUBMIT_PATH
+    # For a 422: fields some error's ``loc`` must name, and how many errors at least.
+    fields: tuple[str, ...] = ()
+    min_errors: int = 1
 
 
 def valid_payload() -> dict[str, Any]:
-    return {"prompt": PROMPT, "image_prompts": [_image()]}
+    return {
+        "prompt": PROMPT,
+        "first_frame": TINY_PNG_DATA_URI,
+        "aspect_ratio": "16:9",
+        "size": "480p",
+    }
 
 
-def cases() -> list[RequestCase]:
+def cases(
+    unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
+) -> list[RequestCase]:
     valid = valid_payload()
 
     def without(key: str) -> dict[str, Any]:
         return {k: v for k, v in valid.items() if k != key}
 
+    def field(name: str, key: str, value: Any, **kwargs) -> RequestCase:
+        return RequestCase(name, {**valid, key: value}, fields=(key,), **kwargs)
+
+    def missing(key: str) -> RequestCase:
+        return RequestCase(f"missing_{key}", without(key), fields=(key,))
+
+    def media(name: str, key: str, value: str, status: int) -> RequestCase:
+        return RequestCase(name, {**valid, key: value}, status)
+
     return [
-        RequestCase("missing_bearer_authentication", valid, (401, 403), "missing"),
-        RequestCase("invalid_bearer_authentication", valid, (401,), "invalid"),
-        RequestCase("missing_prompt", without("prompt")),
-        RequestCase("missing_image_prompts", without("image_prompts")),
-        RequestCase("empty_image_prompts", {**valid, "image_prompts": []}),
-        RequestCase(
-            "undecodable_image",
-            {**valid, "image_prompts": [_image(image="bm90IGFuIGltYWdl")]},
+        RequestCase("missing_bearer_authentication", valid, 401, "missing"),
+        RequestCase("invalid_bearer_authentication", valid, 401, "invalid"),
+        missing("prompt"),
+        field("empty_prompt", "prompt", ""),
+        missing("first_frame"),
+        missing("aspect_ratio"),
+        missing("size"),
+        field("unsupported_aspect_ratio", "aspect_ratio", "4:3"),
+        field("unsupported_size", "size", "1080p"),
+        field("frames_below_81", "frames", 80),
+        field("frames_above_81", "frames", 82),
+        field("negative_seed", "seed", -1),
+        field("seed_above_int32", "seed", SEED_MAX + 1),
+        # Inline images must be data URIs; today's API took bare base64.
+        field("bare_base64_first_frame", "first_frame", TINY_PNG_BASE64),
+        field("bare_base64_last_frame", "last_frame", TINY_PNG_BASE64),
+        media(
+            "first_frame_is_not_an_image",
+            "first_frame",
+            "data:image/png;base64,bm90IGFuIGltYWdl",
+            422,
         ),
-        RequestCase("negative_frame_pos", {**valid, "image_prompts": [_image(-1)]}),
-        RequestCase(
-            "frame_pos_past_last_frame",
-            {**valid, "image_prompts": [_image(WAN22_NUM_FRAMES)]},
-        ),
-        RequestCase(
-            "duplicate_frame_pos",
-            {**valid, "image_prompts": [_image(0), _image(0)]},
-        ),
-        RequestCase(
-            "more_image_prompts_than_frames",
-            {
-                **valid,
-                "image_prompts": [_image(i) for i in range(WAN22_NUM_FRAMES + 1)],
-            },
-        ),
-        RequestCase(
-            "num_inference_steps_below_minimum",
-            {**valid, "num_inference_steps": MIN_VIDEO_INFERENCE_STEPS - 1},
-        ),
-        RequestCase(
-            "num_inference_steps_above_maximum",
-            {**valid, "num_inference_steps": MAX_VIDEO_INFERENCE_STEPS + 1},
-        ),
-        # Size limits, with an image bigger than both (~13 MB, 5760x3240): the JSON
-        # API caps an image at 10M base64 characters (422), the upload endpoint at
-        # 10 MiB (413, before the body is read into memory).
-        RequestCase(
-            "image_over_base64_limit",
-            {
-                **valid,
-                "image_prompts": [
-                    _image(image=base64.b64encode(over_limit_image()).decode("ascii"))
-                ],
-            },
+        # The request schema forbids unknown fields, so today's knobs are refused
+        # rather than silently ignored.
+        field("unknown_field_num_inference_steps", "num_inference_steps", 40),
+        field("unknown_field_guidance_scale", "guidance_scale", 5.0),
+        field(
+            "unknown_field_image_prompts",
+            "image_prompts",
+            [{"image": TINY_PNG_BASE64, "frame_pos": 0}],
         ),
         RequestCase(
-            "upload_over_size_limit",
-            {"prompt": PROMPT},
-            (413,),
-            path=I2V_UPLOAD_PATH,
-            upload=over_limit_image(),
+            "every_problem_is_reported",
+            {**valid, "aspect_ratio": "4:3", "size": "1080p"},
+            fields=("aspect_ratio", "size"),
+            min_errors=2,
         ),
-        # The deployment gate runs before body validation, so an empty body tells a
-        # refused route (string detail) from a served one (list of field errors).
-        RequestCase(
-            "text_to_video_route_is_refused",
-            {},
-            path=T2V_CREATE_PATH,
-            expects_refusal=True,
+        # Fetch policy: https only, and never a private, loopback or cloud
+        # metadata address, for either frame.
+        media("http_first_frame_url", "first_frame", "http://example.com/a.png", 400),
+        media("http_last_frame_url", "last_frame", "http://example.com/a.png", 400),
+        media(
+            "loopback_first_frame_url", "first_frame", "https://127.0.0.1/a.png", 400
         ),
+        media("private_first_frame_url", "first_frame", "https://10.0.0.1/a.png", 400),
+        media(
+            "metadata_first_frame_url",
+            "first_frame",
+            "https://169.254.169.254/latest/meta-data/",
+            400,
+        ),
+        media("unfetchable_first_frame_url", "first_frame", unfetchable_image_url, 422),
+        media(
+            "first_frame_over_size_limit",
+            "first_frame",
+            data_uri(over_limit_image()),
+            413,
+        ),
+        RequestCase("another_models_route", valid, 404, path=UNSERVED_SUBMIT_PATH),
     ]
 
 
-def resolve_api_key() -> str:
-    """The key the server was started with (security/api_key_checker.py default)."""
-    return os.getenv("API_KEY") or DEFAULT_API_KEY
-
-
-def _headers(api_key: str, auth_mode: str, *, json_body: bool = True) -> dict[str, str]:
-    headers = {"Accept": "application/json"}
-    if json_body:
-        headers["Content-Type"] = "application/json"
+def _headers(api_key: str, auth_mode: str) -> dict[str, str]:
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
     if auth_mode == "valid":
         headers["Authorization"] = f"Bearer {api_key}"
     elif auth_mode == "invalid":
@@ -164,28 +171,43 @@ def _headers(api_key: str, auth_mode: str, *, json_body: bool = True) -> dict[st
     return headers
 
 
+def detail_problems(case: RequestCase, detail: Any) -> list[str]:
+    """Where an error body breaks its schema: ValidationError for a 422, Error else."""
+    if case.expected_status == 422:
+        return validation_error_problems(
+            detail, fields=case.fields, min_errors=case.min_errors
+        )
+    if not isinstance(detail, str):
+        return [f"detail is {type(detail).__name__}, expected a string"]
+    return []
+
+
+async def _cancel_stray_job(
+    session: aiohttp.ClientSession, base_url: str, api_key: str, job_id: str
+) -> None:
+    """Cancel a job a refused request created, so it holds no device time."""
+    url = f"{base_url}{CANCEL_PATH.format(job_id=job_id)}"
+    try:
+        async with session.post(url, headers=_headers(api_key, "valid")) as response:
+            logger.warning(f"Cancelled stray job {job_id}: HTTP {response.status}")
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        logger.warning(f"Could not cancel stray job {job_id}: {e}")
+
+
 async def run_case(
     session: aiohttp.ClientSession, *, base_url: str, api_key: str, case: RequestCase
 ) -> dict[str, Any]:
-    url = f"{base_url.rstrip('/')}{case.path}"
+    base_url = base_url.rstrip("/")
+    url = f"{base_url}{case.path}"
     result: dict[str, Any] = {
         "check": case.name,
         "endpoint_url": url,
-        "expected_status": list(case.expected_statuses),
+        "expected_status": case.expected_status,
     }
-    if case.upload is None:
-        body = {"json": case.payload}
-    else:
-        form = aiohttp.FormData()
-        for key, value in case.payload.items():
-            form.add_field(key, str(value))
-        form.add_field(
-            "image", case.upload, filename="image.jpg", content_type="image/jpeg"
-        )
-        body = {"data": form}
-    headers = _headers(api_key, case.auth_mode, json_body=case.upload is None)
     try:
-        async with session.post(url, headers=headers, **body) as response:
+        async with session.post(
+            url, headers=_headers(api_key, case.auth_mode), json=case.payload
+        ) as response:
             text = await response.text()
             status = response.status
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
@@ -200,18 +222,18 @@ async def run_case(
         data = json.loads(text) if text else None
     except json.JSONDecodeError:
         data = None
-    detail = data.get("detail") if isinstance(data, dict) else None
 
     message = ""
-    if status not in case.expected_statuses:
-        message = f"expected {list(case.expected_statuses)}, got {status}"
+    if status != case.expected_status:
+        message = f"expected {case.expected_status}, got {status}"
         if 200 <= status < 300 and isinstance(data, dict) and data.get("id"):
             # A refused request must not create a job; this one did.
             message += f"; the server created job {data['id']}"
-    elif detail is None:
-        message = "error response did not include a FastAPI detail"
-    elif case.expects_refusal and not isinstance(detail, str):
-        message = "422 was field validation, not a route refusal"
+            await _cancel_stray_job(session, base_url, api_key, data["id"])
+    elif not isinstance(data, dict) or "detail" not in data:
+        message = "error response did not include a detail"
+    else:
+        message = "; ".join(detail_problems(case, data["detail"]))
     return {
         **result,
         "passed": not message,
@@ -228,12 +250,13 @@ async def run_create_contract(
     base_url: str,
     api_key: str,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
 ) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=request_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = [
             await run_case(session, base_url=base_url, api_key=api_key, case=case)
-            for case in cases()
+            for case in cases(unfetchable_image_url)
         ]
     for result in results:
         if not result["passed"]:
@@ -260,6 +283,9 @@ class WanI2VCreateContractTest(BaseTest):
             api_key=resolve_api_key(),
             request_timeout=float(
                 self.targets.get("request_timeout", DEFAULT_REQUEST_TIMEOUT_SECONDS)
+            ),
+            unfetchable_image_url=self.targets.get(
+                "unfetchable_image_url", DEFAULT_UNFETCHABLE_IMAGE_URL
             ),
         )
 
@@ -289,12 +315,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--request-timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT_SECONDS
     )
+    parser.add_argument(
+        "--unfetchable-image-url", default=DEFAULT_UNFETCHABLE_IMAGE_URL
+    )
     args = parser.parse_args(argv)
     result = asyncio.run(
         run_create_contract(
             base_url=args.base_url,
             api_key=resolve_api_key(),
             request_timeout=args.request_timeout,
+            unfetchable_image_url=args.unfetchable_image_url,
         )
     )
     print(json.dumps(result, indent=2, sort_keys=True))

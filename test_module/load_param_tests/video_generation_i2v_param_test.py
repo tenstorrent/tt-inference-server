@@ -2,35 +2,41 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Parameter-sweep test for the Wan2.2 image-to-video endpoint.
+"""Parameter-sweep test for Wan2.2 image-to-video on the generation API.
 
-Generates one clip per request variant (seed, prompt, step count, negative
-prompt, conditioning frame position, an image at the size limit), one after
+Generates one clip per request variant (seed, prompt, negative prompt, last
+frame, no seed, each output shape, an image at the size limit), one after
 another, and checks that each parameter took effect in the video itself, not
-only that the request was accepted:
+only that the request was accepted. The API is the spec's
+(``wan_i2v_generation_api``; tt-media-server does not implement it yet, so
+today every submit fails):
 
-* every job completes, echoes its request, and its clip passes the output check
-  (decodable, not black/flat/frozen, 81 frames at the deployment's resolution),
-  including the one conditioned on a 5760x3240, ~7 MB image;
-* a different seed, a different prompt and fewer steps each change the clip;
-* fewer steps finish faster.
+* every job completes with one video output that matches its request (shape,
+  81 frames at 16 fps, seed, prompt, no audio) and a clip that passes the
+  output check at that shape: each of the four ``aspect_ratio`` x ``size``
+  shapes, and the one conditioned on a 7680x4320 image just under 30 MB;
+* a different seed and a different prompt each change the clip.
 
-Four behaviours are recorded but not yet gated, until real clips show where
-their thresholds belong: whether an identical request reproduces the clip,
-whether dropping the negative prompt changes it, whether the conditioning
-image lands at the requested frame, and whether the large-image clip starts
+Five behaviours are recorded but not yet gated, until real clips show where
+their thresholds belong: whether resubmitting a seedless request with the
+seed its output reported reproduces the clip, whether a custom negative
+prompt changes it, whether sending Wan2.2's own negative prompt gives the
+same clip as leaving it out (the spec's default), whether a clip with a
+``last_frame`` ends on that image, and whether the large-image clip starts
 from its image.
 
-The variants run sequentially, so per-job times are not inflated by queueing,
-and at a reduced step count: the sweep checks that parameters take effect, not
-quality. Nothing is left queued when it finishes.
+The variants run sequentially, so per-job times are not inflated by queueing.
+The API has no step count, so each is a full generation at the server's
+settings. Nothing is left queued when it finishes.
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
 
-import base64
+from __future__ import annotations
+
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -38,36 +44,45 @@ from report_module.schema import Block
 
 from .._test_common import TestConfig
 from .._test_common.large_images import near_limit_image
+from .._test_common.video_generation_routing import (
+    FIXTURE_IMAGE_PATH,
+    WAN22_I2V_SHAPES,
+    WAN22_NEGATIVE_PROMPT,
+)
 from .._test_common.video_output_check import (
-    check_video_output,
-    deployment_resolution,
     frame_distances_to_image,
     mean_frame_difference,
     save_clip,
 )
-from .video_generation_i2v_test import (
-    _HEADERS,
-    FIXTURE_IMAGE_PATH,
-    SUBMIT_PATH,
-    VideoGenerationI2VTest,
+from .._test_common.wan_i2v_generation_api import (
+    NUM_FRAMES,
+    auth_headers,
+    data_uri,
+    requested_shape,
+    shape_fields,
+    video_output_problems,
 )
+from .video_generation_i2v_test import VideoGenerationI2VTest
 
 if TYPE_CHECKING:
     from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_NUM_INFERENCE_STEPS = 20
-MIN_VIDEO_INFERENCE_STEPS = 4
 DEFAULT_POLL_INTERVAL_SECONDS = 1
 DEFAULT_POLL_TIMEOUT_SECONDS = 1200
 # Mean absolute pixel difference (0-255) between sampled frames. Clips from a
 # changed seed or prompt differ by far more; re-encodes of one clip by ~0.
 DIFFERS_THRESHOLD = 1.0
-CONDITIONING_FRAME_POS = 4
 # Frame 0 of a clip conditioned at frame 0 measured 4.4-4.8 from its image on BH
-# Galaxy; the grainy large image is allowed more before the check reports it.
-LARGE_IMAGE_START_SLACK = 15.0
+# Galaxy; a frame conditioned on another image is allowed more before the check
+# reports it.
+CONDITIONED_FRAME_SLACK = 15.0
+LAST_FRAME = NUM_FRAMES - 1
+# The image the last_frame variant ends on: unlike the volcano it starts from.
+LAST_FRAME_IMAGE_PATH = (
+    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_000_coucal.jpg"
+)
 
 BASE_PROMPT = (
     "A tranquil sunrise over rolling hills, soft golden light, cinematic camera pan"
@@ -77,60 +92,49 @@ ALT_PROMPT = (
     "crystal clear water, 4K quality"
 )
 NEGATIVE_PROMPT = "blurry, low quality, distorted, shaky"
+SEED = 42
 
 
-def _build_payload(
-    *,
-    image_b64: str,
-    num_inference_steps: int,
-    prompt: str = BASE_PROMPT,
-    seed: int = 42,
-    frame_pos: int = 0,
-    negative_prompt: str | None = NEGATIVE_PROMPT,
-) -> dict:
-    """Build an I2V request body with the conditioning frame attached."""
-    payload = {
-        "prompt": prompt,
-        "num_inference_steps": num_inference_steps,
-        "seed": seed,
-        "image_prompts": [{"image": image_b64, "frame_pos": frame_pos}],
-    }
-    if negative_prompt is not None:
-        payload["negative_prompt"] = negative_prompt
-    return payload
+def _shape_variant_name(shape: tuple[int, int]) -> str:
+    aspect_ratio, size = WAN22_I2V_SHAPES[shape]
+    return f"shape_{aspect_ratio.replace(':', 'x')}_{size}"
 
 
 def build_variants(
-    image_b64: str, steps: int, large_image_b64: str | None = None
+    image_uri: str,
+    shape: tuple[int, int],
+    *,
+    last_image_uri: str | None = None,
+    large_image_uri: str | None = None,
 ) -> dict[str, dict]:
     """The sweep's requests, by name; ``default`` is the base the others change.
 
-    ``large_image`` swaps in an image just under the server's size limit
-    (5760x3240, ~7 MB), the largest a request may carry.
+    ``default`` is at ``shape``, leaves out the negative prompt (so the server
+    uses Wan2.2's) and fixes the seed. Each other shape gets a variant;
+    ``large_image`` swaps in an image just under the 30 MB limit.
     """
-    fewer_steps = max(MIN_VIDEO_INFERENCE_STEPS, steps // 2)
-    common = {"image_b64": image_b64, "num_inference_steps": steps}
-    large = (
-        {
-            "large_image": _build_payload(
-                image_b64=large_image_b64, num_inference_steps=steps
-            )
-        }
-        if large_image_b64
-        else {}
-    )
-    return {
-        "default": _build_payload(**common),
-        "duplicate_default": _build_payload(**common),
-        "seed_123": _build_payload(**common, seed=123),
-        "different_prompt": _build_payload(**common, prompt=ALT_PROMPT),
-        "fewer_steps": _build_payload(
-            image_b64=image_b64, num_inference_steps=fewer_steps
-        ),
-        "no_negative_prompt": _build_payload(**common, negative_prompt=None),
-        "frame_pos_4": _build_payload(**common, frame_pos=CONDITIONING_FRAME_POS),
-        **large,
+    default = {
+        "prompt": BASE_PROMPT,
+        "first_frame": image_uri,
+        **shape_fields(shape),
+        "seed": SEED,
     }
+    variants = {
+        "default": default,
+        "seed_123": {**default, "seed": 123},
+        "different_prompt": {**default, "prompt": ALT_PROMPT},
+        "custom_negative_prompt": {**default, "negative_prompt": NEGATIVE_PROMPT},
+        "wan_negative_prompt": {**default, "negative_prompt": WAN22_NEGATIVE_PROMPT},
+        "no_seed": {k: v for k, v in default.items() if k != "seed"},
+    }
+    if last_image_uri:
+        variants["last_frame"] = {**default, "last_frame": last_image_uri}
+    for other in WAN22_I2V_SHAPES:
+        if other != tuple(shape):
+            variants[_shape_variant_name(other)] = {**default, **shape_fields(other)}
+    if large_image_uri:
+        variants["large_image"] = {**default, "first_frame": large_image_uri}
+    return variants
 
 
 def _check(
@@ -147,12 +151,18 @@ def _check(
 
 
 def evaluate_sweep(
-    jobs: dict[str, dict], image_bytes: bytes, large_image_bytes: bytes | None = None
+    jobs: dict[str, dict],
+    image_bytes: bytes,
+    *,
+    last_image_bytes: bytes | None = None,
+    large_image_bytes: bytes | None = None,
 ) -> list[dict]:
     """Grade the sweep from each variant's job record.
 
-    A job record has ``elapsed`` and ``video_path`` once its clip downloaded and
-    passed the output check, and ``problem`` otherwise.
+    A job record has ``elapsed``, ``seed`` (what its output reported) and
+    ``video_path`` once its clip downloaded and passed the output check, and
+    ``problem`` otherwise. ``no_seed_replay`` is ``no_seed`` resubmitted with
+    that seed.
     """
     checks = [
         _check(
@@ -163,68 +173,73 @@ def evaluate_sweep(
         for name, job in jobs.items()
     ]
     done = {name: job for name, job in jobs.items() if not job.get("problem")}
+
+    def compare(a: str, b: str, *, same: bool, name: str, gated: bool) -> None:
+        if a not in done or b not in done:
+            return
+        diff = mean_frame_difference(done[a]["video_path"], done[b]["video_path"])
+        passed = diff <= DIFFERS_THRESHOLD if same else diff > DIFFERS_THRESHOLD
+        checks.append(
+            _check(
+                name,
+                passed,
+                f"mean frame difference {diff:.2f} "
+                f"({'<=' if same else '>'} {DIFFERS_THRESHOLD})",
+                gated=gated,
+                clips=(a, b),
+            )
+        )
+
+    for variant, gated in (
+        ("seed_123", True),
+        ("different_prompt", True),
+        ("custom_negative_prompt", False),
+    ):
+        compare(
+            "default",
+            variant,
+            same=False,
+            name=f"{variant}_differs_from_default",
+            gated=gated,
+        )
+    compare(
+        "default",
+        "wan_negative_prompt",
+        same=True,
+        name="default_negative_prompt_is_wans",
+        gated=False,
+    )
+    compare(
+        "no_seed",
+        "no_seed_replay",
+        same=True,
+        name="reported_seed_reproduces_clip",
+        gated=False,
+    )
+
     if "default" not in done:
         return checks
     base = done["default"]["video_path"]
+    # How close a conditioned frame gets: the default clip's frame 0 to its image.
+    reference = frame_distances_to_image(base, image_bytes, [0])[0]
+    allowed = max(2 * reference, CONDITIONED_FRAME_SLACK)
 
-    def differs(name: str, *, gated: bool = True) -> None:
-        if name not in done:
-            return
-        diff = mean_frame_difference(base, done[name]["video_path"])
+    if "last_frame" in done and last_image_bytes:
+        end = frame_distances_to_image(
+            done["last_frame"]["video_path"], last_image_bytes, [LAST_FRAME]
+        )[LAST_FRAME]
+        default_end = frame_distances_to_image(base, last_image_bytes, [LAST_FRAME])[
+            LAST_FRAME
+        ]
         checks.append(
             _check(
-                f"{name}_differs_from_default",
-                diff > DIFFERS_THRESHOLD,
-                f"mean frame difference {diff:.2f} (> {DIFFERS_THRESHOLD})",
-                gated=gated,
-                clips=("default", name),
-            )
-        )
-
-    differs("seed_123")
-    differs("different_prompt")
-    differs("fewer_steps")
-    differs("no_negative_prompt", gated=False)
-
-    if "fewer_steps" in done:
-        fast, slow = done["fewer_steps"]["elapsed"], done["default"]["elapsed"]
-        checks.append(
-            _check(
-                "fewer_steps_is_faster",
-                fast < slow,
-                f"{fast:.1f} s vs {slow:.1f} s",
-            )
-        )
-
-    if "duplicate_default" in done:
-        diff = mean_frame_difference(base, done["duplicate_default"]["video_path"])
-        checks.append(
-            _check(
-                "identical_request_reproduces_clip",
-                diff <= DIFFERS_THRESHOLD,
-                f"mean frame difference {diff:.2f} (<= {DIFFERS_THRESHOLD})",
+                "last_frame_ends_on_its_image",
+                end <= allowed and end < default_end,
+                f"frame {LAST_FRAME} is {end:.1f} from the last_frame image "
+                f"(default clip: {default_end:.1f}; frame 0 to its image: "
+                f"{reference:.1f})",
                 gated=False,
-                clips=("default", "duplicate_default"),
-            )
-        )
-
-    if "frame_pos_4" in done:
-        indices = [0, CONDITIONING_FRAME_POS]
-        moved = frame_distances_to_image(
-            done["frame_pos_4"]["video_path"], image_bytes, indices
-        )
-        at_start = frame_distances_to_image(base, image_bytes, indices)
-        checks.append(
-            _check(
-                "conditioning_lands_at_frame_pos",
-                moved[CONDITIONING_FRAME_POS] < moved[0],
-                f"frame_pos={CONDITIONING_FRAME_POS} clip: frame 0 is "
-                f"{moved[0]:.1f} from the image, frame {CONDITIONING_FRAME_POS} "
-                f"{moved[CONDITIONING_FRAME_POS]:.1f}; frame_pos=0 clip: frame 0 "
-                f"{at_start[0]:.1f}, frame {CONDITIONING_FRAME_POS} "
-                f"{at_start[CONDITIONING_FRAME_POS]:.1f}",
-                gated=False,
-                clips=("default", "frame_pos_4"),
+                clips=("default", "last_frame"),
             )
         )
 
@@ -232,11 +247,10 @@ def evaluate_sweep(
         start = frame_distances_to_image(
             done["large_image"]["video_path"], large_image_bytes, [0]
         )[0]
-        reference = frame_distances_to_image(base, image_bytes, [0])[0]
         checks.append(
             _check(
                 "large_image_starts_from_its_image",
-                start <= max(2 * reference, LARGE_IMAGE_START_SLACK),
+                start <= allowed,
                 f"frame 0 is {start:.1f} from the large image "
                 f"(default clip: {reference:.1f} from its image)",
                 gated=False,
@@ -252,31 +266,42 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
     KIND = "video_generation_i2v_param"
 
     async def _run_specific_test_async(self):
-        self.poll_timeout = self.targets.get(
-            "poll_timeout", DEFAULT_POLL_TIMEOUT_SECONDS
-        )
-        self.poll_interval = self.targets.get(
-            "poll_interval", DEFAULT_POLL_INTERVAL_SECONDS
-        )
-        steps = self.targets.get("num_inference_steps", DEFAULT_NUM_INFERENCE_STEPS)
+        self._configure(DEFAULT_POLL_TIMEOUT_SECONDS, DEFAULT_POLL_INTERVAL_SECONDS)
+        shape = self._default_shape()
         image_bytes = FIXTURE_IMAGE_PATH.read_bytes()
+        last_image_bytes = LAST_FRAME_IMAGE_PATH.read_bytes()
         large_image_bytes = near_limit_image()
         variants = build_variants(
-            base64.b64encode(image_bytes).decode("ascii"),
-            steps,
-            base64.b64encode(large_image_bytes).decode("ascii"),
+            data_uri(image_bytes),
+            shape,
+            last_image_uri=data_uri(last_image_bytes),
+            large_image_uri=data_uri(large_image_bytes),
         )
-        submit_url = f"{self.base_url}{SUBMIT_PATH}"
-        logger.info(f"I2V parameter sweep: {len(variants)} clips at {steps} steps")
+        logger.info(f"I2V parameter sweep: {len(variants) + 1} clips")
 
         jobs: dict[str, dict] = {}
         # Per request, not per session: the session outlives several clips.
         timeout = aiohttp.ClientTimeout(total=None, sock_read=self.poll_timeout)
-        async with aiohttp.ClientSession(headers=_HEADERS, timeout=timeout) as session:
-            for name, payload in variants.items():
-                jobs[name] = await self._generate(session, submit_url, name, payload)
+        async with aiohttp.ClientSession(
+            headers=auth_headers(), timeout=timeout
+        ) as session:
+            try:
+                for name, payload in variants.items():
+                    jobs[name] = await self._generate(session, name, payload)
+                seed = jobs["no_seed"].get("seed")
+                if seed is not None:
+                    jobs["no_seed_replay"] = await self._generate(
+                        session, "no_seed_replay", {**variants["no_seed"], "seed": seed}
+                    )
+            finally:
+                await self._cancel_leftovers(session)
 
-        checks = evaluate_sweep(jobs, image_bytes, large_image_bytes)
+        checks = evaluate_sweep(
+            jobs,
+            image_bytes,
+            last_image_bytes=last_image_bytes,
+            large_image_bytes=large_image_bytes,
+        )
         for check in checks:
             mark = "✅" if check["passed"] else ("❌" if check["gated"] else "⚠️")
             logger.info(f"{mark} {check['check']}: {check['detail']}")
@@ -284,7 +309,7 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
         self._save_clips_behind_failures(checks, jobs)
         return {
             "success": success,
-            "num_inference_steps": steps,
+            "shape": list(shape),
             "checks": checks,
             "jobs": {
                 name: {k: v for k, v in job.items() if k != "video_path"}
@@ -304,46 +329,46 @@ class VideoGenerationI2VParamTest(VideoGenerationI2VTest):
             )
 
     async def _generate(
-        self, session: aiohttp.ClientSession, url: str, name: str, payload: dict
+        self, session: aiohttp.ClientSession, name: str, payload: dict
     ) -> dict:
         """Run one variant to a checked clip; the record says how far it got."""
         start = time.monotonic()
-        job_id = await self._submit_job(session, url, payload)
+        job_id, problems = await self._submit_job(session, payload)
         if not job_id:
-            return {"problem": "submit failed"}
-        problem = await self._check_job_metadata(session, job_id, payload)
-        file_path = await self._poll_until_complete(session, job_id)
+            return {"problem": f"submit failed: {'; '.join(problems)}"}
+        job = await self._poll_until_final(session, job_id)
         elapsed = time.monotonic() - start
         record = {"job_id": job_id, "elapsed": elapsed}
-        if problem:
-            return {**record, "problem": problem}
+        if job is None or job.get("status") != "completed":
+            status = job.get("status") if job else "unknown (poll timed out)"
+            return {**record, "problem": f"job ended {status}"}
+        outputs = job.get("outputs") or [{}]
+        record["seed"] = outputs[0].get("seed")
+        problems += self._job_problems(job, job_id)
+        problems += video_output_problems(job, payload)
+        file_path = await self._download_output(session, job)
         if not file_path:
-            return {**record, "problem": "job did not complete"}
-        clip_problem = check_video_output(
-            file_path,
-            hf_model_repo=self.ctx.model_spec.hf_model_repo if self.ctx else "",
-            device_name=self.ctx.device.name if self.ctx else "",
-            resolution=deployment_resolution(self.ctx.model_spec) if self.ctx else None,
-        )
-        if clip_problem:
-            save_clip(
+            problems.append("output did not download")
+        else:
+            problems += self._clip_problems(
                 file_path,
-                getattr(self.ctx, "output_path", None),
-                "failed/spec_tests/param_sweep",
+                requested_shape(payload),
                 f"{name}.mp4",
+                "failed/spec_tests/param_sweep",
             )
-            return {**record, "problem": f"clip: {clip_problem}"}
+        if problems:
+            return {**record, "problem": "; ".join(problems)}
         logger.info(f"{name}: clip ready in {elapsed:.1f} s")
         return {**record, "video_path": file_path}
 
 
 def run_video_generation_i2v_param(
-    ctx: "MediaContext", targets: dict | None = None
+    ctx: MediaContext, targets: dict | None = None
 ) -> Block:
     """Run :class:`VideoGenerationI2VParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
-            "timeout": 7200,
+            "timeout": 14400,
             "retry_attempts": 0,
             "retry_delay": 0,
             "break_on_failure": False,

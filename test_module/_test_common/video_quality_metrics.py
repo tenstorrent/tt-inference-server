@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,6 +200,117 @@ def probe_video(
         "codec": video_stream.get("codec_name"),
         "frame_rate": video_stream.get("r_frame_rate"),
         "frame_count": video_stream.get("nb_frames"),
+    }
+
+
+# One stream line of ``ffmpeg -i``, e.g. "Stream #0:0[0x1](und): Video: h264
+# (High) (avc1 / 0x31637661), yuv420p(progressive), 832x480, ...": its kind,
+# codec, profile (the first parenthesis) and, for video, pixel format.
+_FFMPEG_STREAM = re.compile(
+    r"Stream #\S+: (?P<kind>Video|Audio): (?P<codec>\w+)"
+    r"(?: \((?P<profile>[^)]*)\))?(?: \([^)]*\))*(?:, (?P<pix_fmt>\w+))?"
+)
+
+
+def parse_ffmpeg_streams(stderr: str) -> list[dict[str, Any]]:
+    """The streams ``ffmpeg -i`` describes, as ffprobe would name their fields."""
+    return [
+        {
+            "codec_type": match["kind"].lower(),
+            "codec_name": match["codec"],
+            "profile": match["profile"],
+            "pix_fmt": match["pix_fmt"] if match["kind"] == "Video" else None,
+        }
+        for match in _FFMPEG_STREAM.finditer(stderr)
+    ]
+
+
+def mp4_top_level_boxes(video_path: Path) -> list[str]:
+    """The MP4's top-level box types in file order (``ftyp``, ``moov``, ``mdat``...)."""
+    boxes = []
+    with open(video_path, "rb") as f:
+        while len(header := f.read(8)) == 8:
+            size, kind = struct.unpack(">I4s", header)
+            boxes.append(kind.decode("latin-1"))
+            if size == 0:  # runs to the end of the file
+                break
+            if size == 1:
+                size = struct.unpack(">Q", f.read(8))[0] - 8
+            if size < 8:
+                raise ValueError(f"MP4 box {kind!r} has size {size}")
+            f.seek(size - 8, 1)
+    return boxes
+
+
+def probe_container(video_path: Path) -> dict[str, Any]:
+    """Codec, profile, pixel format and audio of a video file, and its box order.
+
+    Uses ffprobe when it is installed, else the ffmpeg imageio-ffmpeg ships.
+    ``faststart`` is whether the ``moov`` index comes before the ``mdat`` data,
+    so a player can start before the whole file has downloaded.
+    """
+    ffprobe = shutil.which("ffprobe")
+    try:
+        if ffprobe is not None:
+            result = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_type,codec_name,profile,pix_fmt",
+                    "-of",
+                    "json",
+                    str(video_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            streams = json.loads(result.stdout)["streams"]
+        else:
+            try:
+                import imageio_ffmpeg  # pyright: ignore[reportMissingImports]
+            except ImportError as exc:
+                raise MissingVideoQualityDependency(
+                    "ffprobe or imageio-ffmpeg is required for container metadata"
+                ) from exc
+            # With no output file ffmpeg exits 1 after describing the input.
+            result = subprocess.run(
+                [
+                    imageio_ffmpeg.get_ffmpeg_exe(),
+                    "-hide_banner",
+                    "-i",
+                    str(video_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            streams = parse_ffmpeg_streams(result.stderr)
+        boxes = mp4_top_level_boxes(video_path)
+    except (
+        KeyError,
+        OSError,
+        struct.error,
+        json.JSONDecodeError,
+        subprocess.CalledProcessError,
+    ) as exc:
+        raise ValueError(f"container metadata could not be read: {exc}") from exc
+
+    videos = [s for s in streams if s.get("codec_type") == "video"]
+    if not videos:
+        raise ValueError("no video stream")
+    video = videos[0]
+    return {
+        "codec": video.get("codec_name"),
+        "profile": video.get("profile"),
+        "pix_fmt": video.get("pix_fmt"),
+        "audio_streams": sum(s.get("codec_type") == "audio" for s in streams),
+        "boxes": boxes,
+        "faststart": "moov" in boxes
+        and "mdat" in boxes
+        and boxes.index("moov") < boxes.index("mdat"),
     }
 
 
@@ -425,6 +538,9 @@ __all__ = [
     "SampledVideoFrames",
     "analyze_video_quality",
     "clip_video_metrics",
+    "mp4_top_level_boxes",
+    "parse_ffmpeg_streams",
+    "probe_container",
     "probe_video",
     "sample_video_frames",
     "structural_frame_metrics",

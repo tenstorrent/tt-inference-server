@@ -13,6 +13,7 @@ from pathlib import Path
 from .video_quality_metrics import (
     FRAME_METRIC_SIZE,
     MissingVideoQualityDependency,
+    probe_container,
     probe_video,
     sample_video_frames,
     structural_frame_metrics,
@@ -110,6 +111,33 @@ def check_video_output(
     return "; ".join(problems) or None
 
 
+def check_mp4_container(video_path: str | Path, *, audio: bool = False) -> str | None:
+    """Return how an MP4 breaks the generation API's video format, or None.
+
+    The API serves H.264 High profile, yuv420p, faststart (the ``moov`` index
+    before the data, so playback can start while downloading), with an audio
+    track only when the model makes sound.
+    """
+    try:
+        container = probe_container(Path(video_path))
+    except (ValueError, MissingVideoQualityDependency) as e:
+        return f"container could not be probed: {e}"
+    expected = {"codec": "h264", "profile": "High", "pix_fmt": "yuv420p"}
+    problems = [
+        f"{key} {container[key]!r}, expected {value!r}"
+        for key, value in expected.items()
+        if container[key] != value
+    ]
+    if not container["faststart"]:
+        problems.append(f"not faststart (top-level boxes {container['boxes']})")
+    if audio != bool(container["audio_streams"]):
+        problems.append(
+            f"{container['audio_streams']} audio stream(s), expected "
+            f"{'one' if audio else 'none'}"
+        )
+    return "; ".join(problems) or None
+
+
 def mean_frame_difference(path_a: str | Path, path_b: str | Path) -> float:
     """Mean absolute pixel difference (0-255) between two clips' sampled frames.
 
@@ -186,6 +214,7 @@ def save_clip(
 
 
 __all__ = [
+    "check_mp4_container",
     "check_video_output",
     "save_clip",
     "deployment_resolution",

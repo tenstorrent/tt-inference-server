@@ -10,14 +10,21 @@ skips the caller; tests that encode clips ``importorskip`` them first.
 from __future__ import annotations
 
 
-def write_clip(path, frames, fps=16):
-    """Encode ``frames`` (uint8, N x H x W x 3) as an H.264 mp4."""
+def write_clip(path, frames, fps=16, faststart=False):
+    """Encode ``frames`` (uint8, N x H x W x 3) as an H.264 mp4.
+
+    ``faststart`` moves the index before the data, as the generation API serves it.
+    """
     import imageio_ffmpeg
     import numpy as np
 
     height, width = frames[0].shape[:2]
     writer = imageio_ffmpeg.write_frames(
-        str(path), (width, height), fps=fps, macro_block_size=1
+        str(path),
+        (width, height),
+        fps=fps,
+        macro_block_size=1,
+        output_params=["-movflags", "+faststart"] if faststart else None,
     )
     writer.send(None)
     for frame in frames:

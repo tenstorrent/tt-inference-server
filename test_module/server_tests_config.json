@@ -1515,7 +1515,7 @@
         "heavy"
       ],
       "test_config": {
-        "test_timeout": 7200,
+        "test_timeout": 14400,
         "retry_attempts": 0,
         "retry_delay": 0,
         "break_on_failure": false,
