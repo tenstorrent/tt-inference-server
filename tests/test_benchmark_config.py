@@ -442,3 +442,30 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+@pytest.mark.parametrize(
+    "hf_model_repo, engine, expected",
+    [
+        # transformers-5 tokenizer: routed by model to the newer client
+        ("google/embeddinggemma-2", "media", "BENCHMARKS_VLLM_FORGE"),
+        # other MEDIA embeddings keep the shared client
+        ("BAAI/bge-large-en-v1.5", "media", "BENCHMARKS_VLLM"),
+        ("Qwen/Qwen3-Embedding-8B", "media", "BENCHMARKS_VLLM"),
+        # FORGE still routes by engine
+        ("Qwen/Qwen3-Embedding-4B", "forge", "BENCHMARKS_VLLM_FORGE"),
+    ],
+)
+def test_select_vllm_benchmark_venv(hf_model_repo, engine, expected):
+    from types import SimpleNamespace
+
+    from reference_config.benchmarking.benchmark_config import (
+        select_vllm_benchmark_venv,
+    )
+    from workflows.workflow_types import InferenceEngine, WorkflowVenvType
+
+    spec = SimpleNamespace(
+        hf_model_repo=hf_model_repo,
+        inference_engine=InferenceEngine[engine.upper()].value,
+    )
+    assert select_vllm_benchmark_venv(spec) == WorkflowVenvType[expected]

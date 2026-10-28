@@ -22,9 +22,22 @@ _VLLM_BENCHMARK_VENV_BY_ENGINE = {
     InferenceEngine.FORGE.value: WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
 }
 
+# Models of other engines whose tokenizer needs transformers >= 5 (the shared
+# client pins transformers 4.x through vllm 0.13). They use the newer client
+# too: google/embeddinggemma-2 lists `extra_special_tokens` in its
+# tokenizer_config.json, which transformers 4.57 cannot parse.
+_VLLM_BENCHMARK_VENV_BY_MODEL = {
+    "google/embeddinggemma-2": WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
+}
+
 
 def select_vllm_benchmark_venv(model_spec) -> WorkflowVenvType:
     """Pick the vllm benchmark client venv for ``model_spec``."""
+    by_model = _VLLM_BENCHMARK_VENV_BY_MODEL.get(
+        getattr(model_spec, "hf_model_repo", None)
+    )
+    if by_model is not None:
+        return by_model
     return _VLLM_BENCHMARK_VENV_BY_ENGINE.get(
         model_spec.inference_engine, WorkflowVenvType.BENCHMARKS_VLLM
     )
