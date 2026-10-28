@@ -1717,6 +1717,9 @@ templates:
         # Long prefill: an 8192-row chunk trace runs the full 8192-token blocks of each chunk (all SDPA cores busy at
         # depth); the prefill SDPA uses the approximate exponential by default (QWEN36_SDPA_PREFILL_EXP_APPROX=1)
         QWEN36_PREFILL_BIG_CHUNK: "8192"
+        QWEN36_PREFILL_RS_LINKS: "2"  # long prefill: MLP-down and attention-wo reduce-scatters use 2 Ethernet links (default: auto)
+        QWEN36_PREFILL_AGMM_TUNED: "1"  # swept per-shape AGMM configs for prefill chunks of 8192 rows or more (needs tt-metal 3247d93 or later)
+        QWEN36_PREFILL_MASKED_BIG: "1"  # masked 4096/8192-row traces serve the remainder after full 8192-row blocks (needs BIG_CHUNK 8192)
       vllm_args:
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 32 -> max_num_seqs 8 per rank
         enable_auto_tool_choice: true
