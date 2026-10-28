@@ -403,3 +403,130 @@ def test_package_folder_is_named_by_glm_tt_package(tmp_path):
     assert run_glm_tt.package_home(env) == tmp_path / "glm-tt-abc"
     env["GLM_TT_PACKAGE"] = "glm-tt-missing"
     assert run_glm_tt.package_home(env) == Path(run_glm_tt.DEFAULT_HOME)
+
+
+# A glm-tt with --groups auto, the groups command and MTP (glx-serve3 ship2 and later).
+USAGE_AUTO = (
+    "[--users B --context POSITIONS | --groups G|auto] [--mtp MTP.ttq] [--host ADDR]\n"
+    "Without it, serve takes the key from the environment's API_KEY unless NO_AUTH is set.\n"
+)
+
+
+def test_galaxy_serves_ethernet_cube_groups_with_mtp(tmp_path):
+    env = {
+        "DEVICE": "blackhole_galaxy",
+        "API_KEY": "a",
+        "GLM_TT_EXTRA_ARGS": "--users 2",
+    }
+    env.update(_weights(tmp_path))
+    (tmp_path / "m.ttq").write_bytes(b"m")
+    env["GLM_TT_MTP"] = str(tmp_path / "m.ttq")
+    serve, updates = run_glm_tt.serve_command(env, USAGE_AUTO, 32)
+    assert serve[serve.index("--groups") + 1] == "auto"
+    assert serve[serve.index("--mtp") + 1] == str(tmp_path / "m.ttq")
+    assert serve[-2:] == ["--users", "2"]
+    assert updates == {
+        "TT_LAB_GLM_ROUND": "auto",
+        "TT_LAB_GLM_GATHER": "eth",
+        "TT_LAB_ETH_GATHER": "1",
+        "API_KEY": "a",
+    }
+
+
+def test_mtp_needs_its_file_and_a_glm_tt_with_mtp(tmp_path):
+    env = {"DEVICE": "blackhole_galaxy", "API_KEY": "a", "GLM_TT_MTP": "missing.ttq"}
+    env.update(_weights(tmp_path))
+    with pytest.raises(run_glm_tt.SetupError, match="missing.ttq not found"):
+        run_glm_tt.serve_command(env, USAGE_AUTO, 32)
+    env["GLM_TT_MTP"] = env["GLM_TT_TTQ"]
+    with pytest.raises(run_glm_tt.SetupError, match="no --mtp"):
+        run_glm_tt.serve_command(env, USAGE, 32)
+
+
+def test_pcie_fallback_drops_mtp_and_the_extra_arguments():
+    env = {"GLM_TT_EXTRA_ARGS": "--users 2,8 --context 262144,65536"}
+    serve = ["serve", "--ttq", "t", "--mtp", "m", "--groups", "auto", "--users", "2,8",
+             "--context", "262144,65536"]  # fmt: skip
+    out, dropped = run_glm_tt.pcie_fallback_command(serve, env)
+    assert out == ["serve", "--ttq", "t", "--groups", "4"]
+    assert dropped == ["--users", "2,8", "--context", "262144,65536", "--mtp", "m"]
+
+
+def _cube_package(tmp_path, serve_statuses, groups_status=0):
+    """A package whose glm-tt has --groups auto: `groups` prints a map and exits
+    groups_status; each serve records its argv and environment and exits the next of
+    serve_statuses."""
+    home = tmp_path / "glm-tt"
+    (home / "bin").mkdir(parents=True)
+    (home / "runtime").mkdir()
+    loader = home / "runtime" / "ld-linux-x86-64.so.2"
+    loader.write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
+    record = tmp_path / "serves.jsonl"
+    binary = home / "bin" / "glm-tt"
+    binary.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "if len(sys.argv) == 1:\n"
+        f"    print({USAGE_AUTO!r}); sys.exit(1)\n"
+        "if sys.argv[1] == 'groups':\n"
+        f"    print('TT_LAB_GROUPS=0,1,4,5,8,9,12,13'); sys.exit({groups_status})\n"
+        f"with open({str(record)!r}, 'a') as f:\n"
+        "    f.write(json.dumps({'argv': sys.argv[1:], 'env': dict(os.environ)}) + '\\n')\n"
+        f"statuses = {list(serve_statuses)!r}\n"
+        f"sys.exit(statuses[min(len(open({str(record)!r}).readlines()), len(statuses)) - 1])\n"
+    )
+    for path in (loader, binary):
+        path.chmod(0o755)
+    sums = "".join(
+        f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(home)}\n"
+        for p in (binary, loader)
+    )
+    (home / "SHA256SUMS").write_text(sums)
+    return home, record
+
+
+def _serves(record):
+    return [json.loads(line) for line in record.read_text().splitlines()]
+
+
+def test_main_probes_the_link_map_then_serves_auto_groups(tmp_path, galaxy_env, capsys):
+    home, record = _cube_package(tmp_path, [0])
+    galaxy_env["GLM_TT_HOME"] = str(home)
+    assert run_glm_tt.main([], galaxy_env) == 0
+    assert "groups: TT_LAB_GROUPS=0,1,4,5,8,9,12,13" in capsys.readouterr().err
+    (served,) = _serves(record)
+    assert served["argv"][served["argv"].index("--groups") + 1] == "auto"
+    assert served["env"]["TT_LAB_GLM_GATHER"] == "eth"
+
+
+def test_probe_only_serves_nothing(tmp_path, galaxy_env):
+    home, record = _cube_package(tmp_path, [0], groups_status=5)
+    galaxy_env.update(GLM_TT_HOME=str(home), GLM_TT_PROBE_ONLY="1")
+    assert run_glm_tt.main([], galaxy_env) == 5
+    assert not record.exists()
+
+
+def test_no_cube_groups_falls_back_to_pcie_rounds(tmp_path, galaxy_env, capsys):
+    home, record = _cube_package(tmp_path, [5, 0])
+    (tmp_path / "m.ttq").write_bytes(b"m")
+    galaxy_env.update(
+        GLM_TT_HOME=str(home),
+        GLM_TT_MTP=str(tmp_path / "m.ttq"),
+        GLM_TT_EXTRA_ARGS="--users 2 --context 262144",
+    )
+    assert run_glm_tt.main([], galaxy_env) == 0
+    first, second = _serves(record)
+    assert "--mtp" in first["argv"] and "--users" in first["argv"]
+    assert second["argv"][second["argv"].index("--groups") + 1] == "4"
+    assert "--mtp" not in second["argv"] and "--users" not in second["argv"]
+    assert second["env"]["TT_LAB_GLM_ROUND"] == "pcie"
+    assert second["env"]["TT_LAB_ETH_GATHER"] == "0"
+    assert "TT_LAB_GLM_GATHER" not in second["env"]
+    assert "DOWNGRADE" in capsys.readouterr().err
+
+
+def test_no_cube_groups_without_fallback_exits_5(tmp_path, galaxy_env):
+    home, record = _cube_package(tmp_path, [5, 0])
+    galaxy_env.update(GLM_TT_HOME=str(home), GLM_TT_FALLBACK="none")
+    assert run_glm_tt.main([], galaxy_env) == 5
+    assert len(_serves(record)) == 1

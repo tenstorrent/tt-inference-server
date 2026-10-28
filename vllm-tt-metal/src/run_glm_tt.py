@@ -17,9 +17,18 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
   GLM_TT_PACKAGE     the package's folder in the weights directory (default glm-tt)
   GLM_TT_HOME        the package (default GLM_TT_PACKAGE in the weights directory, else
                      /home/container_app_user/glm-tt)
-  DEVICE             p150x8 (LoudBox, one user) or blackhole_galaxy (Galaxy: --groups 4,
-                     one user per 8-chip group, and TT_LAB_GLM_ROUND=auto); bh_galaxy too.
+  DEVICE             p150x8 (LoudBox, one user) or blackhole_galaxy (Galaxy: --groups auto,
+                     the 3-cube groups of the Galaxy's Ethernet link map, or --groups 4 with
+                     a glm-tt that has no auto; TT_LAB_GLM_ROUND=auto, and
+                     TT_LAB_GLM_GATHER=eth with a glm-tt that has --mtp); bh_galaxy too.
                      TT_LAB_ETH_GATHER=1 on both unless set.
+  GLM_TT_MTP         the MTP sidecar TTQ (name or path, found as GLM_TT_TTQ is): serve --mtp.
+  GLM_TT_FALLBACK    Galaxy: "pcie" (default) reruns serve on PCIe rounds and host gathers,
+                     one user per group and no MTP or GLM_TT_EXTRA_ARGS, when glm-tt finds
+                     no 3-cube groups (exit status 5); "none" exits 5 instead.
+  GLM_TT_PROBE_ONLY  Galaxy, 1: print ``glm-tt groups`` (the link map, the cubes and the
+                     cover; read-only) and exit with its status (0, or 5 for no cube groups)
+                     without serving. Every Galaxy start prints it before serve.
   GLM_TT_TTQ, GLM_TT_VOCAB  the weights: absolute paths, or names in the weights
                      directory (MODEL_WEIGHTS_DIR, else $CACHE_ROOT/weights/$MODEL where
                      TIS downloads the weights repo), or in an HF snapshot under HF_HOME.
@@ -66,6 +75,11 @@ DEVICES = {
     # 1.5x slower decode.
     "blackhole_galaxy": (32, ["--groups", "4"], {"TT_LAB_GLM_ROUND": "auto"}),
 }
+# glm-tt's exit status when the Galaxy's link map holds no 3-cube group for serve.
+NO_CUBE_GROUPS = 5
+# The configuration CI's Galaxies served on before Ethernet groups: PCIe rounds and
+# host-side prefill gathers, one user per group.
+PCIE_FALLBACK = {"TT_LAB_GLM_ROUND": "pcie", "TT_LAB_ETH_GATHER": "0"}
 DEVICES["bh_galaxy"] = DEVICES["blackhole_galaxy"]
 
 # The fixed JWT header and payload TIS's clients sign (pyjwt's compact JSON).
@@ -301,6 +315,11 @@ def serve_command(env, usage, chips_present):
             f"DEVICE={device} needs {chips} chips in /dev/tenstorrent, found {chips_present}"
         )
     updates = {k: env.get(k) or v for k, v in device_env.items()}
+    if "--groups" in device_args and "--groups G|auto" in usage:
+        device_args = ["--groups", "auto"]
+    if "--groups" in device_args and "--mtp" in usage:
+        # MTP's draft gathers and the batch image's rounds go over Ethernet.
+        updates["TT_LAB_GLM_GATHER"] = env.get("TT_LAB_GLM_GATHER") or "eth"
     # Chunked-prefill gathers over Ethernet on every box: without it they go host-side
     # over PCIe at about 160 t/s; output is bit-identical either way.
     updates["TT_LAB_ETH_GATHER"] = env.get("TT_LAB_ETH_GATHER") or "1"
@@ -350,6 +369,15 @@ def serve_command(env, usage, chips_present):
         "--port", env.get("SERVICE_PORT") or "8000",
         "--served-model-name", env.get("SERVED_MODEL_NAME") or model,
     ]  # fmt: skip
+    if env.get("GLM_TT_MTP"):
+        mtp = find_weight(env["GLM_TT_MTP"], env)
+        if not mtp:
+            raise SetupError(
+                f"weights: {env['GLM_TT_MTP']} not found (in {where}); set GLM_TT_MTP"
+            )
+        if "--mtp" not in usage:
+            raise SetupError("GLM_TT_MTP is set but this glm-tt has no --mtp")
+        serve += ["--mtp", mtp]
     extra = shlex.split(env.get("GLM_TT_EXTRA_ARGS", ""))
     return serve + args + device_args + extra, updates
 
@@ -431,6 +459,44 @@ def device_report(chips, sys_root="/sys"):
     return f"IOMMU groups by type: {groups or 'no chips'}; 1 GiB hugepages {huge}"
 
 
+def groups_probe(glm_tt, env):
+    """Print ``glm-tt groups`` (read-only: the link map, the cubes, the cover) and return
+    its status: 0 with at least one cube group, 5 with none."""
+    result = subprocess.run(
+        glm_tt + ["groups"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        log(f"groups: {line}")
+    log(f"glm-tt groups exited {result.returncode}")
+    return result.returncode
+
+
+def pcie_fallback_command(serve, env):
+    """(serve arguments, dropped arguments) for a Galaxy without cube groups: --groups 4,
+    one user per group, no --mtp and none of GLM_TT_EXTRA_ARGS."""
+    extra = shlex.split(env.get("GLM_TT_EXTRA_ARGS", ""))
+    base = serve[: len(serve) - len(extra)] if extra else list(serve)
+    dropped = list(extra)
+    out = []
+    i = 0
+    while i < len(base):
+        if base[i] == "--mtp":
+            dropped += base[i : i + 2]
+            i += 2
+            continue
+        if base[i] == "--groups":
+            out += ["--groups", "4"]
+            i += 2
+            continue
+        out.append(base[i])
+        i += 1
+    return out, dropped
+
+
 def main(argv=None, environ=None):
     argv = sys.argv[1:] if argv is None else argv
     env = dict(os.environ if environ is None else environ)
@@ -498,8 +564,25 @@ def main(argv=None, environ=None):
         log(
             "the dirty marker exists: a previous run halted mid-command; serve will exit 3"
         )
+    galaxy = "--groups" in serve
+    # A glm-tt with --groups auto also has the read-only `groups` command.
+    if galaxy and "--groups G|auto" in usage:
+        probe = groups_probe(glm_tt, env)
+        if _truthy(env.get("GLM_TT_PROBE_ONLY")):
+            return probe
     log(f"glm-tt {' '.join(_redacted(serve))}")
     status = run_serve(glm_tt + serve, env)
+    fallback = (env.get("GLM_TT_FALLBACK") or "pcie").lower()
+    if galaxy and status == NO_CUBE_GROUPS and fallback == "pcie":
+        serve, dropped = pcie_fallback_command(serve, env)
+        env.update(PCIE_FALLBACK)
+        env.pop("TT_LAB_GLM_GATHER", None)
+        log(
+            "DOWNGRADE: glm-tt found no 3-cube groups (exit 5); serving on PCIe rounds "
+            f"and host gathers, one user per group (dropped {' '.join(dropped) or 'nothing'})"
+        )
+        log(f"glm-tt {' '.join(_redacted(serve))}")
+        status = run_serve(glm_tt + serve, env)
     if status == 3:
         log(
             "glm-tt exited 3: a device group failed or the chips are marked dirty; reset "
