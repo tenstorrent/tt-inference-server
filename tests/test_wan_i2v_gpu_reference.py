@@ -22,6 +22,17 @@ ref = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ref)
 
 
+class NoisePipe:
+    """What the noise helpers read from a Wan pipeline."""
+
+    class vae:
+        class config:
+            z_dim = 16
+
+    vae_scale_factor_temporal = 4
+    vae_scale_factor_spatial = 8
+
+
 def make_data(root: Path) -> Path:
     """A two-video vbench_i2v_50 data folder: one dev 16:9, one ci-only 9:16."""
     entries = []
@@ -60,6 +71,7 @@ def args_for(data: Path, out: Path, **kw) -> argparse.Namespace:
         "shape": None,
         "limit": None,
         "shard": (0, 1),
+        "noise_dir": None,
     }
     return argparse.Namespace(**{**defaults, **kw})
 
@@ -80,6 +92,22 @@ def test_jobs_follow_the_manifest(tmp_path):
     assert (first["width"], first["height"], first["seed"]) == (832, 480, 1)
     assert first["conditioning_image"] == "vbi2v_0001.jpg"
     assert first["camera_motion"] == "pan_left"
+    assert first["saved_noise"] is None
+
+
+def test_jobs_load_noise_saved_by_an_earlier_run(tmp_path):
+    data = make_data(tmp_path / "data")
+    noise_dir = tmp_path / "r1" / "noise"
+    with pytest.raises(SystemExit, match="no saved noise"):
+        ref.jobs(args_for(data, tmp_path / "out", noise_dir=noise_dir))
+    for shape, video_id in (
+        ("832x480", "vbi2v_0001_832x480"),
+        ("480x832", "vbi2v_0002_480x832"),
+    ):
+        (noise_dir / shape).mkdir(parents=True, exist_ok=True)
+        (noise_dir / shape / f"{video_id}.pt").write_bytes(b"")
+    jobs = ref.jobs(args_for(data, tmp_path / "out", noise_dir=noise_dir))
+    assert jobs[0]["saved_noise"] == noise_dir / "832x480" / "vbi2v_0001_832x480.pt"
 
 
 def test_jobs_pick_subset_and_shape(tmp_path):
@@ -123,22 +151,39 @@ def test_resume_refuses_other_settings(tmp_path):
         ref.check_resumable(path, dict(record, guidance_scale=4.0))
 
 
+def test_a_cache_dit_run_does_not_resume_into_a_folder_made_without_it(tmp_path):
+    # An R1 folder's provenance predates the cache_dit setting.
+    path = tmp_path / "provenance.json"
+    path.write_text(json.dumps({"model": "m", "steps": 40}))
+    ref.check_resumable(path, {"model": "m", "steps": 40, "cache_dit": None})
+    with pytest.raises(SystemExit, match="cache_dit"):
+        ref.check_resumable(
+            path,
+            {"model": "m", "steps": 40, "cache_dit": {"residual_diff_threshold": 0.08}},
+        )
+    assert ref.cache_dit_settings(None) is None
+
+
 def test_initial_noise_is_the_seeded_cpu_draw():
     torch = pytest.importorskip("torch")
 
-    class Pipe:
-        class vae:
-            class config:
-                z_dim = 16
-
-        vae_scale_factor_temporal = 4
-        vae_scale_factor_spatial = 8
-
-    noise = ref.initial_noise(Pipe, 5, 832, 480)
+    noise = ref.initial_noise(NoisePipe, 5, 832, 480)
     assert noise.shape == (1, 16, 21, 60, 104)
     assert noise.dtype == torch.float32
     expected = torch.randn(noise.shape, generator=torch.Generator("cpu").manual_seed(5))
     assert torch.equal(noise, expected)
+
+
+def test_saved_noise_must_fit_the_video(tmp_path):
+    torch = pytest.importorskip("torch")
+    pipe = NoisePipe
+    path = tmp_path / "noise.pt"
+    torch.save(ref.initial_noise(pipe, 5, 832, 480), path)
+    assert torch.equal(
+        ref.saved_noise(pipe, path, 832, 480), ref.initial_noise(pipe, 5, 832, 480)
+    )
+    with pytest.raises(SystemExit, match="expected float32"):
+        ref.saved_noise(pipe, path, 480, 832)
 
 
 def test_shards_split_the_clips_between_them(tmp_path):

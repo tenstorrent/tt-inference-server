@@ -40,12 +40,25 @@ The negative prompt defaults to Wan2.2's own (``sample_neg_prompt``), which is
 what the generation API spec serves when a request leaves it out.
 
 The initial noise is drawn from torch's CPU generator in float32, as TT draws
-it, passed to the pipeline, and saved, one tensor per video. The output is
-the layout the video eval saves, so the VBench scorer runs on it unchanged:
+it, passed to the pipeline, and saved, one tensor per video. ``--noise-dir``
+loads each video's saved tensor instead (``<dir>/<WxH>/<video_id>.pt``, e.g.
+an earlier run's ``noise/``), so a later run starts from exactly the same
+latents on any host. The output is the layout the video eval saves, so the
+VBench scorer runs on it unchanged:
 
     uv run scripts/wan_i2v_gpu_reference.py --data hf_upload --out refs/r1 --subset dev
     python3 -m test_module._test_common.vbench_i2v --videos-dir refs/r1/832x480 \\
         --images-dir hf_upload/images/832x480 --gpu-reference none
+
+``--cache-dit THRESHOLD`` turns on cache-dit's DBCache on both experts
+(``uv run --with cache-dit==1.5.3 ...``): a step whose first blocks' residual
+changes less than the threshold reuses the cached rest of the transformer.
+Every other DBCache setting is cache-dit's default, and all of them are in
+provenance.json. Each clip's record lists the steps each expert took from the
+cache, with the residual diffs:
+
+    uv run --with cache-dit==1.5.3 scripts/wan_i2v_gpu_reference.py \\
+        --data hf_upload --out refs/r2/t0.08 --cache-dit 0.08 --noise-dir hf_upload/noise
 
 A run resumes where it stopped: a clip whose record is in its folder's
 ``.clips`` is not made again, so rerunning the same command after an
@@ -100,9 +113,22 @@ SCHEDULES = {
         "guidance_scale_2": 3.0,
     },
 }
+# The DBCache settings a Cache-DiT run records; all but the threshold are
+# cache-dit's defaults.
+CACHE_DIT_SETTINGS = (
+    "residual_diff_threshold",
+    "Fn_compute_blocks",
+    "Bn_compute_blocks",
+    "max_warmup_steps",
+    "warmup_interval",
+    "max_cached_steps",
+    "max_continuous_cached_steps",
+)
+# diffusers' Wan2.2 experts: transformer takes the high-noise steps.
+EXPERTS = (("high_noise", "transformer"), ("low_noise", "transformer_2"))
 
 
-def load_pipeline(schedule: str, offload: bool):
+def load_pipeline(schedule: str, offload: bool, cache_threshold: float | None):
     import torch
     from diffusers import (
         AutoencoderKLWan,
@@ -126,7 +152,44 @@ def load_pipeline(schedule: str, offload: bool):
         pipe.enable_model_cpu_offload()
     else:
         pipe.to("cuda")
+    if cache_threshold is not None:
+        import cache_dit
+
+        cache_dit.enable_cache(pipe, cache_config=cache_dit_config(cache_threshold))
     return pipe
+
+
+def cache_dit_config(threshold: float):
+    from cache_dit import DBCacheConfig
+
+    return DBCacheConfig(residual_diff_threshold=threshold)
+
+
+def cache_dit_settings(threshold: float | None) -> dict | None:
+    if threshold is None:
+        return None
+    config = cache_dit_config(threshold)
+    return {name: getattr(config, name) for name in CACHE_DIT_SETTINGS}
+
+
+def cache_log(pipe) -> dict:
+    """The steps each expert took from the cache in the last call, with their residual diffs.
+
+    Steps count from each expert's own first step. cache-dit resets its context
+    at the start of every pipeline call, so this is one clip's log.
+    """
+    import cache_dit
+
+    log = {}
+    for expert, name in EXPERTS:
+        stats = cache_dit.summary(getattr(pipe, name), logging=False)[0]
+        log[expert] = {
+            "cached_steps": list(stats.cached_steps),
+            "cfg_cached_steps": list(stats.cfg_cached_steps),
+            "residual_diffs": dict(stats.residual_diffs),
+            "cfg_residual_diffs": dict(stats.cfg_residual_diffs),
+        }
+    return log
 
 
 def conditioning_image(path: Path, width: int, height: int):
@@ -139,19 +202,37 @@ def conditioning_image(path: Path, width: int, height: int):
     return image
 
 
-def initial_noise(pipe, seed: int, width: int, height: int):
-    """The latent noise diffusers would draw from a CPU generator with ``seed``."""
-    import torch
-
-    shape = (
+def noise_shape(pipe, width: int, height: int) -> tuple[int, ...]:
+    return (
         1,
         pipe.vae.config.z_dim,
         (NUM_FRAMES - 1) // pipe.vae_scale_factor_temporal + 1,
         height // pipe.vae_scale_factor_spatial,
         width // pipe.vae_scale_factor_spatial,
     )
+
+
+def initial_noise(pipe, seed: int, width: int, height: int):
+    """The latent noise diffusers would draw from a CPU generator with ``seed``."""
+    import torch
+
     generator = torch.Generator("cpu").manual_seed(seed)
-    return torch.randn(shape, generator=generator, dtype=torch.float32)
+    return torch.randn(
+        noise_shape(pipe, width, height), generator=generator, dtype=torch.float32
+    )
+
+
+def saved_noise(pipe, path: Path, width: int, height: int):
+    """A video's noise saved by an earlier run, checked to fit its shape."""
+    import torch
+
+    noise = torch.load(path)
+    expected = noise_shape(pipe, width, height)
+    if tuple(noise.shape) != expected or noise.dtype != torch.float32:
+        raise SystemExit(
+            f"{path} is {noise.dtype} {tuple(noise.shape)}, expected float32 {expected}"
+        )
+    return noise
 
 
 def sha256_file(path: Path) -> str:
@@ -190,11 +271,17 @@ def all_jobs(args) -> list[dict]:
         if sha256_file(image_path) != e["image_sha256"]:
             raise SystemExit(f"{image_path} does not match the manifest's sha256")
         shape = f"{e['width']}x{e['height']}"
+        saved = (
+            args.noise_dir / shape / f"{e['video_id']}.pt" if args.noise_dir else None
+        )
+        if saved and not saved.is_file():
+            raise SystemExit(f"no saved noise at {saved}")
         out.append(
             {
                 "file": f"{e['video_id']}.mp4",
                 "out_dir": args.out / shape,
                 "noise_path": args.out / "noise" / shape / f"{e['video_id']}.pt",
+                "saved_noise": saved,
                 "image_path": image_path,
                 "conditioning_image": Path(e["image"]).name,
                 "caption": e["caption"],
@@ -210,6 +297,8 @@ def all_jobs(args) -> list[dict]:
 
 
 def provenance(args, width: int, height: int) -> dict:
+    from importlib.metadata import PackageNotFoundError, version
+
     import diffusers
     import torch
 
@@ -241,8 +330,16 @@ def provenance(args, width: int, height: int) -> dict:
         "schedule": args.schedule,
         **SCHEDULES[args.schedule],
         "noise": "torch.randn on a CPU generator seeded per clip, float32",
+        "noise_from": str(args.noise_dir) if args.noise_dir else None,
         "cpu_offload": args.offload,
+        "cache_dit": cache_dit_settings(args.cache_dit),
     }
+    if args.cache_dit is not None:
+        record["cache_dit_version"] = version("cache-dit")
+    try:
+        record["transformers"] = version("transformers")
+    except PackageNotFoundError:
+        pass
     record["manifest_sha256"] = sha256_file(args.data / "pairs" / "manifest.json")
     return record
 
@@ -264,6 +361,7 @@ GENERATION_SETTINGS = (
     "guidance_scale_2",
     "num_frames",
     "manifest_sha256",
+    "cache_dit",
 )
 
 
@@ -331,6 +429,17 @@ def main() -> int:
     parser.add_argument("--steps", type=int, default=STEPS)
     parser.add_argument("--limit", type=int, help="first N clips only")
     parser.add_argument(
+        "--cache-dit",
+        type=float,
+        metavar="THRESHOLD",
+        help="cache-dit DBCache with this residual diff threshold (e.g. 0.08)",
+    )
+    parser.add_argument(
+        "--noise-dir",
+        type=Path,
+        help="load each video's noise from <dir>/<WxH>/<video_id>.pt instead of drawing it",
+    )
+    parser.add_argument(
         "--shard",
         type=parse_shard,
         default=(0, 1),
@@ -378,10 +487,13 @@ def main() -> int:
             print(f"{job['file']}: already made, skipping", flush=True)
             continue
         if pipe is None:
-            pipe = load_pipeline(args.schedule, args.offload)
+            pipe = load_pipeline(args.schedule, args.offload, args.cache_dit)
 
         started = time.monotonic()
-        noise = initial_noise(pipe, job["seed"], job["width"], job["height"])
+        if job["saved_noise"]:
+            noise = saved_noise(pipe, job["saved_noise"], job["width"], job["height"])
+        else:
+            noise = initial_noise(pipe, job["seed"], job["width"], job["height"])
         frames = pipe(
             image=conditioning_image(job["image_path"], job["width"], job["height"]),
             prompt=job["caption"],
@@ -414,7 +526,10 @@ def main() -> int:
             )
         if job.get("camera_motion"):
             entry["camera_motion"] = job["camera_motion"]
-        if job.get("noise_path"):
+        if args.cache_dit is not None:
+            entry["cache"] = cache_log(pipe)
+        # Noise loaded from an earlier run is already saved there.
+        if job.get("noise_path") and not job["saved_noise"]:
             import torch
 
             job["noise_path"].parent.mkdir(parents=True, exist_ok=True)
