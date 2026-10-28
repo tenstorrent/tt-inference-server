@@ -11,14 +11,9 @@ class RerankService(BaseService):
     through the scheduler on their own, so a worker batches pairs from any number of requests, and
     combine_results returns their responses in document order."""
 
-    def __init__(self):
-        super().__init__()
-
     async def pre_process(self, request: RerankRequest):
-        texts = request.document_texts()
-        if not texts:
-            raise ValueError("documents must not be empty")
-        request._segments = texts
+        # RerankRequest's validation guarantees 1 to MAX_RERANK_DOCUMENTS documents.
+        request._segments = request.document_texts()
         return request
 
     def create_segment_request(
@@ -31,4 +26,9 @@ class RerankService(BaseService):
         )
 
     def combine_results(self, results):
+        # A failed pair comes back from the scheduler as an Exception object (not raised): raise the
+        # first one, so the request fails with the worker's message.
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
         return list(results)

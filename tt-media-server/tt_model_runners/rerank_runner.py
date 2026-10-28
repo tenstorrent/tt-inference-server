@@ -14,7 +14,7 @@ class NemotronRerankRunner(BaseMetalDeviceRunner):
     """nvidia/llama-nemotron-rerank-1b-v2 (tt-metal models/demos/blackhole/llama_nemotron_rerank_1b) on one P150.
 
     Each request is one (query, document) pair. The runner formats it with the model card's prompt
-    template, tokenizes it (truncated to max_model_length), and scores the batch with the model's
+    template, tokenizes it (truncated to the longest captured sequence bucket), and scores the batch with the model's
     traced runner, which packs the pairs into (batch 1 / 8 / 32) x (sequence bucket) traces. The
     result per pair is the relevance logit; the API layer applies the sigmoid."""
 
@@ -58,6 +58,9 @@ class NemotronRerankRunner(BaseMetalDeviceRunner):
             model_name=self.model_name,
             warmup=True,
         )
+        # The longest trace is the largest sequence bucket (128, 256, 512, ...) not above
+        # max_model_length, so e.g. 500 serves 256 tokens: truncate to that, not to the setting.
+        self.max_model_len = self.model.runner.max_seq_len
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
     @log_execution_time("Model warmup")
@@ -79,7 +82,7 @@ class NemotronRerankRunner(BaseMetalDeviceRunner):
 
     def _validate_requests(self, requests: list[RerankPairRequest]):
         for req in requests:
-            if req.model not in self.accepted_model_names:
+            if req.model is not None and req.model not in self.accepted_model_names:
                 raise ValueError(
                     f"Only {self.model_name} reranking is supported, got {req.model!r}"
                 )

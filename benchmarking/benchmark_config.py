@@ -485,6 +485,10 @@ def cap_benchmark_params(
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
 BENCHMARK_CONFIGS = {}
 for model_id, model_spec in MODEL_SPECS.items():
+    # No rerank benchmark exists yet; without this skip a rerank model would get the LLM text sweeps
+    # (completions requests its server does not serve). validate_setup then stops the run up front.
+    if model_spec.model_type == ModelType.RERANK:
+        continue
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency

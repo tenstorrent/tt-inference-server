@@ -5,6 +5,7 @@
 import math
 import uuid
 
+from config.settings import get_settings
 from domain.rerank_request import RerankRequest, ScoreRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from model_services.base_service import BaseService
@@ -15,19 +16,31 @@ router = APIRouter()
 
 
 def relevance_score(logit: float) -> float:
-    """The model returns a relevance logit; relevance_score is its sigmoid (vLLM / Cohere convention)."""
-    return 1.0 / (1.0 + math.exp(-logit))
+    """The model returns a relevance logit; relevance_score is its sigmoid (vLLM / Cohere convention).
+    Written per sign so math.exp never overflows for a large |logit|."""
+    if logit >= 0:
+        return 1.0 / (1.0 + math.exp(-logit))
+    z = math.exp(logit)
+    return z / (1.0 + z)
 
 
-async def _score_documents(
-    service: BaseService, model: str, query: str, documents: list
-):
-    # The request models already rejected (422) empty document lists and unknown model names.
-    request = RerankRequest(model=model, query=query, documents=documents)
+def _served_model(model):
+    """The name to echo in the response: the request's, or the served model's when it was left out."""
+    return model if model is not None else get_settings().model_weights_path
+
+
+async def _score_documents(service: BaseService, request: RerankRequest):
+    """One RerankPairResponse per document, in document order. The scheduler's own HTTP errors (429
+    queue full, 405 model not ready) pass through; any other failure becomes a 500 with its message."""
     try:
-        return await service.process_request(request)
+        pairs = await service.process_request(request)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e) or type(e).__name__)
+    if isinstance(pairs, Exception):
+        raise HTTPException(status_code=500, detail=str(pairs) or type(pairs).__name__)
+    return pairs
 
 
 @router.post("/rerank")
@@ -38,11 +51,9 @@ async def rerank(
 ):
     """Score each document against the query; results sorted by relevance, best first."""
     texts = rerank_request.document_texts()
-    pairs = await _score_documents(
-        service, rerank_request.model, rerank_request.query, texts
-    )
+    pairs = await _score_documents(service, rerank_request)
     order = sorted(range(len(texts)), key=lambda i: -pairs[i].logit)
-    if rerank_request.top_n is not None:
+    if rerank_request.top_n:
         order = order[: rerank_request.top_n]
     results = []
     for i in order:
@@ -56,7 +67,7 @@ async def rerank(
         results.append(result)
     return {
         "id": f"rerank-{uuid.uuid4().hex}",
-        "model": rerank_request.model,
+        "model": _served_model(rerank_request.model),
         "usage": {"total_tokens": sum(p.total_tokens for p in pairs)},
         "results": results,
     }
@@ -74,14 +85,16 @@ async def score(
         if isinstance(score_request.text_2, str)
         else list(score_request.text_2)
     )
-    pairs = await _score_documents(
-        service, score_request.model, score_request.text_1, texts
+    # ScoreRequest already checked the model name and the document count.
+    request = RerankRequest(
+        model=score_request.model, query=score_request.text_1, documents=texts
     )
+    pairs = await _score_documents(service, request)
     tokens = sum(p.total_tokens for p in pairs)
     return {
         "id": f"score-{uuid.uuid4().hex}",
         "object": "list",
-        "model": score_request.model,
+        "model": _served_model(score_request.model),
         "data": [
             {"index": i, "object": "score", "score": relevance_score(p.logit)}
             for i, p in enumerate(pairs)

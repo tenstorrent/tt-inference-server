@@ -46,8 +46,6 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 | `/v1/cnn/search-image`         | `/cnn/search-image`        |
 | `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
 | `/v1/tokenize`                 | `/tokenize`                |
-| `/v1/rerank`                   | `/rerank`                  |
-| `/v1/score`                    | `/score`                   |
 
 The following endpoints were already on `/v1` and have no legacy path:
 
@@ -56,6 +54,8 @@ The following endpoints were already on `/v1` and have no legacy path:
 | `/v1/completions`              |
 | `/v1/chat/completions`         |
 | `/v1/embeddings`               |
+| `/v1/rerank`                   |
+| `/v1/score`                    |
 
 ## Deprecation headers
 
@@ -412,7 +412,8 @@ it scores each `question:{query} \n \n passage:{document}` pair and returns one 
 model is tt-metal's `models/demos/blackhole/llama_nemotron_rerank_1b`; one P150 serves it (`DEVICE=p150`). A
 request is split into one (query, document) pair per document, and the worker batches pairs from all
 requests, up to `MAX_BATCH_SIZE` (32), into traced batches of 1, 8 or 32 pairs of up to 128, 256 or 512 tokens.
-Pairs longer than `VLLM__MAX_MODEL_LENGTH` (512) tokens are truncated.
+Pairs are truncated to the largest of those sequence buckets that is not above `VLLM__MAX_MODEL_LENGTH` (512 by
+default; 500 would give 256).
 
 ```bash
 export MODEL=llama-nemotron-rerank-1b-v2
@@ -450,8 +451,9 @@ curl -X POST 'http://127.0.0.1:8000/v1/score' \
        "text_2": ["Paris is the capital of France.", "Bananas are yellow."]}'
 ```
 
-`model` may be the Hugging Face id or the short name. An empty document list, an empty `text_2` list or another
-model name is rejected with 422 before it reaches the worker.
+`model` may be the Hugging Face id, the short name or left out. `top_n` 0 or left out returns every document. An
+empty document list, more than 1000 documents (`documents` or `text_2`) or another model name is rejected with 422
+before it reaches the worker.
 
 Settings for this model (`ModelConfigs[(nemotron-rerank, p150)]`; an environment variable of the same name in upper
 case overrides each):
@@ -459,7 +461,7 @@ case overrides each):
 | Setting | Default | Effect |
 |---|---|---|
 | `MAX_BATCH_SIZE` | 32 | most pairs per worker batch (the largest traced batch is 32) |
-| `VLLM__MAX_MODEL_LENGTH` | 512 | token limit per pair (truncation) and the largest traced sequence bucket |
+| `VLLM__MAX_MODEL_LENGTH` | 512 | largest traced sequence bucket (128, 256, 512, ... not above it); pairs are truncated to that bucket |
 | `TRACE_REGION_SIZE` | 400000000 | device memory reserved for the traces |
 | `DEFAULT_THROTTLE_LEVEL` | "0" | copied into `TT_MM_THROTTLE_PERF`; the image default 5 slows the FF1 + FF3 matmul |
 | `API_KEY` | `your-secret-key` | bearer token the endpoints check; set your own |

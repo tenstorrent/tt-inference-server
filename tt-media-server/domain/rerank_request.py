@@ -7,6 +7,11 @@ from typing import Optional, Union
 from domain.base_request import BaseRequest
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
+# Most documents per request. A request becomes one scheduler task per document, so this keeps one
+# request well inside the task queue (max_queue_size, 5000 by default); Cohere's rerank API has the
+# same limit.
+MAX_RERANK_DOCUMENTS = 1000
+
 
 def served_model_names() -> set[str]:
     """Names a client may pass as ``model``: the running runner's ModelNames and their Hugging Face ids.
@@ -34,7 +39,10 @@ def served_model_names() -> set[str]:
     return served
 
 
-def _check_model(model: str) -> str:
+def _check_model(model: Optional[str]) -> Optional[str]:
+    """None (vLLM makes ``model`` optional) means the served model; a name must be one of the served names."""
+    if model is None:
+        return None
     served = served_model_names()
     if served and model not in served:
         raise ValueError(
@@ -48,12 +56,15 @@ class RerankDocument(BaseModel):
 
 
 class RerankRequest(BaseRequest):
-    """POST /v1/rerank (vLLM / Cohere shape): score each document against the query."""
+    """POST /v1/rerank (vLLM / Cohere shape): score each document against the query.
+    ``top_n`` 0 or omitted returns every document (vLLM's default is 0)."""
 
-    model: str
+    model: Optional[str] = None
     query: str
-    documents: list[Union[str, RerankDocument]] = Field(min_length=1)
-    top_n: Optional[int] = Field(default=None, ge=1)
+    documents: list[Union[str, RerankDocument]] = Field(
+        min_length=1, max_length=MAX_RERANK_DOCUMENTS
+    )
+    top_n: Optional[int] = Field(default=None, ge=0)
     return_documents: bool = False
     # Set by RerankService.pre_process: one segment (a document text) per (query, document) pair.
     _segments: Optional[list[str]] = PrivateAttr(default=None)
@@ -65,9 +76,10 @@ class RerankRequest(BaseRequest):
 
 
 class ScoreRequest(BaseModel):
-    """POST /v1/score (vLLM shape): text_1 is the query, text_2 one document or a non-empty list of them."""
+    """POST /v1/score (vLLM shape): text_1 is the query, text_2 one document or a list of
+    1 to MAX_RERANK_DOCUMENTS documents."""
 
-    model: str
+    model: Optional[str] = None
     text_1: str
     text_2: Union[str, list[str]]
 
@@ -75,15 +87,17 @@ class ScoreRequest(BaseModel):
 
     @field_validator("text_2")
     @classmethod
-    def _non_empty(cls, v):
-        if isinstance(v, list) and not v:
-            raise ValueError("text_2 must not be an empty list")
+    def _document_count(cls, v):
+        if isinstance(v, list) and not 1 <= len(v) <= MAX_RERANK_DOCUMENTS:
+            raise ValueError(
+                f"text_2 must hold 1 to {MAX_RERANK_DOCUMENTS} documents, got {len(v)}"
+            )
         return v
 
 
 class RerankPairRequest(BaseRequest):
     """One (query, document) pair: the unit the scheduler batches and the runner scores."""
 
-    model: str
+    model: Optional[str] = None
     query: str
     document: str

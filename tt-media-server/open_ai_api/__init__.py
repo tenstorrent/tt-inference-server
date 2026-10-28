@@ -71,7 +71,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
     ],
     ModelServices.RERANK.value: [
-        ServiceRoute(rerank.router, "/v1", "", ["Rerank"]),
+        ServiceRoute(rerank.router, "/v1", None, ["Rerank"]),
     ],
 }
 
