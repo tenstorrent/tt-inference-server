@@ -1805,9 +1805,8 @@ _eval_config_list = [
     # (temperature 1.0, top_p 0.95; https://huggingface.co/zai-org/GLM-5.3-Flash), streamed. The model
     # always thinks at max effort, so every generative task gets a reasoning budget (lm-eval's default
     # 1280 ends a reply inside its reasoning), and prompt plus output fit the 262144-position serve.
-    # max_concurrent 4: the BLACKHOLE_GALAXY row serves 4 requests at once; eval_command clamps it to
-    # P150X8's max_concurrency 1. Long-context tasks are kept to a few CI samples: CI's Galaxies run
-    # host-side prefill gathers (no Ethernet cube there), much slower to prefill than the Ethernet path.
+    # max_concurrent 8: the BLACKHOLE_GALAXY row serves 8 requests at once (2 per 8-chip group, each
+    # with the full context). Long-context tasks are kept to a few CI samples.
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.3-Flash",
         tasks=[
@@ -1815,7 +1814,7 @@ _eval_config_list = [
                 # Graduate-level science multiple choice, reasoning then answer (198 questions).
                 task_name="gpqa_diamond_cot_zeroshot",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=4,
+                max_concurrent=8,
                 use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=91.2,

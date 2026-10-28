@@ -25,8 +25,7 @@ MODEL_SPECS = get_model_spec_map(
     load_templates_from_yaml(_MODEL_SPECS_DIR / "dev" / "llm.yaml", env="dev")
 )
 DEVICES = {
-    "id_tt-lab-glm_GLM-5.3-Flash_blackhole_galaxy": 4,
-    "id_tt-lab-glm_GLM-5.3-Flash_p150x8": 1,
+    "id_tt-lab-glm_GLM-5.3-Flash_blackhole_galaxy": 8,
 }
 TASKS = {
     task.task_name: task for task in ALL_EVAL_CONFIGS["zai-org/GLM-5.3-Flash"].tasks

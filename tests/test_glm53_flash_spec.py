@@ -39,8 +39,17 @@ def _galaxy_runtime():
 def test_glm_galaxy_catalog_row():
     spec = MODEL_SPECS[GLM_GALAXY_ID]
     device = spec.device_model_spec
-    assert device.max_concurrency == 4
+    # Two users of the full 262144-position context per group, four groups: none refused.
+    assert device.max_concurrency == 8
     assert device.max_context == 262144
+    extra = device.env_vars["GLM_TT_EXTRA_ARGS"].split()
+    assert extra[extra.index("--users") + 1] == "2"
+    assert extra[extra.index("--context") + 1] == "262144"
+    assert extra[extra.index("--session-positions") + 1] == "262144"
+    # Ethernet groups (the launcher's defaults), not the PCIe overrides of the first CI runs.
+    assert "TT_LAB_GLM_ROUND" not in device.env_vars
+    assert "TT_LAB_ETH_GATHER" not in device.env_vars
+    assert device.env_vars["GLM_TT_MTP"] in spec.metadata["checkpoint_files"]
     assert device.docker_entrypoint == LAUNCHER
     # Weights and the glm-tt package come from the weights repo, not host packages.
     assert spec.hf_weights_repo
@@ -95,7 +104,8 @@ def test_glm_galaxy_docker_command():
     assert command[image + 1 :] == LAUNCHER[1:]
     env = {command[i + 1] for i, value in enumerate(command[:-1]) if value == "-e"}
     assert "DEVICE=blackhole_galaxy" in env
-    assert "GLM_TT_TTQ=glm53-flash-hot3-meas.ttq" in env
+    assert "GLM_TT_TTQ=glm53-flash-plan0h.ttq" in env
+    assert "GLM_TT_MTP=glm53-flash-mtp-plan0h.ttq" in env
     assert not any(
         value.endswith(",readonly") and "glm-tt" in value for value in command
     )

@@ -7673,12 +7673,13 @@ templates:
 # OpenAI-compatible server, no vLLM. glm-tt is a prebuilt binary that ships with its own loader and
 # C/C++ libraries, so it runs in any image with a python3: docker_entrypoint replaces the image's
 # entrypoint with vllm-tt-metal/src/run_glm_tt.py, which maps DEVICE, the weights and the bearer key
-# (VLLM_API_KEY, else the JWT of JWT_SECRET, else API_KEY) onto glm-tt serve on port 8000. The
+# (VLLM_API_KEY, else API_KEY, else the JWT of JWT_SECRET) onto glm-tt serve on port 8000. The
 # script is in the vLLM image's app/src and, with --dev-mode, mounted there from this checkout.
-# hf_weights_repo holds tt-lab's prequantized TTQ (split into parts with a manifest), the
-# vocabulary GGUF and the glm-tt package (glm-tt/: bin/, runtime/, licenses, SHA256SUMS). Host
-# setup downloads it into the persistent volume like any checkpoint (checkpoint_files says when it
-# is complete); the launcher verifies the package and runs a copy, since downloads keep no exec bits.
+# hf_weights_repo holds tt-lab's prequantized plan0h TTQ (split into parts with a manifest), its MTP
+# sidecar TTQ, the vocabulary GGUF and the glm-tt package (glm-tt-<build>/: bin/, runtime/, licenses,
+# SHA256SUMS). Host setup downloads it into the persistent volume like any checkpoint
+# (checkpoint_files says when it is complete); the launcher verifies the package and runs a copy,
+# since downloads keep no exec bits.
 - weights:
     - zai-org/GLM-5.3-Flash
   impl: tt_lab_glm
@@ -7686,12 +7687,12 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
-  # TODO: the private repo the weights and the package are uploaded to.
   hf_weights_repo: tenstorrent/GLM-5.3-Flash-TTQ
-  # hot3-meas TTQ (245.7 GB in six parts) plus the vocabulary GGUF and the package, downloaded
-  # once into the persistent volume and read through the page cache.
-  min_disk_gb: 260
-  min_ram_gb: 300
+  # The plan0h TTQ (about 246 GB in 40 GiB parts) and the 4.3 GB MTP sidecar, downloaded once into
+  # the persistent volume and read through the page cache.
+  min_disk_gb: 270
+  # The page-cached TTQ, plus 32 GB of session records per group (four groups).
+  min_ram_gb: 450
   uses_tensor_model_cache: false
   # glm-tt loads its weights and compiles nothing at run time, and /health answers 200 only once it serves.
   has_builtin_warmup: true
@@ -7704,22 +7705,23 @@ templates:
       mode: STRICT
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      # glm-tt serve --groups 4: four 8-chip groups, one request and one 262144-position context
-      # each; a fifth request waits for the first free group. About 155 t/s per user short and 122
-      # at 262K with all four busy.
-      max_concurrency: 4
+      # glm-tt serve --groups auto: the Galaxy's 3-cube groups from its Ethernet link map (the
+      # d <-> d+8 blocks on CI's ladder-wired Galaxies, groups A-D elsewhere), up to four. Each group
+      # batches 2 users of the full 262144-position context with MTP, so every request gets the full
+      # context and none is refused: 8 at once, more wait for a free slot. TT_LAB_GLM_ROUND=auto
+      # and TT_LAB_GLM_GATHER=eth are the launcher's Galaxy defaults. A Galaxy whose map holds no
+      # cube group (glm-tt exit 5) is served on PCIe rounds, one user per group, without MTP
+      # (GLM_TT_FALLBACK); the launcher logs that as a DOWNGRADE, after the link map it prints at
+      # every start.
+      max_concurrency: 8
       max_context: 262144  # 256 * 1024
       default_impl: true
-      # CI's Galaxies (bh-galaxy runners) are cabled as 2 x 4 ladders per board with cube links
-      # in only two columns, so the four Ethernet cube groups (TT_LAB_GLM_ROUND=auto,
-      # TT_LAB_ETH_GATHER=1, the launcher's Galaxy defaults) do not form there. PCIe rounds and
-      # host-side prefill gathers need no cube: the same tokens, about 100 instead of 155 t/s
-      # per user. Delete these two on a Galaxy whose 3-cube groups are complete.
       env_vars:
-        TT_LAB_GLM_ROUND: pcie
-        TT_LAB_ETH_GATHER: "0"
-      # docker stop took 9.1 s on a Galaxy (drain, then four groups release their chips); the
-      # timeout leaves room for the 8 s default drain on top of that teardown.
+        GLM_TT_MTP: glm53-flash-mtp-plan0h.ttq
+        # 32 GB of host session records per group (glx-serve3 soaks used 64 on 1 TB hosts); a
+        # failed group reloads in-process (about 194 s) while the others serve.
+        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 32 --on-group-failure restart"
+      # docker stop: drain, then four groups release their chips.
       docker_stop_timeout: 30
       # The "chips need a reset" marker outlives the container here when the host has the
       # directory (writable by uid 1000); otherwise it goes to the cache volume.
@@ -7727,25 +7729,15 @@ templates:
       docker_entrypoint:
         - python3
         - /home/container_app_user/app/src/run_glm_tt.py
-      # The four groups map the same TTQ, so the page cache holds it once (a 566 GB host worked).
-    - device: P150X8
-      # One user at a time; more requests queue.
-      max_concurrency: 1
-      max_context: 262144  # 256 * 1024
-      default_impl: true
-      # SIGTERM drains, then glm-tt releases the chips: about 2.5 s on a LoudBox (12-14 s before
-      # glm-tt ff5cc8e1). The timeout is a margin over the 8 s default drain.
-      docker_stop_timeout: 20
-      docker_host_state_dir: /var/lib/tenstorrent
-      docker_entrypoint:
-        - python3
-        - /home/container_app_user/app/src/run_glm_tt.py
+      # The four groups map the same TTQ, so the page cache holds it once.
   env_vars:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
-    # launcher takes a split TTQ by its manifest and the package from glm-tt/.
+    # launcher takes a split TTQ by its manifest and the package from its folder.
     # The repo keeps each glm-tt build in its own folder, so a cached download fetches a new one.
-    GLM_TT_PACKAGE: glm-tt-2a3e893
-    GLM_TT_TTQ: glm53-flash-hot3-meas.ttq
+    # glm-tt-ship2-e492dca3: tt-lab glx-serve3 ship2 (batch serve, MTP, sessions, --groups auto,
+    # in-process group restart), firmware images byte-identical to s13.
+    GLM_TT_PACKAGE: glm-tt-ship2-e492dca3
+    GLM_TT_TTQ: glm53-flash-plan0h.ttq
     GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "163840"
   metadata:
@@ -7754,17 +7746,18 @@ templates:
       tool_call_parser_name: glm47
       # The repo has no safetensors: complete when these are present (see setup_host).
       checkpoint_files:
-        - glm53-flash-hot3-meas.ttq.manifest
-        - glm53-flash-hot3-meas.ttq.00001-of-00006
-        - glm53-flash-hot3-meas.ttq.00002-of-00006
-        - glm53-flash-hot3-meas.ttq.00003-of-00006
-        - glm53-flash-hot3-meas.ttq.00004-of-00006
-        - glm53-flash-hot3-meas.ttq.00005-of-00006
-        - glm53-flash-hot3-meas.ttq.00006-of-00006
+        - glm53-flash-plan0h.ttq.manifest
+        - glm53-flash-plan0h.ttq.00001-of-00006
+        - glm53-flash-plan0h.ttq.00002-of-00006
+        - glm53-flash-plan0h.ttq.00003-of-00006
+        - glm53-flash-plan0h.ttq.00004-of-00006
+        - glm53-flash-plan0h.ttq.00005-of-00006
+        - glm53-flash-plan0h.ttq.00006-of-00006
+        - glm53-flash-mtp-plan0h.ttq
         - GLM-5.3-Flash-vocab.gguf
-        - glm-tt-2a3e893/SHA256SUMS
-        - glm-tt-2a3e893/bin/glm-tt
-        - glm-tt-2a3e893/runtime/ld-linux-x86-64.so.2
+        - glm-tt-ship2-e492dca3/SHA256SUMS
+        - glm-tt-ship2-e492dca3/bin/glm-tt
+        - glm-tt-ship2-e492dca3/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.
