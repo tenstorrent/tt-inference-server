@@ -3662,7 +3662,7 @@ cnn_templates = [
 rerank_templates = [
     ModelSpecTemplate(
         weights=["nvidia/llama-nemotron-rerank-1b-v2"],
-        tt_metal_commit="741a1e7",
+        tt_metal_commit="1fefb04",
         impl=llama_nemotron_rerank_impl,
         min_disk_gb=15,
         min_ram_gb=8,
