@@ -1891,7 +1891,13 @@ ModelConfigs = {
             "min_context_length": 32,
             "max_num_seqs": 32,
         },
-        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        # FasterFifo hands the worker what is queued without waiting to fill
+        # a batch. BatchFifo holds a lone request ~100 ms (measured on P150:
+        # 110 ms vs 7.7 ms for one short text; 453 vs 591 req/s at
+        # concurrency 32). Needs USE_DYNAMIC_BATCHER=false (set in the dev
+        # spec): the dynamic batcher calls _run_async, which the embedding
+        # runners do not implement.
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },

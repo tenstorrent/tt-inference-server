@@ -203,6 +203,10 @@ templates:
         VLLM__MAX_NUM_SEQS: "32"
         MAX_BATCH_SIZE: "32"
         DEFAULT_THROTTLE_LEVEL: "0"
+        # Python media server only (cpp_server ignores it): Settings auto-enables
+        # the dynamic batcher for max_num_seqs > 1, and that worker calls
+        # _run_async, which EmbeddingGemma2Runner does not implement.
+        USE_DYNAMIC_BATCHER: "false"
         # Weight load + first-run ttnn weight cache + compile and capture of
         # every served shape happen in warmup.
         EMBEDDING_WARMUP_TIMEOUT_MS: "1800000"
