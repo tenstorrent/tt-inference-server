@@ -128,7 +128,8 @@
   "swe_agent_isolated_network": true,
   "selection_basis": "Same historical frozen every-fourth Gemma100 cohort used by the25-task control and C16 candidate; no task substitution based on outcomes. Earlier Qwen pilots were already known before the control25.",
   "prefix_retention_probe": {
-    "schema_version": 1,
+    "schema_version": 2,
+    "study_namespace": "qwen38-maxkv-512-v1",
     "block_size": 512,
     "base_lengths": [
       16384,

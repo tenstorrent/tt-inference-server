@@ -16,7 +16,8 @@ spec = importlib.util.spec_from_file_location(
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 CONFIG = dict(
-    schema_version=1,
+    schema_version=2,
+    study_namespace="qwen38-maxkv-512-v1",
     block_size=512,
     base_lengths=[16384],
     streams=32,
@@ -29,6 +30,17 @@ CONFIG = dict(
 
 
 class ProbeTest(unittest.TestCase):
+    def test_fixed_study_namespace_is_reused_across_arms(self):
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            a = module.Probe(
+                base_url="http://unused", model="m", config=CONFIG, output_dir=one
+            )
+            b = module.Probe(
+                base_url="http://unused", model="m", config=CONFIG, output_dir=two
+            )
+            self.assertEqual(a.session, b.session)
+            self.assertEqual(a.session, CONFIG["study_namespace"])
+
     def test_lcp_counts_token_identity_not_label_or_total_length(self):
         self.assertEqual(module.lcp([1, 2, 3], [1, 2, 4, 5]), 2)
         self.assertEqual(module.lcp([1, 2, 3], [1, 2, 3, 5]), 3)
@@ -72,7 +84,7 @@ class ProbeTest(unittest.TestCase):
             self.assertEqual(row["lcp_tokens"], 1029)
             self.assertEqual(row["reusable_aligned_tokens"], 1024)
             self.assertEqual(row["retention_fraction_of_eligible"], 1)
-            self.assertEqual(row["recomputed_prompt_tokens"], len(current) - 1024)
+            self.assertEqual(row["uncached_prompt_tokens"], len(current) - 1024)
 
     def test_missing_cached_count_fails_instead_of_reporting_zero(self):
         with tempfile.TemporaryDirectory() as tmp:

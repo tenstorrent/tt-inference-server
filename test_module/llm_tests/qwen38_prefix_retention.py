@@ -16,7 +16,6 @@ from pathlib import Path
 import threading
 import time
 import urllib.request
-import uuid
 
 
 def sha(tokens):
@@ -65,6 +64,7 @@ def parse_metrics(raw):
 def validate_config(config):
     fields = {
         "schema_version",
+        "study_namespace",
         "block_size",
         "base_lengths",
         "streams",
@@ -74,9 +74,16 @@ def validate_config(config):
         "tool_gap_s",
         "request_budget_s",
     }
-    if set(config) != fields or config["schema_version"] != 1:
+    if set(config) != fields or config["schema_version"] != 2:
         raise ValueError("Unknown or incomplete prefix-probe configuration")
-    for name in fields - {"base_lengths", "tool_gap_s"}:
+    if (
+        not isinstance(config["study_namespace"], str)
+        or not config["study_namespace"].strip()
+    ):
+        raise ValueError(
+            "A fixed cross-arm study_namespace is required; start a fresh server for every arm"
+        )
+    for name in fields - {"base_lengths", "tool_gap_s", "study_namespace"}:
         if type(config[name]) is not int:
             raise ValueError(f"{name} must be an integer")
     if not 1 <= config["streams"] <= 40 or not 1 <= config["concurrency"] <= 40:
@@ -108,7 +115,7 @@ class Probe:
         self.model, self.config = model, config
         self.root = Path(output_dir) / "qwen38_prefix_retention"
         self.root.mkdir(parents=True, exist_ok=False)
-        self.session = uuid.uuid4().hex
+        self.session = config["study_namespace"]
         self.lock = threading.Lock()
         self.stop = threading.Event()
         self.outstanding = 0
@@ -245,7 +252,10 @@ class Probe:
             row.update(
                 response=body,
                 cached_prompt_tokens=cached,
-                recomputed_prompt_tokens=len(tokens) - cached,
+                uncached_prompt_tokens=len(tokens) - cached,
+                eligible_prefix_missed_tokens=max(0, eligible - cached),
+                prior_common_prefix_uncached_tokens=max(0, reusable - cached),
+                new_prompt_tokens_after_lcp=len(tokens) - reusable,
                 retention_fraction_of_eligible=(
                     cached / eligible if eligible else None
                 ),
@@ -411,7 +421,10 @@ class Probe:
                         prompt_tokens=0,
                         cached_prompt_tokens=0,
                         reusable_aligned_tokens=0,
-                        recomputed_prompt_tokens=0,
+                        uncached_prompt_tokens=0,
+                        eligible_prefix_missed_tokens=0,
+                        prior_common_prefix_uncached_tokens=0,
+                        new_prompt_tokens_after_lcp=0,
                     ),
                 )
                 total["requests"] += 1
@@ -419,7 +432,10 @@ class Probe:
                     "prompt_tokens",
                     "cached_prompt_tokens",
                     "reusable_aligned_tokens",
-                    "recomputed_prompt_tokens",
+                    "uncached_prompt_tokens",
+                    "eligible_prefix_missed_tokens",
+                    "prior_common_prefix_uncached_tokens",
+                    "new_prompt_tokens_after_lcp",
                 ):
                     total[field] += row[field]
             for total in panels.values():

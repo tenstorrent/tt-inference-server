@@ -7,6 +7,7 @@ selection. Local0.26 tooling-calibration receipts cannot select serving pools.
 
 import argparse
 import difflib
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -19,30 +20,169 @@ def replace_once(text, pattern, replacement):
     return result
 
 
-def selected_pool(arm, selection, receipt, image):
-    if arm == "reference":
-        return 0, 1368, 23661297664
+def receipt_digest(row):
+    return hashlib.sha256(
+        json.dumps(row, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def campaign_identity(row):
+    keys = (
+        "source_sha256",
+        "runtime",
+        "capacity_image_digest",
+        "vllm_distribution_version",
+        "checkpoint_file_sha256",
+        "effective_precision",
+        "capacity_study_id",
+        "capacity_guards",
+        "environment",
+        "shared_mlp_readers",
+        "shared_mlp_cores",
+        "layers",
+        "batch",
+        "native_context",
+        "requested_outputs",
+        "configured_trace_region_bytes",
+        "throw_exception_on_fallback",
+        "layer_types",
+    )
+    return {key: row.get(key) for key in keys}
+
+
+def validate_boundary_contract(row):
+    expected = dict(
+        layers="all64",
+        batch=32,
+        native_context=262144,
+        requested_outputs=128,
+        configured_trace_region_bytes=128 * 1024**2,
+        shared_mlp_readers=1,
+        shared_mlp_cores=80,
+        throw_exception_on_fallback=True,
+    )
+    if any(row.get(k) != value for k, value in expected.items()):
+        raise ValueError("Unsafe boundary changed the registered workload/geometry")
+    if row.get("capacity_guards") != dict(
+        min_normal_free_bytes=512 * 1024**2,
+        fragment_guard_bytes_per_bank=8 * 1024**2,
+        min_trace_free_bytes=8 * 1024**2,
+    ):
+        raise ValueError("Receipt changed registered capacity guards")
+    if row.get("stress_cycles") not in (1, 3):
+        raise ValueError("Unexpected stress cycle contract")
+    pool = row.get("physical_cache_pool", {})
+    n = row["capacity_pool_ids"]
+    actual = n * 17285120 + ((-3 * n) % 8) * 5120 * 16
+    if (
+        pool.get("actual_bytes_per_device") != actual
+        or pool.get("global_ids") != n
+        or pool.get("checkpoint_tokens") != 512
+        or pool.get("unique_snapshot_pools") != 16
+    ):
+        raise ValueError("Unsafe boundary lacks exact physical pool ownership")
+    for phase in ("after_construction", "after_preparation"):
+        allocation = row.get(phase, {})
+        if not allocation.get("exact_allocator_reconciliation") or allocation.get(
+            "independently_reconciled_allocator_domains"
+        ) != ["DRAM", "TRACE"]:
+            raise ValueError("Unsafe boundary lacks reconciled allocator domains")
+    records = row.get("records", [])
+    expected_lengths = [513, 4096, 16384] * row["stress_cycles"]
+    if [r["length"] for r in records] != expected_lengths[: len(records)] or len(
+        records
+    ) > len(expected_lengths):
+        raise ValueError("Unsafe boundary changed completed workload prefix")
+    if row.get("status") == "pass" and len(records) != len(expected_lengths):
+        raise ValueError("Passing receipt must complete every registered stress case")
+    if row.get("status") != "pass" and not records:
+        raise ValueError("Unsafe boundary must include a completed stress-case witness")
+    for r in records:
+        if (
+            len(r.get("tokens", [])) != 32
+            or any(len(t) != 128 for t in r["tokens"])
+            or len(r.get("logits", [])) != 4
+            or not r.get("allocation", {}).get("exact_allocator_reconciliation")
+        ):
+            raise ValueError(
+                "Unsafe boundary has incomplete completed-request evidence"
+            )
+
+
+def selected_pool(arm, selection, receipt, image, unsafe=None, study=None):
     shared = int(arm == "shared_max")
     if (receipt.get("vllm_distribution_version") or "").split("+")[0] != "0.30.0":
-        raise ValueError(
-            "Max-pool serving arm requires actual0.30 CI receipt; local native calibration is insufficient"
-        )
+        raise ValueError("Every arm requires an actual0.30 CI receipt")
     if receipt.get("capacity_image_digest") != image:
         raise ValueError(
             "Native receipt and serving matrix must use the same immutable image"
         )
+    if not study or receipt.get("capacity_study_id") != study:
+        raise ValueError(
+            "Native receipt and HTTP salts must belong to the same fixed study"
+        )
+    if not (
+        receipt.get("status") == "pass"
+        and receipt.get("close_mesh_device_returned")
+        and receipt.get("shared") == str(shared)
+    ):
+        raise ValueError("Expected a closed qualifying receipt for this arm")
+    actual = receipt["physical_cache_pool"]["actual_bytes_per_device"]
+    validate_boundary_contract(receipt)
+    if arm == "reference":
+        if receipt["capacity_pool_ids"] != 1368:
+            raise ValueError("Reference requires the matched1368-ID control receipt")
+        return 0, 1368, 23661297664
     row = selection["arms"][str(shared)]
     if row["status"] != "native_max_safe_verified_at_one_ID_boundary":
         raise ValueError("Capacity search has not established an adjacent-ID boundary")
-    if not (
-        receipt["status"] == "pass"
-        and receipt["close_mesh_device_returned"]
-        and receipt["stress_cycles"] == 3
-        and receipt["capacity_pool_ids"] == row["ids"]
-        and receipt["shared"] == str(shared)
+    if (
+        not unsafe
+        or receipt_digest(receipt) != row.get("selected_receipt_sha256")
+        or receipt_digest(unsafe) != row.get("unsafe_receipt_sha256")
     ):
-        raise ValueError("Expected closed three-cycle qualifying receipt for this arm")
-    actual = receipt["physical_cache_pool"]["actual_bytes_per_device"]
+        raise ValueError(
+            "Selection must bind both original qualifying and unsafe receipts"
+        )
+    identity = campaign_identity(receipt)
+    if identity != campaign_identity(unsafe) or identity != row.get(
+        "campaign_identity"
+    ):
+        raise ValueError("Pass and unsafe boundary have different campaign identities")
+    if not (
+        receipt["stress_cycles"] == 3
+        and receipt["capacity_pool_ids"] == row["ids"]
+        and unsafe.get("shared") == str(shared)
+        and unsafe.get("status") != "pass"
+        and unsafe.get("close_mesh_device_returned") is True
+        and not unsafe.get("cleanup_error")
+        and not unsafe.get("close_error")
+        and unsafe.get("error_type") == "AssertionError"
+        and unsafe.get("capacity_pool_ids") == row["ids"] + 1
+        and any(
+            t in unsafe.get("error", "")
+            for t in (
+                "Transient headroom failed",
+                "TRACE headroom failed",
+                "Fragmentation guard failed",
+            )
+        )
+    ):
+        raise ValueError(
+            "Expected closed three-cycle pass and adjacent known guard failure"
+        )
+    validate_boundary_contract(unsafe)
+    witnesses = {
+        r["length"]: (r["input_sha256"], r["tokens"], r["logits"])
+        for r in receipt["records"]
+    }
+    for r in unsafe.get("records", []):
+        if all(
+            k in r for k in ("length", "input_sha256", "tokens", "logits")
+        ) and witnesses[r["length"]] != (r["input_sha256"], r["tokens"], r["logits"]):
+            raise ValueError(
+                "Completed unsafe-trial output differs from qualifying witness"
+            )
     if actual != row["actual_physical_cache_bytes_per_device"]:
         raise ValueError("Selected IDs and actual physical bytes disagree")
     return shared, row["ids"], actual
@@ -54,7 +194,9 @@ def main():
         "--arm", choices=["reference", "control_max", "shared_max"], required=True
     )
     p.add_argument("--selection", type=Path)
-    p.add_argument("--receipt", type=Path)
+    p.add_argument("--receipt", type=Path, required=True)
+    p.add_argument("--unsafe-receipt", type=Path)
+    p.add_argument("--study-namespace", default="qwen38-maxkv-512-v1")
     p.add_argument("--image", required=True)
     p.add_argument("--metal-ref", required=True)
     p.add_argument("--source-manifest", type=Path, required=True)
@@ -81,7 +223,17 @@ def main():
         )
     selection = json.loads(a.selection.read_text()) if a.selection else {}
     receipt = json.loads(a.receipt.read_text()) if a.receipt else {}
-    shared, ids, budget = selected_pool(a.arm, selection, receipt, a.image)
+    unsafe = json.loads(a.unsafe_receipt.read_text()) if a.unsafe_receipt else None
+    shared, ids, budget = selected_pool(
+        a.arm, selection, receipt, a.image, unsafe, a.study_namespace
+    )
+    for path, digest in receipt["source_sha256"].items():
+        namespace, name = path.split("/", 1)
+        expected = manifest.get(
+            "sha256" if namespace == "tt" else "diagnostics_sha256", {}
+        ).get(name)
+        if expected != digest:
+            raise ValueError(f"Native receipt does not match image manifest: {path}")
     root = Path(__file__).resolve().parents[2]
     spec = root / "workflows/model_specs/dev/llm.yaml"
     original = spec.read_text()
@@ -120,7 +272,9 @@ def main():
         raise ValueError(
             "Primary causal pair fixes checkpoint512;2048 is a separate factor"
         )
-    probe.update(streams=a.streams, concurrency=a.streams)
+    probe.update(
+        streams=a.streams, concurrency=a.streams, study_namespace=a.study_namespace
+    )
     updated_control = json.dumps(config, indent=2) + "\n"
     a.output_dir.mkdir(parents=True, exist_ok=True)
     patch = ""
@@ -152,6 +306,10 @@ def main():
         ).get("actual_bytes_per_device"),
         configured_cache_budget_bytes_per_device=budget,
         image=a.image,
+        study_namespace=a.study_namespace,
+        fresh_server_required=True,
+        selected_receipt_sha256=receipt_digest(receipt),
+        unsafe_receipt_sha256=receipt_digest(unsafe) if unsafe else None,
         metal_ref=a.metal_ref,
         acceptance="Apply/review/commit patch in an isolated TTI arm; serving startup and memory/cached-prefix/quality gates still required.",
     )
