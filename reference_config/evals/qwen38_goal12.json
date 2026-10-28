@@ -1,5 +1,5 @@
 {
-  "phase": "frozen32-single-b32-c32-81920",
+  "phase": "frozen32-single-b32-c32-81920-combined",
   "seed": 1234,
   "include_standard_evals": true,
   "evals": [

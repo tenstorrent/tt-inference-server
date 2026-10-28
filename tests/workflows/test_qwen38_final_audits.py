@@ -75,3 +75,8 @@ def test_launch_receipt_only_generated_paths_no_env(tmp_path,monkeypatch):
     _write_qwen38_audit_source(setup,spec,'owned-server',env)
     p=next((tmp_path/'qwen38_audit_sources').glob('*.json'));body=json.loads(p.read_text());assert 'SECRET' not in p.read_text()
     m.validate_plan(body,'120-qb2-p05t01',expected_owner='goal12-123-1-0')
+
+
+def test_exact_b32_bounded_overlay_allowed():
+    p=plan();p["image"]=m.B32_BOUNDED_OVERLAY_IMAGE
+    assert m.validate_plan(p,p["runner_name"])["image"]==m.B32_BOUNDED_OVERLAY_IMAGE
