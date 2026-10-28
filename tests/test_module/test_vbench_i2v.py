@@ -24,6 +24,7 @@ INDEX = [
         "video_id": "vbi2v_0001_832x480",
         "width": 832,
         "height": 480,
+        "seed": 1,
     },
     {
         "file": "01_b.mp4",
@@ -32,6 +33,7 @@ INDEX = [
         "video_id": "vbi2v_0002_1280x720",
         "width": 1280,
         "height": 720,
+        "seed": 2,
     },
 ]
 
@@ -267,17 +269,23 @@ def test_psnr_is_capped_for_identical_frames_and_follows_the_error():
     assert mod.psnr(frame, frame + 1) == pytest.approx(48.13, abs=0.01)
 
 
+def _frame_metrics(clip, ref, lpips):
+    frames = {"frame0": 35.0, "mean": 20.0, "min": 15.0, "ref": ref.name}
+    return {
+        "psnr": frames,
+        "ssim": {"frame0": 0.9, "mean": 0.8, "min": 0.7},
+        "lpips": {"frame0": 0.05, "mean": 0.1, "max": 0.2},
+    }
+
+
 def test_comparison_pairs_clips_by_video_across_shape_folders(tmp_path, monkeypatch):
     run = tmp_path / "r1"
     _reference_run(
         run,
         per_clip={"vbi2v_0001_832x480.mp4": 0.98, "vbi2v_0002_1280x720.mp4": 0.90},
     )
-    monkeypatch.setattr(
-        mod,
-        "frame_psnr",
-        lambda clip, ref: {"frame0": 35.0, "mean": 20.0, "min": 15.0, "ref": ref.name},
-    )
+    monkeypatch.setattr(mod, "frame_metrics", _frame_metrics)
+    monkeypatch.setattr(mod, "lpips_scorer", lambda device: "lpips")
     matches = mod.find_gpu_references(INDEX, run)
     comparison = mod.compare_to_gpu_reference(_result(), tmp_path, matches, run)
 
@@ -288,12 +296,145 @@ def test_comparison_pairs_clips_by_video_across_shape_folders(tmp_path, monkeypa
     # A dimension that errored on TT has nothing to compare.
     assert "motion_smoothness" not in comparison["dimensions"]
     assert comparison["psnr"]["01_b.mp4"]["ref"] == "vbi2v_0002_1280x720.mp4"
+    assert comparison["lpips"]["00_a.mp4"]["max"] == 0.2
     assert (comparison["gpu"], comparison["clips"]) == ("NVIDIA H100 NVL", 2)
+    # Without the eval's index there is no first frame or seed to check.
+    assert (comparison["first_frame"], comparison["noise"]) == ({}, {})
 
     result = {**_result(), "gpu_reference": comparison}
     md = mod.to_markdown(result, "x")
     assert "| i2v_subject | 0.9500 | 0.9400 | +0.0100 | 1 / 1 of 2 |" in md
-    assert "| 00 | A bird on a feeder. | 35.0 | 20.0 | 15.0 |" in md
+    assert (
+        "| 00 | A bird on a feeder. | 35.0 / 20.0 / 15.0 | 0.800 / 0.700 "
+        "| 0.100 / 0.200 |  |  |  |" in md
+    )
+
+
+def test_comparison_checks_first_frames_and_the_saved_noise(tmp_path, monkeypatch):
+    run = tmp_path / "r1"
+    _reference_run(run)
+    noise = tmp_path / "noise"
+    (noise / "832x480").mkdir(parents=True)
+    (noise / "832x480" / "vbi2v_0001_832x480.pt").write_bytes(b"")
+    monkeypatch.setattr(mod, "frame_metrics", _frame_metrics)
+    monkeypatch.setattr(mod, "lpips_scorer", lambda device: "lpips")
+    monkeypatch.setattr(
+        mod,
+        "first_frame_fidelity",
+        lambda clip, image, lpips: {
+            "psnr": 30.0 if clip.parent == tmp_path else 32.0,
+            "ssim": 0.9,
+            "lpips": 0.05,
+        },
+    )
+    checked = []
+
+    def fake_redraw(seed, path):
+        checked.append((seed, path.name))
+        return {"identical": True, "max_abs_diff": 0.0, "torch": "2.5.1"}
+
+    monkeypatch.setattr(mod, "redraws_saved_noise", fake_redraw)
+    (tmp_path / "img").mkdir()
+    for name in ("bird.jpg", "lake.jpg"):
+        (tmp_path / "img" / name).write_bytes(b"jpg")
+
+    matches = mod.find_gpu_references(INDEX, run)
+    comparison = mod.compare_to_gpu_reference(
+        _result(),
+        tmp_path,
+        matches,
+        run,
+        index=INDEX,
+        images_dir=tmp_path / "img",
+        noise_dir=noise,
+    )
+    assert comparison["first_frame"]["00_a.mp4"] == {
+        "tt": {"psnr": 30.0, "ssim": 0.9, "lpips": 0.05},
+        "gpu": {"psnr": 32.0, "ssim": 0.9, "lpips": 0.05},
+    }
+    # Each clip's own seed, against its own video's saved noise.
+    assert checked == [(1, "vbi2v_0001_832x480.pt")]
+    assert comparison["noise"]["01_b.mp4"] == {
+        "skipped": "no saved noise for this video"
+    }
+
+    md = mod.to_markdown({**_result(), "gpu_reference": comparison}, "x")
+    assert "| 30.0 / 32.0 | 0.900 / 0.900 | same |" in md
+    assert "| no saved noise for this video |" in md
+    assert "1 of 1 clips' seeds redraw the GPU run's saved noise bit for bit" in md
+
+
+def test_lpips_failing_to_load_keeps_psnr_and_ssim(tmp_path, monkeypatch):
+    run = tmp_path / "r1"
+    _reference_run(run)
+    lpips_given = []
+
+    def no_lpips(device):
+        raise OSError("weights download failed")
+
+    def metrics(clip, ref, lpips):
+        lpips_given.append(lpips)
+        return {"psnr": {"frame0": 30.0, "mean": 30.0, "min": 30.0}}
+
+    monkeypatch.setattr(mod, "lpips_scorer", no_lpips)
+    monkeypatch.setattr(mod, "frame_metrics", metrics)
+    matches = mod.find_gpu_references(INDEX, run)
+    comparison = mod.compare_to_gpu_reference(_result(), tmp_path, matches, run)
+    assert lpips_given == [None, None]
+    assert "weights download failed" in comparison["lpips_error"]
+    md = mod.to_markdown({**_result(), "gpu_reference": comparison}, "x")
+    assert "LPIPS unavailable: OSError: weights download failed" in md
+
+
+def test_the_saved_noise_is_fetched_only_for_matched_clips(tmp_path, monkeypatch):
+    fetched = []
+    monkeypatch.setattr(
+        mod, "hf_snapshot", lambda patterns: fetched.extend(patterns) or tmp_path
+    )
+    matches = {"01_b.mp4": (tmp_path, "vbi2v_0002_1280x720.mp4")}
+    assert mod.saved_noise_dir(INDEX, matches) == tmp_path / "noise"
+    assert fetched == ["noise/1280x720/vbi2v_0002_1280x720.pt"]
+
+
+def test_a_redraw_from_the_seed_is_compared_bit_for_bit(tmp_path):
+    torch = pytest.importorskip("torch")
+    drawn = torch.randn(
+        (1, 16, 2, 4, 6), generator=torch.Generator("cpu").manual_seed(7)
+    )
+    torch.save(drawn, tmp_path / "same.pt")
+    torch.save(drawn + 1e-6, tmp_path / "off.pt")
+    same = mod.redraws_saved_noise(7, tmp_path / "same.pt")
+    assert (same["identical"], same["max_abs_diff"]) == (True, 0.0)
+    off = mod.redraws_saved_noise(7, tmp_path / "off.pt")
+    assert not off["identical"]
+    assert off["max_abs_diff"] == pytest.approx(1e-6, rel=0.1)
+
+
+def test_frame_metrics_score_every_frame_and_keep_the_worst(tmp_path):
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("skimage")
+    imageio = pytest.importorskip("imageio")
+    rng = np.random.default_rng(0)
+    frames = [rng.integers(0, 256, (64, 64, 3), dtype=np.uint8) for _ in range(3)]
+    imageio.mimwrite(tmp_path / "a.mp4", frames, fps=16, quality=10)
+    noisy = [np.clip(f.astype(int) + 20, 0, 255).astype(np.uint8) for f in frames]
+    imageio.mimwrite(tmp_path / "b.mp4", noisy, fps=16, quality=10)
+
+    same = mod.frame_metrics(tmp_path / "a.mp4", tmp_path / "a.mp4")
+    assert same["psnr"]["min"] == mod.PSNR_IDENTICAL_DB
+    assert same["ssim"]["min"] == pytest.approx(1.0)
+    assert "lpips" not in same  # no scorer given
+    other = mod.frame_metrics(
+        tmp_path / "a.mp4", tmp_path / "b.mp4", lpips=lambda a, b: 0.25
+    )
+    assert len(other["psnr"]["frames"]) == len(other["ssim"]["frames"]) == 3
+    assert other["psnr"]["min"] < 40 and other["ssim"]["mean"] < 1
+    assert other["lpips"] == {
+        "frame0": 0.25,
+        "mean": 0.25,
+        "max": 0.25,
+        "frames": [0.25] * 3,
+    }
 
 
 def test_a_clips_first_frame_comes_from_hf_at_its_shape(tmp_path, monkeypatch):

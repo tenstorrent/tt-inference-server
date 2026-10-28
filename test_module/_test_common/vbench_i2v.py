@@ -23,9 +23,17 @@ scored the same way and compared dimension by dimension:
 When the GPU reference run in the eval data on Hugging Face (GPU_REFERENCE_RUN
 in I2V_EVAL_HF_REPO at I2V_EVAL_HF_REVISION, from
 scripts/wan_i2v_gpu_reference.py) has clips for the same videos, matched by
-video id, each dimension is also reported against them, with each frame's PSNR
-to the GPU clip. Both sides draw the initial noise from the same seed on the host, so the clips
-start out the same and the PSNR shows how far TT drifts from the GPU.
+video id, each dimension is also reported against them, and each clip is
+compared with its GPU clip frame by frame:
+
+- PSNR, SSIM and LPIPS (AlexNet) of every frame to the GPU clip's same frame
+- first-frame fidelity: frame 0 of the TT clip and of the GPU clip, each
+  against the conditioning image
+- initial noise: whether this host, from the clip's seed, redraws the noise
+  the GPU run saved, bit for bit
+
+Both sides draw the initial noise from the same seed on the host, so the clips
+start out the same and the frame metrics show how far TT drifts from the GPU.
 
 Informational: nothing gates on it yet.
 
@@ -276,19 +284,110 @@ def psnr(frame, reference) -> float:
     return min(PSNR_IDENTICAL_DB, float(10 * np.log10(255.0**2 / error)))
 
 
-def frame_psnr(clip: Path, reference: Path) -> dict:
-    """Each frame's PSNR to the reference clip's same frame, with frame 0, mean and min."""
-    frames = [
-        round(psnr(a, b), 2) for a, b in zip(read_frames(clip), read_frames(reference))
-    ]
-    if not frames:
-        raise ValueError(f"no frames decoded from {clip.name} or {reference.name}")
+def ssim(frame, reference) -> float:
+    """SSIM between two uint8 frames of the same size, over all three channels."""
+    from skimage.metrics import structural_similarity
+
+    return float(
+        structural_similarity(frame, reference, channel_axis=-1, data_range=255)
+    )
+
+
+def lpips_scorer(device: str):
+    """LPIPS (AlexNet) between two uint8 BGR frames; lower is closer."""
+    import pyiqa
+    import torch
+
+    metric = pyiqa.create_metric("lpips", device=torch.device(device))
+
+    def to_tensor(frame):
+        rgb = torch.from_numpy(frame[..., ::-1].copy()).permute(2, 0, 1)
+        return rgb[None].float().div(255).to(device)
+
+    def score(frame, reference) -> float:
+        with torch.no_grad():
+            return float(metric(to_tensor(frame), to_tensor(reference)))
+
+    return score
+
+
+def summarize_frames(values: list[float], worst=min) -> dict:
+    """A per-frame metric: frame 0, mean, worst frame and every frame."""
     return {
-        "frame0": frames[0],
-        "mean": round(sum(frames) / len(frames), 2),
-        "min": min(frames),
-        "frames": frames,
+        "frame0": values[0],
+        "mean": round(sum(values) / len(values), 4),
+        "min" if worst is min else "max": worst(values),
+        "frames": values,
     }
+
+
+def frame_metrics(clip: Path, reference: Path, lpips=None) -> dict:
+    """Each frame's PSNR, SSIM and (given a scorer) LPIPS to the reference clip's same frame."""
+    psnrs, ssims, lpipses = [], [], []
+    for a, b in zip(read_frames(clip), read_frames(reference)):
+        psnrs.append(round(psnr(a, b), 2))
+        ssims.append(round(ssim(a, b), 4))
+        if lpips:
+            lpipses.append(round(lpips(a, b), 4))
+    if not psnrs:
+        raise ValueError(f"no frames decoded from {clip.name} or {reference.name}")
+    metrics = {"psnr": summarize_frames(psnrs), "ssim": summarize_frames(ssims)}
+    if lpipses:
+        metrics["lpips"] = summarize_frames(lpipses, worst=max)
+    return metrics
+
+
+def first_frame_fidelity(clip: Path, image: Path, lpips=None) -> dict:
+    """Frame 0 against the conditioning image: PSNR, SSIM and (given a scorer) LPIPS."""
+    import cv2
+
+    frame = next(read_frames(clip), None)
+    target = cv2.imread(str(image))
+    if frame is None or target is None:
+        raise ValueError(f"cannot read frame 0 of {clip.name} or {image.name}")
+    if frame.shape != target.shape:
+        raise ValueError(
+            f"{clip.name} frame 0 is {frame.shape[1]}x{frame.shape[0]}, "
+            f"{image.name} is {target.shape[1]}x{target.shape[0]}"
+        )
+    record = {
+        "psnr": round(psnr(frame, target), 2),
+        "ssim": round(ssim(frame, target), 4),
+    }
+    if lpips:
+        record["lpips"] = round(lpips(frame, target), 4)
+    return record
+
+
+def redraws_saved_noise(seed: int, path: Path) -> dict:
+    """Whether this host draws the GPU run's saved noise from ``seed``, bit for bit.
+
+    The GPU script draws ``torch.randn`` on a CPU generator in float32; so does
+    TT. A redraw can differ in the last bits on another CPU architecture.
+    """
+    import torch
+
+    saved = torch.load(path, weights_only=True)
+    drawn = torch.randn(
+        saved.shape,
+        generator=torch.Generator("cpu").manual_seed(seed),
+        dtype=torch.float32,
+    )
+    return {
+        "identical": bool(torch.equal(saved, drawn)),
+        "max_abs_diff": float((saved - drawn).abs().max()),
+        "torch": torch.__version__,
+    }
+
+
+def saved_noise_dir(index: list[dict], matches: dict) -> Path:
+    """The eval data's noise/ with each matched clip's saved noise fetched."""
+    patterns = [
+        f"noise/{entry['width']}x{entry['height']}/{entry['video_id']}.pt"
+        for entry in index
+        if entry["file"] in matches and clip_shape(entry)
+    ]
+    return hf_snapshot(patterns) / "noise"
 
 
 def describe_reference(folder: Path) -> str:
@@ -308,11 +407,19 @@ def compare_to_gpu_reference(
     videos_dir: Path,
     matches: dict[str, tuple[Path, str]],
     run_dir: Path,
+    *,
+    index: list[dict] = (),
+    images_dir: Path | None = None,
+    noise_dir: Path | None = None,
+    device: str = "cpu",
 ) -> dict:
-    """Each dimension against the matched GPU clips, and each clip's frame PSNR.
+    """Each dimension against the matched GPU clips, and each clip against its GPU clip.
 
     Dimension means are over the clips both sides scored, so a dimension that
-    scores only some clips (camera_motion) compares like with like.
+    scores only some clips (camera_motion) compares like with like. Per clip:
+    PSNR, SSIM and LPIPS of every frame to the GPU clip's; frame 0 of both
+    clips against the conditioning image; and whether the clip's seed redraws
+    the GPU run's saved noise (in ``noise_dir``) on this host.
     """
     folders = {folder for folder, _ in matches.values()}
     scores = {f: json.loads((f / "vbench.json").read_text()) for f in folders}
@@ -341,21 +448,68 @@ def compare_to_gpu_reference(
             "per_clip": {clip: round(a - b, 4) for clip, a, b in shared},
         }
 
-    frames = {}
+    try:
+        lpips = lpips_scorer(device)
+        lpips_error = None
+    except Exception as e:  # its weights are fetched; PSNR and SSIM need none
+        logger.exception("LPIPS unavailable")
+        lpips, lpips_error = None, f"{type(e).__name__}: {e}"[:500]
+
+    entries = {entry["file"]: entry for entry in index}
+    metrics = {"psnr": {}, "ssim": {}, "lpips": {}}
+    first_frame, noise = {}, {}
     for clip, (folder, ref) in matches.items():
         try:
-            frames[clip] = frame_psnr(videos_dir / clip, folder / ref)
+            for name, record in frame_metrics(
+                videos_dir / clip, folder / ref, lpips
+            ).items():
+                metrics[name][clip] = record
         except Exception as e:  # one unreadable clip should not hide the rest
-            logger.exception("PSNR of %s to the GPU reference failed", clip)
-            frames[clip] = {"error": f"{type(e).__name__}: {e}"[:500]}
+            logger.exception("Frame metrics of %s to the GPU reference failed", clip)
+            metrics["psnr"][clip] = {"error": f"{type(e).__name__}: {e}"[:500]}
 
-    return {
+        entry = entries.get(clip, {})
+        if entry.get("conditioning_image"):
+            try:
+                image = find_conditioning_image(
+                    entry["conditioning_image"], images_dir, clip_shape(entry)
+                )
+                first_frame[clip] = {
+                    "tt": first_frame_fidelity(videos_dir / clip, image, lpips),
+                    "gpu": first_frame_fidelity(folder / ref, image, lpips),
+                }
+            except Exception as e:
+                logger.exception("First-frame fidelity of %s failed", clip)
+                first_frame[clip] = {"error": f"{type(e).__name__}: {e}"[:500]}
+
+        if noise_dir is None or entry.get("seed") is None or not clip_shape(entry):
+            continue
+        path = (
+            noise_dir
+            / f"{entry['width']}x{entry['height']}"
+            / f"{entry['video_id']}.pt"
+        )
+        try:
+            if not path.is_file():
+                noise[clip] = {"skipped": "no saved noise for this video"}
+            else:
+                noise[clip] = redraws_saved_noise(entry["seed"], path)
+        except Exception as e:
+            logger.exception("Noise check of %s failed", clip)
+            noise[clip] = {"error": f"{type(e).__name__}: {e}"[:500]}
+
+    comparison = {
         "reference": describe_reference(run_dir),
         "gpu": ", ".join(sorted(g for g in gpus if g)) or None,
         "clips": len(matches),
         "dimensions": dimensions,
-        "psnr": frames,
+        **metrics,
+        "first_frame": first_frame,
+        "noise": noise,
     }
+    if lpips_error:
+        comparison["lpips_error"] = lpips_error
+    return comparison
 
 
 def score_directory(
@@ -503,8 +657,19 @@ def score_directory(
         if matches:
             if run_dir is None:
                 run_dir = hf_snapshot(REFERENCE_METADATA) / GPU_REFERENCE_RUN
+                noise_dir = saved_noise_dir(index, matches)
+            else:
+                # The GPU script's own layout: <run>/noise/<WxH>/<video_id>.pt.
+                noise_dir = run_dir / "noise"
             result["gpu_reference"] = compare_to_gpu_reference(
-                result, videos_dir, matches, run_dir
+                result,
+                videos_dir,
+                matches,
+                run_dir,
+                index=index,
+                images_dir=images_dir,
+                noise_dir=noise_dir,
+                device=device,
             )
         else:
             logger.info("No GPU reference for these clips; skipping the comparison")
@@ -583,19 +748,66 @@ def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
         )
     lines += [
         "",
-        "| Clip | Prompt | PSNR frame 0 (dB) | Mean | Min |",
-        "|---|---|---|---|---|",
+        "Each frame against the GPU clip's same frame. PSNR and SSIM: higher is "
+        "closer; LPIPS: lower is closer. First frame: frame 0 against the "
+        "conditioning image, TT / GPU.",
+        "",
+        "| Clip | Prompt | PSNR f0 / mean / min (dB) | SSIM mean / min "
+        "| LPIPS mean / max | First frame PSNR TT / GPU | First frame SSIM TT / GPU "
+        "| Noise |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for clip in clips:
         p = reference["psnr"].get(clip["file"])
         if p is None:
             continue
         if "error" in p:
-            cells = f"error: {p['error'][:80]} | | "
+            lines.append(
+                f"| {clip['file'][:2]} | {clip['prompt']} | error: {p['error'][:80]} "
+                "| | | | | |"
+            )
+            continue
+        s = reference.get("ssim", {}).get(clip["file"])
+        lp = reference.get("lpips", {}).get(clip["file"])
+        ff = reference.get("first_frame", {}).get(clip["file"], {})
+        cells = [
+            f"{p['frame0']:.1f} / {p['mean']:.1f} / {p['min']:.1f}",
+            f"{s['mean']:.3f} / {s['min']:.3f}" if s else "",
+            f"{lp['mean']:.3f} / {lp['max']:.3f}" if lp else "",
+        ]
+        if "tt" in ff:
+            cells += [
+                f"{ff['tt']['psnr']:.1f} / {ff['gpu']['psnr']:.1f}",
+                f"{ff['tt']['ssim']:.3f} / {ff['gpu']['ssim']:.3f}",
+            ]
         else:
-            cells = f"{p['frame0']:.1f} | {p['mean']:.1f} | {p['min']:.1f}"
-        lines.append(f"| {clip['file'][:2]} | {clip['prompt']} | {cells} |")
+            cells += [f"error: {ff['error'][:60]}" if "error" in ff else "", ""]
+        cells.append(noise_cell(reference.get("noise", {}).get(clip["file"])))
+        lines.append(
+            f"| {clip['file'][:2]} | {clip['prompt']} | " + " | ".join(cells) + " |"
+        )
+    if reference.get("lpips_error"):
+        lines += ["", f"LPIPS unavailable: {reference['lpips_error'][:200]}"]
+    noise = [n for n in reference.get("noise", {}).values() if "identical" in n]
+    if noise:
+        same = sum(n["identical"] for n in noise)
+        lines += [
+            "",
+            f"Initial noise: {same} of {len(noise)} clips' seeds redraw the GPU run's "
+            f"saved noise bit for bit on this host (torch {noise[0]['torch']}).",
+        ]
     return lines
+
+
+def noise_cell(record: dict | None) -> str:
+    """One clip's noise check, as a table cell."""
+    if not record:
+        return ""
+    if "identical" in record:
+        return (
+            "same" if record["identical"] else f"differs ({record['max_abs_diff']:.1e})"
+        )
+    return record.get("skipped") or f"error: {record.get('error', '')[:60]}"
 
 
 def summarize(result: dict) -> dict:
