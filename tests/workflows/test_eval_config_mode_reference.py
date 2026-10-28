@@ -157,6 +157,31 @@ def test_tiny_subset_tolerates_one_flip_without_abs_margin():
     assert accept_eval_score(ci, 0.0, n_total=5) is False  # 0/5
 
 
+def test_mode_reference_min_correct_holds_when_scored_count_shrinks():
+    # 20% of 5 is 1 solved, but with 1 errored trial n = 4 and floor(0.8) = 0.
+    score = _make_score(
+        mode_reference_scores={
+            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(20.0, tolerance=0.0)
+        }
+    )
+    floor_only = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    assert accept_eval_score(floor_only, 0.0, n_total=4) is True
+
+    score = _make_score(
+        mode_reference_scores={
+            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                20.0, tolerance=0.0, min_correct=1
+            )
+        }
+    )
+    ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    assert ci["min_correct"] == 1
+    assert accept_eval_score(ci, 0.0, n_total=4) is False  # 0 of 4 scored
+    assert accept_eval_score(ci, 25.0, n_total=4) is True  # 1 of 4 scored
+    assert accept_eval_score(ci, 0.0, n_total=5) is False
+    assert accept_eval_score(ci, 20.0, n_total=5) is True
+
+
 def test_mode_reference_without_sample_count_falls_back_to_ratio():
     score = _make_score(
         mode_reference_scores={

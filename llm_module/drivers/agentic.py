@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +21,7 @@ from llm_module.request_overrides import (
     agent_kwargs_with_request_body,
     resolve_request_body,
 )
-from ..agentic.harbor import HarborRunConfig, run as run_harbor
+from ..agentic.harbor import HarborRunConfig, harbor_python, run as run_harbor
 from ..agentic.local_datasets import prepare_local_dataset
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
@@ -153,9 +152,15 @@ class HarborAgenticDriver(AgenticEvalDriver):
             run_stamp=self._run_stamp,
         )
         dataset_path = prepare_local_dataset(
-            run_config.dataset, run_config.venv_python or Path(sys.executable)
+            run_config.dataset, harbor_python(run_config)
         )
         if dataset_path is not None:
+            logger.info(
+                "[agentic] %r runs %s from the local copy at %s",
+                self.task.task_name,
+                run_config.dataset,
+                dataset_path,
+            )
             run_config = replace(run_config, dataset_path=dataset_path)
         rc = run_harbor(run_config)
         return self._load_result(rc, self.result_path(server, context))

@@ -380,6 +380,49 @@ class TestAgenticModeReference:
         assert "[CI_NIGHTLY subset]" in block.targets["gpu_reference_score_ref"]
 
 
+class TestMuseGlimmerAgenticFloor:
+    """Muse-Glimmer-30B's 5-task agentic CI subsets gate on at least 1 solved."""
+
+    @pytest.mark.parametrize("task_name", ["terminal_bench_2_1", "swe_bench_verified"])
+    def test_one_solved_passes_zero_fails(self, task_name):
+        from reference_config.evals.eval_config import _eval_config_map
+
+        tasks = {
+            t.task_name: t
+            for t in _eval_config_map["meta-models/Muse-Glimmer-30B"].tasks
+        }
+        task = tasks[task_name]
+        subset = task.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY]
+        assert len(subset) == 5
+
+        def check(solved):
+            metrics = {"accuracy": solved / 5, "n_trials": 5}
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check(0) == ReportCheckTypes.FAIL
+        assert check(1) == ReportCheckTypes.PASS
+
+        # Incomplete scoring: an errored trial is not in n_trials, so 4 scored
+        # failures + 1 error grade on n = 4, where floor(4 * 20%) = 0.
+        def check_scored(solved, scored):
+            metrics = {
+                "accuracy": solved / scored,
+                "n_trials": scored,
+                "n_errors": 5 - scored,
+            }
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check_scored(0, 4) == ReportCheckTypes.FAIL
+        assert check_scored(0, 1) == ReportCheckTypes.FAIL
+        assert check_scored(1, 4) == ReportCheckTypes.PASS
+        assert check_scored(1, 1) == ReportCheckTypes.PASS
+        # Without a limit mode there is no reference to grade against.
+        assert (
+            compute_accuracy_check({"accuracy": 0.0, "n_trials": 5}, task.score, None)
+            == ReportCheckTypes.NA
+        )
+
+
 class TestStandardEvalModeReference:
     """Standard lm-eval scoring (_score_one) honors the CI-subset reference."""
 
@@ -755,7 +798,7 @@ class TestHarborHarness:
             }
         ]
 
-    def test_local_dataset_drops_the_registry_ref(self, tmp_path):
+    def test_local_dataset_drops_the_registry_ref(self, tmp_path, caplog):
         """A generated copy has no registry version to pin."""
         task = _harbor_task()
         task.agentic_eval_config.agent_timeout_sec = None
@@ -770,12 +813,40 @@ class TestHarborHarness:
 
         with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
             run_cmd.return_value = 17
-            run_harbor(cfg)
+            with caplog.at_level("WARNING", logger="llm_module.agentic.harbor"):
+                run_harbor(cfg)
 
         config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
         (dataset,) = json.loads(config_path.read_text())["datasets"]
         assert dataset["path"] == str(tmp_path / "tasks" / "tau3-bench")
         assert "ref" not in dataset and "name" not in dataset
+        assert "Ignoring dataset_ref '1.0'" in caplog.text
+        assert str(tmp_path / "tasks" / "tau3-bench") in caplog.text
+
+    @pytest.mark.parametrize("local", [False, True])
+    def test_driver_runs_a_generated_dataset_from_its_local_path(self, tmp_path, local):
+        task = _harbor_task()
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        driver = HarborAgenticDriver(task)
+        driver.venv_python = tmp_path / "venv" / "bin" / "python"
+        local_path = tmp_path / "tasks" / "tau3-bench" if local else None
+
+        prepare_patch = patch(
+            "llm_module.drivers.agentic.prepare_local_dataset", return_value=local_path
+        )
+        run_patch = patch("llm_module.drivers.agentic.run_harbor", return_value=1)
+        with prepare_patch as prepare, run_patch as run:
+            result = driver.run(
+                None, _server(), DriverContext(output_dir=tmp_path, device="N150")
+            )
+
+        assert result.return_code == 1
+        prepare.assert_called_once_with(
+            "sierra-research/tau3-bench", tmp_path / "venv" / "bin" / "python"
+        )
+        (run_config,) = run.call_args.args
+        assert run_config.dataset == "sierra-research/tau3-bench"
+        assert run_config.dataset_path == local_path
 
     def test_harbor_timeout_is_passed_to_the_watchdog(self, tmp_path):
         # ``harbor_timeout_sec`` is forwarded to the progress watchdog as the

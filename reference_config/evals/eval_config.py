@@ -158,6 +158,10 @@ class ModeReferenceScore:
     ref: str = ""
     # Falls back to EvalTaskScore.tolerance when None.
     tolerance: Optional[float] = None
+    # Minimum number of correct samples, regardless of the scored sample count.
+    # Agentic runs grade on the trials that produced a score, so an errored trial
+    # shrinks n and the integer floor can reach 0; this keeps "at least k solved".
+    min_correct: int = 0
 
 
 @dataclass(frozen=True)
@@ -211,6 +215,7 @@ def resolve_eval_reference(score_obj, limit_mode):
             if mode_ref.tolerance is not None
             else score_obj.tolerance,
             "is_subset_reference": True,
+            "min_correct": mode_ref.min_correct,
         }
 
     return {
@@ -231,7 +236,8 @@ def accept_eval_score(ref, score, n_total=None):
     check is sample-count-aware:
 
         n_correct_obs = round(score/100 * n_total)
-        threshold     = floor(n_total * reference/100 * (1 - tolerance))
+        threshold     = max(floor(n_total * reference/100 * (1 - tolerance)),
+                            min_correct)
         PASS iff n_correct_obs >= threshold
 
     The integer floor lets tiny subsets tolerate one flipped item without a
@@ -246,7 +252,10 @@ def accept_eval_score(ref, score, n_total=None):
     assert reference > 0, "Reference score is not > 0"
     if ref.get("is_subset_reference") and n_total:
         ref_rate = reference / 100.0
-        threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
+        threshold = max(
+            math.floor(n_total * ref_rate * (1.0 - tolerance)),
+            ref.get("min_correct", 0),
+        )
         observed = round(score / 100.0 * n_total)
         return observed >= threshold
     return (score / reference) >= (1.0 - tolerance)
@@ -2811,8 +2820,9 @@ _eval_config_list = [
     # scores only for the RL checkpoint, so published scores cite that card.
     # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
     # (the chat template only disables it on enable_thinking=false).
-    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 and
-    # one attempt match the Blackhole Galaxy spec (4 lanes x 4 users).
+    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 (8
+    # for tau3) and one attempt per task match the Blackhole Galaxy spec (4
+    # lanes x 4 users).
     EvalConfig(
         hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
         tasks=[
@@ -3883,6 +3893,13 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=50.78,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # T3K release runs land at 48.2-48.9 (434-440 of 900), and the
+                    # 0.05 floor is 48.24 (435/900): one question of margin, so a
+                    # single flipped answer blocks the release (tt-shield run
+                    # 40366385918 failed at 48.22). 0.10 puts the floor at 45.7,
+                    # about 3 binomial SEs (1.67 pts at n=900) under the reference,
+                    # still far above the 25-30% chance level of MMMU.
+                    tolerance=0.10,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -8919,41 +8936,138 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # r1_aime24 (GPU reference 90.00, #5353 issuecomment-6108470321) is not run in CI: its CI_NIGHTLY
+            # subset is 6 problems at a 32K budget, so one problem moves the score 17 points (release run
+            # 39584812502: 3/6, one truncated at 32K).
+            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row: the CI agentic subsets gate on a 1-of-5 floor.
             EvalTask(
-                task_name="r1_aime24",
+                # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
+                # CI runs 5 tasks from the oracle-checked K2-Horizon-7B QB2 list: the two
+                # this model solved in release run 38773036733 (fix-git,
+                # nginx-request-logging) and three it attempted to completion there.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
+                    # Card 51.7 on the full set; this 5-task CI subset is not comparable, so it is not cited.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=90.00,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6108470321",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
+                        "result_keys": ["accuracy"],
                         "unit": "percent",
                     },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                model_kwargs={
-                    "max_length": 131072,
-                    "timeout": "3600",
-                },
-                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
-                # at the chat template's default "Reasoning strength: high".
-                gen_kwargs={
-                    "stream": "true",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 64,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 5 tasks at 5 concurrent = one wave of <= 3 h plus setup.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
+                    # left to the server default (device sampler). 96K input plus
+                    # 32K output fits the 131072 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                # SWE-bench Verified with mini-swe-agent: the model card reports 76.0.
+                # CI runs the 5-instance list shared with the Qwen3.x / Gemma 4 rows.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card 76.0 on the full set; this 5-task CI subset is not comparable, so it is not cited.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    # 5 instances at 5 concurrent = one wave of <= 3 h.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),
