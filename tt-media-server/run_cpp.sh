@@ -14,5 +14,8 @@
 # copy of the .so, so the preload override that distinguished build-tree from
 # install-tree copies is no longer needed.
 
+# exec: the Dockerfile CMD sources this script from `bash -c`, so without it
+# bash stays PID 1, does not forward SIGTERM, and `docker stop` ends in SIGKILL
+# after the timeout. The server handles SIGTERM/SIGINT itself (main.cpp).
 cd cpp_server
-./build/tt_media_server_cpp -p 8000
+exec ./build/tt_media_server_cpp -p 8000
