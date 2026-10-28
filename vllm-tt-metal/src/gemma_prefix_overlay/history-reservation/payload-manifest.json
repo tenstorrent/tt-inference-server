@@ -34,14 +34,14 @@
       "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator",
       "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-      "target": "440ec11630b2d990554fd83af1c0e4c37615ce07426345f677c19492ba8b4f79"
+      "target": "1649344fab53ee883b03a95b4acdbbc22f1efd417e0d7186e589a85f17b79e7e"
     },
     {
       "root": "metal",
       "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
       "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
       "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-      "target": "f4c0aaab270e1676b86743c05cbafe65b8b6161010541daf0b9001825984bc0e"
+      "target": "6f17209405fb69ba4cc7c2d04769861830e996a9a7288b480e5ae7658b72833c"
     },
     {
       "root": "metal",
@@ -55,7 +55,7 @@
       "path": "gemma_history_reservation.py",
       "module": "gemma_history_reservation",
       "base": null,
-      "target": "8fd785c8af4aa2cb122b3773ef2c5d757316d57334d882584bdef1d2e76e9ebe"
+      "target": "57e537e89d9962c4dcbebc79db83978fe0bb9fb57793b049c4e85ce99d2e035e"
     },
     {
       "root": "purelib",
@@ -65,7 +65,7 @@
       "target": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
     }
   ],
-  "attestation_sha256": "cf44507e84cdd4251c6089cd860c02e5504581ddb4817c8e37e265f975b53f88",
+  "attestation_sha256": "b0881bffafd05f1203e065b74969bf5005cc008687c19689c09b461b1fbd3b5e",
   "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
   "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
   "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
@@ -122,6 +122,11 @@
       "c32a32_p2_f458752": {
         "n": 5696,
         "P": 5728
+      },
+      "c32a32_p2_f626688": {
+        "n": 7008,
+        "P": 7040,
+        "requires": "GEMMA_EXPERIMENT_SHARE_BF8_GATE_UP=1 for memory"
       }
     }
   }
