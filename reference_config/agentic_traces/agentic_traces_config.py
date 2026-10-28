@@ -461,6 +461,21 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # GLM-5.3-Flash on tt-lab's glm-tt, one BLACKHOLE_GALAXY (dev catalog). InferenceX agentx
+    # replay only, the 256k dataset to match the spec's 262144 max_context, and concurrency at the
+    # spec's max_concurrency of 8 (2 full-context users on each of 4 groups). Same InferenceX pin
+    # as Kimi above.
+    AgenticTracesConfig(
+        model_id="id_tt-lab-glm_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
     # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only. Full (1M) dataset to match the spec's 1048576 max_context, and
     # concurrency at the spec's max_concurrency of 62.
