@@ -1237,7 +1237,7 @@ templates:
         # 3047424: with the four decode graphs (1,4,8,32) that left no DRAM headroom and the
         # 131072-prompt benchmark points failed with Out of Memory on a 60 MB buffer
         # (2026-10-06 02:36, banks at 4.19 of 4.21 GB).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "2883584"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2621440"  # 10 users x 256K per engine (was 11 = 2883584): the assistant drafter weights and the 1.2 GB trace region need ~1 GB of DRAM per chip that the 11-user pool left no room for (shield 12B Galaxy boot OOM at 98 % DRAM); 40 x 256K users across the four engines
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
