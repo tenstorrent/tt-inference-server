@@ -17,6 +17,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from llm_module.eval_configs import _apply_profile_request_body_overrides
+from llm_module.eval_command import build_eval_command
 from reference_config.evals.eval_config import (
     EvalTaskScore,
     ModeReferenceScore,
@@ -24,7 +26,9 @@ from reference_config.evals.eval_config import (
     accept_eval_score,
     resolve_eval_reference,
 )
-from workflows.workflow_types import EvalLimitMode
+from workflows.model_spec import load_templates_from_yaml
+from workflows.utils import get_repo_root_path
+from workflows.workflow_types import DeviceTypes, EvalLimitMode, WorkflowVenvType
 
 
 def _make_score(**overrides):
@@ -200,59 +204,146 @@ def test_no_reference_returns_none():
     assert accept_eval_score(ref, 50.0, n_total=40) is None
 
 
-# --- gemma-4 release entries: deterministic subset gate + ci-long preset ------
+# --- gemma-4 release entries: the model-card presets --------------------------
 
 
 def _gemma4_task(model, task_name):
     return next(t for t in _eval_config_map[model].tasks if t.task_name == task_name)
 
 
-def test_gemma4_12b_gpqa_subset_gate_is_the_measured_deterministic_score():
-    """The 40-question ci-nightly subset is deterministic for a fixed seed on TT
-    (26/40 in three same-seed runs), so it is gated as a regression reference at
-    its measured 65.0 with a 5% band: 24/40 passes, 23/40 fails."""
-    score = _gemma4_task("google/gemma-4-12B-it", "r1_gpqa_diamond").score
-    ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
-    assert ref["is_subset_reference"] is True
-    assert ref["reference_score"] == 65.0
-    assert ref["tolerance"] == 0.05
-    assert accept_eval_score(ref, 26 / 40 * 100, n_total=40) is True
-    assert accept_eval_score(ref, 24 / 40 * 100, n_total=40) is True
-    assert accept_eval_score(ref, 23 / 40 * 100, n_total=40) is False
-    # The full set is still judged against the published score (ratio check).
-    full = resolve_eval_reference(score, EvalLimitMode.CI_LONG)
-    assert full["is_subset_reference"] is False
+GEMMA4_RELEASE_MODELS = (
+    "google/gemma-4-31B-it",
+    "google/gemma-4-26B-A4B-it",
+    "google/gemma-4-12B-it",
+)
 
 
-def test_gemma4_release_models_define_the_ci_long_preset():
-    """ci-long = full gpqa (no CI_LONG limit), the nightly mmlu_pro subset, a 24-task
-    Terminal-Bench 2.0 wave and the nightly swe-bench list, so the preset proves accuracy without running the
-    12k-question mmlu_pro or 500-task swe-bench sets."""
-    for model in ("google/gemma-4-31B-it", "google/gemma-4-12B-it"):
-        gpqa = _gemma4_task(model, "r1_gpqa_diamond")
-        assert EvalLimitMode.CI_LONG not in gpqa.limit_samples_map
-        mmlu = _gemma4_task(model, "mmlu_pro")
+def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
+    """Both presets run all 198 questions, graded against the published score and
+    the full-set GPU reference; no preset carries a subset reference."""
+    for model in GEMMA4_RELEASE_MODELS:
+        task = _gemma4_task(model, "r1_gpqa_diamond")
+        assert EvalLimitMode.CI_NIGHTLY not in task.limit_samples_map
+        assert EvalLimitMode.CI_LONG not in task.limit_samples_map
+        assert not task.score.mode_reference_scores
+        assert task.score.gpu_reference_score is not None
+        ref = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
+        assert ref["is_subset_reference"] is False
+        # The reference is a thinking-mode run; the task pins the mode per
+        # request rather than relying on the serving default.
+        # The 31B / 12B tasks pin thinking on themselves; the 26B task is shared by
+        # two implementations, so its pin lives in each profile's override.
+        assert task.thinking is (None if model == "google/gemma-4-26B-A4B-it" else True)
+
+
+def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
+    """The entries carry exactly the model-card evals, every one a blocking gate
+    (priority must, graded against the same-protocol GPU reference where one exists),
+    and ci-nightly and ci-long run the same set at the same sizes: GPQA Diamond in
+    full, one 24-task Terminal-Bench 2.0 wave, the whole LiveCodeBench v6 window and
+    865 MMMU-Pro questions."""
+    for model in GEMMA4_RELEASE_MODELS:
+        tasks = _eval_config_map[model].tasks
+        assert [t.task_name for t in tasks] == [
+            "r1_gpqa_diamond",
+            "terminal_bench_2",
+            "livecodebench",
+            "mmmu_pro_standard_cot",
+        ]
+        assert all((t.priority or "must") == "must" for t in tasks)
+        terminal = _gemma4_task(model, "terminal_bench_2").agentic_eval_config
+        names = terminal.task_names_map
+        assert names[EvalLimitMode.CI_NIGHTLY] == names[EvalLimitMode.CI_LONG]
+        assert len(set(names[EvalLimitMode.CI_LONG])) == 24
+        assert terminal.n_concurrent_trials == 24
+        assert terminal.agent_kwargs["llm_kwargs"]["extra_body"][
+            "chat_template_kwargs"
+        ] == {"enable_thinking": True}
+        lcb = _gemma4_task(model, "livecodebench")
+        assert EvalLimitMode.CI_NIGHTLY not in lcb.limit_samples_map
+        assert EvalLimitMode.CI_LONG not in lcb.limit_samples_map
+        assert lcb.thinking is True
+        mmmu = _gemma4_task(model, "mmmu_pro_standard_cot")
+        # Stock lmms-eval client; thinking off per request (the protocol of the
+        # GPU reference) through the request-overrides wrapper.
+        assert mmmu.eval_class == "openai_compatible"
+        assert mmmu.workflow_venv_type == WorkflowVenvType.EVALS_VISION
+        assert mmmu.thinking is False and not mmmu.request_body
+        assert mmmu.batch_size == 32
+        assert mmmu.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.5
+        assert mmmu.limit_samples_map[EvalLimitMode.CI_LONG] == 0.5
+        refs = mmmu.score.mode_reference_scores
+        # Same-protocol GPU reference measured on the 865-doc subset; both
+        # presets share it.
+        assert set(refs) == {EvalLimitMode.CI_NIGHTLY, EvalLimitMode.CI_LONG}
+        assert refs[EvalLimitMode.CI_NIGHTLY].score == refs[EvalLimitMode.CI_LONG].score
+        ref = resolve_eval_reference(mmmu.score, EvalLimitMode.CI_LONG)
+        assert ref["is_subset_reference"] is True
+
+
+def _gemma4_multimodal_release_specs():
+    """The six tt-transformers Blackhole QB2 / Galaxy blocks of the release entries."""
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    return [
+        spec
+        for template in templates
+        if template.weights[0] in GEMMA4_RELEASE_MODELS
+        for spec in template.expand_to_specs()
+        if spec.impl.impl_id == "tt_transformers"
+        and spec.device_type in (DeviceTypes.P300X2, DeviceTypes.BLACKHOLE_GALAXY)
+    ]
+
+
+def test_gemma4_evals_pin_thinking_per_request_over_the_serving_default(
+    monkeypatch, tmp_path
+):
+    """The multimodal serving blocks keep thinking on by default; the mode an
+    eval is graded in is set by its own request: the text evals thinking on
+    (their references), MMMU-Pro thinking off (its GPU reference's protocol),
+    rendered through the request-overrides wrapper (--harness lmms-eval for
+    the lmms-eval task)."""
+    monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+    specs = _gemma4_multimodal_release_specs()
+    assert len(specs) == 6
+    for spec in specs:
         assert (
-            mmlu.limit_samples_map[EvalLimitMode.CI_LONG]
-            == mmlu.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
-            == 0.07
+            spec.device_model_spec.vllm_args["default-chat-template-kwargs"]
+            == '{"enable_thinking": true}'
+        ), spec.model_id
+        tasks = {
+            t.task_name: t
+            for t in _apply_profile_request_body_overrides(
+                _eval_config_map[spec.hf_model_repo].tasks, spec
+            )
+        }
+        mmmu = build_eval_command(
+            tasks["mmmu_pro_standard_cot"], spec, spec.device_type, tmp_path, 8000
         )
-        agentic = [t for t in _eval_config_map[model].tasks if t.agentic_eval_config]
-        for task in agentic:
-            names = task.agentic_eval_config.task_names_map
-            assert len(names[EvalLimitMode.CI_NIGHTLY]) == 5
-            if task.task_name == "terminal_bench_2":
-                # ci-long: one 24-task wave (24 concurrent x 3h20 budget < 6 h job).
-                assert len(names[EvalLimitMode.CI_LONG]) == 24
-                assert len(set(names[EvalLimitMode.CI_LONG])) == 24
-            else:
-                assert names[EvalLimitMode.CI_LONG] == names[EvalLimitMode.CI_NIGHTLY]
-    # The 12B entry carries the two informational agentic tasks.
-    assert {
-        t.task_name
-        for t in _eval_config_map["google/gemma-4-12B-it"].tasks
-        if t.agentic_eval_config
-    } == {
-        "terminal_bench_2",
-        "swe_bench_verified",
-    }
+        sep = mmmu.index("--")
+        assert mmmu[1].endswith("llm_module/lm_eval_request_overrides.py")
+        assert mmmu[2:sep] == [
+            "--request-body",
+            '{"chat_template_kwargs": {"enable_thinking": false}}',
+            "--harness",
+            "lmms-eval",
+        ]
+        assert mmmu[sep + 1 : sep + 5] == [
+            "--tasks",
+            "mmmu_pro_standard_cot",
+            "--model",
+            "openai_compatible",
+        ]
+        for name in ("r1_gpqa_diamond", "livecodebench"):
+            cmd = build_eval_command(
+                tasks[name], spec, spec.device_type, tmp_path, 8000
+            )
+            assert cmd[2 : cmd.index("--")] == [
+                "--request-body",
+                '{"chat_template_kwargs": {"enable_thinking": true}}',
+            ], name
+        tb = tasks["terminal_bench_2"].agentic_eval_config.agent_kwargs
+        assert tb["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
+            "enable_thinking": True
+        }
