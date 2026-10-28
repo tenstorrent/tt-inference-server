@@ -135,6 +135,7 @@ MODEL_TYPE_DESCRIPTIONS = {
     ModelType.IMAGE: "Image generation models",
     ModelType.CNN: "Convolutional Neural Networks",
     ModelType.EMBEDDING: "Text embedding models",
+    ModelType.RERANK: "Text reranking models",
     ModelType.TEXT_TO_SPEECH: "Text-to-speech models",
     ModelType.VIDEO: "Video generation models",
 }

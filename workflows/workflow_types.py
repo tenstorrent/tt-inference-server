@@ -352,6 +352,7 @@ class ModelType(IntEnum):
     TEXT_TO_SPEECH = auto()
     VIDEO = auto()
     VLM = auto()  # Vision-Language Models (text+image-to-text)
+    RERANK = auto()  # Cross-encoder rerankers (query + document -> relevance score)
 
     @property
     def display_name(self) -> str:
@@ -364,6 +365,7 @@ class ModelType(IntEnum):
             ModelType.TEXT_TO_SPEECH: "Text-to-Speech",
             ModelType.VIDEO: "Video",
             ModelType.VLM: "Vision-Language Model",
+            ModelType.RERANK: "Reranker",
         }
         return display_names[self]
 
@@ -378,5 +380,6 @@ class ModelType(IntEnum):
             ModelType.EMBEDDING: "Embedding",
             ModelType.TEXT_TO_SPEECH: "TTS",
             ModelType.VIDEO: "Video",
+            ModelType.RERANK: "Rerank",
         }
         return short_names[self]

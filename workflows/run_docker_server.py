@@ -248,6 +248,7 @@ def generate_docker_run_command(
                 ModelType.CNN,
                 ModelType.IMAGE,
                 ModelType.EMBEDDING,
+                ModelType.RERANK,
                 ModelType.VIDEO,
                 ModelType.TEXT_TO_SPEECH,
                 ModelType.AUDIO,

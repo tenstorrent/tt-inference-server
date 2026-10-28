@@ -240,6 +240,12 @@ whisper_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
 )
+llama_nemotron_rerank_impl = ImplSpec(
+    impl_id="llama_nemotron_rerank",
+    impl_name="llama-nemotron-rerank",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/llama_nemotron_rerank_1b",
+)
 speecht5_impl = ImplSpec(
     impl_id="speecht5_tts",
     impl_name="speecht5-tts",
@@ -3650,6 +3656,39 @@ cnn_templates = [
     ),
 ]
 
+# =============================================================================
+# rerank_templates
+# =============================================================================
+rerank_templates = [
+    ModelSpecTemplate(
+        weights=["nvidia/llama-nemotron-rerank-1b-v2"],
+        tt_metal_commit="741a1e7",
+        impl=llama_nemotron_rerank_impl,
+        min_disk_gb=15,
+        min_ram_gb=8,
+        docker_image="",
+        model_type=ModelType.RERANK,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=32,
+                max_context=512,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "16384",
+                    "VLLM__MAX_MODEL_LENGTH": "512",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "32",
+                    "MAX_BATCH_SIZE": "32",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+]
+
 # make spec_templates from the templates in the correct order
 spec_templates = [
     *llm_templates,
@@ -3658,6 +3697,7 @@ spec_templates = [
     *image_templates,
     *audio_tts_templates,
     *embedding_templates,
+    *rerank_templates,
     *cnn_templates,
 ]
 
