@@ -1204,10 +1204,32 @@ def resolve_runtime(args):
         )
         model_spec.apply_overrides(runtime_config)
 
+    apply_agentic_traces_release_default(model_spec, runtime_config)
     populate_model_spec_cli_args(model_spec, runtime_config)
     runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
 
     return runtime_config, model_spec
+
+
+def apply_agentic_traces_release_default(model_spec, runtime_config):
+    """Turn on the release's agentic-traces child when the model's config asks.
+
+    A config with ``in_release`` opts every ``--workflow release`` in, for
+    dispatchers that cannot pass ``--agentic-traces`` (tt-shield's on-dispatch).
+    """
+    if runtime_config.workflow != "release" or runtime_config.agentic_traces:
+        return
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config,
+    )
+
+    config = get_agentic_traces_config(model_spec)
+    if config is not None and config.in_release:
+        logger.info(
+            f"Release includes agentic traces: {model_spec.model_id} sets in_release "
+            "in reference_config/agentic_traces."
+        )
+        runtime_config.agentic_traces = True
 
 
 def should_mount_runtime_model_spec(model_spec, runtime_config):

@@ -302,6 +302,10 @@ class AgenticTracesConfig:
     mode_settings: Dict[AgenticTracesMode, AgenticTracesModeSettings] = field(
         default_factory=lambda: dict(DEFAULT_MODE_SETTINGS)
     )
+    # Every ``--workflow release`` of this spec runs the replay as if
+    # ``--agentic-traces`` were passed. For dispatchers that cannot add the flag,
+    # such as tt-shield's on-dispatch release.
+    in_release: bool = False
 
     def __post_init__(self) -> None:
         if not self.model_id.strip():
@@ -478,13 +482,15 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # MiMo-V2.6-Flash-MOPD on BLACKHOLE_GALAXY (dev catalog), plain decode and
     # MTP speculative decoding. InferenceX agentx replay only. Full (1M) dataset
     # to match the specs' 1048576 max_context, and concurrency at their
-    # max_concurrency of 16 (4 lanes x 4 users).
+    # max_concurrency of 16 (4 lanes x 4 users). In every release, so the
+    # tt-shield release run reports AgentX.
     *for_model_ids(
         [
             "id_mimo-v2.6-flash_MiMo-V2.6-Flash-MOPD_blackhole_galaxy",
             "id_mimo-v2.6-flash-mtp_MiMo-V2.6-Flash-MOPD_blackhole_galaxy",
         ],
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        in_release=True,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
