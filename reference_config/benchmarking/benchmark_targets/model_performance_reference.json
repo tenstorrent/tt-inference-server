@@ -6456,9 +6456,10 @@
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "blackhole_galaxy": [
             {
-                "_comment": "Requirement: one 5 s clip (81 frames at 16 fps) at 480p 16:9 (832x480) in 43.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "_comment": "Requirement without DBCache step caching (8x H200 uncached): one 5 s clip (81 frames at 16 fps) at 480p 16:9 (832x480) in 43.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
                 "width": 832,
                 "height": 480,
+                "dbcache": false,
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
                 "task_type": "video",
@@ -6472,9 +6473,10 @@
                 }
             },
             {
-                "_comment": "Requirement: one 5 s clip (81 frames at 16 fps) at 480p 9:16 (480x832) in 43.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "_comment": "Requirement without DBCache step caching (8x H200 uncached): one 5 s clip (81 frames at 16 fps) at 480p 9:16 (480x832) in 43.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
                 "width": 480,
                 "height": 832,
+                "dbcache": false,
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
                 "task_type": "video",
@@ -6488,9 +6490,10 @@
                 }
             },
             {
-                "_comment": "Requirement: one 5 s clip (81 frames at 16 fps) at 720p 16:9 (1280x720) in 144.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "_comment": "Requirement without DBCache step caching (8x H200 uncached): one 5 s clip (81 frames at 16 fps) at 720p 16:9 (1280x720) in 144.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
                 "width": 1280,
                 "height": 720,
+                "dbcache": false,
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
                 "task_type": "video",
@@ -6504,9 +6507,10 @@
                 }
             },
             {
-                "_comment": "Requirement: one 5 s clip (81 frames at 16 fps) at 720p 9:16 (720x1280) in 144.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "_comment": "Requirement without DBCache step caching (8x H200 uncached): one 5 s clip (81 frames at 16 fps) at 720p 9:16 (720x1280) in 144.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
                 "width": 720,
                 "height": 1280,
+                "dbcache": false,
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
                 "task_type": "video",
@@ -6514,6 +6518,74 @@
                     "theoretical": {
                         "ttft_ms": 144300,
                         "end_to_end_latency_ms": 144300,
+                        "inference_steps_per_second": null,
+                        "tput_user": null
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (8x H200, rdt 0.12 recipe): one 5 s clip (81 frames at 16 fps) at 480p 16:9 (832x480) in 25.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "width": 832,
+                "height": 480,
+                "dbcache": true,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25400,
+                        "end_to_end_latency_ms": 25400,
+                        "inference_steps_per_second": null,
+                        "tput_user": null
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (8x H200, rdt 0.12 recipe): one 5 s clip (81 frames at 16 fps) at 480p 9:16 (480x832) in 25.4 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "width": 480,
+                "height": 832,
+                "dbcache": true,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25400,
+                        "end_to_end_latency_ms": 25400,
+                        "inference_steps_per_second": null,
+                        "tput_user": null
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (8x H200, rdt 0.12 recipe): one 5 s clip (81 frames at 16 fps) at 720p 16:9 (1280x720) in 76.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "width": 1280,
+                "height": 720,
+                "dbcache": true,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76300,
+                        "end_to_end_latency_ms": 76300,
+                        "inference_steps_per_second": null,
+                        "tput_user": null
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (8x H200, rdt 0.12 recipe): one 5 s clip (81 frames at 16 fps) at 720p 9:16 (720x1280) in 76.3 s end to end; both orientations of a size share its target. The video benchmark requests each shape and reports clip wall time as ttft. tput_user is left null because the benchmark reports steps/s under that name.",
+                "width": 720,
+                "height": 1280,
+                "dbcache": true,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76300,
+                        "end_to_end_latency_ms": 76300,
                         "inference_steps_per_second": null,
                         "tput_user": null
                     }

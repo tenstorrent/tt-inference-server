@@ -253,19 +253,58 @@ def test_bh_galaxy_wan_i2v_has_a_target_per_shape():
 
     assert performance_target_shapes(WAN_I2V, "blackhole_galaxy") == SHAPES
     ttft = {
-        shape: get_performance_targets(WAN_I2V, "blackhole_galaxy", shape).ttft_ms
+        (shape, dbcache): get_performance_targets(
+            WAN_I2V, "blackhole_galaxy", shape, dbcache
+        ).ttft_ms
         for shape in SHAPES
+        for dbcache in (False, True)
     }
+    # Uncached: 8x H200 uncached; cached: 8x H200 with the DBCache recipe.
     assert ttft == {
-        (832, 480): 43400,
-        (480, 832): 43400,
-        (1280, 720): 144300,
-        (720, 1280): 144300,
+        ((832, 480), False): 43400,
+        ((480, 832), False): 43400,
+        ((1280, 720), False): 144300,
+        ((720, 1280), False): 144300,
+        ((832, 480), True): 25400,
+        ((480, 832), True): 25400,
+        ((1280, 720), True): 76300,
+        ((720, 1280), True): 76300,
     }
+    # A deployment that leaves DBCache unset gets no targets rather than the wrong ones.
+    assert get_performance_targets(WAN_I2V, "blackhole_galaxy", (832, 480)).ttft_ms is None
     # Devices without per-shape entries keep one benchmark at the served shape.
     assert performance_target_shapes(WAN_I2V, "t3k") == []
     assert get_performance_targets(WAN_I2V, "t3k").ttft_ms == 540000
     assert get_performance_targets(WAN_I2V, "t3k", (832, 480)).ttft_ms is None
+
+
+def test_the_deployments_dbcache_setting_picks_the_targets():
+    from types import SimpleNamespace
+
+    from test_module._test_common.target_check import deployment_dbcache
+
+    def spec(env):
+        return SimpleNamespace(env_vars=env)
+
+    assert deployment_dbcache(spec({"WAN22_DBCACHE": "on"})) is True
+    assert deployment_dbcache(spec({"WAN22_DBCACHE": " OFF "})) is False
+    assert deployment_dbcache(spec({})) is None
+    assert deployment_dbcache(SimpleNamespace()) is None
+
+
+def test_the_bh_galaxy_i2v_spec_states_its_dbcache_setting():
+    from pathlib import Path
+
+    import yaml
+
+    catalog = Path(__file__).parents[3] / "workflows/model_specs/dev/video.yaml"
+    templates = yaml.safe_load(catalog.read_text())["templates"]
+    (template,) = [t for t in templates if t["weights"] == [WAN_I2V]]
+    (device,) = [
+        d for d in template["device_model_specs"] if d["device"] == "BLACKHOLE_GALAXY"
+    ]
+    # Quoted in the YAML: a bare on/off would load as a bool.
+    assert device["env_vars"]["WAN22_DBCACHE"] in ("on", "off")
 
 
 @pytest.mark.parametrize(
@@ -302,9 +341,16 @@ def test_requested_shape_overrides_the_deployment_shape(tmp_path):
     )
 
 
-def test_every_shape_runs_and_one_unserved_shape_fails_the_block(monkeypatch):
+@pytest.mark.parametrize(
+    "dbcache,target_ms,check",
+    [("off", 144300, "PASS"), ("on", 76300, "FAIL")],
+)
+def test_every_shape_runs_and_one_unserved_shape_fails_the_block(
+    monkeypatch, dbcache, target_ms, check
+):
     # The deployment serves 1280x720 only: the other three shapes come back
-    # the wrong size, so their generations fail and so does the block.
+    # the wrong size, so their generations fail and so does the block. A
+    # 140 s clip meets the uncached 720p target but not the cached one.
     calls = []
 
     def fake_generate(ctx, prompt, num_inference_steps, image_b64=None, shape=None):
@@ -321,6 +367,7 @@ def test_every_shape_runs_and_one_unserved_shape_fails_the_block(monkeypatch):
     monkeypatch.setattr(mod, "save_clip", lambda *a, **k: None)
     ctx = _ctx(WAN_I2V, "BLACKHOLE_GALAXY")
     ctx.model_spec.cli_args = {"device": "blackhole_galaxy"}
+    ctx.model_spec.env_vars = {"WAN22_DBCACHE": dbcache}
 
     block = mod._run_video_benchmark_by_shape(ctx, 2, SHAPES)
 
@@ -329,10 +376,11 @@ def test_every_shape_runs_and_one_unserved_shape_fails_the_block(monkeypatch):
     assert list(rows) == ["832x480", "480x832", "1280x720", "720x1280"]
     assert rows["1280x720"]["num_successful"] == 2
     assert rows["1280x720"]["ttft"] == 140.0
+    assert {r["dbcache"] for r in rows.values()} == {dbcache}
     assert rows["832x480"]["num_successful"] == 0
     assert block.data["num_requests"] == 8
     assert block.data["status"] == "fail"
     target = block.data["target_checks"]["target"]
-    assert target["ttft_1280x720"] == 144300
-    assert target["ttft_1280x720_check"] == mod.ReportCheckTypes.PASS
+    assert target["ttft_1280x720"] == target_ms
+    assert target["ttft_1280x720_check"] == mod.ReportCheckTypes[check]
     assert target["ttft_832x480_check"] == mod.ReportCheckTypes.NA

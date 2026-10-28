@@ -34,6 +34,7 @@ from .._test_common import (
     run_tiered_check,
 )
 from .._test_common.target_check import (
+    deployment_dbcache,
     performance_target_shapes,
     summary_from_tiered,
 )
@@ -336,6 +337,10 @@ def _run_video_benchmark_by_shape(
     """
     records = []
     target_checks: dict[str, dict] = {}
+    # Which targets apply (cached or uncached), shown next to each shape's timings.
+    dbcache = {True: "on", False: "off"}.get(
+        deployment_dbcache(ctx.model_spec), "unset"
+    )
     for shape in shapes:
         status_list = _run_video_generation_benchmark(ctx, num_calls, shape)
         summary = _summarize(status_list)
@@ -347,6 +352,7 @@ def _run_video_benchmark_by_shape(
         records.append(
             {
                 "shape": f"{shape[0]}x{shape[1]}",
+                "dbcache": dbcache,
                 **summary,
                 "tput_user": summary["inference_steps_per_second"],
                 "target_check": check,

@@ -97,10 +97,23 @@ def _load_reference() -> Dict[str, Any]:
     return _REFERENCE_CACHE
 
 
+def deployment_dbcache(model_spec) -> Optional[bool]:
+    """Whether a deployment's model spec turns Wan2.2 DBCache step caching on (WAN22_DBCACHE).
+
+    None when the spec leaves it unset: tt-metal caches I2V by default only from
+    9b40b665, so an unset value does not say which targets apply.
+    """
+    value = (getattr(model_spec, "env_vars", None) or {}).get("WAN22_DBCACHE")
+    if value is None:
+        return None
+    return str(value).strip().lower() == "on"
+
+
 def get_performance_targets(
     hf_model_repo: str,
     device_str: Optional[str],
     shape: Optional[tuple[int, int]] = None,
+    dbcache: Optional[bool] = None,
 ) -> PerformanceTargets:
     """Look up performance targets for ``hf_model_repo`` on ``device_str``.
 
@@ -108,7 +121,9 @@ def get_performance_targets(
     ``"meta-llama/Llama-3.1-8B-Instruct"``), matching the keys in
     ``model_performance_reference.json``. ``shape`` is a video output
     ``(width, height)``: the device entry with that ``width`` and ``height``
-    is used instead of the first one.
+    is used instead of the first one. An entry with a ``dbcache`` key applies
+    only to a deployment with that step-caching setting (``dbcache``), so a
+    cached and an uncached deployment are graded against their own targets.
 
     Returns an empty ``PerformanceTargets`` (all ``None``) if no entry is
     found; callers handle that as ``ReportCheckTypes.NA``.
@@ -128,8 +143,15 @@ def get_performance_targets(
             for entry in device_list
             if (entry.get("width"), entry.get("height")) == tuple(shape)
         ]
-    where = f"device '{device_key}'" + (
-        f" at {shape[0]}x{shape[1]}" if shape is not None else ""
+    device_list = [
+        entry
+        for entry in device_list
+        if "dbcache" not in entry or entry["dbcache"] == dbcache
+    ]
+    where = (
+        f"device '{device_key}'"
+        + (f" at {shape[0]}x{shape[1]}" if shape is not None else "")
+        + ("" if dbcache is None else f" with DBCache {'on' if dbcache else 'off'}")
     )
     if device_list:
         logger.info(f"Found performance targets for model '{hf_model_repo}' on {where}")
@@ -147,11 +169,13 @@ def performance_target_shapes(
     if not device_str:
         return []
     device_list = _load_reference().get(hf_model_repo, {}).get(device_str.lower(), [])
-    return [
+    shapes = [
         (entry["width"], entry["height"])
         for entry in device_list
         if entry.get("width") and entry.get("height")
     ]
+    # A shape with cached and uncached targets is listed once.
+    return list(dict.fromkeys(shapes))
 
 
 @dataclass
@@ -175,7 +199,12 @@ def load_targets(
     ctx: "MediaContext", shape: Optional[tuple[int, int]] = None
 ) -> PerformanceTargets:
     device_str = ctx.model_spec.cli_args.get("device")
-    targets = get_performance_targets(ctx.model_spec.hf_model_repo, device_str, shape)
+    targets = get_performance_targets(
+        ctx.model_spec.hf_model_repo,
+        device_str,
+        shape,
+        deployment_dbcache(ctx.model_spec),
+    )
     logger.info(f"Performance targets: {targets}")
     return targets
 
@@ -283,6 +312,7 @@ __all__ = [
     "PerformanceTargets",
     "TIER_MULTIPLIERS",
     "evaluate_tiered",
+    "deployment_dbcache",
     "get_performance_targets",
     "load_targets",
     "performance_target_shapes",
