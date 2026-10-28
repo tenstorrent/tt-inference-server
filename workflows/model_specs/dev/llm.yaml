@@ -568,6 +568,10 @@ templates:
         V41_DECODE_SDPA: "local"
         V41_MHC_PROJ_W: "dram"
         V41_MHC_RSQRT: "fused"
+        # the decode step's host copies in one dispatch round (bit for
+        # bit): served, the staging 2.7 -> 2.2 ms a step, the period 59.0 ->
+        # 58.5, tput_user 17.1 -> 17.2 to 17.3 at points 1, 5, 8
+        V41_DECODE_STAGE_BATCH: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
