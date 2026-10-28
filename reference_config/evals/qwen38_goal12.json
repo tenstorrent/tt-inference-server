@@ -1,5 +1,5 @@
 {
-  "phase": "swe25-isolated-grouped-masked-flat-b16-p512-c8-medium-20261028",
+  "phase": "unscored-qwen-b32-prefix-retention-p512-fixed-work",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
@@ -126,5 +126,19 @@
   "record_suite_metrics": true,
   "swe_reasoning_effort": "medium",
   "swe_agent_isolated_network": true,
-  "selection_basis": "Same historical frozen every-fourth Gemma100 cohort used by the25-task control and C16 candidate; no task substitution based on outcomes. Earlier Qwen pilots were already known before the control25."
+  "selection_basis": "Same historical frozen every-fourth Gemma100 cohort used by the25-task control and C16 candidate; no task substitution based on outcomes. Earlier Qwen pilots were already known before the control25.",
+  "prefix_retention_probe": {
+    "schema_version": 1,
+    "block_size": 512,
+    "base_lengths": [
+      16384,
+      32768
+    ],
+    "streams": 32,
+    "concurrency": 32,
+    "append_tokens": 512,
+    "churn_streams": 8,
+    "tool_gap_s": 1,
+    "request_budget_s": 3600
+  }
 }

@@ -218,6 +218,17 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     _configure_openai_env(ctx)
     _require_openai_server(ctx)
 
+    # Explicit unscored mechanism route after the same auth/readiness gates.
+    # Normal/scored evaluation is unchanged when this source-owned key is absent.
+    if ctx.model_spec.hf_model_repo == "Qwen/Qwen3.8-27B":
+        from reference_config.evals.qwen38_goal12 import controls
+        probe_config = controls().get("prefix_retention_probe")
+        if probe_config is not None:
+            from .qwen38_prefix_retention import run
+            block = run(ctx, probe_config)
+            accept_blocks([block], envelope=sweep_envelope(ctx))
+            return [block]
+
     agentic_tasks = _select_agentic_tasks(ctx)
     if not agentic_tasks:
         raise RuntimeError(

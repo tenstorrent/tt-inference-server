@@ -1,0 +1,70 @@
+{
+  "status": "prepared_not_dispatched",
+  "scored": false,
+  "base_tti_commit": "649c4342d6a1aab5f99c7c6ece672721182a98e9",
+  "image": "ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:677859aa1eba574ffb95214247ed1849ad17cddfe1faf1884c0dd73a5bf53d07",
+  "tt_metal": "6faa07fb5320284381ca1a9ab4651489366d7436",
+  "plugin": "1badbd02bb6911dfdb59c206bdc00c6c1e8dc0bf",
+  "tokenizer_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "batch": 32,
+  "max_model_len": 262144,
+  "block_size": 512,
+  "budget_bytes_per_device": 23661297664,
+  "mechanism": "Native server-tokenized private user transcripts; three fixed append turns, tool gap, eight cold churn streams, then retained-prefix return.",
+  "panels": [
+    {
+      "base_tokens": 16384,
+      "turn_tokens": [
+        16384,
+        16896,
+        17408
+      ],
+      "streams": 32,
+      "churn_streams": 8,
+      "sampled_uncached_controls": 2,
+      "requests": 106
+    },
+    {
+      "base_tokens": 32768,
+      "turn_tokens": [
+        32768,
+        33280,
+        33792
+      ],
+      "streams": 32,
+      "churn_streams": 8,
+      "sampled_uncached_controls": 2,
+      "requests": 106
+    }
+  ],
+  "request_count": 212,
+  "outputs_per_request": 1,
+  "request_budget_s": 3600,
+  "timing": "One-hour client request budget starts after server readiness, before input tokenization; deployment/initial preparation separate. No shortened scored task budgets.",
+  "dispatch": "Parent must review and integrate/push TTI branch before replacing inference-server-git-ref in the unchanged successful wrapper inputs. No dispatch performed.",
+  "changes": [
+    "Explicit prefix_retention_probe key in source-owned goal12 controls",
+    "Unscored route after existing auth and readiness gates",
+    "P300X2 qwen38_autoport concurrency/max_num_seqs16->32; all cache sizes/precision/context settings retained"
+  ],
+  "gates": [
+    "Native context262144 attested by /v1/models",
+    "Every HTTP response has exact input/output counts, actual token IDs and cached-prompt count",
+    "Private cold requests have zero cached tokens; cached count never exceeds true LCP on append requests",
+    "Missing running/waiting/preemption metrics fails mechanism evidence",
+    "Sampled cached/fresh prompt outputs match greedily",
+    "Inspect actual server prepared allocation, trace counters, state-pool saves/restores and ownership separately before interpreting capacity"
+  ],
+  "outputs": [
+    "inputs.json includes full synthetic token arrays and content/input hashes",
+    "calls.jsonl includes each exact response/body, cache salt, timing, LCP, reusable aligned denominator and recompute accounting",
+    "metrics.jsonl preserves raw metrics and exact labeled series with phase/client-outstanding samples",
+    "result.json contains per-panel/per-phase totals and limitations"
+  ],
+  "limitations": [
+    "Predetermined extensions within a single user message test prefix mechanics, not real agent trajectories",
+    "One greedy capped output is deliberately different from scored SWE generation",
+    "HTTP hit counts plus sampled cache usage do not establish the live/idle group ownership census; that requires server allocator/pool instrumentation",
+    "No score, SWE100/SWE500/Terminal run, or memory reduction is claimed"
+  ]
+}
