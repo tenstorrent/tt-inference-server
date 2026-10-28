@@ -1,7 +1,9 @@
 # Prepared Terminal-Bench 2.1 seeded8
 
-Not dispatched. Hold until p2048 strict local correctness and the original
-one-task smoke40687173740 qualify actual serving geometry. The first TB2.1
+Not dispatched. Hold until local combined B32 state/logit correctness and the
+original one-task smoke40687173740 qualify their separate scopes. The local
+fixture uses physical1024 prefill chunks; only the CI smoke exercises actual
+p2048 shared-pool/scheduler geometry. The first TB2.1
 harness pilot40685950043 passed both short tasks, all8 original verifier tests,
 and11/11 exact whole-turn prefix continuations on B32/p256. It generated6261
 tokens without cap/timeout; this is not population accuracy.
