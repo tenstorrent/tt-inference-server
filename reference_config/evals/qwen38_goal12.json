@@ -133,5 +133,5 @@
   "record_suite_metrics": true,
   "swe_reasoning_effort": "medium",
   "swe_agent_isolated_network": true,
-  "selection_basis": "Part0 of deterministic10x50; first2 partitions preserve historical frozen SWE100, remaining8 cover ordered frozen500 complement. Fixed identities independent of Qwen rewards; all parts use same selected runtime/protocol."
+  "selection_basis": "First32 ordered identities from historical frozen SWE100; fixed before matched B32/C32 comparison, eight overlap previously scored SWE25. Retain all attempted tasks."
 }

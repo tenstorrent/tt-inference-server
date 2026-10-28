@@ -10,6 +10,7 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import subprocess
 import tarfile
 import threading
@@ -958,6 +959,29 @@ def _prepare_qwen38_audit_directory(model_spec, runtime_config, setup_config):
     subprocess.run(command, check=True, timeout=60)
 
 
+def _require_idle_qwen38_endpoint(model_spec, runtime_config):
+    """Fail before launch rather than accept another model's health endpoint."""
+    if (model_spec.impl.impl_id != "qwen38_autoport"
+            or not os.environ.get("TT_AGENTIC_CONTAINER_OWNER")):
+        return
+    # A live server may belong to another job whose GitHub runner is idle.
+    # Never stop or reuse it. This is only a read-only admission check.
+    listing = subprocess.run(
+        ["docker", "ps", "--format", "{{.Names}}"],
+        check=True, capture_output=True, text=True, timeout=15,
+    )
+    servers = [name for name in listing.stdout.splitlines()
+               if name.startswith(("tt-inference-server", "tt-controller", "tt-worker"))]
+    if servers:
+        raise RuntimeError("Qwen admission refused: existing inference containers: "
+                           + ", ".join(servers))
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind((runtime_config.bind_host or "127.0.0.1", int(runtime_config.service_port)))
+        except OSError as exc:
+            raise RuntimeError(f"Qwen admission refused: service port {runtime_config.service_port} is occupied") from exc
+
+
 def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     """Orchestrate docker server: ensure image, generate command, run container.
 
@@ -973,6 +997,7 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
             model_spec, runtime_config, setup_config, json_fpath
         )
 
+    _require_idle_qwen38_endpoint(model_spec, runtime_config)
     logger.info("Starting Docker inference server ...")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
