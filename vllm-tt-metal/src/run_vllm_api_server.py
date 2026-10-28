@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import asyncio
 import json
 import logging
 import multiprocessing
@@ -10,9 +11,12 @@ import os
 import re
 import runpy
 import shlex
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from huggingface_hub import snapshot_download
 
@@ -1441,7 +1445,181 @@ def inject_tt_colocated_fabric_config(default_vllm_args):
     )
 
 
+# Submesh engines (DeviceModelSpec.submesh_engines): the spec's data parallelism runs as one vLLM engine per device
+# group instead of one engine over the whole mesh. This launcher then starts a copy of itself per group (the copy sees
+# SUBMESH_ENGINE_INDEX_ENV) on port service_port + 1 + index, and serves engine_proxy on the service port, so clients
+# keep one endpoint. An engine schedules prefill and decode on its own, so one group prefills while the others decode.
+SUBMESH_ENGINE_INDEX_ENV = "TT_SUBMESH_ENGINE_INDEX"
+SUBMESH_ENGINE_STOP_TIMEOUT_S = 120.0
+
+
+def submesh_engine_groups(model_spec: dict) -> Optional[List[str]]:
+    """The spec's submesh engine device groups (TT_VISIBLE_DEVICES strings), or None."""
+    device_model_spec = model_spec.get("device_model_spec", {})
+    groups = device_model_spec.get("submesh_engines")
+    if not groups:
+        return None
+    groups = [str(group).replace(" ", "") for group in groups]
+    vllm_args = device_model_spec.get("vllm_args", {})
+    data_parallel_size = vllm_args.get(
+        "data_parallel_size", vllm_args.get("data-parallel-size")
+    )
+    if data_parallel_size is not None and int(data_parallel_size) != len(groups):
+        raise ValueError(
+            f"submesh_engines lists {len(groups)} device groups but data_parallel_size is {data_parallel_size}: "
+            "each data-parallel rank is one engine"
+        )
+    return groups
+
+
+def submesh_engine_port(service_port: int, index: int) -> int:
+    return service_port + 1 + index
+
+
+def _without_port_args(argv: List[str]) -> List[str]:
+    out, skip_value = [], False
+    for token in argv:
+        if skip_value:
+            skip_value = False
+            continue
+        name, separator, _ = token.partition("=")
+        if name in ("--port", "--service-port"):
+            skip_value = not separator
+            continue
+        out.append(token)
+    return out
+
+
+def submesh_engine_command(
+    launcher_argv: List[str], service_port: int, index: int
+) -> List[str]:
+    """This launcher with the same arguments, serving engine ``index`` on its own port."""
+    return [
+        sys.executable,
+        os.path.abspath(__file__),
+        *_without_port_args(launcher_argv),
+        "--service-port",
+        str(submesh_engine_port(service_port, index)),
+    ]
+
+
+def configure_submesh_engine(
+    groups: List[str], index: int, default_vllm_args: dict
+) -> None:
+    """In submesh engine ``index``: its device group as a 1 x N mesh, one engine's data parallelism, and a share of the
+    host's threads. Runs after the spec's env vars, which set the whole machine's MESH_DEVICE."""
+    group = groups[index]
+    os.environ["TT_VISIBLE_DEVICES"] = group
+    os.environ["MESH_DEVICE"] = f"(1, {len(group.split(','))})"
+    # Torch's default intra-op pool (a thread per core) in every engine oversubscribes the host: the small torch ops on
+    # each step then wait on the other engines' spinning pools (MiMo-V2.6-Flash, four engines: a 23 ms speculative step
+    # took 61 ms).
+    os.environ.setdefault(
+        "OMP_NUM_THREADS", str(max(1, (os.cpu_count() or 1) // (2 * len(groups))))
+    )
+    default_vllm_args.pop("data-parallel-size", None)
+    default_vllm_args["data_parallel_size"] = 1
+    logger.info(
+        f"Submesh engine {index}/{len(groups)}: TT_VISIBLE_DEVICES={group} MESH_DEVICE={os.environ['MESH_DEVICE']} "
+        f"OMP_NUM_THREADS={os.environ['OMP_NUM_THREADS']}"
+    )
+
+
+async def serve_engine_proxy(
+    procs, backends: List[str], host: str, port: int, poll_s: float = 1.0
+) -> int:
+    """Serve engine_proxy on host:port until SIGINT / SIGTERM or an engine exits. Returns the exit code."""
+    from aiohttp import web
+
+    from engine_proxy import Router, make_app
+
+    runner = web.AppRunner(make_app(Router(backends)), access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, host, port).start()
+    logger.info(f"Engine proxy on {host}:{port} for {', '.join(backends)}")
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+    exit_code = 0
+    try:
+        while not stop.is_set():
+            exited = [
+                (index, proc)
+                for index, proc in enumerate(procs)
+                if proc.poll() is not None
+            ]
+            if exited:
+                index, proc = exited[0]
+                logger.error(
+                    f"Submesh engine {index} exited with {proc.returncode}; stopping the others"
+                )
+                exit_code = proc.returncode or 1
+                break
+            try:
+                await asyncio.wait_for(stop.wait(), poll_s)
+            except asyncio.TimeoutError:
+                pass
+    finally:
+        await runner.cleanup()
+    return exit_code
+
+
+def _signal_engine(proc, sig) -> None:
+    """Signal an engine's whole process group (its API server and EngineCore): killing only the API server, e.g.
+    while it waits for its engine to load, would leave the EngineCore running on the devices."""
+    try:
+        os.killpg(proc.pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def stop_submesh_engines(
+    procs, timeout_s: float = SUBMESH_ENGINE_STOP_TIMEOUT_S
+) -> None:
+    """SIGINT every engine (vLLM shuts down cleanly on it), then SIGKILL what is left after timeout_s."""
+    for proc in procs:
+        _signal_engine(proc, signal.SIGINT)
+    deadline = time.monotonic() + timeout_s
+    for proc in procs:
+        try:
+            proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            _signal_engine(proc, signal.SIGKILL)
+            proc.wait()
+    for proc in procs:
+        # The group may outlive its leader (an EngineCore still shutting down).
+        _signal_engine(proc, signal.SIGKILL)
+
+
+def run_submesh_engines(
+    groups: List[str], launcher_argv: List[str], service_port: int, host: str
+) -> int:
+    procs = []
+    try:
+        for index, group in enumerate(groups):
+            command = submesh_engine_command(launcher_argv, service_port, index)
+            logger.info(
+                f"Starting submesh engine {index} on devices {group}: {shlex.join(command)}"
+            )
+            procs.append(
+                subprocess.Popen(
+                    command,
+                    env=dict(os.environ, **{SUBMESH_ENGINE_INDEX_ENV: str(index)}),
+                    start_new_session=True,  # its own process group: stop_submesh_engines signals all of it
+                )
+            )
+        backends = [
+            f"http://127.0.0.1:{submesh_engine_port(service_port, i)}"
+            for i in range(len(groups))
+        ]
+        return asyncio.run(serve_engine_proxy(procs, backends, host, service_port))
+    finally:
+        stop_submesh_engines(procs)
+
+
 def main():
+    launcher_argv = list(sys.argv[1:])
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
     args.device = args.tt_device or args.device
@@ -1484,11 +1662,23 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    submesh_groups = submesh_engine_groups(model_spec)
+    submesh_index = os.environ.get(SUBMESH_ENGINE_INDEX_ENV)
+    if submesh_groups and submesh_index is not None:
+        configure_submesh_engine(submesh_groups, int(submesh_index), default_vllm_args)
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
     inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
+    if submesh_groups and submesh_index is None:
+        # One engine per device group behind the proxy; the engines do the rest of the startup.
+        host = _extract_cli_arg_value(sys.argv[1:], "--host") or "0.0.0.0"
+        sys.exit(
+            run_submesh_engines(
+                submesh_groups, launcher_argv, resolve_service_port(), host
+            )
+        )
     configure_quetzal_provider(model_spec)
 
     # Step 5: Start trace capture if needed

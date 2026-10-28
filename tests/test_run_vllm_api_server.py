@@ -1508,7 +1508,15 @@ def test_tt_cache_env_rejects_non_env_var_names(
         module.model_setup(spec)
 
 
-def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
+MIMO_ROWS = [
+    "0,1,2,3,11,10,9,8",
+    "4,5,6,7,15,14,13,12",
+    "28,29,30,31,23,22,21,20",
+    "24,25,26,27,19,18,17,16",
+]
+
+
+def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
     template = next(
         t
         for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
@@ -1520,13 +1528,16 @@ def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
     assert vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_seqs"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
+    # One engine per mesh row behind the proxy; each engine gets its row as (1, 8).
+    assert spec.device_model_spec.submesh_engines == MIMO_ROWS
     assert spec.device_model_spec.env_vars["MESH_DEVICE"] == "(4, 8)"
     # 4 x 1M per lane with the global KV pair split (tt-metal #62679).
     assert spec.device_model_spec.env_vars["MIMO_KV_GB_PER_CHIP"] == 6.7
     tt_config = json.loads(vllm_args["additional_config"])["tt"]
     assert tt_config["trace_region_size"] == 1000000000
     assert tt_config["sample_on_device_mode"] == "decode_only"
-    assert tt_config["prefill_gather_ms"] == 200
+    # The lane-DP prefill gather was for four lanes stalling together; an engine prefills alone.
+    assert "prefill_gather_ms" not in tt_config
     assert spec.metadata["model_path_env"] == "MIMO_MODEL_PATH"
     assert spec.metadata["tt_cache_env"] == "MIMO_TT_CACHE"
 
@@ -1541,9 +1552,13 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     vllm_args = spec.device_model_spec.vllm_args
     assert not spec.device_model_spec.default_impl
     assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
+    # c=16: each engine verifies its 4 requests as 4 groups of 2 slots.
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_SLOTS"] == 8
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == 4
+    assert spec.device_model_spec.submesh_engines == MIMO_ROWS
     # The model declares supports_async_spec_decode, so async scheduling stays on.
     assert "no-async-scheduling" not in vllm_args
-    assert vllm_args["max_num_seqs"] == 4 and vllm_args["data_parallel_size"] == 4
+    assert vllm_args["max_num_seqs"] == 8 and vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
     # MTP keeps the default KV budget: a larger one is unverified with its extra memory.
     assert "MIMO_KV_GB_PER_CHIP" not in spec.device_model_spec.env_vars
@@ -1551,7 +1566,7 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     assert speculative == {
         "method": "custom_class",
         "model": "vllm_tt_plugin.model_owned_drafter",
-        "num_speculative_tokens": 3,
+        "num_speculative_tokens": 1,
     }
 
 
@@ -1737,3 +1752,245 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+# ---------------------------------------------------------------- submesh engines
+
+
+def _submesh_spec(groups=("0,1", "2,3"), data_parallel_size=2):
+    return {
+        "model_id": "id_x_Model_galaxy",
+        "impl": {"impl_id": "x"},
+        "device_model_spec": {
+            "submesh_engines": list(groups),
+            "vllm_args": {"data_parallel_size": data_parallel_size, "max_num_seqs": 4},
+        },
+    }
+
+
+def test_submesh_engine_groups(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    assert module.submesh_engine_groups({"device_model_spec": {}}) is None
+    assert module.submesh_engine_groups(_submesh_spec(("0, 1", "2,3"))) == [
+        "0,1",
+        "2,3",
+    ]
+    with pytest.raises(ValueError, match="data_parallel_size"):
+        module.submesh_engine_groups(_submesh_spec(data_parallel_size=4))
+
+
+def test_submesh_engine_command_moves_the_port(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    argv = [
+        "--model",
+        "m",
+        "--tt-device",
+        "galaxy",
+        "--service-port",
+        "7000",
+        "--port=7000",
+        "--no-auth",
+    ]
+    command = module.submesh_engine_command(argv, 7000, 2)
+    assert command[:2] == [sys.executable, os.path.abspath(module.__file__)]
+    assert command[2:] == [
+        "--model",
+        "m",
+        "--tt-device",
+        "galaxy",
+        "--no-auth",
+        "--service-port",
+        "7003",
+    ]
+
+
+def test_configure_submesh_engine(monkeypatch, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(4, 8)")
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(module.os, "cpu_count", lambda: 64)
+    args = {"data_parallel_size": 4, "max_num_seqs": 4}
+    module.configure_submesh_engine(
+        ["0,1,2,3", "4,5,6,7", "8,9,10,11", "12,13,14,15"], 1, args
+    )
+    assert os.environ["TT_VISIBLE_DEVICES"] == "4,5,6,7"
+    assert os.environ["MESH_DEVICE"] == "(1, 4)"
+    assert os.environ["OMP_NUM_THREADS"] == "8"
+    assert args == {"data_parallel_size": 1, "max_num_seqs": 4}
+    # A spec-set OMP_NUM_THREADS wins.
+    monkeypatch.setenv("OMP_NUM_THREADS", "3")
+    module.configure_submesh_engine(["0,1", "2,3"], 0, {"data_parallel_size": 2})
+    assert os.environ["OMP_NUM_THREADS"] == "3"
+
+
+def _patch_main_startup(monkeypatch, module, model_spec, cli=()):
+    args = argparse.Namespace(
+        model="m",
+        tt_device="galaxy",
+        device=None,
+        engine=None,
+        impl=None,
+        no_auth=True,
+        disable_trace_capture=True,
+        service_port=7000,
+    )
+    monkeypatch.setattr(module, "parse_args", lambda: (args, list(cli)))
+    monkeypatch.setattr(module, "load_model_spec", MagicMock(return_value=model_spec))
+    for name in (
+        "set_cache_paths",
+        "ensure_weights_available",
+        "register_tt_models",
+        "set_metal_timeout_env_vars",
+        "set_runtime_env_vars",
+        "runtime_settings",
+        "start_trace_capture",
+    ):
+        monkeypatch.setattr(module, name, MagicMock())
+    run_module = MagicMock()
+    monkeypatch.setattr(module.runpy, "run_module", run_module)
+    return run_module
+
+
+def test_main_serves_submesh_engines_behind_the_proxy(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv(module.SUBMESH_ENGINE_INDEX_ENV, raising=False)
+    run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
+    run_engines = MagicMock(return_value=0)
+    monkeypatch.setattr(module, "run_submesh_engines", run_engines)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_vllm_api_server.py", "--model", "m", "--service-port", "7000"],
+    )
+
+    with pytest.raises(SystemExit) as stop:
+        module.main()
+
+    assert stop.value.code == 0
+    run_engines.assert_called_once_with(
+        ["0,1", "2,3"], ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0"
+    )
+    run_module.assert_not_called()
+
+
+def test_main_runs_one_engine_in_a_submesh_child(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
+    run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
+    monkeypatch.setattr(
+        module,
+        "run_submesh_engines",
+        MagicMock(side_effect=AssertionError("parent path")),
+    )
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+
+    module.main()
+
+    run_module.assert_called_once()
+    assert os.environ["TT_VISIBLE_DEVICES"] == "2,3"
+    argv = " ".join(sys.argv)
+    assert "--data_parallel_size 1" in argv and "--port 7000" in argv
+
+
+class _FakeProc:
+    def __init__(self, exit_after_polls=None, code=3):
+        self.polls, self.exit_after, self.code = 0, exit_after_polls, code
+        self.returncode = None
+        self.signals = []
+
+    def poll(self):
+        self.polls += 1
+        if self.exit_after is not None and self.polls > self.exit_after:
+            self.returncode = self.code
+        return self.returncode
+
+    def send_signal(self, sig):
+        self.signals.append(sig)
+
+    def wait(self, timeout=None):
+        if self.returncode is None and self.signals:
+            self.returncode = 0
+        if self.returncode is None:
+            raise module_subprocess.TimeoutExpired("x", timeout)
+        return self.returncode
+
+    def kill(self):
+        self.returncode = -9
+
+
+import subprocess as module_subprocess  # noqa: E402
+
+
+def _free_port():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_serve_engine_proxy_stops_when_an_engine_exits(
+    monkeypatch, run_vllm_api_server_module
+):
+    import asyncio
+
+    monkeypatch.syspath_prepend(str(MODULE_PATH.parent))
+    module = run_vllm_api_server_module
+    procs = [_FakeProc(), _FakeProc(exit_after_polls=2, code=3)]
+    code = asyncio.run(
+        module.serve_engine_proxy(
+            procs, ["http://127.0.0.1:1"], "127.0.0.1", _free_port(), poll_s=0.01
+        )
+    )
+    assert code == 3
+
+
+def test_stop_submesh_engines(monkeypatch, run_vllm_api_server_module):
+    import signal
+
+    module = run_vllm_api_server_module
+
+    def signal_engine(proc, sig):
+        if sig == signal.SIGKILL:
+            if proc.returncode is None:  # a group that already exited takes no signal
+                proc.kill()
+            return
+        proc.send_signal(sig)
+
+    monkeypatch.setattr(module, "_signal_engine", signal_engine)
+    running, stubborn = _FakeProc(), _FakeProc()
+    stubborn.send_signal = lambda sig: None  # ignores SIGINT
+    module.stop_submesh_engines([running, stubborn], timeout_s=0.01)
+    assert running.signals[0] == signal.SIGINT and running.returncode == 0
+    assert stubborn.returncode == -9
+
+
+def test_stop_submesh_engines_reaches_the_whole_process_group(
+    run_vllm_api_server_module,
+):
+    """An engine's API server can exit on SIGINT while its EngineCore (here: a child ignoring SIGINT) keeps running;
+    stopping must not leave that child on the devices."""
+    module = run_vllm_api_server_module
+    proc = module.subprocess.Popen(
+        ["sh", "-c", '(trap "" INT; exec sleep 60) & echo $!; wait'],
+        stdout=module.subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    child = int(proc.stdout.readline())
+    module.stop_submesh_engines([proc], timeout_s=5)
+    assert proc.returncode is not None
+    for _ in range(50):
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        module.time.sleep(0.05)
+    else:
+        pytest.fail(f"process {child} of the engine's group survived")

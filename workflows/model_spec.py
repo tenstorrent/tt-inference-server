@@ -616,6 +616,13 @@ class DeviceModelSpec:
     # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
     # auto-generated Helm chart values)
     docker_shm_size: Optional[str] = None
+    # When set, the server runs its data parallelism as one vLLM engine per device group (TT_VISIBLE_DEVICES strings,
+    # one per data-parallel rank) behind a prefix-cache aware proxy on the service port
+    # (vllm-tt-metal/src/run_vllm_api_server.py, engine_proxy.py), instead of one engine over the whole mesh. Each
+    # engine runs --data-parallel-size 1 on its group as a 1 x N mesh, so one group prefills while the others decode.
+    # Clients see one endpoint; vllm_args keep the whole server's data_parallel_size (= the number of groups) and each
+    # engine's max_num_seqs.
+    submesh_engines: Optional[List[str]] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
@@ -631,7 +638,16 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        pass
+        if self.submesh_engines:
+            data_parallel_size = self.vllm_args.get("data_parallel_size")
+            assert data_parallel_size == len(self.submesh_engines), (
+                f"submesh_engines lists {len(self.submesh_engines)} device groups: vllm_args.data_parallel_size must "
+                f"be {len(self.submesh_engines)} (got {data_parallel_size})"
+            )
+            ids = [d for group in self.submesh_engines for d in str(group).split(",")]
+            assert len(ids) == len(set(ids)), (
+                f"submesh_engines device groups overlap: {self.submesh_engines}"
+            )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
