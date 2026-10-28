@@ -13355,7 +13355,7 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
             task,
             agentic_eval_config=replace(
                 task.agentic_eval_config,
-                n_concurrent_trials=56,
+                n_concurrent_trials=40,
                 agent_kwargs={
                     **task.agentic_eval_config.agent_kwargs,
                     "reasoning_effort": effort,
