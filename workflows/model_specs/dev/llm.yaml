@@ -618,7 +618,12 @@ templates:
         # slot; the short chunk's state at one width) and the prefill captures
         # of TT_V41_TRACE_PREFILL_LENGTHS (one per chunk per length, on the
         # short chunk's state for the lengths that fit it).
-        trace_region_size: 2147483648  # 2 * 1024 * 1024 * 1024
+        # 3 GiB with the speculative round: its warm-up
+        # captures a round per user index and draft count (16 vd: variants
+        # of ~40 MB) and the plain one-slot step per user index beside the
+        # 32-slot step, after which the per-length prefill captures overran
+        # the 2 GiB region of the plain configuration.
+        trace_region_size: 3221225472  # 3 * 1024 * 1024 * 1024
         # The decode step samples on device (ttnn.sampling over each row's
         # top-128 candidates) and returns token ids: the host sampler over
         # 32 x 129,280 logits took ~100 ms of every step.
