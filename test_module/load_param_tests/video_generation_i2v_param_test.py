@@ -368,7 +368,7 @@ def run_video_generation_i2v_param(
     """Run :class:`VideoGenerationI2VParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
-            "timeout": 14400,
+            "timeout": 3600,
             "retry_attempts": 0,
             "retry_delay": 0,
             "break_on_failure": False,

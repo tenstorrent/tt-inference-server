@@ -339,11 +339,6 @@
       ],
       "category": "VIDEO",
       "compatible_devices": [
-        "t3k",
-        "galaxy",
-        "p150x4",
-        "p150x8",
-        "p300x2",
         "blackhole_galaxy"
       ]
     },
@@ -1515,7 +1510,7 @@
         "heavy"
       ],
       "test_config": {
-        "test_timeout": 14400,
+        "test_timeout": 3600,
         "retry_attempts": 0,
         "retry_delay": 0,
         "break_on_failure": false,

@@ -193,11 +193,6 @@ class TestVideoMatrixExpansion:
         "wan-p150x4",
         "wan-p150x8",
         "wan-p300x2",
-        "wan-i2v-t3k",
-        "wan-i2v-galaxy",
-        "wan-i2v-p150x4",
-        "wan-i2v-p150x8",
-        "wan-i2v-p300x2",
         "wan-i2v-blackhole_galaxy",
         "mochi-t3k",
         "mochi-galaxy",
@@ -242,30 +237,9 @@ class TestVideoMatrixExpansion:
             "poll_timeout": 1000,
         },
     }
-    # Expected VideoGenerationI2VTest targets per expanded suite. p150x4 keeps
-    # the base poll_timeout (no per-device override).
+    # Expected VideoGenerationI2VTest targets per expanded suite. Wan2.2 I2V's
+    # spec tests run on BH Galaxy only for now.
     WAN_I2V_TARGETS = {
-        "wan-i2v-t3k": {
-            "poll_timeout": 1500,
-            "poll_interval": 5,
-        },
-        "wan-i2v-galaxy": {
-            "poll_timeout": 550,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p150x4": {
-            "poll_timeout": 1200,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p150x8": {
-            "poll_timeout": 900,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p300x2": {
-            "poll_timeout": 800,
-            "poll_interval": 5,
-        },
-        # No measured BH Galaxy time yet, so it keeps the suite default.
         "wan-i2v-blackhole_galaxy": {
             "poll_timeout": 1200,
             "poll_interval": 5,
