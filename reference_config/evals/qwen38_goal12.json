@@ -1,5 +1,5 @@
 {
-  "phase": "swe32-isolated-grouped-masked-flat-b32-p2048-c32-medium-20261028",
+  "phase": "swe32-isolated-control-b32-p2048-c32-medium-20261028",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
