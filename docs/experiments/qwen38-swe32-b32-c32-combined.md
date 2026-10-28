@@ -1,0 +1,11 @@
+# Combined Qwen SWE32 B32/C32 qualification
+
+Freeze the first32 identities of the historical SWE100 manifest before measuring this arm. This is a new cohort, not the historical frozen32; eight tasks overlap the previously scored SWE25. Compare only identically selected arms. Every attempted task stays in the denominator.
+
+Use immutable Metal6faa07fb5320284381ca1a9ab4651489366d7436, plugin1badbd02bb6911dfdb59c206bdc00c6c1e8dc0bf and image677859aa1eba574ffb95214247ed1849ad17cddfe1faf1884c0dd73a5bf53d07. Enable grouped/masked/flat; B32/C32, shared256 cache, native262144, unchanged precision and Sampling1D. GPQA's completion recipe adds no model changes; its80K/xhigh budget remains GPQA specific. SWE retains medium,16K output,6300s agent,3600s request and actual network isolation.
+
+Prior B8/C8 SWE25 generated577292 tokens,23092/task. Scaling work to32 gives about739K tokens; measured grouped B32 full occupancy410tokens/s yields a lower bound0.50h decode, before prefill/tool/setup/tails. Historical C8 combined25 took3.04h. Plan2–4h evaluation;14400s suite reserves setup/verifier slack beyond a single6300s agent wave. Published wrapper hard bound is13.5h, which remains an upper bound, not expected runtime.
+
+Shared256 physical backing has1346 usable token blocks under the original GPQA recipe; this is not1346*256 conversation capacity because recurrent groups and worker reservations compete. Measure actual live size, cache hits/evictions/preemptions rather than require32 simultaneous maximum contexts. Grouped local B32 decode8.88722→12.81941tokens/s/user and exact state/logit checks justify measurement; they do not establish scored throughput. Masked/flat source has full-model correctness evidence but this exact combined B32 serving shape still needs startup and runtime confirmation.
+
+Require per-task verifier/completion/timeout, actual HTTP and saved output work, caps/missing responses, exact source/image/settings, cache/preemption and isolation/stable exports. Feature-off B32/C32 uses the same image, tasks and budgets for a matched comparison. No full100/500 estimate is promoted before this result.

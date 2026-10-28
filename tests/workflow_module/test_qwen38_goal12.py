@@ -65,11 +65,14 @@ def test_active_manifest_and_handoff_exact_identities():
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
     if 'swe25' in m:
         assert c['evals'] == ['swe_bench_verified']
-        assert c['sample_count'] in (1, 25, 50, 100)
+        assert c['sample_count'] in (1, 25, 32, 50, 100)
         if c['sample_count'] == 1:
             expected_tasks = ['astropy__astropy-14309']
             assert c['max_concurrent'] == 1
             assert set(expected_tasks) <= set(m['swe25'])
+        elif c['sample_count'] == 32:
+            expected_tasks = m['swe100'][:32]
+            assert c['max_concurrent'] == 32
         elif c['sample_count'] == 25:
             expected_tasks = m['swe25']
             assert c['max_concurrent'] in (8, 16)
@@ -104,7 +107,7 @@ def test_active_manifest_and_handoff_exact_identities():
         assert c['llm_timeout_sec'] == 3600
         assert c['output_tokens'] == 16384
         assert c['swe_agent_isolated_network'] is True
-        assert c['suite_timeout_sec'] == ((c['sample_count']+c['max_concurrent']-1)//c['max_concurrent'])*6300+(900 if c['sample_count']==1 else 1800)
+        assert c['suite_timeout_sec'] == (14400 if c['sample_count']==32 else ((c['sample_count']+c['max_concurrent']-1)//c['max_concurrent'])*6300+(900 if c['sample_count']==1 else 1800))
         task = EVAL_CONFIGS[MODEL].tasks[0]
         from reference_config.evals.eval_config import EvalLimitMode
         agent = task.agentic_eval_config

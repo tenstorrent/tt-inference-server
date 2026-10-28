@@ -1,15 +1,15 @@
 {
-  "phase": "swe50-isolated-grouped-masked-flat-b16-p512-c8-medium-part0-20261028",
+  "phase": "swe32-isolated-grouped-masked-flat-b32-p256-c32-medium-20261028",
   "seed": 1234,
   "include_standard_evals": false,
   "evals": [
     "swe_bench_verified"
   ],
-  "sample_count": 50,
-  "max_concurrent": 8,
+  "sample_count": 32,
+  "max_concurrent": 32,
   "agent_timeout_sec": 6300,
   "llm_timeout_sec": 3600,
-  "suite_timeout_sec": 45900,
+  "suite_timeout_sec": 14400,
   "output_tokens": 16384,
   "task_names": {
     "swe_bench_verified": [
@@ -44,25 +44,7 @@
       "django__django-13344",
       "django__django-14011",
       "django__django-14089",
-      "django__django-14122",
-      "django__django-14238",
-      "django__django-14315",
-      "django__django-14559",
-      "django__django-14631",
-      "django__django-14771",
-      "django__django-14855",
-      "django__django-14999",
-      "django__django-15103",
-      "django__django-15104",
-      "django__django-15161",
-      "django__django-15375",
-      "django__django-15572",
-      "django__django-15814",
-      "django__django-15957",
-      "django__django-15973",
-      "django__django-16485",
-      "django__django-16642",
-      "django__django-16661"
+      "django__django-14122"
     ]
   },
   "gpqa_handoff": {
