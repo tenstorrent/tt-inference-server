@@ -225,6 +225,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
         GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_WIDTH_RUNGS: "3"  # keep the 3 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 3 rungs = 12 records in the 768 MB trace region
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
         # laid the TP collectives over the wrong fabric links and corrupted decode
@@ -247,7 +248,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
+        trace_region_size: 768000000  # ~110 MB plain decode traces + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~37 MB = ~555 MB (31B ~1.25x the measured 12B record); ~2.3 GB DRAM spare after weights and the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -350,6 +351,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
         GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 960 MB trace region
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
@@ -380,7 +382,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 960000000  # four resident decode-bucket traces
+        trace_region_size: 960000000  # four resident decode-bucket traces (~110 MB) + 16 speculative records (4 shapes x 4 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~37 MB = ~700 MB per engine; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
@@ -580,6 +582,7 @@ templates:
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
+        GEMMA4_DFLASH_WIDTH_RUNGS: "3"  # keep the 3 largest rungs of the dFlash verify-width set: the dFlash adapter captures its own GEMMA4_DFLASH_* ladder, not the MTP records, so this (not GEMMA4_SPEC_WIDTH_RUNGS) is the knob its class reads
         # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone) and no ring-headroom knob: this entry runs
         # unbounded sliding KV (GEMMA4_BOUNDED_SLIDING_KV_CACHE=0), so there is no device ring to reserve in.
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
@@ -604,7 +607,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
+        trace_region_size: 768000000  # as on the MTP default (~110 MB plain decode traces + the speculative captures); the dFlash width set's record size is unmeasured on the contract rail, so the boot log's trace-region projection line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -671,6 +674,7 @@ templates:
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
+        GEMMA4_DFLASH_WIDTH_RUNGS: "4"  # keep the 4 largest rungs of the dFlash verify-width set: the dFlash adapter captures its own GEMMA4_DFLASH_* ladder, not the MTP records, so this (not GEMMA4_SPEC_WIDTH_RUNGS) is the knob its class reads
         # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone) and no ring-headroom knob: this entry runs
         # unbounded sliding KV (GEMMA4_BOUNDED_SLIDING_KV_CACHE=0), so there is no device ring to reserve in.
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
@@ -703,7 +707,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 960000000  # four resident decode-bucket traces
+        trace_region_size: 960000000  # as on the MTP default (four resident decode-bucket traces ~110 MB + the speculative captures); the dFlash width set's record size is unmeasured on the contract rail, so the boot log's trace-region projection line is the check
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
@@ -1152,7 +1156,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
+        trace_region_size: 768000000  # ~87 MB plain decode traces + 20 speculative records (4 shapes x 5 default rungs) x ~27 MB = ~627 MB (12B TP8 measured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
@@ -1223,7 +1227,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
+        trace_region_size: 768000000  # ~87 MB plain decode traces + 20 speculative records (4 shapes x 5 default rungs) x ~27 MB = ~627 MB per engine (12B TP8 measured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
         # On-device decode sampling required on TP so token ids >= 65536 are
         # reachable (host sampling only sees device 0's vocab shard).
@@ -2892,6 +2896,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
         GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_WIDTH_RUNGS: "3"  # keep the 3 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 3 rungs = 12 records in the 768 MB trace region
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -2911,8 +2916,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        # B=1+B=32 lean decode; nightly uses 300MB + max_num_seqs=1.
-        trace_region_size: 1200000000
+        trace_region_size: 768000000  # was 1.2 GB for the B=1 + B=32 lean decode traces alone; budget now ~110 MB plain traces + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~37 MB = ~555 MB by the 31B estimate (the MoE record size is unmeasured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
