@@ -58,6 +58,13 @@ def install_prefix_overlay(metal):
     if loaded:
         raise RuntimeError("C32 admission installation must precede plugin imports: " + repr(loaded))
     _install(metal, "serial-serving-hook-manifest.json", "serial-serving-hook.patch", "GEMMA_SERIAL_SERVING_HOOK_MODEL")
+    import os
+    share_gate_up = os.environ.get("GEMMA_EXPERIMENT_SHARE_BF8_GATE_UP", "0")
+    if share_gate_up not in ("0", "1"):
+        raise RuntimeError("Invalid gate/up sharing selector")
+    if share_gate_up == "1":
+        # Applied on top of the serial-serving-hook decoder target; refuses any other decoder source.
+        _install(metal, "gate-up-share-manifest.json", "gate-up-share.patch", "GEMMA_SHARED_GATE_UP_MODEL")
     _install(
         metal.parent / "vllm-tt-plugin",
         "plugin-manifest.json",

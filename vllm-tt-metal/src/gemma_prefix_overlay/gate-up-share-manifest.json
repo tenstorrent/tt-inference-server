@@ -1,0 +1,12 @@
+{
+  "base_commit": "serial-serving-hook target",
+  "target_commit": "experimental-shared-bf8-gate-up-v1",
+  "patch_sha256": "404531454a38d15f1bc7b4c4722295161cd414940394313dc03daf67c16874aa",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "4a7a838d7e79e3786b90aed24c5cd656eef8bcb81d8d04db7ee546bdc98017ae",
+      "target": "5b56a12280e55ee9696a065050a51d5273a6fb8470556bd4697a1bb5499d1ad2"
+    }
+  },
+  "scope": "Prefill and decode share native DRAM width-sharded gate and up owners; decode runs two DRAM-sharded matmuls with the packed program's per-worker work (21 N tiles, in0_block_w 3)"
+}

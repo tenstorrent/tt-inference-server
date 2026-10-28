@@ -21,7 +21,7 @@ from models.demos.gemma4_31b_qb2.tt.generator import CacheState, build_generator
 # row. A full block b owns the whole wide row b = native full rows 2b and 2b+1,
 # so the second half of each wide row is no longer idle. Ownership remains one
 # global scheduler ID per wide row, exactly as in the unpacked alias.
-PACKED_POOL_PROFILES = {"c32a32_p2_f412672": 5336, "c32a32_p2_f443392": 5576, "c32a32_p2_f458752": 5696}
+PACKED_POOL_PROFILES = {"c32a32_p2_f412672": 5336, "c32a32_p2_f443392": 5576, "c32a32_p2_f458752": 5696, "c32a32_p2_f626688": 7008}
 
 
 def full_pack_enabled():
