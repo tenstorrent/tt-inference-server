@@ -30,6 +30,24 @@
                     }
                 }
             ]
+        },
+        {
+            "models": [
+                "embeddinggemma2"
+            ],
+            "devices": [
+                "p150"
+            ],
+            "test_cases": [
+                {
+                    "template": "EmbeddingLoadTest",
+                    "enabled": true,
+                    "description": "Embedding load test",
+                    "targets": {
+                        "embedding_time": 1
+                    }
+                }
+            ]
         }
     ]
 }

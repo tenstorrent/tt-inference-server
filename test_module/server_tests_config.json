@@ -29,7 +29,8 @@
       "BAAI/bge-large-en-v1.5",
       "Qwen/Qwen3-Embedding-4B",
       "Qwen/Qwen3-Embedding-8B",
-      "bge-m3"
+      "bge-m3",
+      "google/embeddinggemma-2"
     ],
     "TTS": [
       "microsoft/speecht5_tts",
@@ -482,6 +483,16 @@
         "n150",
         "t3k",
         "galaxy"
+      ]
+    },
+    "embeddinggemma2": {
+      "id_name": "embeddinggemma-2",
+      "weights": [
+        "google/embeddinggemma-2"
+      ],
+      "category": "EMBEDDING",
+      "compatible_devices": [
+        "p150"
       ]
     },
     "speecht5": {

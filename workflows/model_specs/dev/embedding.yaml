@@ -173,6 +173,42 @@ templates:
         VLLM__MAX_NUM_SEQS: "1"
         BENCHMARK_MAX_CONCURRENCY: "32"  # 32 workers x 1 seq each
 
+# google/embeddinggemma-2 (text, image, audio, video -> one 768-dim embedding)
+# from the tt-model-bringup pipeline (models/demos/embedding_gemma2). The media
+# server serves text through /v1/embeddings on the cpp_server backend
+# (MODEL_RUNNER_TYPE=tt_embedding_gemma2). The model pins the HF revision
+# 914f7f89 for weights and tokenizer (EMBEDDING_GEMMA2_REVISION overrides).
+# One P150, one worker, traced: one trace per (batch 1/8/32, seq bucket
+# 32..8192) shape with batch * bucket <= 8192, all captured at warmup.
+# Device-only forward on P150a (bring-up E8): 1x512 6.9 ms, 8x512 24.3 ms,
+# 32x128 22.2 ms, 1x8192 93.0 ms.
+- weights:
+    - google/embeddinggemma-2
+  impl: embedding_gemma2
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: EMBEDDING
+  inference_engine: MEDIA
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 8192
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "8192"
+        VLLM__MAX_MODEL_LENGTH: "8192"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "32"
+        MAX_BATCH_SIZE: "32"
+        DEFAULT_THROTTLE_LEVEL: "0"
+        # Weight load + first-run ttnn weight cache + compile and capture of
+        # every served shape happen in warmup.
+        EMBEDDING_WARMUP_TIMEOUT_MS: "1800000"
+        # Keep the ttnn weight cache on the persistent cache_root volume.
+        EMBEDDING_GEMMA2_CACHE: "/home/container_app_user/cache_root/tt_metal_cache/embedding_gemma2"
+
 - weights:
     - Qwen/Qwen3-Embedding-4B
   impl: forge_vllm_plugin

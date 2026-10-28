@@ -502,6 +502,16 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b_qb2",
 )
 
+# google/embeddinggemma-2 on Blackhole under models/demos/embedding_gemma2,
+# produced by the tt-model-bringup pipeline. Served as text embeddings by the
+# media server (cpp_server EmbeddingGemma2Impl / Python EmbeddingGemma2Runner).
+embedding_gemma2_impl = ImplSpec(
+    impl_id="embedding_gemma2",
+    impl_name="embedding-gemma2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/embedding_gemma2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -515,6 +525,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
+    "embedding_gemma2": embedding_gemma2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,

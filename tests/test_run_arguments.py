@@ -1415,6 +1415,30 @@ class TestMediaServerDockerEnvVars:
         # The C++ parent throws on a non-LLM MODEL value.
         assert "MODEL" not in env_vars
 
+    def test_embedding_gemma2_uses_cpp_server(self):
+        # embeddinggemma-2 is in the dev catalog only (P150).
+        from workflows.model_spec import _MODEL_SPECS_DIR, load_templates_from_yaml
+
+        (model_spec,) = [
+            spec
+            for template in load_templates_from_yaml(
+                _MODEL_SPECS_DIR / "dev" / "embedding.yaml", env="dev"
+            )
+            for spec in template.expand_to_specs()
+            if spec.model_name == "embeddinggemma-2"
+        ]
+        assert model_spec.device_type.name == "P150"
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "embedding"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_embedding_gemma2"
+        assert env_vars["DEVICE"] == "p150"
+        assert env_vars["DEVICE_IDS"] == "(0)"
+        # The C++ parent throws on a non-LLM MODEL value.
+        assert "MODEL" not in env_vars
+
     def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
         """Whisper (uvicorn media server) must place HF_HOME on the cache_root
         volume so weights survive container restarts."""

@@ -94,16 +94,19 @@ _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME = {
     "bge-large-en-v1.5": "tt_bge_large_en",
     "bge-m3": "tt_bge_m3",
     "Qwen3-Embedding-8B": "tt_qwen_embedding_8b",
+    "embeddinggemma-2": "tt_embedding_gemma2",
 }
 
 # device.name.lower() -> DEVICE_IDS (worker layout, one worker per group).
-# Mirrors constants.py::DeviceIds usage in the embedding ModelConfigs entries;
-# identical for all three embedding models.
+# Mirrors constants.py::DeviceIds usage in the embedding ModelConfigs entries.
+# A device row is used only by models whose spec lists that device (p150:
+# embeddinggemma-2 only).
 _CPP_EMBEDDING_DEVICE_IDS = {
     "n150": "(0)",
     "n300": "(0)",
     "t3k": "(0),(1),(2),(3)",
     "galaxy": _DEVICE_IDS_32,
+    "p150": "(0)",
 }
 
 

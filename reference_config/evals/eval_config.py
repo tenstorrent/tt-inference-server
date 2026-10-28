@@ -10899,6 +10899,27 @@ _eval_config_list = [
             ),
         ],
     ),
+    # MTEB STS12 over /v1/embeddings without a task prompt (the eval sends raw
+    # text). No published STS12 score; add a GPU reference from
+    # SentenceTransformer("google/embeddinggemma-2") (revision 914f7f89) on the
+    # same task and prompt-free input before grading.
+    EvalConfig(
+        hf_model_repo="google/embeddinggemma-2",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score="",
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-Embedding-4B",
         tasks=[
