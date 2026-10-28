@@ -149,14 +149,15 @@ MODEL_EXTRA_ISL_OSL_PAIRS = {
 MODEL_EXTRA_CONCURRENCY_SWEEP_POINTS = {
     # MiMo-V2.6-Flash on Blackhole Galaxy: 4 vLLM lanes (DP=4), max_concurrency 16
     # (max_num_seqs 4 per lane), max_model_len 1M. Global-layer KV scales with
-    # total tokens per lane: a lane holds 2 x 1M requests with
-    # MIMO_KV_GB_PER_CHIP=6.6 (tt-metal #61745), so 8 users at 1M, 16 at 512K and
-    # 16 (the spec cap) at 256K. Prefill takes ~280 s per 1M request and ~100 s
+    # total tokens per lane: with the global KV pair split (tt-metal #62679 /
+    # #62724) a lane holds 4 x 1M requests at MIMO_KV_GB_PER_CHIP=6.7, so every
+    # context runs up to the spec cap of 16 users. Higher concurrencies need
+    # max_num_seqs > 4 per lane. Prefill takes ~280 s per 1M request and ~100 s
     # per 512K one, and a lane's requests prefill one after another.
     ("MiMo-V2.6-Flash-MOPD", DeviceTypes.BLACKHOLE_GALAXY): [
         (262144 - 128, 128, (1, 4, 8, 16)),  # 256K
         (524288 - 128, 128, (1, 4, 8, 16)),  # 512K
-        (1048576 - 128, 128, (1, 4, 8)),  # 1M
+        (1048576 - 128, 128, (1, 4, 8, 16)),  # 1M
     ],
 }
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)

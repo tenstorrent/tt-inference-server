@@ -454,10 +454,8 @@ def test_mimo_bh_galaxy_sweep_adds_long_context_concurrency_points(monkeypatch):
     )
     spec = MODEL_SPECS[model_id]
     config = benchmark_config.get_benchmark_config(spec)
-    triplets = {
-        (p.isl, p.osl, p.max_concurrency, p.num_prompts)
-        for p in config.tasks[1].param_map[DeviceTypes.BLACKHOLE_GALAXY]
-    }
+    params = config.tasks[1].param_map[DeviceTypes.BLACKHOLE_GALAXY]
+    triplets = {(p.isl, p.osl, p.max_concurrency, p.num_prompts) for p in params}
 
     # The standard sweep is kept: 128K at the spec's 16 users.
     assert (131072, 128, 16, 16) in triplets
@@ -465,11 +463,12 @@ def test_mimo_bh_galaxy_sweep_adds_long_context_concurrency_points(monkeypatch):
     for isl, concurrencies in (
         (262144 - 128, (1, 4, 8, 16)),
         (524288 - 128, (1, 4, 8, 16)),
-        (1048576 - 128, (1, 4, 8)),
+        (1048576 - 128, (1, 4, 8, 16)),
     ):
         for c in concurrencies:
             assert (isl, 128, c, c) in triplets
-    assert (1048576 - 128, 128, 16, 16) not in triplets
+    # Nothing above the spec's 16 users (max_num_seqs 4 per lane x 4 lanes).
+    assert max(p.max_concurrency for p in params) == 16
     assert all(
         p.isl + p.osl <= spec.device_model_spec.max_context
         and p.max_concurrency <= spec.device_model_spec.max_concurrency
