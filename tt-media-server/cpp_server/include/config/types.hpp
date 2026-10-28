@@ -97,6 +97,7 @@ enum class ModelRunnerType {
   TT_BGE_LARGE_EN,
   TT_BGE_M3,
   TT_QWEN_EMBEDDING_8B,
+  TT_EMBEDDING_GEMMA2,
   EMBEDDING_MOCK,
 };
 
@@ -166,6 +167,8 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_bge_m3";
     case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
       return "tt_qwen_embedding_8b";
+    case ModelRunnerType::TT_EMBEDDING_GEMMA2:
+      return "tt_embedding_gemma2";
     case ModelRunnerType::EMBEDDING_MOCK:
       return "embedding_mock";
   }
@@ -191,6 +194,7 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
     case ModelRunnerType::TT_BGE_LARGE_EN:
     case ModelRunnerType::TT_BGE_M3:
     case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
+    case ModelRunnerType::TT_EMBEDDING_GEMMA2:
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:

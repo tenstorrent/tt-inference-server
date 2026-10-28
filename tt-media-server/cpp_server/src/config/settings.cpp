@@ -542,8 +542,14 @@ struct EmbeddingModelEntry {
   std::vector<EmbeddingDeviceEntry> devices;
 };
 
-// Python Settings' default trace_region_size; no embedding row overrides it.
+// Python Settings' default trace_region_size; the bge / Qwen3 rows use it.
 constexpr size_t EMBEDDING_TRACE_REGION_SIZE = 34541598;
+
+// embeddinggemma-2 captures one trace per served (batch, bucket) shape at
+// warmup (19 shapes at batch ladder 1/8/32, 8192 tokens per forward, buckets
+// 32..8192; see the tt-metal generator_vllm.py). Its perf suite fits six text
+// traces up to 1 x 8192 in 128 MiB; 512 MiB leaves room for all 19.
+constexpr size_t EMBEDDING_GEMMA2_TRACE_REGION_SIZE = 512 * 1024 * 1024;
 
 constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
@@ -575,6 +581,14 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
         {"n300", 2, 4096, {2, 1}},
         {"t3k", 2, 4096, {2, 1}},
         {"galaxy", 1, 1024, {1, 1}}}},
+
+      // Blackhole P150 only. One command queue: the model's traces use cq 0
+      // and 2cq is not supported.
+      {ModelRunnerType::TT_EMBEDDING_GEMMA2,
+       "google/embeddinggemma-2",
+       0,
+       EMBEDDING_GEMMA2_TRACE_REGION_SIZE,
+       {{"p150", 32, 8192, {1, 1}}}},
 
       {ModelRunnerType::EMBEDDING_MOCK,
        "BAAI/bge-large-en-v1.5",

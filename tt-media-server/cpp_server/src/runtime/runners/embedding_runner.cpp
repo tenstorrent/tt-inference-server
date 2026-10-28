@@ -99,6 +99,9 @@ struct EmbeddingImpl {
     return result;
   }
 
+  // Extra AutoTokenizer.from_pretrained kwargs, e.g. a pinned revision.
+  virtual void addTokenizerKwargs(py::dict& /*kwargs*/) const {}
+
   // ---- template methods (shared) ------------------------------------------
 
   bool initialize() {
@@ -120,9 +123,12 @@ struct EmbeddingImpl {
         ttnn = py::module_::import("ttnn");
         openMeshDevice();
 
-        tokenizer = py::module_::import("transformers")
-                        .attr("AutoTokenizer")
-                        .attr("from_pretrained")(config.hf_model_id);
+        py::dict tokenizerKwargs;
+        addTokenizerKwargs(tokenizerKwargs);
+        tokenizer =
+            py::module_::import("transformers")
+                .attr("AutoTokenizer")
+                .attr("from_pretrained")(config.hf_model_id, **tokenizerKwargs);
         TT_LOG_INFO("[EmbeddingRunner] Tokenizer loaded for {}",
                     config.hf_model_id);
 
@@ -373,6 +379,32 @@ struct Qwen3Embedding8bImpl final : detail::EmbeddingImpl {
   }
 };
 
+// Hub revision the model was validated on; hub main later dropped README.md
+// and chat_template.jinja. Same default and override as the model's weight
+// loader (tt/weights.py), so tokenizer and weights come from one snapshot.
+constexpr const char* EMBEDDING_GEMMA2_REVISION =
+    "914f7f89142e33e77833254d9c9b90c3cef7303b";
+
+struct EmbeddingGemma2Impl final : detail::EmbeddingImpl {
+  using EmbeddingImpl::EmbeddingImpl;
+
+  const char* modelModule() const override {
+    return "models.demos.embedding_gemma2.demo.generator_vllm";
+  }
+  const char* modelClass() const override {
+    return "EmbeddingGemma2ForEmbedding";
+  }
+
+  // Precision comes from the model's selected config file
+  // (EMBEDDING_GEMMA2_PRECISION overrides it), not from dtype kwargs.
+  void addModelKwargs(py::dict& /*kwargs*/) const override {}
+
+  void addTokenizerKwargs(py::dict& kwargs) const override {
+    const char* rev = std::getenv("EMBEDDING_GEMMA2_REVISION");
+    kwargs["revision"] = (rev && *rev) ? rev : EMBEDDING_GEMMA2_REVISION;
+  }
+};
+
 std::unique_ptr<detail::EmbeddingImpl> makeImpl(
     const config::EmbeddingConfig& cfg) {
   switch (cfg.runner_type) {
@@ -382,6 +414,8 @@ std::unique_ptr<detail::EmbeddingImpl> makeImpl(
       return std::make_unique<BgeM3Impl>(cfg);
     case config::ModelRunnerType::TT_QWEN_EMBEDDING_8B:
       return std::make_unique<Qwen3Embedding8bImpl>(cfg);
+    case config::ModelRunnerType::TT_EMBEDDING_GEMMA2:
+      return std::make_unique<EmbeddingGemma2Impl>(cfg);
     default:
       throw std::runtime_error(
           "[EmbeddingRunner] runner_type=" + config::toString(cfg.runner_type) +

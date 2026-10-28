@@ -111,6 +111,9 @@ void registerEmbedding() {
   runners.registerMediaRunner(config::ModelService::EMBEDDING,
                               config::ModelRunnerType::TT_QWEN_EMBEDDING_8B,
                               realEmbeddingFactory);
+  runners.registerMediaRunner(config::ModelService::EMBEDDING,
+                              config::ModelRunnerType::TT_EMBEDDING_GEMMA2,
+                              realEmbeddingFactory);
 
   auto embeddingIpcFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* /*resultQueue*/,
@@ -137,6 +140,9 @@ void registerEmbedding() {
                             embeddingIpcFactory);
   runners.registerIpcRunner(config::ModelService::EMBEDDING,
                             config::ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+                            embeddingIpcFactory);
+  runners.registerIpcRunner(config::ModelService::EMBEDDING,
+                            config::ModelRunnerType::TT_EMBEDDING_GEMMA2,
                             embeddingIpcFactory);
 
   const auto cfg = config::embeddingEngineConfig();

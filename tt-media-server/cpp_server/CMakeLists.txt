@@ -1190,6 +1190,10 @@ target_link_libraries(qwen3_tts_config_test PRIVATE llm_runner_lib GTest::gtest_
 add_executable(qwen3_tts_settings_test tests/unit/config/qwen3_tts_settings_test.cpp)
 target_link_libraries(qwen3_tts_settings_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+# Embedding model catalog (settings.cpp embeddingModels()).
+add_executable(embedding_settings_test tests/unit/config/embedding_settings_test.cpp)
+target_link_libraries(embedding_settings_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 # Qwen3-TTS request fields, release validation and the preprocessor's Qwen3 path.
 add_executable(qwen3_tts_request_test
     tests/unit/services/qwen3_tts_request_test.cpp
@@ -1673,6 +1677,7 @@ gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(qwen3_tts_config_test)
 gtest_discover_tests(qwen3_tts_settings_test)
+gtest_discover_tests(embedding_settings_test)
 gtest_discover_tests(qwen3_tts_request_test)
 gtest_discover_tests(tts_audio_ipc_test)
 gtest_discover_tests(qwen3_tts_runner_test)
