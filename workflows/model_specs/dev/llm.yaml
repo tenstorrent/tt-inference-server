@@ -595,6 +595,13 @@ templates:
         # next draft: the committed stream has
         # the same law as plain serving. TT_V41_SPEC_GREEDY_ALL=1 verified every request greedily instead.
         TT_V41_SPEC: "3"
+        # The drafter keeps a ring per slot, so every
+        # request speculates: a step of one live slot is the fused c1 round,
+        # a step of several runs every slot of the pool as a block of 1 + K
+        # rows and one standalone draft call for the four slots of every mesh
+        # row (the served c32 round; for what one ring set could not
+        # serve: one request a mesh, the others plain).
+        TT_V41_SPEC_RINGS: "slot"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
