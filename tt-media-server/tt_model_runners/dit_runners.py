@@ -635,6 +635,13 @@ WAN22_ANISORA_GUIDANCE_SCALE = 3.5
 WAN22_LIGHTNING_BOUNDARY_RATIO = 0.875
 WAN22_LIGHTNING_FLOW_SHIFT = 5.0
 
+# Wan2.2 I2V samples with Wan2.2's I2V settings (wan/configs/wan_i2v_A14B.py:
+# sample_shift 5.0, boundary 0.900, guide_scale (3.5, 3.5)) rather than the T2V
+# ones (12.0, 0.875, 4.0/3.0) the pipeline and _wan22_pipeline_args default to.
+WAN22_I2V_FLOW_SHIFT = 5.0
+WAN22_I2V_BOUNDARY_RATIO = 0.9
+WAN22_I2V_GUIDANCE_SCALE = 3.5
+
 
 def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
     """Return True when Wan2.2 must advertise FABRIC_1D_RING for ``mesh_shape``."""
@@ -1001,6 +1008,13 @@ class TTWan22I2VRunner(TTDiTRunner):
             image_prompt=self._build_image_prompt(request),
             on_event=recorder,
         )
+        # Per-call overrides: flow_shift only reshapes the host-side sigma
+        # schedule and boundary_ratio only picks the expert per step, so the
+        # traces captured at warmup stay valid.
+        pipeline_args["guidance_scale"] = WAN22_I2V_GUIDANCE_SCALE
+        pipeline_args["guidance_scale_2"] = WAN22_I2V_GUIDANCE_SCALE
+        pipeline_args["flow_shift"] = WAN22_I2V_FLOW_SHIFT
+        pipeline_args["boundary_ratio"] = WAN22_I2V_BOUNDARY_RATIO
         frames = None
         try:
             frames = self.pipeline(**pipeline_args)
