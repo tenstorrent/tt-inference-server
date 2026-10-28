@@ -126,6 +126,11 @@ SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 # still filtered by ``isl + osl <= max_context``. Scoped per model so other
 # long-context specs keep their existing sweeps.
 MODEL_EXTRA_ISL_OSL_PAIRS = {
+    # 128K-context model: the standard (131072, 128) top point exceeds max_context once OSL is added,
+    # so cover the full window with ISL + OSL = 131072.
+    "Muse-Glimmer-30B": [
+        (131072 - 128, 128),
+    ],
     # 512K-context autoport: extend the sweep to its full window.
     "K2-Horizon-7B": [
         # Decode across a page-table capacity bucket (4096 -> 8192 at 32 users,
