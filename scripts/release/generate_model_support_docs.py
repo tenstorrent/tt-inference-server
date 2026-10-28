@@ -146,6 +146,7 @@ MODEL_TYPE_DESCRIPTIONS = {
     ModelType.TEXT_TO_SPEECH: "Text-to-speech models",
     ModelType.VIDEO: "Video generation models",
     ModelType.TRAINING: "Training models",
+    ModelType.RERANK: "Text reranking models",
 }
 
 # Status groups for supported models (excludes EXPERIMENTAL)

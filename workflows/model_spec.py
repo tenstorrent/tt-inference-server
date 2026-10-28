@@ -475,6 +475,15 @@ kolibri_1_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
+# nvidia/llama-nemotron-rerank-1b-v2 (cross-encoder reranker) on one P150, served by
+# tt-media-server's nemotron-rerank runner. The code exists only on the tt-metal branch
+# jerrywangTT/llama-nemotron-rerank, not on main.
+llama_nemotron_rerank_impl = ImplSpec(
+    impl_id="llama_nemotron_rerank",
+    impl_name="llama-nemotron-rerank",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/llama_nemotron_rerank_1b",
+)
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
@@ -532,6 +541,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
+    "llama_nemotron_rerank": llama_nemotron_rerank_impl,
 }
 
 
