@@ -1299,14 +1299,11 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
+      # The GPU reference profile (stock vLLM server) serves every modality the checkpoint has,
+      # so its eval set includes MMMU-Pro like the Blackhole QB2 / Galaxy blocks. Scoped to this
+      # block: the tt_transformers blocks above are text-only serving profiles (template default).
+      supported_modalities: [text, image, video, audio]
   status: EXPERIMENTAL
-  # The GPU reference profile serves every modality the checkpoint has (the stock vLLM
-  # server), so its eval set includes MMMU-Pro like the Blackhole QB2 / Galaxy blocks.
-  supported_modalities:
-    - text
-    - image
-    - video
-    - audio
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
