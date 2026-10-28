@@ -529,6 +529,24 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     return WAN22_RESOLUTION_SMALL_MESH
 
 
+# tt-metal (from 9b40b665) caches I2V denoising steps with DBCache by default.
+# WAN22_DBCACHE=off builds the pipeline uncached, e.g. to compare against
+# uncached references; unset or "on" keeps tt-metal's default. Like the
+# resolution, this is per deployment.
+WAN22_DBCACHE_SETTINGS = ("on", "off")
+
+
+def wan22_dbcache_disabled() -> bool:
+    """True if WAN22_DBCACHE turns tt-metal's I2V step caching off."""
+    value = os.getenv("WAN22_DBCACHE", "on").strip().lower()
+    if value not in WAN22_DBCACHE_SETTINGS:
+        raise ValueError(
+            f"WAN22_DBCACHE must be one of {list(WAN22_DBCACHE_SETTINGS)}, "
+            f"got {value!r}"
+        )
+    return value == "off"
+
+
 # --- LTX-2.3 distilled inference shape policy ---------------------------------
 # Served shape for the (4, 8) Galaxy ring: 1080p, 153 frames (6.12s, the nearest
 # 8k+1 count to 6s) at 25 fps. H/W must be %64 and (num_frames-1)%8 == 0.

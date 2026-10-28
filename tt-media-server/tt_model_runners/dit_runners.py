@@ -25,6 +25,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
     is_large_mesh,
+    wan22_dbcache_disabled,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -965,11 +966,17 @@ class TTWan22I2VRunner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            # Only passed to turn caching off: a tt-metal without DBCache has no
+            # cache_config to override.
+            config_overrides = (
+                {"cache_config": None} if wan22_dbcache_disabled() else None
+            )
             return WanPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
+                config_overrides=config_overrides,
             )
         except Exception as e:
             log_exception_chain(
@@ -1021,6 +1028,12 @@ class TTWan22I2VRunner(TTDiTRunner):
         finally:
             if recorder is not None:
                 recorder.flush(frames)
+        # DBCache's per-expert log (empty when uncached); older tt-metal has none.
+        for expert in getattr(self.pipeline, "cache_summary", list)():
+            self.logger.info(
+                f"Device {self.device_id}: DBCache {expert['name']}: "
+                f"{expert['executed_steps']} steps, cached {expert['cached_steps']}"
+            )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
