@@ -40,7 +40,6 @@ from .._test_common.target_check import (
 from .._test_common.video_output_check import (
     check_video_output,
     deployment_resolution,
-    expected_video_shape,
     save_clip,
 )
 from ..context import MediaContext, require_health
@@ -202,14 +201,6 @@ def _generate_video(
         elapsed = time.time() - start_time
         logger.error(f"Video generation error: {e}")
         return False, elapsed, "", ""
-
-
-def _expected_video_shape(ctx: MediaContext) -> tuple[int, int, int] | None:
-    return expected_video_shape(
-        ctx.model_spec.hf_model_repo,
-        ctx.device.name,
-        deployment_resolution(ctx.model_spec),
-    )
 
 
 def _check_video_output(

@@ -12,6 +12,10 @@ import pytest
 import yaml
 
 from test_module._test_common import SkipTest
+from test_module._test_common.video_output_check import (
+    deployment_resolution,
+    expected_video_shape,
+)
 from test_module.benchmark_tests import video_benchmark_tests as mod
 from tests.test_module.video_clips import (
     black_frames,
@@ -136,7 +140,7 @@ def test_every_dev_wan_i2v_variant_but_prodia_has_a_step_profile():
     ],
 )
 def test_expected_video_shape(model, device, expected):
-    assert mod._expected_video_shape(_ctx(model, device)) == expected
+    assert expected_video_shape(model, device) == expected
 
 
 @pytest.mark.parametrize(
@@ -149,7 +153,14 @@ def test_expected_video_shape(model, device, expected):
 def test_deployment_resolution_overrides_the_mesh_default(resolution, device, expected):
     ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", device)
     ctx.model_spec.env_vars = {"WAN22_RESOLUTION": resolution}
-    assert mod._expected_video_shape(ctx) == expected
+    assert (
+        expected_video_shape(
+            ctx.model_spec.hf_model_repo,
+            ctx.device.name,
+            deployment_resolution(ctx.model_spec),
+        )
+        == expected
+    )
 
 
 class TestCheckVideoOutput:

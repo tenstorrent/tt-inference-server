@@ -13,7 +13,7 @@ import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 DEFAULT_SAMPLE_COUNT = 8
 FRAME_METRIC_SIZE = (224, 224)
@@ -34,75 +34,6 @@ class SampledVideoFrames:
     frames: tuple[Any, ...]
     total_decoded_frames: int
     sampled_indices: tuple[int, ...]
-
-
-class BatchedCLIPScorer:
-    """Batch image/text scorer using the same OpenCLIP defaults as CLIPEncoder."""
-
-    def __init__(
-        self,
-        *,
-        clip_version: str = "ViT-B/32",
-        pretrained: str = "openai",
-        cache_dir: str | None = None,
-    ) -> None:
-        try:
-            import open_clip  # pyright: ignore[reportMissingImports]
-            import torch  # pyright: ignore[reportMissingImports]
-        except ImportError as exc:
-            raise MissingVideoQualityDependency(
-                "CLIP scoring requires torch and open_clip_torch"
-            ) from exc
-
-        self._open_clip = open_clip
-        self._torch = torch
-        self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-            clip_version,
-            pretrained=pretrained,
-            cache_dir=cache_dir,
-        )
-        self.model.eval()
-
-    def encode_images(self, frames: Iterable[Any]) -> Any:
-        frame_list = list(frames)
-        if not frame_list:
-            raise ValueError("at least one frame is required")
-        image_batch = self._torch.stack(
-            [self.preprocess(frame) for frame in frame_list]
-        )
-        with self._torch.no_grad():
-            features = self.model.encode_image(image_batch).float()
-            features /= features.norm(dim=-1, keepdim=True)
-        return features
-
-    def encode_texts(self, texts: Iterable[str]) -> Any:
-        text_list = list(texts)
-        if not text_list:
-            raise ValueError("at least one text is required")
-        tokens = self._open_clip.tokenize(text_list)
-        with self._torch.no_grad():
-            features = self.model.encode_text(tokens).float()
-            features /= features.norm(dim=-1, keepdim=True)
-        return features
-
-    def score(
-        self,
-        *,
-        frames: Iterable[Any],
-        texts: Iterable[str],
-    ) -> tuple[Any, Any]:
-        """Return ``(similarity*100, image_features)`` for frames × texts."""
-
-        image_features = self.encode_images(frames)
-        text_features = self.encode_texts(texts)
-        similarities = (image_features @ text_features.T) * 100
-        return similarities.cpu().numpy(), image_features
-
-    def consecutive_image_similarity(self, image_features: Any) -> list[float]:
-        if image_features.shape[0] < 2:
-            return []
-        similarities = (image_features[:-1] * image_features[1:]).sum(dim=-1) * 100
-        return [float(value) for value in similarities.cpu().tolist()]
 
 
 def probe_video(
@@ -416,128 +347,9 @@ def structural_frame_metrics(sampled: SampledVideoFrames) -> dict[str, Any]:
     }
 
 
-def clip_video_metrics(
-    *,
-    scorer: BatchedCLIPScorer,
-    sampled: SampledVideoFrames,
-    prompt: str,
-    required_concepts: Iterable[str] = (),
-    expected_start: str | None = None,
-    expected_end: str | None = None,
-) -> dict[str, Any]:
-    """Score whole-prompt alignment, concept coverage, and progression."""
-
-    try:
-        import numpy as np  # pyright: ignore[reportMissingImports]
-    except ImportError as exc:
-        raise MissingVideoQualityDependency("CLIP aggregation requires numpy") from exc
-
-    concepts = tuple(required_concepts)
-    texts = [prompt, *concepts]
-    start_index: int | None = None
-    end_index: int | None = None
-    if expected_start:
-        start_index = len(texts)
-        texts.append(expected_start)
-    if expected_end:
-        end_index = len(texts)
-        texts.append(expected_end)
-
-    similarities, image_features = scorer.score(
-        frames=sampled.frames,
-        texts=texts,
-    )
-    prompt_scores = similarities[:, 0]
-    concept_metrics = {}
-    for index, concept in enumerate(concepts, start=1):
-        scores = similarities[:, index]
-        concept_metrics[concept] = {
-            "mean": float(np.mean(scores)),
-            "minimum": float(np.min(scores)),
-            "maximum": float(np.max(scores)),
-        }
-
-    progression = None
-    if start_index is not None and end_index is not None:
-        boundary = max(1, len(sampled.frames) // 3)
-        early_start = float(np.mean(similarities[:boundary, start_index]))
-        late_start = float(np.mean(similarities[-boundary:, start_index]))
-        early_end = float(np.mean(similarities[:boundary, end_index]))
-        late_end = float(np.mean(similarities[-boundary:, end_index]))
-        progression = {
-            "early_start_score": early_start,
-            "late_start_score": late_start,
-            "early_end_score": early_end,
-            "late_end_score": late_end,
-            "progression_margin": ((early_start - late_start) + (late_end - early_end))
-            / 2,
-        }
-
-    image_similarities = scorer.consecutive_image_similarity(image_features)
-    return {
-        "prompt_scores": [float(value) for value in prompt_scores.tolist()],
-        "mean_prompt_score": float(np.mean(prompt_scores)),
-        "minimum_prompt_score": float(np.min(prompt_scores)),
-        "p10_prompt_score": float(np.percentile(prompt_scores, 10)),
-        "prompt_score_stddev": float(np.std(prompt_scores)),
-        "concept_scores": concept_metrics,
-        "consecutive_image_similarity": image_similarities,
-        "mean_image_consistency": (
-            float(np.mean(image_similarities)) if image_similarities else None
-        ),
-        "progression": progression,
-    }
-
-
-def analyze_video_quality(
-    video_path: Path,
-    *,
-    prompt: str,
-    required_concepts: Iterable[str],
-    expected_start: str | None,
-    expected_end: str | None,
-    expected_duration: float,
-    expected_ratio: str,
-    sample_count: int,
-    clip_scorer: BatchedCLIPScorer | None,
-) -> dict[str, Any]:
-    """Run all enabled quality metrics for one downloaded video."""
-
-    probe = probe_video(
-        video_path,
-        expected_duration=expected_duration,
-        expected_ratio=expected_ratio,
-    )
-    sampled = sample_video_frames(video_path, sample_count=sample_count)
-    structural = structural_frame_metrics(sampled)
-    clip = (
-        clip_video_metrics(
-            scorer=clip_scorer,
-            sampled=sampled,
-            prompt=prompt,
-            required_concepts=required_concepts,
-            expected_start=expected_start,
-            expected_end=expected_end,
-        )
-        if clip_scorer is not None
-        else None
-    )
-    return {
-        "probe": probe,
-        "structural": structural,
-        "clip": clip,
-        "valid_video": bool(probe["valid"])
-        and not structural["is_black"]
-        and not structural["is_flat"],
-    }
-
-
 __all__ = [
-    "BatchedCLIPScorer",
     "MissingVideoQualityDependency",
     "SampledVideoFrames",
-    "analyze_video_quality",
-    "clip_video_metrics",
     "mp4_top_level_boxes",
     "parse_ffmpeg_streams",
     "probe_container",
