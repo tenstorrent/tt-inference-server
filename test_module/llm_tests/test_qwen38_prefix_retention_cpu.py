@@ -168,6 +168,12 @@ class ProbeTest(unittest.TestCase):
                 self.assertEqual(result["status"], "pass")
                 self.assertEqual(result["request_count"], 9)
                 self.assertEqual(result["completion_tokens"], 9)
+                saved = json.loads((probe.root / "inputs.json").read_text())
+                self.assertEqual(len(saved["prompts"]), 7)
+                self.assertEqual(
+                    {p["sha256"] for p in saved["prompts"]},
+                    {c["input_sha256"] for c in probe.calls},
+                )
                 self.assertTrue(
                     all(
                         c["cached_prompt_tokens"] == 0

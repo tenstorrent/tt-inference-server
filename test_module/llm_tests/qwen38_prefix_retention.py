@@ -135,6 +135,11 @@ class Probe:
             raw = response.read()
         return raw.decode() if path == "/metrics" else json.loads(raw)
 
+    def write_inputs(self):
+        (self.root / "inputs.json").write_text(
+            json.dumps(dict(session=self.session, prompts=self.prompts))
+        )
+
     def tokenize(self, content):
         body = self.http(
             "/tokenize",
@@ -319,9 +324,7 @@ class Probe:
                     raise RuntimeError(
                         "Private streams lack distinct early text tokens"
                     )
-                (self.root / "inputs.json").write_text(
-                    json.dumps(dict(session=self.session, prompts=self.prompts))
-                )
+                self.write_inputs()
 
                 def wave(turn):
                     self.phase = (
@@ -351,6 +354,7 @@ class Probe:
                 churn_prompts = [
                     self.prompt(i + streams, base, family=panel) for i in range(churn)
                 ]
+                self.write_inputs()
 
                 def churn_task(i):
                     return self.call(
@@ -446,6 +450,7 @@ class Probe:
         finally:
             self.stop.set()
             monitor.join(timeout=12)
+            self.write_inputs()
             result["elapsed_budget_used_s"] = self.config["request_budget_s"] - (
                 self.deadline - time.monotonic()
             )
