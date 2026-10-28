@@ -598,6 +598,11 @@ an hour of profiling per configured run on top of the rest of the release; pass
 `--agentic-traces-sources/-duration/-git-ref` overrides apply, and are rejected
 unless the run is either the standalone workflow or an opted-in release.
 
+A config entry with `in_release=True` opts that spec's every release in, as if
+`--agentic-traces` were passed, for dispatchers that cannot add the flag (the
+tt-shield on-dispatch release). Such a release runs the default `full` mode;
+the overrides above still need the explicit `--agentic-traces`.
+
 Mechanically this mirrors `--prefix-cache`: the flag rides through
 `RuntimeConfig` into the engine argv, `_engine_dependency_venv_types` provisions
 `AGENTIC_TRACES` up front (the release child cannot clone InferenceX itself), and
