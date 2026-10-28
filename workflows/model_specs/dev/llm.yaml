@@ -558,6 +558,16 @@ templates:
         V41_DECODE_C1_SHARED: "split"
         V41_MHC_TP_SUM: "gather"
         V41_DECODE_CONCAT: "qdq"
+        # The decode SDPA on the chip's own 16 heads padded with zero heads
+        # instead of the queries all-gathered over TP and all 64 heads on
+        # every chip (-3.8 ms, bit for bit), and the decode tile's
+        # mHC projection without its L1 weight copy and its rsqrt op
+        # (-0.4 ms, bit for bit): served, the one-row step 53.3 ->
+        # 49.2 ms of device, tput_user 15.9 / 16.0 / 15.7 -> 17.1 / 17.2 /
+        # 17.1 at points 1, 5, 8 (0.59x); the three state gates as before.
+        V41_DECODE_SDPA: "local"
+        V41_MHC_PROJ_W: "dram"
+        V41_MHC_RSQRT: "fused"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
