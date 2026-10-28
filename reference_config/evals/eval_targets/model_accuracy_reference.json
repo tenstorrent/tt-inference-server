@@ -311,10 +311,16 @@
     },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-        "_comment": "Placeholder: no I2V reference yet, so clip_valid_range is null and the CLIP score is recorded without gating (accuracy_check NA). The T2V range it used to copy, [28.25276, 30.54], failed a working BH Galaxy 480p run at 23.48, when the eval conditioned every video on one unrelated image. The eval now uses the COCO image-caption pairs in test_fixtures/datasets/coco_i2v; set the range from a Wan2.2 I2V GPU reference run on those same pairs.",
+        "_comment": "Placeholder: no I2V reference yet, so clip_valid_range is null and the CLIP score is recorded without gating (accuracy_check NA). The T2V range it used to copy, [28.25276, 30.54], failed a working BH Galaxy 480p run at 23.48, when the eval conditioned every video on one unrelated image. The eval runs the VBench-I2V validation set (test_fixtures/datasets/vbench_i2v_50): 5, 20 or 65 videos for its dev, ci and all subsets; set each range from the Wan2.2 I2V GPU reference run (refs/r1 in the eval data) on the same videos.",
         "num_inference_steps": 40,
         "accuracy": {
             "5": {
+                "clip_valid_range": null
+            },
+            "20": {
+                "clip_valid_range": null
+            },
+            "65": {
                 "clip_valid_range": null
             }
         },

@@ -21,27 +21,22 @@ VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT = "v1/videos/generations/i2v"
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
-# Image-caption pairs for the I2V eval: each image with the caption that
-# describes it (see each set's ATTRIBUTION.md). I2V_EVAL_PAIRS picks the set:
-# five COCO pairs by default, or fifteen from VBench-I2V's image suite (four
-# with a camera move), each run in full at the deployment's shape. Or the
-# validation set, vbench_i2v_50[:dev|ci|all] (ci when no subset is named): 50
-# VBench-I2V pairs at the four output shapes, each video with its own shape,
-# seed and Wan2.2's negative prompt, its first frames read from the eval data
-# on Hugging Face (scripts/select_vbench_i2v_pairs.py).
-I2V_EVAL_DATASETS_DIR = Path("test_fixtures") / "datasets"
-I2V_EVAL_PAIRS_DIR = I2V_EVAL_DATASETS_DIR / "coco_i2v"
-VALIDATION_PAIR_SET = "vbench_i2v_50"
+# The I2V eval's videos: the validation set, 50 VBench-I2V pairs at the four
+# output shapes (scripts/select_vbench_i2v_pairs.py). Each video has its own
+# shape, seed and Wan2.2's negative prompt, and its first frame is read from the
+# eval data on Hugging Face. I2V_EVAL_SUBSET picks dev (5 videos), ci (20, the
+# default) or all (65).
+I2V_EVAL_MANIFEST = (
+    Path("test_fixtures") / "datasets" / "vbench_i2v_50" / "manifest.json"
+)
 I2V_EVAL_SUBSETS = ("dev", "ci", "all")
+I2V_EVAL_SUBSET_ENV = "I2V_EVAL_SUBSET"
 DEFAULT_I2V_EVAL_SUBSET = "ci"
-# Pairs per set; the validation set's count depends on the subset.
-I2V_EVAL_PAIR_SETS = {"coco_i2v": 5, "vbench_i2v": 15, VALIDATION_PAIR_SET: None}
-I2V_EVAL_PAIRS_ENV = "I2V_EVAL_PAIRS"
-DEFAULT_I2V_EVAL_PAIRS = "coco_i2v"
+# What the benchmark and spec tests send; the eval sends each video's own.
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 # Wan2.2's sample_neg_prompt (wan/configs/shared_config.py): the API spec's
-# default, and what the validation set's GPU references were made with.
+# default, and what the I2V eval's GPU references were made with.
 WAN22_NEGATIVE_PROMPT = (
     "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，"
     "最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，"
@@ -74,105 +69,48 @@ def _load_fixture_image_base64() -> str:
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 
 
-def i2v_eval_selection() -> tuple[str, str | None]:
-    """``I2V_EVAL_PAIRS`` as (pair set, subset); COCO when unset.
-
-    Only the validation set has subsets; it runs ci when none is named.
-    """
-    value = os.getenv(I2V_EVAL_PAIRS_ENV) or DEFAULT_I2V_EVAL_PAIRS
-    name, _, subset = value.partition(":")
-    if name not in I2V_EVAL_PAIR_SETS:
-        raise ValueError(
-            f"{I2V_EVAL_PAIRS_ENV}={value!r}; expected one of {sorted(I2V_EVAL_PAIR_SETS)}"
-        )
-    if name != VALIDATION_PAIR_SET:
-        if subset:
-            raise ValueError(
-                f"{I2V_EVAL_PAIRS_ENV}={value!r}; only {VALIDATION_PAIR_SET} has subsets"
-            )
-        return name, None
-    subset = subset or DEFAULT_I2V_EVAL_SUBSET
+def i2v_eval_subset() -> str:
+    """The I2V eval's subset: ``I2V_EVAL_SUBSET``, or ci when unset."""
+    subset = os.getenv(I2V_EVAL_SUBSET_ENV) or DEFAULT_I2V_EVAL_SUBSET
     if subset not in I2V_EVAL_SUBSETS:
         raise ValueError(
-            f"{I2V_EVAL_PAIRS_ENV}={value!r}; subset must be one of {I2V_EVAL_SUBSETS}"
+            f"{I2V_EVAL_SUBSET_ENV}={subset!r}; expected one of {I2V_EVAL_SUBSETS}"
         )
-    return name, subset
+    return subset
 
 
-def i2v_eval_pair_set() -> str:
-    """The I2V eval's pair set: ``I2V_EVAL_PAIRS`` without its subset."""
-    return i2v_eval_selection()[0]
-
-
-def i2v_eval_pairs_dir() -> Path:
-    return I2V_EVAL_DATASETS_DIR / i2v_eval_pair_set()
-
-
-def _validation_videos(subset: str) -> list[dict]:
-    """The validation set's manifest entries in ``subset``, one per video."""
-    manifest = json.loads(
-        (I2V_EVAL_DATASETS_DIR / VALIDATION_PAIR_SET / "manifest.json").read_text()
-    )
+def i2v_eval_videos() -> list[dict]:
+    """The validation set's manifest entries in the eval's subset, one per video."""
+    subset = i2v_eval_subset()
+    manifest = json.loads(I2V_EVAL_MANIFEST.read_text())
     return [e for e in manifest if subset == "all" or e[subset]]
 
 
 def i2v_eval_num_pairs() -> int:
-    """How many pairs (videos, for the validation set) the I2V eval runs."""
-    name, subset = i2v_eval_selection()
-    count = I2V_EVAL_PAIR_SETS[name]
-    return count if count is not None else len(_validation_videos(subset))
+    """How many videos the I2V eval runs: its whole subset."""
+    return len(i2v_eval_videos())
 
 
 def load_i2v_eval_pairs(num_pairs: int) -> list[dict]:
-    """The first ``num_pairs`` I2V eval pairs: ``{prompt, image, image_b64, concepts}``.
+    """The I2V eval's first ``num_pairs`` videos: ``{prompt, image, image_b64, ...}``.
 
-    ``prompt`` is the caption of ``image``, so the video is scored against text
-    that describes what it was conditioned on; ``concepts`` are the things in it
-    the video should keep showing, each scored separately. A pair that asks for
-    a camera move also carries ``camera_motion`` (VBench's name for the move).
-    """
-    name, subset = i2v_eval_selection()
-    if name == VALIDATION_PAIR_SET:
-        return _load_validation_videos(num_pairs, subset)
-    pairs_dir = i2v_eval_pairs_dir()
-    manifest = json.loads((pairs_dir / "manifest.json").read_text())
-    if num_pairs > len(manifest):
-        raise ValueError(
-            f"I2V eval wants {num_pairs} pairs; {pairs_dir} has {len(manifest)}"
-        )
-    pairs = []
-    for entry in manifest[:num_pairs]:
-        pair = {
-            "prompt": entry["caption"],
-            "image": entry["image"],
-            "concepts": entry.get("concepts", []),
-            "image_b64": base64.b64encode(
-                (pairs_dir / entry["image"]).read_bytes()
-            ).decode("ascii"),
-        }
-        if entry.get("camera_motion"):
-            pair["camera_motion"] = entry["camera_motion"]
-        pairs.append(pair)
-    return pairs
-
-
-def _load_validation_videos(num_videos: int, subset: str) -> list[dict]:
-    """The validation set's first ``num_videos`` videos in ``subset``, as eval pairs.
-
-    Each also carries the request its GPU reference was made with: ``shape``
-    ``(width, height)``, ``seed`` and ``negative_prompt``, plus its
-    ``video_id``. First frames come from the eval data on Hugging Face and
-    must match the manifest's sha256.
+    ``prompt`` is VBench's prompt for ``image``, so the video is scored against
+    text that describes what it was conditioned on. Each also carries the
+    request its GPU reference was made with: ``shape`` ``(width, height)``,
+    ``seed`` and ``negative_prompt``, plus its ``video_id``; a pair that asks
+    for a camera move carries ``camera_motion`` (VBench's name for the move).
+    First frames come from the eval data on Hugging Face and must match the
+    manifest's sha256.
     """
     from .vbench_i2v import hf_snapshot
 
-    videos = _validation_videos(subset)
-    if num_videos > len(videos):
+    videos = i2v_eval_videos()
+    if num_pairs > len(videos):
         raise ValueError(
-            f"I2V eval wants {num_videos} videos; {VALIDATION_PAIR_SET}:{subset} "
+            f"I2V eval wants {num_pairs} videos; subset {i2v_eval_subset()} "
             f"has {len(videos)}"
         )
-    videos = videos[:num_videos]
+    videos = videos[:num_pairs]
     root = hf_snapshot([e["image"] for e in videos])
     pairs = []
     for entry in videos:
@@ -182,7 +120,6 @@ def _load_validation_videos(num_videos: int, subset: str) -> list[dict]:
         pair = {
             "prompt": entry["caption"],
             "image": Path(entry["image"]).name,
-            "concepts": [],
             "image_b64": base64.b64encode(data).decode("ascii"),
             "shape": (entry["width"], entry["height"]),
             "seed": entry["seed"],

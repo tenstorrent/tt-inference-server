@@ -142,9 +142,9 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     return combined_results
 
 
-# What a validation-set clip's index entry carries beyond the prompt and image,
-# so the VBench scorer can find its first frame and GPU reference by shape.
-VALIDATION_CLIP_FIELDS = ("video_id", "width", "height", "seed")
+# What an I2V clip's index entry carries beyond the prompt and image, so the
+# VBench scorer can find its first frame and GPU reference.
+I2V_CLIP_FIELDS = ("video_id", "width", "height", "seed")
 
 
 def _save_eval_clips(
@@ -172,9 +172,7 @@ def _save_eval_clips(
                 entry["conditioning_image"] = video["image"]
             if video.get("camera_motion"):
                 entry["camera_motion"] = video["camera_motion"]
-            if video.get("concept_scores"):
-                entry["concept_scores"] = video["concept_scores"]
-            entry.update({k: video[k] for k in VALIDATION_CLIP_FIELDS if k in video})
+            entry.update({k: video[k] for k in I2V_CLIP_FIELDS if k in video})
             index.append(entry)
     if index:
         index_path = Path(ctx.output_path) / "videos" / "evals" / "index.json"
@@ -229,11 +227,6 @@ def run_video_eval(ctx: MediaContext) -> Block:
             "clip_standard_deviation", 0.0
         )
         data["accuracy_check"] = eval_result.get("accuracy_check", ReportCheckTypes.NA)
-        concept_results = eval_result.get("concept_results")
-        if concept_results:
-            data["mean_concept_score"] = concept_results["mean_concept_score"]
-            data["min_concept_score"] = concept_results["min_concept_score"]
-            data["weakest_concept"] = concept_results["weakest_concept"]
     else:
         logger.warning("No eval results from video generation test")
 

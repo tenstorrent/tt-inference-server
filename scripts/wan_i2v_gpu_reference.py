@@ -21,16 +21,12 @@
 
 """Generate GPU reference clips for the Wan2.2 I2V eval with upstream diffusers.
 
-Runs Wan2.2-I2V-A14B on a CUDA GPU over an I2V pair set (``--pairs``):
-
-- ``vbench_i2v_50``: the validation set, 65 videos over 50 VBench-I2V pairs at
-  four shapes (scripts/select_vbench_i2v_pairs.py). ``--data`` is the folder
-  with its ``pairs/manifest.json`` and prepared ``images/``. Each video has its
-  own shape and seed; ``--subset dev|ci`` and ``--shape`` pick some of them.
-- any other set in the fifteen-pair layout, by name under
-  test_fixtures/datasets (``coco_i2v``, ``vbench_i2v``, ``vbench_i2v_full`` once
-  built by scripts/build_vbench_i2v_full_pairs.py) or as a folder holding a
-  ``manifest.json``: every pair at ``--resolution`` with ``--seed``.
+Runs Wan2.2-I2V-A14B on a CUDA GPU over the I2V eval's validation set: 65
+videos over 50 VBench-I2V pairs at four shapes
+(scripts/select_vbench_i2v_pairs.py). ``--data`` is the folder with its
+``pairs/manifest.json`` and prepared ``images/`` (the eval data on Hugging
+Face). Each video has its own shape and seed; ``--subset dev|ci`` and
+``--shape`` pick some of them.
 
 Every clip is 81 frames at 16 fps with 40 steps. ``--schedule`` sets the
 sampler and guidance:
@@ -39,31 +35,26 @@ sampler and guidance:
   UniPC flow_shift 5.0, expert boundary 0.900, guidance 3.5 on both experts
 - ``tt``: what TT runs today: flow_shift 12.0, boundary 0.875, guidance 4.0 on
   the high-noise expert and 3.0 on the low-noise one (Wan2.2's T2V settings)
-- ``checkpoint``: the Hugging Face checkpoint's scheduler (flow_shift 3.0,
-  boundary 0.9) with TT's guidance
 
 The negative prompt defaults to Wan2.2's own (``sample_neg_prompt``), which is
 what the generation API spec serves when a request leaves it out.
 
 The initial noise is drawn from torch's CPU generator in float32, as TT draws
-it, and passed to the pipeline. For ``vbench_i2v_50`` it is also saved, one
-tensor per video. The output is the layout the video eval saves, so the
-VBench scorer runs on it unchanged:
+it, passed to the pipeline, and saved, one tensor per video. The output is
+the layout the video eval saves, so the VBench scorer runs on it unchanged:
 
-    uv run scripts/wan_i2v_gpu_reference.py --pairs vbench_i2v_50 --data hf_upload \\
-        --out refs/r1 --subset dev
+    uv run scripts/wan_i2v_gpu_reference.py --data hf_upload --out refs/r1 --subset dev
     python3 -m test_module._test_common.vbench_i2v --videos-dir refs/r1/832x480 \\
         --images-dir hf_upload/images/832x480 --gpu-reference none
 
 A run resumes where it stopped: a clip whose record is in its folder's
 ``.clips`` is not made again, so rerunning the same command after an
-interruption finishes the set. ``--shard i/N`` splits a long set across GPUs or
+interruption finishes the set. ``--shard i/N`` splits the set across GPUs or
 hosts; shards may share one output folder:
 
     for i in 0 1 2 3; do
       CUDA_VISIBLE_DEVICES=$i uv run scripts/wan_i2v_gpu_reference.py \\
-        --out gpu_ref_480p_vbench_full --pairs vbench_i2v_full --resolution 480p \\
-        --shard $i/4 &
+        --data hf_upload --out refs/r1 --shard $i/4 &
     done
 """
 
@@ -79,17 +70,14 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DATASETS_DIR = REPO_ROOT / "test_fixtures" / "datasets"
-# The validation set; every other --pairs is a set in the fifteen-pair layout.
-VALIDATION_SET = "vbench_i2v_50"
+# Recorded in each folder's provenance, so folders from earlier runs still resume.
+PAIR_SET = "vbench_i2v_50"
 # Per-clip records each output folder's index is built from (see write_index).
 CLIP_RECORDS = ".clips"
 MODEL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
-RESOLUTIONS = {"720p": (1280, 720), "480p": (832, 480)}
 NUM_FRAMES = 81
 FPS = 16
 STEPS = 40
-SEED = 42
 # Wan2.2's sample_neg_prompt (wan/configs/shared_config.py), the API spec's default.
 WAN_NEGATIVE_PROMPT = (
     "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，"
@@ -97,7 +85,6 @@ WAN_NEGATIVE_PROMPT = (
     "画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，"
     "三条腿，背景人很多，倒着走"
 )
-# flow_shift and boundary_ratio of None keep the checkpoint's own (3.0, 0.9).
 # guidance_scale drives the high-noise expert, guidance_scale_2 the low-noise one.
 SCHEDULES = {
     "wan": {
@@ -109,12 +96,6 @@ SCHEDULES = {
     "tt": {
         "flow_shift": 12.0,
         "boundary_ratio": 0.875,
-        "guidance_scale": 4.0,
-        "guidance_scale_2": 3.0,
-    },
-    "checkpoint": {
-        "flow_shift": None,
-        "boundary_ratio": None,
         "guidance_scale": 4.0,
         "guidance_scale_2": 3.0,
     },
@@ -136,12 +117,11 @@ def load_pipeline(schedule: str, offload: bool):
         MODEL, vae=vae, torch_dtype=torch.bfloat16
     )
     settings = SCHEDULES[schedule]
-    if settings["flow_shift"] is not None:
-        pipe.scheduler = UniPCMultistepScheduler.from_config(
-            pipe.scheduler.config, flow_shift=settings["flow_shift"]
-        )
-    if settings["boundary_ratio"] is not None:
-        pipe.register_to_config(boundary_ratio=settings["boundary_ratio"])
+    # The checkpoint ships flow_shift 3.0 and boundary 0.9; both are set here.
+    pipe.scheduler = UniPCMultistepScheduler.from_config(
+        pipe.scheduler.config, flow_shift=settings["flow_shift"]
+    )
+    pipe.register_to_config(boundary_ratio=settings["boundary_ratio"])
     if offload:
         pipe.enable_model_cpu_offload()
     else:
@@ -150,19 +130,13 @@ def load_pipeline(schedule: str, offload: bool):
 
 
 def conditioning_image(path: Path, width: int, height: int):
-    """The image at the canvas size; bicubic with antialiasing if it is not already."""
-    import torch
-    import torchvision.transforms.functional as TF
+    """The prepared first frame, which is already at the canvas size."""
     from PIL import Image
 
     image = Image.open(path).convert("RGB")
-    if image.size == (width, height):
-        return image
-    tensor = TF.to_tensor(image)[None]
-    resized = torch.nn.functional.interpolate(
-        tensor, size=(height, width), mode="bicubic", antialias=True
-    )
-    return TF.to_pil_image(resized[0].clamp(0, 1))
+    if image.size != (width, height):
+        raise SystemExit(f"{path} is {image.size}, expected {(width, height)}")
+    return image
 
 
 def initial_noise(pipe, seed: int, width: int, height: int):
@@ -184,12 +158,6 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def pairs_dir_for(pairs: str) -> Path:
-    """A pair set by name under test_fixtures/datasets, or a folder with a manifest.json."""
-    folder = Path(pairs)
-    return folder if (folder / "manifest.json").is_file() else DATASETS_DIR / pairs
-
-
 def parse_shard(value: str) -> tuple[int, int]:
     """``i/N``: this run makes every Nth clip, starting at clip i (0-based)."""
     try:
@@ -208,29 +176,6 @@ def jobs(args) -> list[dict]:
 
 
 def all_jobs(args) -> list[dict]:
-    if args.pairs != VALIDATION_SET:
-        width, height = RESOLUTIONS[args.resolution]
-        pairs_dir = pairs_dir_for(args.pairs)
-        manifest = json.loads((pairs_dir / "manifest.json").read_text())
-        # Two digits for the small sets, as their references have.
-        digits = max(2, len(str(len(manifest) - 1)))
-        return [
-            {
-                "file": f"{i:0{digits}d}_gpu.mp4",
-                "out_dir": args.out,
-                "image_path": pairs_dir / pair["image"],
-                "conditioning_image": pair["image"],
-                "caption": pair["caption"],
-                "camera_motion": pair.get("camera_motion"),
-                "width": width,
-                "height": height,
-                "seed": args.seed,
-            }
-            for i, pair in enumerate(manifest[: args.limit])
-        ]
-
-    if args.data is None:
-        raise SystemExit(f"--pairs {args.pairs} needs --data")
     manifest = json.loads((args.data / "pairs" / "manifest.json").read_text())
     shapes = set(args.shape or [])
     picked = [
@@ -279,9 +224,7 @@ def provenance(args, width: int, height: int) -> dict:
         sha = None
     record = {
         "model": MODEL,
-        "pairs": pairs_dir_for(args.pairs).name
-        if args.pairs != VALIDATION_SET
-        else args.pairs,
+        "pairs": PAIR_SET,
         "gpu": torch.cuda.get_device_name(0),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
@@ -296,17 +239,11 @@ def provenance(args, width: int, height: int) -> dict:
         "steps": args.steps,
         "negative_prompt": args.negative_prompt,
         "schedule": args.schedule,
-        **{
-            k: "checkpoint" if v is None else v
-            for k, v in SCHEDULES[args.schedule].items()
-        },
+        **SCHEDULES[args.schedule],
         "noise": "torch.randn on a CPU generator seeded per clip, float32",
         "cpu_offload": args.offload,
     }
-    if args.pairs != VALIDATION_SET:
-        record["seed"] = args.seed
-    else:
-        record["manifest_sha256"] = sha256_file(args.data / "pairs" / "manifest.json")
+    record["manifest_sha256"] = sha256_file(args.data / "pairs" / "manifest.json")
     return record
 
 
@@ -380,33 +317,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument(
-        "--pairs",
-        default=VALIDATION_SET,
-        help=f"{VALIDATION_SET} (default), or a set in the fifteen-pair layout: a "
-        "name under test_fixtures/datasets (coco_i2v, vbench_i2v, vbench_i2v_full "
-        "once built) or a folder holding a manifest.json",
-    )
-    parser.add_argument(
         "--data",
         type=Path,
-        help=f"{VALIDATION_SET}: folder with pairs/manifest.json and images/",
+        required=True,
+        help="folder with pairs/manifest.json and images/ (the eval data)",
     )
+    parser.add_argument("--subset", choices=("all", "ci", "dev"), default="all")
     parser.add_argument(
-        "--subset", choices=("all", "ci", "dev"), default="all", help=VALIDATION_SET
-    )
-    parser.add_argument(
-        "--shape",
-        action="append",
-        help=f"{VALIDATION_SET}: only this WxH (e.g. 832x480); repeatable",
-    )
-    parser.add_argument(
-        "--resolution",
-        choices=sorted(RESOLUTIONS),
-        default="720p",
-        help=f"every set but {VALIDATION_SET}",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=SEED, help=f"every set but {VALIDATION_SET}"
+        "--shape", action="append", help="only this WxH (e.g. 832x480); repeatable"
     )
     parser.add_argument("--schedule", choices=sorted(SCHEDULES), default="wan")
     parser.add_argument("--negative-prompt", default=WAN_NEGATIVE_PROMPT)

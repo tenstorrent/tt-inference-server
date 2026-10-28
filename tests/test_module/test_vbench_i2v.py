@@ -15,16 +15,23 @@ from test_module._test_common import vbench_i2v as mod
 from workflow_module.engine_types import WorkflowVenvType
 from workflows.workflow_venvs import REQUIREMENTS_DIR, VENV_CONFIGS
 
+# Two clips of an eval run at different shapes, as the I2V eval saves them.
 INDEX = [
     {
         "file": "00_a.mp4",
         "prompt": "A bird on a feeder.",
         "conditioning_image": "bird.jpg",
+        "video_id": "vbi2v_0001_832x480",
+        "width": 832,
+        "height": 480,
     },
     {
         "file": "01_b.mp4",
         "prompt": "A man at the lake.",
         "conditioning_image": "lake.jpg",
+        "video_id": "vbi2v_0002_1280x720",
+        "width": 1280,
+        "height": 720,
     },
 ]
 
@@ -110,24 +117,21 @@ def test_vbench_venv_is_registered_with_its_requirements():
     assert venv.setup_function is not None
 
 
-def test_conditioning_images_are_found_in_either_pair_set():
-    for pair_set in ("coco_i2v", "vbench_i2v"):
-        manifest = json.loads(
-            (mod.DATASETS_DIR / pair_set / "manifest.json").read_text()
-        )
-        found = mod.find_conditioning_image(manifest[0]["image"])
-        assert found == mod.DATASETS_DIR / pair_set / manifest[0]["image"]
+def test_a_conditioning_image_needs_a_folder_or_a_shape():
+    with pytest.raises(ValueError, match="no images dir and no shape"):
+        mod.find_conditioning_image("bird.jpg")
 
 
 def test_every_manifest_camera_move_is_one_vbench_reads():
     manifest = json.loads(
-        (mod.DATASETS_DIR / "vbench_i2v" / "manifest.json").read_text()
+        (
+            mod.REPO_ROOT / "test_fixtures/datasets/vbench_i2v_50/manifest.json"
+        ).read_text()
     )
-    moves = [e["camera_motion"] for e in manifest if "camera_motion" in e]
-    assert len(moves) == 4
-    for entry in manifest:
-        if "camera_motion" in entry:
-            assert entry["caption"].endswith(mod.CAMERA_PHRASES[entry["camera_motion"]])
+    moved = [e for e in manifest if e["camera_motion"]]
+    assert {e["camera_motion"] for e in moved} == set(mod.CAMERA_PHRASES)
+    for entry in moved:
+        assert entry["caption"].endswith(mod.CAMERA_PHRASES[entry["camera_motion"]])
 
 
 def test_camera_clips_are_linked_under_names_carrying_the_move(tmp_path):
@@ -190,39 +194,39 @@ def test_only_checksum_failures_count_as_a_corrupt_download():
     )
 
 
-def _write_reference(folder, index, width=1280, height=720, per_clip=None):
+def _write_reference(folder, index, per_clip=None):
     folder.mkdir(parents=True)
     (folder / "index.json").write_text(json.dumps(index))
-    (folder / "provenance.json").write_text(
-        json.dumps({"gpu": "NVIDIA H100 NVL", "width": width, "height": height})
-    )
+    (folder / "provenance.json").write_text(json.dumps({"gpu": "NVIDIA H100 NVL"}))
     (folder / "vbench.json").write_text(
         json.dumps({"dimensions": {"i2v_subject": {"per_clip": per_clip or {}}}})
     )
 
 
-def test_gpu_reference_must_hold_every_request_at_the_same_resolution(tmp_path):
-    gpu_index = [{**e, "file": f"{i:02d}_gpu.mp4"} for i, e in enumerate(INDEX)]
-    _write_reference(tmp_path / "wan" / "a_480p", gpu_index, 832, 480)
-    _write_reference(tmp_path / "wan" / "a_720p", gpu_index)
-    _write_reference(tmp_path / "wan" / "b_720p", gpu_index[:1])
-
-    found = mod.find_gpu_reference(INDEX, 1280, 720, tmp_path)
-    assert found == tmp_path / "wan" / "a_720p"
-    # A run of fewer clips still matches; a different size or request does not.
-    assert mod.find_gpu_reference(INDEX[:1], 832, 480, tmp_path).name == "a_480p"
-    assert mod.find_gpu_reference(INDEX, 640, 360, tmp_path) is None
-    other = [{**INDEX[0], "prompt": "A cat."}]
-    assert mod.find_gpu_reference(other, 1280, 720, tmp_path) is None
+def _reference_run(run, per_clip=None):
+    """A GPU reference run as the GPU script writes it: one folder per shape."""
+    for entry in INDEX:
+        shape = f"{entry['width']}x{entry['height']}"
+        gpu = {**entry, "file": f"{entry['video_id']}.mp4"}
+        _write_reference(run / shape, [gpu], per_clip)
 
 
-def test_hf_reference_is_chosen_from_metadata_then_its_clips_fetched(
+def test_gpu_references_are_matched_per_video_across_shapes(tmp_path):
+    _reference_run(tmp_path / "r1")
+    matches = mod.find_gpu_references(INDEX, tmp_path / "r1")
+    assert matches == {
+        "00_a.mp4": (tmp_path / "r1" / "832x480", "vbi2v_0001_832x480.mp4"),
+        "01_b.mp4": (tmp_path / "r1" / "1280x720", "vbi2v_0002_1280x720.mp4"),
+    }
+    # A clip the run has no reference for is left out, not mismatched.
+    other = [{**INDEX[0], "video_id": "vbi2v_0003_832x480"}]
+    assert mod.find_gpu_references(other, tmp_path / "r1") == {}
+
+
+def test_hf_references_are_matched_from_metadata_then_only_they_fetched(
     tmp_path, monkeypatch
 ):
-    # A fake snapshot of the eval data: references at two depths, as on HF.
-    gpu_index = [{**e, "file": f"{i:02d}_gpu.mp4"} for i, e in enumerate(INDEX)]
-    _write_reference(tmp_path / "legacy" / "set_720p", gpu_index)
-    _write_reference(tmp_path / "refs" / "r1" / "832x480", gpu_index, 832, 480)
+    _reference_run(tmp_path / "refs" / "r1")
     fetched = []
 
     def fake_snapshot(patterns):
@@ -230,23 +234,24 @@ def test_hf_reference_is_chosen_from_metadata_then_its_clips_fetched(
         return tmp_path
 
     monkeypatch.setattr(mod, "hf_snapshot", fake_snapshot)
-    found = mod.find_gpu_reference(INDEX, 832, 480)
-    assert found == tmp_path / "refs" / "r1" / "832x480"
-    assert fetched == [list(mod.REFERENCE_METADATA), ["refs/r1/832x480/*"]]
-    assert mod.find_gpu_reference(INDEX, 1280, 720).name == "set_720p"
-    assert mod.find_gpu_reference(INDEX, 640, 360) is None
+    matches = mod.find_gpu_references(INDEX[:1])
+    assert matches == {
+        "00_a.mp4": (
+            tmp_path / "refs" / "r1" / "832x480",
+            "vbi2v_0001_832x480.mp4",
+        )
+    }
+    assert fetched == [
+        list(mod.REFERENCE_METADATA),
+        ["refs/r1/832x480/vbi2v_0001_832x480.mp4"],
+    ]
 
 
 def test_hf_reference_is_named_by_its_path_in_the_dataset(tmp_path):
     cached = (
-        tmp_path
-        / "datasets--Tenstorrent--x"
-        / "snapshots"
-        / "51206b33"
-        / "legacy"
-        / "a"
+        tmp_path / "datasets--Tenstorrent--x" / "snapshots" / "51206b33" / "refs" / "r1"
     )
-    assert mod.describe_reference(cached) == f"{mod.I2V_EVAL_HF_REPO}/legacy/a"
+    assert mod.describe_reference(cached) == f"{mod.I2V_EVAL_HF_REPO}/refs/r1"
 
 
 def test_the_eval_data_revision_is_pinned():
@@ -262,21 +267,19 @@ def test_psnr_is_capped_for_identical_frames_and_follows_the_error():
     assert mod.psnr(frame, frame + 1) == pytest.approx(48.13, abs=0.01)
 
 
-def test_comparison_pairs_clips_by_request_not_file_name(tmp_path, monkeypatch):
-    reference = tmp_path / "ref"
-    gpu_index = [{**e, "file": f"{i:02d}_gpu.mp4"} for i, e in enumerate(INDEX)]
-    # The reference lists the clips in the other order.
-    _write_reference(
-        reference,
-        gpu_index[::-1],
-        per_clip={"00_gpu.mp4": 0.98, "01_gpu.mp4": 0.90},
+def test_comparison_pairs_clips_by_video_across_shape_folders(tmp_path, monkeypatch):
+    run = tmp_path / "r1"
+    _reference_run(
+        run,
+        per_clip={"vbi2v_0001_832x480.mp4": 0.98, "vbi2v_0002_1280x720.mp4": 0.90},
     )
     monkeypatch.setattr(
         mod,
         "frame_psnr",
         lambda clip, ref: {"frame0": 35.0, "mean": 20.0, "min": 15.0, "ref": ref.name},
     )
-    comparison = mod.compare_to_gpu_reference(_result(), INDEX, tmp_path, reference)
+    matches = mod.find_gpu_references(INDEX, run)
+    comparison = mod.compare_to_gpu_reference(_result(), tmp_path, matches, run)
 
     subject = comparison["dimensions"]["i2v_subject"]
     assert subject["per_clip"] == {"00_a.mp4": -0.01, "01_b.mp4": 0.03}
@@ -284,7 +287,8 @@ def test_comparison_pairs_clips_by_request_not_file_name(tmp_path, monkeypatch):
     assert (subject["tt_lower"], subject["tt_higher"], subject["clips"]) == (1, 1, 2)
     # A dimension that errored on TT has nothing to compare.
     assert "motion_smoothness" not in comparison["dimensions"]
-    assert comparison["psnr"]["01_b.mp4"]["ref"] == "01_gpu.mp4"
+    assert comparison["psnr"]["01_b.mp4"]["ref"] == "vbi2v_0002_1280x720.mp4"
+    assert (comparison["gpu"], comparison["clips"]) == ("NVIDIA H100 NVL", 2)
 
     result = {**_result(), "gpu_reference": comparison}
     md = mod.to_markdown(result, "x")
@@ -292,7 +296,7 @@ def test_comparison_pairs_clips_by_request_not_file_name(tmp_path, monkeypatch):
     assert "| 00 | A bird on a feeder. | 35.0 | 20.0 | 15.0 |" in md
 
 
-def test_validation_clip_first_frame_comes_from_hf_at_its_shape(tmp_path, monkeypatch):
+def test_a_clips_first_frame_comes_from_hf_at_its_shape(tmp_path, monkeypatch):
     image = tmp_path / "images" / "480x832" / "vbi2v_0048.jpg"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"jpg")

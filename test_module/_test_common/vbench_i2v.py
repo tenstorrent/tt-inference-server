@@ -20,11 +20,11 @@ scored the same way and compared dimension by dimension:
 - camera_motion: the camera makes the move the prompt asks for (CoTracker),
   scored only on clips whose index entry names one (``camera_motion``)
 
-When a GPU reference made from the same pairs at the same resolution is in the
-eval data on Hugging Face (I2V_EVAL_HF_REPO at I2V_EVAL_HF_REVISION, from
-scripts/wan_i2v_gpu_reference.py), each dimension is also reported against it,
-with each frame's PSNR to the GPU clip.
-Both sides draw the initial noise from the same seed on the host, so the clips
+When the GPU reference run in the eval data on Hugging Face (GPU_REFERENCE_RUN
+in I2V_EVAL_HF_REPO at I2V_EVAL_HF_REVISION, from
+scripts/wan_i2v_gpu_reference.py) has clips for the same videos, matched by
+video id, each dimension is also reported against them, with each frame's PSNR
+to the GPU clip. Both sides draw the initial noise from the same seed on the host, so the clips
 start out the same and the PSNR shows how far TT drifts from the GPU.
 
 Informational: nothing gates on it yet.
@@ -54,16 +54,20 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Conditioning images are found by name in whichever eval pair set has them.
-DATASETS_DIR = REPO_ROOT / "test_fixtures" / "datasets"
-# The I2V eval data too large for the repo: GPU reference clips (one folder per
-# reference: clips, index.json, provenance.json, vbench.json) and first frames.
+# The I2V eval data too large for the repo: first frames (images/<W>x<H>/) and
+# GPU reference runs (one folder per output shape: clips, index.json,
+# provenance.json, vbench.json).
 # Private to the Tenstorrent org, so reading it needs HF_TOKEN. The revision is
 # pinned, so a new reference or image set reaches CI only through a commit here.
 I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs"
 I2V_EVAL_HF_REVISION = "51206b33c4877cbfec4cf06e70478666ead6e1de"
-# A reference folder's small files: enough to pick one before fetching its clips.
-REFERENCE_METADATA = ("*index.json", "*provenance.json", "*vbench.json")
+# The GPU run TT is compared with: Wan2.2's I2V settings, Cache-DiT off.
+GPU_REFERENCE_RUN = "refs/r1"
+# A reference run's small files: enough to match clips before fetching them.
+REFERENCE_METADATA = tuple(
+    f"{GPU_REFERENCE_RUN}/*/{name}"
+    for name in ("index.json", "provenance.json", "vbench.json")
+)
 I2V_DIMENSIONS = ("i2v_subject", "i2v_background", "camera_motion")
 DEFAULT_DIMENSIONS = (
     "i2v_subject",
@@ -116,29 +120,25 @@ def find_conditioning_image(
     images_dir: Path | None = None,
     shape: tuple[int, int] | None = None,
 ) -> Path:
-    """The conditioning image: in ``images_dir`` if given, else where its set keeps it.
+    """The conditioning image: in ``images_dir`` if given, else in the eval data.
 
-    A validation-set clip names its ``shape``: its first frame is the one
-    prepared at that size, in the eval data on Hugging Face. Other sets' images
-    are in the repo, under the pair set that has them.
+    The eval data holds each first frame prepared at every output size it is
+    used at, so a clip finds its own by its ``shape``.
     """
     if images_dir:
-        candidates = [images_dir / name]
+        path = images_dir / name
     elif shape:
         relative = f"images/{shape[0]}x{shape[1]}/{name}"
-        candidates = [hf_snapshot([relative]) / relative]
+        path = hf_snapshot([relative]) / relative
     else:
-        candidates = sorted(DATASETS_DIR.glob(f"*/{name}"))
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(
-        f"conditioning image {name} not found in {images_dir or DATASETS_DIR}"
-    )
+        raise ValueError(f"conditioning image {name}: no images dir and no shape")
+    if not path.is_file():
+        raise FileNotFoundError(f"conditioning image {name} not found at {path}")
+    return path
 
 
 def clip_shape(entry: dict) -> tuple[int, int] | None:
-    """The ``(width, height)`` a validation-set clip's index entry names, if any."""
+    """The ``(width, height)`` a clip's index entry names, if any."""
     if entry.get("width") and entry.get("height"):
         return (entry["width"], entry["height"])
     return None
@@ -216,41 +216,35 @@ def ensure_raft_weights(cache_dir: Path) -> None:
     archive.unlink()
 
 
-def clip_key(entry: dict) -> tuple:
-    """A clip's request: what a reference clip must share to stand in for it."""
-    return (entry["prompt"], entry.get("conditioning_image"))
+def find_gpu_references(
+    index: list[dict], run_dir: Path | None = None
+) -> dict[str, tuple[Path, str]]:
+    """Each clip's GPU reference clip, by video id: ``{file: (folder, reference file)}``.
 
-
-def find_gpu_reference(
-    index: list[dict],
-    width: int,
-    height: int,
-    references_dir: Path | None = None,
-) -> Path | None:
-    """The reference with every clip's request at this resolution, if any.
-
-    Looks in ``references_dir``, or else in the eval data on Hugging Face,
-    where only the chosen folder's clips are fetched.
+    Looks in ``run_dir`` (a reference run: one folder per shape, each with an
+    index.json), or else in the eval data's GPU_REFERENCE_RUN on Hugging Face,
+    fetching only the matched clips. Clips without a reference are left out.
     """
-    if references_dir is None:
-        metadata = hf_snapshot(REFERENCE_METADATA)
-        folder = find_gpu_reference(index, width, height, metadata)
-        if folder is None:
-            return None
-        relative = folder.relative_to(metadata).as_posix()
-        # The same snapshot, now holding the folder's clips too.
-        return hf_snapshot([f"{relative}/*"]) / relative
-    wanted = {clip_key(e) for e in index}
-    for index_path in sorted(references_dir.rglob("index.json")):
-        folder = index_path.parent
-        if not (folder / "provenance.json").is_file():
-            continue
-        provenance = json.loads((folder / "provenance.json").read_text())
-        if (provenance.get("width"), provenance.get("height")) != (width, height):
-            continue
-        if wanted <= {clip_key(e) for e in json.loads(index_path.read_text())}:
-            return folder
-    return None
+    if run_dir is None:
+        metadata = hf_snapshot(REFERENCE_METADATA) / GPU_REFERENCE_RUN
+        matches = find_gpu_references(index, metadata)
+        if matches:
+            # The same snapshot, now holding the matched clips too.
+            hf_snapshot(
+                [f"{GPU_REFERENCE_RUN}/{f.name}/{ref}" for f, ref in matches.values()]
+            )
+        return matches
+    by_video = {
+        entry["video_id"]: (index_path.parent, entry["file"])
+        for index_path in sorted(run_dir.glob("*/index.json"))
+        for entry in json.loads(index_path.read_text())
+        if entry.get("video_id")
+    }
+    return {
+        entry["file"]: by_video[entry["video_id"]]
+        for entry in index
+        if entry.get("video_id") in by_video
+    }
 
 
 def read_frames(path: Path):
@@ -264,20 +258,6 @@ def read_frames(path: Path):
             if not ok:
                 return
             yield frame
-    finally:
-        capture.release()
-
-
-def video_size(path: Path) -> tuple[int, int]:
-    """A clip's (width, height)."""
-    import cv2
-
-    capture = cv2.VideoCapture(str(path))
-    try:
-        return (
-            int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        )
     finally:
         capture.release()
 
@@ -324,35 +304,33 @@ def describe_reference(folder: Path) -> str:
 
 
 def compare_to_gpu_reference(
-    result: dict, index: list[dict], videos_dir: Path, reference_dir: Path
+    result: dict,
+    videos_dir: Path,
+    matches: dict[str, tuple[Path, str]],
+    run_dir: Path,
 ) -> dict:
-    """Each dimension against the reference's same clips, and each clip's frame PSNR.
+    """Each dimension against the matched GPU clips, and each clip's frame PSNR.
 
     Dimension means are over the clips both sides scored, so a dimension that
     scores only some clips (camera_motion) compares like with like.
     """
-    reference_index = {
-        clip_key(e): e["file"]
-        for e in json.loads((reference_dir / "index.json").read_text())
-    }
-    reference_scores = json.loads((reference_dir / "vbench.json").read_text())
-    provenance = json.loads((reference_dir / "provenance.json").read_text())
-    pairs = [(e["file"], reference_index[clip_key(e)]) for e in index]
+    folders = {folder for folder, _ in matches.values()}
+    scores = {f: json.loads((f / "vbench.json").read_text()) for f in folders}
+    gpus = {json.loads((f / "provenance.json").read_text()).get("gpu") for f in folders}
 
     dimensions = {}
     for name, record in result["dimensions"].items():
-        reference = reference_scores["dimensions"].get(name, {})
-        if "per_clip" not in record or "per_clip" not in reference:
+        if "per_clip" not in record:
             continue
-        shared = [
-            (clip, ref)
-            for clip, ref in pairs
-            if clip in record["per_clip"] and ref in reference["per_clip"]
-        ]
+        shared = []
+        for clip, (folder, ref) in matches.items():
+            reference = scores[folder]["dimensions"].get(name, {}).get("per_clip", {})
+            if clip in record["per_clip"] and ref in reference:
+                shared.append((clip, record["per_clip"][clip], reference[ref]))
         if not shared:
             continue
-        tt = [record["per_clip"][clip] for clip, _ in shared]
-        gpu = [reference["per_clip"][ref] for _, ref in shared]
+        tt = [a for _, a, _ in shared]
+        gpu = [b for _, _, b in shared]
         dimensions[name] = {
             "tt": round(sum(tt) / len(tt), 4),
             "gpu": round(sum(gpu) / len(gpu), 4),
@@ -360,23 +338,21 @@ def compare_to_gpu_reference(
             "clips": len(shared),
             "tt_lower": sum(a < b for a, b in zip(tt, gpu)),
             "tt_higher": sum(a > b for a, b in zip(tt, gpu)),
-            "per_clip": {
-                clip: round(a - b, 4) for (clip, _), a, b in zip(shared, tt, gpu)
-            },
+            "per_clip": {clip: round(a - b, 4) for clip, a, b in shared},
         }
 
     frames = {}
-    for clip, ref in pairs:
+    for clip, (folder, ref) in matches.items():
         try:
-            frames[clip] = frame_psnr(videos_dir / clip, reference_dir / ref)
+            frames[clip] = frame_psnr(videos_dir / clip, folder / ref)
         except Exception as e:  # one unreadable clip should not hide the rest
             logger.exception("PSNR of %s to the GPU reference failed", clip)
             frames[clip] = {"error": f"{type(e).__name__}: {e}"[:500]}
 
-    shown = describe_reference(reference_dir)
     return {
-        "reference": shown,
-        "gpu": provenance.get("gpu"),
+        "reference": describe_reference(run_dir),
+        "gpu": ", ".join(sorted(g for g in gpus if g)) or None,
+        "clips": len(matches),
         "dimensions": dimensions,
         "psnr": frames,
     }
@@ -395,8 +371,9 @@ def score_directory(
     """Score every clip in a saved eval folder; one failing dimension skips one dimension.
 
     Writes the result after each dimension, so a run cut short keeps what finished.
-    ``gpu_reference`` is a reference folder to compare against, "auto" for the
-    checked-in one matching these clips, or None for no comparison.
+    ``gpu_reference`` is a reference run to compare against (one folder per
+    shape), "auto" for GPU_REFERENCE_RUN in the eval data, or None for no
+    comparison.
     """
     import importlib
 
@@ -513,35 +490,31 @@ def score_directory(
         )
         out.write_text(json.dumps(result, indent=2) + "\n")
 
-    if gpu_reference == "auto":
-        try:
-            gpu_reference = (
-                find_gpu_reference(index, *video_size(videos_dir / index[0]["file"]))
-                if index
-                else None
-            )
-        except Exception as e:  # e.g. no HF_TOKEN: score without the comparison
-            logger.exception("Looking up the GPU reference failed")
-            result["gpu_reference"] = {
-                "reference": f"{I2V_EVAL_HF_REPO}@{I2V_EVAL_HF_REVISION[:12]}",
-                "error": f"{type(e).__name__}: {e}"[:500],
-            }
-            out.write_text(json.dumps(result, indent=2) + "\n")
-            gpu_reference = None
-    if gpu_reference:
-        try:
+    if gpu_reference is None:
+        return result
+    run_dir = None if gpu_reference == "auto" else Path(gpu_reference)
+    shown = (
+        f"{I2V_EVAL_HF_REPO}/{GPU_REFERENCE_RUN}"
+        if run_dir is None
+        else describe_reference(run_dir)
+    )
+    try:
+        matches = find_gpu_references(index, run_dir)
+        if matches:
+            if run_dir is None:
+                run_dir = hf_snapshot(REFERENCE_METADATA) / GPU_REFERENCE_RUN
             result["gpu_reference"] = compare_to_gpu_reference(
-                result, index, videos_dir, Path(gpu_reference)
+                result, videos_dir, matches, run_dir
             )
-        except Exception as e:  # the scores above stand without the comparison
-            logger.exception("Comparing with the GPU reference failed")
-            result["gpu_reference"] = {
-                "reference": str(gpu_reference),
-                "error": f"{type(e).__name__}: {e}"[:500],
-            }
-        out.write_text(json.dumps(result, indent=2) + "\n")
-    else:
-        logger.info("No GPU reference for these clips; skipping the comparison")
+        else:
+            logger.info("No GPU reference for these clips; skipping the comparison")
+    except Exception as e:  # e.g. no HF_TOKEN: the scores above stand
+        logger.exception("Comparing with the GPU reference failed")
+        result["gpu_reference"] = {
+            "reference": shown,
+            "error": f"{type(e).__name__}: {e}"[:500],
+        }
+    out.write_text(json.dumps(result, indent=2) + "\n")
     return result
 
 
@@ -595,7 +568,10 @@ def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
     if "error" in reference:
         return lines + [f"Comparison failed: {reference['error'][:200]}"]
     lines += [
-        f"Same requests on {reference.get('gpu') or 'GPU'}, from the same initial noise.",
+        (
+            f"{reference['clips']} of these clips' requests on "
+            f"{reference.get('gpu') or 'GPU'}, from the same initial noise."
+        ),
         "",
         "| Dimension | TT | GPU | TT − GPU | Clips TT lower / higher |",
         "|---|---|---|---|---|",
@@ -657,7 +633,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--images-dir",
         type=Path,
-        help="default: whichever test_fixtures/datasets pair set has each image",
+        help="default: the eval data on Hugging Face, at each clip's shape",
     )
     parser.add_argument(
         "--dimensions",
@@ -670,8 +646,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--gpu-reference",
         default="auto",
-        help="reference folder to compare with; 'auto' (default) picks the checked-in "
-        "one made from the same pairs at the same resolution, 'none' skips it",
+        help="reference run to compare with (one folder per shape); 'auto' "
+        f"(default) is {GPU_REFERENCE_RUN} in the eval data, 'none' skips it",
     )
     parser.add_argument("--vbench-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--in-venv", action="store_true", help=argparse.SUPPRESS)

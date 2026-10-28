@@ -54,7 +54,6 @@ def make_data(root: Path) -> Path:
 
 def args_for(data: Path, out: Path, **kw) -> argparse.Namespace:
     defaults = {
-        "pairs": "vbench_i2v_50",
         "data": data,
         "out": out,
         "subset": "all",
@@ -99,28 +98,6 @@ def test_jobs_refuse_an_image_that_does_not_match(tmp_path):
     (data / "images" / "832x480" / "vbi2v_0001.jpg").write_bytes(b"changed")
     with pytest.raises(SystemExit, match="sha256"):
         ref.jobs(args_for(data, tmp_path / "out"))
-
-
-def test_jobs_need_data_for_the_validation_set(tmp_path):
-    with pytest.raises(SystemExit, match="--data"):
-        ref.jobs(args_for(None, tmp_path / "out"))
-
-
-def test_legacy_set_runs_at_one_resolution_and_seed(tmp_path):
-    jobs = ref.jobs(
-        argparse.Namespace(
-            pairs="coco_i2v",
-            out=tmp_path,
-            resolution="480p",
-            seed=7,
-            limit=2,
-            shard=(0, 1),
-        )
-    )
-    assert [(j["file"], j["width"], j["height"], j["seed"]) for j in jobs] == [
-        ("00_gpu.mp4", 832, 480, 7),
-        ("01_gpu.mp4", 832, 480, 7),
-    ]
 
 
 def test_wan_schedule_is_wan22_i2v_reference_config():
@@ -174,25 +151,6 @@ def test_shards_split_the_clips_between_them(tmp_path):
     assert ref.parse_shard("1/4") == (1, 4)
     with pytest.raises(argparse.ArgumentTypeError):
         ref.parse_shard("4/4")
-
-
-def test_a_pair_set_can_be_a_folder_with_a_manifest(tmp_path):
-    (tmp_path / "set").mkdir()
-    pairs = [{"image": f"{i}.jpg", "caption": f"c{i}"} for i in range(101)]
-    (tmp_path / "set" / "manifest.json").write_text(json.dumps(pairs))
-    jobs = ref.jobs(
-        argparse.Namespace(
-            pairs=str(tmp_path / "set"),
-            out=tmp_path / "out",
-            resolution="720p",
-            seed=42,
-            limit=None,
-            shard=(0, 1),
-        )
-    )
-    # Clip numbers widen past two digits for sets over 100 clips.
-    assert jobs[0]["file"] == "000_gpu.mp4" and jobs[-1]["file"] == "100_gpu.mp4"
-    assert jobs[5]["image_path"] == tmp_path / "set" / "5.jpg"
 
 
 def test_records_rebuild_the_index_and_adopt_an_older_index(tmp_path):

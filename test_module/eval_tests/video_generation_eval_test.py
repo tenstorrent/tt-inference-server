@@ -97,11 +97,11 @@ class VideoGenerationEvalsTest(BaseTest):
             )
             request.num_inference_steps = num_inference_steps
 
-        # Step 1: Get prompts from COCO. I2V gets image-caption pairs, so each
-        # video is conditioned on the image its prompt describes.
+        # Step 1: Get prompts. T2V takes COCO captions; I2V takes the validation
+        # set's videos, each conditioned on the image its prompt describes.
         conditioning = None
         if is_i2v_video_model(request.model_name):
-            logger.info(f"Step 1: Loading {request.num_prompts} image-caption pairs")
+            logger.info(f"Step 1: Loading {request.num_prompts} I2V validation videos")
             conditioning = load_i2v_eval_pairs(request.num_prompts)
             prompts = [pair["prompt"] for pair in conditioning]
         else:
@@ -128,7 +128,6 @@ class VideoGenerationEvalsTest(BaseTest):
             prompts=prompts,
             frame_sample_rate=request.frame_sample_rate,
         )
-        concept_results = self._score_concepts(videos_info, conditioning)
 
         # Step 4: Calculate accuracy check
         logger.info("Step 4: Checking accuracy against reference")
@@ -157,7 +156,6 @@ class VideoGenerationEvalsTest(BaseTest):
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
-            "concept_results": concept_results,
             # {prompt, video_path, job_id, ...} per clip, so the caller can keep them.
             "videos": videos_info,
             # Clips that came back the wrong shape (or unusable): not scored, kept
@@ -391,59 +389,6 @@ class VideoGenerationEvalsTest(BaseTest):
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
             return ""
-
-    def _score_concepts(
-        self, videos_info: list[dict], conditioning: list[dict] | None
-    ) -> dict | None:
-        """CLIP score of each pair's concepts, per clip; informational, never gates.
-
-        The prompt-level CLIP score says how well a clip matches its caption as a
-        whole; scoring "a bird feeder" and "a small bird" separately shows which
-        part of it the video loses. Adds ``concept_scores`` to each video entry.
-        """
-        concepts_by_image = {
-            pair["image"]: pair.get("concepts") or [] for pair in conditioning or []
-        }
-        if not any(concepts_by_image.values()):
-            return None
-        from .._test_common.video_quality_metrics import (
-            BatchedCLIPScorer,
-            clip_video_metrics,
-            sample_video_frames,
-        )
-
-        logger.info("Step 3b: Scoring each pair's concepts with CLIP")
-        try:
-            scorer = BatchedCLIPScorer()
-            scores = []
-            for video in videos_info:
-                concepts = concepts_by_image.get(video.get("image")) or []
-                if not concepts:
-                    continue
-                metrics = clip_video_metrics(
-                    scorer=scorer,
-                    sampled=sample_video_frames(Path(video["video_path"])),
-                    prompt=video["prompt"],
-                    required_concepts=concepts,
-                )
-                video["concept_scores"] = {
-                    concept: round(values["mean"], 2)
-                    for concept, values in metrics["concept_scores"].items()
-                }
-                for concept, score in video["concept_scores"].items():
-                    scores.append((score, concept, video["prompt"]))
-                    logger.info(f"  {score:6.2f}  {concept!r} in: {video['prompt']}")
-        except Exception as e:  # noqa: BLE001 - informational; must not fail the eval
-            logger.warning(f"Concept scoring skipped: {e}")
-            return None
-        if not scores:
-            return None
-        weakest = min(scores)
-        return {
-            "mean_concept_score": statistics.mean(score for score, _, _ in scores),
-            "min_concept_score": weakest[0],
-            "weakest_concept": f"{weakest[1]} ({weakest[2]})",
-        }
 
     def _calculate_video_clip_scores(
         self,
