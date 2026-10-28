@@ -31,7 +31,7 @@ I2V_EVAL_MANIFEST = (
 )
 I2V_EVAL_SUBSETS = ("dev", "ci", "all")
 I2V_EVAL_SUBSET_ENV = "I2V_EVAL_SUBSET"
-DEFAULT_I2V_EVAL_SUBSET = "dev"
+DEFAULT_I2V_EVAL_SUBSET = "ci"
 # What the benchmark and spec tests send; the eval sends each video's own.
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
