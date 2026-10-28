@@ -65,7 +65,7 @@ def test_active_manifest_and_handoff_exact_identities():
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
     if 'swe25' in m:
         assert c['evals'] == ['swe_bench_verified']
-        assert c['sample_count'] in (1, 25, 100)
+        assert c['sample_count'] in (1, 25, 50, 100)
         if c['sample_count'] == 1:
             expected_tasks = ['astropy__astropy-14309']
             assert c['max_concurrent'] == 1
@@ -79,9 +79,19 @@ def test_active_manifest_and_handoff_exact_identities():
             assert len(cohorts) == 5 and all(len(set(x)) == 100 for x in cohorts)
             assert len(set(sum(cohorts, []))) == 500
             assert set(sum(cohorts, [])) == set(m['swe500'])
-            expected_tasks = c['task_names']['swe_bench_verified']
-            assert expected_tasks in cohorts
-            assert c['max_concurrent'] == 16
+            if c['sample_count'] == 50:
+                partitions = [cohort[i:i+50] for cohort in cohorts for i in (0, 50)]
+                assert len(partitions) == 10
+                assert all(len(set(part)) == 50 for part in partitions)
+                assert len(set(sum(partitions, []))) == 500
+                assert set(sum(partitions[:2], [])) == set(m['swe100'])
+                expected_tasks = c['task_names']['swe_bench_verified']
+                assert expected_tasks in partitions
+                assert c['max_concurrent'] == 8
+            else:
+                expected_tasks = c['task_names']['swe_bench_verified']
+                assert expected_tasks in cohorts
+                assert c['max_concurrent'] == 16
             assert c['suite_timeout_sec'] == 45900
             assert c['suite_timeout_sec'] + 4500 == 840*60
         assert len(set(m['swe25'])) == 25
