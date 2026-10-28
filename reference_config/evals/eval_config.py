@@ -398,8 +398,9 @@ class EvalTask:
     # chat_template_kwargs over --default-chat-template-kwargs), so one server
     # can run thinking-on and thinking-off evals back to back. lm-eval tasks go
     # through llm_module/lm_eval_request_overrides.py; Harbor tasks get it as
-    # the agent's extra_body (see llm_module/request_overrides.py). Not
-    # supported for lmms-eval (vision/audio) tasks.
+    # the agent's extra_body (see llm_module/request_overrides.py); lmms-eval
+    # tasks on the openai_compatible client get it through the same wrapper
+    # (--harness lmms-eval, merged into the openai SDK's extra_body).
     request_body: Dict[str, Any] = field(default_factory=dict)
     # Convenience for the common case. None (default) leaves the model in the
     # serving entry's default thinking mode; True/False force it for this task
@@ -597,6 +598,35 @@ class EvalConfig:
 # Note: meta_math_hard for Llama 3.1 models has a bug: see https://github.com/tenstorrent/tt-inference-server/issues/155
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
+
+# Terminal-Bench 2.0 wave the Gemma 4 presets run: a seed-42 sample of 24 of the 89 tasks,
+# one wave of 24 concurrent trials under the runners' Docker address pools.
+GEMMA4_TERMINAL_BENCH_2_WAVE = [
+    "terminal-bench/build-cython-ext",
+    "terminal-bench/build-pmars",
+    "terminal-bench/code-from-image",
+    "terminal-bench/configure-git-webserver",
+    "terminal-bench/constraints-scheduling",
+    "terminal-bench/custom-memory-heap-crash",
+    "terminal-bench/feal-linear-cryptanalysis",
+    "terminal-bench/financial-document-processor",
+    "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/fix-git",
+    "terminal-bench/gcode-to-text",
+    "terminal-bench/headless-terminal",
+    "terminal-bench/nginx-request-logging",
+    "terminal-bench/openssl-selfsigned-cert",
+    "terminal-bench/path-tracing",
+    "terminal-bench/pypi-server",
+    "terminal-bench/query-optimize",
+    "terminal-bench/sam-cell-seg",
+    "terminal-bench/sparql-university",
+    "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/torch-pipeline-parallelism",
+    "terminal-bench/train-fasttext",
+    "terminal-bench/video-processing",
+    "terminal-bench/vulnerable-secret",
+]
 
 # LiveCodeBench "v6" window (contest_date >= 2025-02-01) as doc_ids of the
 # lm-eval livecodebench task (six code_generation_lite release files
@@ -11897,6 +11927,12 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-4-31B-it",
         tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run: GPQA Diamond in full (198), one 24-task Terminal-Bench 2 wave,
+            # the LiveCodeBench v6 window (131) and 865 MMMU-Pro questions. Both presets
+            # are the same sizes: no subset of GPQA judges accuracy against the published
+            # score (a 40-question slice scores below the set average on every model
+            # measured), and the other three are bounded by their own budgets.
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond (thinking mode).
                 # Model emits reasoning, then a final answer; the task's own
@@ -11921,18 +11957,6 @@ _eval_config_list = [
                     # channel that suppresses native reasoning.)
                     gpu_reference_score=83.33,
                     gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-16",
-                    # CI subset (--ci-mode -> ci-nightly limit 0.2 = doc_ids
-                    # 0-39). The full run scores only ~75% on these same 40
-                    # harder-than-average questions, and temp=1.0 adds ~+/-2.5
-                    # pts jitter, so compare against the subset measurement with
-                    # a looser 10% tolerance instead of the full-set 83.33.
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.00,
-                            ref="ci-nightly r1_gpqa_diamond (doc_ids 0-39), H100 gemma-4-31B-it, 2026-06-29",
-                            tolerance=0.10,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -11943,23 +11967,21 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false.
+                # and the per-request chat_template_kwargs below; client-side
+                # apply_chat_template on /v1/completions would render with the
+                # template's default enable_thinking=false.
                 use_chat_api=True,
                 # Both references are thinking mode. Request it per task rather
-                # than relying on the serving entry's default: a row that keeps
-                # upstream's thinking-off default (the quetzal row) would
-                # otherwise be graded in a different mode than its reference.
+                # than relying on the serving entry's default: every Gemma 4 eval
+                # pins its own mode per request (MMMU-Pro runs thinking off), so
+                # the server default never decides a graded mode.
                 thinking=True,
                 model_kwargs={
                     "max_length": 131072,
-                    # lm-eval default HTTP timeout is 1800s. Under
-                    # num_concurrent=32, non-terminating / near-max_gen
-                    # thinking gens share decode and hit that wall (~30min)
-                    # while seq1 finishes each sample in a few minutes.
-                    # Match other reasoning models (Kimi/MiniMax): allow 2h.
-                    "timeout": 7200,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (the 26B lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -11977,107 +11999,14 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # ci-nightly ~1 h per dataset: 0.2 = doc_ids 0-39, matching the
-                # calibrated CI_NIGHTLY reference score above. No CI_LONG entry = full set.
+                # Both presets run the full 198 questions (no preset entry).
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
-                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
-                # scored by the task's own answer extractor. Unlike bare
-                # n-shot GPQA, the few-shot examples demonstrate reasoning
-                # before the final answer, so they do not suppress thinking.
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=85.2,
-                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Match tt-agentic-bringup-qb2 run 33842850459 exactly: use the
-                # chat endpoint with server-side thinking and non-streaming
-                # responses for this 5-shot MMLU-Pro sweep.
-                use_chat_api=True,
-                # Thinking on per request, as for r1_gpqa_diamond above: the run
-                # this matches and the pending GPU reference both think, and a
-                # thinking-off serving default must not change the mode.
-                thinking=True,
-                model_kwargs={
-                    "max_length": 49152,
-                    "timeout": "3600",
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 8192,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
-                # subtask (an int multiplies by 14, a fraction scales each subtask).
-                # ci-nightly ~1 h: 0.07 ~= 842 questions (SE ~1.5 points; the 12B scores
-                # 0.995 of its published number on it). ci-long keeps the same subset: the full
-                # 12,032-question set is 17-28 h per device and the preset exists to run gpqa in
-                # full, which is the task whose 40-question subset cannot judge accuracy.
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.07,
-                    EvalLimitMode.CI_LONG: 0.07,
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-            ),
-            EvalTask(
-                # LiveCodeBench on the chat endpoint with server-side thinking
-                # (same sampling as r1_gpqa_diamond). Scored on the model card's
-                # "v6" window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); the
-                # 31B measured 78.6 on BLACKHOLE_GALAXY (2026-10-13, 24 min).
-                task_name="livecodebench",
-                priority="should",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    published_score=80.0,
-                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["acc,none"],
-                        "unit": "percent",
-                    },
-                ),
-                use_chat_api=True,
-                max_concurrent=64,
-                allow_code_execution=True,
-                model_kwargs={
-                    "max_length": 131072,
-                    "timeout": 7200,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 64 * 1024,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
-            ),
-            EvalTask(
                 task_name="terminal_bench_2",
-                priority="should",
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=39.33,
@@ -12103,7 +12032,7 @@ _eval_config_list = [
                     # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -12117,49 +12046,133 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
-                        # ci-long: one wave of 24 fixed tasks (seed-42 sample of the 89;
-                        # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
-                        EvalLimitMode.CI_LONG: [
-                            "terminal-bench/build-cython-ext",
-                            "terminal-bench/build-pmars",
-                            "terminal-bench/code-from-image",
-                            "terminal-bench/configure-git-webserver",
-                            "terminal-bench/constraints-scheduling",
-                            "terminal-bench/custom-memory-heap-crash",
-                            "terminal-bench/feal-linear-cryptanalysis",
-                            "terminal-bench/financial-document-processor",
-                            "terminal-bench/fix-code-vulnerability",
-                            "terminal-bench/fix-git",
-                            "terminal-bench/gcode-to-text",
-                            "terminal-bench/headless-terminal",
-                            "terminal-bench/nginx-request-logging",
-                            "terminal-bench/openssl-selfsigned-cert",
-                            "terminal-bench/path-tracing",
-                            "terminal-bench/pypi-server",
-                            "terminal-bench/query-optimize",
-                            "terminal-bench/sam-cell-seg",
-                            "terminal-bench/sparql-university",
-                            "terminal-bench/sqlite-db-truncate",
-                            "terminal-bench/torch-pipeline-parallelism",
-                            "terminal-bench/train-fasttext",
-                            "terminal-bench/video-processing",
-                            "terminal-bench/vulnerable-secret",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench on the chat endpoint with thinking on (same
+                # sampling as r1_gpqa_diamond). Scored on the model card's "v6"
+                # window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); the 31B
+                # measured 78.6 on BLACKHOLE_GALAXY in 24 min.
+                task_name="livecodebench",
+                # Gating: graded against the published score on the full v6 window (131).
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=80.0,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                thinking=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # MMMU-Pro, standard (10 options) split, chain-of-thought prompt ("think
+                # step by step", final line "Answer: X"): the image eval the Gemma 4 model
+                # card publishes. lmms-eval's mmmu_pro group would also run the 1,730-sample
+                # vision split (question rendered into the image), doubling the cost, so only
+                # the standard split runs; mmmu_acc is the overall accuracy over the 30 subjects.
+                # Stock lmms-eval openai_compatible client (as the other image evals), with
+                # thinking off per request (thinking=False below rides in every request's
+                # chat_template_kwargs through the request-overrides wrapper): the protocol
+                # of the GPU references, and the client drops an answer whose content is
+                # None, i.e. a thought that never closed. The client keeps up to 32 requests
+                # of a --batch_size chunk in flight and caps max_new_tokens at 4096.
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~12 points under the model card on this
+                # checkpoint on a GPU too (64.4 vs 76.9), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=76.9,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-31B-it served by vLLM 0.30.0 on an A100 80 GB: 64.39 (557/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=64.39,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-31B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=64.39,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-31B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points; ~35 min on
+                # the Galaxy at 128 requests in flight, about 4x that at the client's 32); no
+                # preset = the full 1,730. A 173-question slice cannot judge the published
+                # number (standard error ~3.4).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -12410,24 +12423,23 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run, sized as on the 31B: GPQA Diamond in full (198), one 24-task
+            # Terminal-Bench 2 wave, the LiveCodeBench v6 window (131) and 865 MMMU-Pro
+            # questions.
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond; scores
-                # exact_match,none.
-                # Published/GPU refs are official Gemma 4 model-card scores.
+                # exact_match,none. Published ref is the official Gemma 4
+                # model-card score.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     published_score=82.3,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    mode_reference_scores={
-                        # Release acceptance: at least 8 of the fixed 10-item
-                        # CI cohort must pass.
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.0,
-                            tolerance=0.0,
-                        ),
-                    },
+                    # Same protocol as this entry (pinned lm-eval fork r1_gpqa_diamond, full 198, thinking on,
+                    # T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16 checkpoint google/gemma-4-26B-A4B-it
+                    # served by vLLM 0.30.0 on an A100 80 GB: 80.81.
+                    gpu_reference_score=80.81,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval r1_gpqa_diamond (198), baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -12437,12 +12449,20 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the resolved model profile controls
-                # chat-template behavior.
+                # Use the chat endpoint so the server applies the chat template
+                # and the per-request chat_template_kwargs below.
                 use_chat_api=True,
+                # Both references are thinking-mode runs. The mode is pinned per profile
+                # through the catalog's eval_task_request_body_overrides (two implementations
+                # share this task): the tt-transformers entries pin thinking on, the dedicated
+                # gemma4_26b_a4b_qb2 profile pins it off. No task-level pin, so neither
+                # profile's override conflicts.
                 model_kwargs={
                     "max_length": 131072,
-                    "timeout": 7200,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (this model lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -12450,17 +12470,17 @@ _eval_config_list = [
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32 * 1024,
+                    # 124K like the 31B / 12B tasks (strictly below max_length): the 32K cap
+                    # truncated thinking traces on the full set, and a truncated trace scores 0.
+                    "max_gen_toks": 124 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Both presets run the full 198 questions (no preset entry), as on the 31B.
                 limit_samples_map={
-                    # Keep release CI bounded to the validated 10-question
-                    # subset rather than a fraction of the evolving dataset.
-                    EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -12474,19 +12494,13 @@ _eval_config_list = [
                         "min_count": 8,
                     },
                 },
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=14.0,
                     published_score_ref="https://arxiv.org/abs/2607.02770",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
-                    mode_reference_scores={
-                        # Release acceptance: at least 1 of the fixed 5 tasks.
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=20.0,
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -12495,17 +12509,20 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    # The server remains max_num_seqs=1; concurrent trials
-                    # overlap tool work and keep the device-fed portion serial.
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # QB2 agentic runners expose 16 host CPUs; a larger Docker
-                    # resource request fails before the agent can start.
+                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 5 h per task: the 3 h budget left 5 of the 24-task wave unfinished on the QB2
+                    # release run (shield 40142241727), which writes no score for an errored wave.
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -12519,25 +12536,18 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
-                        EvalLimitMode.CI_LONG: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
@@ -12545,249 +12555,21 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    mode_reference_scores={
-                        # Release acceptance: at least 1 of the fixed 5 issues.
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=20.0,
-                            tolerance=0.0,
-                        ),
-                    },
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=1,
-                    n_attempts=1,
-                    n_tasks=None,
-                    agent_timeout_sec=2 * 60 * 60,
-                    llm_timeout_sec=30 * 60,
-                    # Keep the task-isolated tools import dependencies complete.
-                    agent_env={
-                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt",
-                    },
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # Output cap left at the value the pre-Harbor runs used,
-                        # chosen so input + output (96K + 32K = 128K) fit
-                        # gemma-4's 131072 ctx.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            # SWE task images install the checked-out project
-                            # and dependencies in the testbed environment.
-                            "environment": {
-                                "env": {
-                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                                    "CONDA_DEFAULT_ENV": "testbed",
-                                }
-                            },
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            },
-                        },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "astropy__astropy-14096",
-                            "django__django-11299",
-                            "matplotlib__matplotlib-25332",
-                            "scikit-learn__scikit-learn-14629",
-                            "sympy__sympy-13551",
-                        ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
-                        EvalLimitMode.CI_LONG: [
-                            "astropy__astropy-14096",
-                            "django__django-11299",
-                            "matplotlib__matplotlib-25332",
-                            "scikit-learn__scikit-learn-14629",
-                            "sympy__sympy-13551",
-                        ],
-                    },
-                ),
-                request_body={
-                    "seed": 9472,
-                    "repetition_detection": {
-                        "min_pattern_size": 16,
-                        "max_pattern_size": 1024,
-                        "min_count": 8,
-                    },
-                },
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="google/gemma-4-12B-it",
-        tasks=[
-            EvalTask(
-                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
-                # note above). Thinking-mode GPQA; scores exact_match,none.
-                # Published/GPU refs are official Gemma 4 model-card scores.
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    # Official Gemma 4 model card / HF README (12B Unified).
-                    # gpu_reference left unset until an H100 full-set / CI-subset
-                    # measurement lands (CI_NIGHTLY is doc_ids 0-39, 40 samples).
-                    published_score=78.8,
-                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    # No H100 measurement for this model yet (#4090). The ci-nightly subset is
-                    # doc_ids 0-39, the same 40 questions the 31B runs; they score below the set
-                    # average on every model measured (31B: H100 80.0 on the subset vs 83.33 on the
-                    # full set). The TT run is deterministic for a fixed seed: three same-seed runs
-                    # of the release build on 2026-10-08 (one server at concurrency 32, four servers
-                    # at concurrency 50, and the on-dispatch CI run) all scored 26/40 with 39/40
-                    # byte-identical responses; on the full set 194/198 responses were identical
-                    # (147 vs 148 correct, 74.2-74.7 against the published 78.8, ratio 0.94). The
-                    # final sampler kernel (tt-metal #59759 db2fe08e193, low threshold digit from
-                    # tile element 2) re-rolls the streams and scores 27/40 on the subset and
-                    # 143/198 = 72.2 on the full set (one run each). So the subset number is a
-                    # stable regression reference, not a noisy estimate: gate it at 65.0 with a 5%
-                    # band, i.e. floor(40*0.65*0.95) = 24 of 40, two to three questions of slack.
-                    # Accuracy itself is proven on the full set (ci-long preset: no CI_LONG limit
-                    # on this task = all 198 questions).
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=65.0,
-                            ref="TT-measured deterministic seed-42 ci-nightly subset (doc_ids 0-39), release build 2026-10-08: 26/40 in three runs; H100 subset reference pending #4090",
-                            tolerance=0.05,
-                        ),
-                    },
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false and
-                # suppress native reasoning (see gemma-4-31B-it note above).
-                use_chat_api=True,
-                # Default concurrency (32), same as the 31B task. This was pinned
-                # to 1 on 2026-09-03 when the 12B KV pool was ~264k tokens and ten
-                # concurrent 32k thinking generations thrashed; the release
-                # entries now report a 638k-token pool on P300X2 (2.44x 256K, more
-                # than the 31B's 574k, which runs this task 32-wide in 12 min),
-                # while seq=1 took 2 h 46 min for the 40-item subset (tt-shield
-                # run 37565081726).
-                model_kwargs={
-                    "max_length": 131072,
-                    # Same as 31B: under num_concurrent=32, long thinking gens
-                    # exceed lm-eval's default 1800s HTTP timeout (prior QB2
-                    # ci-nightly lost 10/40 to TimeoutError). Allow 2h.
-                    "timeout": 7200,
-                },
-                # Thinking-mode sampling for published-score GPQA (model card 78.8).
-                # stream=false is REQUIRED: lm-eval's local-chat-completions
-                # streaming parser raises KeyError 'message' on every response.
-                gen_kwargs={
-                    "stream": "false",
-                    # 124K like the 31B task (strictly below max_length). The 32K cap was a
-                    # leftover from the single-request era: on the full 198-item set it cut
-                    # 7/198 thinking traces (3/198 after tt-metal #59759) and those items
-                    # scored 0; at 124K every trace terminates (147/198 on P300X2,
-                    # 2026-10-08) and the pool (786K tokens on P300X2) holds 32 x 124K
-                    # worst case with queueing rather than thrashing.
-                    "max_gen_toks": 124 * 1024,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                # Match gemma-4-31B-it: CI_NIGHTLY 0.2 = doc_ids 0-39 (40 samples; one
-                # question is 2.5 points). 0.05 was 10 samples, a 10-point step.
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
-                # scored by the task's own answer extractor. Unlike bare
-                # n-shot GPQA, the few-shot examples demonstrate reasoning
-                # before the final answer, so they do not suppress thinking.
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=77.2,
-                    published_score_ref="https://huggingface.co/google/gemma-4-12B-it",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Match 31B entry: use the
-                # chat endpoint with server-side thinking and non-streaming
-                # responses for this 5-shot MMLU-Pro sweep.
-                use_chat_api=True,
-                model_kwargs={
-                    "max_length": 49152,
-                    "timeout": "3600",
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    # 11% of the 12B answers were empty at 8192 (thinking never terminated; the 31B
-                    # loses 3.7% the same way), which is the whole gap to the model-card score.
-                    "max_gen_toks": 16384,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
-                # subtask (an int multiplies by 14, a fraction scales each subtask).
-                # ci-nightly ~1 h: 0.07 ~= 842 questions (SE ~1.5 points; the 12B scores
-                # 0.995 of its published number on it). ci-long keeps the same subset: the full
-                # 12,032-question set is 17-28 h per device and the preset exists to run gpqa in
-                # full, which is the task whose 40-question subset cannot judge accuracy.
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.07,
-                    EvalLimitMode.CI_LONG: 0.07,
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-            ),
-            EvalTask(
-                # LiveCodeBench on the chat endpoint with server-side thinking,
-                # scored on the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
+                # LiveCodeBench on the chat endpoint with thinking on (same
+                # sampling as r1_gpqa_diamond). Scored on the model card's "v6"
+                # window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); same task
+                # settings as the 31B entry.
                 task_name="livecodebench",
-                priority="should",
+                # Gating: graded against the published score on the full v6 window (131).
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=72.0,
+                    published_score=77.1,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (pinned lm-eval fork, livecodebench v6 window, the same 131
+                    # fixed problems, thinking on, T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16
+                    # checkpoint google/gemma-4-26B-A4B-it served by vLLM 0.30.0 on an A100 80 GB: 75.57.
+                    gpu_reference_score=75.57,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval livecodebench (131 fixed v6 problems), baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["acc,none"],
@@ -12795,6 +12577,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                thinking=True,
                 max_concurrent=64,
                 allow_code_execution=True,
                 model_kwargs={
@@ -12810,14 +12593,144 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
                 doc_ids=LIVECODEBENCH_V6_DOC_IDS,
             ),
             EvalTask(
+                # MMMU-Pro standard split, chain-of-thought prompt, on the stock lmms-eval
+                # openai_compatible client with thinking off per request: see the 31B entry
+                # for the protocol and the client's limits (32 requests in flight,
+                # max_new_tokens capped at 4096).
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~6 points under the model card on this
+                # checkpoint on a GPU too (67.5 vs 73.8), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=73.8,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-26B-A4B-it served by vLLM 0.30.0 on an A100 80 GB: 67.51 (584/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=67.51,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=67.51,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points); no preset =
+                # the full 1,730. A 173-question slice cannot judge the published number.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-12B-it",
+        tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run, sized as on the 31B: GPQA Diamond in full (198), one 24-task
+            # Terminal-Bench 2 wave, the LiveCodeBench v6 window (131) and 865 MMMU-Pro
+            # questions.
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above). Thinking-mode GPQA; scores exact_match,none.
+                # Published ref is the official Gemma 4 model-card score.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Official Gemma 4 model card / HF README (12B Unified).
+                    published_score=78.8,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Same protocol as this entry (pinned lm-eval fork r1_gpqa_diamond, full 198, thinking on,
+                    # T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16 checkpoint google/gemma-4-12B-it
+                    # served by vLLM 0.30.0 on an A100 80 GB: 74.24.
+                    gpu_reference_score=74.24,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval r1_gpqa_diamond (198), baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # and the per-request chat_template_kwargs below; client-side
+                # apply_chat_template on /v1/completions would render with the
+                # template's default enable_thinking=false and suppress native
+                # reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
+                # Thinking on per request (both references are thinking mode);
+                # every Gemma 4 eval pins its own mode per request.
+                thinking=True,
+                # Default concurrency (32), same as the 31B task: the release entries'
+                # KV pools hold 32 x 124K worst case with queueing rather than thrashing.
+                model_kwargs={
+                    "max_length": 131072,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (the 26B lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
+                },
+                # Thinking-mode sampling for published-score GPQA (model card 78.8).
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    # 124K like the 31B task (strictly below max_length): a 32K cap cut
+                    # 7/198 thinking traces on the full set and those items scored 0.
+                    "max_gen_toks": 124 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the full 198 questions (no preset entry), as on the 31B.
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
-                # Informational for the release entries: no H100 reference for either task and the
-                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
-                # reported, never a blocker.
-                priority="should",
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=18.0,
@@ -12834,17 +12747,17 @@ _eval_config_list = [
                     dataset="terminal-bench/terminal-bench-2",
                     dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    # Default Docker address pools allow ~31 compose networks per host.
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
-                    # limit above the host count ("range of CPUs is from 0.01 to 16.00"), which
-                    # failed all five trials at 32 on P300X2 (runs 37769777681, 37830840345)
-                    # while the Galaxy runner scored 4/5. 16 matches the other entries.
+                    # limit above the host count ("range of CPUs is from 0.01 to 16.00").
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -12858,45 +12771,18 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
-                        # ci-long: one wave of 24 fixed tasks (seed-42 sample of the 89;
-                        # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
-                        EvalLimitMode.CI_LONG: [
-                            "terminal-bench/build-cython-ext",
-                            "terminal-bench/build-pmars",
-                            "terminal-bench/code-from-image",
-                            "terminal-bench/configure-git-webserver",
-                            "terminal-bench/constraints-scheduling",
-                            "terminal-bench/custom-memory-heap-crash",
-                            "terminal-bench/feal-linear-cryptanalysis",
-                            "terminal-bench/financial-document-processor",
-                            "terminal-bench/fix-code-vulnerability",
-                            "terminal-bench/fix-git",
-                            "terminal-bench/gcode-to-text",
-                            "terminal-bench/headless-terminal",
-                            "terminal-bench/nginx-request-logging",
-                            "terminal-bench/openssl-selfsigned-cert",
-                            "terminal-bench/path-tracing",
-                            "terminal-bench/pypi-server",
-                            "terminal-bench/query-optimize",
-                            "terminal-bench/sam-cell-seg",
-                            "terminal-bench/sparql-university",
-                            "terminal-bench/sqlite-db-truncate",
-                            "terminal-bench/torch-pipeline-parallelism",
-                            "terminal-bench/train-fasttext",
-                            "terminal-bench/video-processing",
-                            "terminal-bench/vulnerable-secret",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
@@ -12904,67 +12790,106 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="swe_bench_verified",
-                # Informational for the release entries: no H100 reference for either task and the
-                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
-                # reported, never a blocker.
-                priority="should",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # LiveCodeBench on the chat endpoint with thinking on, scored on
+                # the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
+                task_name="livecodebench",
+                # Gating: graded against the published score on the full v6 window (131).
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=72.0,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (pinned lm-eval fork, livecodebench v6 window, the same 131
+                    # fixed problems, thinking on, T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16
+                    # checkpoint google/gemma-4-12B-it served by vLLM 0.30.0 on an A100 80 GB: 73.28.
+                    gpu_reference_score=73.28,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval livecodebench (131 fixed v6 problems), baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": ["acc,none"],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    # Default Docker address pools allow ~31 compose networks per host.
-                    n_concurrent_trials=24,
-                    n_attempts=1,
-                    n_tasks=None,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # Output cap left at the value the pre-Harbor runs used,
-                        # chosen so input + output (96K + 32K = 128K) fit
-                        # gemma-4's 131072 ctx.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
+                use_chat_api=True,
+                thinking=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # MMMU-Pro standard split, chain-of-thought prompt, on the stock lmms-eval
+                # openai_compatible client with thinking off per request: see the 31B entry
+                # for the protocol and the client's limits (32 requests in flight,
+                # max_new_tokens capped at 4096).
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~8 points under the model card on this
+                # checkpoint on a GPU too (61.9 vs 69.1), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=69.1,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-12B-it served by vLLM 0.30.0 on an A100 80 GB: 61.85 (535/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=61.85,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=61.85,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
                     },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
                         ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
-                        EvalLimitMode.CI_LONG: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
-                        ],
+                        "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points); no preset =
+                # the full 1,730. A 173-question slice cannot judge the published number.
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],

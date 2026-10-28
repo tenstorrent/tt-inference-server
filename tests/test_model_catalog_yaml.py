@@ -577,3 +577,33 @@ def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
     assert {"FL2VA/*", "Ref2VA/*", f"{skipped}/*"} <= set(excludes)
     assert f"{served}/*" not in excludes
     assert f"{served}/config.json" in spec.metadata["hf_required_globs"]
+
+
+def test_device_profile_can_narrow_the_template_modalities():
+    """``supported_modalities`` is template-wide; a device block that serves the
+    text model only narrows it for that profile, the others keep the template's."""
+    template = _build_template(
+        {
+            "weights": ["google/gemma-4-31B-it"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "supported_modalities": ["text", "image", "video"],
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "supported_modalities": ["text"],
+                },
+                {"device": "N300", "max_concurrency": 32, "max_context": 32768},
+            ],
+        },
+        "dev",
+    )
+    specs = {s.device_type: s for s in template.expand_to_specs()}
+    assert specs[DeviceTypes.N150].supported_modalities == ["text"]
+    assert specs[DeviceTypes.N300].supported_modalities == ["text", "image", "video"]
+    # The narrowing survives the JSON round trip the runtime reads the spec from.
+    assert specs[DeviceTypes.N150].get_serialized_dict()["supported_modalities"] == [
+        "text"
+    ]
