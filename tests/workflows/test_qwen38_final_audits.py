@@ -66,13 +66,13 @@ def test_wrong_host_rejected():
     with pytest.raises(ValueError):m.validate_plan(plan(),'120-qb2-p04t05')
 
 
-@pytest.mark.parametrize('image',[m.OVERLAY_IMAGE,m.MASKED_OVERLAY_IMAGE,m.FLAT_OVERLAY_IMAGE])
+@pytest.mark.parametrize('image',[m.OVERLAY_IMAGE,m.MASKED_OVERLAY_IMAGE,m.FLAT_OVERLAY_IMAGE,m.B32_BOUNDED_OVERLAY_IMAGE])
 def test_published_exact_overlay_attribution_accepted(image):
     p={**plan(),'image':image}
     assert m.validate_plan(p,p['runner_name'],expected_owner=p['source_owner'])==p
 
 
-@pytest.mark.parametrize('image',[m.OVERLAY_IMAGE,m.MASKED_OVERLAY_IMAGE,m.FLAT_OVERLAY_IMAGE])
+@pytest.mark.parametrize('image',[m.OVERLAY_IMAGE,m.MASKED_OVERLAY_IMAGE,m.FLAT_OVERLAY_IMAGE,m.B32_BOUNDED_OVERLAY_IMAGE])
 def test_other_overlay_digest_still_rejected(image):
     p={**plan(),'image':image[:-1]+'0'}
     with pytest.raises(ValueError,match='unexpected immutable image'):

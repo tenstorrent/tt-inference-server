@@ -1,9 +1,16 @@
 # Prepared Terminal-Bench 2.1 seeded8
 
-Not dispatched. Hold until local combined B32 state/logit correctness and the
-original one-task smoke40687173740 qualify their separate scopes. The local
-fixture uses physical1024 prefill chunks; only the CI smoke exercises actual
-p2048 shared-pool/scheduler geometry. The first TB2.1
+Ready for one CI dispatch after both independent gates passed. The first
+p2048 smoke40687173740 failed during1024-chunk warmup before agents (OOM),
+so it qualifies no task result. Metal126fde8d56bcb53853858f673a0199a5d585acc4
+bounds physical prefill chunks to512 while retaining logical p2048 checkpoints
+and native262144 context. Its immutable source-overlay image digest is
+0611f1029baae3c347440a84f511ec8d156b1d3cb953e0471324910e8b17388d.
+Local all64/B32/512 state/logit/continuation checks passed with all27 source
+hashes matching. Actual-pool smoke40691014802 passed its original Astropy task,
+10HTTP tool calls,4 captures,512 physical chunks and771 scheduler IDs. These
+are separate correctness and real-pool-fit gates; neither is a TB accuracy
+measurement. The first TB2.1
 harness pilot40685950043 passed both short tasks, all8 original verifier tests,
 and11/11 exact whole-turn prefix continuations on B32/p256. It generated6261
 tokens without cap/timeout; this is not population accuracy.
