@@ -37,7 +37,7 @@ DEFAULT_I2V_EVAL_SUBSET = "ci"
 # Pairs per set; the validation set's count depends on the subset.
 I2V_EVAL_PAIR_SETS = {"coco_i2v": 5, "vbench_i2v": 15, VALIDATION_PAIR_SET: None}
 I2V_EVAL_PAIRS_ENV = "I2V_EVAL_PAIRS"
-DEFAULT_I2V_EVAL_PAIRS = "coco_i2v"
+DEFAULT_I2V_EVAL_PAIRS = "vbench_i2v_50:dev"
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 # Wan2.2's sample_neg_prompt (wan/configs/shared_config.py): the API spec's
