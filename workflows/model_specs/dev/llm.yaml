@@ -521,6 +521,7 @@ templates:
         V41_DECODE_HOST_INPUTS: "one"
         V41_DECODE_REPLAY_SYNC: "0"
         V41_DECODE_C1_SELECT: "persist"
+        V41_DECODE_C1_FFN: "matvec"
         # The mHC Sinkhorn lane-wise on the SFPU: the
         # op 52 -> 18.5 us, twice a layer; comb nearer the reference.
         V41_MHC_SINKHORN_SFPU: "1"
