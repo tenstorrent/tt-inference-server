@@ -39,6 +39,114 @@ def _apply_profile_request_body_overrides(tasks: list, model_spec) -> list:
     ]
 
 
+_SCORE_OVERRIDE_KEYS = frozenset(
+    {"gpu_reference_score", "gpu_reference_score_ref", "mode_reference_scores"}
+)
+_MODE_REFERENCE_KEYS = frozenset({"score", "ref", "tolerance"})
+
+
+def _limit_mode_key(name, where):
+    try:
+        return EvalLimitMode.from_string(str(name))
+    except ValueError as exc:
+        raise ValueError(f"{where}: {exc}") from exc
+
+
+def _apply_profile_score_overrides(tasks: list, model_spec) -> list:
+    """Apply the eval gates owned by the resolved model profile.
+
+    Two implementations of one checkpoint share the model's eval tasks, so a
+    gate that is right for one profile lives in that profile's catalog
+    metadata rather than on the task:
+
+    - ``eval_task_score_overrides`` (per task name): ``gpu_reference_score``
+      and ``gpu_reference_score_ref`` replace the task's full-set reference;
+      ``mode_reference_scores`` ({mode name: {score, ref, tolerance}}) is
+      merged per mode into the task's subset references (a null entry removes
+      that mode's reference).
+    - ``eval_task_limit_samples_overrides`` (per task name): {mode name: limit}
+      merged per mode into the task's ``limit_samples_map`` (a null entry
+      removes that mode's cap).
+
+    Mode names resolve through ``EvalLimitMode.from_string`` (``ci_nightly``,
+    ``CI-NIGHTLY``). An unknown key or mode raises ValueError naming it, so a
+    typo cannot silently leave a profile on the shared gate. Task names the
+    model does not configure, or that this run filtered out (an agentic task,
+    an image task on a text-only profile), are left alone, as for the
+    request-body overrides.
+    """
+    metadata = getattr(model_spec, "metadata", None) or {}
+    score_overrides = metadata.get("eval_task_score_overrides") or {}
+    limit_overrides = metadata.get("eval_task_limit_samples_overrides") or {}
+    if not score_overrides and not limit_overrides:
+        return tasks
+    from reference_config.evals.eval_config import ModeReferenceScore
+
+    profile = getattr(model_spec, "model_name", "profile")
+    out = []
+    for task in tasks:
+        fields = {}
+        override = score_overrides.get(task.task_name)
+        if override is not None:
+            where = f"eval_task_score_overrides[{task.task_name}] of {profile}"
+            unknown = sorted(set(override) - _SCORE_OVERRIDE_KEYS)
+            if unknown:
+                raise ValueError(
+                    f"{where}: unknown key(s) {unknown}; allowed keys are "
+                    f"{sorted(_SCORE_OVERRIDE_KEYS)}"
+                )
+            if task.score is None:
+                raise ValueError(f"{where}: the task carries no score to override")
+            score_fields = {
+                key: override[key]
+                for key in ("gpu_reference_score", "gpu_reference_score_ref")
+                if key in override
+            }
+            if "mode_reference_scores" in override:
+                modes = dict(task.score.mode_reference_scores or {})
+                for name, entry in (override["mode_reference_scores"] or {}).items():
+                    mode = _limit_mode_key(name, where)
+                    if entry is None:
+                        modes.pop(mode, None)
+                        continue
+                    bad = sorted(set(entry) - _MODE_REFERENCE_KEYS)
+                    if bad or "score" not in entry:
+                        raise ValueError(
+                            f"{where}: mode_reference_scores[{name}] needs 'score' "
+                            f"and allows {sorted(_MODE_REFERENCE_KEYS)}; got "
+                            f"{sorted(entry)}"
+                        )
+                    tolerance = entry.get("tolerance")
+                    modes[mode] = ModeReferenceScore(
+                        score=float(entry["score"]),
+                        ref=str(entry.get("ref") or ""),
+                        tolerance=None if tolerance is None else float(tolerance),
+                    )
+                score_fields["mode_reference_scores"] = modes
+            fields["score"] = replace(task.score, **score_fields)
+        limits = limit_overrides.get(task.task_name)
+        if limits is not None:
+            where = f"eval_task_limit_samples_overrides[{task.task_name}] of {profile}"
+            limit_map = dict(task.limit_samples_map or {})
+            for name, limit in limits.items():
+                mode = _limit_mode_key(name, where)
+                if limit is None:
+                    limit_map.pop(mode, None)
+                    continue
+                if (
+                    isinstance(limit, bool)
+                    or not isinstance(limit, (int, float))
+                    or limit <= 0
+                ):
+                    raise ValueError(
+                        f"{where}: the limit for {name} must be a positive number, got {limit!r}"
+                    )
+                limit_map[mode] = limit
+            fields["limit_samples_map"] = limit_map
+        out.append(replace(task, **fields) if fields else task)
+    return out
+
+
 def eval_task_names(runtime_config):
     """Task names selected by --eval-tasks, or None (all tasks)."""
     raw = getattr(runtime_config, "eval_tasks", None)
@@ -113,10 +221,10 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
 
     Looks the model up in the registered target pack by ``model_name``, drops
     non-standard (agentic/media) task venvs, applies per-device tier-2/3
-    overrides when ``device`` is given, then applies --eval-samples /
-    smoke-test selection. Returns ``[]`` when the model has no standard eval
-    tasks so the caller can no-op cleanly (e.g. a model with only agentic
-    evals).
+    overrides when ``device`` is given and the profile's own request-body and
+    eval-gate overrides, then applies --eval-samples / smoke-test selection.
+    Returns ``[]`` when the model has no standard eval tasks so the caller can
+    no-op cleanly (e.g. a model with only agentic evals).
     """
     from workflow_module.target_pack import get_target_pack
 
@@ -165,6 +273,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
     standard = _apply_profile_request_body_overrides(standard, model_spec)
+    standard = _apply_profile_score_overrides(standard, model_spec)
 
     return _select_tasks(standard, runtime_config)
 

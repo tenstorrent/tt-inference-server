@@ -1019,6 +1019,24 @@ templates:
         r1_gpqa_diamond:
           chat_template_kwargs:
             enable_thinking: false
+      # This profile's own GPQA gate, carried over from main: its thinking-off path was
+      # calibrated on the fixed 10-question ci-nightly cohort, not on the thinking-on
+      # full-set GPU reference the shared task carries for the tt-transformers profiles.
+      # No full-set GPU reference (an unrestricted run grades against the published 82.3
+      # at the task tolerance); ci-nightly runs 10 questions against 80.0 at tolerance 0
+      # (at least 8 of 10 pass).
+      eval_task_score_overrides:
+        r1_gpqa_diamond:
+          gpu_reference_score: null
+          gpu_reference_score_ref: null
+          mode_reference_scores:
+            ci_nightly:
+              score: 80.0
+              tolerance: 0.0
+              ref: "fixed 10-question CI cohort, thinking off (this profile's validated path)"
+      eval_task_limit_samples_overrides:
+        r1_gpqa_diamond:
+          ci_nightly: 10
 
 - weights:
     - google/gemma-4-12B-it
@@ -1282,6 +1300,13 @@ templates:
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
   status: EXPERIMENTAL
+  # The GPU reference profile serves every modality the checkpoint has (the stock vLLM
+  # server), so its eval set includes MMMU-Pro like the Blackhole QB2 / Galaxy blocks.
+  supported_modalities:
+    - text
+    - image
+    - video
+    - audio
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1

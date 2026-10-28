@@ -79,3 +79,40 @@ def test_image_eval_tasks_run_only_where_the_profile_serves_images(monkeypatch):
     assert [t.task_name for t in text_only] == ["gpqa"]
     with_images = get_llm_eval_tasks(_spec(["text", "image"]), _rc(None))
     assert [t.task_name for t in with_images] == ["gpqa", "mmmu_pro"]
+
+
+def test_gemma4_12b_gpu_profile_runs_the_image_eval(monkeypatch):
+    """The 12B GPU reference profile serves every modality of the checkpoint, so
+    MMMU-Pro is in its eval set and --eval-tasks can select it (a text-only profile
+    would make that name an error)."""
+    from reference_config.evals.eval_config import _eval_config_map
+    from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
+    from workflows.utils import get_repo_root_path
+    import workflow_module.target_pack as target_pack
+
+    # The catalog's eval configs, independent of which MODEL_SPECS catalog is active.
+    monkeypatch.setattr(
+        target_pack,
+        "get_target_pack",
+        lambda: SimpleNamespace(
+            eval_config=lambda repo: _eval_config_map.get(repo),
+            resolve_eval_task_for_device=lambda t, device: t,
+        ),
+    )
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    specs = [
+        spec
+        for template in templates
+        if template.weights == ["google/gemma-4-12B-it"]
+        for spec in template.expand_to_specs()
+    ]
+    gpu = resolve_model_spec(
+        specs, model="google/gemma-4-12B-it", device="gpu", catalog_name="Shield"
+    )
+    assert gpu.supported_modalities == ["text", "image", "video", "audio"]
+    names = [t.task_name for t in get_llm_eval_tasks(gpu, _rc(None))]
+    assert "mmmu_pro_standard_cot" in names
+    selected = get_llm_eval_tasks(gpu, _rc("mmmu_pro_standard_cot"))
+    assert [t.task_name for t in selected] == ["mmmu_pro_standard_cot"]

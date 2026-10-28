@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from llm_module.benchmark_configs import get_llm_configs
-from llm_module.eval_configs import _apply_profile_request_body_overrides
+from llm_module.eval_configs import (
+    _apply_profile_request_body_overrides,
+    _apply_profile_score_overrides,
+)
 from reference_config.evals.eval_config import (
     _eval_config_map,
     accept_eval_score,
@@ -115,6 +118,22 @@ def test_gemma4_26b_release_eval_cohort():
     assert gpqa.score.gpu_reference_score == 80.81
     reference = resolve_eval_reference(gpqa.score, EvalLimitMode.CI_NIGHTLY)
     assert reference["is_subset_reference"] is False
+    # The dedicated QB2 profile grades it on its own thinking-off gate instead (the
+    # profile's eval gate override): the fixed 10-question ci-nightly cohort against 80.0.
+    dedicated = resolve_model_spec(
+        _gemma4_26b_specs(),
+        model="google/gemma-4-26B-A4B-it",
+        device="p300x2",
+        impl="gemma4-26b-a4b-qb2",
+        catalog_name="Shield",
+    )
+    dedicated_gpqa = _apply_profile_score_overrides([gpqa], dedicated)[0]
+    assert dedicated_gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    dedicated_reference = resolve_eval_reference(
+        dedicated_gpqa.score, EvalLimitMode.CI_NIGHTLY
+    )
+    assert dedicated_reference["reference_score"] == 80.0
+    assert dedicated_reference["is_subset_reference"] is True
 
     terminal = terminal_task.agentic_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 24
