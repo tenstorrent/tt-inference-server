@@ -300,12 +300,13 @@ def calculate_vision_tokens(
 
     model_name_lower = model_name.lower()
 
-    # Gemma-4 models: fixed 280 soft tokens per image (processor image_seq_length / max_soft_tokens)
-    if "gemma-4" in model_name_lower:
-        tokens_per_image = 280
     # Gemma-3 models: Fixed 256 tokens per image
-    elif "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
+    if "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
         tokens_per_image = 256
+    # Gemma-4 models (gemma-4-31B-it / -12B-it / -26B-A4B-it): fixed 280 soft tokens per image
+    # (processor image_seq_length / max_soft_tokens). The hyphen keeps medgemma-4b-it on its rule.
+    elif "gemma-4-" in model_name_lower:
+        tokens_per_image = 280
     # Qwen2.5-VL models
     elif "qwen2.5-vl" in model_name_lower or "qwen2-5-vl" in model_name_lower:
         tokens_per_image = (image_height // 28) * (image_width // 28)
