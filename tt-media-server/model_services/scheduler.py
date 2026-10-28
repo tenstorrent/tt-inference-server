@@ -663,6 +663,16 @@ class Scheduler:
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
+            # Every finished request puts its task_id on cancel_queue
+            # (base_service._teardown_task), but only the dynamic-batch worker
+            # reads it. With the serial worker the pipe fills after ~1000
+            # requests, its feeder thread blocks, and join_thread() below never
+            # returns. Pending cancel signals are moot once the workers are gone.
+            try:
+                self.cancel_queue.cancel_join_thread()
+            except Exception:
+                pass
+
             # Close all worker queues
             self._close_queues(
                 [

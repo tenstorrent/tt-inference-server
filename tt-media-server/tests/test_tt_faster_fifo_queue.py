@@ -308,5 +308,16 @@ class TestTTFasterFifoQueuePerformance:
         assert sorted(ids) == list(range(50))
 
 
+class TestTTFasterFifoQueueClose:
+    """Scheduler.stop_workers calls close() and join_thread() on every worker queue."""
+
+    def test_close_and_join_thread(self):
+        queue = TTFasterFifoQueue()
+        queue.put("item")
+        queue.close()
+        queue.join_thread()
+        assert queue._queue.is_closed()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

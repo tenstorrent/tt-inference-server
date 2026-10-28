@@ -527,6 +527,23 @@ class TestScheduler:
         mock_logger.info.assert_any_call("Trying deep restart of all workers")
         mock_deep_restart.assert_called_once()
 
+    def test_stop_workers_with_undrained_cancel_queue_returns(self, scheduler):
+        """Only the dynamic-batch worker reads cancel_queue, so with the serial
+        worker it fills up (one task_id per finished request). stop_workers must
+        not block in cancel_queue.join_thread() on the stuck feeder thread."""
+        cancel_queue = Queue()
+        for i in range(5000):  # well past the pipe's buffer
+            cancel_queue.put(f"task-{i:06d}", block=False)
+        scheduler.cancel_queue = cancel_queue
+        scheduler.worker_info = {}
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+
+        stopper = threading.Thread(target=scheduler.stop_workers, daemon=True)
+        stopper.start()
+        stopper.join(timeout=10.0)
+
+        assert not stopper.is_alive(), "stop_workers hung on cancel_queue"
+
     def test_stop_workers(self, scheduler):
         """Test stop_workers method"""
         # Setup

@@ -59,6 +59,14 @@ class TTFasterFifoQueue(TTQueueInterface):
         """Non-blocking get."""
         return self._queue.get(block=False)
 
+    def close(self):
+        """Close the queue (Scheduler.stop_workers closes every worker queue)."""
+        self._queue.close()
+
+    def join_thread(self):
+        """Same call as multiprocessing.Queue.join_thread, delegated to faster-fifo."""
+        self._queue.join_thread()
+
     def get_many(
         self,
         max_messages_to_get: int = 100,
