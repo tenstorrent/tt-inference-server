@@ -3248,8 +3248,10 @@ templates:
       # replica; c=16 is the measured point (~1000 tok/s, TPOT ~13 ms).
       max_concurrency: 16
       # Full 1M window: LongBench v2 sends up to 900K-token prompts. Each lane's
-      # KV pool is capped by MIMO_KV_GB_PER_CHIP (6.6 GB below -> 2 x 1M tokens),
-      # so a lane holds two 1M requests or several shorter ones, not four 1M requests.
+      # KV pool is capped by MIMO_KV_GB_PER_CHIP. The global KV pair split
+      # (MIMO_KV_PAIR_SPLIT=1, the tt-metal default; tt-metal #62679 / #62724)
+      # halves each chip's global KV, so at 6.7 GB a lane holds 4,202,656 tokens:
+      # four 1M requests, so all 16 users fit at 1M.
       # Above 128K the decode RoPE comes from the host instead of device tables.
       max_context: 1048576  # 1024 * 1024
       default_impl: true
@@ -3259,8 +3261,10 @@ templates:
       env_vars:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-        # 2 x 1M requests per lane, sized in tt-metal #61745, so 1M x 8 runs concurrently.
-        MIMO_KV_GB_PER_CHIP: 6.6
+        # 4 x 1M requests per lane with the global KV pair split (tt-metal #62679 / #62724),
+        # so 1M x 16 runs concurrently. 6.7 is tt-metal's pair-split default; 6.6 holds
+        # only ~3.95 x 1M per lane. The image must include the pair split (tt-metal mimo-v2.6/dev).
+        MIMO_KV_GB_PER_CHIP: 6.7
       override_tt_config:
         trace_mode: decode_only
         trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
