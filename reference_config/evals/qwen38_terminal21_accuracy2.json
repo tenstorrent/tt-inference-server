@@ -1,0 +1,13 @@
+{
+  "dataset": "terminal-bench/terminal-bench-2-1",
+  "ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+  "population": 89,
+  "tasks": {
+    "terminal-bench/fix-git": {
+      "content_hash": "16948b980df9d96de616a205f5acca1c5d395de83ff4f8ffabcafacb93226f2e"
+    },
+    "terminal-bench/openssl-selfsigned-cert": {
+      "content_hash": "d4afa2bd2a9ba1420db8d6cfde42ffdb4873ae2d955c35014e8da94444c83302"
+    }
+  }
+}

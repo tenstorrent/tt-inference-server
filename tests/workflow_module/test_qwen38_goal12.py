@@ -63,6 +63,19 @@ def test_active_manifest_and_handoff_exact_identities():
     payload = manifest_path.read_bytes()
     m = json.loads(payload)
     assert hashlib.sha256(payload).hexdigest() == c['selection_manifest_sha256']
+    if m.get('dataset') == 'terminal-bench/terminal-bench-2-1':
+        assert c['evals'] == ['terminal_bench_2_1']
+        assert c['sample_count'] == len(m['tasks']) == 2
+        assert c['terminal_interleaved_thinking'] is True
+        assert c['terminal_preserve_thinking'] is True
+        task = EVAL_CONFIGS[MODEL].tasks[0]
+        agent = task.agentic_eval_config
+        assert agent.dataset == m['dataset']
+        assert agent.dataset_ref == m['ref']
+        assert agent.agent_kwargs['interleaved_thinking'] is True
+        assert agent.agent_kwargs['llm_kwargs']['extra_body']['chat_template_kwargs']['preserve_thinking'] is True
+        assert set(c['task_names']['terminal_bench_2_1']) == set(m['tasks'])
+        return
     if 'swe25' in m:
         assert c['evals'] == ['swe_bench_verified']
         assert c['sample_count'] in (1, 25, 32, 50, 100)

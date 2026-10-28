@@ -46,6 +46,9 @@ def configure(config, limit_mode):
             kwargs = copy.deepcopy(cfg.agent_kwargs)
             if cfg.agent == "terminus-2":
                 kwargs["session_id_headers"] = ["X-Session-ID"]
+                kwargs["interleaved_thinking"] = c.get("terminal_interleaved_thinking", False)
+                template = kwargs["llm_kwargs"].setdefault("extra_body", {}).setdefault("chat_template_kwargs", {})
+                template["preserve_thinking"] = c.get("terminal_preserve_thinking", True)
                 kwargs["model_info"]["max_output_tokens"] = c["output_tokens"]
                 kwargs["llm_kwargs"].update(seed=c["seed"], max_tokens=c["output_tokens"], timeout=c["llm_timeout_sec"])
             else:

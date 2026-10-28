@@ -53,12 +53,13 @@ class AgenticAuditMiddleware:
                 logging.getLogger(__name__).error("Goal12 audit writes failed; request evidence unavailable")
 
     def evict(self, now):
-        for key, (_, stamp) in list(self.sessions.items()):
+        for key, state in list(self.sessions.items()):
+            stamp = state[1]
             if now - stamp > self.ttl_s:
                 self.stored_tokens -= len(self.sessions.pop(key)[0])
                 self.evictions += 1
 
-    def remember(self, key, ids, now):
+    def remember(self, key, ids, now, prompt_length=None):
         old = self.sessions.pop(key, None)
         if old:
             self.stored_tokens -= len(old[0])
@@ -67,7 +68,7 @@ class AgenticAuditMiddleware:
         while self.sessions and (len(self.sessions) >= self.max_sessions or self.stored_tokens + len(ids) > self.max_tokens):
             self.stored_tokens -= len(self.sessions.popitem(last=False)[1][0])
             self.evictions += 1
-        self.sessions[key] = (array("I", ids), now)
+        self.sessions[key] = (array("I", ids), now, len(ids) if prompt_length is None else prompt_length)
         self.stored_tokens += len(ids)
         return True
 
@@ -225,8 +226,19 @@ class AgenticAuditMiddleware:
                     if a != b:
                         break
                     length += 1
-                record.update(previous_sent_prompt_tokens=len(prior), previous_prompt_lcp_tokens=length,
+                record.update(previous_sent_prompt_tokens=previous[2], previous_prompt_lcp_tokens=min(length, previous[2]),
+                              previous_prompt_plus_completion_tokens=len(prior), previous_turn_lcp_tokens=length,
+                              previous_generated_tokens=len(prior)-previous[2],
                               previous_turn_away_s=max(0, started - previous[1]))
             else:
                 record["prefix_missing_reason"] = "first observed session turn or audit-state eviction"
-            record["prefix_state_saved"] = self.remember(session, ids, time.monotonic())
+            choices = response.get("choices") or []
+            generated = choices[0].get("token_ids") if len(choices) == 1 and isinstance(choices[0], dict) else None
+            valid_generated = isinstance(generated, list) and all(type(t) is int and 0 <= t < 2**32 for t in generated)
+            if valid_generated and len(generated) == record["completion_tokens"]:
+                record["generated_ids_count"] = len(generated)
+                record["generated_ids_sha256"] = hashlib.sha256(array("I", generated).tobytes()).hexdigest()
+                record["prefix_state_saved"] = self.remember(session, ids + generated, time.monotonic(), len(ids))
+            else:
+                record["generated_prefix_missing_reason"] = "single-choice generated token IDs absent or disagree with usage"
+                record["prefix_state_saved"] = self.remember(session, ids, time.monotonic())
