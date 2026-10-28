@@ -96,7 +96,7 @@ class AuditTests(unittest.IsolatedAsyncioTestCase):
         await self.request(session="one")
         self.assertNotIn("previous_prompt_lcp_tokens", self.ends()[-1])
         self.assertEqual(len(self.audit.sessions), 1)
-        self.assertEqual(self.audit.stored_tokens, 3)
+        self.assertEqual(self.audit.stored_tokens, 4)
         self.assertEqual(self.audit.evictions, 2)
 
     async def test_streaming_passes_through_without_injection(self):

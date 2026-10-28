@@ -62,6 +62,33 @@ class SessionStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.last()['previous_prompt_lcp_tokens'],4)
         self.assertEqual(self.audit.stored_tokens,5)
 
+    def test_whole_turn_lcp_preserves_original_prompt_metric(self):
+        record = {}
+        response = {'prompt_token_ids': [1,2,3], 'usage': {'prompt_tokens':3, 'completion_tokens':2},
+                    'choices':[{'token_ids':[4,5]}]}
+        self.audit.observe(response, 'session', 0, False, record)
+        self.assertEqual(self.audit.stored_tokens, 5)
+        record = {}
+        response['prompt_token_ids'] = [1,2,3,4,5,6]
+        response['usage']['prompt_tokens'] = 6
+        self.audit.observe(response, 'session', 0, False, record)
+        self.assertEqual(record['previous_prompt_lcp_tokens'], 3)
+        self.assertEqual(record['previous_turn_lcp_tokens'], 5)
+        self.assertEqual(record['previous_prompt_plus_completion_tokens'], 5)
+        self.assertEqual(record['previous_generated_tokens'], 2)
+        self.assertEqual(self.audit.stored_tokens, 8)
+        self.audit.forget('session')
+        self.assertEqual(self.audit.stored_tokens, 0)
+
+    def test_whole_turn_ids_share_existing_memory_bound(self):
+        self.audit.max_tokens = 4
+        record = {}
+        self.audit.observe({'prompt_token_ids':[1,2,3],
+                            'usage':{'prompt_tokens':3,'completion_tokens':2},
+                            'choices':[{'token_ids':[4,5]}]}, 'session', 0, False, record)
+        self.assertFalse(record['prefix_state_saved'])
+        self.assertEqual(self.audit.stored_tokens, 0)
+
     async def test_missing_metadata_invalidates_and_recovers(self):
         for mode in ('missing_body','missing_ids','mismatched_count','invalid_json'):
             with self.subTest(mode=mode):
