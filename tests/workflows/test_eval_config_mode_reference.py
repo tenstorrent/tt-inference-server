@@ -19,6 +19,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from llm_module.eval_configs import _apply_profile_request_body_overrides
 from llm_module.eval_command import build_eval_command
+from reference_config.evals.eval_utils import score_task_single_key
+from test_module._test_common import ReportCheckTypes
+from test_module.llm_tests import llm_eval_tests
 from reference_config.evals.eval_config import (
     EvalTaskScore,
     ModeReferenceScore,
@@ -296,12 +299,19 @@ def test_gemma4_12b_fleurs_is_the_audio_gate_scored_as_100_minus_wer():
     assert EvalLimitMode.CI_LONG not in fleurs.limit_samples_map
     assert not fleurs.score.mode_reference_scores
     assert fleurs.score.published_score == 100 - 6.9
-    score = fleurs.score.score_func(
+    # The gate inverts a "WER"-unit task itself (100 - WER), so the task returns the
+    # raw key: graded through the harness, a 6.35 WER scores 93.65 and passes.
+    assert fleurs.score.score_func is score_task_single_key
+    assert fleurs.score.score_func_kwargs["unit"] == "WER"
+    score, ratio_to_published, _, check, _ = llm_eval_tests._grade_one(
+        fleurs,
         {"fleurs_en": {"wer,none": 6.35}},
-        task_name="fleurs_en",
-        kwargs=fleurs.score.score_func_kwargs,
+        "fleurs_en",
+        {"reference_score": None, "tolerance": 0.05},
+        n_total=647,
     )
     assert score == 100 - 6.35
+    assert ratio_to_published > 1.0 and check == ReportCheckTypes.PASS
     # Other release models do not serve audio and carry no audio task.
     for model in ("google/gemma-4-31B-it", "google/gemma-4-26B-A4B-it"):
         assert "fleurs_en" not in {t.task_name for t in _eval_config_map[model].tasks}

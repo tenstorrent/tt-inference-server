@@ -12931,10 +12931,10 @@ _eval_config_list = [
                     #     --server-url http://127.0.0.1 --service-port 8000 --eval-tasks fleurs_en
                     gpu_reference_score=100 - 6.63,
                     gpu_reference_score_ref="same-protocol GPU run: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 A100 80 GB, stock vLLM, thinking off, greedy, WAV input_audio (2026-10-19, WER 6.63)",
-                    # lmms-eval reports WER in percent; the gate scores 100 - WER.
-                    score_func=lambda results, task_name, kwargs: (
-                        100.0 - score_task_single_key(results, task_name, kwargs)
-                    ),
+                    # lmms-eval reports WER in percent; the gate itself scores a
+                    # "WER"-unit task as 100 - WER (llm_eval_tests), so the raw key is
+                    # returned here like the other WER tasks.
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
                             "wer,none",
