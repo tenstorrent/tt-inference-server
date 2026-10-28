@@ -17,7 +17,8 @@ Usage (tt-metal worktree venv active):
     PYTHONPATH="$TT_METAL_HOME:$PWD" \
     python scripts/capture_embedding_golden.py [model]
 
-where [model] is one of: bge-large (default), bge-m3, qwen3-8b.
+where [model] is one of: bge-large (default), bge-m3, qwen3-8b,
+embeddinggemma-2 (DEVICE=p150).
 Output goes to scripts/goldens/<model>_<device>.json.
 """
 
@@ -33,6 +34,12 @@ CAPTURE_MODELS = {
         "Qwen3-Embedding-8B",
         "Qwen3Embedding8BRunner",
         "Qwen/Qwen3-Embedding-8B",
+    ),
+    # Blackhole only: run with DEVICE=p150.
+    "embeddinggemma-2": (
+        "embeddinggemma-2",
+        "EmbeddingGemma2Runner",
+        "google/embeddinggemma-2",
     ),
 }
 

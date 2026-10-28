@@ -184,3 +184,52 @@ class Qwen3Embedding8BRunner(EmbeddingRunner):
             model_name=self.model_name,
         )
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
+
+
+# Hub revision embeddinggemma-2 was validated on; hub main later dropped
+# README.md and chat_template.jinja. Same default and override as the model's
+# weight loader (tt/weights.py) and the C++ EmbeddingGemma2Impl.
+EMBEDDING_GEMMA2_REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b"
+
+
+class EmbeddingGemma2Runner(EmbeddingRunner):
+    """Text embeddings of google/embeddinggemma-2 (Blackhole P150).
+
+    For a text input the plain tokenizer ids (BOS ... EOS) equal the ids
+    sentence-transformers passes to the model, so the output matches
+    SentenceTransformer("google/embeddinggemma-2").encode(text). Prompts such as
+    "task: search result | query: " are prepended by the client.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.max_model_len = self.settings.vllm.max_model_length
+        self.max_num_seqs = self.settings.vllm.max_num_seqs
+        self.model_name = SupportedModels.EMBEDDING_GEMMA_2.value
+        self.tokenizer = EmbeddingTokenizer(
+            self.model_name,
+            revision=os.environ.get(
+                "EMBEDDING_GEMMA2_REVISION", EMBEDDING_GEMMA2_REVISION
+            ),
+        )
+
+    def get_pipeline_device_params(self):
+        # One command queue: the model's traces run on cq 0 (2cq unsupported).
+        return {
+            "trace_region_size": self.settings.trace_region_size,
+        }
+
+    def _load_model(self):
+        self.logger.info(f"Device {self.device_id}: Loading model...")
+        from models.demos.embedding_gemma2.demo.generator_vllm import (
+            EmbeddingGemma2ForEmbedding,
+        )
+
+        # Captures one trace per served (batch, seq bucket) shape.
+        self.model = EmbeddingGemma2ForEmbedding(
+            device=self.ttnn_device,
+            max_batch_size=self.settings.max_batch_size,
+            max_seq_len=self.max_model_len,
+            model_name=self.model_name,
+        )
+        self.logger.info(f"Device {self.device_id}: Model loaded successfully")

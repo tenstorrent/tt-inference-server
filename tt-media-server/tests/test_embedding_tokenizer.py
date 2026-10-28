@@ -24,6 +24,22 @@ class TestEmbeddingTokenizerProperty:
             assert tok._tokenizer is result
             assert result == mock_auto.from_pretrained.return_value
 
+    def test_tokenizer_property_passes_pinned_revision(self):
+        """A revision given at construction is forwarded to from_pretrained."""
+        with patch("utils.embedding_tokenizer.AutoTokenizer") as mock_auto:
+            mock_auto.from_pretrained.return_value = MagicMock()
+            tok = EmbeddingTokenizer(
+                "google/embeddinggemma-2",
+                revision="914f7f89142e33e77833254d9c9b90c3cef7303b",
+            )
+
+            tok.tokenizer
+
+            mock_auto.from_pretrained.assert_called_once_with(
+                "google/embeddinggemma-2",
+                revision="914f7f89142e33e77833254d9c9b90c3cef7303b",
+            )
+
     def test_tokenizer_property_returns_cached_on_second_access(self):
         """Second access to .tokenizer returns cached instance without calling from_pretrained again."""
         with patch("utils.embedding_tokenizer.AutoTokenizer") as mock_auto:

@@ -44,6 +44,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     BGE_M3 = "BAAI/bge-m3"
+    EMBEDDING_GEMMA_2 = "google/embeddinggemma-2"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
@@ -108,6 +109,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     BGE_M3 = "bge-m3"
+    EMBEDDING_GEMMA_2 = "embeddinggemma-2"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
@@ -165,6 +167,7 @@ class ModelRunners(Enum):
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
+    EMBEDDING_GEMMA2 = "embedding_gemma2"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -229,6 +232,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
         ModelRunners.BGEM3,
+        ModelRunners.EMBEDDING_GEMMA2,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -446,6 +450,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     # Shares the BGE_M3 name with the MEDIA runner above; must stay AFTER it so
     # the name-only fallback still resolves to MEDIA. MODEL_RUNNER selects this.
     ModelRunners.VLLMForge_BGE_M3: {ModelNames.BGE_M3},
+    ModelRunners.EMBEDDING_GEMMA2: {ModelNames.EMBEDDING_GEMMA_2},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -1865,6 +1870,28 @@ ModelConfigs = {
         },
         "queue_for_multiprocessing": QueueType.BatchFifo.value,
         "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    # Blackhole P150 only. Mirrors the tt_embedding_gemma2 row of the C++
+    # embedding catalog (cpp_server/src/config/settings.cpp); keep them in sync.
+    # The model splits a batch so batch * seq bucket <= 8192 tokens per forward
+    # and captures one trace per served shape at warmup, hence the larger
+    # trace region.
+    (ModelRunners.EMBEDDING_GEMMA2, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "trace_region_size": 512 * 1024 * 1024,
+        "vllm": {
+            "model": SupportedModels.EMBEDDING_GEMMA_2.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },

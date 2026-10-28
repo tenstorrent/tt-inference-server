@@ -15,6 +15,7 @@ from tt_model_runners.runner_fabric import get_device_runner
     "runner_name_param, expected_class_name",
     [
         ("vllm_forge", "VLLMForgeRunner"),
+        ("embedding_gemma2", "EmbeddingGemma2Runner"),
     ],
 )
 def test_runner_creation_unique(

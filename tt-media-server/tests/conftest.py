@@ -697,6 +697,7 @@ runner_mocks = {
         "BGELargeENRunner": create_mock_runner_class("BGELargeENRunner"),
         "BGEM3Runner": create_mock_runner_class("BGEM3Runner"),
         "Qwen3Embedding8BRunner": create_mock_runner_class("Qwen3Embedding8BRunner"),
+        "EmbeddingGemma2Runner": create_mock_runner_class("EmbeddingGemma2Runner"),
     },
     "tt_model_runners.llm_test_runner": {
         "LLMTestRunner": create_mock_runner_class("LLMTestRunner"),

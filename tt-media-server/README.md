@@ -16,6 +16,7 @@ This server is built to serve non-LLM models. Currently supported models:
 12. VLLM with TT Plugin
 13. bge-large-en-v1.5
 14. Qwen3-Embedding-8B
+15. embeddinggemma-2 (text embeddings, Blackhole P150)
 
 # Repo structure
 

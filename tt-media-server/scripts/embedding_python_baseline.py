@@ -9,7 +9,8 @@ PYTHONPATH including the tt-metal repo root (for models.demos imports):
 
     PYTHONPATH=$TT_METAL_HOME python scripts/embedding_python_baseline.py [model]
 
-where [model] is one of: bge-large (default), bge-m3, qwen3-8b.
+where [model] is one of: bge-large (default), bge-m3, qwen3-8b,
+embeddinggemma-2 (DEVICE=p150).
 
 Environment (MODEL / DEVICE) must be set before importing anything from
 `config`, because config.settings builds its Settings singleton at import
@@ -28,6 +29,12 @@ BASELINE_MODELS = {
         "Qwen3-Embedding-8B",
         "Qwen3Embedding8BRunner",
         "Qwen/Qwen3-Embedding-8B",
+    ),
+    # Blackhole only: run with DEVICE=p150.
+    "embeddinggemma-2": (
+        "embeddinggemma-2",
+        "EmbeddingGemma2Runner",
+        "google/embeddinggemma-2",
     ),
 }
 

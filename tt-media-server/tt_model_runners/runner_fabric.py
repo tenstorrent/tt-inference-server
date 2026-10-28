@@ -100,6 +100,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.BGEM3: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGEM3Runner"]
     ).BGEM3Runner(wid),
+    ModelRunners.EMBEDDING_GEMMA2: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["EmbeddingGemma2Runner"]
+    ).EmbeddingGemma2Runner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
