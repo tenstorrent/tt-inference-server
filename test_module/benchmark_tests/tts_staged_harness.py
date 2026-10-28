@@ -22,6 +22,13 @@ between the two, so independent draws reproduce the joint distribution too.
     python tts_staged_harness.py run --host d08u08 --out staged.json
     python tts_staged_harness.py report --results staged.json
 
+``run`` and ``report`` print a per-stage table (run next to capture) and, when
+matplotlib is installed, write three charts next to the results file:
+
+    <prefix>_throughput_fc.png   ladder: requests/s vs first-chunk P50/P95
+    <prefix>_concurrency_fc.png  ladder: first-chunk P50/P95 vs concurrency
+    <prefix>_probe_fc_isl.png    probe: first-chunk latency vs prompt tokens
+
 Voice references:
   The capture records only each voice prompt's length in speech tokens, not its
   audio. ``run`` therefore needs one WAV per voice size, ``<voice-dir>/voice_<N>.wav``.
@@ -254,7 +261,10 @@ def build_dataset(
             "cancel_after_chunks": cancel_chunks.most_common(1)[0][0]
             if cancel_chunks
             else 0,
-            "requests": [spec(r) for r in probe],
+            "requests": [
+                dict(spec(r), captured_fc_ms=round(r["ttfc_us"] / 1e3, 1))
+                for r in probe
+            ],
             "captured": _stage_stats(probe),
         },
     }
@@ -581,7 +591,12 @@ def run(args: argparse.Namespace) -> dict:
         )
         t0 = time.time()
         runner.sequential(probe["requests"], "probe", probe["cancel_after_chunks"])
-        checkpoint("probe", "sequential", 1, t0, probe["captured"])
+        points = [
+            [isl_tokens(s["text_tokens"], s["voice_speech_ids"]), s["captured_fc_ms"]]
+            for s in probe["requests"]
+            if "captured_fc_ms" in s
+        ]
+        checkpoint("probe", "sequential", 1, t0, dict(probe["captured"], points=points))
 
     doc["meta"]["finished"] = time.time()
     with open(args.out, "w") as f:
@@ -695,6 +710,203 @@ def probe_table(doc: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------- charts
+
+# Categorical slots 1-2 of the reference palette; capture reuses the hue, dashed.
+P50_COLOR = "#2a78d6"
+P95_COLOR = "#eb6834"
+INK = "#0b0b0b"
+INK_MUTED = "#52514e"
+GRID = "#e4e3df"
+
+
+def _ladder_points(doc: dict) -> list:
+    """(conc, run stats, captured stats) for every ladder level that ran."""
+    by_stage = collections.defaultdict(list)
+    for r in doc["records"]:
+        by_stage[r["stage"]].append(r)
+    out = []
+    for s in doc["stages"]:
+        if s["kind"] == "closed" and by_stage.get(s["stage"]):
+            out.append(
+                (s["conc"], stage_stats(by_stage[s["stage"]]), s.get("captured"))
+            )
+    return out
+
+
+def _style(ax, title: str, xlabel: str, ylabel: str) -> None:
+    ax.set_title(title, loc="left", fontsize=12, color=INK)
+    ax.set_xlabel(xlabel, color=INK_MUTED)
+    ax.set_ylabel(ylabel, color=INK_MUTED)
+    ax.grid(True, color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(GRID)
+    ax.tick_params(colors=INK_MUTED, labelsize=9)
+
+
+def _series(ax, xs, ys, color: str, label: str, captured: bool) -> None:
+    pts = [(x, y) for x, y in zip(xs, ys) if x is not None and y is not None]
+    if not pts:
+        return
+    ax.plot(
+        *zip(*pts),
+        ls="--" if captured else "-",
+        lw=1.5 if captured else 2,
+        marker="o",
+        ms=7,
+        color=color,
+        mfc="white" if captured else color,
+        mew=1.5,
+        alpha=0.75 if captured else 1.0,
+        label=label,
+    )
+
+
+def render_charts(doc: dict, prefix: str) -> list:
+    """Write ladder and probe charts as ``<prefix>_*.png``; returns the paths."""
+    try:
+        import matplotlib
+    except ImportError:
+        logger.warning("charts skipped: matplotlib is not installed")
+        return []
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
+
+    paths = []
+    ladder = _ladder_points(doc)
+    if ladder:
+        concs = [c for c, _, _ in ladder]
+        run_s = [r for _, r, _ in ladder]
+        cap_s = [c or {} for _, _, c in ladder]
+        has_cap = any(cap_s)
+
+        # Throughput vs first-chunk latency, one point per level.
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+        for key, color, name in (
+            ("fc_p50_ms", P50_COLOR, "P50"),
+            ("fc_p95_ms", P95_COLOR, "P95"),
+        ):
+            _series(
+                ax,
+                [r[key] for r in run_s],
+                [r["req_per_s"] for r in run_s],
+                color,
+                f"run {name}",
+                False,
+            )
+            if has_cap:
+                _series(
+                    ax,
+                    [c.get(key) for c in cap_s],
+                    [c.get("req_per_s") for c in cap_s],
+                    color,
+                    f"capture {name}",
+                    True,
+                )
+        for conc, r in zip(concs, run_s):
+            ax.annotate(
+                str(conc),
+                (r["fc_p50_ms"], r["req_per_s"]),
+                xytext=(6, 5),
+                textcoords="offset points",
+                fontsize=8,
+                color=INK_MUTED,
+            )
+        _style(
+            ax,
+            "Throughput vs first-chunk latency (ladder)",
+            "first-chunk latency (ms); point label = concurrency",
+            "throughput (requests/s, log scale)",
+        )
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_throughput_fc.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+        # First-chunk latency vs concurrency.
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+        for key, color, name in (
+            ("fc_p50_ms", P50_COLOR, "P50"),
+            ("fc_p95_ms", P95_COLOR, "P95"),
+        ):
+            _series(ax, concs, [r[key] for r in run_s], color, f"run {name}", False)
+            if has_cap:
+                _series(
+                    ax,
+                    concs,
+                    [c.get(key) for c in cap_s],
+                    color,
+                    f"capture {name}",
+                    True,
+                )
+        ax.set_xscale("log", base=2)
+        ax.xaxis.set_major_locator(FixedLocator(concs))
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.set_xticklabels([str(c) for c in concs])
+        _style(
+            ax,
+            "First-chunk latency vs concurrency (ladder)",
+            "concurrency (closed-loop clients)",
+            "first-chunk latency (ms)",
+        )
+        ax.set_ylim(bottom=0)
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_concurrency_fc.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+    probe = [r for r in doc["records"] if r["stage"] == "probe" and r["ttfb_s"]]
+    if probe:
+        stage = next((s for s in doc["stages"] if s["stage"] == "probe"), {})
+        captured = (stage.get("captured") or {}).get("points") or []
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+
+        def means(points):
+            groups = collections.defaultdict(list)
+            for isl, fc in points:
+                groups[isl].append(fc)
+            return sorted((k, sum(v) / len(v)) for k, v in groups.items())
+
+        run_pts = [(r["isl"], r["ttfb_s"] * 1e3) for r in probe]
+        ax.scatter(
+            *zip(*run_pts),
+            s=14,
+            color=P50_COLOR,
+            alpha=0.35,
+            lw=0,
+            label="run, each request",
+        )
+        _series(ax, *zip(*means(run_pts)), P50_COLOR, "run, mean per ISL", False)
+        if captured:
+            _series(
+                ax, *zip(*means(captured)), P50_COLOR, "capture, mean per ISL", True
+            )
+        _style(
+            ax,
+            "First-chunk latency vs prompt size (probe, one request at a time)",
+            "prompt tokens (text + voice)",
+            "first-chunk latency (ms)",
+        )
+        ax.set_ylim(bottom=0)
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_probe_fc_isl.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+    for path in paths:
+        logger.info("wrote %s", path)
+    return paths
+
+
 # ------------------------------------------------------------------------- CLI
 
 
@@ -738,9 +950,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--bootstrap-chars", type=int, default=1600)
     p.add_argument("--out", default="tts_staged_results.json")
     p.add_argument("--no-table", action="store_true")
+    p.add_argument(
+        "--chart",
+        default=None,
+        help="chart file prefix (default: --out without .json); 'none' to skip",
+    )
 
-    p = sub.add_parser("report", help="tables from a run's results JSON")
+    p = sub.add_parser("report", help="tables and charts from a run's results JSON")
     p.add_argument("--results", required=True)
+    p.add_argument(
+        "--chart",
+        default=None,
+        help="chart file prefix (default: --results without .json); 'none' to skip",
+    )
     return ap
 
 
@@ -769,10 +991,14 @@ def main(argv: list | None = None) -> None:
     if args.command == "report":
         with open(args.results) as f:
             doc = json.load(f)
+        results = args.results
     else:
         doc = run(args)
-        if args.no_table:
-            return
+        results = args.out
+    if args.chart != "none":
+        render_charts(doc, args.chart or os.path.splitext(results)[0])
+    if getattr(args, "no_table", False):
+        return
     print(report_table(doc))
     probe = probe_table(doc)
     if probe:

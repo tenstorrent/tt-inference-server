@@ -224,3 +224,17 @@ def test_run_end_to_end_against_fake_server(tmp_path, fake_server):
     table = staged.report_table(saved)
     assert "c2" in table and "capture" in table
     assert "112" in staged.probe_table(saved)
+
+
+def test_charts_cover_ladder_and_probe(tmp_path, fake_server):
+    pytest.importorskip("matplotlib")
+    test_run_end_to_end_against_fake_server(tmp_path, fake_server)
+    doc = json.loads((tmp_path / "out.json").read_text())
+    paths = staged.render_charts(doc, str(tmp_path / "staged"))
+    names = sorted(p.rsplit("/", 1)[1] for p in paths)
+    assert names == [
+        "staged_concurrency_fc.png",
+        "staged_probe_fc_isl.png",
+        "staged_throughput_fc.png",
+    ]
+    assert all((tmp_path / n).stat().st_size > 0 for n in names)

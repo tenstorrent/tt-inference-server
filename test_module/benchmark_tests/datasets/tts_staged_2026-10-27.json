@@ -75,8 +75,8 @@
     "max_inflight": 12,
     "arrival_span_s": 0.5,
     "req_per_s": 25.71,
-    "isl_p50": 26.0,
-    "isl_p90": 26.0,
+    "isl_p50": 26,
+    "isl_p90": 26,
     "isl_max": 26,
     "fc_p50_ms": 79.7,
     "fc_p95_ms": 88.2,
@@ -156,8 +156,8 @@
     "max_inflight": 12,
     "arrival_span_s": 0.3,
     "req_per_s": 44.83,
-    "isl_p50": 205.0,
-    "isl_p90": 205.0,
+    "isl_p50": 205,
+    "isl_p90": 205,
     "isl_max": 205,
     "fc_p50_ms": 82.3,
     "fc_p95_ms": 91.0,
@@ -237,8 +237,8 @@
     "max_inflight": 12,
     "arrival_span_s": 0.4,
     "req_per_s": 30.33,
-    "isl_p50": 240.0,
-    "isl_p90": 240.0,
+    "isl_p50": 240,
+    "isl_p90": 240,
     "isl_max": 240,
     "fc_p50_ms": 83.4,
     "fc_p95_ms": 91.0,
@@ -261,8 +261,8 @@
      "max_inflight": 1,
      "arrival_span_s": 93.7,
      "req_per_s": 0.06,
-     "isl_p50": 1092.0,
-     "isl_p90": 1123.0,
+     "isl_p50": 1092,
+     "isl_p90": 1123,
      "isl_max": 1152,
      "fc_p50_ms": 78.0,
      "fc_p95_ms": 79.6,
@@ -281,8 +281,8 @@
      "max_inflight": 2,
      "arrival_span_s": 77.0,
      "req_per_s": 0.12,
-     "isl_p50": 1092.0,
-     "isl_p90": 1158.4,
+     "isl_p50": 1092,
+     "isl_p90": 1158,
      "isl_max": 1184,
      "fc_p50_ms": 78.5,
      "fc_p95_ms": 86.3,
@@ -301,8 +301,8 @@
      "max_inflight": 4,
      "arrival_span_s": 93.5,
      "req_per_s": 0.26,
-     "isl_p50": 946.5,
-     "isl_p90": 1141.8,
+     "isl_p50": 946,
+     "isl_p90": 1142,
      "isl_max": 1197,
      "fc_p50_ms": 79.0,
      "fc_p95_ms": 92.7,
@@ -321,8 +321,8 @@
      "max_inflight": 8,
      "arrival_span_s": 119.5,
      "req_per_s": 0.33,
-     "isl_p50": 981.0,
-     "isl_p90": 1186.6000000000001,
+     "isl_p50": 981,
+     "isl_p90": 1187,
      "isl_max": 1330,
      "fc_p50_ms": 90.2,
      "fc_p95_ms": 117.9,
@@ -341,8 +341,8 @@
      "max_inflight": 16,
      "arrival_span_s": 118.1,
      "req_per_s": 0.69,
-     "isl_p50": 757.0,
-     "isl_p90": 1185.0,
+     "isl_p50": 757,
+     "isl_p90": 1185,
      "isl_max": 1389,
      "fc_p50_ms": 101.4,
      "fc_p95_ms": 126.2,
@@ -361,8 +361,8 @@
      "max_inflight": 32,
      "arrival_span_s": 119.9,
      "req_per_s": 1.67,
-     "isl_p50": 768.0,
-     "isl_p90": 1234.1,
+     "isl_p50": 768,
+     "isl_p90": 1234,
      "isl_max": 1440,
      "fc_p50_ms": 105.2,
      "fc_p95_ms": 129.5,
@@ -381,8 +381,8 @@
      "max_inflight": 64,
      "arrival_span_s": 119.7,
      "req_per_s": 4.23,
-     "isl_p50": 749.0,
-     "isl_p90": 1243.5,
+     "isl_p50": 749,
+     "isl_p90": 1244,
      "isl_max": 1507,
      "fc_p50_ms": 112.2,
      "fc_p95_ms": 130.7,
@@ -401,8 +401,8 @@
      "max_inflight": 128,
      "arrival_span_s": 119.9,
      "req_per_s": 7.92,
-     "isl_p50": 736.0,
-     "isl_p90": 1254.0,
+     "isl_p50": 736,
+     "isl_p90": 1254,
      "isl_max": 1507,
      "fc_p50_ms": 116.0,
      "fc_p95_ms": 140.1,
@@ -421,8 +421,8 @@
      "max_inflight": 256,
      "arrival_span_s": 120.0,
      "req_per_s": 13.41,
-     "isl_p50": 690.0,
-     "isl_p90": 1248.0,
+     "isl_p50": 690,
+     "isl_p90": 1248,
      "isl_max": 1616,
      "fc_p50_ms": 124.9,
      "fc_p95_ms": 397.6,
@@ -6761,427 +6761,512 @@
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 189
+    "voice_speech_ids": 189,
+    "captured_fc_ms": 70.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 189
+    "voice_speech_ids": 189,
+    "captured_fc_ms": 70.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 189
+    "voice_speech_ids": 189,
+    "captured_fc_ms": 70.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 189
+    "voice_speech_ids": 189,
+    "captured_fc_ms": 70.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 227
+    "voice_speech_ids": 227,
+    "captured_fc_ms": 71.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 227
+    "voice_speech_ids": 227,
+    "captured_fc_ms": 72.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 227
+    "voice_speech_ids": 227,
+    "captured_fc_ms": 71.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 277
+    "voice_speech_ids": 277,
+    "captured_fc_ms": 72.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 277
+    "voice_speech_ids": 277,
+    "captured_fc_ms": 71.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 277
+    "voice_speech_ids": 277,
+    "captured_fc_ms": 72.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 327
+    "voice_speech_ids": 327,
+    "captured_fc_ms": 71.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 327
+    "voice_speech_ids": 327,
+    "captured_fc_ms": 71.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 327
+    "voice_speech_ids": 327,
+    "captured_fc_ms": 71.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 389
+    "voice_speech_ids": 389,
+    "captured_fc_ms": 72.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 389
+    "voice_speech_ids": 389,
+    "captured_fc_ms": 73.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 389
+    "voice_speech_ids": 389,
+    "captured_fc_ms": 72.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 445
+    "voice_speech_ids": 445,
+    "captured_fc_ms": 73.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 445
+    "voice_speech_ids": 445,
+    "captured_fc_ms": 72.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 445
+    "voice_speech_ids": 445,
+    "captured_fc_ms": 72.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 467
+    "voice_speech_ids": 467,
+    "captured_fc_ms": 73.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 467
+    "voice_speech_ids": 467,
+    "captured_fc_ms": 72.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 467
+    "voice_speech_ids": 467,
+    "captured_fc_ms": 72.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 490
+    "voice_speech_ids": 490,
+    "captured_fc_ms": 73.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 490
+    "voice_speech_ids": 490,
+    "captured_fc_ms": 73.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 490
+    "voice_speech_ids": 490,
+    "captured_fc_ms": 73.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 509
+    "voice_speech_ids": 509,
+    "captured_fc_ms": 74.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 509
+    "voice_speech_ids": 509,
+    "captured_fc_ms": 73.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 509
+    "voice_speech_ids": 509,
+    "captured_fc_ms": 73.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 537
+    "voice_speech_ids": 537,
+    "captured_fc_ms": 74.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 537
+    "voice_speech_ids": 537,
+    "captured_fc_ms": 73.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 537
+    "voice_speech_ids": 537,
+    "captured_fc_ms": 73.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 546
+    "voice_speech_ids": 546,
+    "captured_fc_ms": 73.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 546
+    "voice_speech_ids": 546,
+    "captured_fc_ms": 73.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 546
+    "voice_speech_ids": 546,
+    "captured_fc_ms": 74.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 561
+    "voice_speech_ids": 561,
+    "captured_fc_ms": 74.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 561
+    "voice_speech_ids": 561,
+    "captured_fc_ms": 73.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 561
+    "voice_speech_ids": 561,
+    "captured_fc_ms": 74.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 615
+    "voice_speech_ids": 615,
+    "captured_fc_ms": 83.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 615
+    "voice_speech_ids": 615,
+    "captured_fc_ms": 74.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 615
+    "voice_speech_ids": 615,
+    "captured_fc_ms": 75.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 719
+    "voice_speech_ids": 719,
+    "captured_fc_ms": 75.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 719
+    "voice_speech_ids": 719,
+    "captured_fc_ms": 74.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 719
+    "voice_speech_ids": 719,
+    "captured_fc_ms": 75.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 865
+    "voice_speech_ids": 865,
+    "captured_fc_ms": 77.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 865
+    "voice_speech_ids": 865,
+    "captured_fc_ms": 76.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 865
+    "voice_speech_ids": 865,
+    "captured_fc_ms": 76.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 921
+    "voice_speech_ids": 921,
+    "captured_fc_ms": 80.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 921
+    "voice_speech_ids": 921,
+    "captured_fc_ms": 76.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 921
+    "voice_speech_ids": 921,
+    "captured_fc_ms": 76.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 955
+    "voice_speech_ids": 955,
+    "captured_fc_ms": 77.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 955
+    "voice_speech_ids": 955,
+    "captured_fc_ms": 77.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 955
+    "voice_speech_ids": 955,
+    "captured_fc_ms": 77.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 995
+    "voice_speech_ids": 995,
+    "captured_fc_ms": 77.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 995
+    "voice_speech_ids": 995,
+    "captured_fc_ms": 78.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 995
+    "voice_speech_ids": 995,
+    "captured_fc_ms": 77.5
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1035
+    "voice_speech_ids": 1035,
+    "captured_fc_ms": 77.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1035
+    "voice_speech_ids": 1035,
+    "captured_fc_ms": 77.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1035
+    "voice_speech_ids": 1035,
+    "captured_fc_ms": 77.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1076
+    "voice_speech_ids": 1076,
+    "captured_fc_ms": 78.7
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1076
+    "voice_speech_ids": 1076,
+    "captured_fc_ms": 79.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1076
+    "voice_speech_ids": 1076,
+    "captured_fc_ms": 78.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1122
+    "voice_speech_ids": 1122,
+    "captured_fc_ms": 78.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1122
+    "voice_speech_ids": 1122,
+    "captured_fc_ms": 79.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1122
+    "voice_speech_ids": 1122,
+    "captured_fc_ms": 79.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1165
+    "voice_speech_ids": 1165,
+    "captured_fc_ms": 79.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1165
+    "voice_speech_ids": 1165,
+    "captured_fc_ms": 80.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1165
+    "voice_speech_ids": 1165,
+    "captured_fc_ms": 79.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1216
+    "voice_speech_ids": 1216,
+    "captured_fc_ms": 80.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1216
+    "voice_speech_ids": 1216,
+    "captured_fc_ms": 79.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1216
+    "voice_speech_ids": 1216,
+    "captured_fc_ms": 79.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1264
+    "voice_speech_ids": 1264,
+    "captured_fc_ms": 79.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1264
+    "voice_speech_ids": 1264,
+    "captured_fc_ms": 80.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 1264
+    "voice_speech_ids": 1264,
+    "captured_fc_ms": 79.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 2000
+    "voice_speech_ids": 2000,
+    "captured_fc_ms": 88.8
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 2000
+    "voice_speech_ids": 2000,
+    "captured_fc_ms": 86.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 2000
+    "voice_speech_ids": 2000,
+    "captured_fc_ms": 86.6
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 3000
+    "voice_speech_ids": 3000,
+    "captured_fc_ms": 95.9
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 3000
+    "voice_speech_ids": 3000,
+    "captured_fc_ms": 96.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 3000
+    "voice_speech_ids": 3000,
+    "captured_fc_ms": 95.2
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 4500
+    "voice_speech_ids": 4500,
+    "captured_fc_ms": 109.3
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 4500
+    "voice_speech_ids": 4500,
+    "captured_fc_ms": 109.4
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 4500
+    "voice_speech_ids": 4500,
+    "captured_fc_ms": 109.1
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 6000
+    "voice_speech_ids": 6000,
+    "captured_fc_ms": 124.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 6000
+    "voice_speech_ids": 6000,
+    "captured_fc_ms": 123.0
    },
    {
     "text": "The morning train left the station a few minutes late, but nobody on the platform seemed to mind.",
     "text_tokens": 38,
-    "voice_speech_ids": 6000
+    "voice_speech_ids": 6000,
+    "captured_fc_ms": 124.0
    }
   ],
   "captured": {
@@ -7190,8 +7275,8 @@
    "max_inflight": 3,
    "arrival_span_s": 14.5,
    "req_per_s": 5.86,
-   "isl_p50": 759.0,
-   "isl_p90": 2639.9999999999945,
+   "isl_p50": 759,
+   "isl_p90": 2640,
    "isl_max": 6040,
    "fc_p50_ms": 76.1,
    "fc_p95_ms": 109.2,
