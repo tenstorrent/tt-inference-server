@@ -13637,24 +13637,58 @@ _eval_config_list = [
 #   Terminal-Bench 4.0: task-declared (mostly 2-4 CPUs, a few 8-16); the 40
 #     largest need ~170 CPUs.
 #   tau3-bench (4 CPU / 8 GiB + tau3-runtime sidecar): ~35-40 fit; 32.
-#   SWE-bench Verified (1 CPU / 4 GiB, task default): 62. Its test runs already
-#     drive the pool to ~100% CPU, so more trials would mostly slow them.
+#   DeepSWE: 62.
 _MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
     "terminal_bench_2_1": 62,
     "terminal_bench_4": 40,
     "tau3_bench_banking": 32,
-    "swe_bench_verified": 62,
+    "deepswe": 62,
 }
 # Tasks that run with each task's declared CPU and memory instead of M3's override.
 _MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES = {"terminal_bench_2_1"}
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
-# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
-# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
-# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
-# measurements only (no published, GPU or limit-mode references; the card's
-# AutomationBench 62.8 states no harness or effort).
+# its tasks are M3's (GPQA, LongBench v2, Terminal-Bench 2.1 and 4.0,
+# AutomationBench, tau3-bench), plus DeepSWE. Published scores are the model
+# card's where it reports the benchmark (not GPQA, LongBench v2, Terminal-Bench
+# 2.1 or tau3-bench; the card's Terminal-Bench 4.0 ran Codex, here terminus-2).
+# GPU references are the SGLang runs in #5470.
+_MINIMAX_M31_FLASH_CARD = "https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash"
+_MINIMAX_M31_FLASH_PUBLISHED = {
+    # 600 publicly released tasks.
+    "automation_bench": 62.8,
+    "terminal_bench_4": 38.1,
+    "deepswe": 73.7,
+}
+_MINIMAX_M31_FLASH_GPU_REFERENCE = {
+    "r1_gpqa_diamond": (
+        87.88,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6466031915",
+    ),
+    "longbench2_generate": (
+        63.49,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6466031915",
+    ),
+    "automation_bench": (
+        61.33,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6446885867",
+    ),
+}
+_MINIMAX_M31_FLASH_M3_TASKS = (
+    "r1_gpqa_diamond",
+    "longbench2_generate",
+    "terminal_bench_2_1",
+    "terminal_bench_4",
+    "automation_bench",
+    "tau3_bench_banking",
+)
+# Without an effort the chat template leaves thinking "adaptive". SGLang maps a
+# request's reasoning_effort onto the template's <effort> tag.
+_MINIMAX_M31_FLASH_REASONING_EFFORT = "max"
+# Agents that take the effort as an agent kwarg (--reasoning-effort) because
+# request_body is not wired for them.
+_MINIMAX_M31_FLASH_EFFORT_KWARG_AGENTS = {"auto-bench", "tau3_llm_agent"}
 # M3's tau3 entry points its user simulator (TAU2_USER_MODEL) and NL-assertion
 # verifier (TAU2_NL_ASSERTIONS_MODEL) at the served name MiniMaxAI/MiniMax-M3.
 # An M3.1-Flash endpoint serves only MiniMaxAI/MiniMax-M3.1-Flash, so those calls
@@ -13686,6 +13720,25 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
                 verifier_env=_minimax_m31_flash_env(cfg.verifier_env),
             ),
         )
+    if cfg is not None and cfg.agent in _MINIMAX_M31_FLASH_EFFORT_KWARG_AGENTS:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config,
+                agent_kwargs={
+                    **task.agentic_eval_config.agent_kwargs,
+                    "reasoning_effort": _MINIMAX_M31_FLASH_REASONING_EFFORT,
+                },
+            ),
+        )
+    else:
+        task = replace(
+            task,
+            request_body={
+                **task.request_body,
+                "reasoning_effort": _MINIMAX_M31_FLASH_REASONING_EFFORT,
+            },
+        )
     concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
     if concurrency is not None:
         task = replace(
@@ -13701,14 +13754,18 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
                 task.agentic_eval_config, override_cpus=None, override_memory_mb=None
             ),
         )
+    published = _MINIMAX_M31_FLASH_PUBLISHED.get(task.task_name)
+    gpu_reference, gpu_reference_ref = _MINIMAX_M31_FLASH_GPU_REFERENCE.get(
+        task.task_name, (None, None)
+    )
     return replace(
         task,
         score=replace(
             task.score,
-            published_score=None,
-            published_score_ref=None,
-            gpu_reference_score=None,
-            gpu_reference_score_ref=None,
+            published_score=published,
+            published_score_ref=_MINIMAX_M31_FLASH_CARD if published else None,
+            gpu_reference_score=gpu_reference,
+            gpu_reference_score_ref=gpu_reference_ref,
             mode_reference_scores={},
         ),
     )
@@ -13721,23 +13778,12 @@ def _minimax_m31_flash_deepswe() -> "EvalTask":
     The card's 73.7 used mini-SWE-agent 2.4.5 at 512K context; this keeps the 2.3.0 pin the harness
     was validated with (MiMo's GPU reference). No GPU reference for M3.1-Flash yet.
     """
-    mimo = next(
+    return next(
         task
         for config in _eval_config_list
         if config.hf_model_repo == "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
         for task in config.tasks
         if task.task_name == "deepswe"
-    )
-    return replace(
-        mimo,
-        score=replace(
-            mimo.score,
-            published_score=73.7,
-            published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash",
-            gpu_reference_score=None,
-            gpu_reference_score_ref=None,
-            mode_reference_scores={},
-        ),
     )
 
 
@@ -13749,8 +13795,9 @@ _eval_config_list.append(
             for config in _eval_config_list
             if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
             for task in config.tasks
+            if task.task_name in _MINIMAX_M31_FLASH_M3_TASKS
         ]
-        + [_minimax_m31_flash_deepswe()],
+        + [_minimax_m31_flash_task(_minimax_m31_flash_deepswe())],
     )
 )
 
