@@ -300,9 +300,9 @@ templates:
 # Reranker templates (cross-encoders: one relevance score per query-document pair)
 # =============================================================================
 # Served by tt-media-server's nemotron-rerank runner (/v1/rerank, /v1/score). The
-# tt-metal code is on branch jerrywangTT/llama-nemotron-rerank (commit 0fbeb89b89a or
-# later), not on main; dev entries carry no tt_metal_commit, so supply an image built
-# from that commit with --override-docker-image.
+# tt-metal code is on branch jerrywangTT/llama-nemotron-rerank (commit 04b717f9322 or
+# later; tenstorrent/tt-metal#63253), not on main; dev entries carry no tt_metal_commit,
+# so supply an image built from that commit with --override-docker-image.
 - weights:
     - nvidia/llama-nemotron-rerank-1b-v2
   impl: llama_nemotron_rerank

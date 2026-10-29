@@ -14,9 +14,10 @@ class NemotronRerankRunner(BaseMetalDeviceRunner):
     """nvidia/llama-nemotron-rerank-1b-v2 (tt-metal models/demos/blackhole/llama_nemotron_rerank_1b) on one P150.
 
     Each request is one (query, document) pair. The runner formats it with the model card's prompt
-    template, tokenizes it (truncated to the longest captured sequence bucket), and scores the batch with the model's
-    traced runner, which packs the pairs into (batch 1 / 8 / 32) x (sequence bucket) traces. The
-    result per pair is the relevance logit; the API layer applies the sigmoid."""
+    template, tokenizes it (truncated to the longest traced row), and scores the batch with the model's
+    traced runner, which packs the pairs back to back into rows of 128 / 256 / 512 tokens and runs them
+    as (1 / 8 / 32 rows) x (row length) traces. The result per pair is the relevance logit; the API
+    layer applies the sigmoid."""
 
     def __init__(self, device_id: str):
         super().__init__(device_id)

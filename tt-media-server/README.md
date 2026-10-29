@@ -615,10 +615,11 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 `nvidia/llama-nemotron-rerank-1b-v2` (`MODEL=llama-nemotron-rerank-1b-v2`, runner `nemotron-rerank`) is a cross-encoder:
 it scores each `question:{query} \n \n passage:{document}` pair and returns one relevance logit per pair. The
 model is tt-metal's `models/demos/blackhole/llama_nemotron_rerank_1b`; one P150 serves it (`DEVICE=p150`). A
-request is split into one (query, document) pair per document, and the worker batches pairs from all
-requests, up to `MAX_BATCH_SIZE` (32), into traced batches of 1, 8 or 32 pairs of up to 128, 256 or 512 tokens.
-Pairs are truncated to the largest of those sequence buckets that is not above `VLLM__MAX_MODEL_LENGTH` (512 by
-default; 500 would give 256).
+request is split into one (query, document) pair per document, and the worker takes up to `MAX_BATCH_SIZE`
+(32) pairs from all requests at a time. The model's traced runner packs those pairs back to back into rows of
+128, 256 or 512 tokens (a mask keeps each pair to its own tokens) and runs the rows as traced batches of 1, 8
+or 32 rows. Pairs are truncated to the largest of those row lengths that is not above `VLLM__MAX_MODEL_LENGTH`
+(512 by default; 500 would give 256).
 
 ```bash
 export MODEL=llama-nemotron-rerank-1b-v2
@@ -665,8 +666,8 @@ case overrides each):
 
 | Setting | Default | Effect |
 |---|---|---|
-| `MAX_BATCH_SIZE` | 32 | most pairs per worker batch (the largest traced batch is 32) |
-| `VLLM__MAX_MODEL_LENGTH` | 512 | largest traced sequence bucket (128, 256, 512, ... not above it); pairs are truncated to that bucket |
+| `MAX_BATCH_SIZE` | 32 | most pairs per worker batch; also caps the traced batch size (1 / 8 / 32 rows) |
+| `VLLM__MAX_MODEL_LENGTH` | 512 | longest traced row (128, 256, 512, ... not above it); pairs are truncated to that length |
 | `TRACE_REGION_SIZE` | 400000000 | device memory reserved for the traces |
 | `DEFAULT_THROTTLE_LEVEL` | "0" | copied into `TT_MM_THROTTLE_PERF`; the image default 5 slows the FF1 + FF3 matmul |
 | `API_KEY` | `your-secret-key` | bearer token the endpoints check; set your own |
