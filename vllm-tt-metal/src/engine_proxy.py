@@ -56,6 +56,9 @@ SAMPLE = re.compile(
     r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?(\s.*)$"
 )  # name, labels, value [timestamp]
 LABEL = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
+PROBE_TIMEOUT_S = (
+    10.0  # an engine's /health or /metrics answer; generation requests have no timeout
+)
 
 
 def prefix_text(path, body):
@@ -316,18 +319,27 @@ def make_app(router, session_factory=None):
         return web.json_response(router.snapshot())
 
     async def all_metrics(_):
-        texts = []
-        for b in router.backends:
-            async with state["session"].get(b + "/metrics") as up:
-                texts.append(await up.text())
-        return web.Response(text=merge_metrics(texts), content_type="text/plain")
+        # An engine that fails or hangs leaves out only its own samples (its index keeps its place).
+        texts, missing = [], []
+        for i, b in enumerate(router.backends):
+            try:
+                async with state["session"].get(
+                    b + "/metrics", timeout=ClientTimeout(total=PROBE_TIMEOUT_S)
+                ) as up:
+                    texts.append(await up.text())
+            except Exception:  # noqa: BLE001 - any failure means no metrics from this engine
+                texts.append("")
+                missing.append(f"# engine {i} ({b}) did not answer\n")
+        return web.Response(
+            text="".join(missing) + merge_metrics(texts), content_type="text/plain"
+        )
 
     async def health(_):
         bad = []
         for b in router.backends:
             try:
                 async with state["session"].get(
-                    b + "/health", timeout=ClientTimeout(total=10)
+                    b + "/health", timeout=ClientTimeout(total=PROBE_TIMEOUT_S)
                 ) as up:
                     if up.status != 200:
                         bad.append(b)
