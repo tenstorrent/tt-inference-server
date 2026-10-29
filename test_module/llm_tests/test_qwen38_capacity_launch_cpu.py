@@ -122,6 +122,7 @@ class CampaignTest(unittest.TestCase):
                     root, output, "image@sha256:fixed", root, manifest_path=manifest
                 )
                 self.assertEqual(calls, ["0", "1"])
+                self.assertEqual(output.stat().st_mode & 0o777, 0o777)
                 self.assertEqual(
                     set(json.loads((output / "selection.json").read_text())["arms"]),
                     {"0", "1"},

@@ -100,6 +100,9 @@ def screen(
     manifest = json.loads(manifest_path.read_text())
     verify_sources(root, manifest)
     output.mkdir(parents=True, exist_ok=False)
+    # Container and runner UIDs differ. The host must be able to unlink these
+    # archived flat evidence files during the next checkout, regardless of umask.
+    output.chmod(0o777)
     (output / "source-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     planner = load_planner(root / "tests/plan_capacity_trials.py")
     env = os.environ.copy()
