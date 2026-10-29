@@ -3487,7 +3487,7 @@ templates:
       # four 1M requests, so all 16 users fit at 1M.
       # Above 128K the decode RoPE comes from the host instead of device tables.
       max_context: 1048576  # 1024 * 1024
-      default_impl: true
+      default_impl: false  # the MTP entry below is the default
       # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
       # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
       tensor_cache_timeout: 10800.0
@@ -3543,11 +3543,12 @@ templates:
       model_path_env: MIMO_MODEL_PATH
       tt_cache_env: MIMO_TT_CACHE
 
-# MiMo-V2.6-Flash-MOPD with MTP speculative decoding (select with --impl mimo-v2.6-flash-mtp). The
-# MTP layer drafts 3 tokens through the plugin's model-owned drafter contract; a lane speculates
-# while it holds one request (requests go to the least-loaded lane, so up to 4 at once), and lanes
-# with more decode as above. Needs an image built from tt-metal mimo-v2.6/dev-mtp-spec-decode and
-# vllm-tt-plugin mimo-v2.6-flash/vllm-plugin-dev-lane-spec-decode (lane mode + custom_class).
+# MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
+# mimo-v2.6-flash serves without it). The MTP layers draft 3 tokens through the plugin's
+# model-owned drafter contract; a lane speculates while it holds one request (requests go to the
+# least-loaded lane, so up to 4 at once), and lanes with more decode as above. Needs an image built
+# from tt-metal mimo-v2.6/dev and vllm-tt-plugin mimo-v2.6-flash/vllm-plugin-dev (lane mode +
+# custom_class).
 - weights:
     - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
   impl: mimo_v2_6_flash_mtp
@@ -3556,7 +3557,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 16
       max_context: 1048576  # 1024 * 1024
-      default_impl: false
+      default_impl: true
       # Its own persistent volume (keyed by impl), so the first start converts the TTNN cache too.
       tensor_cache_timeout: 10800.0
       env_vars:

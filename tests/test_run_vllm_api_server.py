@@ -1517,6 +1517,7 @@ def test_mimo_bh_galaxy_spec_runs_four_lanes_of_four():
     (spec,) = template.expand_to_specs()
     vllm_args = spec.device_model_spec.vllm_args
     assert spec.device_type.name == "BLACKHOLE_GALAXY"
+    assert not spec.device_model_spec.default_impl  # MTP is the default (--impl mimo-v2.6-flash)
     assert vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_seqs"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
@@ -1539,7 +1540,7 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     )
     (spec,) = template.expand_to_specs()
     vllm_args = spec.device_model_spec.vllm_args
-    assert not spec.device_model_spec.default_impl
+    assert spec.device_model_spec.default_impl
     assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
     # The model declares supports_async_spec_decode, so async scheduling stays on.
     assert "no-async-scheduling" not in vllm_args
