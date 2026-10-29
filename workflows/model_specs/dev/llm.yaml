@@ -233,12 +233,12 @@ templates:
 # and the engine admits users_per_row requests (4 at 1 M, 28 at 128 K).
 # Admission at the slot count needs the model-side per-row prefill ownership
 # (_agents/vllm_glm53/ROW_OWNERSHIP.md: GLM53MeshModel.prefill_wave,
-# GLM53_VLLM_ROWS_INDEPENDENT: "1"): the 1 M profile admits 32 (2026-10-29: the
-# served 32-request bench, 4 x 64 K needles 4/4 through waves and through the
-# SP-first placement); the 128 K profile stays at 28 until its 224-request
-# served check. With 32 slots the slot-level prefix cache's host-store KDA
-# snapshots cost 725-1194 ms per decode step (vs 58-61 ms off), so the 1 M
-# profile runs it off (GLM53_VLLM_PREFIX_CACHING "0" + enable-prefix-caching
+# GLM53_VLLM_ROWS_INDEPENDENT: "1"): the 1 M profile admits 32 and the 128 K
+# profile 192 (6 slots per chip: 224 = 7 per chip runs out of DRAM at boot under
+# the wave ladder), both served 2026-10-29 (the 32- and 192-request benches,
+# 4 x 64 K needles 4/4). With many slots the slot-level prefix cache's host-store
+# KDA snapshots cost 725-1194 ms per decode step (vs 58-61 ms off), so both
+# profiles run it off (GLM53_VLLM_PREFIX_CACHING "0" + enable-prefix-caching
 # false, which must agree).
 - weights:
     - zai-org/GLM-5.3-Flash
@@ -367,9 +367,9 @@ templates:
     - video
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 28  # = users per row at 128 K (7 slots per chip; 32 ran out of DRAM in the prefill warm-up); 224 after the row-ownership flip
+      max_concurrency: 192  # = the slots under per-row prefill ownership: 24 per row = 6 per chip (7 per chip = 224 runs out of DRAM at boot)
       max_context: 131072  # 128 * 1024
-      max_tokens_all_users_override: 3670016  # 28 x 131072
+      max_tokens_all_users_override: 25165824  # 192 x 131072
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
@@ -385,7 +385,8 @@ templates:
         # Image + video serving with the vision tower resident on every chip (1.05 GiB per chip:
         # the planner still fits 28 users per row at 128 K beside it; tt/memory_plan.py).
         GLM53_VLLM_IMAGES: "1"
-        GLM53_VLLM_PREFIX_CACHING: "1"  # the slot-level prefix cache (KDA snapshots at the chunk-aligned ends; the served smoke 2026-10-29)
+        GLM53_VLLM_PREFIX_CACHING: "0"  # off at 192 slots (the host-store KDA snapshots cost >700 ms per decode step)
+        GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 192 distinct requests (one per slot), waves + the SP-first placement
         GLM53_VLLM_VISION_RESIDENT: "1"
         GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
       override_tt_config:
@@ -397,7 +398,7 @@ templates:
         prefill_chunk_alignment: 256
         decode_interleave_enabled: false
       vllm_args:
-        max_num_seqs: 28  # = users per row; 224 after the row-ownership flip
+        max_num_seqs: 192  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
         block_size: 32
         max_num_batched_tokens: 32768  # holds the largest multimodal item whole (see the 1 M profile)
         long_prefill_token_threshold: 16384
@@ -408,7 +409,7 @@ templates:
         # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
-        enable-prefix-caching: true  # the adapter's slot-level prefix cache (GLM53_VLLM_PREFIX_CACHING below; 2026-10-29)
+        enable-prefix-caching: false  # follows GLM53_VLLM_PREFIX_CACHING "0" above (off at 192 slots; 2026-10-29)
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: glm47
