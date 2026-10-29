@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 830" role="img" aria-label="Where a generation request is checked in the proposed tt-media-server API and how each answer returns to the console: schema, readiness, media, model policy and queue-room checks run at submit, before anything is queued, and answer with an HTTP code and message; failures during the run come back later as a job error read by polling." stroke="currentColor" fill="currentColor" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" style="color:#1d1c1a;background:#ffffff" width="1120" height="760">
+<rect width="100%" height="100%" fill="#ffffff" stroke="none"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker><marker id="arrow-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2b6cb0"/></marker></defs>
+<rect x="35" y="22" width="230" height="44" rx="6" fill="none" stroke-width="1.3"/>
+<text x="150.0" y="40.5" text-anchor="middle" style="font-size:13px;font-weight:600">Console</text>
+<text x="150.0" y="55.5" text-anchor="middle" style="font-size:10.5px">public API: auth, moderation, ids, media</text>
+<rect x="430" y="22" width="300" height="44" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="40.5" text-anchor="middle" style="font-size:13px;font-weight:600">tt-media-server</text>
+<text x="580.0" y="55.5" text-anchor="middle" style="font-size:10.5px">runner API the console calls</text>
+<rect x="850" y="22" width="220" height="44" rx="6" fill="none" stroke-width="1.3"/>
+<text x="960.0" y="40.5" text-anchor="middle" style="font-size:13px;font-weight:600">tt-metal</text>
+<text x="960.0" y="55.5" text-anchor="middle" style="font-size:10.5px">model code on the device</text>
+<line x1="150" y1="66" x2="150" y2="818" stroke-dasharray="3 5" stroke-width="1" opacity="0.35"/>
+<line x1="580" y1="66" x2="580" y2="818" stroke-dasharray="3 5" stroke-width="1" opacity="0.35"/>
+<line x1="960" y1="66" x2="960" y2="818" stroke-dasharray="3 5" stroke-width="1" opacity="0.35"/>
+<line x1="150" y1="100" x2="416" y2="100" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="283" y="91" text-anchor="middle" style="font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">POST /v1/generations/{org}/{model}</text>
+<text x="283" y="115" text-anchor="middle" style="font-size:10.5px">Bearer key + JSON body, per-model endpoint</text>
+<rect x="416" y="80" width="330" height="440" rx="8" fill="none" stroke-width="1" opacity="0.5"/>
+<text x="580" y="98" text-anchor="middle" style="font-size:11px;font-style:italic">checked at submit, before anything is queued</text>
+<rect x="430" y="112" width="300" height="50" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="126.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">1 · Request schema</text>
+<text x="580.0" y="141.0" text-anchor="middle" style="font-size:11px">per-model Pydantic model, strict (PR 5466)</text>
+<text x="580.0" y="156.0" text-anchor="middle" style="font-size:11px" fill="#2b6cb0">→ 422: every problem, naming the accepted values</text>
+<line x1="430" y1="137.0" x2="394" y2="137.0" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<rect x="430" y="174" width="300" height="50" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="188.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">2 · Model ready?</text>
+<text x="580.0" y="203.0" text-anchor="middle" style="font-size:11px">a warmed-up worker exists</text>
+<text x="580.0" y="218.0" text-anchor="middle" style="font-size:11px" fill="#2b6cb0">→ 503, Retry-After</text>
+<line x1="430" y1="199.0" x2="394" y2="199.0" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<rect x="430" y="236" width="300" height="50" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="250.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">3 · Media</text>
+<text x="580.0" y="265.0" text-anchor="middle" style="font-size:11px">fetch URLs, decode images, probe reference clips</text>
+<text x="580.0" y="280.0" text-anchor="middle" style="font-size:11px" fill="#2b6cb0">→ 400 URL policy · 413 too large · 422 unreadable</text>
+<line x1="430" y1="261.0" x2="394" y2="261.0" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<rect x="430" y="298" width="300" height="50" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="312.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">4 · Model policy</text>
+<text x="580.0" y="327.0" text-anchor="middle" style="font-size:11px">admit_request(): aspect ratio, frames, duration, refs</text>
+<text x="580.0" y="342.0" text-anchor="middle" style="font-size:11px" fill="#2b6cb0">→ 422: one sentence from the policy</text>
+<line x1="430" y1="323.0" x2="394" y2="323.0" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<rect x="430" y="360" width="300" height="50" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="374.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">5 · Room for a job?</text>
+<text x="580.0" y="389.0" text-anchor="middle" style="font-size:11px">active jobs &lt; max_queue_size</text>
+<text x="580.0" y="404.0" text-anchor="middle" style="font-size:11px" fill="#2b6cb0">→ 429 queue full, Retry-After</text>
+<line x1="430" y1="385.0" x2="394" y2="385.0" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<line x1="580" y1="162" x2="580" y2="174" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="592" y="171" text-anchor="start" style="font-size:10px">ok</text>
+<line x1="580" y1="224" x2="580" y2="236" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="592" y="233" text-anchor="start" style="font-size:10px">ok</text>
+<line x1="580" y1="286" x2="580" y2="298" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="592" y="295" text-anchor="start" style="font-size:10px">ok</text>
+<line x1="580" y1="348" x2="580" y2="360" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="592" y="357" text-anchor="start" style="font-size:10px">ok</text>
+<line x1="392" y1="137.0" x2="392" y2="432" stroke="#2b6cb0" stroke-width="1.6"/>
+<path d="M392 432 L150 432" fill="none" stroke-width="1.4" marker-end="url(#arrow-acc)" stroke="#2b6cb0"/>
+<text x="271" y="424" text-anchor="middle" style="font-size:12px;font-weight:600" fill="#2b6cb0">rejected at submit (a check failed)</text>
+<text x="271" y="447" text-anchor="middle" style="font-size:10.5px" fill="#2b6cb0">HTTP code + message, nothing queued</text>
+<line x1="580" y1="410" x2="580" y2="466" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="592" y="443" text-anchor="start" style="font-size:10.5px;font-style:italic">all checks pass</text>
+<rect x="430" y="466" width="300" height="44" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="484.5" text-anchor="middle" style="font-size:12.5px;font-weight:600">job queued</text>
+<text x="580.0" y="499.5" text-anchor="middle" style="font-size:11px">job record created, request on the task queue</text>
+<line x1="430" y1="488" x2="150" y2="488" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="283" y="480" text-anchor="middle" style="font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">202  Job {id, status: queued}</text>
+<rect x="845" y="290" width="230" height="66" rx="6" fill="none" stroke-width="1.3"/>
+<text x="960.0" y="312.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">model policy module</text>
+<text x="960.0" y="327.0" text-anchor="middle" style="font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">e.g. minimax_h3/policy.py:</text>
+<text x="960.0" y="342.0" text-anchor="middle" style="font-size:11px">accepted shapes, durations, refs</text>
+<line x1="845" y1="323.0" x2="730" y2="323.0" stroke-width="1.4" marker-end="url(#arrow)" stroke-dasharray="5 4"/>
+<text x="788" y="315.0" text-anchor="middle" style="font-size:10.5px">imported by the server</text>
+<text x="788" y="338.0" text-anchor="middle" style="font-size:10.5px;font-style:italic">rule lives here, check runs there</text>
+<text x="580" y="572" text-anchor="middle" style="font-size:11px;font-style:italic">a device worker (own process) claims the job</text>
+<rect x="520" y="582" width="120" height="62" rx="6" fill="none" stroke-width="1.3"/>
+<text x="580.0" y="609.5" text-anchor="middle" style="font-size:12.5px;font-weight:600">device worker</text>
+<text x="580.0" y="624.5" text-anchor="middle" style="font-size:11px">runner process</text>
+<rect x="845" y="576" width="230" height="74" rx="6" fill="none" stroke-width="1.3"/>
+<text x="960.0" y="602.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">pipeline</text>
+<text x="960.0" y="617.0" text-anchor="middle" style="font-size:10.5px">MiniMax-H3 · Wan2.2 · LTX-2.3 · FLUX</text>
+<text x="960.0" y="632.0" text-anchor="middle" style="font-size:10.5px">Qwen-Image · SD3.5 · Mochi · Motif</text>
+<line x1="640" y1="597" x2="845" y2="597" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="762" y="589" text-anchor="middle" style="font-size:10.5px">run(request)</text>
+<line x1="845" y1="632" x2="640" y2="632" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="762" y="624" text-anchor="middle" style="font-size:10.5px">frames + audio, or an exception</text>
+<line x1="580" y1="644" x2="580" y2="670" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="590" y="661" text-anchor="start" style="font-size:10.5px">post-process: ffmpeg → mp4</text>
+<rect x="416" y="670" width="330" height="58" rx="6" fill="none" stroke-width="1.3"/>
+<text x="581.0" y="688.0" text-anchor="middle" style="font-size:12.5px;font-weight:600">job record</text>
+<text x="581.0" y="703.0" text-anchor="middle" style="font-size:11px">queued → in_progress → completed | failed | cancelled</text>
+<text x="581.0" y="718.0" text-anchor="middle" style="font-size:11px">failed: error {code, message}</text>
+<line x1="150" y1="760" x2="416" y2="760" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="283" y="752" text-anchor="middle" style="font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">GET /v1/jobs/{id}   ·   /content/{i}</text>
+<line x1="416" y1="790" x2="150" y2="790" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="283" y="782" text-anchor="middle" style="font-size:11px">status; outputs, or error {code, message}</text>
+<text x="283" y="805" text-anchor="middle" style="font-size:10.5px;font-style:italic">(poll until completed, failed or cancelled)</text>
+</svg>

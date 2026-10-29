@@ -450,6 +450,10 @@ class EvalTask:
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
     priority: str = "must"
+    # Media the task sends beyond text, e.g. ["audio"]; None keeps the venv's
+    # default (lmms-eval EVALS_VISION tasks send images). The eval runner skips
+    # a task on a serving profile whose ``supported_modalities`` lack one.
+    modalities: Optional[List[str]] = None
     # Per-device overrides, keyed by device name (e.g. "GALAXY",
     # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
     # three-tier device-variance model:
@@ -517,6 +521,7 @@ class EvalTask:
             "task_name",
             "workflow_venv_type",
             "eval_class",
+            "modalities",
             "num_fewshot",
             "seed",
             "include_path",
@@ -12892,6 +12897,65 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # FLEURS en_us speech recognition (WER), the model card's audio benchmark
+                # for the 12B: the 647 test utterances on the stock lmms-eval
+                # openai_compatible client, thinking off per request like MMMU-Pro. The
+                # request-overrides wrapper sends each utterance as an OpenAI input_audio
+                # part (16-bit PCM WAV; lmms-eval v0.4.1 forwards the HF Audio dict
+                # unencoded). The task ships in the EVALS_VISION pin; the EVALS_AUDIO venv
+                # is tt-media-server's /audio client, not a chat-completions client.
+                eval_class="openai_compatible",
+                task_name="fleurs_en",
+                # Only profiles that serve audio run it (the 12B Blackhole QB2 / Galaxy /
+                # GPU blocks); the text-only blocks skip it like MMMU-Pro.
+                modalities=["audio"],
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    # Model card: WER 0.069 for the 12B, an average over the FLEURS
+                    # languages except Chinese (the English split should score at least
+                    # as well). Graded as 100 - WER so the higher-is-better accuracy
+                    # check applies.
+                    published_score=100 - 6.9,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Same-protocol GPU reference: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 on an
+                    # A100 80 GB via stock vLLM 0.30.0, thinking off, greedy, WAV input_audio (2026-10-19):
+                    #   vllm serve google/gemma-4-12B-it --dtype bfloat16 --max-model-len 32768 --max-num-seqs 32 \
+                    #     --reasoning-parser gemma4 --default-chat-template-kwargs '{"enable_thinking": true}' --port 8000
+                    #   python run.py --model google/gemma-4-12B-it --workflow evals --tt-device gpu --dev-mode \
+                    #     --server-url http://127.0.0.1 --service-port 8000 --eval-tasks fleurs_en
+                    gpu_reference_score=100 - 6.63,
+                    gpu_reference_score_ref="same-protocol GPU run: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 A100 80 GB, stock vLLM, thinking off, greedy, WAV input_audio (2026-10-19, WER 6.63)",
+                    # lmms-eval reports WER in percent; the gate itself scores a
+                    # "WER"-unit task as 100 - WER (llm_eval_tests), so the raw key is
+                    # returned here like the other WER tasks.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # Transcripts are short: the task's own budget (thinking off).
+                    "max_new_tokens": "256",
+                },
+                # Both presets run the full 647 utterances (minutes at 32 in flight).
+                limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
