@@ -1508,14 +1508,6 @@ def test_tt_cache_env_rejects_non_env_var_names(
         module.model_setup(spec)
 
 
-MIMO_ROWS = [
-    "0,1,2,3,11,10,9,8",
-    "4,5,6,7,15,14,13,12",
-    "28,29,30,31,23,22,21,20",
-    "24,25,26,27,19,18,17,16",
-]
-
-
 def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
     template = next(
         t
@@ -1528,8 +1520,8 @@ def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
     assert vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_seqs"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
-    # One engine per mesh row behind the proxy; each engine gets its row as (1, 8).
-    assert spec.device_model_spec.submesh_engines == MIMO_ROWS
+    # One engine per mesh row behind the proxy; the launcher discovers the rows' chips.
+    assert spec.device_model_spec.submesh_engines is True
     assert spec.device_model_spec.env_vars["MESH_DEVICE"] == "(4, 8)"
     # 4 x 1M per lane with the global KV pair split (tt-metal #62679).
     assert spec.device_model_spec.env_vars["MIMO_KV_GB_PER_CHIP"] == 6.7
@@ -1555,7 +1547,7 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     # c=16: each engine verifies its 4 requests as 4 groups of 2 slots.
     assert spec.device_model_spec.env_vars["MIMO_SPEC_SLOTS"] == 8
     assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == 4
-    assert spec.device_model_spec.submesh_engines == MIMO_ROWS
+    assert spec.device_model_spec.submesh_engines is True
     # The model declares supports_async_spec_decode, so async scheduling stays on.
     assert "no-async-scheduling" not in vllm_args
     assert vllm_args["max_num_seqs"] == 8 and vllm_args["data_parallel_size"] == 4
@@ -1757,26 +1749,97 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 # ---------------------------------------------------------------- submesh engines
 
 
-def _submesh_spec(groups=("0,1", "2,3"), data_parallel_size=2):
+def _submesh_spec(data_parallel_size=2):
     return {
         "model_id": "id_x_Model_galaxy",
         "impl": {"impl_id": "x"},
         "device_model_spec": {
-            "submesh_engines": list(groups),
+            "submesh_engines": True,
             "vllm_args": {"data_parallel_size": data_parallel_size, "max_num_seqs": 4},
         },
     }
 
 
-def test_submesh_engine_groups(run_vllm_api_server_module):
+def test_submesh_engine_count(run_vllm_api_server_module):
     module = run_vllm_api_server_module
-    assert module.submesh_engine_groups({"device_model_spec": {}}) is None
-    assert module.submesh_engine_groups(_submesh_spec(("0, 1", "2,3"))) == [
-        "0,1",
-        "2,3",
-    ]
+    assert module.submesh_engine_count({"device_model_spec": {}}) is None
+    assert module.submesh_engine_count(_submesh_spec(4)) == 4
     with pytest.raises(ValueError, match="data_parallel_size"):
-        module.submesh_engine_groups(_submesh_spec(data_parallel_size=4))
+        module.submesh_engine_count(_submesh_spec(1))
+
+
+def _fake_discovery(conn, mesh_device_env, data_parallel_size):
+    # vllm-tt-plugin's run_standard_dp_visible_device_group_discovery, without devices.
+    rows = [
+        ",".join(str(4 * r + c) for c in range(4)) for r in range(data_parallel_size)
+    ]
+    conn.send(("ok", [(row, (1, 4)) for row in rows]))
+    conn.close()
+
+
+def _fake_discovery_failing(conn, mesh_device_env, data_parallel_size):
+    conn.send(("error", f"RuntimeError: no mesh {mesh_device_env}"))
+    conn.close()
+
+
+def _install_fake_discovery(monkeypatch, module, target):
+    fake = types.ModuleType("vllm_tt_plugin.utils.dp_discovery")
+    fake.run_standard_dp_visible_device_group_discovery = target
+    monkeypatch.setitem(sys.modules, "vllm_tt_plugin.utils.dp_discovery", fake)
+    # The fake lives only in this process: fork instead of spawn so the child has it.
+    fork = module.multiprocessing.get_context("fork")
+    monkeypatch.setattr(module.multiprocessing, "get_context", lambda method: fork)
+
+
+def test_discover_submesh_engine_groups(monkeypatch, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(2, 4)")
+    _install_fake_discovery(monkeypatch, module, _fake_discovery)
+    assert module.discover_submesh_engine_groups(2) == [
+        ("0,1,2,3", "(1, 4)"),
+        ("4,5,6,7", "(1, 4)"),
+    ]
+
+
+def test_discover_submesh_engine_groups_reports_failure(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(2, 4)")
+    _install_fake_discovery(monkeypatch, module, _fake_discovery_failing)
+    with pytest.raises(RuntimeError, match=r"no mesh \(2, 4\)"):
+        module.discover_submesh_engine_groups(2)
+
+
+def test_run_submesh_engines_hands_each_engine_its_group(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    # Each fake engine process is the environment it was started with.
+    monkeypatch.setattr(
+        module.subprocess, "Popen", lambda command, env, start_new_session: env
+    )
+    served = {}
+
+    async def serve_engine_proxy(procs, backends, host, port):
+        served.update(envs=procs, backends=backends, port=port)
+        return 0
+
+    monkeypatch.setattr(module, "serve_engine_proxy", serve_engine_proxy)
+    monkeypatch.setattr(module, "stop_submesh_engines", MagicMock())
+    groups = [("0,1,2,3", "(1, 4)"), ("4,5,6,7", "(1, 4)")]
+
+    assert module.run_submesh_engines(groups, ["--model", "m"], 7000, "0.0.0.0") == 0
+
+    envs = served["envs"]
+    assert [env[module.SUBMESH_ENGINE_INDEX_ENV] for env in envs] == ["0", "1"]
+    assert [env[module.SUBMESH_ENGINE_DEVICES_ENV] for env in envs] == [
+        "0,1,2,3",
+        "4,5,6,7",
+    ]
+    assert {env[module.SUBMESH_ENGINE_MESH_ENV] for env in envs} == {"(1, 4)"}
+    assert served["backends"] == ["http://127.0.0.1:7001", "http://127.0.0.1:7002"]
+    assert served["port"] == 7000
 
 
 def test_submesh_engine_command_moves_the_port(run_vllm_api_server_module):
@@ -1807,20 +1870,21 @@ def test_submesh_engine_command_moves_the_port(run_vllm_api_server_module):
 def test_configure_submesh_engine(monkeypatch, run_vllm_api_server_module):
     module = run_vllm_api_server_module
     monkeypatch.setenv("MESH_DEVICE", "(4, 8)")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "4,5,6,7")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 4)")
     monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
     monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
     monkeypatch.setattr(module.os, "cpu_count", lambda: 64)
     args = {"data_parallel_size": 4, "max_num_seqs": 4}
-    module.configure_submesh_engine(
-        ["0,1,2,3", "4,5,6,7", "8,9,10,11", "12,13,14,15"], 1, args
-    )
+    module.configure_submesh_engine(4, args)
     assert os.environ["TT_VISIBLE_DEVICES"] == "4,5,6,7"
     assert os.environ["MESH_DEVICE"] == "(1, 4)"
     assert os.environ["OMP_NUM_THREADS"] == "8"
     assert args == {"data_parallel_size": 1, "max_num_seqs": 4}
     # A spec-set OMP_NUM_THREADS wins.
     monkeypatch.setenv("OMP_NUM_THREADS", "3")
-    module.configure_submesh_engine(["0,1", "2,3"], 0, {"data_parallel_size": 2})
+    module.configure_submesh_engine(2, {"data_parallel_size": 2})
     assert os.environ["OMP_NUM_THREADS"] == "3"
 
 
@@ -1858,6 +1922,9 @@ def test_main_serves_submesh_engines_behind_the_proxy(
     module = run_vllm_api_server_module
     monkeypatch.delenv(module.SUBMESH_ENGINE_INDEX_ENV, raising=False)
     run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
+    groups = [("0,1", "(1, 2)"), ("2,3", "(1, 2)")]
+    discover = MagicMock(return_value=groups)
+    monkeypatch.setattr(module, "discover_submesh_engine_groups", discover)
     run_engines = MagicMock(return_value=0)
     monkeypatch.setattr(module, "run_submesh_engines", run_engines)
     monkeypatch.setattr(
@@ -1870,8 +1937,9 @@ def test_main_serves_submesh_engines_behind_the_proxy(
         module.main()
 
     assert stop.value.code == 0
+    discover.assert_called_once_with(2)
     run_engines.assert_called_once_with(
-        ["0,1", "2,3"], ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0"
+        groups, ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0"
     )
     run_module.assert_not_called()
 
@@ -1881,19 +1949,22 @@ def test_main_runs_one_engine_in_a_submesh_child(
 ):
     module = run_vllm_api_server_module
     monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "2,3")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 2)")
     monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setenv("MESH_DEVICE", "(1, 4)")
     run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
-    monkeypatch.setattr(
-        module,
-        "run_submesh_engines",
-        MagicMock(side_effect=AssertionError("parent path")),
-    )
+    for parent_only in ("discover_submesh_engine_groups", "run_submesh_engines"):
+        monkeypatch.setattr(
+            module, parent_only, MagicMock(side_effect=AssertionError("parent path"))
+        )
     monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
 
     module.main()
 
     run_module.assert_called_once()
     assert os.environ["TT_VISIBLE_DEVICES"] == "2,3"
+    assert os.environ["MESH_DEVICE"] == "(1, 2)"
     argv = " ".join(sys.argv)
     assert "--data_parallel_size 1" in argv and "--port 7000" in argv
 

@@ -3257,18 +3257,13 @@ templates:
       # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
       # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
       tensor_cache_timeout: 10800.0
-      # One vLLM engine per mesh row (TT_VISIBLE_DEVICES groups of the BH Galaxy's 1x8 rows, as
-      # tt-metal models/experimental/mimo_v2_6_flash/serving/discover_rows.py prints them) behind the
-      # launcher's prefix-cache aware proxy on the service port: a row prefills while the others
+      # One vLLM engine per mesh row (the launcher discovers each 1x8 row's chips at startup) behind
+      # the launcher's prefix-cache aware proxy on the service port: a row prefills while the others
       # decode. With the four rows as lanes of one engine (--data-parallel-size 4 alone), a prefill on
       # any lane stalls every lane's decode. Measured (SPEED-Bench coding, c=16): 835 -> 984 tok/s;
       # 16 x 256K prompts finish in 320 s instead of 685 (tt-metal mimo-v2.6/row-engines,
       # doc/vllm_integration/README.md "One engine per Galaxy row").
-      submesh_engines:
-        - "0,1,2,3,11,10,9,8"
-        - "4,5,6,7,15,14,13,12"
-        - "28,29,30,31,23,22,21,20"
-        - "24,25,26,27,19,18,17,16"
+      submesh_engines: true
       env_vars:
         MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3336,18 +3331,13 @@ templates:
       default_impl: false
       # Its own persistent volume (keyed by impl), so the first start converts the TTNN cache too.
       tensor_cache_timeout: 10800.0
-      # One vLLM engine per mesh row (TT_VISIBLE_DEVICES groups of the BH Galaxy's 1x8 rows, as
-      # tt-metal models/experimental/mimo_v2_6_flash/serving/discover_rows.py prints them) behind the
-      # launcher's prefix-cache aware proxy on the service port: a row prefills while the others
+      # One vLLM engine per mesh row (the launcher discovers each 1x8 row's chips at startup) behind
+      # the launcher's prefix-cache aware proxy on the service port: a row prefills while the others
       # decode. With the four rows as lanes of one engine (--data-parallel-size 4 alone), a prefill on
       # any lane stalls every lane's decode. Measured (SPEED-Bench coding, c=16): 835 -> 984 tok/s;
       # 16 x 256K prompts finish in 320 s instead of 685 (tt-metal mimo-v2.6/row-engines,
       # doc/vllm_integration/README.md "One engine per Galaxy row").
-      submesh_engines:
-        - "0,1,2,3,11,10,9,8"
-        - "4,5,6,7,15,14,13,12"
-        - "28,29,30,31,23,22,21,20"
-        - "24,25,26,27,19,18,17,16"
+      submesh_engines: true
       env_vars:
         MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
