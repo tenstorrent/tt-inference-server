@@ -1,0 +1,288 @@
+{
+  "scope": "Full64 physicalB1/native262144; matched0/1compact flag; clientSSE; not fullStage9/release/SWE closure",
+  "image": "ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:cae3e50bc45fa12f7ff34410fdaf3b5a5362bc7296a3979a1112e61a5b1c9939",
+  "metal": "f023ac0e0bcb70118f09eb994128e65dfdbc7411",
+  "serving_wrapper": "cae0049e9a05b6858af98f5402bdb4d78898514c",
+  "control_tti": "df02557da5ae4ad2fe17d5958c6e6cf5cb852c26",
+  "candidate_tti": "ef8461f67c628f73441cf76d61cf37a77d3b8d95",
+  "runs": {
+    "control": 40926118763,
+    "candidate": 40931138892
+  },
+  "matched_host": "qb2-120-p05t02",
+  "input_records_exact": 12,
+  "performance_outputs_exact": 12,
+  "qualitative_outputs_exact": 6,
+  "qualitative_eos": 3,
+  "qualitative_coherent_caps256": 3,
+  "all_measured_candidate_TSU_above40": true,
+  "summary": {
+    "128": {
+      "control": {
+        "ttft_ms": {
+          "values": [
+            114.85740263015032,
+            113.85067086666822,
+            113.97893726825714
+          ],
+          "median": 113.97893726825714
+        },
+        "tpot_ms": {
+          "values": [
+            26.320484151521068,
+            26.321536190367823,
+            26.32391782418832
+          ],
+          "median": 26.321536190367823
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            37.99322209436675,
+            37.99170355284745,
+            37.98826628615014
+          ],
+          "median": 37.99170355284745
+        },
+        "output_throughput": {
+          "values": [
+            37.0194425198032,
+            37.02877209888689,
+            37.02411617425551
+          ],
+          "median": 37.02411617425551
+        }
+      },
+      "candidate": {
+        "ttft_ms": {
+          "values": [
+            113.60879521816969,
+            115.85924215614796,
+            115.27404375374317
+          ],
+          "median": 115.27404375374317
+        },
+        "tpot_ms": {
+          "values": [
+            23.197843557531673,
+            23.196854566289918,
+            23.196564158644733
+          ],
+          "median": 23.196854566289918
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            43.107455118401674,
+            43.10929299238776,
+            43.10983269594808
+          ],
+          "median": 43.10929299238776
+        },
+        "output_throughput": {
+          "values": [
+            41.832407892084554,
+            41.80332546094336,
+            41.812126389223934
+          ],
+          "median": 41.812126389223934
+        }
+      },
+      "decode_tsu_gain_percent": 13.47028156403045,
+      "ttft_change_percent": 1.1362682584396433
+    },
+    "4096": {
+      "control": {
+        "ttft_ms": {
+          "values": [
+            419.55991787835956,
+            420.55506724864244,
+            420.0042560696602
+          ],
+          "median": 420.0042560696602
+        },
+        "tpot_ms": {
+          "values": [
+            26.712113544051572,
+            26.70710398925571,
+            26.71166506456578
+          ],
+          "median": 26.71166506456578
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            37.43619906193033,
+            37.44322111458812,
+            37.4368276025797
+          ],
+          "median": 37.4368276025797
+        },
+        "output_throughput": {
+          "values": [
+            33.57721240893396,
+            33.57432770724776,
+            33.574016327826804
+          ],
+          "median": 33.57432770724776
+        }
+      },
+      "candidate": {
+        "ttft_ms": {
+          "values": [
+            418.1363838724792,
+            418.3887951076031,
+            420.1426226645708
+          ],
+          "median": 418.3887951076031
+        },
+        "tpot_ms": {
+          "values": [
+            23.58229332566848,
+            23.580356559708832,
+            23.58399285003543
+          ],
+          "median": 23.58229332566848
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            42.404696871085726,
+            42.408179768946965,
+            42.40164107743519
+          ],
+          "median": 42.404696871085726
+        },
+        "output_throughput": {
+          "values": [
+            37.501157548250006,
+            37.50180439843284,
+            37.47735628534424
+          ],
+          "median": 37.501157548250006
+        }
+      },
+      "decode_tsu_gain_percent": 13.270005998488244,
+      "ttft_change_percent": -0.3846296647501579
+    },
+    "129": {
+      "control": {
+        "ttft_ms": {
+          "values": [
+            115.71377702057362,
+            115.12669734656811,
+            113.89303300529718
+          ],
+          "median": 115.12669734656811
+        },
+        "tpot_ms": {
+          "values": [
+            26.323181819024047,
+            26.324052708296794,
+            26.323714036875824
+          ],
+          "median": 26.323714036875824
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            37.98932845106473,
+            37.988071634760885,
+            37.988560375604315
+          ],
+          "median": 37.988560375604315
+        },
+        "output_throughput": {
+          "values": [
+            37.006507993613944,
+            37.01199064015913,
+            37.02542816111633
+          ],
+          "median": 37.01199064015913
+        }
+      },
+      "candidate": {
+        "ttft_ms": {
+          "values": [
+            118.01981600001454,
+            113.64577477797866,
+            119.11814194172621
+          ],
+          "median": 118.01981600001454
+        },
+        "tpot_ms": {
+          "values": [
+            23.201397077481108,
+            23.196852971308346,
+            23.196727825754035
+          ],
+          "median": 23.196852971308346
+        },
+        "decode_tokens_per_second_per_user": {
+          "values": [
+            43.100852791773626,
+            43.109295956519496,
+            43.10952852969873
+          ],
+          "median": 43.109295956519496
+        },
+        "output_throughput": {
+          "values": [
+            41.766145289787794,
+            41.833725728567,
+            41.75939330606668
+          ],
+          "median": 41.766145289787794
+        }
+      },
+      "decode_tsu_gain_percent": 13.47967790904665,
+      "ttft_change_percent": 2.51298675296594
+    }
+  },
+  "worker_counts": {
+    "control": {
+      "prefill_and_releases": 18,
+      "sampling_replays": 2506,
+      "model_replays": 2488,
+      "readbacks": 2506,
+      "captures_before_after": [
+        3,
+        3
+      ],
+      "retirements_during_requests": 0,
+      "host_logits_reads": 0
+    },
+    "candidate": {
+      "prefill_and_releases": 18,
+      "sampling_replays": 2506,
+      "model_replays": 2488,
+      "readbacks": 2506,
+      "captures_before_after": [
+        3,
+        3
+      ],
+      "retirements_during_requests": 0,
+      "host_logits_reads": 0
+    }
+  },
+  "preparation_host_s_excluded": {
+    "control": 1278.317203886807,
+    "candidate": 1289.373708921019
+  },
+  "stable_export_status": "incomplete_both_arms; chat-only HTTP audit file absent for completions probe; worker/client artifacts reconcile and cleanup complete",
+  "trace_lifetime_scope": "captures3->3 and retirements0 during18requests; shutdown trace destruction not separately instrumented; owned cleanup separately complete",
+  "async_excess_classification": "One extra sampled/read in-flight result on each EOS-ended quality call, consistent with async lookahead/late suppression; EOS already in returned IDs; timed calls have0excess. Actual discarded values not logged.",
+  "native_reference": {
+    "historical_native_candidate_tsu": 40.67309104397927,
+    "scope_differences": [
+      "compiledbackend",
+      "prompt/token trajectory",
+      "cacheownership",
+      "buffered native versus client SSE boundaries"
+    ],
+    "current_serving_4k_minus_historical_native_tsu": 1.7316058271064563,
+    "no_isolated_overhead_attribution": true
+  },
+  "independent_review": "clean-pass for bounded B1 serving check; see qwen38_b1_serving_review.md",
+  "actual_installed_plugin": {
+    "version": "0.1.0",
+    "vllm_version": "0.30.0+empty",
+    "model_runner_sha256": "f09e7719214d6e3e1d2b82e4abc3534b9779a1358949a9adda0625f2d1c3422c",
+    "identity": "immutable image and readback hashes; dispatch1bad ref is not pristine installed source"
+  }
+}
