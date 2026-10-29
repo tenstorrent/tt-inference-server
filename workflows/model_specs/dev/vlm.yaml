@@ -676,7 +676,9 @@ templates:
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
-        DSV41_VLLM_MAX_PARTIAL: "4"  # up to four prompts part-way through their prefill (one per mesh row; bench_b8 value)
+        DSV41_VLLM_MAX_PARTIAL: "8"  # Up=2: all eight prompts of the B=8 build may be part-way through their prefill
+        DSV41_PREFILL_UP: "2"  # users per mesh row of the prefill trace (Up=2: two slots per row, replay cost 1.67x of Up=1, under the 2x bar)
+        DSV41_PREFILL_UP_BATCH: "1"  # both slots of a row in ONE replay at different chunk starts (per-slot tables); replaces the row-aware placement (a no-op at Up=2 = users per row)
         DSV41_SPEC_MAX_CTX: "1048832"  # speculative decode context cap = max_model_len + 256 (bench_b8 spec)
         DSV41_VLLM_SPEC_ADAPT: "1"  # adaptive speculative decode (two verify runners)
         DSV41_VLLM_SPEC_KS: "3,5"  # the adaptive runner set
@@ -703,7 +705,7 @@ templates:
         chat-template-content-format: openai  # image_url content parts (the DeepSeek-V4.1 renderer of tokenizer-mode deepseek_v41 does the chat formatting; vllm_config/chat_template.jinja is no longer passed)
         max_num_seqs: "8"
         max_model_len: "1048576"
-        max_num_batched_tokens: "16384"  # chunked prefill token budget per step (bench_b8 value: 4 prefilling prompts x 4096, threshold below)
+        max_num_batched_tokens: "32768"  # chunked prefill token budget per step: 8 prefilling prompts x 4096 (threshold below)
         long_prefill_token_threshold: 4096  # per-request prefill tokens per scheduler step (vLLM applies it while more than one request is eligible); needed so that concurrent prompts advance together
         enable-prefix-caching: true  # APC on by default (with DSV41_APC=1 and DSV41_PF_PAGED=read above); --no-enable-prefix-caching turns it off
         limit-mm-per-prompt: '{"image": 250}'
