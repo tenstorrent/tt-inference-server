@@ -1663,7 +1663,7 @@ templates:
         MESH_DEVICE: P300x2
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
-        QWEN38_COMPACT_B1_RECURRENCE: "0"
+        QWEN38_COMPACT_B1_RECURRENCE: "1"
         QWEN38_RUN_CAPACITY_SCREEN: "0"
         QWEN38_MEMORY_ATTESTATION: "0"
         QWEN38_MEMORY_CHECKPOINTS: "0"
