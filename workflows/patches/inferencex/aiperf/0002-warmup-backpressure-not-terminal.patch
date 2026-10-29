@@ -1,0 +1,47 @@
+diff --git a/src/aiperf/credit/callback_handler.py b/src/aiperf/credit/callback_handler.py
+index 8b7053d3..ee680001 100644
+--- a/src/aiperf/credit/callback_handler.py
++++ b/src/aiperf/credit/callback_handler.py
+@@ -36,6 +36,26 @@ if TYPE_CHECKING:
+ 
+ _logger = AIPerfLogger(__name__)
+ 
++# Server-side back-pressure, not a broken warmup. A saturated inference server
++# sheds with an overload status (Dynamo's DYN_HTTP_OVERLOAD_STATUS_CODE, 529 by
++# default) instead of failing the request; the trajectory is fine and the next
++# phase can still run it. Treating one shed credit as a terminal warmup failure
++# aborts the whole profile, which is how a 10-minute AgentX c=80 run was thrown
++# away on 2026-10-29 after the decode worker shed 8 requests in one second.
++# CreditReturn.error is str(ErrorDetails), so match the rendered fields.
++_WARMUP_BACKPRESSURE_MARKERS = (
++    "code=529",
++    "Server overloaded",
++    "worker at capacity",
++)
++
++
++def _is_backpressure_error(error: str | None) -> bool:
++    """True when a credit return carries a server overload signal."""
++    return error is not None and any(
++        marker in error for marker in _WARMUP_BACKPRESSURE_MARKERS
++    )
++
+ 
+ @dataclass(slots=True)
+ class PhaseCallbackContext:
+@@ -300,6 +320,15 @@ class CreditCallbackHandler:
+             and (credit_return.error is not None or credit_return.cancelled)
+         ):
+             return
++        if _is_backpressure_error(credit_return.error):
++            # Shed, not failed: do not record it and do not abort. The run
++            # proceeds to PROFILING, where the same trajectory is issued again.
++            _logger.warning(
++                lambda: f"Warmup credit for trace {credit.conversation_id} was shed by "
++                f"the server ({credit_return.error}); treating as back-pressure, "
++                f"not a terminal warmup failure."
++            )
++            return
+         record_warmup_failure = getattr(handler.strategy, "record_warmup_failure", None)
+         if record_warmup_failure is None:
+             return
