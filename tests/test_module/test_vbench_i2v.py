@@ -124,18 +124,6 @@ def test_a_conditioning_image_needs_a_folder_or_a_shape():
         mod.find_conditioning_image("bird.jpg")
 
 
-def test_every_manifest_camera_move_is_one_vbench_reads():
-    manifest = json.loads(
-        (
-            mod.REPO_ROOT / "test_fixtures/datasets/vbench_i2v_50/manifest.json"
-        ).read_text()
-    )
-    moved = [e for e in manifest if e["camera_motion"]]
-    assert {e["camera_motion"] for e in moved} == set(mod.CAMERA_PHRASES)
-    for entry in moved:
-        assert entry["caption"].endswith(mod.CAMERA_PHRASES[entry["camera_motion"]])
-
-
 def test_camera_clips_are_linked_under_names_carrying_the_move(tmp_path):
     videos, links = tmp_path / "v", tmp_path / "links"
     videos.mkdir()

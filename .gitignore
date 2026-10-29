@@ -90,9 +90,6 @@ tt-media-server/huggingface
 
 # ignore downloaded datsets
 test_fixtures/datasets/*
-# ...except the I2V validation set's manifest; its images are on Hugging Face
-!test_fixtures/datasets/vbench_i2v_50/
-!test_fixtures/datasets/vbench_i2v_50/manifest.json
 
 # ignore generated files
 model_spec.json

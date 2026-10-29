@@ -19,25 +19,51 @@ from test_module._test_common.video_generation_routing import (
     build_video_generation_payload,
 )
 
-MANIFEST = json.loads(I2V_EVAL_MANIFEST.read_text())
 SHAPES = {(832, 480), (480, 832), (1280, 720), (720, 1280)}
+# The validation set's layout: the dev set's 5 videos (each shape, plus a
+# second 832x480 one) lead, within the ci set's 20, within all 65.
+DEV_SHAPES = [(832, 480), (832, 480), (480, 832), (1280, 720), (720, 1280)]
+
+
+def _manifest() -> list[dict]:
+    manifest = []
+    for i in range(65):
+        width, height = DEV_SHAPES[i] if i < 5 else (832, 480)
+        pair_id = f"vbi2v_{i:04d}"
+        video_id = f"{pair_id}_{width}x{height}"
+        manifest.append(
+            {
+                "pair_id": pair_id,
+                "video_id": video_id,
+                "image": f"images/{width}x{height}/{pair_id}.jpg",
+                "image_sha256": hashlib.sha256(video_id.encode()).hexdigest(),
+                "caption": f"prompt {i}" + (", camera pans left" if i == 1 else ""),
+                "camera_motion": "pan_left" if i == 1 else None,
+                "width": width,
+                "height": height,
+                "seed": 1000 + i,
+                "dev": i < 5,
+                "ci": i < 20,
+            }
+        )
+    return manifest
+
+
+MANIFEST = _manifest()
 
 
 @pytest.fixture
 def eval_data(tmp_path, monkeypatch):
     """The HF eval data as a local folder, each first frame matching its sha256."""
-    from test_module._test_common import vbench_i2v, video_generation_routing
+    from test_module._test_common import vbench_i2v
 
-    manifest = []
     for entry in MANIFEST:
         path = tmp_path / entry["image"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(entry["video_id"].encode())
-        sha = hashlib.sha256(entry["video_id"].encode()).hexdigest()
-        manifest.append({**entry, "image_sha256": sha})
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest))
-    monkeypatch.setattr(video_generation_routing, "I2V_EVAL_MANIFEST", manifest_path)
+    manifest_path = tmp_path / I2V_EVAL_MANIFEST
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(MANIFEST))
     fetched = []
 
     def fake_snapshot(patterns):
@@ -51,7 +77,7 @@ def eval_data(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "subset,count", [(None, 20), ("dev", 5), ("ci", 20), ("all", 65)]
 )
-def test_the_eval_runs_its_subset_ci_by_default(monkeypatch, subset, count):
+def test_the_eval_runs_its_subset_ci_by_default(monkeypatch, eval_data, subset, count):
     if subset:
         monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, subset)
     else:
@@ -69,7 +95,7 @@ def test_each_video_carries_its_request(monkeypatch, eval_data):
     monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
     pairs = load_i2v_eval_pairs(i2v_eval_num_pairs())
     dev = [e for e in MANIFEST if e["dev"]]
-    assert eval_data.fetched == [e["image"] for e in dev]
+    assert eval_data.fetched == [I2V_EVAL_MANIFEST] * 2 + [e["image"] for e in dev]
     assert {p["shape"] for p in pairs} == SHAPES
     for pair, entry in zip(pairs, dev):
         assert pair["video_id"] == entry["video_id"]
@@ -92,16 +118,6 @@ def test_the_eval_refuses_more_videos_than_its_subset_has(monkeypatch, eval_data
     monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
     with pytest.raises(ValueError, match="wants 6 videos"):
         load_i2v_eval_pairs(6)
-
-
-def test_wan_negative_prompt_matches_the_gpu_reference_script():
-    import importlib.util
-
-    script = I2V_EVAL_MANIFEST.parents[3] / "scripts" / "wan_i2v_gpu_reference.py"
-    spec = importlib.util.spec_from_file_location("wan_ref", script.resolve())
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert module.WAN_NEGATIVE_PROMPT == WAN22_NEGATIVE_PROMPT
 
 
 def test_payload_sends_the_videos_shape_seed_and_negative_prompt():

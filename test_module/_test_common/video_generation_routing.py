@@ -22,13 +22,11 @@ FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 # The I2V eval's videos: the validation set, 50 VBench-I2V pairs at the four
-# output shapes (scripts/select_vbench_i2v_pairs.py). Each video has its own
-# shape, seed and Wan2.2's negative prompt, and its first frame is read from the
-# eval data on Hugging Face. I2V_EVAL_SUBSET picks dev (5 videos), ci (20, the
-# default) or all (65).
-I2V_EVAL_MANIFEST = (
-    Path("test_fixtures") / "datasets" / "vbench_i2v_50" / "manifest.json"
-)
+# output shapes. Each video has its own shape, seed and Wan2.2's negative
+# prompt. Its manifest and first frames are read from the eval data on Hugging
+# Face (vbench_i2v.I2V_EVAL_HF_REPO), which also holds the tool that made them.
+# I2V_EVAL_SUBSET picks dev (5 videos), ci (20, the default) or all (65).
+I2V_EVAL_MANIFEST = "pairs/manifest.json"
 I2V_EVAL_SUBSETS = ("dev", "ci", "all")
 I2V_EVAL_SUBSET_ENV = "I2V_EVAL_SUBSET"
 DEFAULT_I2V_EVAL_SUBSET = "ci"
@@ -81,8 +79,11 @@ def i2v_eval_subset() -> str:
 
 def i2v_eval_videos() -> list[dict]:
     """The validation set's manifest entries in the eval's subset, one per video."""
+    from .vbench_i2v import hf_snapshot
+
     subset = i2v_eval_subset()
-    manifest = json.loads(I2V_EVAL_MANIFEST.read_text())
+    manifest_path = hf_snapshot([I2V_EVAL_MANIFEST]) / I2V_EVAL_MANIFEST
+    manifest = json.loads(manifest_path.read_text())
     return [e for e in manifest if subset == "all" or e[subset]]
 
 

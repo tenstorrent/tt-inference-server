@@ -22,7 +22,7 @@ scored the same way and compared dimension by dimension:
 
 When the GPU reference run in the eval data on Hugging Face (GPU_REFERENCE_RUN,
 or GPU_REFERENCE_RUN_CACHED for a deployment that caches, in I2V_EVAL_HF_REPO
-at I2V_EVAL_HF_REVISION, from scripts/wan_i2v_gpu_reference.py) has clips for
+at I2V_EVAL_HF_REVISION, made by its tools/wan_i2v_gpu_reference.py) has clips for
 the same videos, matched by video id, each dimension is also reported against
 them, and each clip is compared with its GPU clip frame by frame:
 
@@ -69,7 +69,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Private to the Tenstorrent org, so reading it needs HF_TOKEN. The revision is
 # pinned, so a new reference or image set reaches CI only through a commit here.
 I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs"
-I2V_EVAL_HF_REVISION = "be9b4745e0414c4b6fe6dbf4ddd06f9a6786f6e8"
+I2V_EVAL_HF_REVISION = "821c6cb061c5d4109d10c467d54d478e5fa0095a"
 # The GPU run TT is compared with: Wan2.2's I2V settings, Cache-DiT off.
 GPU_REFERENCE_RUN = "refs/r1"
 # The same with Cache-DiT on, set to TT's DBCache recipe: what a deployment
