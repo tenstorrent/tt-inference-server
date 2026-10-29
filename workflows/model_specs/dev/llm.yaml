@@ -667,6 +667,19 @@ templates:
         # on the composed tree): no ratio-1 mask build and no row-major
         # add on the chunks of the score buckets over 32K.
         TT_V41_PREFILL_INDEX_BOUND: "1"
+        # Prompt packing: the generator runs the whole short prompts of a listed layout (k x length)
+        # as one packed chunk on the 5,120 geometry (TT_V41_PACK_CHUNK: a pack of four 1,028s pays
+        # that chunk, not the 10,240 one), each prompt isolated by its own positions, window rows,
+        # index-mask bounds and carries and joining its decode slot from its own segment (one packed
+        # state at the first score bucket, ~60 MB a chip; one capture per layout and the segment
+        # joins per slot at warm-up), and the scheduler admits exactly those prompts in one step
+        # (TT_SCHED_PACK, the same list; sched_pack: under TT_SCHED_DEFER_FINAL the held one-chunk
+        # prompts of a draining cohort). The short c32 points (12, 13) are what it moves; at c1 and
+        # on longer prompts the flags are inert.
+        TT_V41_PACK: "1"
+        TT_V41_PACK_CHUNK: "5120"
+        TT_V41_PACK_LAYOUTS: "4x1028,3x1028,2x1028,2x2052"
+        TT_SCHED_PACK: "4x1028,3x1028,2x1028,2x2052"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
