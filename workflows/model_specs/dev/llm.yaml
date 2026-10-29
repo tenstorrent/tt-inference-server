@@ -3566,6 +3566,7 @@ templates:
         # Throwaway: adaptive draft length on the 8-row kernels: K=3 for up to 2 requests per lane, K=1 for 3-4 (tt-metal mimo-v2.6/dev-mtp-adaptive-k, plugin lane-k1).
         MIMO_SPEC_SLOTS: 8
         MIMO_SPEC_GROUPS: "2,4"
+        MIMO_VLLM_TIMING: 1  # throwaway: chained vs host drafts, waits and step timing in the server log
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
