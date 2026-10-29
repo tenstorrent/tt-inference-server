@@ -11,13 +11,15 @@ from llm_module.agentic.local_datasets import prepare_local_dataset
 from reference_config.evals.eval_config import (
     ALL_EVAL_CONFIGS,
     DEEPSWE_TEST_WORKER_ENV,
+    HarborEvalConfig,
 )
 
 
 def _harbor_configs():
     for eval_config in ALL_EVAL_CONFIGS.values():
         for task in eval_config.tasks:
-            if task.agentic_eval_config is not None:
+            # Only Harbor configs have a dataset; AutomationBench's does not.
+            if isinstance(task.agentic_eval_config, HarborEvalConfig):
                 yield task.agentic_eval_config
 
 
