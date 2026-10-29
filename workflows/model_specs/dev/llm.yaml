@@ -3528,6 +3528,29 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# Remote-served model: evaluated against an external OpenAI-compatible endpoint via `--server-url`. Sized for
+# tt-shield's Gemma-4-31B P/D deployment (tt-orchestration values.gemma4.yaml: SC12 or SC16 blaze decode, four
+# one-galaxy prefills): 6 KV slots per side, one kept free for prefix reuse, and 253952 tokens advertised (one
+# 8192-token prefill chunk below the 262144-token caches). The id matches the AgentX config
+# id_blaze_gemma-4-31B-it_super_cluster.
+- weights:
+    - google/gemma-4-31B-it
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 5
+      max_context: 253952  # 248 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      remote_api_model: google/gemma-4-31B-it
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
 - weights:
     - moonshotai/Kimi-K2.7-Code
   impl: blaze

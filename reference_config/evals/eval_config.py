@@ -12070,6 +12070,65 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # SWE-bench Verified for the SUPER_CLUSTER P/D deployment (tt-shield's Gemma P/D catalog leaf); the
+                # QB2 port dropped it (#5212). Not gating: Google publishes no SWE-bench Verified number for Gemma 4.
+                # Run it alone with --agentic-benchmark swebench; AGENTIC_MAX_CONCURRENT_TRIALS caps the trials to the
+                # deployment's slots.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full SWE-bench Verified (500), mini-swe-agent, single H100 NVL bring-your-own vLLM
+                    # (max-model-len 204800, enable_thinking=true), temp=1.0/top_p=0.95/top_k=20, 32K out,
+                    # 2026-06-18: 324/500 resolved.
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    # Thinking on per request, as the GPU reference and terminal_bench_2 above.
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {"enable_thinking": True},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
                 # LiveCodeBench on the chat endpoint with thinking on (same
                 # sampling as r1_gpqa_diamond). Scored on the model card's "v6"
                 # window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); the 31B
