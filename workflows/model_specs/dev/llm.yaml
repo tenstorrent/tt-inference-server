@@ -350,8 +350,9 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
-        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: prose +25..+50 %, code +40..+55 % over the plain step), K=3 at 6-8 rows (conc 32: +3..+27 %); a K=1 record at 16 rows lands at plain, so above 8 rows per engine (conc > 32) the step is the plain decode
+        GEMMA4_SPEC_EXTRA_SHAPES: "5:3"  # a (5,3) record beside the (5,5), as measured on the QB2 block (chosen most at 2-5 rows); 4 shapes x 4 rungs = 16 records, the count the trace region was sized for
+        GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 960 MB trace region
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
