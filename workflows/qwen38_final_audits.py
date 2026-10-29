@@ -32,6 +32,9 @@ FLAT_OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src
 # Metal502069d1858. The export helper continues to use the fixed IMAGE above.
 CAPACITY_OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:41aa0687bc668186baf9c4ed7942e135b60cf8828d9bbd67418cf53993a3d612'
 
+# Frozen compactB1 runtime-only overlay: build40923312357, Metalf023ac0e0bc.
+B1_OVERLAY_IMAGE='ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:cae3e50bc45fa12f7ff34410fdaf3b5a5362bc7296a3979a1112e61a5b1c9939'
+
 # This exact fixed code runs in a no-network/no-device/read-only helper. It reads
 # only the two proven filenames, never discovers files or reads environment.
 COLLECTOR=r'''
@@ -86,7 +89,7 @@ sys.stdout.buffer.write(buf.getvalue())
 
 def validate_plan(p,runner,expected_owner=None):
     if p.get('volume')!='volume_id_qwen38_autoport-Qwen3.8-27B':raise ValueError('unexpected volume')
-    if p.get('image') not in (IMAGE,OVERLAY_IMAGE,MASKED_OVERLAY_IMAGE,FLAT_OVERLAY_IMAGE,CAPACITY_OVERLAY_IMAGE):raise ValueError('unexpected immutable image')
+    if p.get('image') not in (IMAGE,OVERLAY_IMAGE,MASKED_OVERLAY_IMAGE,FLAT_OVERLAY_IMAGE,CAPACITY_OVERLAY_IMAGE,B1_OVERLAY_IMAGE):raise ValueError('unexpected immutable image')
     if runner not in p.get('host_aliases',[]):raise ValueError('wrong assigned host')
     if not re.fullmatch(r'goal12-[0-9]+-[0-9]+-[0-9]+',p.get('source_owner','')):raise ValueError('invalid source owner')
     if str(p.get('source_run_id'))!=p['source_owner'].split('-')[1]:raise ValueError('source run/owner mismatch')
