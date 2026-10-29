@@ -259,10 +259,17 @@ def main():
         '        QWEN38_FLAT_PREFILL: "1"\n'
         f'        QWEN38_SHARED_MLP_WEIGHTS: "{shared}"\n'
         '        QWEN38_SHARED_MLP_READERS: "1"\n'
-        '        QWEN38_SHARED_MLP_CORES: "80"\n'
-        '        QWEN38_MEMORY_ATTESTATION: "1"\n'
-        '        QWEN38_MEMORY_CHECKPOINTS: "1"',
+        '        QWEN38_SHARED_MLP_CORES: "80"',
     )
+    for flag in ("QWEN38_MEMORY_ATTESTATION", "QWEN38_MEMORY_CHECKPOINTS"):
+        if f"        {flag}:" not in section:
+            section = section.replace(
+                '        QWEN38_FLAT_PREFILL: "1"',
+                f'        {flag}: "1"\n        QWEN38_FLAT_PREFILL: "1"',
+            )
+    # Qualified serving arms reuse the closed native receipts; they must not
+    # repeat the full capacity search before each fresh server.
+    section = section.replace('QWEN38_RUN_CAPACITY_SCREEN: "1"', 'QWEN38_RUN_CAPACITY_SCREEN: "0"')
     updated = original[:start] + section + original[end:]
     control = root / "reference_config/evals/qwen38_goal12.json"
     original_control = control.read_text()

@@ -203,7 +203,12 @@ def _require_openai_server(ctx: MediaContext) -> None:
         controller, "models_url", ""
     )
     logger.info("Waiting for inference server readiness at %s", endpoint)
-    if not controller.wait_for_healthy():
+    readiness_options = {}
+    if getattr(ctx.model_spec, "env_vars", {}).get("QWEN38_RUN_CAPACITY_SCREEN") == "1":
+        # Only this explicit unscored experiment includes native diagnostics
+        # before the health endpoint exists; request/task budgets are unchanged.
+        readiness_options["timeout"] = ctx.model_spec.device_model_spec.tensor_cache_timeout
+    if not controller.wait_for_healthy(**readiness_options):
         raise RuntimeError(f"Inference server health check failed at {endpoint}")
     logger.info("Inference server health check passed via %s", endpoint)
 

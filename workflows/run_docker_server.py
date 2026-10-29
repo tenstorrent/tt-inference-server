@@ -821,6 +821,18 @@ def generate_docker_run_command(
 
     docker_command += _qwen38_audit_mount(repo_root_path, model_spec, runtime_config.dev_mode)
 
+    if model_spec.env_vars.get("QWEN38_RUN_CAPACITY_SCREEN") == "1":
+        if (not runtime_config.dev_mode or model_spec.impl.impl_id != "qwen38_autoport"
+                or model_spec.hf_model_repo != "Qwen/Qwen3.8-27B"):
+            raise ValueError("Qwen capacity screen requires the explicit autoport dev configuration")
+        evidence = get_default_workflow_root_log_dir() / "qwen38_capacity"
+        ensure_readwriteable_dir(evidence)
+        # This dedicated artifact directory must be writable by container UID1000.
+        evidence.chmod(0o777)
+        docker_command += ["--mount", f"type=bind,src={evidence},dst=/qwen38-capacity"]
+        docker_env_vars["QWEN38_CAPACITY_OUTPUT"] = f"/qwen38-capacity/run-{time.time_ns()}"
+        docker_env_vars["QWEN38_CAPACITY_IMAGE_DIGEST"] = model_spec.docker_image
+
     if setup_config and "QWEN38_HTTP_AUDIT" in docker_env_vars:
         _write_qwen38_audit_source(setup_config, model_spec, container_name, docker_env_vars)
 

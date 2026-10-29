@@ -376,6 +376,10 @@ class ServerCommand(Command):
     def execute(self) -> CommandResult:
         spec = self.launch
         attempts = _server_boot_attempts()
+        if getattr(spec.model_spec, "env_vars", {}).get("QWEN38_RUN_CAPACITY_SCREEN") == "1":
+            # A diagnostic failure requires evidence review. Rebooting the
+            # server would silently start a second device campaign.
+            attempts = 1
         last_error = None
         attempts_made = 0
 

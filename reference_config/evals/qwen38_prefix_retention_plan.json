@@ -1,9 +1,9 @@
 {
-  "status": "prepared_not_dispatched",
+  "status": "capacity_integrated_image_built_serving_evidence_pending",
   "scored": false,
   "base_tti_commit": "649c4342d6a1aab5f99c7c6ece672721182a98e9",
-  "image": "ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:677859aa1eba574ffb95214247ed1849ad17cddfe1faf1884c0dd73a5bf53d07",
-  "tt_metal": "6faa07fb5320284381ca1a9ab4651489366d7436",
+  "image": "ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:41aa0687bc668186baf9c4ed7942e135b60cf8828d9bbd67418cf53993a3d612",
+  "tt_metal": "502069d1858aeaba995d90653eb4999193e6b4c8",
   "plugin": "1badbd02bb6911dfdb59c206bdc00c6c1e8dc0bf",
   "tokenizer_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
   "batch": 32,
@@ -41,7 +41,7 @@
   "outputs_per_request": 1,
   "request_budget_s": 3600,
   "timing": "One-hour client request budget starts after server readiness, before input tokenization; deployment/initial preparation separate. No shortened scored task budgets.",
-  "dispatch": "Parent must review and integrate/push TTI branch before replacing inference-server-git-ref in the unchanged successful wrapper inputs. No dispatch performed.",
+  "dispatch": "Explicit pre-server native screen; after matched boundaries close, run current1368 reference. Materialize fresh control-max/shared-max arms from qualified receipts.",
   "changes": [
     "Explicit prefix_retention_probe key in source-owned goal12 controls",
     "Unscored route after existing auth and readiness gates",
@@ -66,5 +66,7 @@
     "One greedy capped output is deliberately different from scored SWE generation",
     "HTTP hit counts plus sampled cache usage do not establish the live/idle group ownership census; that requires server allocator/pool instrumentation",
     "No score, SWE100/SWE500/Terminal run, or memory reduction is claimed"
-  ]
+  ],
+  "image_build_run": 40846316059,
+  "capacity_ci_contract": "reference_config/evals/qwen38_capacity_ci.md"
 }

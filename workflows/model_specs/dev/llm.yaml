@@ -1657,11 +1657,15 @@ templates:
       max_concurrency: 32
       max_context: 262144
       default_impl: true
-      tensor_cache_timeout: 7200
+      # This unscored arm includes a bounded4h pre-server capacity campaign.
+      tensor_cache_timeout: 23400
       env_vars:
         MESH_DEVICE: P300x2
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
+        QWEN38_RUN_CAPACITY_SCREEN: "1"
+        QWEN38_MEMORY_ATTESTATION: "1"
+        QWEN38_MEMORY_CHECKPOINTS: "1"
         QWEN38_CACHE_BLOCK_SIZE: "512"
         QWEN38_GROUPED_RECURRENCE: "1"
         QWEN38_MASKED_RECURRENCE: "1"

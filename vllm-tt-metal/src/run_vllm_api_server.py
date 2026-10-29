@@ -1485,6 +1485,12 @@ def main():
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
     configure_quetzal_provider(model_spec)
 
+    # The explicit Qwen capacity campaign runs before trace capture or vLLM.
+    # Each diagnostic child must close its mesh before serving may start.
+    from qwen38_capacity_screen import maybe_run as maybe_run_capacity_screen
+
+    maybe_run_capacity_screen(model_spec)
+
     # Step 5: Start trace capture if needed
     start_trace_capture(
         model_spec,
