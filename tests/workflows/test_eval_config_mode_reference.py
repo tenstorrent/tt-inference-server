@@ -217,6 +217,22 @@ GEMMA4_RELEASE_MODELS = (
     "google/gemma-4-12B-it",
 )
 
+GEMMA4_31B_SHOULD_EVALS = [
+    "aime_2026",
+    "mmmlu_cot",
+    "bbeh",
+    "mrcr_8needle_128k",
+    "codeforces_elo",
+    "tau2_airline",
+    "tau2_retail",
+    "tau2_telecom",
+    "mmmu_pro_standard_cot_shuffled",
+    "mathvision_test_shuffled",
+    "omnidocbench_v15",
+    "hle_no_tools",
+    "hle_with_search",
+]
+
 
 def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
     """Both presets run all 198 questions, graded against the published score and
@@ -244,13 +260,19 @@ def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
     865 MMMU-Pro questions."""
     for model in GEMMA4_RELEASE_MODELS:
         tasks = _eval_config_map[model].tasks
-        assert [t.task_name for t in tasks] == [
+        gates = [t for t in tasks if (t.priority or "must") == "must"]
+        assert [t.task_name for t in gates] == [
             "r1_gpqa_diamond",
             "terminal_bench_2",
             "livecodebench",
             "mmmu_pro_standard_cot",
         ]
-        assert all((t.priority or "must") == "must" for t in tasks)
+        # Only the 31B adds non-blocking (priority should) model-card / customer
+        # evals for QB2, after the gates.
+        extra = [t.task_name for t in tasks[len(gates) :]]
+        assert tasks[: len(gates)] == gates
+        assert all(t.priority == "should" for t in tasks[len(gates) :])
+        assert extra == (GEMMA4_31B_SHOULD_EVALS if model == "google/gemma-4-31B-it" else [])
         terminal = _gemma4_task(model, "terminal_bench_2").agentic_eval_config
         names = terminal.task_names_map
         assert names[EvalLimitMode.CI_NIGHTLY] == names[EvalLimitMode.CI_LONG]
