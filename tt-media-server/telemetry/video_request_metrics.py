@@ -25,13 +25,12 @@ logger = TTLogger()
 
 _LABELS = ["model_type", "request_type"]
 
-# duration_seconds is validated to 1..60. MiniMax-H3, the one runner that
-# constrains it further, serves the integers 4..15 (MINIMAX_H3_DURATIONS_S), so
-# the ladder resolves every one of those individually — a coarser ladder would
-# collapse its working points into four buckets and make the distribution
-# useless as the capacity input it is described as. Above 15 the steps widen,
-# and the top bucket sits past the 60s validation cap so raising that cap
-# degrades to coarse rather than clipping into +Inf.
+# Only MiniMax-H3 requests are recorded, and H3 serves the integers 4..15
+# (MINIMAX_H3_DURATIONS_S), so the ladder resolves every one of those
+# individually — a coarser ladder would collapse its working points into four
+# buckets and make the distribution useless as the capacity input it is
+# described as. Above 15 the steps widen, so a wider served range degrades to
+# coarse rather than clipping into +Inf.
 _DURATION_BUCKETS = (
     1,
     2,
@@ -137,7 +136,11 @@ def observe_video_request(request: object, model_type: str, request_type: str) -
             *labels, bucket_aspect_ratio(getattr(request, "aspect_ratio", None))
         ).inc()
 
-        duration = getattr(request, "duration_seconds", None)
+        # H3 only: LTX writes its served duration back onto every request, so
+        # recording it there would count a value no client asked for.
+        from domain.video_generate_request import _is_minimax_h3
+
+        duration = getattr(request, "duration", None) if _is_minimax_h3() else None
         if duration:
             requested_duration.labels(*labels).observe(duration)
     except Exception as e:  # pragma: no cover - defensive

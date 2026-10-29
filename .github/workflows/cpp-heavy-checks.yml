@@ -252,12 +252,13 @@ jobs:
 
   cpp-server-embedding-mock-bench:
     name: C++ Server Embedding Mock Benchmark
-    # Exercises the full HTTP -> EmbeddingService -> fork/pipe -> mock runner
-    # -> binary codec -> JSON response path under realistic load (8192-token
-    # text inputs, 32-way concurrency against a single worker). The mock
-    # runner is pure CPU math with no core pinning, so unlike the
-    # mock_pipeline bench this job runs fine on ubuntu-latest and reuses the
-    # cpp-build artifact instead of building in-job.
+    # Exercises the full HTTP -> EmbeddingService -> Boost shm task queue ->
+    # worker-side batching -> mock runner -> Boost shm result queue -> JSON
+    # response path under realistic load (8192-token text inputs, 32-way
+    # concurrency against a single worker). The mock runner is pure CPU math
+    # with no core pinning, so unlike the mock_pipeline bench this job runs
+    # fine on ubuntu-latest and reuses the cpp-build artifact instead of
+    # building in-job.
     needs: cpp-build
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1872,7 +1873,9 @@ jobs:
       - name: Install guidellm
         run: |
           uv venv
-          uv pip install guidellm
+          # guidellm 0.7.0 replaced `guidellm benchmark run` with a new
+          # `guidellm run` CLI; the workload step below uses the old one.
+          uv pip install 'guidellm==0.6.1'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Start TSan-instrumented server
@@ -1898,6 +1901,9 @@ jobs:
           # doesn't need them, but inheriting the env is harmless.
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
         run: |
+          # Without pipefail, `| tee` hides a guidellm failure and the race
+          # check below only covers server startup/shutdown.
+          set -o pipefail
           mkdir -p bench_results/tsan_ci
           guidellm benchmark run \
             --target "http://localhost:8001" \

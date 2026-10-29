@@ -224,6 +224,19 @@ def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
     assert timeout >= 2 * 32768 / 6.2
 
 
+def test_mimo_gpqa_request_timeout_covers_a_full_length_generation():
+    """MiMo-V2.6-Flash r1_gpqa_diamond streams up to max_gen_toks (400K) per
+    request. At 7200 s, Shield run 39472309296 cut three Blackhole Galaxy streams
+    short and lm_eval failed the task; the timeout must cover max_gen_toks at
+    30 ms/token, the Galaxy's host-sampled decode (13.5 ms/token on device)."""
+    task = next(
+        t
+        for t in _eval_config_map["XiaomiMiMo/MiMo-V2.6-Flash-MOPD"].tasks
+        if t.task_name == "r1_gpqa_diamond"
+    )
+    assert int(task.model_kwargs["timeout"]) >= task.gen_kwargs["max_gen_toks"] * 0.030
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
@@ -1343,15 +1356,37 @@ class TestEvalRequestOverrides:
                 EvalTask(task_name="r1_gpqa_diamond", thinking=False)
             )
 
-    def test_lmms_eval_tasks_are_rejected(self, monkeypatch):
+    def test_lmms_eval_tasks_need_the_openai_sdk_client(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
         task = EvalTask(
             task_name="vision_task",
             workflow_venv_type=WorkflowVenvType.EVALS_VISION,
             request_body={"top_k": 20},
         )
-        with pytest.raises(ValueError, match="request-overrides"):
+        with pytest.raises(ValueError, match="openai-SDK"):
             _build_eval_test_command(task)
+
+    def test_lmms_eval_openai_compatible_launches_the_wrapper(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+        task = EvalTask(
+            task_name="vision_task",
+            eval_class="openai_compatible",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            apply_chat_template=False,
+            use_chat_api=True,
+            thinking=False,
+        )
+        ours, theirs = self._wrapper_args(_build_eval_test_command(task))
+        assert ours == [
+            "--request-body",
+            '{"chat_template_kwargs": {"enable_thinking": false}}',
+            "--harness",
+            "lmms-eval",
+        ]
+        assert theirs[:4] == ["--tasks", "vision_task", "--model", "openai_compatible"]
+        # the override is not smuggled through lmms-eval's own argument strings
+        for flag in ("--model_args", "--gen_kwargs"):
+            assert "chat_template_kwargs" not in theirs[theirs.index(flag) + 1]
 
     def test_mismatched_serving_switch_warns(self, caplog):
         task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)

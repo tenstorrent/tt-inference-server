@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from pathlib import Path
@@ -144,6 +144,26 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+# DeepSWE's verifier writes several rewards, so Harbor reports each key's mean
+# under its own name instead of a single "mean".
+HARBOR_MULTI_REWARD_FIXTURE = {
+    "stats": {
+        "evals": {
+            "deepswe": {
+                "metrics": [
+                    {"f2p": 0.89, "p2p": 0.97, "partial": 0.94, "reward": 0.56}
+                ],
+                "n_trials": 25,
+                "reward_stats": {
+                    "reward": {"1": [f"t{i}" for i in range(14)], "0": ["x"] * 11},
+                    "f2p": {"1.0": ["t0"], "0.5": ["x"]},
+                },
+                "pass_at_k": {},
+            }
+        }
+    },
+}
+
 HARBOR_ZERO_TRIALS_FIXTURE = {
     "stats": {
         "evals": {
@@ -188,6 +208,16 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_multi_reward_harbor_result_scores_from_reward(self):
+        block = AgenticEvalParser(task_name="deepswe", score=FakeScore()).parse(
+            HARBOR_MULTI_REWARD_FIXTURE, device="GPU"
+        )
+
+        assert abs(block.data["score"] - 56.0) < 1e-9
+        assert abs(block.targets["pass_at_1"] - 0.56) < 1e-9
+        assert block.targets["n_resolved"] == 14
+        assert block.data["accuracy_check"] != ReportCheckTypes.NA
 
     def test_priority_defaults_to_must_on_parsed_and_failure_blocks(self):
         # Acceptance reads block.data["priority"] and treats a missing key as
@@ -350,6 +380,49 @@ class TestAgenticModeReference:
         assert "[CI_NIGHTLY subset]" in block.targets["gpu_reference_score_ref"]
 
 
+class TestMuseGlimmerAgenticFloor:
+    """Muse-Glimmer-30B's 5-task agentic CI subsets gate on at least 1 solved."""
+
+    @pytest.mark.parametrize("task_name", ["terminal_bench_2_1", "swe_bench_verified"])
+    def test_one_solved_passes_zero_fails(self, task_name):
+        from reference_config.evals.eval_config import _eval_config_map
+
+        tasks = {
+            t.task_name: t
+            for t in _eval_config_map["meta-models/Muse-Glimmer-30B"].tasks
+        }
+        task = tasks[task_name]
+        subset = task.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY]
+        assert len(subset) == 5
+
+        def check(solved):
+            metrics = {"accuracy": solved / 5, "n_trials": 5}
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check(0) == ReportCheckTypes.FAIL
+        assert check(1) == ReportCheckTypes.PASS
+
+        # Incomplete scoring: an errored trial is not in n_trials, so 4 scored
+        # failures + 1 error grade on n = 4, where floor(4 * 20%) = 0.
+        def check_scored(solved, scored):
+            metrics = {
+                "accuracy": solved / scored,
+                "n_trials": scored,
+                "n_errors": 5 - scored,
+            }
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check_scored(0, 4) == ReportCheckTypes.FAIL
+        assert check_scored(0, 1) == ReportCheckTypes.FAIL
+        assert check_scored(1, 4) == ReportCheckTypes.PASS
+        assert check_scored(1, 1) == ReportCheckTypes.PASS
+        # Without a limit mode there is no reference to grade against.
+        assert (
+            compute_accuracy_check({"accuracy": 0.0, "n_trials": 5}, task.score, None)
+            == ReportCheckTypes.NA
+        )
+
+
 class TestStandardEvalModeReference:
     """Standard lm-eval scoring (_score_one) honors the CI-subset reference."""
 
@@ -496,6 +569,32 @@ class TestAgenticDriverConfigMapping:
         cfg = build_harbor_config(task, _server(), _driver_context())
 
         assert cfg.agent_env == {"OPENAI_BASE_URL": "http://alt/v1"}
+
+    def test_harbor_config_caps_concurrency_from_env(self):
+        task = _harbor_task()
+        task.agentic_eval_config.n_concurrent_trials = 62
+
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "28"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 28
+            )
+        with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": "100"}):
+            assert (
+                build_harbor_config(
+                    task, _server(), _driver_context()
+                ).n_concurrent_trials
+                == 62
+            )
+
+    def test_invalid_max_concurrent_trials_cap_names_the_env_var(self):
+        task = _harbor_task()
+        for cap in ("0", "-3", "abc"):
+            with patch.dict(os.environ, {"AGENTIC_MAX_CONCURRENT_TRIALS": cap}):
+                with pytest.raises(ValueError, match="AGENTIC_MAX_CONCURRENT_TRIALS"):
+                    build_harbor_config(task, _server(), _driver_context())
 
     def test_harbor_config_injects_runtime_openai_environment(self):
         task = _harbor_task()
@@ -662,6 +761,92 @@ class TestHarborHarness:
             "image_mode": "prebuilt",
             "node_selector": {"tt-pool": "shield"},
         }
+
+    def test_local_dataset_replaces_the_registry_name(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        task.agentic_eval_config.task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-*"
+        ]
+        task.agentic_eval_config.exclude_task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002"
+        ]
+        cfg = replace(
+            build_harbor_config(
+                task,
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=97,
+            ),
+            dataset_path=tmp_path / "tasks" / "tau3-bench",
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+
+            assert run_harbor(cfg) == 17
+
+        assert "--config" in run_cmd.call_args.args[0]
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        assert json.loads(config_path.read_text())["datasets"] == [
+            {
+                "path": str(tmp_path / "tasks" / "tau3-bench"),
+                "n_tasks": 97,
+                "task_names": ["tau3-banking_knowledge-*"],
+                "exclude_task_names": ["tau3-banking_knowledge-task-002"],
+            }
+        ]
+
+    def test_local_dataset_drops_the_registry_ref(self, tmp_path, caplog):
+        """A generated copy has no registry version to pin."""
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        cfg = replace(
+            build_harbor_config(
+                task, _server(), DriverContext(output_dir=tmp_path, device="N150")
+            ),
+            dataset_ref="1.0",
+            dataset_path=tmp_path / "tasks" / "tau3-bench",
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+            with caplog.at_level("WARNING", logger="llm_module.agentic.harbor"):
+                run_harbor(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        (dataset,) = json.loads(config_path.read_text())["datasets"]
+        assert dataset["path"] == str(tmp_path / "tasks" / "tau3-bench")
+        assert "ref" not in dataset and "name" not in dataset
+        assert "Ignoring dataset_ref '1.0'" in caplog.text
+        assert str(tmp_path / "tasks" / "tau3-bench") in caplog.text
+
+    @pytest.mark.parametrize("local", [False, True])
+    def test_driver_runs_a_generated_dataset_from_its_local_path(self, tmp_path, local):
+        task = _harbor_task()
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        driver = HarborAgenticDriver(task)
+        driver.venv_python = tmp_path / "venv" / "bin" / "python"
+        local_path = tmp_path / "tasks" / "tau3-bench" if local else None
+
+        prepare_patch = patch(
+            "llm_module.drivers.agentic.prepare_local_dataset", return_value=local_path
+        )
+        run_patch = patch("llm_module.drivers.agentic.run_harbor", return_value=1)
+        with prepare_patch as prepare, run_patch as run:
+            result = driver.run(
+                None, _server(), DriverContext(output_dir=tmp_path, device="N150")
+            )
+
+        assert result.return_code == 1
+        prepare.assert_called_once_with(
+            "sierra-research/tau3-bench", tmp_path / "venv" / "bin" / "python"
+        )
+        (run_config,) = run.call_args.args
+        assert run_config.dataset == "sierra-research/tau3-bench"
+        assert run_config.dataset_path == local_path
 
     def test_harbor_timeout_is_passed_to_the_watchdog(self, tmp_path):
         # ``harbor_timeout_sec`` is forwarded to the progress watchdog as the
@@ -846,7 +1031,8 @@ class TestMiniSweAgentParity:
         kwargs = harbor._get_agent_kwargs(cfg)
         assert "config" not in kwargs
 
-    def test_mini_swe_docker_uses_host_gateway(self, tmp_path):
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_mini_swe_docker_reaches_the_host_address(self, _host_address, tmp_path):
         cfg = build_harbor_config(
             _swebench_task(),
             _server(),
@@ -863,17 +1049,156 @@ class TestMiniSweAgentParity:
         config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
         harbor_config = json.loads(config_path.read_text())
         assert harbor_config["agents"][0]["env"] == {
-            "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
-            "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+            "OPENAI_BASE_URL": "http://172.17.0.1:8000/v1",
+            "OPENAI_API_BASE": "http://172.17.0.1:8000/v1",
         }
-        overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
-        assert json.loads(overlay_path.read_text()) == {
-            "services": {
-                "main": {
-                    "extra_hosts": ["host.docker.internal:host-gateway"],
-                }
-            }
+        # No extra_hosts overlay: Docker rejects one on a service that shares the
+        # egress-control sidecar's network namespace.
+        assert "extra_docker_compose" not in harbor_config["environment"]
+
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_allow_agent_endpoint_allowlists_the_task_side_host(
+        self, _host_address, tmp_path
+    ):
+        """A no-network task (DeepSWE) must still let the agent reach the
+        server, at the host the container actually dials."""
+        task = _swebench_task()
+        object.__setattr__(task.agentic_eval_config, "allow_agent_endpoint", True)
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        assert cfg.allow_agent_endpoint
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        agent = json.loads(config_path.read_text())["agents"][0]
+        assert agent["extra_allowed_hosts"] == ["172.17.0.1"]
+
+    @patch.object(harbor, "_docker_host_address", return_value="172.17.0.1")
+    def test_tau3_agent_and_its_containers_reach_the_host_address(
+        self, _host_address, tmp_path
+    ):
+        """tau3's LLM agent, user simulator and NL-assertion verifier all call
+        the model from task containers."""
+        task = _harbor_task(
+            task_name="tau3_bench_banking",
+            agentic_eval_config=FakeHarborConfig(
+                dataset="sierra-research/tau3-bench",
+                agent="tau3_llm_agent",
+                agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                environment_env={
+                    "TAU2_USER_MODEL": "openai/m",
+                    "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+                },
+                verifier_env={
+                    "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+                    "OPENAI_API_BASE": "http://localhost:8000/v1",
+                },
+            ),
+        )
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["env"]["OPENAI_BASE_URL"] == (
+            "http://172.17.0.1:8000/v1"
+        )
+        assert harbor_config["environment"]["env"] == {
+            "TAU2_USER_MODEL": "openai/m",
+            "OPENAI_BASE_URL": "http://172.17.0.1:8000/v1",
         }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+            "OPENAI_API_BASE": "http://172.17.0.1:8000/v1",
+        }
+
+    def test_remote_endpoint_is_not_rewritten(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            ServerConnection(
+                base_url="http://172.17.0.1", service_port=8004, model="m"
+            ),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        with patch.object(harbor, "_docker_host_address") as host_address:
+            assert harbor._get_agent_env(cfg)["OPENAI_BASE_URL"] == (
+                "http://172.17.0.1:8004/v1"
+            )
+        host_address.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "override, docker_os, gateways, expected",
+        [
+            ("10.0.0.5", "", "", "10.0.0.5"),
+            ("", "Docker Desktop", "", "host.docker.internal"),
+            ("", "Ubuntu 22.04.5 LTS", "172.17.0.1 ", "172.17.0.1"),
+            ("", "Ubuntu 22.04.5 LTS", "", "172.17.0.1"),
+        ],
+    )
+    def test_docker_host_address(
+        self, monkeypatch, override, docker_os, gateways, expected
+    ):
+        monkeypatch.setenv("AGENTIC_DOCKER_HOST_ADDRESS", override)
+        harbor._docker_host_address.cache_clear()
+
+        def fake_run(cmd, **kwargs):
+            out = docker_os if cmd[1] == "info" else gateways
+            return SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+        with patch.object(harbor.subprocess, "run", side_effect=fake_run):
+            assert harbor._docker_host_address() == expected
+        harbor._docker_host_address.cache_clear()
+
+    def test_docker_host_address_without_docker(self, monkeypatch):
+        monkeypatch.delenv("AGENTIC_DOCKER_HOST_ADDRESS", raising=False)
+        harbor._docker_host_address.cache_clear()
+        with patch.object(
+            harbor.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            assert harbor._docker_host_address() == "172.17.0.1"
+        harbor._docker_host_address.cache_clear()
+
+    def test_prepull_images_reach_the_harbor_run_config(self, tmp_path):
+        task = _swebench_task()
+        object.__setattr__(
+            task.agentic_eval_config, "prepull_images", ["python:3.12-slim"]
+        )
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        assert cfg.prepull_images == ["python:3.12-slim"]
+
+    def test_agent_endpoint_is_not_allowlisted_by_default(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        agent = json.loads(config_path.read_text())["agents"][0]
+        assert "extra_allowed_hosts" not in agent
 
     def test_host_executed_agent_keeps_loopback_endpoint(self, tmp_path):
         cfg = build_harbor_config(

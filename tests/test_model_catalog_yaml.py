@@ -516,3 +516,94 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
     assert rates("tt_transformers") == [10.0]
     assert rates(None) == [10.0]
     assert rates("llama31_8b_qb2") == [10.0, 130.0]
+
+
+@pytest.mark.parametrize(
+    "weights, runner, adapter_file, served, skipped",
+    [
+        (
+            "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V",
+            "tt-minimax-h3-fl2va-lightx2v",
+            "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors",
+            "transformer",
+            "transformer_ref",
+        ),
+        (
+            "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V",
+            "tt-minimax-h3-ref2va-lightx2v",
+            "minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors",
+            "transformer_ref",
+            "transformer",
+        ),
+    ],
+)
+def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
+    weights, runner, adapter_file, served, skipped
+):
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "video.yaml")
+    template = next(t for t in templates if t.weights == [weights])
+    (spec,) = template.expand_to_specs()
+
+    # MODEL in the container is the weights basename; each runner accepts only its own name.
+    assert spec.model_name == weights.split("/")[1]
+    assert spec.hf_weights_repo == "MiniMaxAI/MiniMax-H3"
+    assert spec.device_type == DeviceTypes.BLACKHOLE_GALAXY
+    assert spec.device_model_spec.max_concurrency == 1
+
+    env = spec.env_vars
+    assert env["MODEL_RUNNER"] == runner
+    assert "MODEL_WEIGHTS_DIR" not in env
+    weights_dir = f"/home/container_app_user/cache_root/weights/{spec.model_name}"
+    assert env["MINIMAX_H3_MODEL_PATH"] == weights_dir
+
+    # The adapter path the runner reads is where setup_host puts the extra file.
+    (adapter,) = spec.metadata["hf_extra_files"]
+    assert adapter["repo"] == "lightx2v/Minimax-h3-Turbo"
+    assert adapter["filename"] == adapter_file
+    assert env["MINIMAX_H3_LORA_PATH"] == (
+        f"{weights_dir}/{adapter['local_subdir']}/{adapter['filename']}"
+    )
+    # The runner pins steps and shifts to the adapter; an env override would desync them.
+    for pinned in (
+        "MINIMAX_H3_NUM_INFERENCE_STEPS",
+        "MINIMAX_H3_VIDEO_SHIFT",
+        "MINIMAX_H3_AUDIO_SHIFT",
+        "MINIMAX_H3_LORA_STRENGTH",
+    ):
+        assert pinned not in env
+
+    # Each task loads one 66 GB transformer partition and never reads the other.
+    excludes = spec.metadata["hf_download_excludes"]
+    assert {"FL2VA/*", "Ref2VA/*", f"{skipped}/*"} <= set(excludes)
+    assert f"{served}/*" not in excludes
+    assert f"{served}/config.json" in spec.metadata["hf_required_globs"]
+
+
+def test_device_profile_can_narrow_the_template_modalities():
+    """``supported_modalities`` is template-wide; a device block that serves the
+    text model only narrows it for that profile, the others keep the template's."""
+    template = _build_template(
+        {
+            "weights": ["google/gemma-4-31B-it"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "supported_modalities": ["text", "image", "video"],
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "supported_modalities": ["text"],
+                },
+                {"device": "N300", "max_concurrency": 32, "max_context": 32768},
+            ],
+        },
+        "dev",
+    )
+    specs = {s.device_type: s for s in template.expand_to_specs()}
+    assert specs[DeviceTypes.N150].supported_modalities == ["text"]
+    assert specs[DeviceTypes.N300].supported_modalities == ["text", "image", "video"]
+    # The narrowing survives the JSON round trip the runtime reads the spec from.
+    assert specs[DeviceTypes.N150].get_serialized_dict()["supported_modalities"] == [
+        "text"
+    ]

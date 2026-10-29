@@ -17,9 +17,6 @@ mistral-common[image]>=1.11.7 # mistral's tokenizer
 datasets # model training
 peft # model training
 
-# Training recipes reused by trainer runners.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@0a3c097e6b56a5a30d52ba173e94de5bec545a9b
-
 # yolox requirements
 thop
 pycocotools>=2.0.2
