@@ -2973,9 +2973,9 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
-        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
-        GEMMA4_SPEC_WIDTH_RUNGS: "3"  # keep the 3 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 3 rungs = 12 records in the 768 MB trace region
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: the MoE plain step grows with the rows (22 ms at 1 row, ~40 ms at 5-16) while a record adds little, so every band pays: K=5 up to 5 rows (c1 prose +35 % / code +20 %, c2 +25..+30 %), K=3 at 6-8 rows and K=1 at 9-16 rows (+15..+20 % over the ~25 tok/s plain)
+        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (the packed verify tile holds 16 x 2)
+        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # the full verify-width ladder (2K..256K): a record measured 17-23 MB of trace beside 133 MB of MoE decode traces, so 4 shapes x 5 rungs (~510 MB in use) fit the 1.5 GB region (measured 2026-10-29)
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
