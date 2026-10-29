@@ -302,6 +302,13 @@ templates:
         sample_on_device_mode: decode_only
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
+      env_vars:
+        # Galaxy release/nightly runs trip the 5 s tt-metal dispatch watchdog
+        # intermittently during prefill (tt-metal #63344), and tt-triage cannot
+        # read the hung DP lane (tt-metal #63345), so the watchdog only kills the
+        # run without a diagnosis. Leave hang detection to vLLM's RPC timeout
+        # until both are resolved.
+        DISABLE_METAL_OP_TIMEOUT: "1"
   # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
   # decode/TTFT figures measured on this commit; "complete" must hold 80% of them, "functional" 50%.
   # 80% covers the spread between CI hosts of one device class (T3K llmbox: 28 ms vs 35 ms decode at
