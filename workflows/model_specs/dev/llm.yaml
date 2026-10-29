@@ -2577,6 +2577,7 @@ templates:
         DSV41_DRAFT_MOE_TAIL: "1"  # fused tilize + fast_reduce tail for the drafter MoE (moe_tail.py, K=3)
         DSV41_SPEC_COMMIT_GATHER: "1"  # compressor-state commit as one row-major gather
         DSV41_SPEC_ACCEPT_VEC: "1"  # accept count as eq + cumprod + sum
+        DSV41_ROUTER: "fused2"  # one-program fused router (router_fused: split-K matmul + score + bias + exact top-k), 384-expert gate, T <= 16 (larger T falls back to the fused chain); evidence limited: two 16-prompt sets at B=16 / 262144 context (pooled acceptance gap -0.009, within the 0.04 bar), no GSM8K check; spec==plain was 6/16 and 10/16 at B=16 in both arms (not a fused2 effect); not combinable with the dispatch-layouts switch (not in this build)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
