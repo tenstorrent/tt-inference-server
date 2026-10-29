@@ -529,14 +529,15 @@ def score_directory(
     device: str | None = None,
     out: Path | None = None,
     gpu_reference: Path | str | None = "auto",
-    gpu_reference_run: str = GPU_REFERENCE_RUN,
+    gpu_reference_runs: list[str] | tuple[str, ...] = (GPU_REFERENCE_RUN,),
 ) -> dict:
     """Score every clip in a saved eval folder; one failing dimension skips one dimension.
 
     Writes the result after each dimension, so a run cut short keeps what finished.
     ``gpu_reference`` is a reference run to compare against (one folder per
-    shape), "auto" for ``gpu_reference_run`` in the eval data, or None for no
-    comparison.
+    shape), "auto" for each of ``gpu_reference_runs`` in the eval data, or None
+    for no comparison. Every comparison is in ``gpu_references``, in order; the
+    first is also ``gpu_reference``.
     """
     import importlib
 
@@ -564,6 +565,8 @@ def score_directory(
             {
                 "file": e["file"],
                 "video_id": e.get("video_id"),
+                "width": e.get("width"),
+                "height": e.get("height"),
                 "prompt": e["prompt"],
                 "conditioning_image": e.get("conditioning_image"),
                 "camera_motion": e.get("camera_motion"),
@@ -656,44 +659,66 @@ def score_directory(
 
     if gpu_reference is None:
         return result
-    run_dir = None if gpu_reference == "auto" else Path(gpu_reference)
+    if gpu_reference == "auto":
+        runs = [(None, run) for run in gpu_reference_runs]
+    else:
+        runs = [(Path(gpu_reference), None)]
+    result["gpu_references"] = [
+        _compare_with_run(
+            result, index, videos_dir, run_dir, hf_run, images_dir, device
+        )
+        for run_dir, hf_run in runs
+    ]
+    result["gpu_references"] = [r for r in result["gpu_references"] if r]
+    if result["gpu_references"]:
+        result["gpu_reference"] = result["gpu_references"][0]
+    out.write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
+def _compare_with_run(
+    result: dict,
+    index: list[dict],
+    videos_dir: Path,
+    run_dir: Path | None,
+    hf_run: str | None,
+    images_dir: Path | None,
+    device: str,
+) -> dict | None:
+    """The clips against one reference run: a local ``run_dir``, or ``hf_run`` in the eval data.
+
+    None when the run has no clip for these videos; an error is recorded, not
+    raised, so the VBench scores stand.
+    """
     shown = (
-        f"{I2V_EVAL_HF_REPO}/{gpu_reference_run}"
+        f"{I2V_EVAL_HF_REPO}/{hf_run}"
         if run_dir is None
         else describe_reference(run_dir)
     )
     try:
-        matches = find_gpu_references(index, run_dir, gpu_reference_run)
-        if matches:
-            if run_dir is None:
-                run_dir = (
-                    hf_snapshot(reference_metadata(gpu_reference_run))
-                    / gpu_reference_run
-                )
-                noise_dir = saved_noise_dir(index, matches)
-            else:
-                # The GPU script's own layout: <run>/noise/<WxH>/<video_id>.pt.
-                noise_dir = run_dir / "noise"
-            result["gpu_reference"] = compare_to_gpu_reference(
-                result,
-                videos_dir,
-                matches,
-                run_dir,
-                index=index,
-                images_dir=images_dir,
-                noise_dir=noise_dir,
-                device=device,
-            )
+        matches = find_gpu_references(index, run_dir, hf_run or GPU_REFERENCE_RUN)
+        if not matches:
+            logger.info("No clips in %s for these videos; skipping it", shown)
+            return None
+        if run_dir is None:
+            run_dir = hf_snapshot(reference_metadata(hf_run)) / hf_run
+            noise_dir = saved_noise_dir(index, matches)
         else:
-            logger.info("No GPU reference for these clips; skipping the comparison")
+            # The GPU script's own layout: <run>/noise/<WxH>/<video_id>.pt.
+            noise_dir = run_dir / "noise"
+        return compare_to_gpu_reference(
+            result,
+            videos_dir,
+            matches,
+            run_dir,
+            index=index,
+            images_dir=images_dir,
+            noise_dir=noise_dir,
+            device=device,
+        )
     except Exception as e:  # e.g. no HF_TOKEN: the scores above stand
-        logger.exception("Comparing with the GPU reference failed")
-        result["gpu_reference"] = {
-            "reference": shown,
-            "error": f"{type(e).__name__}: {e}"[:500],
-        }
-    out.write_text(json.dumps(result, indent=2) + "\n")
-    return result
+        logger.exception("Comparing with %s failed", shown)
+        return {"reference": shown, "error": f"{type(e).__name__}: {e}"[:500]}
 
 
 def to_markdown(result: dict, title: str) -> str:
@@ -702,7 +727,7 @@ def to_markdown(result: dict, title: str) -> str:
     lines = [
         f"### VBench: {title}",
         "",
-        f"{result['num_clips']} clips, scored on {result['device']}. Informational, nothing gates on it.",
+        f"{result['num_clips']} clips, scored on {result['device']}.",
         "",
         "| Dimension | Score | Min clip | Time (s) |",
         "|---|---|---|---|",
@@ -735,8 +760,10 @@ def to_markdown(result: dict, title: str) -> str:
             lines.append(
                 f"| {clip_label(clip)} | {clip['prompt']} | " + " | ".join(cells) + " |"
             )
-    if result.get("gpu_reference"):
-        lines += reference_markdown(result["gpu_reference"], result["clips"])
+    for reference in result.get("gpu_references") or (
+        [result["gpu_reference"]] if result.get("gpu_reference") else []
+    ):
+        lines += reference_markdown(reference, result["clips"])
     return "\n".join(lines) + "\n"
 
 
@@ -881,9 +908,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--gpu-reference-run",
-        default=GPU_REFERENCE_RUN,
-        help=f"the eval data's reference run for 'auto' (default {GPU_REFERENCE_RUN}; "
-        f"{GPU_REFERENCE_RUN_CACHED} for a deployment that caches)",
+        action="append",
+        help=f"the eval data's reference run for 'auto'; repeat to compare with "
+        f"several (default {GPU_REFERENCE_RUN}; {GPU_REFERENCE_RUN_CACHED} then "
+        f"{GPU_REFERENCE_RUN} for a deployment that caches)",
     )
     parser.add_argument("--vbench-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--in-venv", action="store_true", help=argparse.SUPPRESS)
@@ -908,7 +936,7 @@ def main(argv: list[str] | None = None) -> int:
         device=args.device,
         out=args.out.resolve() if args.out else None,
         gpu_reference=gpu_reference,
-        gpu_reference_run=args.gpu_reference_run,
+        gpu_reference_runs=args.gpu_reference_run or [GPU_REFERENCE_RUN],
     )
     markdown = to_markdown(result, args.videos_dir.parent.parent.name)
     print(markdown)

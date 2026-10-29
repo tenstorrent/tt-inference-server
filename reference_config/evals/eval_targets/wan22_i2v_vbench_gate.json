@@ -1,0 +1,148 @@
+{
+  "_comment": [
+    "Wan2.2 I2V VBench gate (test_module/_test_common/vbench_gate.py), per the validation plan's release CI.",
+    "Each run is compared with the GPU run made the same way (drift: Cache-DiT on -> refs/r2/tt, off -> refs/r1), and a cached run also with refs/r1 (budget: the expected cost of caching).",
+    "VBench: a gated dimension fails if TT's mean is more than tolerance_pct below the reference's over the same clips. TT scoring higher never fails. dynamic_degree and camera_motion are pass/fail per clip, so they are reported, not gated.",
+    "Output (drift comparison only, per resolution): a clip fails if its mean LPIPS exceeds max_clip_lpips; the run fails if its mean PSNR, SSIM or LPIPS over the calibrated clips moves more than mean_margin from the calibration's mean over the same clips.",
+    "480p calibration: tt-shield runs 40839687590 (Cache-DiT off, vs refs/r1) and 40839683835 (on, vs refs/r2/tt), BH Galaxy at 480p, tt-metal 9b40b665, the ci subset's 10 clips at 832x480. Worst clip LPIPS 0.402 and 0.438; max_clip_lpips is that plus about 0.1. 720p has no calibration run yet, so its output is not gated.",
+    "Change any value only with review."
+  ],
+  "models": [
+    "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+  ],
+  "gated_dimensions": [
+    "i2v_subject",
+    "i2v_background",
+    "subject_consistency",
+    "background_consistency",
+    "motion_smoothness",
+    "aesthetic_quality",
+    "imaging_quality",
+    "temporal_flickering"
+  ],
+  "reported_dimensions": [
+    "dynamic_degree",
+    "camera_motion"
+  ],
+  "tolerance_pct": {
+    "drift": 1.0,
+    "budget": 2.0
+  },
+  "output": {
+    "480p": {
+      "max_clip_lpips": 0.55,
+      "mean_margin": {
+        "psnr": 1.5,
+        "ssim": 0.05,
+        "lpips": 0.05
+      },
+      "calibration": {
+        "refs/r1": {
+          "vbi2v_0289_832x480": {
+            "psnr": 16.6,
+            "ssim": 0.604,
+            "lpips": 0.155
+          },
+          "vbi2v_0320_832x480": {
+            "psnr": 27.9,
+            "ssim": 0.799,
+            "lpips": 0.098
+          },
+          "vbi2v_0738_832x480": {
+            "psnr": 25.0,
+            "ssim": 0.736,
+            "lpips": 0.137
+          },
+          "vbi2v_0779_832x480": {
+            "psnr": 31.1,
+            "ssim": 0.86,
+            "lpips": 0.093
+          },
+          "vbi2v_0874_832x480": {
+            "psnr": 19.2,
+            "ssim": 0.703,
+            "lpips": 0.168
+          },
+          "vbi2v_0912_832x480": {
+            "psnr": 24.0,
+            "ssim": 0.781,
+            "lpips": 0.222
+          },
+          "vbi2v_0913_832x480": {
+            "psnr": 23.3,
+            "ssim": 0.698,
+            "lpips": 0.078
+          },
+          "vbi2v_1025_832x480": {
+            "psnr": 17.0,
+            "ssim": 0.484,
+            "lpips": 0.402
+          },
+          "vbi2v_1058_832x480": {
+            "psnr": 20.1,
+            "ssim": 0.621,
+            "lpips": 0.294
+          },
+          "vbi2v_1117_832x480": {
+            "psnr": 21.3,
+            "ssim": 0.777,
+            "lpips": 0.164
+          }
+        },
+        "refs/r2/tt": {
+          "vbi2v_0289_832x480": {
+            "psnr": 16.8,
+            "ssim": 0.61,
+            "lpips": 0.148
+          },
+          "vbi2v_0320_832x480": {
+            "psnr": 27.3,
+            "ssim": 0.803,
+            "lpips": 0.095
+          },
+          "vbi2v_0738_832x480": {
+            "psnr": 26.2,
+            "ssim": 0.791,
+            "lpips": 0.114
+          },
+          "vbi2v_0779_832x480": {
+            "psnr": 31.0,
+            "ssim": 0.862,
+            "lpips": 0.1
+          },
+          "vbi2v_0874_832x480": {
+            "psnr": 20.5,
+            "ssim": 0.721,
+            "lpips": 0.139
+          },
+          "vbi2v_0912_832x480": {
+            "psnr": 22.9,
+            "ssim": 0.767,
+            "lpips": 0.257
+          },
+          "vbi2v_0913_832x480": {
+            "psnr": 25.2,
+            "ssim": 0.784,
+            "lpips": 0.062
+          },
+          "vbi2v_1025_832x480": {
+            "psnr": 16.6,
+            "ssim": 0.461,
+            "lpips": 0.438
+          },
+          "vbi2v_1058_832x480": {
+            "psnr": 19.9,
+            "ssim": 0.646,
+            "lpips": 0.263
+          },
+          "vbi2v_1117_832x480": {
+            "psnr": 20.2,
+            "ssim": 0.746,
+            "lpips": 0.198
+          }
+        }
+      }
+    },
+    "720p": null
+  }
+}
