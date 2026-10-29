@@ -244,9 +244,33 @@ def test_hf_references_are_matched_from_metadata_then_only_they_fetched(
         )
     }
     assert fetched == [
-        list(mod.REFERENCE_METADATA),
+        mod.reference_metadata("refs/r1"),
         ["refs/r1/832x480/vbi2v_0001_832x480.mp4"],
     ]
+
+
+def test_the_cached_reference_run_is_fetched_from_its_own_folder(tmp_path, monkeypatch):
+    _reference_run(tmp_path / "refs" / "r2" / "tt")
+    fetched = []
+
+    def fake_snapshot(patterns):
+        fetched.append(list(patterns))
+        return tmp_path
+
+    monkeypatch.setattr(mod, "hf_snapshot", fake_snapshot)
+    matches = mod.find_gpu_references(INDEX[:1], hf_run=mod.GPU_REFERENCE_RUN_CACHED)
+    assert matches == {
+        "00_a.mp4": (
+            tmp_path / "refs" / "r2" / "tt" / "832x480",
+            "vbi2v_0001_832x480.mp4",
+        )
+    }
+    assert fetched[0] == [
+        "refs/r2/tt/*/index.json",
+        "refs/r2/tt/*/provenance.json",
+        "refs/r2/tt/*/vbench.json",
+    ]
+    assert fetched[1] == ["refs/r2/tt/832x480/vbi2v_0001_832x480.mp4"]
 
 
 def test_hf_reference_is_named_by_its_path_in_the_dataset(tmp_path):

@@ -20,11 +20,11 @@ scored the same way and compared dimension by dimension:
 - camera_motion: the camera makes the move the prompt asks for (CoTracker),
   scored only on clips whose index entry names one (``camera_motion``)
 
-When the GPU reference run in the eval data on Hugging Face (GPU_REFERENCE_RUN
-in I2V_EVAL_HF_REPO at I2V_EVAL_HF_REVISION, from
-scripts/wan_i2v_gpu_reference.py) has clips for the same videos, matched by
-video id, each dimension is also reported against them, and each clip is
-compared with its GPU clip frame by frame:
+When the GPU reference run in the eval data on Hugging Face (GPU_REFERENCE_RUN,
+or GPU_REFERENCE_RUN_CACHED for a deployment that caches, in I2V_EVAL_HF_REPO
+at I2V_EVAL_HF_REVISION, from scripts/wan_i2v_gpu_reference.py) has clips for
+the same videos, matched by video id, each dimension is also reported against
+them, and each clip is compared with its GPU clip frame by frame:
 
 - PSNR, SSIM and LPIPS (AlexNet) of every frame to the GPU clip's same frame
 - first-frame fidelity: frame 0 of the TT clip and of the GPU clip, each
@@ -69,14 +69,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Private to the Tenstorrent org, so reading it needs HF_TOKEN. The revision is
 # pinned, so a new reference or image set reaches CI only through a commit here.
 I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs"
-I2V_EVAL_HF_REVISION = "31808112a4e0e3686dab167067b3cb3fedadf5ec"
+I2V_EVAL_HF_REVISION = "be9b4745e0414c4b6fe6dbf4ddd06f9a6786f6e8"
 # The GPU run TT is compared with: Wan2.2's I2V settings, Cache-DiT off.
 GPU_REFERENCE_RUN = "refs/r1"
-# A reference run's small files: enough to match clips before fetching them.
-REFERENCE_METADATA = tuple(
-    f"{GPU_REFERENCE_RUN}/*/{name}"
-    for name in ("index.json", "provenance.json", "vbench.json")
-)
+# The same with Cache-DiT on, set to TT's DBCache recipe: what a deployment
+# that caches is compared with.
+GPU_REFERENCE_RUN_CACHED = "refs/r2/tt"
+
+
+def reference_metadata(run: str) -> list[str]:
+    """A reference run's small files: enough to match clips before fetching them."""
+    return [
+        f"{run}/*/{name}" for name in ("index.json", "provenance.json", "vbench.json")
+    ]
+
+
 I2V_DIMENSIONS = ("i2v_subject", "i2v_background", "camera_motion")
 DEFAULT_DIMENSIONS = (
     "i2v_subject",
@@ -226,22 +233,22 @@ def ensure_raft_weights(cache_dir: Path) -> None:
 
 
 def find_gpu_references(
-    index: list[dict], run_dir: Path | None = None
+    index: list[dict],
+    run_dir: Path | None = None,
+    hf_run: str = GPU_REFERENCE_RUN,
 ) -> dict[str, tuple[Path, str]]:
     """Each clip's GPU reference clip, by video id: ``{file: (folder, reference file)}``.
 
     Looks in ``run_dir`` (a reference run: one folder per shape, each with an
-    index.json), or else in the eval data's GPU_REFERENCE_RUN on Hugging Face,
+    index.json), or else in the eval data's ``hf_run`` on Hugging Face,
     fetching only the matched clips. Clips without a reference are left out.
     """
     if run_dir is None:
-        metadata = hf_snapshot(REFERENCE_METADATA) / GPU_REFERENCE_RUN
+        metadata = hf_snapshot(reference_metadata(hf_run)) / hf_run
         matches = find_gpu_references(index, metadata)
         if matches:
             # The same snapshot, now holding the matched clips too.
-            hf_snapshot(
-                [f"{GPU_REFERENCE_RUN}/{f.name}/{ref}" for f, ref in matches.values()]
-            )
+            hf_snapshot([f"{hf_run}/{f.name}/{ref}" for f, ref in matches.values()])
         return matches
     by_video = {
         entry["video_id"]: (index_path.parent, entry["file"])
@@ -522,12 +529,13 @@ def score_directory(
     device: str | None = None,
     out: Path | None = None,
     gpu_reference: Path | str | None = "auto",
+    gpu_reference_run: str = GPU_REFERENCE_RUN,
 ) -> dict:
     """Score every clip in a saved eval folder; one failing dimension skips one dimension.
 
     Writes the result after each dimension, so a run cut short keeps what finished.
     ``gpu_reference`` is a reference run to compare against (one folder per
-    shape), "auto" for GPU_REFERENCE_RUN in the eval data, or None for no
+    shape), "auto" for ``gpu_reference_run`` in the eval data, or None for no
     comparison.
     """
     import importlib
@@ -650,15 +658,18 @@ def score_directory(
         return result
     run_dir = None if gpu_reference == "auto" else Path(gpu_reference)
     shown = (
-        f"{I2V_EVAL_HF_REPO}/{GPU_REFERENCE_RUN}"
+        f"{I2V_EVAL_HF_REPO}/{gpu_reference_run}"
         if run_dir is None
         else describe_reference(run_dir)
     )
     try:
-        matches = find_gpu_references(index, run_dir)
+        matches = find_gpu_references(index, run_dir, gpu_reference_run)
         if matches:
             if run_dir is None:
-                run_dir = hf_snapshot(REFERENCE_METADATA) / GPU_REFERENCE_RUN
+                run_dir = (
+                    hf_snapshot(reference_metadata(gpu_reference_run))
+                    / gpu_reference_run
+                )
                 noise_dir = saved_noise_dir(index, matches)
             else:
                 # The GPU script's own layout: <run>/noise/<WxH>/<video_id>.pt.
@@ -866,7 +877,13 @@ def main(argv: list[str] | None = None) -> int:
         "--gpu-reference",
         default="auto",
         help="reference run to compare with (one folder per shape); 'auto' "
-        f"(default) is {GPU_REFERENCE_RUN} in the eval data, 'none' skips it",
+        "(default) is --gpu-reference-run in the eval data, 'none' skips it",
+    )
+    parser.add_argument(
+        "--gpu-reference-run",
+        default=GPU_REFERENCE_RUN,
+        help=f"the eval data's reference run for 'auto' (default {GPU_REFERENCE_RUN}; "
+        f"{GPU_REFERENCE_RUN_CACHED} for a deployment that caches)",
     )
     parser.add_argument("--vbench-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--in-venv", action="store_true", help=argparse.SUPPRESS)
@@ -891,6 +908,7 @@ def main(argv: list[str] | None = None) -> int:
         device=args.device,
         out=args.out.resolve() if args.out else None,
         gpu_reference=gpu_reference,
+        gpu_reference_run=args.gpu_reference_run,
     )
     markdown = to_markdown(result, args.videos_dir.parent.parent.name)
     print(markdown)

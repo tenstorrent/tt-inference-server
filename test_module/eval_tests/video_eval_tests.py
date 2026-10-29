@@ -198,19 +198,28 @@ def _run_vbench(ctx: MediaContext) -> Block | None:
 
     None when the eval saved no clips. The scorer sets up its own pinned venv,
     so it runs in a subprocess. A failure or timeout is reported in the section
-    instead of failing the eval: nothing gates on VBench yet.
+    instead of failing the eval: nothing gates on VBench yet. A deployment
+    with DBCache on is compared with the GPU run made with the same cache recipe.
     """
     from .._test_common import vbench_i2v
+    from .._test_common.target_check import deployment_dbcache
 
     videos_dir = Path(ctx.output_path) / "videos" / "evals"
     if not (videos_dir / "index.json").is_file():
         return None
+    reference_run = (
+        vbench_i2v.GPU_REFERENCE_RUN_CACHED
+        if deployment_dbcache(ctx.model_spec)
+        else vbench_i2v.GPU_REFERENCE_RUN
+    )
     command = [
         sys.executable,
         "-m",
         "test_module._test_common.vbench_i2v",
         "--videos-dir",
         str(videos_dir),
+        "--gpu-reference-run",
+        reference_run,
     ]
     logger.info("Scoring the eval clips with VBench: %s", " ".join(command))
     problem = None

@@ -18,7 +18,11 @@ RESULT = {
     "device": "cpu",
     "num_clips": 1,
     "clips": [
-        {"file": "00_vbi2v_0913_832x480.mp4", "video_id": "vbi2v_0913_832x480", "prompt": "a lake"}
+        {
+            "file": "00_vbi2v_0913_832x480.mp4",
+            "video_id": "vbi2v_0913_832x480",
+            "prompt": "a lake",
+        }
     ],
     "dimensions": {
         "i2v_subject": {
@@ -85,7 +89,11 @@ def test_the_scores_become_a_report_section(monkeypatch, ctx):
     calls = fake_scorer(monkeypatch)
     block = mod._run_vbench(ctx)
 
-    assert calls[0][1:4] == ["-m", "test_module._test_common.vbench_i2v", "--videos-dir"]
+    assert calls[0][1:4] == [
+        "-m",
+        "test_module._test_common.vbench_i2v",
+        "--videos-dir",
+    ]
     assert block.kind == "vbench"
     assert block.data["scores"] == {"i2v_subject": 0.98}
     assert "error" not in block.data
@@ -102,6 +110,24 @@ def test_the_scores_become_a_report_section(monkeypatch, ctx):
     # Clips are labelled by their video id.
     assert "| vbi2v_0913_832x480 | a lake | 0.980 |" in rendered
     assert "| vbi2v_0913_832x480 | a lake | 30.0 / 22.0 / 18.0 |" in rendered
+
+
+@pytest.mark.parametrize(
+    "env_vars, reference_run",
+    [
+        ({}, "refs/r1"),
+        ({"WAN22_DBCACHE": "off"}, "refs/r1"),
+        ({"WAN22_DBCACHE": "on"}, "refs/r2/tt"),
+    ],
+)
+def test_a_caching_deployment_is_compared_with_the_cached_gpu_run(
+    monkeypatch, ctx, env_vars, reference_run
+):
+    ctx.model_spec.env_vars = env_vars
+    calls = fake_scorer(monkeypatch)
+    mod._run_vbench(ctx)
+    command = calls[0]
+    assert command[command.index("--gpu-reference-run") + 1] == reference_run
 
 
 def test_a_timeout_keeps_what_finished_and_says_so(monkeypatch, ctx):
