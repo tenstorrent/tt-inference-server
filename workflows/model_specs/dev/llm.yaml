@@ -223,9 +223,10 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
-        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
-        GEMMA4_SPEC_WIDTH_RUNGS: "3"  # keep the 3 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 3 rungs = 12 records in the 768 MB trace region
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: K=5 up to 5 rows (code +20..+49 %, prose +0..+20 % over plain), K=3 at 6-8 rows (code +25 %, prose +8 %); a K=1 record at 16 rows cannot pay (2 tokens a step at 2.7x the plain step: the policy marks it hopeless), so above 8 rows the step is the plain decode
+        GEMMA4_SPEC_EXTRA_SHAPES: "5:3"  # a (5,3) record beside the (5,5) (70 vs 83 ms at the 8K rung): the policy ranks the two per step; the (5,3) was chosen most at 2-5 rows and lifted them by 15..34 % over the table alone
+        GEMMA4_SPEC_MAX_ROWS: "8"  # above 8 live rows the model proposes nothing and the step is the plain decode (no retry overhead)
+        GEMMA4_SPEC_WIDTH_RUNGS: "4"  # the 4 largest verify-width rungs per record (8K..256K; the 32K-rung record cost 84 ms = 2.56x the plain step at 2K ISL): 4 shapes x 4 rungs x ~40 MB + 175 MB plain traces = ~815 MB of the 1 GB trace region (measured 2026-10-29)
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
         # laid the TP collectives over the wrong fabric links and corrupted decode
@@ -1160,8 +1161,9 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
-        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: the K=5 record is 1.8x the plain step and the drafter commits 2.2-3.3 tokens a step, so the policy serves plain unless the text accepts (+0..+8 % at 1-5 rows, +3..+8 % at 6-8 rows); a K=1 record at 16 rows cannot pay, so above 8 rows the step is the plain decode
+        GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's: the (1,3) at 35 ms (1.56x the plain step) is the record chosen most at one row (c1 +5..+7 %), the (5,3) lifts 4-5 rows (code c4 +18 %); 5 shapes x 5 rungs x ~26 MB + 131 MB plain traces = ~780 MB of the 1 GB trace region
+        GEMMA4_SPEC_MAX_ROWS: "8"  # above 8 live rows the model proposes nothing and the step is the plain decode (no retry overhead)
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
