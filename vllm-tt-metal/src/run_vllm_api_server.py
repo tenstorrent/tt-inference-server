@@ -1623,9 +1623,11 @@ def _signal_engine(proc, sig) -> None:
 def stop_submesh_engines(
     procs, timeout_s: float = SUBMESH_ENGINE_STOP_TIMEOUT_S
 ) -> None:
-    """SIGINT every engine (vLLM shuts down cleanly on it), then SIGKILL what is left after timeout_s."""
+    """SIGTERM every engine (vLLM shuts down cleanly on it), then SIGKILL what is left after timeout_s. Not SIGINT: an
+    engine started while this launcher ignores SIGINT (started in the background by a shell) inherits it ignored, and
+    its EngineCore installs a handler only once the model is loaded, so SIGINT would not stop one that is loading."""
     for proc in procs:
-        _signal_engine(proc, signal.SIGINT)
+        _signal_engine(proc, signal.SIGTERM)
     deadline = time.monotonic() + timeout_s
     for proc in procs:
         try:

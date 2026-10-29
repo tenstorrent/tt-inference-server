@@ -2036,20 +2036,20 @@ def test_stop_submesh_engines(monkeypatch, run_vllm_api_server_module):
 
     monkeypatch.setattr(module, "_signal_engine", signal_engine)
     running, stubborn = _FakeProc(), _FakeProc()
-    stubborn.send_signal = lambda sig: None  # ignores SIGINT
+    stubborn.send_signal = lambda sig: None  # ignores SIGTERM
     module.stop_submesh_engines([running, stubborn], timeout_s=0.01)
-    assert running.signals[0] == signal.SIGINT and running.returncode == 0
+    assert running.signals[0] == signal.SIGTERM and running.returncode == 0
     assert stubborn.returncode == -9
 
 
 def test_stop_submesh_engines_reaches_the_whole_process_group(
     run_vllm_api_server_module,
 ):
-    """An engine's API server can exit on SIGINT while its EngineCore (here: a child ignoring SIGINT) keeps running;
+    """An engine's API server can exit on SIGTERM while its EngineCore (here: a child ignoring SIGTERM) keeps running;
     stopping must not leave that child on the devices."""
     module = run_vllm_api_server_module
     proc = module.subprocess.Popen(
-        ["sh", "-c", '(trap "" INT; exec sleep 60) & echo $!; wait'],
+        ["sh", "-c", '(trap "" TERM; exec sleep 60) & echo $!; wait'],
         stdout=module.subprocess.PIPE,
         start_new_session=True,
         text=True,
