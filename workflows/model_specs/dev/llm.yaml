@@ -289,6 +289,7 @@ templates:
         GLM53_VLLM_IMAGES: "1"
         GLM53_VLLM_PREFIX_CACHING: "0"  # off at 32 slots: the host-store KDA snapshots cost 725-1194 ms per decode step (r3) vs 58-61 ms (r5)
         GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 32 distinct requests (one per slot), waves + the SP-first placement
+        GLM53_RESIDENT_DECODE: "1"  # resident decode (2026-10-29): the traced step feeds its sampled ids back and advances the live positions on device, so a steady-state step uploads nothing; 14.1 vs 11.0 tok/s per user at 32 users, ids identical to the reload path
         GLM53_VLLM_VISION_RESIDENT: "0"
         GLM53_VLLM_VISION_BATCH_PATCHES: "1024"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
@@ -340,7 +341,7 @@ templates:
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
         enable-prefix-caching: false  # follows GLM53_VLLM_PREFIX_CACHING "0" above (off at 32 slots; 2026-10-29)
-        no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
+        no-async-scheduling: true  # synchronous scheduling for now: the resident chain admits vLLM's async scheduling (supports_async_decode under GLM53_RESIDENT_DECODE), validated separately before it is turned on here
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
