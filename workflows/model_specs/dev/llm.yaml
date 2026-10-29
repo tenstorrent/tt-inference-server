@@ -3500,7 +3500,7 @@ templates:
         MIMO_KV_GB_PER_CHIP: 6.7
       override_tt_config:
         trace_mode: decode_only
-        trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
+        trace_region_size: 1200000000  # throwaway: room for the 8-row decode trace
         l1_small_size: 65536
         dispatch_core_axis: col
         # Greedy decode rows sample in the decode trace; other rows fall back to
@@ -3513,7 +3513,7 @@ templates:
         prefill_gather_quiet_ms: 25
       vllm_args:
         data_parallel_size: 4
-        max_num_seqs: 4  # per lane
+        max_num_seqs: 8  # per lane (throwaway: plain decode on the 8-row kernels, the draft-group launches' baseline)
         block_size: 64  # required by the model
         enable_chunked_prefill: true
         # 4K is the model's native prefill chunk (the MoE prefill takes up to 4096
