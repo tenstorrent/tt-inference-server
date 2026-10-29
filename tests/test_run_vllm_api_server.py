@@ -1542,9 +1542,12 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     vllm_args = spec.device_model_spec.vllm_args
     assert spec.device_model_spec.default_impl
     assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
+    # Four draft groups of 2 slots per lane: 1 draft for each of up to 4 requests.
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_SLOTS"] == 8
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == 4
     # The model declares supports_async_spec_decode, so async scheduling stays on.
     assert "no-async-scheduling" not in vllm_args
-    assert vllm_args["max_num_seqs"] == 4 and vllm_args["data_parallel_size"] == 4
+    assert vllm_args["max_num_seqs"] == 8 and vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
     # MTP keeps the default KV budget: a larger one is unverified with its extra memory.
     assert "MIMO_KV_GB_PER_CHIP" not in spec.device_model_spec.env_vars
