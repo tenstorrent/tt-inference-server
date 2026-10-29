@@ -3563,6 +3563,9 @@ templates:
         MESH_DEVICE: "(4, 8)"
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
+        # Throwaway: draft groups on the 8-row kernels, 2 groups of 4 slots (K=3 for up to 2 requests per lane).
+        MIMO_SPEC_SLOTS: 8
+        MIMO_SPEC_GROUPS: 2
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
@@ -3575,7 +3578,7 @@ templates:
         prefill_gather_quiet_ms: 25
       vllm_args:
         data_parallel_size: 4
-        max_num_seqs: 4  # per lane; a verify fills the lane's 4 decode slots
+        max_num_seqs: 8  # per lane (throwaway: the adapter needs --max-num-seqs >= MIMO_SPEC_SLOTS)
         block_size: 64
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096  # 4K prefill chunks, as the default entry
