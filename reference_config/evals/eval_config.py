@@ -10641,6 +10641,8 @@ _eval_config_list = [
             ),
         ],
     ),
+    # I2V is graded by VBench against the GPU references, not by this score
+    # (test_module/eval_tests/video_eval_tests._i2v_eval_block).
     EvalConfig(
         hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         tasks=[

@@ -170,25 +170,15 @@ def test_a_comparison_that_could_not_be_made_is_na_not_a_pass():
     assert result["checks"][0]["detail"] == "no HF_TOKEN"
 
 
-def test_the_table_lists_failures_first():
-    md = gate.to_markdown(grade(comparison(R1, imaging=(0.60, 0.70))))
-    assert md.startswith("#### VBench gate: FAIL")
-    rows = [
-        line
-        for line in md.splitlines()
-        if line.startswith("| ") and "Status" not in line
-    ]
-    assert rows[0].startswith("| FAIL | refs/r1 | drift | imaging_quality")
-
-
-def test_the_config_calibrates_480p_from_the_ci_runs_for_both_references():
+def test_the_config_calibrates_480p_for_both_references():
     config = gate.load_config()
     assert config["tolerance_pct"] == {"drift": 1.0, "budget": 2.0}
     assert set(config["gated_dimensions"]).isdisjoint(config["reported_dimensions"])
     calibration = config["output"]["480p"]["calibration"]
-    assert set(calibration) == {R1, R2}
+    # R1 from the uncached ci run's 10 clips; R2 from the cached full run's 40.
+    assert {run: len(clips) for run, clips in calibration.items()} == {R1: 10, R2: 40}
+    assert set(calibration[R1]) < set(calibration[R2])
     for clips in calibration.values():
-        assert len(clips) == 10
         assert all(v.endswith("_832x480") for v in clips)
         assert (
             max(c["lpips"] for c in clips.values())

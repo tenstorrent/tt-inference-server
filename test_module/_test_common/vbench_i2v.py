@@ -35,10 +35,9 @@ them, and each clip is compared with its GPU clip frame by frame:
 Both sides draw the initial noise from the same seed on the host, so the clips
 start out the same and the frame metrics show how far TT drifts from the GPU.
 
-Informational: nothing gates on it yet.
-
-The video eval runs it over the clips it saved
-(``<run output>/videos/evals/index.json``) and puts the tables in the report.
+The I2V video eval runs it over the clips it saved
+(``<run output>/videos/evals/index.json``); vbench_gate grades the result, and
+the report shows report_summary(). Everything else stays in vbench.json.
 It provisions the VBENCH_I2V venv (pinned deps plus a VBench checkout) and
 re-runs itself there, so it also runs on its own:
 
@@ -52,6 +51,7 @@ import functools
 import json
 import logging
 import os
+import statistics
 import sys
 import tempfile
 import time
@@ -721,138 +721,83 @@ def _compare_with_run(
         return {"reference": shown, "error": f"{type(e).__name__}: {e}"[:500]}
 
 
-def to_markdown(result: dict, title: str) -> str:
-    """Dimension means, then each clip's scores, as GitHub markdown tables."""
-    dims = result["dimensions"]
-    lines = [
-        f"### VBench: {title}",
-        "",
-        f"{result['num_clips']} clips, scored on {result['device']}.",
-        "",
-        "| Dimension | Score | Min clip | Time (s) |",
-        "|---|---|---|---|",
-    ]
-    for name, record in dims.items():
-        if "error" in record:
-            lines.append(
-                f"| {name} | error: {record['error'][:80]} | | {record['seconds']} |"
-            )
-            continue
-        if "skipped" in record:
-            lines.append(f"| {name} | skipped: {record['skipped']} | | |")
-            continue
-        clip_scores = list(record["per_clip"].values())
-        low = f"{min(clip_scores):.4f}" if clip_scores else ""
-        lines.append(
-            f"| {name} | {record['score']:.4f} | {low} | {record['seconds']} |"
-        )
-    scored = [n for n, r in dims.items() if "per_clip" in r]
-    if scored:
-        lines += ["", "| Clip | Prompt | " + " | ".join(scored) + " |"]
-        lines.append("|---|---|" + "---|" * len(scored))
-        for clip in result["clips"]:
-            cells = [
-                f"{dims[n]['per_clip'][clip['file']]:.3f}"
-                if clip["file"] in dims[n]["per_clip"]
-                else ""
-                for n in scored
-            ]
-            lines.append(
-                f"| {clip_label(clip)} | {clip['prompt']} | " + " | ".join(cells) + " |"
-            )
-    for reference in result.get("gpu_references") or (
-        [result["gpu_reference"]] if result.get("gpu_reference") else []
-    ):
-        lines += reference_markdown(reference, result["clips"])
-    return "\n".join(lines) + "\n"
+def resolution(width: int, height: int) -> str:
+    """480p or 720p, by the short side."""
+    return f"{min(width, height)}p"
 
 
-def reference_markdown(reference: dict, clips: list[dict]) -> list[str]:
-    """Each dimension against the GPU reference, then each clip's frame PSNR."""
-    lines = ["", f"#### vs GPU reference: `{reference['reference']}`", ""]
+def report_summary(result: dict) -> dict:
+    """What the report shows: the dimension scores and each GPU comparison's means.
+
+    Per-clip scores and frame metrics stay in vbench.json.
+    """
+    return {
+        "num_clips": result.get("num_clips"),
+        "device": result.get("device"),
+        "scores": summarize(result),
+        "problems": {
+            name: record.get("error") or record["skipped"]
+            for name, record in result["dimensions"].items()
+            if "error" in record or "skipped" in record
+        },
+        "references": [
+            reference_summary(reference, result["clips"])
+            for reference in result.get("gpu_references") or []
+        ],
+    }
+
+
+def reference_summary(reference: dict, clips: list[dict]) -> dict:
+    """One GPU comparison: dimension means, and frame-metric means per resolution."""
     if "error" in reference:
-        return lines + [f"Comparison failed: {reference['error'][:200]}"]
-    lines += [
-        (
-            f"{reference['clips']} of these clips' requests on "
-            f"{reference.get('gpu') or 'GPU'}, from the same initial noise."
-        ),
-        "",
-        "| Dimension | TT | GPU | TT − GPU | Clips TT lower / higher |",
-        "|---|---|---|---|---|",
-    ]
-    for name, d in reference["dimensions"].items():
-        lines.append(
-            f"| {name} | {d['tt']:.4f} | {d['gpu']:.4f} | {d['delta']:+.4f} "
-            f"| {d['tt_lower']} / {d['tt_higher']} of {d['clips']} |"
-        )
-    lines += [
-        "",
-        "Each frame against the GPU clip's same frame. PSNR and SSIM: higher is "
-        "closer; LPIPS: lower is closer. First frame: frame 0 against the "
-        "conditioning image, TT / GPU.",
-        "",
-        "| Clip | Prompt | PSNR f0 / mean / min (dB) | SSIM mean / min "
-        "| LPIPS mean / max | First frame PSNR TT / GPU | First frame SSIM TT / GPU "
-        "| Noise |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
+        return {"reference": reference["reference"], "error": reference["error"]}
+    output: dict[str, dict] = {}
     for clip in clips:
         p = reference["psnr"].get(clip["file"])
-        if p is None:
+        if not p or "error" in p or not clip_shape(clip):
             continue
-        if "error" in p:
-            lines.append(
-                f"| {clip_label(clip)} | {clip['prompt']} | error: {p['error'][:80]} "
-                "| | | | | |"
-            )
-            continue
-        s = reference.get("ssim", {}).get(clip["file"])
-        lp = reference.get("lpips", {}).get(clip["file"])
-        ff = reference.get("first_frame", {}).get(clip["file"], {})
-        cells = [
-            f"{p['frame0']:.1f} / {p['mean']:.1f} / {p['min']:.1f}",
-            f"{s['mean']:.3f} / {s['min']:.3f}" if s else "",
-            f"{lp['mean']:.3f} / {lp['max']:.3f}" if lp else "",
-        ]
-        if "tt" in ff:
-            cells += [
-                f"{ff['tt']['psnr']:.1f} / {ff['gpu']['psnr']:.1f}",
-                f"{ff['tt']['ssim']:.3f} / {ff['gpu']['ssim']:.3f}",
-            ]
-        else:
-            cells += [f"error: {ff['error'][:60]}" if "error" in ff else "", ""]
-        cells.append(noise_cell(reference.get("noise", {}).get(clip["file"])))
-        lines.append(
-            f"| {clip_label(clip)} | {clip['prompt']} | " + " | ".join(cells) + " |"
+        res = output.setdefault(resolution(*clip_shape(clip)), {"clips": []})
+        res["clips"].append(
+            {
+                "video_id": clip.get("video_id") or clip["file"],
+                "psnr": p["mean"],
+                "ssim": reference.get("ssim", {}).get(clip["file"], {}).get("mean"),
+                "lpips": reference.get("lpips", {}).get(clip["file"], {}).get("mean"),
+            }
         )
-    if reference.get("lpips_error"):
-        lines += ["", f"LPIPS unavailable: {reference['lpips_error'][:200]}"]
+    for res in output.values():
+        measured = res.pop("clips")
+        res["clips"] = len(measured)
+        for key in ("psnr", "ssim", "lpips"):
+            values = [m[key] for m in measured if m[key] is not None]
+            res[key] = round(statistics.fmean(values), 4) if values else None
+        worst = max(
+            (m for m in measured if m["lpips"] is not None),
+            key=lambda m: m["lpips"],
+            default=None,
+        )
+        if worst:
+            res["worst_lpips"], res["worst_clip"] = worst["lpips"], worst["video_id"]
     noise = [n for n in reference.get("noise", {}).values() if "identical" in n]
+    summary = {
+        "reference": reference["reference"],
+        "gpu": reference.get("gpu"),
+        "clips": reference.get("clips"),
+        "dimensions": {
+            name: {k: d[k] for k in ("tt", "gpu", "clips")}
+            for name, d in reference["dimensions"].items()
+        },
+        "output": output,
+        "failed_clips": sorted(
+            clip for clip, p in reference["psnr"].items() if "error" in p
+        ),
+    }
     if noise:
-        same = sum(n["identical"] for n in noise)
-        lines += [
-            "",
-            f"Initial noise: {same} of {len(noise)} clips' seeds redraw the GPU run's "
-            f"saved noise bit for bit on this host (torch {noise[0]['torch']}).",
-        ]
-    return lines
-
-
-def clip_label(clip: dict) -> str:
-    """A clip's video id (e.g. vbi2v_0913_832x480), or its index for a T2V clip."""
-    return clip.get("video_id") or clip["file"][:2]
-
-
-def noise_cell(record: dict | None) -> str:
-    """One clip's noise check, as a table cell."""
-    if not record:
-        return ""
-    if "identical" in record:
-        return (
-            "same" if record["identical"] else f"differs ({record['max_abs_diff']:.1e})"
-        )
-    return record.get("skipped") or f"error: {record.get('error', '')[:60]}"
+        summary["noise_differs"] = sum(not n["identical"] for n in noise)
+        summary["noise_checked"] = len(noise)
+    if reference.get("lpips_error"):
+        summary["lpips_error"] = reference["lpips_error"]
+    return summary
 
 
 def summarize(result: dict) -> dict:
@@ -899,7 +844,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--device", help="default: cuda if available, else cpu")
     parser.add_argument("--out", type=Path, help="default: <videos-dir>/vbench.json")
-    parser.add_argument("--summary-md", type=Path, help="append markdown tables here")
     parser.add_argument(
         "--gpu-reference",
         default="auto",
@@ -923,7 +867,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.in_venv:
         return _provision_and_reexec(argv)
-    summary_md = args.summary_md.resolve() if args.summary_md else None
     gpu_reference = {"auto": "auto", "none": None}.get(
         args.gpu_reference, Path(args.gpu_reference).resolve()
     )
@@ -938,11 +881,7 @@ def main(argv: list[str] | None = None) -> int:
         gpu_reference=gpu_reference,
         gpu_reference_runs=args.gpu_reference_run or [GPU_REFERENCE_RUN],
     )
-    markdown = to_markdown(result, args.videos_dir.parent.parent.name)
-    print(markdown)
-    if args.summary_md:
-        with open(summary_md, "a") as f:
-            f.write(markdown + "\n")
+    print(json.dumps(report_summary(result), indent=1))
     # Scored nothing at all (e.g. no model could be fetched): say so in the step.
     return 0 if summarize(result) else 1
 

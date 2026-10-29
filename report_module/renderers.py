@@ -431,11 +431,135 @@ def _has_target_checks(block: Block) -> bool:
 VBENCH_KIND = "vbench"
 
 
+VBENCH_OUTPUT_NOTE = (
+    "Means over each frame against the GPU clip from the same noise: PSNR and "
+    "SSIM higher is closer, LPIPS lower."
+)
+
+
+def _vbench_mark(check: Mapping[str, Any] | None) -> str:
+    """A failed gate check's marker for its table cell."""
+    return " ❌" if check and check.get("status") == "FAIL" else ""
+
+
+def _vbench_number(value: Any, digits: int) -> str:
+    return "" if value is None else f"{value:.{digits}f}"
+
+
 @register(VBENCH_KIND)
 def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
-    """VBench's tables, which the video eval renders when it scores its clips."""
+    """The I2V eval's VBench scores against each GPU reference, and the gate.
+
+    Built from the scorer's summary (vbench_i2v.report_summary): one row per
+    dimension with each reference's score and TT's change from it, then each
+    reference's frame metrics per resolution. A failed gate check is marked in
+    its cell and listed below. Per-clip detail stays in the run's vbench.json.
+    """
     data = block.data if isinstance(block.data, Mapping) else {}
-    return str(data.get("markdown") or "").strip()
+    gate = data.get("gate") or {}
+    checks = {
+        (c.get("reference"), c.get("check"), c.get("resolution")): c
+        for c in gate.get("checks") or []
+    }
+    references = [r for r in data.get("references") or [] if "error" not in r]
+    scores = data.get("scores") or {}
+    problems = data.get("problems") or {}
+
+    intro = (
+        f"{data.get('num_clips') or 0} clips, scored on {data.get('device') or '?'}."
+    )
+    if gate:
+        verdict = gate.get("verdict", "NA")
+        intro += f" Gate: {glyph_for_label(verdict)} {verdict}".rstrip()
+        intro += f" ({sum(c.get('status') == 'FAIL' for c in checks.values())} of"
+        intro += f" {len(checks)} checks failed)."
+    lines = [f"### VBench: {data.get('heading') or block.title}", "", intro]
+    if data.get("error"):
+        lines += ["", f"{data['error']}; the scores are what finished."]
+
+    rows = []
+    for name in [*scores, *(p for p in problems if p not in scores)]:
+        run_checks = [checks.get((r.get("run"), name, None)) for r in references]
+        reported = any(c and c.get("status") == "REPORTED" for c in run_checks)
+        row = {
+            "Dimension": f"{name} (reported)" if reported else name,
+            "TT": _vbench_number(scores.get(name), 4) or str(problems[name])[:80],
+        }
+        for reference, check in zip(references, run_checks):
+            run = reference.get("run") or reference["reference"]
+            label = f"{run} ({reference['role']})" if reference.get("role") else run
+            limit = reference.get("tolerance_pct")
+            gpu = (reference.get("dimensions") or {}).get(name) or {}
+            change = ""
+            if gpu.get("gpu"):
+                change = f"{100 * (gpu['tt'] - gpu['gpu']) / gpu['gpu']:+.2f}"
+            row[f"GPU {label}"] = _vbench_number(gpu.get("gpu"), 4)
+            delta = f"Δ % vs {run}" + (f" (≥ −{limit:g})" if limit is not None else "")
+            row[delta] = change + _vbench_mark(check)
+        rows.append(row)
+    if rows:
+        lines += ["", build_markdown_table(rows)]
+
+    output = []
+    for reference in references:
+        run = reference.get("run") or reference["reference"]
+        for res, m in (reference.get("output") or {}).items():
+            mark = {
+                key: _vbench_mark(checks.get((run, f"mean_{key}", res)))
+                for key in ("psnr", "ssim", "lpips")
+            }
+            worst = ""
+            if m.get("worst_lpips") is not None:
+                worst = f"{m['worst_lpips']:.3f} ({m['worst_clip']})"
+                worst += _vbench_mark(checks.get((run, "clip_lpips", res)))
+            output.append(
+                {
+                    "GPU reference": run,
+                    "Resolution": res,
+                    "Clips": m.get("clips"),
+                    "PSNR (dB)": _vbench_number(m.get("psnr"), 2) + mark["psnr"],
+                    "SSIM": _vbench_number(m.get("ssim"), 3) + mark["ssim"],
+                    "LPIPS": _vbench_number(m.get("lpips"), 3) + mark["lpips"],
+                    "Worst clip LPIPS": worst,
+                }
+            )
+    if output:
+        lines += ["", build_markdown_table(output), "", VBENCH_OUTPUT_NOTE]
+
+    notes = []
+    unchecked: Dict[str, List[str]] = {}
+    for key, c in checks.items():
+        where = " ".join(str(x) for x in key if x)
+        if c.get("status") == "FAIL":
+            notes.append(
+                f"- ❌ {where}: {c.get('value')} (limit {c.get('threshold')})"
+                + (f", {c['detail']}" if c.get("detail") else "")
+            )
+        elif c.get("status") == "NA":
+            unchecked.setdefault(c.get("detail") or "no result", []).append(where)
+    for reason, where in unchecked.items():
+        notes.append(f"- Not checked ({reason}): {', '.join(where)}")
+    for reference in data.get("references") or []:
+        run = reference.get("run") or reference["reference"]
+        if reference.get("noise_differs"):
+            notes.append(
+                f"- {run}: {reference['noise_differs']} of {reference['noise_checked']}"
+                " seeds do not redraw the GPU run's saved noise on this host"
+            )
+        if reference.get("failed_clips"):
+            notes.append(
+                f"- {run}: frame metrics failed for {', '.join(reference['failed_clips'])}"
+            )
+        if reference.get("lpips_error"):
+            notes.append(
+                f"- {run}: LPIPS unavailable, {reference['lpips_error'][:200]}"
+            )
+        if "error" in reference and not gate:
+            notes.append(f"- {run}: comparison failed, {reference['error'][:200]}")
+    if notes:
+        lines += ["", *notes]
+    lines += ["", "Per-clip scores and frame metrics: vbench.json with the eval clips."]
+    return "\n".join(lines)
 
 
 @register(BENCHMARKS_KIND)

@@ -47,6 +47,7 @@ DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
 DATASET_DIR = "test_fixtures/datasets/videos"
 # accuracy_check codes returned by _check_accuracy.
+ACCURACY_CHECK_NA = 1
 ACCURACY_CHECK_FAIL = 3
 MIN_GENERATION_SUCCESS_RATIO = 1.0
 
@@ -122,24 +123,31 @@ class VideoGenerationEvalsTest(BaseTest):
         )
         num_generated = len(videos_info)
 
-        # Step 3: Calculate CLIP scores
-        logger.info("Step 3: Calculating CLIP scores for video frames")
-        clip_results = self._calculate_video_clip_scores(
-            videos_info=videos_info,
-            prompts=prompts,
-            frame_sample_rate=request.frame_sample_rate,
-        )
+        if conditioning is not None:
+            # I2V is scored with VBench against the GPU references, by the caller
+            # from the saved clips; CLIP would only repeat the prompt check.
+            logger.info("Step 3: I2V clips are scored with VBench, not CLIP")
+            clip_results = {}
+            accuracy_check = ACCURACY_CHECK_NA
+        else:
+            # Step 3: Calculate CLIP scores
+            logger.info("Step 3: Calculating CLIP scores for video frames")
+            clip_results = self._calculate_video_clip_scores(
+                videos_info=videos_info,
+                prompts=prompts,
+                frame_sample_rate=request.frame_sample_rate,
+            )
 
-        # Step 4: Calculate accuracy check
-        logger.info("Step 4: Checking accuracy against reference")
-        accuracy_check = self._check_accuracy(
-            clip_results=clip_results,
-            model_name=request.model_name,
-            num_prompts=request.num_prompts,
-        )
+            # Step 4: Calculate accuracy check
+            logger.info("Step 4: Checking accuracy against reference")
+            accuracy_check = self._check_accuracy(
+                clip_results=clip_results,
+                model_name=request.model_name,
+                num_prompts=request.num_prompts,
+            )
 
         # A run that failed to generate the requested videos is not a valid
-        # PASS, regardless of the CLIP score computed over the surviving subset.
+        # PASS, whatever the surviving subset scores.
         min_required = max(
             1, math.ceil(request.num_prompts * MIN_GENERATION_SUCCESS_RATIO)
         )

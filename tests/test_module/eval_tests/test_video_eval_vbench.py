@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""The video eval scores its saved clips with VBench, reports them in their own section, and gates on them."""
+"""The I2V eval scores its saved clips with VBench, shows them against the GPU, and grades on them."""
 
 from __future__ import annotations
 
@@ -19,20 +19,22 @@ RESULT = {
     "num_clips": 1,
     "clips": [
         {
-            "file": "00_vbi2v_0913_832x480.mp4",
-            "video_id": "vbi2v_0913_832x480",
+            "file": "00_vbi2v_9999_832x480.mp4",
+            "video_id": "vbi2v_9999_832x480",
             "prompt": "a lake",
+            "width": 832,
+            "height": 480,
         }
     ],
     "dimensions": {
         "i2v_subject": {
             "score": 0.98,
-            "per_clip": {"00_vbi2v_0913_832x480.mp4": 0.98},
+            "per_clip": {"00_vbi2v_9999_832x480.mp4": 0.98},
             "seconds": 30.0,
         }
     },
 }
-CLIP = "00_vbi2v_0913_832x480.mp4"
+CLIP = "00_vbi2v_9999_832x480.mp4"
 
 
 def _comparison(run: str, tt: float = 0.98, gpu: float = 0.98) -> dict:
@@ -100,12 +102,23 @@ def fake_scorer(monkeypatch, result=RESULT, code=0, raises=None):
     return calls
 
 
-def test_no_saved_clips_no_section(tmp_path):
-    ctx = SimpleNamespace(output_path=str(tmp_path))
-    assert mod._run_vbench(ctx) == []
+def test_no_saved_clips_no_section(ctx, tmp_path):
+    (tmp_path / "videos" / "evals" / "index.json").unlink()
+    assert mod._run_vbench(ctx) == (None, None)
 
 
-def test_the_scores_become_a_report_section(monkeypatch, ctx):
+def test_a_t2v_model_is_not_scored(monkeypatch, ctx):
+    ctx.model_spec.hf_model_repo = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    calls = fake_scorer(monkeypatch)
+    assert mod._run_vbench(ctx) == (None, None)
+    assert calls == []
+
+
+def render(block):
+    return get_renderer("vbench")(block, {})
+
+
+def test_the_section_is_the_gpu_comparison_in_two_short_tables(monkeypatch, ctx):
     calls = fake_scorer(monkeypatch)
     block, _gate = mod._run_vbench(ctx)
 
@@ -117,19 +130,33 @@ def test_the_scores_become_a_report_section(monkeypatch, ctx):
     assert block.kind == "vbench"
     assert block.data["scores"] == {"i2v_subject": 0.98}
     assert "error" not in block.data
-    # Per-frame lists stay in vbench.json, out of the report.
-    assert block.data["gpu_references"][0]["psnr"][CLIP] == {
-        "frame0": 30.0,
-        "mean": 22.0,
-        "min": 18.0,
+    # The report carries means; per-clip detail stays in vbench.json.
+    (reference,) = block.data["references"]
+    assert (reference["run"], reference["role"]) == ("refs/r1", "drift")
+    assert reference["output"]["480p"] == {
+        "clips": 1,
+        "psnr": 22.0,
+        "ssim": 0.7,
+        "lpips": 0.2,
+        "worst_lpips": 0.2,
+        "worst_clip": "vbi2v_9999_832x480",
     }
-    rendered = get_renderer("vbench")(block, {})
+    assert "per_clip" not in json.dumps(block.data)
+
+    rendered = render(block)
     assert rendered.startswith(
         "### VBench: Wan-AI/Wan2.2-I2V-A14B-Diffusers on BLACKHOLE_GALAXY"
     )
-    # Clips are labelled by their video id.
-    assert "| vbi2v_0913_832x480 | a lake | 0.980 |" in rendered
-    assert "| vbi2v_0913_832x480 | a lake | 30.0 / 22.0 / 18.0 |" in rendered
+    assert "1 clips, scored on cpu. Gate: ✅ PASS (0 of " in rendered
+    assert "| Dimension   | TT     | GPU refs/r1 (drift) | Δ % vs refs/r1 (≥ −1) |" in (
+        rendered
+    )
+    assert "| i2v_subject | 0.9800 | 0.9800              | +0.00" in rendered
+    assert "| refs/r1       | 480p       | 1     | 22.00     | 0.700 | 0.200 |" in (
+        rendered
+    )
+    # Nothing per clip.
+    assert "a lake" not in rendered
 
 
 @pytest.mark.parametrize(
@@ -152,32 +179,70 @@ def test_a_caching_deployment_is_compared_with_both_gpu_runs(
     assert runs == reference_runs
 
 
+def eval_block(monkeypatch, ctx, *, tt=0.98, generation=None, result=None):
+    fake_scorer(
+        monkeypatch,
+        result=result or {**RESULT, "gpu_references": [_comparison("refs/r1", tt=tt)]},
+    )
+    section, gate = mod._run_vbench(ctx)
+    eval_result = generation or {
+        "num_prompts": 1,
+        "num_generated": 1,
+        "accuracy_check": mod.ReportCheckTypes.NA,
+    }
+    return section, mod._i2v_eval_block(ctx, eval_result, gate)
+
+
 @pytest.mark.parametrize("tt, verdict", [(0.98, "PASS"), (0.95, "FAIL")])
-def test_the_gate_is_an_eval_block_acceptance_grades(monkeypatch, ctx, tt, verdict):
+def test_the_gate_grades_the_i2v_eval(monkeypatch, ctx, tt, verdict):
     from report_module.acceptance_criteria import _check_evals
     from report_module.schema import ReportSchema
 
-    fake_scorer(
-        monkeypatch,
-        result={**RESULT, "gpu_references": [_comparison("refs/r1", tt=tt)]},
-    )
-    section, gate = mod._run_vbench(ctx)
+    section, block = eval_block(monkeypatch, ctx, tt=tt)
 
-    assert (gate.kind, gate.title) == ("evals", "VBench gate")
-    assert mod.ReportCheckTypes(gate.data["accuracy_check"]).name == verdict
-    assert gate.data["references"] == "refs/r1 (drift)"
-    assert f"#### VBench gate: {verdict}" in section.data["markdown"]
-    result = _check_evals(ReportSchema(metadata={}, sections=[gate]))
+    assert (block.kind, block.title) == ("evals", "Video Eval")
+    assert block.data["task_name"] == "vbench_i2v"
+    assert mod.ReportCheckTypes(block.data["accuracy_check"]).name == verdict
+    assert block.data["references"] == "refs/r1 (drift)"
+    assert "average_clip" not in block.data
+    rendered = render(section)
+    assert f"Gate: {'✅' if verdict == 'PASS' else '❌'} {verdict}" in rendered
+    if verdict == "FAIL":
+        assert "| -3.06 ❌" in rendered
+        assert "- ❌ refs/r1 i2v_subject: -3.06 (limit -1.0)" in rendered
+        # The dimensions the fake did not score, on one line.
+        assert "- Not checked (not scored): refs/r1 i2v_background, " in rendered
+    result = _check_evals(ReportSchema(metadata={}, sections=[block]))
     assert result.status == verdict
 
 
-def test_a_model_the_gate_does_not_name_gets_no_gate(monkeypatch, ctx):
+def test_videos_the_eval_could_not_make_fail_it_whatever_the_gate_says(
+    monkeypatch, ctx
+):
+    _section, block = eval_block(
+        monkeypatch,
+        ctx,
+        generation={
+            "num_prompts": 2,
+            "num_generated": 1,
+            "rejected_videos": [{"video_id": "v", "problem": "wrong shape"}],
+            "accuracy_check": mod.ReportCheckTypes.FAIL,
+        },
+    )
+    assert block.data["accuracy_check"] == mod.ReportCheckTypes.FAIL
+    assert block.data["rejected"] == "v: wrong shape"
+
+
+def test_a_model_the_gate_does_not_name_is_scored_without_references(monkeypatch, ctx):
     # The references are of the base model; a distilled variant runs another schedule.
     ctx.model_spec.hf_model_repo = "Wan-AI/Wan2.2-I2V-Lightning"
-    fake_scorer(monkeypatch)
-    (section,) = mod._run_vbench(ctx)
-    assert section.kind == "vbench"
-    assert "VBench gate" not in section.data["markdown"]
+    calls = fake_scorer(monkeypatch, result={**RESULT, "gpu_references": []})
+    section, gate = mod._run_vbench(ctx)
+    assert calls[0][-2:] == ["--gpu-reference", "none"]
+    assert gate is None
+    assert "Gate" not in render(section)
+    block = mod._i2v_eval_block(ctx, {"num_prompts": 1, "num_generated": 1}, gate)
+    assert block.data["accuracy_check"] == mod.ReportCheckTypes.NA
 
 
 def test_a_timeout_keeps_what_finished_and_says_so(monkeypatch, ctx):
@@ -185,7 +250,7 @@ def test_a_timeout_keeps_what_finished_and_says_so(monkeypatch, ctx):
     block, _gate = mod._run_vbench(ctx)
     assert block.data["error"] == "VBench stopped at its 4 h limit"
     assert block.data["scores"] == {"i2v_subject": 0.98}
-    assert "the scores above are what finished" in block.data["markdown"]
+    assert "4 h limit; the scores are what finished" in render(block)
 
 
 def test_a_scorer_that_scored_nothing_is_reported_not_raised(monkeypatch, ctx):
@@ -193,6 +258,6 @@ def test_a_scorer_that_scored_nothing_is_reported_not_raised(monkeypatch, ctx):
     block, gate = mod._run_vbench(ctx)
     assert block.data["error"] == "VBench exited with code 1"
     assert "scores" not in block.data
-    assert "VBench exited with code 1" in block.data["markdown"]
+    assert "VBench exited with code 1" in render(block)
     # Nothing to grade is not a pass.
-    assert mod.ReportCheckTypes(gate.data["accuracy_check"]).name == "NA"
+    assert gate["accuracy_check"] == mod.ReportCheckTypes.NA

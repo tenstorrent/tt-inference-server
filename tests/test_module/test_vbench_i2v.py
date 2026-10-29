@@ -79,7 +79,10 @@ def _result():
     return {
         "device": "cpu",
         "num_clips": 2,
-        "clips": [{"file": e["file"], "prompt": e["prompt"]} for e in INDEX],
+        "clips": [
+            {k: e[k] for k in ("file", "prompt", "video_id", "width", "height")}
+            for e in INDEX
+        ],
         "dimensions": {
             "i2v_subject": {
                 "score": 0.95,
@@ -94,14 +97,11 @@ def _result():
     }
 
 
-def test_markdown_reports_scores_minimums_and_errors():
-    md = mod.to_markdown(_result(), "Wan2.2_evals")
-    assert "### VBench: Wan2.2_evals" in md
-    assert "| i2v_subject | 0.9500 | 0.9300 | 12.0 |" in md
-    assert "| motion_smoothness | error: RuntimeError: out of memory |" in md
-    # The per-clip table covers only the dimensions that ran.
-    assert "| Clip | Prompt | i2v_subject |" in md
-    assert "| 01 | A man at the lake. | 0.930 |" in md
+def test_the_report_summary_has_the_scores_and_what_did_not_score():
+    summary = mod.report_summary(_result())
+    assert summary["scores"] == {"i2v_subject": 0.95}
+    assert summary["problems"] == {"motion_smoothness": "RuntimeError: out of memory"}
+    assert summary["references"] == []
 
 
 def test_summarize_keeps_dimensions_that_ran():
@@ -145,15 +145,14 @@ def test_camera_clips_are_linked_under_names_carrying_the_move(tmp_path):
     ).resolve()
 
 
-def test_markdown_shows_a_skipped_dimension():
+def test_the_report_summary_says_why_a_dimension_was_skipped():
     result = _result()
     result["dimensions"]["camera_motion"] = {
         "skipped": "no clip asks for a camera move",
         "seconds": 0.0,
     }
-    md = mod.to_markdown(result, "x")
-    assert "| camera_motion | skipped: no clip asks for a camera move | | |" in md
-    assert "camera_motion |" not in md.split("| Clip | Prompt |")[1].splitlines()[0]
+    problems = mod.report_summary(result)["problems"]
+    assert problems["camera_motion"] == "no clip asks for a camera move"
 
 
 def test_raft_weights_are_unpacked_without_an_unzip_binary(tmp_path, monkeypatch):
@@ -313,13 +312,28 @@ def test_comparison_pairs_clips_by_video_across_shape_folders(tmp_path, monkeypa
     # Without the eval's index there is no first frame or seed to check.
     assert (comparison["first_frame"], comparison["noise"]) == ({}, {})
 
-    result = {**_result(), "gpu_reference": comparison}
-    md = mod.to_markdown(result, "x")
-    assert "| i2v_subject | 0.9500 | 0.9400 | +0.0100 | 1 / 1 of 2 |" in md
-    assert (
-        "| 00 | A bird on a feeder. | 35.0 / 20.0 / 15.0 | 0.800 / 0.700 "
-        "| 0.100 / 0.200 |  |  |  |" in md
-    )
+    # The report's summary: the means, each resolution on its own.
+    (summary,) = mod.report_summary({**_result(), "gpu_references": [comparison]})[
+        "references"
+    ]
+    assert summary["dimensions"] == {
+        "i2v_subject": {"tt": 0.95, "gpu": 0.94, "clips": 2}
+    }
+    assert summary["output"] == {
+        res: {
+            "clips": 1,
+            "psnr": 20.0,
+            "ssim": 0.8,
+            "lpips": 0.1,
+            "worst_lpips": 0.1,
+            "worst_clip": video_id,
+        }
+        for res, video_id in (
+            ("480p", "vbi2v_0001_832x480"),
+            ("720p", "vbi2v_0002_1280x720"),
+        )
+    }
+    assert summary["failed_clips"] == []
 
 
 def test_comparison_checks_first_frames_and_the_saved_noise(tmp_path, monkeypatch):
@@ -370,10 +384,10 @@ def test_comparison_checks_first_frames_and_the_saved_noise(tmp_path, monkeypatc
         "skipped": "no saved noise for this video"
     }
 
-    md = mod.to_markdown({**_result(), "gpu_reference": comparison}, "x")
-    assert "| 30.0 / 32.0 | 0.900 / 0.900 | same |" in md
-    assert "| no saved noise for this video |" in md
-    assert "1 of 1 clips' seeds redraw the GPU run's saved noise bit for bit" in md
+    (summary,) = mod.report_summary({**_result(), "gpu_references": [comparison]})[
+        "references"
+    ]
+    assert (summary["noise_differs"], summary["noise_checked"]) == (0, 1)
 
 
 def test_lpips_failing_to_load_keeps_psnr_and_ssim(tmp_path, monkeypatch):
@@ -394,8 +408,11 @@ def test_lpips_failing_to_load_keeps_psnr_and_ssim(tmp_path, monkeypatch):
     comparison = mod.compare_to_gpu_reference(_result(), tmp_path, matches, run)
     assert lpips_given == [None, None]
     assert "weights download failed" in comparison["lpips_error"]
-    md = mod.to_markdown({**_result(), "gpu_reference": comparison}, "x")
-    assert "LPIPS unavailable: OSError: weights download failed" in md
+    (summary,) = mod.report_summary({**_result(), "gpu_references": [comparison]})[
+        "references"
+    ]
+    assert "weights download failed" in summary["lpips_error"]
+    assert summary["output"]["480p"]["lpips"] is None
 
 
 def test_the_saved_noise_is_fetched_only_for_matched_clips(tmp_path, monkeypatch):

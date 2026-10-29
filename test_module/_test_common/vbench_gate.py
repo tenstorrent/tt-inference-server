@@ -15,7 +15,8 @@ of caching?). Two kinds of check, with thresholds in GATE_CONFIG:
   the same clips. Set per resolution; a resolution without calibration is not
   gated.
 
-A comparison that could not be made is NA, not a pass.
+A comparison that could not be made is NA, not a pass. The VBench report
+section shows the checks (report_module.renderers.render_vbench).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import statistics
 from pathlib import Path
 
 from .report_types import ReportCheckTypes
-from .vbench_i2v import GPU_REFERENCE_RUN, GPU_REFERENCE_RUN_CACHED
+from .vbench_i2v import GPU_REFERENCE_RUN, GPU_REFERENCE_RUN_CACHED, resolution
 
 GATE_CONFIG = (
     Path(__file__).resolve().parents[2]
@@ -48,11 +49,6 @@ def reference_runs(dbcache: bool | None) -> list[tuple[str, str]]:
     if dbcache:
         return [(GPU_REFERENCE_RUN_CACHED, "drift"), (GPU_REFERENCE_RUN, "budget")]
     return [(GPU_REFERENCE_RUN, "drift")]
-
-
-def resolution(width: int, height: int) -> str:
-    """480p or 720p, by the short side."""
-    return f"{min(width, height)}p"
 
 
 def _run_of(reference: dict, runs: list[tuple[str, str]]) -> tuple[str, str] | None:
@@ -210,30 +206,3 @@ def grade(result: dict, runs: list[tuple[str, str]], config: dict) -> dict:
     else:
         verdict = ReportCheckTypes.NA
     return {"accuracy_check": verdict, "checks": checks}
-
-
-def to_markdown(gate: dict) -> str:
-    """The gate's checks as one table, failures first."""
-    order = {FAIL: 0, NA: 1, PASS: 2, "REPORTED": 3}
-    rows = sorted(gate["checks"], key=lambda c: order.get(c["status"], 4))
-    verdict = ReportCheckTypes(gate["accuracy_check"]).name
-    lines = [
-        f"#### VBench gate: {verdict}",
-        "",
-        "VBench: % change of TT's mean from the GPU's over the same clips (threshold:"
-        " the most it may drop). Output: per-clip LPIPS cap and run means against the"
-        " calibration run.",
-        "",
-        "| Status | Reference | Role | Check | Value | Threshold | 95% CI (%) | Detail |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
-    for c in rows:
-        ci = c.get("ci_pct")
-        lines.append(
-            f"| {c['status']} | {c['reference']} | {c['role']} "
-            f"| {c['check']}{' ' + c['resolution'] if c.get('resolution') else ''} "
-            f"| {'' if c.get('value') is None else c['value']} "
-            f"| {'' if c.get('threshold') is None else c['threshold']} "
-            f"| {f'{ci[0]} to {ci[1]}' if ci else ''} | {c.get('detail', '')} |"
-        )
-    return "\n".join(lines) + "\n"
