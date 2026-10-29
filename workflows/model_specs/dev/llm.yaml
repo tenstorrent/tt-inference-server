@@ -231,11 +231,15 @@ templates:
 # (tt/functional_decoder.py prefill_forward; tests/test_mesh_long_context.py
 # "the SP prefill writes slot user of every row"), so the 8 rows hold replicas
 # and the engine admits users_per_row requests (4 at 1 M, 28 at 128 K).
-# Admission at the slot count (32 at 1 M, 256 at 128 K) needs the model-side
-# per-row prefill ownership (_agents/vllm_glm53/ROW_OWNERSHIP.md:
-# GLM53MeshModel.prefill_wave); when it lands, flip max_num_seqs /
-# max_concurrency / max_tokens_all_users_override to the slot count and add
-# GLM53_VLLM_ROWS_INDEPENDENT: "1" -- nothing else changes.
+# Admission at the slot count needs the model-side per-row prefill ownership
+# (_agents/vllm_glm53/ROW_OWNERSHIP.md: GLM53MeshModel.prefill_wave,
+# GLM53_VLLM_ROWS_INDEPENDENT: "1"): the 1 M profile admits 32 (2026-10-29: the
+# served 32-request bench, 4 x 64 K needles 4/4 through waves and through the
+# SP-first placement); the 128 K profile stays at 28 until its 224-request
+# served check. With 32 slots the slot-level prefix cache's host-store KDA
+# snapshots cost 725-1194 ms per decode step (vs 58-61 ms off), so the 1 M
+# profile runs it off (GLM53_VLLM_PREFIX_CACHING "0" + enable-prefix-caching
+# false, which must agree).
 - weights:
     - zai-org/GLM-5.3-Flash
   impl: glm53_flash
@@ -247,14 +251,14 @@ templates:
     - video
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      # = the engine's admission (users per row at 1 M). The perf reference keeps
-      # the README's 32-user rows; the sweep caps them to this until the flip.
-      max_concurrency: 4
+      # = the engine's admission: the 32 slots (4 per row x 8 rows) under per-row
+      # prefill ownership (GLM53_VLLM_ROWS_INDEPENDENT below).
+      max_concurrency: 32
       max_context: 1048576  # 1024 * 1024: the advertised context (doc/context_contract.json)
       # The logical KV pool: every slot owns a full context on device, so the pool
       # is max_num_seqs x max_model_len (the adapter's get_max_tokens_all_users);
       # the benchmark concurrency cap derives from it.
-      max_tokens_all_users_override: 4194304  # 4 x 1048576
+      max_tokens_all_users_override: 33554432  # 32 x 1048576
       default_impl: true
       # Cold boot converts the checkpoint into the tensorbin weight cache
       # (GLM53_MESH_CACHE, default $TT_CACHE_PATH/glm53_mesh): ~60 s of host
@@ -283,7 +287,8 @@ templates:
         # per-request cost) and runs one 448x448 window (1024 patches) per tower call, which keeps
         # the per-request transient (1.13 GB + 68 MiB) under the reserve's 1 M whole-prefix copy.
         GLM53_VLLM_IMAGES: "1"
-        GLM53_VLLM_PREFIX_CACHING: "1"  # the slot-level prefix cache (KDA snapshots at the chunk-aligned ends; the served smoke 2026-10-29)
+        GLM53_VLLM_PREFIX_CACHING: "0"  # off at 32 slots: the host-store KDA snapshots cost 725-1194 ms per decode step (r3) vs 58-61 ms (r5)
+        GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 32 distinct requests (one per slot), waves + the SP-first placement
         GLM53_VLLM_VISION_RESIDENT: "0"
         GLM53_VLLM_VISION_BATCH_PATCHES: "1024"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
@@ -316,7 +321,7 @@ templates:
         # decode may run while a chunked prefill is mid-prompt (DESIGN.md s.4).
         decode_interleave_enabled: false
       vllm_args:
-        max_num_seqs: 4  # = users per row (distinct requests); 32 after the row-ownership flip
+        max_num_seqs: 32  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
         block_size: 32  # = the latent page (TtLatentCache.block_size); the adapter rejects other sizes
         # One device prefill chunk per engine step: the model walks long prompts
         # in 16 K-token chunks (tt/mesh_model.py prefill_chunked; 32 K exceeds the
@@ -334,7 +339,7 @@ templates:
         # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
-        enable-prefix-caching: true  # the adapter's slot-level prefix cache (GLM53_VLLM_PREFIX_CACHING below; 2026-10-29)
+        enable-prefix-caching: false  # follows GLM53_VLLM_PREFIX_CACHING "0" above (off at 32 slots; 2026-10-29)
         no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
         enable-auto-tool-choice: true
         tool-call-parser: glm47
