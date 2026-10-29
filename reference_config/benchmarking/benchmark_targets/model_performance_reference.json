@@ -7264,17 +7264,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.74,
-                        "tput": 26.2
+                        "tput_user": 30.2,
+                        "tput": 29.6
                     },
                     "measured": {
-                        "ttft_ms": 129.6,
-                        "tput_user": 26.74,
-                        "tput": 26.2,
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7287,17 +7287,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 20.17,
-                        "tput": 435.3
+                        "tput_user": 27.44,
+                        "tput": 545.3
                     },
                     "measured": {
-                        "ttft_ms": 3112.4,
-                        "tput_user": 20.17,
-                        "tput": 435.3,
+                        "ttft_ms": 2882.8,
+                        "tput_user": 27.44,
+                        "tput": 545.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7310,17 +7310,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 25.56,
-                        "tput": 23.1
+                        "tput_user": 28.94,
+                        "tput": 26.3
                     },
                     "measured": {
-                        "ttft_ms": 581.9,
-                        "tput_user": 25.56,
-                        "tput": 23.1,
+                        "ttft_ms": 475.5,
+                        "tput_user": 28.94,
+                        "tput": 26.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7333,17 +7333,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 25.37,
-                        "tput": 16.6
+                        "tput_user": 28.69,
+                        "tput": 18.5
                     },
                     "measured": {
-                        "ttft_ms": 2726.3,
-                        "tput_user": 25.37,
-                        "tput": 16.6,
+                        "ttft_ms": 2491.0,
+                        "tput_user": 28.69,
+                        "tput": 18.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7356,17 +7356,35 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 24.62,
-                        "tput": 6.5
+                        "tput_user": 27.76,
+                        "tput": 7.3
                     },
                     "measured": {
-                        "ttft_ms": 14420.4,
-                        "tput_user": 24.62,
-                        "tput": 6.5,
+                        "ttft_ms": 13058.1,
+                        "tput_user": 27.76,
+                        "tput": 7.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ],
         "blackhole_galaxy": [
@@ -7489,6 +7507,25 @@
                     }
                 },
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 118.2,
+                        "tput_user": 25.41,
+                        "tput": 25.0
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -7527,6 +7564,346 @@
                         "tolerance": 0.05
                     }
                 }
+            }
+        ]
+    },
+    "meta-models/Muse-Glimmer-30B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B entry; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries. Decoder + untied LM",
+                    "head = 26.5B params = 53.0 GB bf16, 13.3 GB per chip on the 4-chip TP mesh at ~560 GB/s = 23.7 ms per step",
+                    "= 42 t/s/u; TTFT floor two step-times (~50 ms). The deployed BFP4/BFP8 precision streams ~3.5x fewer bytes, so",
+                    "measured decode is above this ceiling; theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: release runs 38773036733 and 39584812502 (tt-agentic-bringup-qb2, bh-qb-ge) gave",
+                    "TTFT 84.5-84.6 ms and 58.1 t/s/u. Tolerance 0.30, the runner-spread cap the Kolibri-1 entry uses."
+                ],
+                "impl": "muse_glimmer_30b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 42,
+                        "tput": 42
+                    },
+                    "measured": {
+                        "ttft_ms": 84.5,
+                        "tput_user": 58.1,
+                        "tput": 56.3,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "google/gemma-4-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "Calculated QB2 top-performance estimate, not a measurement. Assumes about 3.8B active MoE parameters per token, BFP8 expert weights, BF16 dense weights, ideal four-chip scaling, full bandwidth utilization, and first-token decode included. The approximately 25.2B total parameters affect residency, not per-token compute. Pure roofline is about 17 ms TTFT and 320 T/S/U; the stored target applies a 70% practical derating, yielding about 24 ms TTFT and 224 T/S/U.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "gemma4_26b_a4b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 24,
+                        "tput_user": 224,
+                        "tput": 224
+                    }
+                }
+            },
+            {
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 45.69,
+                        "tput": 44.9
+                    },
+                    "measured": {
+                        "ttft_ms": 71.9,
+                        "tput_user": 45.69,
+                        "tput": 44.9,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.67,
+                        "tput": 835.0
+                    },
+                    "measured": {
+                        "ttft_ms": 891.1,
+                        "tput_user": 31.67,
+                        "tput": 835.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 44.59,
+                        "tput": 40.5
+                    },
+                    "measured": {
+                        "ttft_ms": 310.5,
+                        "tput_user": 44.59,
+                        "tput": 40.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 44.41,
+                        "tput": 30.8
+                    },
+                    "measured": {
+                        "ttft_ms": 1298.6,
+                        "tput_user": 44.41,
+                        "tput": 30.8,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 43.41,
+                        "tput": 14.3
+                    },
+                    "measured": {
+                        "ttft_ms": 6028.1,
+                        "tput_user": 43.41,
+                        "tput": 14.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "impl": "tt_transformers",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 71.9,
+                        "tput_user": 45.69,
+                        "tput": 44.9
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 37.04,
+                        "tput": 36.2
+                    },
+                    "measured": {
+                        "ttft_ms": 103.5,
+                        "tput_user": 37.04,
+                        "tput": 36.2,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.88,
+                        "tput": 3165.6
+                    },
+                    "measured": {
+                        "ttft_ms": 1186.7,
+                        "tput_user": 31.88,
+                        "tput": 3165.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 36.05,
+                        "tput": 32.7
+                    },
+                    "measured": {
+                        "ttft_ms": 388.8,
+                        "tput_user": 36.05,
+                        "tput": 32.7,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 34.84,
+                        "tput": 26.7
+                    },
+                    "measured": {
+                        "ttft_ms": 1142.1,
+                        "tput_user": 34.84,
+                        "tput": 26.7,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.56,
+                        "tput": 14.2
+                    },
+                    "measured": {
+                        "ttft_ms": 4864.6,
+                        "tput_user": 30.56,
+                        "tput": 14.2,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 103.5,
+                        "tput_user": 37.04,
+                        "tput": 36.2
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point (shield run 40276183422) until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -7617,17 +7994,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 45.2,
-                        "tput": 44.4
+                        "tput_user": 52.73,
+                        "tput": 51.6
                     },
                     "measured": {
-                        "ttft_ms": 75.8,
-                        "tput_user": 45.2,
-                        "tput": 44.4,
+                        "ttft_ms": 70.1,
+                        "tput_user": 52.73,
+                        "tput": 51.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7640,17 +8017,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 31.61,
-                        "tput": 717.7
+                        "tput_user": 47.89,
+                        "tput": 992.3
                     },
                     "measured": {
-                        "ttft_ms": 1688.6,
-                        "tput_user": 31.61,
-                        "tput": 717.7,
+                        "ttft_ms": 1475.0,
+                        "tput_user": 47.89,
+                        "tput": 992.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7663,17 +8040,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 43.36,
-                        "tput": 39.2
+                        "tput_user": 50.34,
+                        "tput": 45.8
                     },
                     "measured": {
-                        "ttft_ms": 332.3,
-                        "tput_user": 43.36,
-                        "tput": 39.2,
+                        "ttft_ms": 270.6,
+                        "tput_user": 50.34,
+                        "tput": 45.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7686,17 +8063,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 42.9,
-                        "tput": 29.3
+                        "tput_user": 49.81,
+                        "tput": 32.1
                     },
                     "measured": {
-                        "ttft_ms": 1402.7,
-                        "tput_user": 42.9,
-                        "tput": 29.3,
+                        "ttft_ms": 1433.1,
+                        "tput_user": 49.81,
+                        "tput": 32.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7709,17 +8086,35 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 41.31,
-                        "tput": 13.0
+                        "tput_user": 47.81,
+                        "tput": 13.2
                     },
                     "measured": {
-                        "ttft_ms": 6736.6,
-                        "tput_user": 41.31,
-                        "tput": 13.0,
+                        "ttft_ms": 7037.6,
+                        "tput_user": 47.81,
+                        "tput": 13.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 70.1,
+                        "tput_user": 52.73,
+                        "tput": 51.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ],
         "blackhole_galaxy": [
@@ -7842,6 +8237,25 @@
                     }
                 },
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 44.19,
+                        "tput": 43.4
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -7898,6 +8312,360 @@
                         "ttft_ms": 1000,
                         "tput_user": 25,
                         "tput": 2600
+                    }
+                }
+            }
+        ]
+    },
+    "Aleph-Alpha/Kolibri-1-BF16": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries, applied to the",
+                    "ACTIVE parameters of this MoE (3.46B per token on the model card, minus the 0.33B embedding table = 3.13B =",
+                    "6.26 GB bf16, 1.57 GB per chip on the 4-chip TP mesh at ~560 GB/s = 2.8 ms per step = 358 t/s/u; TTFT floor",
+                    "two step-times = 6 ms). At 32 users the step streams the union of routed experts (~192 of 384 at 6 of 384",
+                    "per token) plus the dense weights: ~24.5 GB bf16 per step = 11 ms = 2,900 tok/s, 91 t/s/u. Longer-prompt",
+                    "TTFT adds the prefill compute at the LoFi peak (6.26 GFLOP/token; 2.65 PFLOP/s) and the global-attention",
+                    "layers' SDPA. The deployed BFP8/BFP4 precision policy streams fewer bytes, so the true ceilings are higher;",
+                    "theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: the WORST of the two bh-qb-ge runner machines, as a machine-independent floor.",
+                    "qb2-120-p05t02 (release run 37777268044, 2026-10-08): 128/128 c1 TTFT 233 ms / 17.6 t/s/u, c32 250 tok/s;",
+                    "120-qb2-p04t05 (release run 38432395585, 2026-10-13, this stack rebased onto tt-metal main / vLLM 0.30):",
+                    "128/128 c1 TTFT 320 ms / 11.9 t/s/u, c32 168 tok/s, i.e. 30-47% slower at every point (its eval phases took",
+                    "11-43% longer too). Floors are the p04t05 values with tolerance 0.30 (the spread-sized cap the gemma-4-31B",
+                    "Galaxy entry uses), so a run on either machine passes and a real regression on the slower one still trips.",
+                    "The single-user points are held down by the 32-slot server's batch-32 decode trace (a 1-slot server decodes at",
+                    "16.7 ms/token, 60 t/s/u); re-measure after the occupancy-adaptive decode path (tt-agentic-bringup-qb2#75) lands."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 320.2,
+                        "tput_user": 11.9,
+                        "tput": 11.7,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=128 osl=128 c=32 n=256.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 91,
+                        "tput": 2900
+                    },
+                    "measured": {
+                        "ttft_ms": 4728.0,
+                        "tput_user": 6.5,
+                        "tput": 168.0,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=2048 osl=128 c=1 n=4.",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 10,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 606.0,
+                        "tput_user": 11.8,
+                        "tput": 11.3,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=8192 osl=128 c=1 n=2.",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 2098.0,
+                        "tput_user": 11.7,
+                        "tput": 9.9,
+                        "tolerance": 0.3
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=32768 osl=128 c=1 n=1.",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 105,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 7334.0,
+                        "tput_user": 11.2,
+                        "tput": 6.9,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "MiniMaxAI/MiniMax-M3": {
+        "super_cluster": [
+            {
+                "_comment": [
+                    "SUPER_CLUSTER (remote blaze endpoint, P/D, 1M context). Long-context serving",
+                    "points at the measured AgentX ISL distribution (InferenceX semianalysis",
+                    "cc_traces_weka_062126, c128 run on SC24 2026-10-14, 6,649 requests): p50 62,030,",
+                    "mean 89,033, p75 113,935, p90 184,492, p95 266,360, plus 8K as a short-context",
+                    "anchor; all OSL 1024, at concurrency 1 and 62. No targets yet: the rows are",
+                    "informational until a measured block is added, like the default sweep.",
+                    "num_prompts: 2 waves of 62 up to p75, 1 wave at p90/p95 (prefill volume),",
+                    "4 / 2 at concurrency 1. Run with ONLY_BENCHMARK_TARGETS=1 to skip the default",
+                    "ISL/OSL sweep and run only these."
+                ],
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 124,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 62030,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 62030,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 124,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 89033,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 89033,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 124,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 113935,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 113935,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 124,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 184492,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 184492,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 62,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 266360,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 266360,
+                "osl": 1024,
+                "max_concurrency": 62,
+                "num_prompts": 62,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            }
+        ]
+    },
+    "ibm-granite/granite-4.2-30b": {
+        "p300x2": [
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 24,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 16,
+                "num_prompts": 48,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "_comment": "Provisional user-specified QB2 estimates for ISL/OSL128, concurrency1; not measured or formally established performance targets.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 68,
+                        "tput_user": 65,
+                        "tput": 65
                     }
                 }
             }

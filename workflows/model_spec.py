@@ -411,7 +411,7 @@ training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
-# tt-blacksmith-backed LoRA runner (LoraLLMTrainer). Distinct impl_id so it does
+# tt-blacksmith-backed LoRA runner (CrankLLMTrainer). Distinct impl_id so it does
 # not collide with the legacy `training_lora` on the same (model_name, device);
 # selectable via --impl trainer-training-lora.
 trainer_training_lora_impl = ImplSpec(
@@ -468,11 +468,32 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+gemma4_26b_a4b_qb2_impl = ImplSpec(
+    impl_id="gemma4_26b_a4b_qb2",
+    impl_name="gemma4-26b-a4b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_26b_a4b_qb2",
+)
+granite42_30b_qb2_impl = ImplSpec(
+    impl_id="granite42_30b_qb2",
+    impl_name="granite42-30b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/granite42_30b_qb2",
+)
 qwen38_27b_qb2_impl = ImplSpec(
     impl_id="qwen38_27b_qb2",
     impl_name="qwen38-27b-qb2",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
+)
+# Aleph-Alpha/Kolibri-1 TP4 autoport produced by the tt-model-bringup pipeline. Like
+# other autoports, the code_path lives under models/autoports/ and exists only on a
+# tt-metal branch (vkovacevic/kolibri-1-qb2-model), not on main.
+kolibri_1_qb2_impl = ImplSpec(
+    impl_id="kolibri_1_qb2",
+    impl_name="kolibri-1-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
@@ -492,6 +513,15 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     code_path="models/demos/k2_horizon_7b_qb2",
 )
 
+# meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
+# produced by the tt-model-bringup pipeline.
+muse_glimmer_30b_qb2_impl = ImplSpec(
+    impl_id="muse_glimmer_30b_qb2",
+    impl_name="muse-glimmer-30b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/muse_glimmer_30b_qb2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -499,8 +529,12 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
+    "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
@@ -590,6 +624,10 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+    # Modalities this device profile serves when narrower than the template's
+    # ``supported_modalities`` (a board that serves the text model only inside
+    # a multimodal entry). None inherits the template's list.
+    supported_modalities: Optional[List[str]] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -729,6 +767,15 @@ class ModelSpec:
             **self.device_model_spec.env_vars,
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
+
+        # A device profile that serves fewer modalities than the template
+        # (text-only board in a multimodal entry) narrows the spec's list.
+        if self.device_model_spec.supported_modalities is not None:
+            object.__setattr__(
+                self,
+                "supported_modalities",
+                list(self.device_model_spec.supported_modalities),
+            )
 
         # order of precedence: default_vllm_args, device_model_spec.vllm_args
         default_vllm_args = {

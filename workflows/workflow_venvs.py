@@ -8,9 +8,12 @@ import logging
 import os
 import shutil
 import subprocess
+import tarfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional, Tuple
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, Callable, Optional, Sequence, Tuple
 
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
@@ -39,7 +42,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
@@ -49,6 +52,39 @@ VBENCH_REPO = "https://github.com/Vchitect/VBench.git"
 VBENCH_COMMIT = "fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490"
 # 4.12 needs numpy 2; VBench's pins hold numpy below it. Same spec as vbench-i2v.txt.
 VBENCH_OPENCV_HEADLESS = "opencv-python-headless<4.12"
+
+# MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
+# its verify.py and m3_format_check pytest suites run unchanged from these
+# files, and test_module/llm_tests/minimax_verifier_grading.py grades their
+# output. Pinned to an upstream commit: the `verify` gate is blocking, so a
+# moving branch (or a fork) must not change what is graded. This commit is
+# MiniMax-AI/MiniMax-Provider-Verifier main as of #67, which carries the
+# `reasoning_content` fix vLLM servers need. The `verify` cases set no
+# `targets`: they are graded against the README defaults in VERIFY_METRICS
+# (minimax_verifier_grading.py). The GPU vLLM measurements in MiniMax-M3's
+# `_comment_threshold` (test_module/test_suites/llm.json) are reference only.
+# Moving the pin can change scores: re-measure them there when it does, but
+# don't add them as `targets` unless the gates are deliberately changed.
+MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
+MINIMAX_VERIFIER_COMMIT = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
+MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
+# The full tree is ~870 MB, mostly official-deployment baselines for every
+# model x 10 loops. Only these paths are extracted (see export_repo_commit):
+# verify.py and its sample, validator/ (imported by verify.py), the
+# m3_format_check pytest suites, and the first loop of each enrolled model,
+# the ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
+# test_module/test_suites/llm.json).
+MINIMAX_VERIFIER_PATHS = (
+    "verify.py",
+    "sample.jsonl",
+    "validator",
+    "m3_format_check",
+    "output-dir/MiniMax-M3/loop_01",
+    "output-dir/MiniMax-M2.7/loop_01",
+)
+TARBALL_TIMEOUT_S = 300
+# Written next to the exported files: the commit they came from.
+SOURCE_COMMIT_FILE = ".source_commit"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -84,6 +120,85 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
         if run_command(step, logger=logger) != 0:
             logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
             return False
+    return True
+
+
+def read_source_commit(dest: Path) -> Optional[str]:
+    """The commit :func:`export_repo_commit` exported into *dest*, if any."""
+    try:
+        return (dest / SOURCE_COMMIT_FILE).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def tarball_url(repo: str, commit: str) -> str:
+    """codeload URL of *repo*'s (a github.com URL) tarball at *commit*."""
+    slug = repo.removeprefix("https://github.com/").removesuffix(".git")
+    return f"https://codeload.github.com/{slug}/tar.gz/{commit}"
+
+
+def _wanted_path(
+    member: tarfile.TarInfo, paths: Sequence[str]
+) -> Optional[PurePosixPath]:
+    """*member*'s path without the tarball's top-level dir, when it is a file
+    under (or equal to) one of *paths*."""
+    rel = PurePosixPath(*PurePosixPath(member.name).parts[1:])
+    if not member.isfile() or ".." in rel.parts:
+        return None
+    if any(rel == PurePosixPath(p) or PurePosixPath(p) in rel.parents for p in paths):
+        return rel
+    return None
+
+
+def export_repo_commit(
+    dest: Path, repo: str, commit: str, paths: Sequence[str]
+) -> bool:
+    """Materialize *paths* of *repo* at *commit* in *dest*, as plain files.
+    Returns success.
+
+    The export is re-done only when the commit recorded in ``SOURCE_COMMIT_FILE``
+    is not *commit*, so a matching export needs no network at all. When the
+    download fails, whatever export exists is left untouched but the call
+    fails: an export of a different commit must not stand in for the pin.
+
+    The export streams the GitHub tarball at that exact commit and extracts
+    only *paths* (files, or directories taken whole) into a sibling staging
+    directory, swapped into place once every path was found: no clone, so no
+    ``.git`` and no dependence on the local git's sparse-checkout behaviour.
+    """
+    if dest.is_dir() and read_source_commit(dest) == commit:
+        logger.info("%s is at %s %s", dest, repo, commit)
+        return True
+
+    url = tarball_url(repo, commit)
+    staging = dest.with_name(dest.name + ".staging")
+    shutil.rmtree(staging, ignore_errors=True)
+    logger.info("Downloading %s (%s) ...", url, commit)
+    try:
+        with urllib.request.urlopen(
+            url, timeout=TARBALL_TIMEOUT_S
+        ) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
+            for member in tar:
+                rel = _wanted_path(member, paths)
+                if rel is None:
+                    continue
+                out = staging / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(member) as src, open(out, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except (urllib.error.URLError, tarfile.TarError, OSError) as e:
+        logger.error("Failed to export %s %s from %s: %s", repo, commit, url, e)
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    missing = [p for p in paths if not (staging / p).exists()]
+    if missing:
+        logger.error("%s at %s has no %s", repo, commit, ", ".join(missing))
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    (staging / SOURCE_COMMIT_FILE).write_text(commit + "\n")
+    shutil.rmtree(dest, ignore_errors=True)
+    staging.rename(dest)
+    logger.info("Exported %s %s to %s", repo, commit, dest)
     return True
 
 
@@ -258,6 +373,24 @@ def _write_harbor_adapters_pth(
     pth_file.write_text(f"{harbor_dir}\n")
     logger.info("Wrote %s pointing to %s", pth_file, harbor_dir)
     return True
+
+
+def setup_minimax_verifier(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for MINIMAX_VERIFIER: export MiniMax-Provider-Verifier at its pinned commit.
+
+    Nothing is installed from the checkout: the spec test runs its
+    ``verify.py`` and pytest suites with this venv's python, and the
+    dependencies come from requirements/minimax-verifier.txt.
+    """
+    return export_repo_commit(
+        venv_config.venv_path / MINIMAX_VERIFIER_DIR_NAME,
+        MINIMAX_VERIFIER_REPO,
+        MINIMAX_VERIFIER_COMMIT,
+        MINIMAX_VERIFIER_PATHS,
+    )
 
 
 def check_docker_available(
@@ -902,6 +1035,13 @@ _venv_config_list = [
         requirements_file="evals-agentic.txt",
         python_version="3.12",
         setup_function=setup_evals_agentic,
+    ),
+    # 3.12: the verifier's pyproject requires >=3.12.
+    VenvConfig(
+        venv_type=WorkflowVenvType.MINIMAX_VERIFIER,
+        requirements_file="minimax-verifier.txt",
+        python_version="3.12",
+        setup_function=setup_minimax_verifier,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,

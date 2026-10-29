@@ -608,7 +608,11 @@ templates:
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
       default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
+      tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
         # laid the TP collectives over the wrong fabric links and corrupted decode
@@ -616,7 +620,10 @@ templates:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "393216"  # one 256K request + sliding-group charges
+        # KV pool: 3 users at 256K at max_num_batched_tokens 16384. Each pool block id costs 1.39 MB per chip
+        # (the full-attention group runs 128-token blocks, vLLM unifying its page size with the sliding group),
+        # so 13,600 blocks = 19 GB of the 21.8 GB free after weights; a larger pool OOMs at the KV allocation.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "606208"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
@@ -642,7 +649,7 @@ templates:
         # parser ships in vllm-tt-plugin.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-        # Thinking on: the reasoning evals need the thought channel (~10 pts otherwise).
+        # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
@@ -656,6 +663,9 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
       known_issues:
       - workflow_type: SPEC_TESTS
         task_name: test_penalties
@@ -674,6 +684,7 @@ templates:
       max_concurrency: 32
       max_context: 262144  # 256 * 1024
       default_impl: true
+      supported_modalities: [text]  # text profile: the multimodal serving config is installed on the Blackhole QB2 and Galaxy blocks only
       env_vars:
         MESH_DEVICE: "P150x8"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -713,7 +724,11 @@ templates:
       max_concurrency: 128  # 32 x 4 engines
       max_context: 262144
       default_impl: true
+      tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
@@ -764,6 +779,9 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -789,6 +807,7 @@ templates:
       # the last verified-clean prose point until the ticket closes.
       max_context: 131072  # validated on T3K; 262144 OOMs (one full-attn K pool = 270532608B x 10 layers x K+V = 5.4GB + 3.87GB weights > 12GB/chip)  # 32 * 1024 — unbounded sliding (multi-request safe)
       default_impl: true
+      supported_modalities: [text]  # text profile: the multimodal serving config is installed on the Blackhole QB2 and Galaxy blocks only
       env_vars:
         MESH_DEVICE: "T3K"
         # Ring is a Blackhole >=8-device default only; WH must stay Linear
@@ -857,6 +876,7 @@ templates:
       max_concurrency: 128
       max_context: 131072  # per engine — same 12 GB/chip cap as T3K (262144 OOMs)
       default_impl: true
+      supported_modalities: [text]  # text profile: the multimodal serving config is installed on the Blackhole QB2 and Galaxy blocks only
       env_vars:
         MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) so DP carves (1,8) engines
         GEMMA4_CCL_TOPOLOGY: "linear"
@@ -888,6 +908,10 @@ templates:
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
   status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -928,12 +952,91 @@ templates:
         enable-chunked-prefill: true
         max_num_batched_tokens: '8192'
         override_generation_config: '{"top_k": 20}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         reasoning-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+# Dedicated Gemma 4 26B A4B implementation, the default on QB2.
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: gemma4_26b_a4b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P300x2"
+        OMP_NUM_THREADS: "8"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        GEMMA4_26B_ALLOW_HOST_SAMPLING: "1"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_PREFIX_TRACE_SUFFIX: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1000000000
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        enable_model_warmup: false
+      vllm_args:
+        revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        hf-overrides: '{"architectures":["TTGemma4A4BForCausalLM"]}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        block_size: 32
+        # Keep physical inference at batch one while concurrent agent trials
+        # overlap their tool-execution gaps.
+        max_num_seqs: 1
+        max_model_len: 262144
+        max_num_batched_tokens: 262144
+        no-enable-chunked-prefill: true
+        enable-prefix-caching: true
+        async-scheduling: true
+        seed: 9472
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+      # This implementation's validated GPQA path disables thinking.
+      eval_task_request_body_overrides:
+        r1_gpqa_diamond:
+          chat_template_kwargs:
+            enable_thinking: false
+      # This profile's own GPQA gate, carried over from main: its thinking-off path was
+      # calibrated on the fixed 10-question ci-nightly cohort, not on the thinking-on
+      # full-set GPU reference the shared task carries for the tt-transformers profiles.
+      # No full-set GPU reference (an unrestricted run grades against the published 82.3
+      # at the task tolerance); ci-nightly runs 10 questions against 80.0 at tolerance 0
+      # (at least 8 of 10 pass).
+      eval_task_score_overrides:
+        r1_gpqa_diamond:
+          gpu_reference_score: null
+          gpu_reference_score_ref: null
+          mode_reference_scores:
+            ci_nightly:
+              score: 80.0
+              tolerance: 0.0
+              ref: "fixed 10-question CI cohort, thinking off (this profile's validated path)"
+      eval_task_limit_samples_overrides:
+        r1_gpqa_diamond:
+          ci_nightly: 10
 
 - weights:
     - google/gemma-4-12B-it
@@ -1196,6 +1299,10 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
+      # The GPU reference profile (stock vLLM server) serves every modality the checkpoint has,
+      # so its eval set includes MMMU-Pro like the Blackhole QB2 / Galaxy blocks. Scoped to this
+      # block: the tt_transformers blocks above are text-only serving profiles (template default).
+      supported_modalities: [text, image, video, audio]
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -1216,13 +1323,18 @@ templates:
       max_concurrency: 32
       max_context: 262144  # auto-bounded sliding + chunk 4096 at 256k (metal policy)
       default_impl: true
+      tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's
+        # architecture (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 2x the 31B QB2 pool (8 full layers x 8 KV heads vs 10 x 16); bfloat8_b KV as on Galaxy.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
+        # KV pool: 6 users at 256K. The single global KV head is replicated on every chip (8.7 KB per pool
+        # token per chip: 8 global layers x 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2410432"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
@@ -1246,7 +1358,7 @@ templates:
         # parser ships in vllm-tt-plugin.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-        # Thinking on: the reasoning evals need the thought channel (~10 pts otherwise).
+        # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         enable_chunked_prefill: true
@@ -1254,6 +1366,9 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
     # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
     # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
     # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
@@ -1266,7 +1381,11 @@ templates:
       max_concurrency: 128
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
+      tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        # Text + image + video + audio: the unified multimodal serving class for the checkpoint's
+        # architecture (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4UnifiedVisionForConditionalGeneration"
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"  # 110 cores / 32 rows, one kv head per device at TP=8
@@ -1310,6 +1429,9 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
       known_issues:
       - workflow_type: SPEC_TESTS
         task_name: test_penalties
@@ -1319,6 +1441,11 @@ templates:
           a local run of the same stack (2026-10-06); the other 8 cases pass and the P300X2 entry passes
           all 9. Same exemption as Llama-3.3-70B P300X2 (#3888).'
   status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
+    - audio
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1702,6 +1829,59 @@ templates:
     IFM/K2-Horizon-7B:
       reasoning_parser_name: k2_horizon
       tool_call_parser_name: k2_horizon
+
+# meta-models/Muse-Glimmer-30B (dense 30B, text decoder only) TP4 model
+# (models/demos/muse_glimmer_30b_qb2, tenstorrent/tt-metal PR on top of the
+# sharded-norm fix) from the tt-model-bringup pipeline. Runs on stock vllm-tt-plugin main:
+# vLLM >= 0.29 ships the muse_glimmer HF config, reasoning parser and tool parser, and the
+# TT adapter is registered from the model's vllm_metadata.json (EXTRA_MODELS_DIR).
+# Server settings are the bring-up's validated ones. CI (run 38180844318): 128/128 c1
+# TTFT 64 ms, TPOT 20.9 ms; c32 930 tok/s. KV: 4096 x 32-token pages per full-attention
+# layer (sliding layers hold only their 2048 window).
+- weights:
+    - meta-models/Muse-Glimmer-30B
+  impl: muse_glimmer_30b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      default_impl: true
+      env_vars:
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+        TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "512"
+        # The device sampler covers top_k 1..32. Requests that omit top_k (benchmarks,
+        # agent frameworks) stay on it; evals pass the card's top_k 64 explicitly and
+        # sample on the host, as do prefill steps with an intermediate chunk.
+        override_generation_config: '{"top_k": 32}'
+        # Validated checkpoint; the downloader and vLLM both honor this pin.
+        revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68
+        tokenizer_revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68
+        reasoning-parser: muse_glimmer
+        enable-auto-tool-choice: true
+        tool-call-parser: muse_glimmer
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 0
+        fabric_config: FABRIC_1D_RING
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    meta-models/Muse-Glimmer-30B:
+      reasoning_parser_name: muse_glimmer
+      tool_call_parser_name: muse_glimmer
 
 # GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
 # model_id                : Qwen/Qwen3.6-27B
@@ -2397,7 +2577,6 @@ templates:
     - meta-llama/Llama-3.3-70B-Instruct
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
-    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   system_requirements:
@@ -2429,6 +2608,39 @@ templates:
       tool_call_parser_name: llama3_json
     meta-llama/Llama-3.1-70B-Instruct:
       tool_call_parser_name: llama3_json
+
+# DeepSeek-R1-Distill-Llama-70B on P300X2 has its own template, split from the Llama-70B one above,
+# because it needs the deepseek_r1 reasoning parser and the Llama weights must not get it.
+# Otherwise identical to the shared template.
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      vllm_args:
+        reasoning-parser: deepseek_r1
+      override_tt_config:
+        trace_region_size: 402653184  # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
     deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
@@ -2897,18 +3109,31 @@ templates:
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
-    # Matches vLLM nightly [BH-QB-2] Gemma4-26B-A4B (P150x4, max_model_len 128k).
-    # Nightly uses max_num_seqs=1 + TT_LEAN_DECODE_WARMUP + 300MB. Serving
-    # max_concurrency=32 needs a larger trace region even with lean warmup.
+    # Matches vLLM nightly [BH-QB-2] Gemma4-26B-A4B (P150x4). Nightly uses
+    # max_num_seqs=1 + TT_LEAN_DECODE_WARMUP + 300MB. Serving max_concurrency=32
+    # needs a larger trace region even with lean warmup.
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
+      max_context: 262144  # the model's max_position_embeddings; the pool below holds 5 users at 256K
+      default_impl: false  # the dedicated gemma4_26b_a4b_qb2 profile is the QB2 default; select this one with --impl tt-transformers
+      tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights takes ~95 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        # KV pool: 5 users at 256K (the Galaxy recipe at the 4-chip KV share: 5 global layers x 2 local KV
+        # heads, bfloat8_b KV ~8.6 GB of the ~17.8 GB free per chip after weights).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1572864"
+        GEMMA4_KV_BFP8: "1"
+        # vLLM prefix caching as on the 31B / 12B entries: the plugin gates it on the model class
+        # capability (GEMMA4_PREFIX_CACHING), which the class refuses under bounded sliding rings, so
+        # the sliding layers live in vLLM-managed hybrid KV groups.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Off by default: traced multi-chunk sp1 alone needs ~1.08GB on 26B.
         # Enable with GEMMA4_CHUNKED_PREFILL_TRACE=1 once trace_region covers it.
@@ -2918,7 +3143,13 @@ templates:
         # B=1+B=32 lean decode; nightly uses 300MB + max_num_seqs=1.
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
+        # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
+        l1_small_size: 65536
+        decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
+        # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
+        # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
+        block_size: 128
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -2930,10 +3161,147 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096
         long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
+    # BH Galaxy (32x P150), one 32-chip engine for the MoE 26B-A4B: the plugin folds
+    # data_parallel_size=4 into four in-process lanes (one per mesh column, 32 slots
+    # each; the model's folds_dp_into_lanes capability, vllm-tt-plugin#217), the dense
+    # weights are 2-D fractured with TP=8 on the long axis and the experts run
+    # expert-parallel over the columns (tt-metal#60857). MoE is rejected under standard
+    # multi-process DP, so the lane fold is what makes a Galaxy entry possible for this
+    # model. Multimodal (text + image + video).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128  # 32 slots x 4 lanes
+      max_context: 262144  # the model's max_position_embeddings
+      default_impl: true
+      tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      env_vars:
+        GEMMA4_GALAXY_FRACTURE: "1"  # one instance over the (8,4) mesh: 2-D fractured dense weights, TP=8 on axis 0
+        # Cross-chunk sliding-tail pool: one boot-allocated slot per in-flight chunked prefill (25 MB per
+        # chip each). The 8-slot default spilled tails into runtime clones under a 128-user ramp, which the
+        # decode-trace replays overwrite.
+        GEMMA4_TAIL_POOL_SLOTS: "64"
+        GEMMA4_GALAXY_LANES: "1"  # lane-sharded batch over the four columns (folds the DP ranks into lanes)
+        GEMMA4_MOE_DISPATCH_PREFILL: "1"  # token-dispatch routed experts for prefill (4K TTFT 3 s -> 0.7 s); the cache marker carries the flag
+        GEMMA4_MOE_DECODE_KERNEL: "1"  # decode-frame experts on the decode MoE kernel (ring fabric; decode step 104 -> 46 ms); loads the checkpoint at every boot
+        # Lane-group prefill router: fresh prompts of one scheduler step are prefilled as one
+        # lane group instead of per user (32 users at 4K ISL: TTFT 20.6 s -> 10.2 s and 92 -> 158
+        # tok/s aggregate; batch 1 and cached continuations unchanged).
+        GEMMA4_LANE_PREFILL_ROUTER: "1"
+        # k prompts per lane per gathered step, prefilled as one lane-batched walk (model-side router).
+        GEMMA4_LANE_PREFILL_PROMPTS: "8"
+        GEMMA4_LANE_PREFILL_CAPABILITY: "0"  # declare no lane-group capability: the plugin admits whatever waits within max_num_batched_tokens
+        # The validated lane-engine performance set (local windows 2026-10-24/25: 128/128 c1 TTFT 104 ms / 37 tok/s/user, c32
+        # 529 ms / 36, c128 1617 ms / 2894 tok/s aggregate): traced lane prefill frames (1/8/16/32 x 128, lm_head inside the
+        # trace) and the fused lane decode step. The engine's own defaults keep every one of these off on the (8,4) mesh, so
+        # without them the entry serves at 413 ms / 22 tok/s/user (shield release run 40196840603).
+        GEMMA4_LANE_PREFILL_TRACE: "1"
+        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,8x128,16x128,32x128"
+        GEMMA4_LANE_LMHEAD_IN_TRACE: "1"
+        GEMMA4_QKV_NORM_ROPE_FUSED: "1"
+        GEMMA4_NORM_FUSED: "1"
+        GEMMA4_MLP_GEGLU_FUSED: "1"
+        GEMMA4_CONCAT_HEADS_FUSED: "1"
+        GEMMA4_QKV_L1_OUT: "1"
+        GEMMA4_SOFTCAP_FUSED: "1"
+        GEMMA4_ROPE_DECODE_CUSTOM_OP: "1"
+        GEMMA4_HEAD_NORM_4D: "1"
+        GEMMA4_ATTN_DECODE_1D: "1"
+        GEMMA4_ROUTER_DECODE_1D: "1"
+        GEMMA4_MLP_DECODE_1D: "1"
+        GEMMA4_MOE_FUSED: "1"
+        GEMMA4_MOE_DECODE_TILE_TAIL: "1"
+        GEMMA4_MOE_COMPUTE_CUSTOM_OP: "1"
+        GEMMA4_MOE_COMPUTE_SKIP_ZERO_SCORES: "1"
+        # Eager batch-1 prefill at every per-user chunk shape at boot, BEFORE the decode-trace capture: a shape first seen
+        # mid-session (the 1808-token remainder of a 10000-token prompt -> 2048 on shield run 40196840603, a 1024-token
+        # prompt + template -> 2048 on the local replays) grows L1, the trace guard re-captures the decode trace, and the
+        # next MoE token-dispatch prefill op on the ring fabric hangs (tt-triage 2026-10-25 23:15). With the ladder the
+        # local replay passed that point (0 re-captures); ~40 s of boot.
+        GEMMA4_WARMUP_PREFILL_ISLS: "512,1024,2048,4096,8192,16384,32768"
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture
+        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # KV pool PER LANE (the plugin applies it to every lane un-divided; vLLM's "Maximum concurrency"
+        # line is one lane's view): 12 users at 256K per lane = 48 box-wide (47 per lane = 188 at 64K).
+        # The two global KV heads are replicated one per chip over the TP8 column (~7.7 KB per token per
+        # chip); a larger pool OOMs vLLM's per-layer KV allocation (3.0 GB K buffer over 32 GB per chip).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "3145728"
+        # Every layer allocates the pool unless the sliding layers live in vLLM-managed hybrid KV groups
+        # (window-sized caches); bfp8 KV halves the global layers' bytes, as on the 31B / 12B Galaxy entries.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        # Eager prefill on the lane engine: a captured prefill trace bakes one lane's row slice (the
+        # single-lane fast path) or, lane-agnostic, carries all four lanes' gathered rows and overflows
+        # the trace region; eager prefill keeps the per-request owner-lane fast path (1x the expert rows).
+        GEMMA4_DISABLE_PREFILL_TRACE: "1"
+        # vLLM prefix caching as on the other gemma-4 entries (plugin capability gate).
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING  # the ring fabric the decode MoE kernel needs; linear-topology collectives still run on it
+        trace_region_size: 1200000000
+        sample_on_device_mode: decode_only
+        # Collective semaphores go to this region instead of worker L1: a collective first compiled
+        # after the decode-trace capture (a new prefill shape) would otherwise place them where the
+        # replay writes its L1 intermediates (wrong first token / hang on the next prefill).
+        l1_small_size: 65536
+        decode_interleave_prefill_steps: 1  # one decode-only step (~0.1 s) after every prefill step: with 3-9 s prefill steps the default 2:1 starved running users
+      vllm_args:
+        # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
+        # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
+        block_size: 128
+        data_parallel_size: 4  # folded into 4 lanes on one engine (GEMMA4_GALAXY_LANES)
+        max_num_seqs: 32  # per lane; max_concurrency above is whole-box
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096  # vLLM needs >= max_tokens_per_mm_item (2496 for a video item); prefill chunks pad to a power of two, so 4096 is the only useful value above 2048
+        long_prefill_token_threshold: 4096
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
+        limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
+        mm-processor-cache-gb: 0
+  status: COMPLETE
+  supported_modalities:
+    - text
+    - image
+    - video
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+      # GPQA Diamond thinking mode for this implementation (the eval task carries no
+      # task-level pin because the dedicated gemma4_26b_a4b_qb2 profile pins it off).
+      eval_task_request_body_overrides:
+        r1_gpqa_diamond:
+          chat_template_kwargs:
+            enable_thinking: true
+
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
     - device: P150X8
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
+      supported_modalities: [text]  # text profile: the multimodal serving config is installed on the Blackhole QB2 and Galaxy blocks only
       env_vars:
         MESH_DEVICE: "P150x8"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -2971,6 +3339,7 @@ templates:
       max_concurrency: 32
       max_context: 32768  # 32 * 1024 — unbounded sliding (multi-request safe)
       default_impl: true
+      supported_modalities: [text]  # text profile: the multimodal serving config is installed on the Blackhole QB2 and Galaxy blocks only
       env_vars:
         MESH_DEVICE: "T3K"
         # Ring is a Blackhole >=8-device default only; WH must stay Linear
@@ -3031,6 +3400,10 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
   status: EXPERIMENTAL
+  supported_modalities:
+    - text
+    - image
+    - video
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3038,6 +3411,12 @@ templates:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+      # GPQA Diamond thinking mode for this implementation (the eval task carries no
+      # task-level pin because the dedicated gemma4_26b_a4b_qb2 profile pins it off).
+      eval_task_request_body_overrides:
+        r1_gpqa_diamond:
+          chat_template_kwargs:
+            enable_thinking: true
 
 - weights:
     - google/gemma-4-E4B-it
@@ -3068,6 +3447,21 @@ templates:
     google/gemma-4-E2B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+
+# GPU reference spec (bring-your-own vLLM server; see docs/gpu_workflows.md).
+# No TT device entry yet.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 1048576  # 1024 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
@@ -3305,36 +3699,6 @@ templates:
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "1024"
-        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
-        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
-
-- weights:
-    - tiiuae/Falcon3-7B-Instruct
-  impl: forge_vllm_plugin
-  min_disk_gb: 20
-  min_ram_gb: 12
-  model_type: LLM
-  inference_engine: FORGE
-  uses_tensor_model_cache: false
-  status: EXPERIMENTAL
-  device_model_specs:
-    - device: P150
-      max_concurrency: 32
-      max_context: 32768  # Falcon3 native max_position_embeddings
-      default_impl: true
-      eval_max_retries: 1
-      env_vars:
-        MAX_MODEL_LENGTH: "32768"
-        MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.35"
-        TT_KV_POOL_GB: "32"
-        OPTIMIZATION_LEVEL: "1"
-        CPU_SAMPLING: "false"
-        ENABLE_TRACE: "true"
-        KV_CACHE_DTYPE: "bfp_bf8"
-        # 1024 (not 2048): Falcon3 head_dim=256 makes the b32 prefill SDPA buffer
-        # DRAM-OOM at chunk 2048 during trace-capture.
         PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
@@ -5803,6 +6167,82 @@ templates:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
 
+# Aleph-Alpha/Kolibri-1 (78B MoE, 3.46B active) TP4 autoport
+# (models/autoports/aleph_alpha_kolibri_1_bf16) from the tt-model-bringup multigoal
+# pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires the
+# tt-metal model code (models/autoports/aleph_alpha_kolibri_1_bf16, branch
+# vkovacevic/kolibri-1-qb2-model with its four shared-code fixes) and vllm-tt-plugin's
+# kolibri1 registration and parsers (branch vkovacevic/kolibri-1-qb2-plugin; vLLM 0.30).
+# The checkpoint is the vendor's BF16 copy; the main repo is block-FP8. Measured on the
+# 32-slot server (tt-agentic-bringup-qb2#75 batched-decode MoE path, 2048-token chunks):
+# c1 128/128 TTFT 233 ms / TPOT 57 ms, c32 128/128 250 tok/s, c32 4096/128 TTFT 5.5 s /
+# 100 tok/s. Perf targets: the measured gate in model_performance_reference.json (the
+# 2026-10-08 CI sweep) with a bf16 weight-streaming theoretical block.
+# Tracking: tt-agentic-bringup-qb2#73.
+- weights:
+    - Aleph-Alpha/Kolibri-1-BF16
+  impl: kolibri_1_qb2
+  inference_engine: VLLM
+  # The repo name carries no parameter count, so these can't be inferred; without
+  # them a runner with no cached weights fails setup. 78B BF16 is ~156 GB on disk.
+  min_disk_gb: 180
+  min_ram_gb: 128
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      # Native trained context (owner decision, tt-agentic-bringup-qb2#78); the
+      # model-card 1M extension is not served.
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        OMP_NUM_THREADS: "8"
+        # The device sampler covers top_k 1..32 (max_device_top_k). The model card's
+        # eval sampling (top_k 128) needs the host path, which the adapter only
+        # allows when this is set; without it such a request kills the engine.
+        KOLIBRI_VLLM_HOST_COMPAT: "1"
+        # The tt-agentic-bringup-qb2#75 batched-decode MoE path (token-grouped
+        # dispatch / fused SwiGLU / combine, expert-parallel weights, page-table
+        # dedupe) is the model code's default; KOLIBRI_GROUPED_DECODE=0 /
+        # KOLIBRI_EP_EXPERTS=0 / KOLIBRI_PAGE_TABLE_DEDUPE=0 would restore the dense path.
+      override_tt_config:
+        # The adapter refuses host sampling unless KOLIBRI_VLLM_HOST_COMPAT=1 is set.
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 200000000
+        fabric_config: FABRIC_1D
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 1
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        # Chunked prefill with a 2048-token budget (the model's prefill traces are
+        # bucketed at 32/128/512/2048/8192 tokens, so 1024 would pad into the 2048
+        # bucket). vs the bring-up's 512: c32 4096-token TTFT 42 s -> 5.6 s and
+        # throughput 2x; cost: c32 short-prompt burst p50 TTFT 2.0 -> 2.5 s. The
+        # model's paged sliding-window cache requires block_size 32.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "2048"
+        dtype: bfloat16
+        # Requests that omit top_k need a default inside the device sampler's range.
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: kolibri1
+        enable-auto-tool-choice: true
+        tool-call-parser: kolibri1
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Aleph-Alpha/Kolibri-1-BF16:
+      reasoning_parser_name: kolibri1
+
 # BEGIN gpu-ref sweep: derived GPU specs. Generated by
 # scripts/gpu_reference_colab/gpuref.py sweep plan --write-specs from each
 # model's TT row (Quetzal row first): max_context = min(row, native
@@ -7186,3 +7626,45 @@ templates:
     max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
+
+- weights:
+    - ibm-granite/granite-4.2-30b
+  impl: granite42_30b_qb2
+  inference_engine: VLLM
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 655360
+      default_impl: true
+      env_vars:
+        HF_MODEL: ibm-granite/granite-4.2-30b
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+      vllm_args:
+        hf-overrides: '{"architectures":["TTGraniteForCausalLM"]}'
+        revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        # Keep SWE output capped while vLLM shrinks it to the remaining context.
+        # An explicit request max_tokens would reject otherwise valid long prompts.
+        override_generation_config: '{"max_new_tokens": 32768}'
+        block_size: 32
+        max_num_seqs: 16
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_xml
+        reasoning_parser: qwen3
+        default-chat-template-kwargs: '{"enable_thinking": true, "low_effort": false}'
+        max_num_batched_tokens: 1024
+        enable-chunked-prefill: true
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 134217728
+        sample_on_device_mode: all
+  metadata:
+    ibm-granite/granite-4.2-30b:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_xml

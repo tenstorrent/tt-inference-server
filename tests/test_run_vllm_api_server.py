@@ -52,6 +52,60 @@ def _build_catalog():
     }
 
 
+# The vllm serve flag shapes set_vllm_sys_argv has to tell apart, taken from the
+# real parser in the serving image (vLLM 0.26.0):
+#
+#   from vllm.entrypoints.openai.cli_args import make_arg_parser
+#   from vllm.utils.argparse_utils import FlexibleArgumentParser
+#   for a in make_arg_parser(FlexibleArgumentParser())._actions:
+#       print(a.dest, a.nargs, getattr(a.type, "__name__", a.type))
+#
+# nargs='+' (one token per value): lora_modules, api_key, allowed_media_domains,
+#   served_model_name, logits_processors, ignore_patterns, numa_bind_nodes,
+#   numa_bind_cpus, kv_cache_dtype_skip_layers, cpu_offload_params, offload_params,
+#   lora_target_modules, collect_detailed_traces, cudagraph_capture_sizes.
+# nargs=None with type=json.loads (one JSON token, list or dict): allowed_origins,
+#   allowed_methods, allowed_headers, default_chat_template_kwargs.
+_MOCK_VLLM_SERVE_FLAGS = (
+    ("served_model_name", "+"),
+    ("cudagraph_capture_sizes", "+"),
+    ("lora_modules", "+"),
+    ("allowed_origins", None),
+    ("default_chat_template_kwargs", None),
+    ("hf_overrides", None),
+    ("max_model_len", None),
+)
+
+
+def _install_mock_vllm_serve_parser(monkeypatch, vllm, namespace="openai"):
+    parser = types.SimpleNamespace(
+        _actions=[
+            types.SimpleNamespace(dest=dest, nargs=nargs)
+            for dest, nargs in _MOCK_VLLM_SERVE_FLAGS
+        ]
+    )
+    vllm.__path__ = []
+    entrypoints = types.ModuleType("vllm.entrypoints")
+    entrypoints.__path__ = []
+    frontend = types.ModuleType(f"vllm.entrypoints.{namespace}")
+    frontend.__path__ = []
+    cli_args = types.ModuleType(f"{frontend.__name__}.cli_args")
+    cli_args.make_arg_parser = MagicMock(return_value=parser)
+    utils = types.ModuleType("vllm.utils")
+    utils.__path__ = []
+    argparse_utils = types.ModuleType("vllm.utils.argparse_utils")
+    argparse_utils.FlexibleArgumentParser = MagicMock()
+    for name, module in (
+        ("vllm.entrypoints", entrypoints),
+        (frontend.__name__, frontend),
+        (cli_args.__name__, cli_args),
+        ("vllm.utils", utils),
+        ("vllm.utils.argparse_utils", argparse_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    return cli_args
+
+
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
     monkeypatch.delenv("QZ_TRACE_REGION_BYTES", raising=False)
@@ -66,6 +120,7 @@ def run_vllm_api_server_module(monkeypatch):
     vllm = types.ModuleType("vllm")
     vllm.ModelRegistry = MagicMock()
     monkeypatch.setitem(sys.modules, "vllm", vllm)
+    _install_mock_vllm_serve_parser(monkeypatch, vllm)
 
     utils = types.ModuleType("utils")
     utils.__path__ = [str(get_repo_root_path() / "utils")]
@@ -603,6 +658,214 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
         "  --served-model-name 'my model' \\\n"
         "  '--guided-decoding-backend=outlines backend' \\\n"
         "  --port 8000"
+    )
+
+
+def _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, defaults):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), passthrough, defaults
+    )
+    return sys.argv[1:]
+
+
+@pytest.fixture(params=["openai", "launchers"])
+def vllm_cli_args(monkeypatch, run_vllm_api_server_module, request):
+    monkeypatch.delitem(sys.modules, "vllm.entrypoints.openai.cli_args")
+    return _install_mock_vllm_serve_parser(
+        monkeypatch, sys.modules["vllm"], namespace=request.param
+    )
+
+
+def test_set_vllm_sys_argv_supports_vllm_parser_locations(
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
+):
+    origins = '["https://example.com"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", '["model", "alias"]', "--allowed-origins", origins],
+        {"cudagraph_capture_sizes": [1, 2, 4]},
+    ) == [
+        "--served-model-name",
+        "model",
+        "alias",
+        "--allowed-origins",
+        origins,
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+    ]
+    vllm_cli_args.make_arg_parser.assert_called_once()
+
+
+def test_multi_value_arg_names_falls_back_when_launchers_has_no_cli_args(
+    monkeypatch, run_vllm_api_server_module
+):
+    launchers = types.ModuleType("vllm.entrypoints.launchers")
+    launchers.__path__ = []
+    monkeypatch.setitem(sys.modules, launchers.__name__, launchers)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert "served_model_name" in names
+    assert "allowed_origins" not in names
+
+
+def test_multi_value_arg_names_preserves_missing_dependency_error(
+    monkeypatch, run_vllm_api_server_module
+):
+    real_import = builtins.__import__
+    missing_dependency = ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    def import_with_missing_dependency(name, *args, **kwargs):
+        if name == "vllm.entrypoints.launchers.cli_args":
+            raise missing_dependency
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_with_missing_dependency)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert exc_info.value is missing_dependency
+    sys.modules["vllm.entrypoints.openai.cli_args"].make_arg_parser.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "passthrough",
+    [
+        ["--served-model-name", '["Qwen/Qwen3.6-27B", "local-vlm"]'],
+        ['--served-model-name=["Qwen/Qwen3.6-27B", "local-vlm"]'],
+    ],
+    ids=["separate", "equals"],
+)
+def test_set_vllm_sys_argv_splits_json_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module, passthrough
+):
+    assert _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, {}) == [
+        "--served-model-name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+    ]
+
+
+def test_multi_value_arg_names_does_not_load_vllm_general_plugins(
+    monkeypatch, run_vllm_api_server_module, vllm_cli_args
+):
+    # vLLM's EngineArgs.add_cli_args runs load_general_plugins() while the serve
+    # parser is built. A plugin that refuses before model/context are on argv
+    # (Quetzal: "manifest-selected Quetzal serving requires exact model and
+    # context") must not end the entrypoint while it only reads flag shapes.
+    def refusing_plugins():
+        raise RuntimeError(
+            "Quetzal generated-provider registration failed; "
+            "refusing to serve the tt_transformers reference model"
+        )
+
+    plugins = types.ModuleType("vllm.plugins")
+    plugins.load_general_plugins = refusing_plugins
+    engine = types.ModuleType("vllm.engine")
+    engine.__path__ = []
+    arg_utils = types.ModuleType("vllm.engine.arg_utils")
+    arg_utils.load_general_plugins = refusing_plugins
+    for name, module in (
+        ("vllm.plugins", plugins),
+        ("vllm.engine", engine),
+        ("vllm.engine.arg_utils", arg_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    cli_args = vllm_cli_args
+    parser = cli_args.make_arg_parser.return_value
+
+    def make_arg_parser(_parser):
+        # Both binding styles vLLM has used: a module-level import in
+        # arg_utils, and a function-local `from vllm.plugins import ...`.
+        arg_utils.load_general_plugins()
+        sys.modules["vllm.plugins"].load_general_plugins()
+        return parser
+
+    monkeypatch.setattr(cli_args, "make_arg_parser", make_arg_parser)
+
+    names = run_vllm_api_server_module._vllm_multi_value_arg_names()
+
+    assert {"served_model_name", "cudagraph_capture_sizes", "lora_modules"} <= names
+    assert "allowed_origins" not in names
+    # The real loader is restored for vLLM's own startup.
+    assert plugins.load_general_plugins is refusing_plugins
+    assert arg_utils.load_general_plugins is refusing_plugins
+
+
+def test_set_vllm_sys_argv_keeps_json_list_for_single_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # nargs=None, type=json.loads: splitting it makes vLLM exit at parsing.
+    origins = '["https://a.example", "https://b.example"]'
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--allowed-origins", origins],
+        {"default_chat_template_kwargs": {"enable_thinking": False}},
+    ) == [
+        "--allowed-origins",
+        origins,
+        "--default_chat_template_kwargs",
+        '{"enable_thinking": false}',
+    ]
+
+
+def test_set_vllm_sys_argv_leaves_plain_multi_value_tokens_alone(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"],
+        {},
+    ) == ["--served-model-name", "Qwen/Qwen3.6-27B", "local-vlm"]
+
+
+def test_set_vllm_sys_argv_splits_spec_default_lists_for_multi_value_flags(
+    monkeypatch, run_vllm_api_server_module
+):
+    assert _vllm_argv_for(
+        run_vllm_api_server_module,
+        monkeypatch,
+        [],
+        {
+            "served_model_name": ["Qwen/Qwen3.6-27B", "local-vlm"],
+            "cudagraph_capture_sizes": [1, 2, 4],
+            "lora_modules": [{"name": "adapter", "path": "/adapters/a"}],
+            "hf_overrides": {"max_seq_len": 4096},
+        },
+    ) == [
+        "--served_model_name",
+        "Qwen/Qwen3.6-27B",
+        "local-vlm",
+        "--cudagraph_capture_sizes",
+        "1",
+        "2",
+        "4",
+        "--lora_modules",
+        '{"name": "adapter", "path": "/adapters/a"}',
+        "--hf_overrides",
+        '{"max_seq_len": 4096}',
+    ]
+
+
+def test_set_vllm_sys_argv_drops_empty_list_for_multi_value_flag(
+    monkeypatch, run_vllm_api_server_module
+):
+    # A bare nargs='+' flag is an argparse error, so an empty list falls back to vLLM's default.
+    assert (
+        _vllm_argv_for(
+            run_vllm_api_server_module,
+            monkeypatch,
+            ["--served-model-name", "[]"],
+            {"cudagraph_capture_sizes": []},
+        )
+        == []
     )
 
 

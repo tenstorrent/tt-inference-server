@@ -2,10 +2,10 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Run lm-eval with per-request body overrides for one eval task.
+"""Run lm-eval (or lmms-eval) with per-request body overrides for one eval task.
 
     python lm_eval_request_overrides.py [--request-body JSON] [--drop-server-seed]
-        [--preserve-reasoning] -- <lm_eval arguments>
+        [--preserve-reasoning] [--harness lm-eval|lmms-eval] -- <harness arguments>
 
 * ``--request-body`` merges a JSON object into every payload the OpenAI
   completions/chat adapters send (dict values one level deep), e.g.
@@ -15,6 +15,11 @@
   ``lm_eval_no_server_seed.py`` does on its own.
 * ``--preserve-reasoning`` turns on the pinned fork's ``LM_EVAL_PRESERVE_REASONING``
   so a separate ``reasoning_content`` reaches the sample logs (never scoring).
+* ``--harness lmms-eval`` launches lmms-eval instead. Its ``openai_compatible``
+  models send through the openai SDK's chat client and build their payload
+  from the prompt alone, so the body is merged into every
+  ``chat.completions.create`` call's ``extra_body`` (the SDK puts it in the
+  JSON body beside the messages). The two lm-eval-only flags are refused.
 """
 
 from __future__ import annotations
@@ -36,6 +41,10 @@ SUPPORTED_EVAL_CLASSES = (
     "openai-completions",
     "openai-chat-completions",
 )
+# lmms-eval ``--model`` names that send through the openai SDK's chat client
+# (``self.client.chat.completions.create(**payload)`` in v0.4.1), which the
+# ``--harness lmms-eval`` patch covers.
+SUPPORTED_LMMS_EVAL_CLASSES = ("openai_compatible", "openai_compatible_chat")
 _PATCH_MARKER = "_tt_request_overrides"
 
 
@@ -74,11 +83,21 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument("--drop-server-seed", action="store_true")
     parser.add_argument("--preserve-reasoning", action="store_true")
+    parser.add_argument(
+        "--harness", choices=("lm-eval", "lmms-eval"), default="lm-eval"
+    )
     opts = parser.parse_args(ours)
     body = json.loads(opts.request_body)
     if not isinstance(body, dict):
         raise SystemExit(
             f"--request-body must be a JSON object, got {type(body).__name__}"
+        )
+    if opts.harness == "lmms-eval" and (
+        opts.drop_server_seed or opts.preserve_reasoning
+    ):
+        raise SystemExit(
+            "--drop-server-seed / --preserve-reasoning patch the lm-eval adapters "
+            "only; lmms-eval sends no seed and scores content only"
         )
     opts.body = body
     return opts, theirs
@@ -115,8 +134,34 @@ def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str
     return patched
 
 
+def patch_openai_chat_client(body: Dict[str, Any]) -> None:
+    """Merge ``body`` into the ``extra_body`` of every synchronous
+    ``chat.completions.create`` call of the openai SDK, the client lmms-eval's
+    openai_compatible models send through. Re-patching replaces the wrap."""
+    from openai.resources.chat.completions import Completions
+
+    original = getattr(Completions.create, _PATCH_MARKER, None) or Completions.create
+
+    def create(self, *args, extra_body=None, **kwargs):
+        merged = merge_request_body(dict(extra_body or {}), body)
+        return original(self, *args, extra_body=merged, **kwargs)
+
+    setattr(create, _PATCH_MARKER, original)
+    Completions.create = create
+
+
+def require_supported_lmms_model(model_name: str) -> None:
+    """Refuse an lmms-eval model that does not send through the patched SDK
+    client: the override would be dropped silently otherwise."""
+    if model_name not in SUPPORTED_LMMS_EVAL_CLASSES:
+        raise SystemExit(
+            f"request overrides are not supported for lmms-eval model '{model_name}'; "
+            f"supported: {', '.join(SUPPORTED_LMMS_EVAL_CLASSES)}"
+        )
+
+
 def lm_eval_model_name(lm_eval_argv: List[str]) -> str:
-    """The ``--model`` / ``-m`` value lm-eval will use (default ``hf``)."""
+    """The ``--model`` / ``-m`` value lm-eval (or lmms-eval) will use (default ``hf``)."""
     for i, arg in enumerate(lm_eval_argv):
         if arg in ("--model", "-m") and i + 1 < len(lm_eval_argv):
             return lm_eval_argv[i + 1]
@@ -145,19 +190,25 @@ def require_patched_adapter(model_name: str) -> None:
 
 
 def main() -> None:
-    opts, lm_eval_argv = parse_argv(sys.argv[1:])
-    if opts.preserve_reasoning:
-        os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
-    patched = patch_api_adapters(opts.body, opts.drop_server_seed)
-    require_patched_adapter(lm_eval_model_name(lm_eval_argv))
+    opts, harness_argv = parse_argv(sys.argv[1:])
+    model_name = lm_eval_model_name(harness_argv)
+    if opts.harness == "lmms-eval":
+        require_supported_lmms_model(model_name)
+        patch_openai_chat_client(opts.body)
+        patched = ["openai chat.completions.create extra_body"]
+        from lmms_eval.__main__ import cli_evaluate
+    else:
+        if opts.preserve_reasoning:
+            os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
+        patched = patch_api_adapters(opts.body, opts.drop_server_seed)
+        require_patched_adapter(model_name)
+        from lm_eval.__main__ import cli_evaluate
     print(
-        f"[lm_eval_request_overrides] request body overrides: {json.dumps(opts.body)} "
-        f"(patched adapters: {', '.join(patched)})",
+        f"[lm_eval_request_overrides] {opts.harness} request body overrides: "
+        f"{json.dumps(opts.body)} (patched: {', '.join(patched)})",
         file=sys.stderr,
     )
-    sys.argv = [sys.argv[0], *lm_eval_argv]
-    from lm_eval.__main__ import cli_evaluate
-
+    sys.argv = [sys.argv[0], *harness_argv]
     cli_evaluate()
 
 

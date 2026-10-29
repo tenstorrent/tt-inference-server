@@ -303,6 +303,10 @@ def calculate_vision_tokens(
     # Gemma-3 models: Fixed 256 tokens per image
     if "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
         tokens_per_image = 256
+    # Gemma-4 models (gemma-4-31B-it / -12B-it / -26B-A4B-it): fixed 280 soft tokens per image
+    # (processor image_seq_length / max_soft_tokens). The hyphen keeps medgemma-4b-it on its rule.
+    elif "gemma-4-" in model_name_lower:
+        tokens_per_image = 280
     # Qwen2.5-VL models
     elif "qwen2.5-vl" in model_name_lower or "qwen2-5-vl" in model_name_lower:
         tokens_per_image = (image_height // 28) * (image_width // 28)
@@ -389,7 +393,14 @@ def select_smoke_test_benchmark_config(
 ) -> BenchmarkConfig:
     if benchmark_config.tasks:
         benchmark_target_task = benchmark_config.tasks[0]
-        benchmark_targets = benchmark_target_task.param_map.get(device)
+        # Rows without targets are informational (e.g. MiniMax-M3's long-context
+        # sweep points) and can be very large, so a smoke test only runs the
+        # rows that carry targets and otherwise falls back to the tiny pair.
+        benchmark_targets = [
+            params
+            for params in benchmark_target_task.param_map.get(device) or []
+            if params.targets
+        ]
         if benchmark_targets:
             benchmark_target_param_map = dict(benchmark_target_task.param_map)
             benchmark_target_param_map[device] = list(benchmark_targets)

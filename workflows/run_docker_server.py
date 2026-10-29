@@ -132,14 +132,19 @@ _CPP_TTS_CANCEL_QUEUE_CAPACITY = "64"
 
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
-    if model_spec.inference_engine != InferenceEngine.MEDIA.value:
+    if getattr(model_spec, "inference_engine", None) != InferenceEngine.MEDIA.value:
         return False
-    device = model_spec.device_type.name.lower()
-    if model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
+    device_type = getattr(model_spec, "device_type", None)
+    device_name = getattr(device_type, "name", None)
+    if not isinstance(device_name, str):
+        return False
+    device = device_name.lower()
+    model_name = getattr(model_spec, "model_name", None)
+    if model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
         return device in _CPP_SDXL_DEVICE_DEFAULTS
-    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+    if model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return device in _CPP_EMBEDDING_DEVICE_IDS
-    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+    if model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
         return device in _CPP_TTS_DEVICE_IDS
     return False
 
@@ -161,15 +166,18 @@ def _get_cpp_image_server_docker_env_vars(model_spec):
         "SERVER_MODE": "cpp",
         "MODEL_SERVICE": "image",
         "MODEL_RUNNER_TYPE": runner,
+        "DEVICE": device,
         "DEVICE_MESH_SHAPE": mesh_shape,
         "IS_GALAXY": "true" if is_galaxy else "false",
         "DEVICE_IDS": device_ids,
         "MAX_BATCH_SIZE": "1",
         "SDXL_IMAGE_RESOLUTION": "1024x1024",
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
     }
     logger.info(
         f"cpp_server environment variables: MODEL_SERVICE=image, "
-        f"MODEL_RUNNER_TYPE={runner}, DEVICE_MESH_SHAPE={mesh_shape}, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE={device}, DEVICE_MESH_SHAPE={mesh_shape}, "
         f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
     )
     return env_vars
@@ -509,6 +517,9 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         if value is True:
             cli_args.append(flag)
         elif isinstance(value, (dict, list)):
+            # One JSON token. Whether a list must be split into one token per
+            # item depends on the flag's nargs, which only vLLM knows; the
+            # container entrypoint does that split (run_vllm_api_server.py).
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]
@@ -530,11 +541,36 @@ def _resolve_training_store_root(setup_config) -> str:
     return _EPHEMERAL_TRAINING_STORE_ROOT
 
 
+_DEFAULT_CPP_MEDIA_SHM_SIZE = "8g"
+
+
+def _media_pre_downloaded_weights_path(setup_config, model_spec):
+    """Container path of the weights run.py already fetched, or None.
+
+    Without MODEL_WEIGHTS_PATH every cpp_server SDXL worker resolves the HF repo
+    id itself (32 Galaxy workers racing one cold download)."""
+    if setup_config is None or not setup_config.container_model_weights_path:
+        return None
+    if setup_config.host_model_weights_mount_dir:
+        return str(setup_config.container_model_weights_path)
+    if not setup_config.host_model_volume_root:
+        return None
+    host_weights_dir = (
+        Path(setup_config.host_model_volume_root) / "weights" / model_spec.model_name
+    )
+    if not host_weights_dir.is_dir() or not any(host_weights_dir.iterdir()):
+        return None
+    return str(setup_config.container_model_weights_path)
+
+
 def _docker_ipc_args(model_spec) -> List[str]:
     """IPC namespace for the container: the host's by default; a private one with its own
-    /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec)."""
+    /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec) or when
+    running the C++ media server (whose Boost IPC queues and worker metrics live in /dev/shm)."""
     device_spec = getattr(model_spec, "device_model_spec", None)
     shm_size = getattr(device_spec, "docker_shm_size", None)
+    if not shm_size and _is_cpp_media_spec(model_spec):
+        shm_size = _DEFAULT_CPP_MEDIA_SHM_SIZE
     if shm_size:
         return ["--ipc", "private", "--shm-size", str(shm_size)]
     return ["--ipc", "host"]
@@ -689,6 +725,15 @@ def generate_docker_run_command(
         # effect. Runtime-derived values below override these.
         docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        if (
+            _is_cpp_media_spec(model_spec)
+            and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+        ):
+            sdxl_weights_path = _media_pre_downloaded_weights_path(
+                setup_config, model_spec
+            )
+            if sdxl_weights_path:
+                docker_env_vars["MODEL_WEIGHTS_PATH"] = sdxl_weights_path
         api_key = os.getenv("API_KEY")
         if runtime_config.no_auth:
             docker_env_vars["NO_AUTH"] = "1"

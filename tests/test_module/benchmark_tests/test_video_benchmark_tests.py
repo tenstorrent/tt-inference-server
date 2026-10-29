@@ -271,7 +271,9 @@ def test_bh_galaxy_wan_i2v_has_a_target_per_shape():
         ((720, 1280), True): 76300,
     }
     # A deployment that leaves DBCache unset gets no targets rather than the wrong ones.
-    assert get_performance_targets(WAN_I2V, "blackhole_galaxy", (832, 480)).ttft_ms is None
+    assert (
+        get_performance_targets(WAN_I2V, "blackhole_galaxy", (832, 480)).ttft_ms is None
+    )
     # Devices without per-shape entries keep one benchmark at the served shape.
     assert performance_target_shapes(WAN_I2V, "t3k") == []
     assert get_performance_targets(WAN_I2V, "t3k").ttft_ms == 540000
@@ -384,3 +386,134 @@ def test_every_shape_runs_and_one_unserved_shape_fails_the_block(
     assert target["ttft_1280x720"] == target_ms
     assert target["ttft_1280x720_check"] == mod.ReportCheckTypes[check]
     assert target["ttft_832x480_check"] == mod.ReportCheckTypes.NA
+
+
+def test_minimax_h3_fl2va_lightx2v_has_its_four_step_profile():
+    assert mod.VIDEO_INFERENCE_STEPS["MiniMaxAI/MiniMax-H3-FL2VA-LightX2V"] == 4
+
+
+def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
+    # H3 refuses num_inference_steps and negative_prompt with 422; the shape is chosen with
+    # duration and an explicit canvas, and the keyframe goes in as the first frame.
+    captured = {}
+
+    class _Resp:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {"id": "job-h3"}
+
+    def _fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    def _fake_poll(ctx, job_id, headers, **kwargs):
+        captured["poll_timeout"] = kwargs.get("timeout")
+        return "/tmp/h3.mp4"
+
+    monkeypatch.setattr(mod.requests, "post", _fake_post)
+    monkeypatch.setattr(mod, "_poll_video_completion", _fake_poll)
+
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(model_name="MiniMax-H3-FL2VA-LightX2V"),
+        base_url="http://localhost:8000",
+    )
+    ok, _elapsed, job_id, _path = mod._generate_video(
+        ctx, prompt="a volcano erupting", num_inference_steps=4, image_b64="ZmFrZQ=="
+    )
+
+    assert ok is True
+    assert job_id == "job-h3"
+    assert captured["url"].endswith("v1/videos/generations/i2v")
+    assert captured["payload"] == {
+        "prompt": "a volcano erupting",
+        "duration": 5,
+        "height": 768,
+        "width": 1344,
+        "seed": 0,
+        "image_prompts": [{"image": "ZmFrZQ==", "frame_pos": 0}],
+    }
+    assert captured["poll_timeout"] > mod.DEFAULT_VIDEO_TIMEOUT_SECONDS
+
+
+def test_minimax_h3_fl2va_benchmark_loads_the_keyframe(monkeypatch):
+    seen = {}
+
+    def _fake_generate(ctx, prompt, num_inference_steps, image_b64, shape=None):
+        seen["image_b64"] = image_b64
+        return True, 9.0, "job", "/tmp/h3.mp4"
+
+    monkeypatch.setattr(mod, "_generate_video", _fake_generate)
+    monkeypatch.setattr(mod, "_load_fixture_image_base64", lambda: "a2V5")
+    ctx = _ctx("MiniMaxAI/MiniMax-H3-FL2VA-LightX2V")
+    ctx.model_spec.model_name = "MiniMax-H3-FL2VA-LightX2V"
+    (status,) = mod._run_video_generation_benchmark(ctx, 1)
+    assert seen["image_b64"] == "a2V5"
+    assert status.num_inference_steps == 4
+
+
+def test_minimax_h3_ref2va_lightx2v_has_its_four_step_profile():
+    assert mod.VIDEO_INFERENCE_STEPS["MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"] == 4
+
+
+def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
+    # A Ref2VA deployment refuses /generations and /i2v; the image goes in as an unpinned
+    # reference, and the adapter's own canvas is left to the server (aspect_ratio only).
+    captured = {}
+
+    class _Resp:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {"id": "job-ref"}
+
+    def _fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    def _fake_poll(ctx, job_id, headers, **kwargs):
+        captured["poll_timeout"] = kwargs.get("timeout")
+        return "/tmp/ref.mp4"
+
+    monkeypatch.setattr(mod.requests, "post", _fake_post)
+    monkeypatch.setattr(mod, "_poll_video_completion", _fake_poll)
+
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(model_name="MiniMax-H3-Ref2VA-LightX2V"),
+        base_url="http://localhost:8000",
+    )
+    ok, _elapsed, job_id, _path = mod._generate_video(
+        ctx, prompt="a volcano erupting", num_inference_steps=4, image_b64="ZmFrZQ=="
+    )
+
+    assert ok is True
+    assert job_id == "job-ref"
+    assert captured["url"].endswith("v1/videos/generations/ref2va")
+    assert captured["payload"] == {
+        "prompt": "a volcano erupting",
+        "duration": 5,
+        "aspect_ratio": "16:9",
+        "seed": 0,
+        "references": {"images": [{"b64": "ZmFrZQ=="}]},
+    }
+    assert captured["poll_timeout"] > mod.DEFAULT_VIDEO_TIMEOUT_SECONDS
+
+
+def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
+    seen = {}
+
+    def _fake_generate(ctx, prompt, num_inference_steps, image_b64, shape=None):
+        seen["image_b64"] = image_b64
+        return True, 9.0, "job", "/tmp/ref.mp4"
+
+    monkeypatch.setattr(mod, "_generate_video", _fake_generate)
+    monkeypatch.setattr(mod, "_load_fixture_image_base64", lambda: "a2V5")
+    ctx = _ctx("MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V")
+    ctx.model_spec.model_name = "MiniMax-H3-Ref2VA-LightX2V"
+    (status,) = mod._run_video_generation_benchmark(ctx, 1)
+    assert seen["image_b64"] == "a2V5"
+    assert status.num_inference_steps == 4
