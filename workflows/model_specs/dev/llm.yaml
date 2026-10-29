@@ -1662,13 +1662,14 @@ templates:
         MESH_DEVICE: P300x2
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
-        QWEN38_CACHE_BLOCK_SIZE: "2048"
+        QWEN38_CACHE_BLOCK_SIZE: "1536"
         QWEN38_GROUPED_RECURRENCE: "1"
         QWEN38_MASKED_RECURRENCE: "1"
         QWEN38_FLAT_PREFILL: "1"
         QWEN38_UNPADDED_PREFILL: "1"
         QWEN38_AGENT_ISOLATED_NETWORK: "1"
         QWEN38_SHARED_RECURRENT_SNAPSHOTS: "1"
+        QWEN38_UNION_STATE_BACKING: "1"
         QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE: "23661297664"
         TT_METAL_TRACE_ALLOC_TRACKING: "0"
         TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
@@ -1676,9 +1677,9 @@ templates:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         max_num_seqs: 32
-        block_size: 2048
-        mamba_block_size: 2048
-        prefix_cache_retention_interval: 2048
+        block_size: 1536
+        mamba_block_size: 1536
+        prefix_cache_retention_interval: 1536
         mamba_cache_mode: align
         max_num_batched_tokens: 131072
         long_prefill_token_threshold: 4096
