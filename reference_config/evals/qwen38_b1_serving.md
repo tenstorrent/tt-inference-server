@@ -8,6 +8,8 @@ unchanged and the compiled vLLM0.30/backend inherited from the qualified image.
 No Claude unpadded-prefill or union-state changes are included.
 
 The source-owned `b1_serving_probe` route runs before scored agentic evaluation.
+Both specs set `QWEN38_B1_SERVING_PROBE=1`, limiting startup to one attempt;
+failed or canceled startup requires evidence review before a fresh server.
 For each exact native-chat input length128,4096 and129, it issues one128-output
 warmup and three128-output measured streaming requests, serially. Prefix caching
 is disabled. Every request must return128 delta token IDs and matching usage;

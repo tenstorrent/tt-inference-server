@@ -41,6 +41,27 @@ class CampaignTest(unittest.TestCase):
         self.assertEqual(result.return_code, 1)
         self.assertEqual(launch_once.call_count, 1)
 
+    def test_b1_startup_failure_is_not_automatically_retried(self):
+        from workflow_module.commands import ServerCommand, ServerLaunchSpec, ServerMode
+
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=SimpleNamespace(env_vars={"QWEN38_B1_SERVING_PROBE": "1"}),
+            runtime_config=SimpleNamespace(),
+            setup_config=None,
+        )
+        command = ServerCommand(spec)
+        with patch.object(
+            command, "_launch_once", return_value={}
+        ) as launch_once, patch(
+            "workflow_module.commands._server_boot_attempts", return_value=2
+        ), patch(
+            "workflow_module.commands._wait_until_ready", return_value="server exited"
+        ), patch("workflow_module.commands._teardown_server"):
+            result = command.execute()
+        self.assertEqual(result.return_code, 1)
+        self.assertEqual(launch_once.call_count, 1)
+
     def test_source_manifest_rejects_changed_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
