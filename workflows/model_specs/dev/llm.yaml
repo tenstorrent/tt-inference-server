@@ -2560,6 +2560,12 @@ templates:
         DSV41_SHARED_EXPERT_TP: "1"  # shared expert column-sharded over the 8 mesh columns in decode / verify
         DSV41_PREFILL_ROW_AWARE: "1"  # row-aware prefill placement (B=8 TTFT collision fix; effective with DSV41_PREFILL_UP=1 < 2 users per row)
         TT_PREFILL_ROW_AWARE: "1"  # plugin side of the row-aware admission (vllm-tt-plugin ssinghal/dsv4p1-b8-final-plugin 028a7f3); read by the engine process from the environment
+        # Host-side round work (tt/hostopt.py, server A/B dsv4-logs/hostopt_srv: outputs identical in 23/23 cases, WARM about -11 % round at fixed k, the others about -3 %). DSV41_HOSTOPT_POST stays off (no effect in the server). WARM needs `chrt` and `taskset` (util-linux, present in the image) and starts an idle-priority spinner process pinned to the round thread's core; without them it silently does nothing.
+        DSV41_HOSTOPT_FORCE: "1"  # SpecDecoder.set_force: skip the host->device copy when the value is unchanged
+        DSV41_HOSTOPT_ENGRAM: "1"  # numpy Engram n-gram hash + LUT fp8 dequant into a reused buffer (falls back to the torch path on any exception)
+        DSV41_HOSTOPT_PACK: "1"  # packed-upload host tensors built once and refilled in place (needs ENGRAM); sampler-params template only for the shared sampler adapter
+        DSV41_HOSTOPT_READBACK: "1"  # read-back enqueued behind the trace, one synchronize
+        DSV41_HOSTOPT_WARM: "1"  # keep the round thread's core out of deep idle (idle-priority spinner on the same core; paused during prefill_forward)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
