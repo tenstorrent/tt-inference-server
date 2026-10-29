@@ -256,11 +256,34 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
 
         blocks.append(driver.parse(outcome.raw, device=driver_context.device))
         accept_blocks([blocks[-1]], envelope=envelope)
+        data = blocks[-1].data
+        targets = blocks[-1].targets
+        n_trials = targets.get("n_trials")
+        n_errors = targets.get("n_errors", 0)
+        n_not_run = targets.get("n_evaluator_not_run", 0)
         logger.info(
-            "Task %s done: accuracy=%s",
+            "Task %s done: score=%s (percent), n_trials=%s, n_errors=%s, "
+            "n_evaluator_not_run=%s",
             task.task_name,
-            blocks[-1].data.get("accuracy"),
+            data.get("score"),
+            targets.get("n_trials", "N/A"),
+            targets.get("n_errors", "N/A"),
+            targets.get("n_evaluator_not_run", "N/A"),
         )
+        if n_trials and n_not_run == n_trials:
+            logger.warning(
+                "Task %s: the evaluator did not run for any of the %s scored "
+                "trials (used_tau2_evaluator is false); the score is "
+                "not a measurement of the model.",
+                task.task_name,
+                n_trials,
+            )
+        elif n_trials == 0 and n_errors > 0:
+            logger.warning(
+                "Task %s: no scored trials; %s trial errors.",
+                task.task_name,
+                n_errors,
+            )
 
     return blocks
 
