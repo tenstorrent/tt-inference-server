@@ -631,6 +631,12 @@ templates:
         # one or two below it, by the tokenizer) need the finals captured two
         # tokens either side of each listed length, not one (6 of 128 finals at 64K and 1 at 16K ran eagerly, 4 to 13 s each).
         TT_V41_TRACE_PREFILL_SLACK: "2"
+        # The prefill call's host copies in one dispatch round each
+        # (bit for bit): a request's state reset (40
+        # zero-fills of the window carries) and each chunk's staging (the
+        # token ids, the Engram inputs and the position inputs) as one
+        # ttnn.copy_host_to_device_tensors instead of ~55 single copies.
+        TT_V41_PREFILL_HOST_BATCH: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
