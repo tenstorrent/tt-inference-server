@@ -30,6 +30,12 @@ This server is built to serve non-LLM models. Currently supported models:
 
 More details about each folder will be provided below
 
+# Request flow: validation at submit, then a job
+
+![Request flow: every check runs at submit and answers with an HTTP code and message; an accepted request becomes a job that a device worker runs on the model pipeline](docs/request-flow.svg)
+
+A request is checked in the server before anything is queued (schema, model readiness, media, the model's own policy, room in the queue) and rejected with an HTTP code and message; once accepted it becomes a job that a device worker runs on the model pipeline, and its outputs or error are read back from the job record. Endpoint names follow the per-model generation API design (#5466).
+
 # API Versioning
 
 All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy paths without the `/v1` prefix are still supported during a deprecation period but will be removed after **2026-06-30**.
