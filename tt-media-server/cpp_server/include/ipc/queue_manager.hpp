@@ -44,7 +44,12 @@ class QueueManager {
 
   ~QueueManager() { clear(); }
 
+  // Idempotent: LLMService::stop() clears explicitly, and the destructor may
+  // then run during static teardown, after this thread's thread_local send
+  // buffer used by ResultQueue::shutdown() is already gone.
   void clear() {
+    if (cleared) return;
+    cleared = true;
     tt::ipc::boost::TaskQueue::remove(tt::config::ttTaskQueueName());
     for (auto& queue : resultQueues) {
       queue->shutdown();
@@ -60,6 +65,9 @@ class QueueManager {
 
   QueueManager(QueueManager&&) = default;
   QueueManager& operator=(QueueManager&&) = default;
+
+ private:
+  bool cleared = false;
 };
 
 }  // namespace tt::ipc
