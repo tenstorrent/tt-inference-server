@@ -2566,6 +2566,8 @@ templates:
         DSV41_HOSTOPT_PACK: "1"  # packed-upload host tensors built once and refilled in place (needs ENGRAM); sampler-params template only for the shared sampler adapter
         DSV41_HOSTOPT_READBACK: "1"  # read-back enqueued behind the trace, one synchronize
         DSV41_HOSTOPT_WARM: "1"  # keep the round thread's core out of deep idle (idle-priority spinner on the same core; paused during prefill_forward)
+        DSV41_MOE_TAIL_V2: "1"  # moe_tail v2: row segments scattered into the face rows by L1->L1 NoC copies (bit-identical to v1; gate dsv4-logs/decode_fusion/tailv2_g.log)
+        DSV41_ATTN_POSTFUSE: "1"  # post-SDPA glue fused into one generic_op, T<=32 (stock-exact at T=1..32; gate dsv4-logs/decode_fusion/post_b.log)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
