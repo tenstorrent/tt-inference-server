@@ -283,6 +283,7 @@ templates:
         # per-request cost) and runs one 448x448 window (1024 patches) per tower call, which keeps
         # the per-request transient (1.13 GB + 68 MiB) under the reserve's 1 M whole-prefix copy.
         GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_PREFIX_CACHING: "1"  # the slot-level prefix cache (KDA snapshots at the chunk-aligned ends; the served smoke 2026-10-29)
         GLM53_VLLM_VISION_RESIDENT: "0"
         GLM53_VLLM_VISION_BATCH_PATCHES: "1024"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
@@ -333,7 +334,7 @@ templates:
         # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
-        no-enable-prefix-caching: true  # no shared pages exist on device (supports_prefix_caching False)
+        enable-prefix-caching: true  # the adapter's slot-level prefix cache (GLM53_VLLM_PREFIX_CACHING below; 2026-10-29)
         no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
         enable-auto-tool-choice: true
         tool-call-parser: glm47
@@ -379,6 +380,7 @@ templates:
         # Image + video serving with the vision tower resident on every chip (1.05 GiB per chip:
         # the planner still fits 28 users per row at 128 K beside it; tt/memory_plan.py).
         GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_PREFIX_CACHING: "1"  # the slot-level prefix cache (KDA snapshots at the chunk-aligned ends; the served smoke 2026-10-29)
         GLM53_VLLM_VISION_RESIDENT: "1"
         GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
       override_tt_config:
@@ -401,7 +403,7 @@ templates:
         # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true  # the adapter's slot-level prefix cache (GLM53_VLLM_PREFIX_CACHING below; 2026-10-29)
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: glm47
