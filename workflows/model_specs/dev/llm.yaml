@@ -1229,8 +1229,9 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"  # drafts per step by live decode rows (max_rows:K): K=5 up to 5 rows, 3 up to 8, 1 up to 16 (rows x (K+1) <= 32 packed verify rows)
-        GEMMA4_SPEC_MAX_ROWS: "16"  # above 16 live rows the model proposes nothing and the step is the plain decode (baseline performance)
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: +9..+25 % over the quiet plain entry), K=3 at 6-8 rows (conc 32: +11..+25 %); a K=1 record at 16 rows cannot pay, so above 8 rows per engine (conc > 32) the step is the plain decode
+        GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's, as measured on the QB2 block (the (1,3) at 1.56x the plain step is the record chosen most at one row); 5 shapes x 4 rungs x ~26 MB + ~110 MB plain traces of the 1.2 GB region
+        GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"  # 110 cores / 32 rows, one kv head per device at TP=8
