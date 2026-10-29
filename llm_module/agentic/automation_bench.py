@@ -107,7 +107,20 @@ def run(config: AutomationBenchRunConfig) -> int:
     """Run auto-bench, then write ``result.json``. Returns the exit code."""
     config.job_dir.mkdir(parents=True, exist_ok=True)
     cmd = build_command(config)
-    logger.info("Running command: %s", " ".join(cmd))
+    # Logged from the config rather than ``cmd``, which carries the API key's
+    # environment variable name.
+    logger.info(
+        "Running auto-bench for %s: model=%s base_url=%s domains=%s toolset=%s "
+        "max_steps=%d max_concurrent=%d n_tasks=%s",
+        config.task_name,
+        config.model_name,
+        config.api_base,
+        ",".join(config.domains),
+        config.toolset,
+        config.max_steps,
+        config.max_concurrent,
+        config.n_tasks,
+    )
     started_at = datetime.now(timezone.utc)
     try:
         rc = subprocess.run(
