@@ -328,6 +328,10 @@ templates:
         # One image per 448x448 is 256 tokens (grid 32x32 / 4); up to 4 images and 1 video per prompt (the
         # upstream Glm5Next processor's limits; video frames are sampled at 2 fps in 2-frame groups).
         limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        # vLLM 0.30.0 resolves the video loader from transformers' model_type -> video-processor map, which transformers
+        # >= 5.19 returns as a per-backend dict ({'torchvision': 'Glm5NextVideoProcessor'}); the registry lookup on that dict
+        # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
+        media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
         no-enable-prefix-caching: true  # no shared pages exist on device (supports_prefix_caching False)
         no-async-scheduling: true  # the adapter reloads tokens / positions every step (supports_async_decode False)
@@ -392,6 +396,10 @@ templates:
         long_prefill_token_threshold: 16384
         enable_chunked_prefill: true
         limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        # vLLM 0.30.0 resolves the video loader from transformers' model_type -> video-processor map, which transformers
+        # >= 5.19 returns as a per-backend dict ({'torchvision': 'Glm5NextVideoProcessor'}); the registry lookup on that dict
+        # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
+        media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
         no-enable-prefix-caching: true
         no-async-scheduling: true
