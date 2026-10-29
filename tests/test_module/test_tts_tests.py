@@ -199,6 +199,67 @@ def test_target_uses_context_host_port_and_ci_text_shape():
     )
 
 
+def _workflow_ctx(workflow_args, **fields):
+    return SimpleNamespace(
+        runtime_config=SimpleNamespace(workflow_args=workflow_args), **fields
+    )
+
+
+@pytest.mark.parametrize(
+    "workflow_args, expected",
+    [
+        (None, ((1, 2, 4, 8, 16), 128)),
+        ("", ((1, 2, 4, 8, 16), 128)),
+        ("concurrency=480 isl=256", ((480,), 256)),
+        ("concurrency=64,160,320,160", ((64, 160, 320), 128)),
+        ("isl=64", ((1, 2, 4, 8, 16), 64)),
+        ("concurrency=32 other-key=1", ((32,), 128)),
+    ],
+    ids=("unset", "empty", "single-level", "ladder", "isl-only", "unknown-key"),
+)
+def test_workflow_args_override_ladder_and_isl(workflow_args, expected):
+    assert benchmark._workflow_params(_workflow_ctx(workflow_args)) == expected
+
+
+@pytest.mark.parametrize(
+    "workflow_args",
+    ["concurrency=0", "concurrency=abc", "concurrency=", "isl=-1", "isl"],
+)
+def test_invalid_workflow_args_are_rejected(workflow_args):
+    with pytest.raises(ValueError):
+        benchmark._workflow_params(_workflow_ctx(workflow_args))
+
+
+def test_target_text_follows_isl_workflow_arg():
+    ctx = _workflow_ctx(
+        "isl=256", base_url="http://quad-driver.example:8000", server_port=8000
+    )
+
+    target = benchmark._target(ctx)
+
+    assert len(target.text) == round(256 * benchmark.TTS_CI_CHARS_PER_TOKEN)
+
+
+def test_integrity_check_grades_the_requested_ladder(monkeypatch):
+    monkeypatch.setattr(
+        benchmark,
+        "run_tiered_check",
+        lambda ctx, specs: ({"target": {}}, ReportCheckTypes.PASS),
+    )
+    ctx = _workflow_ctx("concurrency=480")
+
+    _, custom = benchmark._target_checks(
+        ctx, benchmark._report_rows([_harness_row(480)])
+    )
+    _, default_ladder = benchmark._target_checks(
+        ctx,
+        benchmark._report_rows([_harness_row(c) for c in benchmark.TTS_CI_CONCURRENCY]),
+    )
+
+    assert custom == ReportCheckTypes.PASS
+    assert default_ladder == ReportCheckTypes.FAIL
+
+
 def test_tts_latency_targets_are_inclusive():
     rows = benchmark._report_rows(
         [
@@ -351,7 +412,9 @@ def test_legacy_tts_benchmark_keeps_previous_report_shape(monkeypatch):
         model_spec=SimpleNamespace(model_name="speecht5_tts"),
         device=SimpleNamespace(name="N150"),
     )
-    monkeypatch.setattr(benchmark, "require_health", lambda actual, requirement=None: None)
+    monkeypatch.setattr(
+        benchmark, "require_health", lambda actual, requirement=None: None
+    )
     monkeypatch.setattr(benchmark, "_tts_num_calls", lambda actual, is_eval=False: 2)
     monkeypatch.setattr(
         benchmark,
