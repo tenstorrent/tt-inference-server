@@ -3494,10 +3494,8 @@ templates:
       env_vars:
         MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-        # 4 x 1M requests per lane with the global KV pair split (tt-metal #62679 / #62724),
-        # so 1M x 16 runs concurrently. 6.7 is tt-metal's pair-split default; 6.6 holds
-        # only ~3.95 x 1M per lane. The image must include the pair split (tt-metal mimo-v2.6/dev).
-        MIMO_KV_GB_PER_CHIP: 6.7
+        # Throwaway: global KV pair split off (A/B for the plain decode garbage); KV budget back to tt-metal's 6 GB default.
+        MIMO_KV_PAIR_SPLIT: 0
       override_tt_config:
         trace_mode: decode_only
         trace_region_size: 1000000000  # decode trace + 28 prefill-batch traces per replica
