@@ -1783,7 +1783,7 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 131072
-      default_impl: true
+      default_impl: false  # nkira/muse-glimmer-30b-spec only: muse_glimmer_30b is the release default here
       env_vars:
         EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
         TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
@@ -1818,7 +1818,7 @@ templates:
       tool_call_parser_name: muse_glimmer
 
 # meta-models/Muse-Glimmer-30B text decoder, models/demos/muse_glimmer_30b (1 x TP mesh,
-# BFP8 weights, bf16 KV). Not the default impl: select it with --impl muse_glimmer_30b.
+# BFP8 weights, bf16 KV). Default impl on this branch (release testing); on main muse_glimmer_30b_qb2 is.
 # The adapter is selected only through TT_MODEL_CLASS_OVERRIDES; it ships no
 # vllm_metadata.json, so the muse_glimmer_30b_qb2 bundle keeps the EXTRA_MODELS_DIR path.
 # Prefill starts at position 0 (no chunked prefill, no prefix caching) and pads prompts to
@@ -1835,10 +1835,13 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 131072
-      default_impl: false
+      default_impl: true
       env_vars:
         TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
-        MESH_DEVICE: "P300x2"
+        # Mesh setup copied from muse_glimmer_30b_qb2 (proven on QB2); FABRIC_1D_RING below turns on the
+        # model's ring all-reduce.
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         MUSE_VLLM_KV_TOKENS: "262144"
       vllm_args:
         block_size: "64"
@@ -1859,7 +1862,7 @@ templates:
     - device: P150X4
       max_concurrency: 32
       max_context: 131072
-      default_impl: false
+      default_impl: true
       env_vars:
         TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
         MESH_DEVICE: "P150x4"
