@@ -85,6 +85,58 @@ def test_the_eval_runs_its_subset_ci_by_default(monkeypatch, eval_data, subset, 
     assert i2v_eval_num_pairs() == count
 
 
+def test_the_deployments_model_spec_picks_the_subset_over_the_environment(
+    monkeypatch, eval_data
+):
+    # What run.py --override-env I2V_EVAL_SUBSET=... sets, which CI can reach.
+    from test_module._test_common import i2v_eval_subset
+
+    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "ci")
+    spec = SimpleNamespace(env_vars={I2V_EVAL_SUBSET_ENV: "dev"})
+    assert i2v_eval_subset(spec) == "dev"
+    assert i2v_eval_subset(SimpleNamespace(env_vars={})) == "ci"
+    assert i2v_eval_num_pairs(i2v_eval_subset(spec)) == 5
+    pairs = load_i2v_eval_pairs(5, "dev")
+    assert [p["video_id"] for p in pairs] == [
+        e["video_id"] for e in MANIFEST if e["dev"]
+    ]
+
+
+def test_the_eval_requests_the_deployments_subset(monkeypatch, eval_data):
+    import sys
+
+    from test_module.eval_tests import video_eval_tests as mod
+
+    seen = {}
+
+    class FakeTest:
+        def __init__(self, config, targets):
+            seen["request"] = targets["request"]
+
+        def run_tests(self):
+            return SimpleNamespace(data={"eval_results": {}})
+
+    # The real generation eval imports the CLIP encoder, which needs torch.
+    monkeypatch.setitem(
+        sys.modules,
+        "test_module.eval_tests.video_generation_eval_test",
+        SimpleNamespace(
+            VideoGenerationEvalsTest=FakeTest,
+            VideoGenerationEvalsTestRequest=SimpleNamespace,
+        ),
+    )
+    monkeypatch.delenv(I2V_EVAL_SUBSET_ENV, raising=False)
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+            env_vars={I2V_EVAL_SUBSET_ENV: "all"},
+        ),
+        base_url="http://x",
+    )
+    mod._run_video_generation_eval(ctx)
+    assert (seen["request"].num_prompts, seen["request"].i2v_subset) == (65, "all")
+
+
 def test_an_unknown_subset_is_refused(monkeypatch):
     monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "nightly")
     with pytest.raises(ValueError, match=I2V_EVAL_SUBSET_ENV):

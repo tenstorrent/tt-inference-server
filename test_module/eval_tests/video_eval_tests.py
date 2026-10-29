@@ -29,7 +29,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
     from .._test_common import TestConfig
 
-    from .._test_common import i2v_eval_num_pairs, is_i2v_video_model
+    from .._test_common import i2v_eval_num_pairs, i2v_eval_subset, is_i2v_video_model
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
@@ -45,7 +45,8 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         generation_mode,
     )
 
-    num_prompts = i2v_eval_num_pairs() if generation_mode == "I2V" else 5
+    i2v_subset = i2v_eval_subset(ctx.model_spec) if generation_mode == "I2V" else None
+    num_prompts = i2v_eval_num_pairs(i2v_subset) if i2v_subset else 5
     num_inference_steps = 40
     start_from = 0
     frame_sample_rate = 8
@@ -57,6 +58,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         num_inference_steps=num_inference_steps,
         server_url=ctx.base_url,
         frame_sample_rate=frame_sample_rate,
+        i2v_subset=i2v_subset,
     )
     logger.info(f"Running VideoGenerationEvalsTest with request: {request}")
 
@@ -181,9 +183,10 @@ def _save_eval_clips(
         index_path.write_text(json.dumps(index, indent=2))
 
 
-# VBench runs on the host CPU after the clips are made: about 2 min per clip and
-# dimension on a BH Galaxy host, so 20 clips fit with room to spare.
-VBENCH_TIMEOUT_SECONDS = 90 * 60
+# VBench runs on the host CPU after the clips are made: about 1.7 min per clip on
+# a BH Galaxy host, setup included, so the full set (all 65 videos, of which a
+# deployment serves up to 40) fits with room to spare.
+VBENCH_TIMEOUT_SECONDS = 4 * 60 * 60
 
 
 def _strip_frames(record):
@@ -230,7 +233,7 @@ def _run_vbench(ctx: MediaContext) -> Block | None:
         if code:
             problem = f"VBench exited with code {code}"
     except subprocess.TimeoutExpired:
-        problem = f"VBench stopped at its {VBENCH_TIMEOUT_SECONDS // 60} min limit"
+        problem = f"VBench stopped at its {VBENCH_TIMEOUT_SECONDS // 3600} h limit"
     except Exception as e:
         problem = f"VBench did not run: {type(e).__name__}: {e}"
     if problem:

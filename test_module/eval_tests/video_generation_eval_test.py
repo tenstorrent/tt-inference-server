@@ -59,6 +59,7 @@ class VideoGenerationEvalsTestRequest:
     num_inference_steps: int = 40
     server_url: str | None = None
     frame_sample_rate: int = 8  # Sample every Nth frame for CLIP scoring
+    i2v_subset: str | None = None  # dev, ci or all; default I2V_EVAL_SUBSET or ci
 
 
 class VideoGenerationEvalsTest(BaseTest):
@@ -102,7 +103,7 @@ class VideoGenerationEvalsTest(BaseTest):
         conditioning = None
         if is_i2v_video_model(request.model_name):
             logger.info(f"Step 1: Loading {request.num_prompts} I2V validation videos")
-            conditioning = load_i2v_eval_pairs(request.num_prompts)
+            conditioning = load_i2v_eval_pairs(request.num_prompts, request.i2v_subset)
             prompts = [pair["prompt"] for pair in conditioning]
         else:
             logger.info(

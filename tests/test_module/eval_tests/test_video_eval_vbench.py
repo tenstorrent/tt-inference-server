@@ -133,7 +133,7 @@ def test_a_caching_deployment_is_compared_with_the_cached_gpu_run(
 def test_a_timeout_keeps_what_finished_and_says_so(monkeypatch, ctx):
     fake_scorer(monkeypatch, raises=subprocess.TimeoutExpired("vbench", 5400))
     block = mod._run_vbench(ctx)
-    assert block.data["error"] == "VBench stopped at its 90 min limit"
+    assert block.data["error"] == "VBench stopped at its 4 h limit"
     assert block.data["scores"] == {"i2v_subject": 0.98}
     assert "the scores above are what finished" in block.data["markdown"]
 

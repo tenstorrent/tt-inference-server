@@ -67,9 +67,18 @@ def _load_fixture_image_base64() -> str:
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 
 
-def i2v_eval_subset() -> str:
-    """The I2V eval's subset: ``I2V_EVAL_SUBSET``, or ci when unset."""
-    subset = os.getenv(I2V_EVAL_SUBSET_ENV) or DEFAULT_I2V_EVAL_SUBSET
+def i2v_eval_subset(model_spec=None) -> str:
+    """The I2V eval's subset: ``I2V_EVAL_SUBSET``, or ci when unset.
+
+    Read from the deployment's model spec first, so a run can pick it with
+    ``run.py --override-env I2V_EVAL_SUBSET=dev``, then from the environment.
+    """
+    env_vars = getattr(model_spec, "env_vars", None) or {}
+    subset = (
+        env_vars.get(I2V_EVAL_SUBSET_ENV)
+        or os.getenv(I2V_EVAL_SUBSET_ENV)
+        or DEFAULT_I2V_EVAL_SUBSET
+    )
     if subset not in I2V_EVAL_SUBSETS:
         raise ValueError(
             f"{I2V_EVAL_SUBSET_ENV}={subset!r}; expected one of {I2V_EVAL_SUBSETS}"
@@ -77,22 +86,22 @@ def i2v_eval_subset() -> str:
     return subset
 
 
-def i2v_eval_videos() -> list[dict]:
-    """The validation set's manifest entries in the eval's subset, one per video."""
+def i2v_eval_videos(subset: str | None = None) -> list[dict]:
+    """The validation set's manifest entries in ``subset`` (default: the eval's), one per video."""
     from .vbench_i2v import hf_snapshot
 
-    subset = i2v_eval_subset()
+    subset = subset or i2v_eval_subset()
     manifest_path = hf_snapshot([I2V_EVAL_MANIFEST]) / I2V_EVAL_MANIFEST
     manifest = json.loads(manifest_path.read_text())
     return [e for e in manifest if subset == "all" or e[subset]]
 
 
-def i2v_eval_num_pairs() -> int:
+def i2v_eval_num_pairs(subset: str | None = None) -> int:
     """How many videos the I2V eval runs: its whole subset."""
-    return len(i2v_eval_videos())
+    return len(i2v_eval_videos(subset))
 
 
-def load_i2v_eval_pairs(num_pairs: int) -> list[dict]:
+def load_i2v_eval_pairs(num_pairs: int, subset: str | None = None) -> list[dict]:
     """The I2V eval's first ``num_pairs`` videos: ``{prompt, image, image_b64, ...}``.
 
     ``prompt`` is VBench's prompt for ``image``, so the video is scored against
@@ -105,11 +114,11 @@ def load_i2v_eval_pairs(num_pairs: int) -> list[dict]:
     """
     from .vbench_i2v import hf_snapshot
 
-    videos = i2v_eval_videos()
+    subset = subset or i2v_eval_subset()
+    videos = i2v_eval_videos(subset)
     if num_pairs > len(videos):
         raise ValueError(
-            f"I2V eval wants {num_pairs} videos; subset {i2v_eval_subset()} "
-            f"has {len(videos)}"
+            f"I2V eval wants {num_pairs} videos; subset {subset} has {len(videos)}"
         )
     videos = videos[:num_pairs]
     root = hf_snapshot([e["image"] for e in videos])
