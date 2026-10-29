@@ -2570,6 +2570,13 @@ templates:
         DSV41_HOSTOPT_WARM: "1"  # keep the round thread's core out of deep idle (idle-priority spinner on the same core; paused during prefill_forward)
         DSV41_MOE_TAIL_V2: "1"  # moe_tail v2: row segments scattered into the face rows by L1->L1 NoC copies (bit-identical to v1; gate dsv4-logs/decode_fusion/tailv2_g.log)
         DSV41_ATTN_POSTFUSE: "1"  # post-SDPA glue fused into one generic_op, T<=32 (stock-exact at T=1..32; gate dsv4-logs/decode_fusion/post_b.log)
+        # Drafter / spec-round Set A (bit-identical per the commit messages; tt/mtp.py, tt/spec_decoder.py). Set B (last-bit changes, off until the B=8 accuracy check): DSV41_DRAFT_HEAD_COLLAPSE, DSV41_DRAFT_WM_FUSED_ROPE, DSV41_SPEC_FINISH_FUSED_ROPE (gated off anyway while DSV41_ATTN_POSTFUSE=1), DSV41_DRAFT_MHC_PRE_MAX, DSV41_DRAFT_X2LITE.
+        DSV41_DRAFT_PAIRSEL: "1"  # pair_select sampler tail: one scalar-core program for the 8-column reduction + next markov-embedding lookup
+        DSV41_DRAFT_MAINPROJ_SHARD: "1"  # column-sharded drafter main_proj
+        DSV41_DRAFT_X_RM2: "1"  # row-major build of the drafter stream copies
+        DSV41_DRAFT_MOE_TAIL: "1"  # fused tilize + fast_reduce tail for the drafter MoE (moe_tail.py, K=3)
+        DSV41_SPEC_COMMIT_GATHER: "1"  # compressor-state commit as one row-major gather
+        DSV41_SPEC_ACCEPT_VEC: "1"  # accept count as eq + cumprod + sum
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
         hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
