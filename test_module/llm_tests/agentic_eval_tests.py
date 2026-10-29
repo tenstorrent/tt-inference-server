@@ -227,6 +227,12 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     # Normal/scored evaluation is unchanged when this source-owned key is absent.
     if ctx.model_spec.hf_model_repo == "Qwen/Qwen3.8-27B":
         from reference_config.evals.qwen38_goal12 import controls
+        b1_config = controls().get("b1_serving_probe")
+        if b1_config is not None:
+            from .qwen38_b1_serving import run
+            block = run(ctx, b1_config)
+            accept_blocks([block], envelope=sweep_envelope(ctx))
+            return [block]
         probe_config = controls().get("prefix_retention_probe")
         if probe_config is not None:
             from .qwen38_prefix_retention import run

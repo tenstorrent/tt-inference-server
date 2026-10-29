@@ -1654,40 +1654,40 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 32
+      max_concurrency: 1
       max_context: 262144
       default_impl: true
-      # This unscored arm includes a bounded4h pre-server capacity campaign.
-      tensor_cache_timeout: 23400
+      # Bounded unscored B1 serving check; native context remains262144.
+      tensor_cache_timeout: 7200
       env_vars:
         MESH_DEVICE: P300x2
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_SERVING_EVENT_TABLES: "0"
-        QWEN38_RUN_CAPACITY_SCREEN: "1"
-        QWEN38_MEMORY_ATTESTATION: "1"
-        QWEN38_MEMORY_CHECKPOINTS: "1"
-        QWEN38_CACHE_BLOCK_SIZE: "512"
+        QWEN38_COMPACT_B1_RECURRENCE: "0"
+        QWEN38_RUN_CAPACITY_SCREEN: "0"
+        QWEN38_MEMORY_ATTESTATION: "0"
+        QWEN38_MEMORY_CHECKPOINTS: "0"
+        QWEN38_CACHE_BLOCK_SIZE: "4096"
         QWEN38_GROUPED_RECURRENCE: "1"
         QWEN38_MASKED_RECURRENCE: "1"
         QWEN38_FLAT_PREFILL: "1"
         QWEN38_AGENT_ISOLATED_NETWORK: "1"
-        QWEN38_SHARED_RECURRENT_SNAPSHOTS: "1"
-        QWEN38_CACHE_BUDGET_BYTES_PER_DEVICE: "23661297664"
+        QWEN38_SHARED_RECURRENT_SNAPSHOTS: "0"
         TT_METAL_TRACE_ALLOC_TRACKING: "0"
         TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
       vllm_args:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
-        max_num_seqs: 32
-        block_size: 512
-        mamba_block_size: 512
-        prefix_cache_retention_interval: 512
+        max_num_seqs: 1
+        block_size: 4096
+        mamba_block_size: 4096
+        prefix_cache_retention_interval: 4096
         mamba_cache_mode: align
-        max_num_batched_tokens: 131072
+        max_num_batched_tokens: 8192
         long_prefill_token_threshold: 4096
         max_logprobs: -1
         async_scheduling: true
-        enable_prefix_caching: true
+        enable_prefix_caching: false
         enable_prompt_tokens_details: true
         middleware: qwen38_agentic_audit.AgenticAuditMiddleware
         language_model_only: true
