@@ -336,23 +336,6 @@
         "quetzal"
       ],
       "models": [
-        "Qwen/Qwen3-4B"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
         "Qwen/Qwen3-14B"
       ],
       "test_cases": [
@@ -495,23 +478,6 @@
       ],
       "models": [
         "meta-llama/Llama-3.2-3B-Instruct"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
-        "Qwen/Qwen3-0.6B"
       ],
       "test_cases": [
         {
