@@ -139,3 +139,39 @@ def test_proxy_affinity_retry_and_health():
     assert all(len(e) == 1 for e in where.values()), where
     assert health == 503  # the dead engine is not healthy
     assert snap["prefix"]["prefix_routed"] == 4
+
+
+# What every engine (a DP-1 vLLM server) exposes: the same families and the same engine="0" label.
+ENGINE_METRICS = """# HELP vllm:generation_tokens_total Number of generation tokens processed.
+# TYPE vllm:generation_tokens_total counter
+vllm:generation_tokens_total{engine="0",model_name="m"} 5.0
+# HELP vllm:time_to_first_token_seconds Histogram of time to first token in seconds.
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.5",model_name="m"} 3.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="+Inf",model_name="m"} 4.0
+vllm:time_to_first_token_seconds_count{engine="0",model_name="m"} 4.0
+vllm:time_to_first_token_seconds_sum{engine="0",model_name="m"} 1.5
+process_open_fds 12.0
+"""
+
+
+def test_merge_metrics_labels_each_engine_and_writes_each_family_once():
+    merged = lb.merge_metrics(
+        [ENGINE_METRICS, ENGINE_METRICS, 'odd{path="a}b\\"c"} 1\n']
+    )
+    lines = merged.splitlines()
+    assert lines.count("# TYPE vllm:generation_tokens_total counter") == 1
+    assert lines.count("# TYPE vllm:time_to_first_token_seconds histogram") == 1
+    samples = [line for line in lines if not line.startswith("#")]
+    assert len(samples) == len(set(samples)) == 2 * 6 + 1  # every series once
+    assert 'vllm:generation_tokens_total{model_name="m",engine="0"} 5.0' in samples
+    assert 'vllm:generation_tokens_total{model_name="m",engine="1"} 5.0' in samples
+    assert 'process_open_fds{engine="1"} 12.0' in samples
+    # A label value with } and an escaped quote.
+    assert 'odd{path="a}b\\"c",engine="2"} 1' in samples
+    # A family's samples stay together, right after its TYPE line.
+    start = lines.index("# TYPE vllm:time_to_first_token_seconds histogram")
+    assert all(
+        line.startswith("vllm:time_to_first_token_seconds_")
+        for line in lines[start + 1 : start + 9]
+    )
