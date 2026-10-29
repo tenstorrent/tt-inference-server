@@ -48,7 +48,7 @@ HARBOR_REF = "tt-inference-server"
 # to the repository root in sorted order after every checkout.
 _HARBOR_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "harbor"
 
-EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
+EVALS_COMMON_LM_EVAL_COMMIT = "af401ef3dd3d2d90e55680990ed1f0c9f7892448"
 
 # MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
 # its verify.py and m3_format_check pytest suites run unchanged from these

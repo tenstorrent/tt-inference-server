@@ -482,3 +482,19 @@ def test_mimo_gpu_sweep_has_no_galaxy_long_context_points(monkeypatch):
     model_id = _find_model_id(model_name="MiMo-V2.6-Flash-MOPD", device=DeviceTypes.GPU)
     config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
     assert max(p.isl for p in config.tasks[1].param_map[DeviceTypes.GPU]) == 131072
+
+
+def test_vision_tokens_per_image_follow_the_model_family():
+    """Fixed-token families route by name: medgemma-4b-it keeps the Gemma 3 rule
+    (its name contains 'gemma-4b', not the 'gemma-4-' family prefix)."""
+    from reference_config.benchmarking.benchmark_config import calculate_vision_tokens
+
+    assert calculate_vision_tokens(896, 896, 1, "google/medgemma-4b-it") == 256
+    assert calculate_vision_tokens(896, 896, 1, "google/medgemma-27b-it") == 256
+    assert calculate_vision_tokens(896, 896, 1, "google/gemma-3-27b-it") == 256
+    for repo in (
+        "google/gemma-4-31B-it",
+        "google/gemma-4-12B-it",
+        "google/gemma-4-26B-A4B-it",
+    ):
+        assert calculate_vision_tokens(896, 896, 2, repo) == 560, repo
