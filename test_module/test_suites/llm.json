@@ -1145,23 +1145,6 @@
         "quetzal"
       ],
       "models": [
-        "allenai/Olmo-3.1-32B-Instruct"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
         "mistralai/Devstral-Small-2-24B-Instruct-2512"
       ],
       "test_cases": [
