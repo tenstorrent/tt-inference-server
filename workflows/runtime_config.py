@@ -53,6 +53,7 @@ class RuntimeConfig:
     override_docker_image: Optional[str] = None
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
+    override_env: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
     # Path to the LLM-serving requirements document driving this run, if
     # any. Carried so dispatched children can re-load the document and rebuild
@@ -183,6 +184,7 @@ class RuntimeConfig:
             override_docker_image=args.override_docker_image,
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,
+            override_env=getattr(args, "override_env", None),
             runtime_model_spec_json=args.runtime_model_spec_json,
             requirements_json=getattr(args, "requirements_json", None),
             tools=args.tools,
