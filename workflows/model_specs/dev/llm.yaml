@@ -564,8 +564,15 @@ templates:
         # mHC projection without its L1 weight copy and its rsqrt op
         # (-0.4 ms, bit for bit): served, the one-row step 53.3 ->
         # 49.2 ms of device, tput_user 15.9 / 16.0 / 15.7 -> 17.1 / 17.2 /
-        # 17.1 at points 1, 5, 8 (0.59x); the three state gates as before.
-        V41_DECODE_SDPA: "local"
+        # 17.1 at points 1, 5, 8 (0.59x); the three state gates as before. Now the one-live-row capture runs the
+        # flash-decode SDPA program (the live rows' keys in
+        # units of 32 over the grid, a log-sum-exp merge per output tile,
+        # the partials exchanged through the merge cores' L1; PCC 0.9998
+        # against the local path on every live-row pattern): the c1 chain
+        # 102 -> 73 us a layer, the one-row step 49.2 -> 48.0 ms of device,
+        # tput_user 17.2 -> 17.6 at points 1, 5, 8 (0.61x); the three state
+        # gates as before. The 32-row capture keeps the local path.
+        V41_DECODE_SDPA: "flash"
         V41_MHC_PROJ_W: "dram"
         V41_MHC_RSQRT: "fused"
         # the decode step's host copies in one dispatch round (bit for
