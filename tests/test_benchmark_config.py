@@ -442,3 +442,19 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+def test_vision_tokens_per_image_follow_the_model_family():
+    """Fixed-token families route by name: medgemma-4b-it keeps the Gemma 3 rule
+    (its name contains 'gemma-4b', not the 'gemma-4-' family prefix)."""
+    from reference_config.benchmarking.benchmark_config import calculate_vision_tokens
+
+    assert calculate_vision_tokens(896, 896, 1, "google/medgemma-4b-it") == 256
+    assert calculate_vision_tokens(896, 896, 1, "google/medgemma-27b-it") == 256
+    assert calculate_vision_tokens(896, 896, 1, "google/gemma-3-27b-it") == 256
+    for repo in (
+        "google/gemma-4-31B-it",
+        "google/gemma-4-12B-it",
+        "google/gemma-4-26B-A4B-it",
+    ):
+        assert calculate_vision_tokens(896, 896, 2, repo) == 560, repo

@@ -380,6 +380,49 @@ class TestAgenticModeReference:
         assert "[CI_NIGHTLY subset]" in block.targets["gpu_reference_score_ref"]
 
 
+class TestMuseGlimmerAgenticFloor:
+    """Muse-Glimmer-30B's 5-task agentic CI subsets gate on at least 1 solved."""
+
+    @pytest.mark.parametrize("task_name", ["terminal_bench_2_1", "swe_bench_verified"])
+    def test_one_solved_passes_zero_fails(self, task_name):
+        from reference_config.evals.eval_config import _eval_config_map
+
+        tasks = {
+            t.task_name: t
+            for t in _eval_config_map["meta-models/Muse-Glimmer-30B"].tasks
+        }
+        task = tasks[task_name]
+        subset = task.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY]
+        assert len(subset) == 5
+
+        def check(solved):
+            metrics = {"accuracy": solved / 5, "n_trials": 5}
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check(0) == ReportCheckTypes.FAIL
+        assert check(1) == ReportCheckTypes.PASS
+
+        # Incomplete scoring: an errored trial is not in n_trials, so 4 scored
+        # failures + 1 error grade on n = 4, where floor(4 * 20%) = 0.
+        def check_scored(solved, scored):
+            metrics = {
+                "accuracy": solved / scored,
+                "n_trials": scored,
+                "n_errors": 5 - scored,
+            }
+            return compute_accuracy_check(metrics, task.score, EvalLimitMode.CI_NIGHTLY)
+
+        assert check_scored(0, 4) == ReportCheckTypes.FAIL
+        assert check_scored(0, 1) == ReportCheckTypes.FAIL
+        assert check_scored(1, 4) == ReportCheckTypes.PASS
+        assert check_scored(1, 1) == ReportCheckTypes.PASS
+        # Without a limit mode there is no reference to grade against.
+        assert (
+            compute_accuracy_check({"accuracy": 0.0, "n_trials": 5}, task.score, None)
+            == ReportCheckTypes.NA
+        )
+
+
 class TestStandardEvalModeReference:
     """Standard lm-eval scoring (_score_one) honors the CI-subset reference."""
 
