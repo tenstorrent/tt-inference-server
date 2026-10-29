@@ -643,3 +643,74 @@ templates:
         sample_on_device_mode: all
   status: EXPERIMENTAL
   has_builtin_warmup: true
+
+# DeepSeek-V4.1-Flash vision profile (model_type VLM), 8 users x 1,048,576 tokens: B=8 final candidate; same settings as the text B=8 entry in dev/llm.yaml; select with `--impl deepseek-v41-flash-vlm-b8-1m`.
+- weights:
+    - deepseek-ai/DeepSeek-V4.1-Flash
+  impl: deepseek_v41_flash_vlm_b8_1m
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 8  # 8 users: 4 mesh rows x 2 users per row
+      max_context: 1048576  # per request (prompt + output) = max_model_len
+      default_impl: false
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        HF_MODEL: deepseek-ai/DeepSeek-V4.1-Flash
+        MESH_DEVICE: "(4, 8)"
+        DSV41_LAYERS: "0-39"
+        DSV41_ENGRAM_RAM: "1"
+        DSV41_POOL_DTYPE: fp8
+        DSV41_TRACE_REGION: "1200000000"  # B=8 / 1M: adaptive speculative decode (two verify runners k=3 and k=5) boots at 1.2 GB as in the B=4 entry (bench_b8, b8_1m_fix: free DRAM 350 MiB/bank after the build)
+        DSV41_CKPT: /ckpt  # container path: mount the DeepSeek-V4.1-Flash-1017 HF checkpoint (deepseek-ai/DeepSeek-V4.1-Flash-1017) at /ckpt (read-only)
+        DSV41_WEIGHT_CACHE: /cache/weights  # container path: mount a host-local NVMe dir at /cache (weights/ unified/ kernels/), written by the first run; one dir per checkpoint (use .../tt-metal-cache/1017 for 1017; the weight cache is stamped with the checkpoint id and the server refuses a cache of another checkpoint)
+        DSV41_UNIFIED_CACHE: /cache/unified
+        TT_METAL_CACHE: /cache/kernels
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos/blackhole
+        DSV41_BUILD_SLOTS: "0"
+        DSV41_VISION: "1"  # device vision tower + image-aware prefill
+        DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
+        DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
+        DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
+        DSV41_VLLM_MAX_PARTIAL: "4"  # up to four prompts part-way through their prefill (one per mesh row; bench_b8 value)
+        DSV41_SPEC_MAX_CTX: "1048832"  # speculative decode context cap = max_model_len + 256 (bench_b8 spec)
+        DSV41_VLLM_SPEC_ADAPT: "1"  # adaptive speculative decode (two verify runners)
+        DSV41_VLLM_SPEC_KS: "3,5"  # the adaptive runner set
+        DSV41_BUILD_LAZY_PF: "1"  # B=8 / 1M memory: lazy build-time prefill tables (commit d76e74a0b35)
+        DSV41_FP8_SERVING: "1"  # fp8 KV pool serving with the single prefill trace + APC (B=8 / 1M memory)
+        DSV41_PF_PAGED_FP8: "1"  # paged prefill over the fp8 pool (with DSV41_FP8_SERVING)
+        DSV41_MHC_PRE16: "1"  # mHC fused front at T=9..16 (B=8 verify T; bench_b8_speedups, gsm_b8_combo, gpqa_tau3_combo, logits40)
+        DSV41_MHC_X2LITE: "1"  # lite x2 write of the attention-side mHC expand
+        DSV41_SHARED_EXPERT_TP: "1"  # shared expert column-sharded over the 8 mesh columns in decode / verify
+        DSV41_PREFILL_ROW_AWARE: "1"  # row-aware prefill placement (B=8 TTFT collision fix; effective with DSV41_PREFILL_UP=1 < 2 users per row)
+        TT_PREFILL_ROW_AWARE: "1"  # plugin side of the row-aware admission (vllm-tt-plugin ssinghal/dsv4p1-b8-final-plugin 028a7f3); read by the engine process from the environment
+      vllm_args:
+        block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
+        hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
+        tokenizer: /ckpt
+        chat-template-content-format: openai  # image_url content parts (the DeepSeek-V4.1 renderer of tokenizer-mode deepseek_v41 does the chat formatting; vllm_config/chat_template.jinja is no longer passed)
+        max_num_seqs: "8"
+        max_model_len: "1048576"
+        max_num_batched_tokens: "16384"  # chunked prefill token budget per step (bench_b8 value: 4 prefilling prompts x 4096, threshold below)
+        long_prefill_token_threshold: 4096  # per-request prefill tokens per scheduler step (vLLM applies it while more than one request is eligible); needed so that concurrent prompts advance together
+        enable-prefix-caching: true  # APC on by default (with DSV41_APC=1 and DSV41_PF_PAGED=read above); --no-enable-prefix-caching turns it off
+        limit-mm-per-prompt: '{"image": 250}'
+        mm-processor-cache-gb: 0
+        tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
+        enable-auto-tool-choice: true
+        tool-call-parser: deepseek_v41  # DSML tool-call parser
+        reasoning-parser: deepseek_v41  # thinking=true requests return the reasoning in the `reasoning` field, not in the content
+        default-chat-template-kwargs: '{"thinking": false}'  # non-thinking chat by default (a request can override it)
+        hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 1200000000
+        sample_on_device_mode: all
+  status: EXPERIMENTAL
+  has_builtin_warmup: true

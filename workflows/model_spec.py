@@ -514,6 +514,20 @@ deepseek_v41_flash_vlm_1m_impl = ImplSpec(
     code_path="models/demos/blackhole/deepseek_v41_flash",
 )
 
+# The 8-user / 1,048,576-token configuration (B=8 final candidate; text and vision profiles): `--impl deepseek-v41-flash-b8-1m` / `--impl deepseek-v41-flash-vlm-b8-1m`.
+deepseek_v41_flash_b8_1m_impl = ImplSpec(
+    impl_id="deepseek_v41_flash_b8_1m",
+    impl_name="deepseek-v41-flash-b8-1m",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
+deepseek_v41_flash_vlm_b8_1m_impl = ImplSpec(
+    impl_id="deepseek_v41_flash_vlm_b8_1m",
+    impl_name="deepseek-v41-flash-vlm-b8-1m",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -533,6 +547,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_v41_flash_vlm": deepseek_v41_flash_vlm_impl,
     "deepseek_v41_flash_1m": deepseek_v41_flash_1m_impl,
     "deepseek_v41_flash_vlm_1m": deepseek_v41_flash_vlm_1m_impl,
+    "deepseek_v41_flash_b8_1m": deepseek_v41_flash_b8_1m_impl,
+    "deepseek_v41_flash_vlm_b8_1m": deepseek_v41_flash_vlm_b8_1m_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "qwen3_tts": qwen3_tts_impl,
