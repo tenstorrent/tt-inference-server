@@ -41,6 +41,10 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_ma
         return symlink_path
 
     # Handle single directory/file symlink (standard case)
+    # Keep a link that is already right: submesh engines run this concurrently, and the
+    # unlink + symlink_to below races between them (FileExistsError).
+    if symlink_path.is_symlink() and symlink_path.readlink() == Path(weights_dir):
+        return symlink_path
     if symlink_path.is_symlink():
         symlink_path.unlink()
     assert not symlink_path.exists(), (
