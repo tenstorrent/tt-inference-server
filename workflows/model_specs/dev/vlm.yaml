@@ -710,6 +710,7 @@ templates:
         DSV41_DRAFT_WM_FUSED_ROPE: "1"  # fused partial RoPE for write_main
         DSV41_DRAFT_X2LITE: "1"  # lite x2 write of the drafter attention-side mHC expand
         DSV41_DRAFT_MHC_PRE_MAX: "16"  # drafter-scoped mHC fused front up to T_d = 16
+        MOE_COMPUTE_PIN_EAST_X: "7"  # moe_compute: pin the east DRAM-bank matmul cores to logical column x=7 (only matters on hosts whose chip 0 has the slow east-core layout, e.g. .46: round 68.2 -> 61.5 ms, ~10 %; neutral elsewhere; needs the tt-metal build with moe_core_placement.cpp)
         DSV41_ROUTER: "fused2"  # one-program fused router (router_fused: split-K matmul + score + bias + exact top-k), 384-expert gate, T <= 16 (larger T falls back to the fused chain); evidence limited: two 16-prompt sets at B=16 / 262144 context (pooled acceptance gap -0.009, within the 0.04 bar), no GSM8K check; spec==plain was 6/16 and 10/16 at B=16 in both arms (not a fused2 effect); not combinable with the dispatch-layouts switch (not in this build)
         DSV41_IDX_KEY_SHARD: "1"  # column-sharded decode indexer key slab (1M A/B on .34: 1M decode 24.5 -> 41.5 tok/s/user, round 163 -> 96.5 ms; 524k -24.6 ms; 8k unchanged; +96.5 MiB/bank free). NOTE: sharding changes the top-512 ids only at score ties; bit-identical ids vs the replicated path are NOT guaranteed. Positions <= DSV41_IDX_CS_HEAD (32768) use the replicated head slab; DSV41_IDX_CS_SORT defaults to bitmap; the sharded path has its own key export (DSV41_KEY_EXPORT_LEAN stays off).
       vllm_args:
