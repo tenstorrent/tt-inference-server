@@ -90,6 +90,72 @@ def propose_one(history, k):
 OVERHEAD_P4_MS = float(os.environ.get("GEMMA_SPEC_OVERHEAD_P4_MS", "5.0"))
 OVERHEAD_P8_MS = float(os.environ.get("GEMMA_SPEC_OVERHEAD_P8_MS", "8.0"))
 PRIOR_WEIGHT = float(os.environ.get("GEMMA_SPEC_PRIOR_WEIGHT", "20"))
+ONLINE_COST = os.environ.get("GEMMA_SPEC_ONLINE_COST", "1") == "1"
+
+
+def batch_bucket(b):
+    for hi in (1, 2, 4, 8, 12, 16, 20, 24, 28):
+        if b <= hi:
+            return hi
+    return 32
+
+
+class CostModel:
+    """Serving verify tax, measured online: (verify step period) - (plain step period at the same batch) - (table
+    cost of the extra rows), per verify trace width and batch bucket. A verify is synchronous (the plain path's
+    async overlap of host scheduling, output processing and input upload is lost), so this tax grows with the batch
+    and differs by host; the fixed priors below are what F6 measured at B1. Exponential averages; plain periods
+    are only sampled between two plain steps with no prefill in between, verify periods only when no prefill ran
+    in the gap after the verify."""
+
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
+        self.plain = {}
+        self.tax = {}
+        self.samples = {}
+
+    def observe_plain(self, b, period_ms):
+        k = batch_bucket(b)
+        old = self.plain.get(k)
+        self.plain[k] = period_ms if old is None else old + self.alpha * (period_ms - old)
+
+    def observe_verify(self, b, rows, wide_p8, period_ms, ctx):
+        k = batch_bucket(b)
+        base = self.plain.get(k)
+        if base is None:
+            # No clean plain period at this batch yet (verifying every step): nearest measured bucket, moved along
+            # the table; with none at all, the table itself (a pipelined plain step runs at device speed).
+            if self.plain:
+                near = min(self.plain, key=lambda x: abs(x - k))
+                base = self.plain[near] + step_ms(b, ctx) - step_ms(near, ctx)
+            else:
+                base = step_ms(b, ctx)
+        sample = period_ms - base - (step_ms(rows, ctx) - step_ms(b, ctx))
+        key = (8 if wide_p8 else 4, k)
+        old = self.tax.get(key)
+        self.tax[key] = sample if old is None else old + self.alpha * (sample - old)
+        self.samples[key] = self.samples.get(key, 0) + 1
+
+    def overhead(self, p8, b):
+        prior = OVERHEAD_P8_MS if p8 else OVERHEAD_P4_MS
+        if not ONLINE_COST:
+            return prior
+        key = (8 if p8 else 4, batch_bucket(b))
+        n = self.samples.get(key, 0)
+        if n == 0:
+            return prior
+        w = min(1.0, n / 16.0)
+        return (1 - w) * prior + w * self.tax[key]
+
+    def summary(self):
+        return {
+            "plain_ms": {k: round(v, 2) for k, v in sorted(self.plain.items())},
+            "tax_ms": {f"P{p}b{b}": round(v, 2) for (p, b), v in sorted(self.tax.items())},
+            "tax_n": {f"P{p}b{b}": n for (p, b), n in sorted(self.samples.items())},
+        }
+
+
+COST = CostModel()
 
 
 def bucket(m):
@@ -128,7 +194,10 @@ class AcceptanceModel:
         return (self.s[b, k] + PRIOR_WEIGHT * prior) / (self.n[b, k] + PRIOR_WEIGHT)
 
     def summary(self):
-        return {"attempts": self.n.sum(axis=0).astype(int).tolist(), "accepted": self.s.sum(axis=0).astype(int).tolist()}
+        return {
+            "attempts": self.n.sum(axis=0).astype(int).tolist(),
+            "accepted": self.s.sum(axis=0).astype(int).tolist(),
+        }
 
 
 MODEL = AcceptanceModel()
@@ -157,7 +226,7 @@ def allocate_best(proposals, contexts, wide=False):
             for j in range(1, k + 1):
                 v *= MODEL.q(m, j)
                 exp += v
-        over = OVERHEAD_P8_MS if max(take, default=0) > 3 else OVERHEAD_P4_MS
+        over = COST.overhead(max(take, default=0) > 3, B)
         if rows <= ROW_BUDGET:
             cost = (step_ms(rows, mean_ctx) - t_plain + over) if rows > B else 0.0
         else:
@@ -192,7 +261,7 @@ def _plan(proposals, mean_ctx, B, cap, row_budget, model):
         take[i] = j
         rows += 1
         expected += value
-    overhead = OVERHEAD_P8_MS if max(take, default=0) > 3 else OVERHEAD_P4_MS
+    overhead = COST.overhead(max(take, default=0) > 3, B)
     gain = expected * ms_per_token - (step_ms(rows, mean_ctx) - t_plain + overhead)
     return take, gain
 
@@ -214,16 +283,109 @@ def allocate(proposals, contexts, row_budget=ROW_BUDGET, overhead_ms=None, model
     return best
 
 
-def propose(histories, k_max, wide=False):
+_CTL = {"path": os.environ.get("GEMMA_SPEC_CTL"), "t": 0.0, "v": {}}
+
+
+def _ctl():
+    """Local A/B knob (only when GEMMA_SPEC_CTL names a JSON file): {"disable": bool, "max_draft": int,
+    "overhead_p4_ms": float, "overhead_p8_ms": float}, re-read every 2 s. Never set on CI."""
+    global OVERHEAD_P4_MS, OVERHEAD_P8_MS
+    if not _CTL["path"]:
+        return {}
+    import json
+    import time
+
+    now = time.monotonic()
+    if now - _CTL["t"] > 2.0:
+        _CTL["t"] = now
+        try:
+            with open(_CTL["path"]) as h:
+                _CTL["v"] = json.load(h)
+        except (OSError, ValueError):
+            _CTL["v"] = {}
+        v = _CTL["v"]
+        OVERHEAD_P4_MS = float(v.get("overhead_p4_ms", os.environ.get("GEMMA_SPEC_OVERHEAD_P4_MS", "5.0")))
+        OVERHEAD_P8_MS = float(v.get("overhead_p8_ms", os.environ.get("GEMMA_SPEC_OVERHEAD_P8_MS", "8.0")))
+    return _CTL["v"]
+
+
+class Gate:
+    """Measured-throughput gate per batch bucket: committed tokens per second of clean step time (no prefill in the
+    period) with drafting allowed vs not. Drafting is allowed in a bucket only while its measured rate beats the
+    plain rate; blocks of BLOCK steps run in one mode, a fraction EXPLORE of blocks (and any mode with too little
+    data) run the other, so the estimate tracks traffic. Catches every cost the planner's model misses (lost async
+    overlap, the reload after a verify, host work). Exponentially decayed sums."""
+
+    BLOCK = int(os.environ.get("GEMMA_SPEC_GATE_BLOCK", "48"))
+    EXPLORE = float(os.environ.get("GEMMA_SPEC_GATE_EXPLORE", "0.1"))
+    MIN_S = 1.0
+    DECAY = 0.998
+    ENABLED = os.environ.get("GEMMA_SPEC_GATE", "1") == "1"
+
+    def __init__(self):
+        self.stats = {}
+        self.cur = {}
+        self.left = {}
+        self.blocks = 0
+        self._rng = np.random.default_rng(1234)
+
+    def record(self, bucket, mode, tokens, seconds):
+        for key in [k for k in self.stats if k[0] == bucket]:
+            t, n = self.stats[key]
+            self.stats[key] = (t * self.DECAY, n * self.DECAY)
+        t, n = self.stats.get((bucket, mode), (0.0, 0.0))
+        self.stats[(bucket, mode)] = (t + seconds, n + tokens)
+
+    def rate(self, bucket, mode):
+        t, n = self.stats.get((bucket, mode), (0.0, 0.0))
+        return (n / t if t > 0 else None), t
+
+    def mode(self, bucket):
+        if not self.ENABLED:
+            return True
+        left = self.left.get(bucket, 0)
+        if left > 0:
+            self.left[bucket] = left - 1
+            return self.cur[bucket]
+        on, t_on = self.rate(bucket, True)
+        off, t_off = self.rate(bucket, False)
+        if t_on < self.MIN_S or t_off < self.MIN_S:
+            best = t_on <= t_off
+        else:
+            best = on >= off
+            # Explore less where the measured difference is large (exploring the losing mode is what it costs).
+            explore = self.EXPLORE if abs(on / off - 1.0) < 0.15 else self.EXPLORE / 3
+            if self._rng.random() < explore:
+                best = not best
+        self.cur[bucket] = best
+        self.left[bucket] = self.BLOCK - 1
+        self.blocks += 1
+        return best
+
+    def summary(self):
+        out = {}
+        for (b, m), (t, n) in sorted(self.stats.items()):
+            out[f"b{b}{'on' if m else 'off'}"] = [round(t, 1), round(n / t, 1) if t else None]
+        return out
+
+
+GATE = Gate()
+
+
+def propose(histories, k_max, wide=False, allow=True):
     """histories: list (per row) of 1-D int arrays, or None for rows with nothing to draft.
 
     Returns (drafts [rows][k_max] int list padded with 0, num_valid [rows]).
     """
-    k_max = min(k_max, MAX_DRAFT)
-    live = [i for i, h in enumerate(histories) if h is not None and len(h) >= 2]
+    ctl = _ctl()
+    width = k_max
+    k_max = min(k_max, MAX_DRAFT, int(ctl.get("max_draft", MAX_DRAFT)))
+    live = (
+        [] if ctl.get("disable") or not allow else [i for i, h in enumerate(histories) if h is not None and len(h) >= 2]
+    )
     props = [propose_one(histories[i], k_max) for i in live]
     take = allocate_best(props, [len(histories[i]) for i in live], wide=wide)
-    drafts = [[0] * k_max for _ in histories]
+    drafts = [[0] * width for _ in histories]
     valid = [0] * len(histories)
     matched = [0] * len(histories)
     full = [[] for _ in histories]
