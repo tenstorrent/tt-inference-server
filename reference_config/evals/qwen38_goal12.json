@@ -1,20 +1,19 @@
 {
-  "phase": "unscored-native-swe-isolated-two-task-smoke-timeout-sized",
+  "phase": "unscored-isolated-two-task-smoke",
   "scored": false,
   "evals": [
-    "swe_bench_verified"
+    "terminal_bench_2_1"
   ],
   "max_concurrent": 32,
   "sample_count": 2,
-  "dataset": "swebench-verified",
-  "dataset_ref": null,
+  "dataset": "terminal-bench/terminal-bench-2-1",
+  "dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
   "task_names": [
-    "django__django-11299",
-    "astropy__astropy-14096"
+    "terminal-bench/break-filter-js-from-html",
+    "terminal-bench/cobol-modernization"
   ],
   "isolate_agent_network": true,
   "limits_source": "release eval_config.py at upstream 411057222c2dc5a4268e693b0bd57bc0e2571f38; no lowered limits",
   "intent": "isolated_smoke",
-  "reference_threshold_informational": true,
-  "request_timeout_sec": 7200
+  "reference_threshold_informational": true
 }
