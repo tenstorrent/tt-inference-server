@@ -711,6 +711,12 @@ class TTModelRunner:
                     "in some group's layer_names."
                 )
             self._layer_to_group_idx = mapping  # type: ignore[assignment]
+            # A model whose verify trace reads one page table per KV-cache group
+            # (rather than per layer) learns the grouping before it allocates
+            # and warms up; layers of one group share a block table.
+            set_groups = getattr(self.model, "set_kv_layer_groups", None)
+            if callable(set_groups):
+                set_groups(list(mapping))
 
         self.kv_caches = self._allocate_kv_caches(kv_cache_config)
 
