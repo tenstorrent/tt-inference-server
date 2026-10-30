@@ -1080,10 +1080,11 @@ _eval_config_list = [
                 # Chat endpoint: the server applies the chat template (thinking on
                 # by default) and the reasoning parser.
                 use_chat_api=True,
-                # Admission is 4 distinct requests at 1 M today (users per row);
-                # the Galaxy decodes every slot in one step, so 4 concurrent
+                # Admission is 32 distinct requests on the 1 M profile (the 8 rows x 4
+                # slots under per-row prefill ownership, GLM53_VLLM_ROWS_INDEPENDENT);
+                # the Galaxy decodes every slot in one step, so 32 concurrent
                 # thinking generations cost nothing extra.
-                max_concurrent=4,
+                max_concurrent=32,
                 model_kwargs={
                     "max_length": 1048576,
                     # Long thinking generations exceed lm-eval's 1800 s default.
@@ -1124,7 +1125,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=4,  # = the engine's admission at 1 M
+                    n_concurrent_trials=4,  # CPU-bound: override_cpus x 4 = the 64-core Galaxy host; admission is 32
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     override_cpus=16,
@@ -1179,7 +1180,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=4,  # = the engine's admission at 1 M
+                max_concurrent=32,  # = the engine's admission on the 1 M profile
                 allow_code_execution=True,
                 model_kwargs={
                     "max_length": 1048576,
@@ -1207,7 +1208,12 @@ _eval_config_list = [
                 # (GLM53FlashForConditionalGeneration, the catalog's multimodal override). The chat
                 # template thinks by default and the reasoning parser strips the thought, so the
                 # answer budget covers a thinking trace. The model card publishes no MMMU number.
-                eval_class="openai_compatible",
+                # lmms-eval's chat client batches the requests in their original order; the simple
+                # client ("openai_compatible") returns its replies in the collator's length-sorted order,
+                # so every reply would be scored against another document. Both clients cap
+                # max_new_tokens at 4096 (thinking + answer; the request-overrides wrapper cannot reach
+                # lmms-eval tasks), so a long thought leaves an empty answer: the score reads low, never wrong.
+                eval_class="openai_compatible_chat",
                 task_name="mmmu_val",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
@@ -1226,7 +1232,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 4,  # = the engine's admission at 1 M
+                    "num_concurrent": 32,  # = the engine's admission on the 1 M profile
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -1234,7 +1240,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "False",
-                    "max_new_tokens": "16384",
+                    "max_new_tokens": "4096",  # the client's cap (see eval_class above)
                     "temperature": 1.0,
                     "top_p": 0.95,
                 },
