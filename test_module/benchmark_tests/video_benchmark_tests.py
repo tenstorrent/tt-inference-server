@@ -81,7 +81,7 @@ def _minimax_h3_payload(model_name: str, prompt: str, image_b64: str) -> dict:
             image_prompts=[{"image": image_b64, "frame_pos": 0}],
         )
     else:
-        # The Ref2VA adapter is 544p-trained; let the server pick the canvas for 16:9.
+        # Let the server pick the canvas for 16:9.
         payload.update(aspect_ratio="16:9", references={"images": [{"b64": image_b64}]})
     return payload
 
