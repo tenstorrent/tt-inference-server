@@ -2553,7 +2553,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
-              tag: 0.25.0-978f93b
+              tag: 0.26.0-09acccb
             probes:
               liveness:
                 path: /tt-liveness
@@ -2571,6 +2571,8 @@ models:
                 value: trainer-training-lora
               - name: TRAINING_MODEL
                 value: Llama-3.1-8B-Instruct
+              - name: TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES
+                value: '0'
   gemma-3-27b-it:
     vllm:
       galaxy:
@@ -4273,6 +4275,36 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      p150x4:
+        defaultImpl: qwen36_blackhole
+        impls:
+          qwen36_blackhole:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.6-27B
+              - name: MESH_DEVICE
+                value: P150x4
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_QWEN35_TEXT_VER
+                value: qwen36_blackhole
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   Qwen3-Embedding-0.6B:
     forge:
@@ -4576,4 +4608,356 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+    defaultEngine: vllm
+  Qwen3.5-27B:
+    vllm:
+      p150x4:
+        defaultImpl: qwen36_blackhole
+        impls:
+          qwen36_blackhole:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.5-27B
+              - name: MESH_DEVICE
+                value: P150x4
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_QWEN35_TEXT_VER
+                value: qwen36_blackhole
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  K2-Horizon-7B:
+    vllm:
+      p300x2:
+        defaultImpl: k2_horizon_7b_qb2
+        impls:
+          k2_horizon_7b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 17Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: EXTRA_MODELS_DIR
+                value: ../../tt-metal/models/demos
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: OMP_NUM_THREADS
+                value: '8'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  Muse-Glimmer-30B:
+    vllm:
+      p300x2:
+        defaultImpl: muse_glimmer_30b_qb2
+        impls:
+          muse_glimmer_30b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 75Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: EXTRA_MODELS_DIR
+                value: ../../tt-metal/models/demos
+              - name: MESH_DEVICE
+                value: (1, 4)
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+              - name: TT_MODEL_CLASS_OVERRIDES
+                value: MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b_qb2.tt.generator_vllm:MuseGlimmerForConditionalGeneration
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  Kolibri-1-BF16:
+    vllm:
+      p300x2:
+        defaultImpl: kolibri_1_qb2
+        impls:
+          kolibri_1_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 128Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: KOLIBRI_VLLM_HOST_COMPAT
+                value: '1'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: OMP_NUM_THREADS
+                value: '8'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  gemma-4-26B-A4B-it:
+    vllm:
+      p300x2:
+        defaultImpl: gemma4_26b_a4b_qb2
+        impls:
+          gemma4_26b_a4b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: EXTRA_MODELS_DIR
+                value: ../../tt-metal/models/demos
+              - name: GEMMA4_26B_ALLOW_HOST_SAMPLING
+                value: '1'
+              - name: GEMMA4_PREFIX_CACHING
+                value: '1'
+              - name: GEMMA4_PREFIX_TRACE_SUFFIX
+                value: '1'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: OMP_NUM_THREADS
+                value: '8'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  granite-4.2-30b:
+    vllm:
+      p300x2:
+        defaultImpl: granite42_30b_qb2
+        impls:
+          granite42_30b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 75Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: EXTRA_MODELS_DIR
+                value: ../../tt-metal/models/demos
+              - name: HF_MODEL
+                value: ibm-granite/granite-4.2-30b
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  Qwen2.5-VL-32B-Instruct:
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+    defaultEngine: vllm
+  Qwen2.5-VL-72B-Instruct:
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 180Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+    defaultEngine: vllm
+  Qwen2.5-VL-7B-Instruct:
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 17Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 17Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: TG
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  olmOCR-2-7B-1025:
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.26.0-09acccb-6098002
+            resources:
+              requests:
+                memory: 17Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
     defaultEngine: vllm
