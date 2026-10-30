@@ -57,16 +57,23 @@ def _spec(modalities):
     )
 
 
-def _venv_task(name, venv):
-    return SimpleNamespace(task_name=name, workflow_venv_type=venv)
+def _venv_task(name, venv, modalities=None):
+    return SimpleNamespace(
+        task_name=name, workflow_venv_type=venv, modalities=modalities
+    )
 
 
-def test_image_eval_tasks_run_only_where_the_profile_serves_images(monkeypatch):
-    """An lmms-eval (EVALS_VISION) task sends images: a profile narrowed to text
-    skips it, a profile that declares the image modality keeps it."""
+def test_media_eval_tasks_run_only_where_the_profile_serves_their_modality(
+    monkeypatch,
+):
+    """An lmms-eval (EVALS_VISION) task sends images unless it declares its own
+    modalities (an audio task): a profile narrowed to text skips both, a profile
+    that declares the image modality keeps the image task only, and one that
+    also serves audio keeps the audio task."""
     tasks = [
         _venv_task("gpqa", WorkflowVenvType.EVALS_COMMON),
         _venv_task("mmmu_pro", WorkflowVenvType.EVALS_VISION),
+        _venv_task("fleurs", WorkflowVenvType.EVALS_VISION, modalities=["audio"]),
     ]
     pack = SimpleNamespace(
         eval_config=lambda repo: SimpleNamespace(tasks=tasks),
@@ -79,13 +86,16 @@ def test_image_eval_tasks_run_only_where_the_profile_serves_images(monkeypatch):
     assert [t.task_name for t in text_only] == ["gpqa"]
     with_images = get_llm_eval_tasks(_spec(["text", "image"]), _rc(None))
     assert [t.task_name for t in with_images] == ["gpqa", "mmmu_pro"]
+    with_audio = get_llm_eval_tasks(_spec(["text", "image", "audio"]), _rc(None))
+    assert [t.task_name for t in with_audio] == ["gpqa", "mmmu_pro", "fleurs"]
 
 
-def test_gemma4_12b_image_eval_is_scoped_to_the_gpu_profile(monkeypatch):
+def test_gemma4_12b_media_evals_are_scoped_to_the_gpu_profile(monkeypatch):
     """The 12B GPU reference profile (stock vLLM server) serves every modality of
-    the checkpoint, so MMMU-Pro is in its eval set and --eval-tasks can select it.
-    The template's other device blocks are text-only serving profiles: they keep
-    the template default [text], never select the image eval, and reject its name."""
+    the checkpoint, so MMMU-Pro and FLEURS are in its eval set and --eval-tasks can
+    select them. The template's other device blocks are text-only serving profiles:
+    they keep the template default [text], never select the media evals, and reject
+    their names."""
     from reference_config.evals.eval_config import _eval_config_map
     from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
     from workflows.utils import get_repo_root_path
@@ -118,14 +128,16 @@ def test_gemma4_12b_image_eval_is_scoped_to_the_gpu_profile(monkeypatch):
     gpu = resolve("gpu")
     assert gpu.supported_modalities == ["text", "image", "video", "audio"]
     names = [t.task_name for t in get_llm_eval_tasks(gpu, _rc(None))]
-    assert "mmmu_pro_standard_cot" in names
-    selected = get_llm_eval_tasks(gpu, _rc("mmmu_pro_standard_cot"))
-    assert [t.task_name for t in selected] == ["mmmu_pro_standard_cot"]
+    assert {"mmmu_pro_standard_cot", "fleurs_en"} <= set(names)
+    for media in ("mmmu_pro_standard_cot", "fleurs_en"):
+        selected = get_llm_eval_tasks(gpu, _rc(media))
+        assert [t.task_name for t in selected] == [media]
 
     for device in ("p150x8", "t3k", "galaxy", "n300"):
         text_only = resolve(device)
         assert text_only.supported_modalities == ["text"], device
         names = [t.task_name for t in get_llm_eval_tasks(text_only, _rc(None))]
-        assert "mmmu_pro_standard_cot" not in names, device
-        with pytest.raises(ValueError, match="does not configure"):
-            get_llm_eval_tasks(text_only, _rc("mmmu_pro_standard_cot"))
+        assert not {"mmmu_pro_standard_cot", "fleurs_en"} & set(names), device
+        for media in ("mmmu_pro_standard_cot", "fleurs_en"):
+            with pytest.raises(ValueError, match="does not configure"):
+                get_llm_eval_tasks(text_only, _rc(media))
