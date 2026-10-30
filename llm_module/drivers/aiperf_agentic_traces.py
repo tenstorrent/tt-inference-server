@@ -314,6 +314,11 @@ def build_aiperf_cmd(
         # never receive DatasetConfiguredNotification and abort mid-run.
         "--record-processor-service-count",
         "8",
+        # Each response's generated text, so a run can be checked for garbled
+        # output: written as it arrives to output_fragments/*.jsonl in the
+        # artifact dir and gathered into outputs.json at the end. Output only,
+        # no prompts; the scenario does not constrain exports.
+        "--export-outputs-json",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
