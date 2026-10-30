@@ -6,7 +6,7 @@
   "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
   "vllm_tt_plugin.model_runner": "8da3a7d99fc3f12405bcc5e0d7cfa10becbbbfdbaacff11ecee4cb9af393fec8",
   "models.demos.gemma4_31b_qb2.tt.generator": "0ed40f7b31bd2e78d28bb881933deb644c4b139ddee1f5215367ba146a2f8fae",
-  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "c096ec36b52596720c88d9070b0bd7024e50b4fde19e1cade02fc2eca0c4e26e",
+  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "5ae195f58740a15e31f6f1fa077819abdd5894518586a6e567d7c9f508f41f03",
   "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
   "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
   "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
@@ -21,6 +21,6 @@
   "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
   "models.demos.gemma4_31b_qb2.tt.decoder": "446079f094780e10a2688e3aaa2748668859c55d29895f4f2e2f2b0c7d72300b",
   "models.demos.gemma4_31b_qb2.tt.model": "1c4809757e70b577bb845997b04a894782c6fef1758591a9a230729e91a82b11",
-  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "50f2b2f506ad3a2b6d51aec3b006538eee494d882741714e8036d90b492dc2de"
+  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "740bdfd9e24e1c7bb9634e14a6e380520b5850705ab29db1b04d07098b4467f2"
  }
 }
