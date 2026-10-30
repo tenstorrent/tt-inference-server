@@ -7717,6 +7717,10 @@ templates:
       max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
+        # PROBE ONLY (branch glm53f/8-ship2-probe): print the Galaxy's link map and cube cover
+        # (glm-tt groups, read-only) and exit; the server never starts, so the run fails at
+        # bring-up by design. Read the map in the docker server log.
+        GLM_TT_PROBE_ONLY: "1"
         GLM_TT_MTP: glm53-flash-mtp-plan0h.ttq
         # 32 GB of host session records per group in one store all groups share (the launch
         # config uses 64 on 1 TB hosts); a failed group reloads in-process (about 194 s) while
@@ -7748,16 +7752,15 @@ templates:
     zai-org/GLM-5.3-Flash:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
-      # The repo has no safetensors: complete when these are present (see setup_host).
+      # Probe: download only the package, not the weights.
+      hf_download_excludes:
+        - "*.ttq*"
+        - "*.gguf"
+        - "glm-tt/**"
+        - "glm-tt-2a3e893/**"
+        - "glm-tt-cec70326/**"
+        - "glm-tt-ship2-e492dca3/**"
       checkpoint_files:
-        - glm53-flash-plan0h.ttq.manifest
-        - glm53-flash-plan0h.ttq.00001-of-00005
-        - glm53-flash-plan0h.ttq.00002-of-00005
-        - glm53-flash-plan0h.ttq.00003-of-00005
-        - glm53-flash-plan0h.ttq.00004-of-00005
-        - glm53-flash-plan0h.ttq.00005-of-00005
-        - glm53-flash-mtp-plan0h.ttq
-        - GLM-5.3-Flash-vocab.gguf
         - glm-tt-l4-9675672c/SHA256SUMS
         - glm-tt-l4-9675672c/bin/glm-tt
         - glm-tt-l4-9675672c/runtime/ld-linux-x86-64.so.2
