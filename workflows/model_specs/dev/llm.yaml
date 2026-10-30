@@ -7718,9 +7718,12 @@ templates:
       default_impl: true
       env_vars:
         GLM_TT_MTP: glm53-flash-mtp-plan0h.ttq
-        # 32 GB of host session records per group (glx-serve3 soaks used 64 on 1 TB hosts); a
-        # failed group reloads in-process (about 194 s) while the others serve.
-        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 32 --on-group-failure restart"
+        # 32 GB of host session records per group in one store all groups share (the launch
+        # config uses 64 on 1 TB hosts); a failed group reloads in-process (about 194 s) while
+        # the others serve. --overload queue: requests beyond the 8 slots wait for one (the
+        # benchmark sweep and the agentic evals send more than 8 at once); serving behind
+        # OpenRouter uses --overload 429 instead.
+        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 32 --session-store shared --overload queue --on-group-failure restart"
       # docker stop: drain, then four groups release their chips.
       docker_stop_timeout: 30
       # The "chips need a reset" marker outlives the container here when the host has the
@@ -7734,9 +7737,10 @@ templates:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
     # launcher takes a split TTQ by its manifest and the package from its folder.
     # The repo keeps each glm-tt build in its own folder, so a cached download fetches a new one.
-    # glm-tt-ship2-e492dca3: tt-lab glx-serve3 ship2 (batch serve, MTP, sessions, --groups auto,
-    # in-process group restart), firmware images byte-identical to s13.
-    GLM_TT_PACKAGE: glm-tt-ship2-e492dca3
+    # glm-tt-l4-9675672c: tt-lab glx-launch l4 (ship2's batch serve, MTP and --groups auto, plus
+    # the shared session store, --overload 429|queue, disconnect handling and OpenAI API fixes),
+    # firmware images byte-identical to ship2's.
+    GLM_TT_PACKAGE: glm-tt-l4-9675672c
     GLM_TT_TTQ: glm53-flash-plan0h.ttq
     GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "163840"
@@ -7754,9 +7758,9 @@ templates:
         - glm53-flash-plan0h.ttq.00005-of-00005
         - glm53-flash-mtp-plan0h.ttq
         - GLM-5.3-Flash-vocab.gguf
-        - glm-tt-ship2-e492dca3/SHA256SUMS
-        - glm-tt-ship2-e492dca3/bin/glm-tt
-        - glm-tt-ship2-e492dca3/runtime/ld-linux-x86-64.so.2
+        - glm-tt-l4-9675672c/SHA256SUMS
+        - glm-tt-l4-9675672c/bin/glm-tt
+        - glm-tt-l4-9675672c/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.

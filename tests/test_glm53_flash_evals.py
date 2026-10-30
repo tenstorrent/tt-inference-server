@@ -45,13 +45,14 @@ def _model_args(command):
 
 
 def test_task_set():
+    # tau3-bench banking runs outside CI (see eval_config.py).
     assert list(TASKS) == [
         "gpqa_diamond_cot_zeroshot",
         "terminal_bench_2_1",
-        "tau3_bench_banking",
     ]
-    for name in ("terminal_bench_2_1", "tau3_bench_banking"):
-        assert TASKS[name].workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    assert (
+        TASKS["terminal_bench_2_1"].workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    )
 
 
 def test_every_task_has_a_published_baseline():
@@ -59,7 +60,6 @@ def test_every_task_has_a_published_baseline():
     assert published == {
         "gpqa_diamond_cot_zeroshot": 91.2,
         "terminal_bench_2_1": 84.3,
-        "tau3_bench_banking": 47.2,
     }
     for task in TASKS.values():
         assert task.score.published_score_ref
@@ -99,23 +99,13 @@ def test_ci_sample_counts():
     # All of GPQA Diamond: at 40 questions the noise was wider than the tolerance.
     gpqa = TASKS["gpqa_diamond_cot_zeroshot"]
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.999
-    for name, count in (("terminal_bench_2_1", 5), ("tau3_bench_banking", 4)):
-        config = TASKS[name].agentic_eval_config
-        assert len(config.task_names_map[EvalLimitMode.CI_NIGHTLY]) == count
+    config = TASKS["terminal_bench_2_1"].agentic_eval_config
+    assert len(config.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
 
 
 def test_agentic_trials_fit_the_galaxy():
-    for name in ("terminal_bench_2_1", "tau3_bench_banking"):
-        assert TASKS[name].agentic_eval_config.n_concurrent_trials <= 4
+    assert TASKS["terminal_bench_2_1"].agentic_eval_config.n_concurrent_trials <= 4
     model_info = TASKS["terminal_bench_2_1"].agentic_eval_config.agent_kwargs[
         "model_info"
     ]
     assert model_info["max_input_tokens"] <= GLM53_FLASH_CONTEXT
-
-
-def test_tau3_calls_the_served_model():
-    config = TASKS["tau3_bench_banking"].agentic_eval_config
-    assert config.environment_env["TAU2_USER_MODEL"] == "openai/zai-org/GLM-5.3-Flash"
-    assert config.verifier_env["TAU2_NL_ASSERTIONS_MODEL"] == (
-        "openai/zai-org/GLM-5.3-Flash"
-    )

@@ -1806,7 +1806,9 @@ _eval_config_list = [
     # always thinks at max effort, so every generative task gets a reasoning budget (lm-eval's default
     # 1280 ends a reply inside its reasoning), and prompt plus output fit the 262144-position serve.
     # max_concurrent 8: the BLACKHOLE_GALAXY row serves 8 requests at once (2 per 8-chip group, each
-    # with the full context). Long-context tasks are kept to a few CI samples.
+    # with the full context). Long-context tasks are kept to a few CI samples. tau3-bench banking is
+    # not in this set: it runs outside CI for now (its task containers could not reach the server
+    # in CI, and release runs here should not wait on it).
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.3-Flash",
         tasks=[
@@ -1891,66 +1893,6 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 1,
-                },
-            ),
-            EvalTask(
-                # Multi-turn customer-service agent with tools and a simulated user (tau3-bench
-                # banking). Agentic: runs in the release workflow, not evals. The agent, the
-                # simulated user and the verifier all call this server.
-                task_name="tau3_bench_banking",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                priority="should",
-                score=EvalTaskScore(
-                    published_score=47.2,
-                    published_score_ref="Artificial Analysis tau3-banking, GLM-5.3-Flash (https://artificialanalysis.ai/evaluations/tau3-banking?models=glm-5-3-flash)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                    tolerance=0.10,
-                ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="sierra-research/tau3-bench",
-                    agent="tau3_llm_agent",
-                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
-                    # Each trial keeps the agent, the simulated user and the verifier on the
-                    # server's 4 groups.
-                    n_concurrent_trials=2,
-                    n_attempts=1,
-                    n_tasks=97,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
-                    agent_timeout_sec=3 * 3600,
-                    agent_kwargs={
-                        "tau2_trial_index": 0,
-                        "temperature": 1.0,
-                        "max_steps": 200,
-                        # A reasoning turn waiting for a free group can exceed the 120 s default.
-                        "tool_timeout_sec": 1800,
-                        "read_timeout_sec": 1800,
-                    },
-                    # Literal values: see the GLM-5.3 entry's note on environment_env.
-                    environment_env={
-                        "TAU2_USER_MODEL": "openai/zai-org/GLM-5.3-Flash",
-                    },
-                    verifier_env={
-                        "TAU2_NL_ASSERTIONS_MODEL": "openai/zai-org/GLM-5.3-Flash",
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
                         ],
                     },
                 ),
