@@ -30,6 +30,9 @@ def test_m31_flash_tasks_match_m3_apart_from_targets_and_concurrency():
         if task.agentic_eval_config is not None:
             cfg = task.agentic_eval_config
             fields = {"n_concurrent_trials": cfg.n_concurrent_trials}
+            for name in ("environment_env", "verifier_env"):
+                if hasattr(cfg, name):
+                    fields[name] = getattr(cfg, name)
             for name in ("override_cpus", "override_memory_mb"):
                 if hasattr(cfg, name):
                     fields[name] = getattr(cfg, name)
@@ -74,3 +77,26 @@ def test_m31_flash_terminal_bench_2_1_uses_task_declared_resources():
     cfg = flash["terminal_bench_2_1"].agentic_eval_config
     assert cfg.override_cpus is None and cfg.override_memory_mb is None
     assert m3["terminal_bench_2_1"].agentic_eval_config.override_cpus == 8
+
+
+def test_m31_flash_tau3_user_sim_and_verifier_call_the_served_m31_name():
+    # An M3.1-Flash endpoint serves only MiniMaxAI/MiniMax-M3.1-Flash: tau3's user
+    # simulator and NL-assertion verifier must call that name, not M3's (on
+    # 2026-10-29 every trial died on the runtime's empty first tool reply).
+    flash, m3 = _tasks(M31_FLASH), _tasks(M3)
+    assert m3["tau3_bench_banking"].agentic_eval_config.environment_env == {
+        "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3"
+    }
+    cfg = flash["tau3_bench_banking"].agentic_eval_config
+    assert cfg.environment_env == {
+        "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3.1-Flash"
+    }
+    assert cfg.verifier_env == {
+        "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M3.1-Flash"
+    }
+    for name, task in flash.items():
+        cfg = task.agentic_eval_config
+        if not hasattr(cfg, "environment_env"):
+            continue
+        envs = {**cfg.environment_env, **cfg.verifier_env}
+        assert "openai/MiniMaxAI/MiniMax-M3" not in envs.values(), name

@@ -13655,7 +13655,37 @@ _MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES = {"terminal_bench_2_1"}
 # M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
 # measurements only (no published, GPU or limit-mode references; the card's
 # AutomationBench 62.8 states no harness or effort).
+# M3's tau3 entry points its user simulator (TAU2_USER_MODEL) and NL-assertion
+# verifier (TAU2_NL_ASSERTIONS_MODEL) at the served name MiniMaxAI/MiniMax-M3.
+# An M3.1-Flash endpoint serves only MiniMaxAI/MiniMax-M3.1-Flash, so those calls
+# fail, the runtime never finishes its first user turn and hands the agent an
+# empty tool reply: every trial dies in json.loads (0/97 on 2026-10-29). It only
+# worked earlier through a proxy that rewrote the request's model name.
+_MINIMAX_M3_LITELLM_MODEL = "openai/MiniMaxAI/MiniMax-M3"
+_MINIMAX_M31_FLASH_LITELLM_MODEL = "openai/MiniMaxAI/MiniMax-M3.1-Flash"
+
+
+def _minimax_m31_flash_env(env: Dict[str, str]) -> Dict[str, str]:
+    """``env`` with every value naming M3's served model renamed to M3.1-Flash's."""
+    return {
+        key: _MINIMAX_M31_FLASH_LITELLM_MODEL
+        if value == _MINIMAX_M3_LITELLM_MODEL
+        else value
+        for key, value in env.items()
+    }
+
+
 def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    cfg = task.agentic_eval_config
+    if hasattr(cfg, "environment_env"):  # Harbor configs (AutomationBench has none)
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                cfg,
+                environment_env=_minimax_m31_flash_env(cfg.environment_env),
+                verifier_env=_minimax_m31_flash_env(cfg.verifier_env),
+            ),
+        )
     concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
     if concurrency is not None:
         task = replace(
