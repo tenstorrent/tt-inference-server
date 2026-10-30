@@ -80,6 +80,10 @@ class HarborRunConfig:
     timeout_multiplier: Optional[float]
     agent_timeout_sec: Optional[float]
     agent_setup_timeout_multiplier: Optional[float] = None
+    # Harbor's ResourceMode for the task's CPU and memory budget (``limit``,
+    # ``request``, ``guarantee``, ...). ``None`` leaves Harbor's ``auto``.
+    cpu_enforcement_policy: Optional[str] = None
+    memory_enforcement_policy: Optional[str] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
     # Rich Live progress: quiet=True shows only the loading bar; quiet=False
@@ -318,6 +322,12 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
+    if config.cpu_enforcement_policy is not None:
+        environment_config["cpu_enforcement_policy"] = config.cpu_enforcement_policy
+    if config.memory_enforcement_policy is not None:
+        environment_config["memory_enforcement_policy"] = (
+            config.memory_enforcement_policy
+        )
     if config.environment_kwargs:
         environment_config["kwargs"] = config.environment_kwargs
 
@@ -531,6 +541,10 @@ def run(config: HarborRunConfig) -> int:
             cmd.extend(["--override-cpus", str(config.override_cpus)])
         if config.override_memory_mb is not None:
             cmd.extend(["--override-memory-mb", str(config.override_memory_mb)])
+        if config.cpu_enforcement_policy is not None:
+            cmd.extend(["--cpus", config.cpu_enforcement_policy])
+        if config.memory_enforcement_policy is not None:
+            cmd.extend(["--memory", config.memory_enforcement_policy])
         if config.timeout_multiplier is not None:
             cmd.extend(["--timeout-multiplier", str(config.timeout_multiplier)])
         if config.agent_setup_timeout_multiplier is not None:

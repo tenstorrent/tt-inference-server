@@ -257,6 +257,8 @@ def build_harbor_config(
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         override_cpus=cfg.override_cpus,
         override_memory_mb=cfg.override_memory_mb,
+        cpu_enforcement_policy=cfg.cpu_enforcement_policy,
+        memory_enforcement_policy=cfg.memory_enforcement_policy,
         timeout_multiplier=cfg.timeout_multiplier,
         agent_timeout_sec=cfg.agent_timeout_sec,
         agent_setup_timeout_multiplier=cfg.agent_setup_timeout_multiplier,

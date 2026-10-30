@@ -59,6 +59,8 @@ class FakeHarborConfig:
     environment_type: str = "docker"
     override_cpus: Optional[int] = 16
     override_memory_mb: Optional[int] = 48 * 1024
+    cpu_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = "limit"
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = 3 * 60 * 60
     agent_setup_timeout_multiplier: Optional[float] = None
@@ -537,6 +539,15 @@ class TestAgenticDriverConfigMapping:
         )
         assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen"}
         assert cfg.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"}
+
+    def test_harbor_config_forwards_resource_enforcement_policies(self):
+        task = _harbor_task()
+        task.agentic_eval_config.memory_enforcement_policy = "guarantee"
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.cpu_enforcement_policy == "limit"
+        assert cfg.memory_enforcement_policy == "guarantee"
 
     def test_swebench_config_uses_limit_mode_task_names_and_n_tasks(self):
         # SWE-bench instance ids are plain Harbor task names in the

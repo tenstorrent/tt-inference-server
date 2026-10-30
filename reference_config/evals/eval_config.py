@@ -286,8 +286,15 @@ class HarborEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
+    # Replace every task's task.toml budget. Leave unset unless the published
+    # score states its own setting: leaderboards reject resource overrides.
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
+    # Harbor's ``auto`` is a hard limit on Docker but only a request on
+    # Kubernetes, where a trial can burst to the whole node. ``limit`` caps both
+    # (Kubernetes then sets the request to the limit).
+    cpu_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = "limit"
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
     agent_setup_timeout_multiplier: Optional[float] = None
@@ -1433,8 +1440,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1694,8 +1699,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1854,8 +1857,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2011,8 +2012,6 @@ _eval_config_list = [
                     n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2240,8 +2239,6 @@ _eval_config_list = [
                     n_concurrent_trials=93,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2461,8 +2458,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2709,8 +2704,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=8,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2975,8 +2968,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=8,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -3155,6 +3146,8 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -3271,6 +3264,8 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -9009,8 +9004,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
                     # left to the server default (device sampler). 96K input plus
@@ -11644,8 +11637,6 @@ _eval_config_list = [
                     n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -11827,8 +11818,6 @@ _eval_config_list = [
                     n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -12034,9 +12023,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -12317,8 +12303,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     # 2 h per task keeps the release job inside the 12 h
                     # nightly cap: the 5 CI tasks run as one wave.
                     agent_timeout_sec=2 * 60 * 60,
@@ -12522,9 +12506,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     # 5 h per task: the 3 h budget left 5 of the 24-task wave unfinished on the QB2
                     # release run (shield 40142241727), which writes no score for an errored wave.
                     agent_timeout_sec=5 * 60 * 60,
@@ -12758,10 +12739,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
-                    # limit above the host count ("range of CPUs is from 0.01 to 16.00").
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -13027,8 +13004,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -13182,8 +13157,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -13341,8 +13314,6 @@ _eval_config_list = [
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     # The selected tasks are estimated at 5-20 expert minutes.
                     # DiffusionGemma is slower than the reference agents, but a
                     # bounded 45-minute budget keeps a stuck trial from
