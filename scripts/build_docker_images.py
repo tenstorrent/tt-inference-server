@@ -24,6 +24,10 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# The image's model_spec.json must include the dev catalog (P150 Gemma3/Qwen3.5
+# entries); MODEL_SPECS is resolved at import time.
+os.environ.setdefault("MODEL_SPECS_ENV", "dev")
+
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 from workflows.utils import get_repo_root_path

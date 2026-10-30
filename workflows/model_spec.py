@@ -379,6 +379,15 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Same tt-metal code again; selects the single-P150 MTP speculative serving class
+# (Qwen36P150MTPForCausalLM, via TT_MODEL_CLASS_OVERRIDES in the yaml entry) for
+# Qwen3.5-2B/4B. Selectable via --impl qwen36-p150-mtp.
+qwen36_p150_mtp_impl = ImplSpec(
+    impl_id="qwen36_p150_mtp",
+    impl_name="qwen36-p150-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -504,6 +513,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "qwen36_p150_mtp": qwen36_p150_mtp_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
