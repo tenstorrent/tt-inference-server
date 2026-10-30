@@ -602,6 +602,22 @@ templates:
         # row (the served c32 round; for what one ring set could not
         # serve: one request a mesh, the others plain).
         TT_V41_SPEC_RINGS: "slot"
+        # Deferred final chunks (composed with the round):
+        # every request's bulk prefill is joined into its decode slot and
+        # parked, the cohort's final chunks run back to back once the wave's
+        # bulk is done (each restored from its slot into the prefill state),
+        # so a request's decode window holds the other requests' finals, not
+        # their whole prefills. Served on the plain tree: c32 mean TPOT 0.76x at 8K and 0.12x at 128K of the
+        # serial path's, flat within 1.13x, the same delivered tokens/s,
+        # mean TTFT up to the wave time (0.77x and 0.85x of target), p99
+        # unchanged. The scheduler flag and the generator flag must agree
+        # (the EngineCore refuses to start otherwise); the restore is
+        # captured per slot and width bucket up to 128K (~90 MB of trace
+        # region at 32 slots), eager at the wider buckets.
+        TT_SCHED_DEFER_FINAL: "1"
+        TT_V41_DEFER_FINAL: "1"
+        TT_V41_RESTORE_TRACE: "1"
+        TT_V41_RESTORE_TRACE_MAX_WIDTH: "131072"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
