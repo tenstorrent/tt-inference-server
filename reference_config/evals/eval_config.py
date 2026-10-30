@@ -1605,8 +1605,8 @@ _eval_config_list = [
     # results use reasoning_effort 100 ("max") with temperature 1.0 and top_p 0.95; dsv41-serve samples
     # the whole vocabulary on the device and refuses top_p below 1, so this runs top_p 1.0 (the card
     # recommends "0.95 or 1.0"). Thinking on and effort max go in the request body. No top_k: the
-    # server refuses it. On an Exabox Galaxy with these settings (4 at a time, max_tokens 131072) a
-    # full run took about 5.5 h and the longest reply used 73K tokens.
+    # server refuses it. On an Exabox Galaxy with these settings (tt-lab 19f4285c, 4 at a time,
+    # max_tokens 131072): 186/198 = 93.9, no reply capped, the longest used 105K tokens, 5 h 22 min.
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash-1017",
         tasks=[

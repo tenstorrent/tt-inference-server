@@ -7299,7 +7299,7 @@ templates:
 # table each, split into three parts with a NAME.safetensors.manifest that tt-lab reads as the one
 # file), tokenizer.json, config.json, token_map.u32 and the tt-lab package folder.
 # Checked on an Exabox Galaxy (bh-glx-120-c03u02, KMD 2.11.0) from the weka copy of the same
-# checkpoint: Hello md5 d26f51a2, GPQA Diamond with the eval config's settings (see eval_config.py).
+# checkpoint: Hello md5 d26f51a2; GPQA Diamond 186/198 = 93.9 (thinking, effort max, T 1.0, top_p 1.0).
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash-1017
   impl: tt_lab_dsv41
