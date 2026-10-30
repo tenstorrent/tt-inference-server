@@ -3567,6 +3567,7 @@ templates:
         MIMO_SPEC_SLOTS: 8
         MIMO_SPEC_GROUPS: "2,4"
         MIMO_VLLM_TIMING: 1  # throwaway: chained vs host drafts, waits and step timing in the server log
+        MIMO_KV_PAIR_SPLIT: 0  # throwaway: A/B for the adaptive garbage (KV falls back to the 6 GB default)
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
