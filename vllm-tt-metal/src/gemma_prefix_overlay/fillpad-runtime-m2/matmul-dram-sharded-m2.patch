@@ -1,0 +1,31 @@
+--- a/ttnn/cpp/ttnn/operations/matmul/device/matmul_device_operation.cpp	2026-10-30 14:24:12.221756490 +0000
++++ b/ttnn/cpp/ttnn/operations/matmul/device/matmul_device_operation.cpp	2026-10-30 14:24:12.232453083 +0000
+@@ -1452,7 +1452,6 @@
+ 
+     // No padding
+     TT_FATAL(M == per_core_M, "{}: M ({}) must equal per_core_M ({})", config_name, M, per_core_M);
+-    TT_FATAL(M == 1, "{}: currently only support in0 tensor height of tile height", config_name);
+     TT_FATAL(
+         per_core_M == (shard_shape[0] / in0_tile.get_height()),
+         "{}: per_core_M ({}) must equal shard_shape[0] / in0_tile.get_height() ({})",
+--- a/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_dram_sharded_program_factory.cpp	2026-10-30 14:24:12.222304834 +0000
++++ b/ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_dram_sharded_program_factory.cpp	2026-10-30 14:24:12.232664576 +0000
+@@ -219,6 +219,18 @@
+         per_core_M, per_core_N_compute, false, false, fp32_dest_acc_en);
+     auto out_subblock_h = std::get<0>(subblock_hw);
+     auto out_subblock_w = std::get<1>(subblock_hw);
++    // More than one in0 tile row: single-row output subblocks (multi-row subblocks give wrong results).
++    if (per_core_M > 1 && out_subblock_h > 1) {
++        out_subblock_h = 1;
++        const uint32_t cap = fp32_dest_acc_en ? 4 : 8;
++        out_subblock_w = 1;
++        for (uint32_t w = cap; w >= 1; --w) {
++            if (per_core_N_compute % w == 0) {
++                out_subblock_w = w;
++                break;
++            }
++        }
++    }
+ 
+     uint32_t max_subblock_w = fp32_dest_acc_en ? 4 : 8;
+     // The widening below may pad per_core_N_compute past per_core_N_in1_sender, in which case the
