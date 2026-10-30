@@ -783,8 +783,16 @@ def reference_summary(reference: dict, clips: list[dict]) -> dict:
         "reference": reference["reference"],
         "gpu": reference.get("gpu"),
         "clips": reference.get("clips"),
+        # delta is TT minus GPU; change_pct is that as % of GPU, what the gate grades.
         "dimensions": {
-            name: {k: d[k] for k in ("tt", "gpu", "clips")}
+            name: {
+                **{k: d[k] for k in ("tt", "gpu", "delta", "clips")},
+                "change_pct": (
+                    round(100 * (d["tt"] - d["gpu"]) / d["gpu"], 2)
+                    if d["gpu"]
+                    else None
+                ),
+            }
             for name, d in reference["dimensions"].items()
         },
         "output": output,

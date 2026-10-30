@@ -521,8 +521,8 @@ def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
             limit = reference.get("tolerance_pct")
             gpu = (reference.get("dimensions") or {}).get(name) or {}
             change = ""
-            if gpu.get("gpu"):
-                change = f"{100 * (gpu['tt'] - gpu['gpu']) / gpu['gpu']:+.2f}"
+            if gpu.get("change_pct") is not None:
+                change = f"{gpu['change_pct']:+.2f}"
             row[f"GPU {label}"] = _vbench_number(gpu.get("gpu"), 4)
             delta = f"Δ % vs {run}" + (f" (≥ −{limit:g})" if limit is not None else "")
             row[delta] = change + _vbench_mark(check)

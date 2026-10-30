@@ -317,7 +317,13 @@ def test_comparison_pairs_clips_by_video_across_shape_folders(tmp_path, monkeypa
         "references"
     ]
     assert summary["dimensions"] == {
-        "i2v_subject": {"tt": 0.95, "gpu": 0.94, "clips": 2}
+        "i2v_subject": {
+            "tt": 0.95,
+            "gpu": 0.94,
+            "delta": 0.01,
+            "clips": 2,
+            "change_pct": 1.06,
+        }
     }
     assert summary["output"] == {
         res: {
