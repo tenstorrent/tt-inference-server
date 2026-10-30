@@ -332,6 +332,52 @@ class HarborEvalConfig:
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
+# AutomationBench's six scored domains (100 public tasks each). The
+# ``simple`` domain (200 one- or two-step tasks) is a tool-use sanity
+# baseline that is not part of the official pass rate.
+AUTOMATION_BENCH_DOMAINS = [
+    "sales",
+    "marketing",
+    "operations",
+    "support",
+    "finance",
+    "hr",
+]
+
+
+@dataclass(frozen=True)
+class AutomationBenchEvalConfig:
+    """One zapier/AutomationBench run through its ``auto-bench`` CLI.
+
+    Not a Harbor job: AutomationBench simulates its 47 SaaS tools in-process
+    and grades by assertions on the final world state, so it needs no sandbox
+    and no judge, only the model endpoint. The field names Harbor tooling
+    reads off any agentic config (``agent``, ``agent_kwargs``,
+    ``n_concurrent_trials``, ``n_tasks``, ``task_names``...) keep their
+    meaning here; ``n_concurrent_trials`` is auto-bench's ``--max-concurrent``.
+    """
+
+    agent: str = "auto-bench"
+    domains: List[str] = field(default_factory=lambda: list(AUTOMATION_BENCH_DOMAINS))
+    # ``api`` is the toolset official scores use; ``zapier`` and
+    # ``limited_zapier`` are experimental.
+    toolset: str = "api"
+    max_steps: int = 50
+    n_concurrent_trials: int = 32
+    n_attempts: int = 1
+    # ``--num-examples`` (first N tasks of the combined domain dataset).
+    n_tasks: Optional[int] = None
+    task_names: List[str] = field(default_factory=list)
+    exclude_task_names: List[str] = field(default_factory=list)
+    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    # ``reasoning_effort`` -> ``--reasoning-effort``; ``extra_body`` is merged
+    # into every chat completion request (``--extra-body``), which is where
+    # sampling parameters go.
+    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Wall-clock ceiling for the whole auto-bench process. None = no limit.
+    timeout_sec: Optional[float] = None
+
+
 MINI_SWE_AGENT_VERSION = "2.2.8"
 
 # Docker's ``cpus`` limit is a quota, so Node still reports every host core and
@@ -445,7 +491,9 @@ class EvalTask:
     # Let this task's scorer execute model-generated code on the eval host.
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
-    agentic_eval_config: Optional[HarborEvalConfig] = None
+    agentic_eval_config: Optional[
+        Union[HarborEvalConfig, AutomationBenchEvalConfig]
+    ] = None
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -650,6 +698,19 @@ LIVECODEBENCH_V6_DOC_IDS = [
 TERMINAL_BENCH_2_DATASET_REF = (
     "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
 )
+
+# Terminal-Bench 4.0 (terminal-bench/terminal-bench tag 4.0.0 = rev 4,
+# 66 tasks, flat 8 h agent timeout): https://www.tbench.ai/news/terminal-bench-4-0
+TERMINAL_BENCH_4_DATASET_REF = (
+    "sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732"
+)
+# The three TB 4.0 tasks that request an H100. Excluding them means a TB 4.0
+# score here is over 63 tasks and not directly comparable to the leaderboard.
+TERMINAL_BENCH_4_GPU_TASKS = [
+    "terminal-bench/fp8-rmsnorm-gemm",
+    "terminal-bench/jax-speedrun-gpu",
+    "terminal-bench/math-eval-grader",
+]
 
 # Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
 # pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
@@ -2732,6 +2793,104 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_4",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench",
+                    dataset_ref=TERMINAL_BENCH_4_DATASET_REF,
+                    agent="terminus-2",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    exclude_task_names=TERMINAL_BENCH_4_GPU_TASKS,
+                    # TB 4.0 sets a flat 8 h agent timeout on every task.
+                    agent_timeout_sec=8 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 500 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        # Shortest expert-time tasks, plus one multi-container
+                        # (Compose) task so the nightly covers that path. The
+                        # Compose task must run under KIX1's compose_strategy=
+                        # "pods" (payments-pipeline-fix, e.g., cannot).
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/html-js-filter",
+                            "terminal-bench/photonic-waveguide-routing",
+                            "terminal-bench/music-harmony",
+                            "terminal-bench/bun-sourcemap-leak",
+                            "terminal-bench/intrastat-meldung",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="automation_bench",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # No targets yet (tt-blaze#5867). The MiniMax-M3.1-Flash card
+                # reports 62.8 on the 600 public tasks, harness and reasoning
+                # effort unstated.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=AutomationBenchEvalConfig(
+                    domains=list(AUTOMATION_BENCH_DOMAINS),
+                    toolset="api",
+                    max_steps=50,
+                    # One in-flight request per task: fill the 62 slots.
+                    n_concurrent_trials=62,
+                    agent_kwargs={
+                        "extra_body": {"temperature": 1.0, "top_p": 0.95},
+                    },
+                    task_names_map={
+                        # The first two tasks of each scored domain.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sales.multi_hop_lookup",
+                            "sales.negative_selection",
+                            "marketing.social_engagement_response",
+                            "marketing.lead_enrichment",
+                            "operations.asana_fire_drill",
+                            "operations.trello_basecamp_compliance",
+                            "support.zendesk_sf_case_sync",
+                            "support.helpscout_jira_bugs",
+                            "finance.invoice_email_extract",
+                            "finance.expense_anomaly_detection",
+                            "hr.offboarding_automation",
+                            "hr.training_compliance",
                         ],
                     },
                 ),
@@ -13528,6 +13687,136 @@ _eval_config_list = [
         ],
     ),
 ]
+
+
+# Harbor trial concurrency for M3.1-Flash. M3 runs its agentic evals at 4-8 trials
+# because its IAD deployment served ~400 ms/token at 62 users (#5335); M3.1-Flash's
+# Virtu P/D deployment held 10-12 ms inter-token latency at 56 agentic users, so the
+# limit is the KIX1 shield-evals pool instead: 3 nodes x 64 CPUs. Trials past it sit
+# Pending and fail Harbor's 300 s pod-ready timeout rather than queue, so each value
+# keeps the worst case (the largest tasks running together) within the pool.
+#   Terminal-Bench 2.1: task-declared resources (83 of 89 tasks ask 1 CPU / 2 GiB;
+#     the 62 largest need ~74 CPUs), not M3's 8 CPU / 32 GiB override, which fit
+#     only 7 trials per node.
+#   Terminal-Bench 4.0: task-declared (mostly 2-4 CPUs, a few 8-16); the 40
+#     largest need ~170 CPUs.
+#   tau3-bench (4 CPU / 8 GiB + tau3-runtime sidecar): ~35-40 fit; 32.
+#   SWE-bench Verified (1 CPU / 4 GiB, task default): 62. Its test runs already
+#     drive the pool to ~100% CPU, so more trials would mostly slow them.
+_MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
+    "terminal_bench_2_1": 62,
+    "terminal_bench_4": 40,
+    "tau3_bench_banking": 32,
+    "swe_bench_verified": 62,
+}
+# Tasks that run with each task's declared CPU and memory instead of M3's override.
+_MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES = {"terminal_bench_2_1"}
+
+
+# MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
+# reuse all of M3's task definitions (GPQA, LongBench v2, Terminal-Bench 2.1 and
+# 4.0, AutomationBench, tau3-bench, SWE-bench Verified). No targets yet: the
+# M3.1-Flash eval set and its GPU reference runs aren't confirmed, so scores are
+# measurements only (no published, GPU or limit-mode references; the card's
+# AutomationBench 62.8 states no harness or effort).
+# M3's tau3 entry points its user simulator (TAU2_USER_MODEL) and NL-assertion
+# verifier (TAU2_NL_ASSERTIONS_MODEL) at the served name MiniMaxAI/MiniMax-M3.
+# An M3.1-Flash endpoint serves only MiniMaxAI/MiniMax-M3.1-Flash, so those calls
+# fail, the runtime never finishes its first user turn and hands the agent an
+# empty tool reply: every trial dies in json.loads (0/97 on 2026-10-29). It only
+# worked earlier through a proxy that rewrote the request's model name.
+_MINIMAX_M3_LITELLM_MODEL = "openai/MiniMaxAI/MiniMax-M3"
+_MINIMAX_M31_FLASH_LITELLM_MODEL = "openai/MiniMaxAI/MiniMax-M3.1-Flash"
+
+
+def _minimax_m31_flash_env(env: Dict[str, str]) -> Dict[str, str]:
+    """``env`` with every value naming M3's served model renamed to M3.1-Flash's."""
+    return {
+        key: _MINIMAX_M31_FLASH_LITELLM_MODEL
+        if value == _MINIMAX_M3_LITELLM_MODEL
+        else value
+        for key, value in env.items()
+    }
+
+
+def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
+    cfg = task.agentic_eval_config
+    if hasattr(cfg, "environment_env"):  # Harbor configs (AutomationBench has none)
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                cfg,
+                environment_env=_minimax_m31_flash_env(cfg.environment_env),
+                verifier_env=_minimax_m31_flash_env(cfg.verifier_env),
+            ),
+        )
+    concurrency = _MINIMAX_M31_FLASH_CONCURRENT_TRIALS.get(task.task_name)
+    if concurrency is not None:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config, n_concurrent_trials=concurrency
+            ),
+        )
+    if task.task_name in _MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config, override_cpus=None, override_memory_mb=None
+            ),
+        )
+    return replace(
+        task,
+        score=replace(
+            task.score,
+            published_score=None,
+            published_score_ref=None,
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            mode_reference_scores={},
+        ),
+    )
+
+
+def _minimax_m31_flash_deepswe() -> "EvalTask":
+    """DeepSWE v1.1 for M3.1-Flash: MiMo-V2.6-Flash's task (mini-swe-agent 2.3.0, temperature 1.0,
+    top_p 0.95, 128K max tokens, agent egress blocked except the endpoint), scored against the card.
+
+    The card's 73.7 used mini-SWE-agent 2.4.5 at 512K context; this keeps the 2.3.0 pin the harness
+    was validated with (MiMo's GPU reference). No GPU reference for M3.1-Flash yet.
+    """
+    mimo = next(
+        task
+        for config in _eval_config_list
+        if config.hf_model_repo == "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+        for task in config.tasks
+        if task.task_name == "deepswe"
+    )
+    return replace(
+        mimo,
+        score=replace(
+            mimo.score,
+            published_score=73.7,
+            published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash",
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            mode_reference_scores={},
+        ),
+    )
+
+
+_eval_config_list.append(
+    EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-M3.1-Flash",
+        tasks=[
+            _minimax_m31_flash_task(task)
+            for config in _eval_config_list
+            if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
+            for task in config.tasks
+        ]
+        + [_minimax_m31_flash_deepswe()],
+    )
+)
 
 
 _eval_config_map = map_configs_by_attr(

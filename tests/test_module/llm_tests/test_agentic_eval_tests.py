@@ -1305,6 +1305,16 @@ class TestAgenticBenchmarkSelection:
             "terminal_bench_2_1"
         ]
 
+    def test_tb4_selects_only_4(self):
+        tasks = self._tasks() + [_harbor_task(task_name="terminal_bench_4")]
+        ctx = self._ctx(tasks, "tb4")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == ["terminal_bench_4"]
+
+    def test_automationbench_selects_only_its_task(self):
+        tasks = self._tasks() + [_harbor_task(task_name="automation_bench")]
+        ctx = self._ctx(tasks, "automationbench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == ["automation_bench"]
+
     def test_tau3_prefix_selects_family(self):
         ctx = self._ctx(self._tasks(), "tau3")
         assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
