@@ -240,26 +240,6 @@ def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
 
 
-ENV_VAR_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def parse_env_overrides(text: str) -> Dict[str, Optional[str]]:
-    """Parse --override-env: comma-separated KEY=VALUE pairs; KEY= removes KEY.
-
-    Commas and spaces cannot appear in values, so the flag passes through CI
-    argument lists that split on whitespace without quoting.
-    """
-    overrides: Dict[str, Optional[str]] = {}
-    for pair in filter(None, (p.strip() for p in text.split(","))):
-        key, sep, value = pair.partition("=")
-        if not sep or not ENV_VAR_NAME.fullmatch(key):
-            raise ValueError(
-                f"--override-env expects KEY=VALUE pairs separated by commas, got {pair!r}"
-            )
-        overrides[key] = value or None
-    return overrides
-
-
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
     assert isinstance(impl_name, str), (
@@ -1148,22 +1128,6 @@ class ModelSpec:
                 object.__setattr__(
                     self, "env_vars", {**self.env_vars, **overridden_env}
                 )
-
-        if runtime_config.override_env:
-            # The device entry's env_vars too: a spec reloaded from JSON merges
-            # them over its own, which would undo the override.
-            merged_env_vars = dict(self.env_vars)
-            merged_device_env_vars = dict(self.device_model_spec.env_vars)
-            for key, value in parse_env_overrides(runtime_config.override_env).items():
-                for env_vars in (merged_env_vars, merged_device_env_vars):
-                    if value is None:
-                        env_vars.pop(key, None)
-                    else:
-                        env_vars[key] = value
-            object.__setattr__(self, "env_vars", merged_env_vars)
-            object.__setattr__(
-                self.device_model_spec, "env_vars", merged_device_env_vars
-            )
 
         if runtime_config.service_port:
             merged_vllm_args = {

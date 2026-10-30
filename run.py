@@ -267,13 +267,6 @@ def parse_arguments():
         help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
     )
     parser.add_argument(
-        "--override-env",
-        type=str,
-        help="Override the model spec's env_vars, which media and forge servers read, "
-        "as comma-separated KEY=VALUE pairs; KEY= removes KEY "
-        "(e.g., 'WAN22_DBCACHE=off,WAN22_RESOLUTION=480p')",
-    )
-    parser.add_argument(
         "--reset-venvs",
         action="store_true",
         help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated.",
@@ -1082,7 +1075,6 @@ def format_cli_args_summary(runtime_config):
         f"  disable_trace_capture:      {runtime_config.disable_trace_capture}",
         f"  override_tt_config:         {runtime_config.override_tt_config}",
         f"  vllm_override_args:         {runtime_config.vllm_override_args}",
-        f"  override_env:               {runtime_config.override_env}",
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
