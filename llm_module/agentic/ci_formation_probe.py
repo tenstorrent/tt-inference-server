@@ -113,13 +113,9 @@ def run_probe(server, context):
     wire.deadline = time.monotonic() + 2700
     try:
         summary, summary_path = execute(wire, root, Path(__file__).parent / 'r9_data')
-        from .ci_returning_pressure import execute_pressure
-        execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-mixed',
-                         Path(__file__).parent / 'r9_data/c32-mixed-prefixes.json')
-        execute_pressure(server, Path(context.output_dir) / 'UNSCORED-c32-admission32',
-                         Path(__file__).parent / 'r9_data/c32-admission32-prefixes.json')
-        from .ci_history_reservation_probe import execute_reservation
-        execute_reservation(server, Path(context.output_dir) / 'UNSCORED-history-reservation')
+        # Speculative-decoding fixture (exactness vs control, prefix-cache path, throughput by batch).
+        from .ci_spec_probe import execute_spec
+        execute_spec(server, Path(context.output_dir) / 'UNSCORED-spec')
         return summary, summary_path
     except BaseException as error:
         save(root / 'failure.json', dict(error_type=type(error).__name__, error=str(error),
