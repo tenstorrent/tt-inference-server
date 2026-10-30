@@ -6,7 +6,7 @@
   "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
   "vllm_tt_plugin.model_runner": "8da3a7d99fc3f12405bcc5e0d7cfa10becbbbfdbaacff11ecee4cb9af393fec8",
   "models.demos.gemma4_31b_qb2.tt.generator": "0ed40f7b31bd2e78d28bb881933deb644c4b139ddee1f5215367ba146a2f8fae",
-  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "0dddbdc228bf9117abe17cfa017467945f30d8cb4002d913286ac435a37d4cc3",
+  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "3150a4b0ea88998a3d9eeef798a5aeca806082f02fcf0b71230a870e20475fd5",
   "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
   "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
   "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
@@ -19,8 +19,8 @@
   "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
   "gemma_history_reservation": "94361d6e604521e827dd7b75f58192eb2df145528ade2b1a06f5ab08d2af04a8",
   "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
-  "models.demos.gemma4_31b_qb2.tt.decoder": "68f27af11ca2a70b3af5a51dffeb3e625b44ae43f8a7dff8913ef076a7aa9fd9",
+  "models.demos.gemma4_31b_qb2.tt.decoder": "446079f094780e10a2688e3aaa2748668859c55d29895f4f2e2f2b0c7d72300b",
   "models.demos.gemma4_31b_qb2.tt.model": "1c4809757e70b577bb845997b04a894782c6fef1758591a9a230729e91a82b11",
-  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "272036a40936df33228ee5e6b8c0cc72a438dd89f5738e1e0ad4826244d01dad"
+  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "27602cb026c740b3908108c1e1386200aa8d5d2efafd986a8dca85ebe6685fa9"
  }
 }
