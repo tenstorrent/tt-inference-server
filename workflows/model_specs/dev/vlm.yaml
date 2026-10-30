@@ -44,7 +44,7 @@ templates:
         l1_small_size: 4096
         fabric_config: FABRIC_1D
     - device: P150
-      max_concurrency: 32
+      max_concurrency: 1
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
@@ -56,6 +56,8 @@ templates:
       override_tt_config:
         l1_small_size: 4096
         fabric_config: FABRIC_1D
+        # Host sampling over the 262K vocab costs ~25% of decode at batch 1.
+        sample_on_device_mode: decode_only
   model_type: VLM
   status: EXPERIMENTAL
   supported_modalities:
@@ -70,7 +72,7 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P150
-      max_concurrency: 32
+      max_concurrency: 1
       # KV cache is ~208 KB/token (48 layers x 8 KV heads x 256 x K/V); 32K tokens (~7 GB) plus
       # ~10 GB of weights fits the 32 GB P150 with room for the vision tower and trace region.
       max_context: 32768
@@ -85,6 +87,8 @@ templates:
       override_tt_config:
         l1_small_size: 4096
         fabric_config: FABRIC_1D
+        # Host sampling over the 262K vocab costs ~25% of decode at batch 1.
+        sample_on_device_mode: decode_only
   model_type: VLM
   status: EXPERIMENTAL
   supported_modalities:
