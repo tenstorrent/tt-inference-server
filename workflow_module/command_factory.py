@@ -16,7 +16,7 @@ from typing import List, Optional
 from workflows.runtime_config import RuntimeConfig
 
 from utils.model_naming import slugify_model_id
-from utils.url_helpers import is_remote_server, resolve_deploy_url
+from utils.url_helpers import build_base_url, is_remote_server, resolve_deploy_url
 
 from test_module import MediaContext
 
@@ -207,14 +207,18 @@ def _resolve_server_url(
 ) -> str:
     """Pick the inference-server URL to target an already-running server.
 
-    Prefers the explicit ``--server-url`` CLI flag, then delegates to the
-    shared :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
+    Prefers the explicit ``--server-url`` CLI flag (merging ``--service-port``
+    when no port is present on the URL), then delegates to the shared
+    :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
     through the workflow dispatch, then the ``DEPLOY_URL`` env var, then the localhost
     default). This routes the workflow engine through the same single source of truth as every
     v1 workflow rather than re-deriving the precedence here.
     """
     explicit = getattr(args, "server_url", None)
     if explicit:
+        port = getattr(args, "service_port", None)
+        if port is not None:
+            return build_base_url(explicit, port)
         return explicit
     return resolve_deploy_url(runtime_config)
 
