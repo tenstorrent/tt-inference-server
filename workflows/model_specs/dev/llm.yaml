@@ -832,7 +832,6 @@ templates:
         trace_mode: decode_only
         enable_model_warmup: false
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         hf-overrides: '{"architectures":["TTGemma4A4BForCausalLM"]}'
