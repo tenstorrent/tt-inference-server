@@ -920,6 +920,8 @@ templates:
         # Speculative decoding: host n-gram drafts, 32-row sampled verify (lossless at T>0).
         GEMMA_SPEC_NGRAM: '1'
         GEMMA_SPEC_MAX_CANDIDATES: '8'
+        # Build proof: per_core_M>1 DRAM-sharded matmul runtime (2-line C++ patch, pinned hash); M=32 numerics unchanged.
+        GEMMA_EXPERIMENT_MATMUL_M2: '1'
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'
