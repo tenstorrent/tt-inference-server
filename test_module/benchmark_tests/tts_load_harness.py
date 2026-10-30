@@ -512,7 +512,11 @@ def prewarm(tgt: Target, conc: int, duration: float) -> int:
 
 def sweep(args: argparse.Namespace, tgt: Target) -> dict:
     """Run every concurrency level and return the results document."""
-    levels = sorted({int(x) for x in args.concurrency.split(",") if x.strip()})
+    # Run the levels in the order given (repeats dropped), so a caller can choose
+    # e.g. a high level first.
+    levels = list(
+        dict.fromkeys(int(x) for x in args.concurrency.split(",") if x.strip())
+    )
     logger.info(
         "target http://%s:%d%s  chars/req=%d  levels=%s",
         tgt.host,
@@ -531,7 +535,9 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
     # preflight probe, so its mean_service_s reflects a warm server.
     prewarm_conc = int(getattr(args, "warmup_concurrency", 0) or 0)
     prewarm_s = float(getattr(args, "prewarm", 0.0) or 0.0)
-    prewarmed = prewarm(tgt, prewarm_conc, prewarm_s) if prewarm_conc and prewarm_s else 0
+    prewarmed = (
+        prewarm(tgt, prewarm_conc, prewarm_s) if prewarm_conc and prewarm_s else 0
+    )
 
     probe = _preflight(tgt)
 
@@ -867,7 +873,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--concurrency",
         default="1,2,4,8,16,32,64,128,256",
-        help="comma list, swept in increasing order",
+        help="comma list, swept in the order given",
     )
     p.add_argument(
         "--duration", type=float, default=60, help="steady-state seconds per level"

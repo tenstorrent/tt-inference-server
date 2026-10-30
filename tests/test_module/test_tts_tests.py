@@ -447,6 +447,30 @@ def test_legacy_tts_benchmark_keeps_previous_report_shape(monkeypatch):
     }
 
 
+def test_sweep_runs_a_nonascending_ladder_in_the_requested_order(monkeypatch, tmp_path):
+    harness = benchmark.tts_load_harness
+    ran = []
+
+    def fake_run_closed(target, conc, duration, warmup):
+        ran.append(conc)
+        return [], 0.0, 1.0
+
+    monkeypatch.setattr(harness, "_preflight", lambda target: {"gen_s": 1.0})
+    monkeypatch.setattr(harness, "run_closed", fake_run_closed)
+    monkeypatch.setattr(harness.time, "sleep", lambda seconds: None)
+    concurrency, _ = benchmark._workflow_params(
+        _workflow_ctx("concurrency=320,64,160,64")
+    )
+
+    document = harness.sweep(
+        benchmark._sweep_args(tmp_path, concurrency=concurrency),
+        harness.Target(host="quad-driver.example", text="hello"),
+    )
+
+    assert ran == [320, 64, 160]
+    assert [level["conc"] for level in document["levels"]] == [320, 64, 160]
+
+
 def test_preflight_raises_instead_of_exiting_workflow(monkeypatch):
     monkeypatch.setattr(
         benchmark.tts_load_harness,
