@@ -471,6 +471,16 @@ tt_lab_glm_impl = ImplSpec(
     code_path="src/glm.cpp",
 )
 
+# tt-lab's standalone DeepSeek-V4.1-Flash decode engine (not TT-NN): `tt-lab dsv41-serve`, its own
+# OpenAI server on all 32 chips of a Galaxy, run from the stock image by
+# vllm-tt-metal/src/run_dsv41_tt.py. Built from tt-lab-private branch dsv41-shield.
+tt_lab_dsv41_impl = ImplSpec(
+    impl_id="tt_lab_dsv41",
+    impl_name="tt-lab-dsv41",
+    repo_url="https://github.com/tenstorrent/tt-lab",
+    code_path="src/dsv41_serve.cpp",
+)
+
 # IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
 # models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
 # the tt-model-bringup pipeline.
@@ -508,6 +518,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
     "tt_lab_glm": tt_lab_glm_impl,
+    "tt_lab_dsv41": tt_lab_dsv41_impl,
 }
 
 

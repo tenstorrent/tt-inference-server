@@ -1601,6 +1601,58 @@ _eval_config_list = [
             ),
         ],
     ),
+    # DeepSeek-V4.1-Flash-1017 on tt-lab's dsv41-serve (impl tt_lab_dsv41). The model card's instruct
+    # results use reasoning_effort 100 ("max") with temperature 1.0 and top_p 0.95; dsv41-serve samples
+    # the whole vocabulary on the device and refuses top_p below 1, so this runs top_p 1.0 (the card
+    # recommends "0.95 or 1.0"). Thinking on and effort max go in the request body. No top_k: the
+    # server refuses it. On an Exabox Galaxy with these settings (4 at a time, max_tokens 131072) a
+    # full run took about 5.5 h and the longest reply used 73K tokens.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        tasks=[
+            EvalTask(
+                # Graduate-level science multiple choice, reasoning then answer (198 questions).
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=4,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=90.9,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (GPQA Diamond Pass@1, reasoning_effort 100)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                request_body={
+                    "chat_template_kwargs": {"thinking": True},
+                    "reasoning_effort": "max",
+                },
+                gen_kwargs={
+                    "max_gen_toks": 131072,  # dsv41-serve --max 131072 (DSV41_TT_MAX_TOKENS)
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.999,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+                wall_clock_timeout_seconds=9 * 3600,
+            ),
+        ],
+    ),
     # GLM-5.3-Flash on tt-lab's glm-tt (impl tt_lab_glm). Chat API with the model card's sampling
     # (temperature 1.0, top_p 0.95; https://huggingface.co/zai-org/GLM-5.3-Flash), streamed. The model
     # always thinks at max effort, so every generative task gets a reasoning budget (lm-eval's default

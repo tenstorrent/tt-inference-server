@@ -7287,3 +7287,129 @@ templates:
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image); this is
   # the vLLM dev image the entry above uses.
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
+
+# DeepSeek-V4.1-Flash-1017 on tt-lab's own decode engine (impl tt_lab_dsv41): one `tt-lab dsv41-serve`
+# process on all 32 chips of the Galaxy, its own OpenAI-compatible server, no vLLM. Same shape as
+# the GLM row above: tt-lab is a prebuilt binary that ships with its own loader and C/C++ libraries
+# (tt-lab-private branch dsv41-shield, commit 19f4285c), so the stock image runs it, and
+# docker_entrypoint replaces the image's entrypoint with vllm-tt-metal/src/run_dsv41_tt.py, which
+# maps DEVICE, the checkpoint and the bearer key (VLLM_API_KEY, else API_KEY, else the JWT of
+# JWT_SECRET) onto dsv41-serve on port 8000; the key reaches it in TT_LAB_API_KEY, not argv.
+# hf_weights_repo holds the release's safetensors as-is (shards 47 and 48, one 101.5 GB Engram
+# table each, split into three parts with a NAME.safetensors.manifest that tt-lab reads as the one
+# file), tokenizer.json, config.json, token_map.u32 and the tt-lab package folder.
+# Checked on an Exabox Galaxy (bh-glx-120-c03u02, KMD 2.11.0) from the weka copy of the same
+# checkpoint: Hello md5 d26f51a2, GPQA Diamond with the eval config's settings (see eval_config.py).
+- weights:
+    - deepseek-ai/DeepSeek-V4.1-Flash-1017
+  impl: tt_lab_dsv41
+  inference_engine: MEDIA
+  model_type: LLM
+  supported_modalities:
+    - text
+  hf_weights_repo: tenstorrent/DeepSeek-V4.1-Flash-TTQ
+  # 510 GB of safetensors plus the package; placed on the chips once, then kept resident across
+  # restarts (a signature and a full device checksum decide whether to reload).
+  min_disk_gb: 530
+  min_ram_gb: 256  # TODO: measure on a CI Galaxy
+  uses_tensor_model_cache: false
+  # dsv41-serve answers /health only once the weights are placed (about 11 min from weka the first
+  # time, about 10 s when they are resident).
+  has_builtin_warmup: true
+  system_requirements:
+    firmware:
+      specifier: ">=19.8.1"  # TODO: copied from the GLM row; confirm
+      mode: STRICT
+    kmd:
+      specifier: ">=2.10.0"  # tt-lab accepts 2.10 since 35239918; checked on 2.11.0
+      mode: STRICT
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # dsv41-serve --slots 4 --groups 4: four lanes decode in the same ring steps. Requests that
+      # wait while a batch runs join the next batch, so a long reply holds up the other three lanes.
+      max_concurrency: 4
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      # TODO: CI's Galaxies are cabled as 2 x 4 ladders per board (see the GLM row). dsv41's
+      # 32-chip ring has only run on Exabox and team Galaxies (TT_LAB_DEVICE_GROUPS=0,24,16,8,
+      # the launcher's default); confirm it forms on a bh-galaxy runner before relying on it.
+      docker_stop_timeout: 30  # TODO: measure
+      docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_dsv41_tt.py
+  env_vars:
+    # The package's folder in the downloaded weights repo; each build gets its own folder, so a
+    # cached download fetches a new one.
+    DSV41_TT_PACKAGE: tt-lab-19f4285c
+    # Largest max_tokens a request may ask for: the GPQA config sends max_gen_toks 131072.
+    DSV41_TT_MAX_TOKENS: "131072"
+    DSV41_TT_CONTEXT: "262144"
+  metadata:
+    deepseek-ai/DeepSeek-V4.1-Flash-1017:
+      # The repo's split shards are not the release's file list: complete when these are present.
+      checkpoint_files:
+        - config.json
+        - tokenizer.json
+        - tokenizer_config.json
+        - model.safetensors.index.json
+        - token_map.u32
+        - model-00001-of-00048.safetensors
+        - model-00002-of-00048.safetensors
+        - model-00003-of-00048.safetensors
+        - model-00004-of-00048.safetensors
+        - model-00005-of-00048.safetensors
+        - model-00006-of-00048.safetensors
+        - model-00007-of-00048.safetensors
+        - model-00008-of-00048.safetensors
+        - model-00009-of-00048.safetensors
+        - model-00010-of-00048.safetensors
+        - model-00011-of-00048.safetensors
+        - model-00012-of-00048.safetensors
+        - model-00013-of-00048.safetensors
+        - model-00014-of-00048.safetensors
+        - model-00015-of-00048.safetensors
+        - model-00016-of-00048.safetensors
+        - model-00017-of-00048.safetensors
+        - model-00018-of-00048.safetensors
+        - model-00019-of-00048.safetensors
+        - model-00020-of-00048.safetensors
+        - model-00021-of-00048.safetensors
+        - model-00022-of-00048.safetensors
+        - model-00023-of-00048.safetensors
+        - model-00024-of-00048.safetensors
+        - model-00025-of-00048.safetensors
+        - model-00026-of-00048.safetensors
+        - model-00027-of-00048.safetensors
+        - model-00028-of-00048.safetensors
+        - model-00029-of-00048.safetensors
+        - model-00030-of-00048.safetensors
+        - model-00031-of-00048.safetensors
+        - model-00032-of-00048.safetensors
+        - model-00033-of-00048.safetensors
+        - model-00034-of-00048.safetensors
+        - model-00035-of-00048.safetensors
+        - model-00036-of-00048.safetensors
+        - model-00037-of-00048.safetensors
+        - model-00038-of-00048.safetensors
+        - model-00039-of-00048.safetensors
+        - model-00040-of-00048.safetensors
+        - model-00041-of-00048.safetensors
+        - model-00042-of-00048.safetensors
+        - model-00043-of-00048.safetensors
+        - model-00044-of-00048.safetensors
+        - model-00045-of-00048.safetensors
+        - model-00046-of-00048.safetensors
+        - model-00047-of-00048.safetensors.manifest
+        - model-00047-of-00048.safetensors.part1-of-3
+        - model-00047-of-00048.safetensors.part2-of-3
+        - model-00047-of-00048.safetensors.part3-of-3
+        - model-00048-of-00048.safetensors.manifest
+        - model-00048-of-00048.safetensors.part1-of-3
+        - model-00048-of-00048.safetensors.part2-of-3
+        - model-00048-of-00048.safetensors.part3-of-3
+        - tt-lab-19f4285c/SHA256SUMS
+        - tt-lab-19f4285c/bin/tt-lab
+        - tt-lab-19f4285c/runtime/ld-linux-x86-64.so.2
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
