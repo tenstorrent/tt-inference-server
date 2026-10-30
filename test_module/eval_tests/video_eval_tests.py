@@ -50,7 +50,12 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         generation_mode,
     )
 
-    i2v_subset = i2v_eval_subset(ctx.model_spec) if generation_mode == "I2V" else None
+    # CI runs the ci subset; a run-full-evals dispatch (no --ci-mode) all of it.
+    runtime_config = getattr(ctx, "runtime_config", None)
+    limit_samples_mode = getattr(runtime_config, "limit_samples_mode", None)
+    i2v_subset = (
+        i2v_eval_subset(limit_samples_mode) if generation_mode == "I2V" else None
+    )
     num_prompts = i2v_eval_num_pairs(i2v_subset) if i2v_subset else 5
     num_inference_steps = 40
     start_from = 0

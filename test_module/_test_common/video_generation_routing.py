@@ -13,7 +13,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 from pathlib import Path
 
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
@@ -25,10 +24,10 @@ FIXTURE_IMAGE_PATH = (
 # output shapes. Each video has its own shape, seed and Wan2.2's negative
 # prompt. Its manifest and first frames are read from the eval data on Hugging
 # Face (vbench_i2v.I2V_EVAL_HF_REPO), which also holds the tool that made them.
-# I2V_EVAL_SUBSET picks dev (5 videos), ci (20, the default) or all (65).
+# The run's eval scope picks the subset (i2v_eval_subset): dev (5 videos), ci
+# (20) or all (65).
 I2V_EVAL_MANIFEST = "pairs/manifest.json"
 I2V_EVAL_SUBSETS = ("dev", "ci", "all")
-I2V_EVAL_SUBSET_ENV = "I2V_EVAL_SUBSET"
 DEFAULT_I2V_EVAL_SUBSET = "ci"
 # What the benchmark and spec tests send; the eval sends each video's own.
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
@@ -67,30 +66,28 @@ def _load_fixture_image_base64() -> str:
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 
 
-def i2v_eval_subset(model_spec=None) -> str:
-    """The I2V eval's subset: ``I2V_EVAL_SUBSET``, or ci when unset.
+def i2v_eval_subset(limit_samples_mode: str | None) -> str:
+    """The I2V eval's subset for the run's ``--limit-samples-mode``.
 
-    Read from the deployment's model spec first, so a run can pick it with
-    ``run.py --override-env I2V_EVAL_SUBSET=dev``, then from the environment.
+    A full-evals run (no limit; CI's run-full-evals) runs all; ``--ci-mode``
+    (ci-nightly, CI's default) and the other CI modes run ci; smoke-test runs dev.
     """
-    env_vars = getattr(model_spec, "env_vars", None) or {}
-    subset = (
-        env_vars.get(I2V_EVAL_SUBSET_ENV)
-        or os.getenv(I2V_EVAL_SUBSET_ENV)
-        or DEFAULT_I2V_EVAL_SUBSET
-    )
-    if subset not in I2V_EVAL_SUBSETS:
-        raise ValueError(
-            f"{I2V_EVAL_SUBSET_ENV}={subset!r}; expected one of {I2V_EVAL_SUBSETS}"
-        )
-    return subset
+    if not limit_samples_mode:
+        return "all"
+    if limit_samples_mode.lower().replace("_", "-") == "smoke-test":
+        return "dev"
+    return "ci"
 
 
 def i2v_eval_videos(subset: str | None = None) -> list[dict]:
-    """The validation set's manifest entries in ``subset`` (default: the eval's), one per video."""
+    """The validation set's manifest entries in ``subset`` (default ci), one per video."""
     from .vbench_i2v import hf_snapshot
 
-    subset = subset or i2v_eval_subset()
+    subset = subset or DEFAULT_I2V_EVAL_SUBSET
+    if subset not in I2V_EVAL_SUBSETS:
+        raise ValueError(
+            f"I2V eval subset {subset!r}; expected one of {I2V_EVAL_SUBSETS}"
+        )
     manifest_path = hf_snapshot([I2V_EVAL_MANIFEST]) / I2V_EVAL_MANIFEST
     manifest = json.loads(manifest_path.read_text())
     return [e for e in manifest if subset == "all" or e[subset]]
@@ -114,7 +111,7 @@ def load_i2v_eval_pairs(num_pairs: int, subset: str | None = None) -> list[dict]
     """
     from .vbench_i2v import hf_snapshot
 
-    subset = subset or i2v_eval_subset()
+    subset = subset or DEFAULT_I2V_EVAL_SUBSET
     videos = i2v_eval_videos(subset)
     if num_pairs > len(videos):
         raise ValueError(

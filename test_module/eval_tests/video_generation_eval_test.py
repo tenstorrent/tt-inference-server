@@ -60,7 +60,7 @@ class VideoGenerationEvalsTestRequest:
     num_inference_steps: int = 40
     server_url: str | None = None
     frame_sample_rate: int = 8  # Sample every Nth frame for CLIP scoring
-    i2v_subset: str | None = None  # dev, ci or all; default I2V_EVAL_SUBSET or ci
+    i2v_subset: str | None = None  # dev, ci or all; default ci
 
 
 class VideoGenerationEvalsTest(BaseTest):

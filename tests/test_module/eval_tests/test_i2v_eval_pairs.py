@@ -14,7 +14,6 @@ import pytest
 from test_module._test_common import i2v_eval_num_pairs, load_i2v_eval_pairs
 from test_module._test_common.video_generation_routing import (
     I2V_EVAL_MANIFEST,
-    I2V_EVAL_SUBSET_ENV,
     WAN22_NEGATIVE_PROMPT,
     build_video_generation_payload,
 )
@@ -77,32 +76,41 @@ def eval_data(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "subset,count", [(None, 20), ("dev", 5), ("ci", 20), ("all", 65)]
 )
-def test_the_eval_runs_its_subset_ci_by_default(monkeypatch, eval_data, subset, count):
-    if subset:
-        monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, subset)
-    else:
-        monkeypatch.delenv(I2V_EVAL_SUBSET_ENV, raising=False)
-    assert i2v_eval_num_pairs() == count
+def test_each_subset_and_ci_by_default(eval_data, subset, count):
+    assert i2v_eval_num_pairs(subset) == count
 
 
-def test_the_deployments_model_spec_picks_the_subset_over_the_environment(
-    monkeypatch, eval_data
-):
-    # What run.py --override-env I2V_EVAL_SUBSET=... sets, which CI can reach.
+@pytest.mark.parametrize(
+    "limit_samples_mode,subset",
+    [
+        # CI's run-full-evals: no --ci-mode, no limit.
+        (None, "all"),
+        # --ci-mode, CI's default.
+        ("ci-nightly", "ci"),
+        ("ci-commit", "ci"),
+        ("ci-long", "ci"),
+        ("smoke-test", "dev"),
+    ],
+)
+def test_the_runs_eval_scope_picks_the_subset(limit_samples_mode, subset):
     from test_module._test_common import i2v_eval_subset
 
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "ci")
-    spec = SimpleNamespace(env_vars={I2V_EVAL_SUBSET_ENV: "dev"})
-    assert i2v_eval_subset(spec) == "dev"
-    assert i2v_eval_subset(SimpleNamespace(env_vars={})) == "ci"
-    assert i2v_eval_num_pairs(i2v_eval_subset(spec)) == 5
+    assert i2v_eval_subset(limit_samples_mode) == subset
+
+
+def test_the_dev_subset_is_the_manifests_dev_videos(eval_data):
     pairs = load_i2v_eval_pairs(5, "dev")
     assert [p["video_id"] for p in pairs] == [
         e["video_id"] for e in MANIFEST if e["dev"]
     ]
 
 
-def test_the_eval_requests_the_deployments_subset(monkeypatch, eval_data):
+@pytest.mark.parametrize(
+    "limit_samples_mode,count,subset", [(None, 65, "all"), ("ci-nightly", 20, "ci")]
+)
+def test_the_eval_requests_the_runs_subset(
+    monkeypatch, eval_data, limit_samples_mode, count, subset
+):
     import sys
 
     from test_module.eval_tests import video_eval_tests as mod
@@ -125,27 +133,27 @@ def test_the_eval_requests_the_deployments_subset(monkeypatch, eval_data):
             VideoGenerationEvalsTestRequest=SimpleNamespace,
         ),
     )
-    monkeypatch.delenv(I2V_EVAL_SUBSET_ENV, raising=False)
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(
-            hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-            env_vars={I2V_EVAL_SUBSET_ENV: "all"},
+            hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers", env_vars={}
         ),
+        runtime_config=SimpleNamespace(limit_samples_mode=limit_samples_mode),
         base_url="http://x",
     )
     mod._run_video_generation_eval(ctx)
-    assert (seen["request"].num_prompts, seen["request"].i2v_subset) == (65, "all")
+    assert (seen["request"].num_prompts, seen["request"].i2v_subset) == (
+        count,
+        subset,
+    )
 
 
-def test_an_unknown_subset_is_refused(monkeypatch):
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "nightly")
-    with pytest.raises(ValueError, match=I2V_EVAL_SUBSET_ENV):
-        i2v_eval_num_pairs()
+def test_an_unknown_subset_is_refused(eval_data):
+    with pytest.raises(ValueError, match="nightly"):
+        i2v_eval_num_pairs("nightly")
 
 
-def test_each_video_carries_its_request(monkeypatch, eval_data):
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
-    pairs = load_i2v_eval_pairs(i2v_eval_num_pairs())
+def test_each_video_carries_its_request(eval_data):
+    pairs = load_i2v_eval_pairs(i2v_eval_num_pairs("dev"), "dev")
     dev = [e for e in MANIFEST if e["dev"]]
     assert eval_data.fetched == [I2V_EVAL_MANIFEST] * 2 + [e["image"] for e in dev]
     assert {p["shape"] for p in pairs} == SHAPES
@@ -158,18 +166,16 @@ def test_each_video_carries_its_request(monkeypatch, eval_data):
     assert any(p.get("camera_motion") for p in pairs)
 
 
-def test_a_first_frame_that_does_not_match_is_refused(monkeypatch, eval_data):
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
+def test_a_first_frame_that_does_not_match_is_refused(eval_data):
     first = next(e for e in MANIFEST if e["dev"])
     (eval_data.root / first["image"]).write_bytes(b"changed")
     with pytest.raises(ValueError, match="sha256"):
-        load_i2v_eval_pairs(5)
+        load_i2v_eval_pairs(5, "dev")
 
 
-def test_the_eval_refuses_more_videos_than_its_subset_has(monkeypatch, eval_data):
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
+def test_the_eval_refuses_more_videos_than_its_subset_has(eval_data):
     with pytest.raises(ValueError, match="wants 6 videos"):
-        load_i2v_eval_pairs(6)
+        load_i2v_eval_pairs(6, "dev")
 
 
 def test_payload_sends_the_videos_shape_seed_and_negative_prompt():
@@ -212,9 +218,8 @@ def test_the_eval_sends_each_video_its_request_and_rejects_wrong_shapes(
     monkeypatch.setattr(
         test, "_poll_video_completion", lambda **kw: f"/tmp/{kw['job_id']}.mp4"
     )
-    monkeypatch.setenv(I2V_EVAL_SUBSET_ENV, "dev")
 
-    pairs = load_i2v_eval_pairs(5)
+    pairs = load_i2v_eval_pairs(5, "dev")
     videos = test._generate_videos(
         prompts=[p["prompt"] for p in pairs],
         model_name="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
