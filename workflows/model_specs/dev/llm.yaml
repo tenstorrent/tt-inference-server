@@ -2551,6 +2551,7 @@ templates:
         DSV41_VLLM_MAX_PARTIAL: "8"  # Up=2: all eight prompts of the B=8 build may be part-way through their prefill
         DSV41_PREFILL_UP: "2"  # users per mesh row of the prefill trace (Up=2: two slots per row, replay cost 1.67x of Up=1, under the 2x bar)
         DSV41_PREFILL_UP_BATCH: "1"  # both slots of a row in ONE replay at different chunk starts (per-slot tables); replaces the row-aware placement (a no-op at Up=2 = users per row)
+        DSV41_UNI_TOPO: "linear"  # unified-MoE dispatch/combine over the 4 mesh rows as a line, not the wrap ring: the ring default hangs the combine kernel intermittently under 8 concurrent 8k prefills (OPTIMIZATIONS.md 8.17), prefill cost <1 %
         DSV41_SPEC_MAX_CTX: "1048832"  # speculative decode context cap = max_model_len + 256 (bench_b8 spec)
         DSV41_VLLM_SPEC_ADAPT: "1"  # adaptive speculative decode (two verify runners)
         DSV41_VLLM_SPEC_KS: "3,5"  # the adaptive runner set
