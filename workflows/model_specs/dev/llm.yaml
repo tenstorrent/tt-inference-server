@@ -3105,11 +3105,28 @@ templates:
         # next MoE token-dispatch prefill op on the ring fabric hangs (tt-triage 2026-10-25 23:15). With the ladder the
         # local replay passed that point (0 re-captures); ~40 s of boot.
         GEMMA4_WARMUP_PREFILL_ISLS: "512,1024,2048,4096,8192,16384,32768"
-        # Plain decode on the lane engine for now: MTP speculation here is a follow-up (the plugin's lane
-        # speculation PR and the model's lane verify path); the other five Blackhole entries speculate.
-        # Text + image + video: the multimodal serving class for the checkpoint's architecture
-        # (same text path; adds the on-device vision tower and vLLM's multimodal processor).
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
+        # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
+        # speculative contract class, on the lane engine: the plugin's lane speculation (vllm-tt-plugin#255:
+        # the slot batch widened to [lanes x per_lane, 1+K], padding rows between the live slots) and the
+        # model's lane verify path (tt-metal: one captured record per mesh column over its lane's rows).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractVisionForConditionalGeneration"
+        # MTP speculative decoding (the it-assistant KV-shared drafter on the plugin's speculative contract;
+        # vLLM schedules the drafts, speculative_config below; plain lane decode is the fallback). On the lane
+        # engine the table is PER LANE (per mesh column): the step's record is the smallest covering the
+        # BUSIEST lane's drafting rows and one K serves every lane that step (one captured graph per
+        # column), so K=5 while no lane has more than 5 drafting rows, K=3 up to 8, K=1 up to 16, plain
+        # above (the busiest lane decides; a lighter lane takes its K). The plugin's draft cap is published
+        # flat at the folded max_num_seqs (128): the per-lane bands are applied by the model.
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"
+        GEMMA4_SPEC_MAX_ROWS: "16"  # per lane: above 16 live rows on a lane the step is the plain lane decode (16 x 2 fills the per-column verify tile)
+        # Records x rungs: 4 shapes x 5 rungs (2K..256K) + 4 seed traces beside the lane decode trace and the four
+        # lane prefill frames; the 26B QB2 measured 17-23 MB per record (4 shapes x 5 rungs ~510 MB in use with its
+        # decode traces), the Galaxy column adds the lane gather/scatter collectives per layer. The boot log's
+        # "[spec-serving] plan: ... of trace region" and "[spec-serving] captured ... MB in use" lines are the
+        # check against the 1.2 GB region below; a TT_FATAL at the capture names the fix (fewer rungs: 4 drops
+        # the 2K rung, ~-110 MB; 3 drops 8K too).
+        GEMMA4_SPEC_WIDTH_RUNGS: "5"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # KV pool PER LANE (the plugin applies it to every lane un-divided; vLLM's "Maximum concurrency"
@@ -3149,7 +3166,12 @@ templates:
         max_num_seqs: 32  # per lane; max_concurrency above is whole-box
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
+        # The MTP contract class declares supports_async_decode / supports_async_spec_decode, which is what a
+        # lane launch with speculation needs (the lane verify takes the plugin's deferred speculative path,
+        # never overlapped with the next step; ordinary lane decode steps keep overlapping).
         async_scheduling: true
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
