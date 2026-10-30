@@ -613,8 +613,11 @@ templates:
         # unchanged. The scheduler flag and the generator flag must agree
         # (the EngineCore refuses to start otherwise); the restore is
         # captured per slot and width bucket up to 128K (~90 MB of trace
-        # region at 32 slots), eager at the wider buckets.
-        TT_SCHED_DEFER_FINAL: "1"
+        # region at 32 slots), eager at the wider buckets. "hold": no admission while a cohort decodes, so the
+        # replacements of the requests that finish first wait for the
+        # cohort and prefill together; under "1" their bulks ran between
+        # the stragglers' decode steps and filled their windows.
+        TT_SCHED_DEFER_FINAL: "hold"
         TT_V41_DEFER_FINAL: "1"
         TT_V41_RESTORE_TRACE: "1"
         TT_V41_RESTORE_TRACE_MAX_WIDTH: "131072"
