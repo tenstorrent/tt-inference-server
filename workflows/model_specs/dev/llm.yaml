@@ -470,7 +470,14 @@ templates:
         # time of a mostly padded chunk exceeds a full one's
         # so the c1 points up to isl 4096 run in one
         # 5,120-row chunk and isl 8192 in two.
-        TT_V41_CHUNK: "5120"
+        # 10,240: the
+        # per-chunk items (the collectives' floors, the ~500 layout and elementwise
+        # ops, the index term's per-chunk part) halve per token: -9 % of prefill
+        # device time per token at 16K and from 128K up, -5 % at 64K (6.4 chunks
+        # round to 7), -1 % at 32K. Prompts up to 5,120 tokens keep the 5,120-row
+        # geometry below (TT_V41_SHORT_CHUNK), so the one-chunk points do not
+        # pay the larger chunk's padded rows.
+        TT_V41_CHUNK: "10240"
         # Prompt lengths whose prefill is captured per slot at warm-up and
         # replayed: the four registered c1 points, each
         # isl plus the 4 tokens the chat template adds. Any other length runs
@@ -482,7 +489,10 @@ templates:
         # MoE padding configs and per-length captures, which a listed prompt
         # length that fits it replays instead of the 5,120-row chunk: 1,028
         # rows 229 -> 160 ms of device, the decode tokens the same.
-        TT_V41_SHORT_CHUNK: "2048"
+        # 5,120 beside 2,048: the former full chunk as a second short
+        # geometry, so a prompt of 2,049 to 5,120 tokens (the 4K points) prefills
+        # in one 5,120-row chunk as before instead of a 10,240-row one.
+        TT_V41_SHORT_CHUNK: "2048,5120"
         # A generic prefill chunk builds each index mask once per ratio and
         # score width, row-major, shared by its index sources, which add it to
         # the score kernel's row-major output directly and read a tiled twin
@@ -674,7 +684,7 @@ templates:
         # request per prefill step (the scheduler keeps the chunks aligned),
         # so a wave's 32 prompts prefill one after another and every chunk
         # replays a generic capture.
-        max_num_batched_tokens: "5120"
+        max_num_batched_tokens: "10240"
         # The checkpoint's quantization_config describes its fp8 / fp4 weights,
         # which the TT implementation dequantizes itself; without this vLLM
         # would treat the model as fp8-quantized.
