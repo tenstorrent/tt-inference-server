@@ -255,6 +255,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
@@ -831,6 +832,7 @@ templates:
         trace_mode: decode_only
         enable_model_warmup: false
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         hf-overrides: '{"architectures":["TTGemma4A4BForCausalLM"]}'
@@ -1199,6 +1201,7 @@ templates:
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
@@ -1273,6 +1276,7 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
@@ -3025,6 +3029,7 @@ templates:
         l1_small_size: 65536
         decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
         block_size: 128
@@ -3137,6 +3142,7 @@ templates:
         l1_small_size: 65536
         decode_interleave_prefill_steps: 1  # one decode-only step (~0.1 s) after every prefill step: with 3-9 s prefill steps the default 2:1 starved running users
       vllm_args:
+        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
         block_size: 128
