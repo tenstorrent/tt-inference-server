@@ -127,3 +127,24 @@ def test_cache_hostpath_includes_impl():
     r = _render("model=Qwen3-32B", "device=galaxy", "impl=qwen3_32b_galaxy")
     assert r.returncode == 0, r.stderr
     assert "/opt/cache/Qwen3-32B-galaxy-qwen3_32b_galaxy" in r.stdout
+
+
+def test_glm53_flash_galaxy_renders_its_own_server():
+    import yaml
+
+    r = _render("model=GLM-5.3-Flash", "device=blackhole_galaxy")
+    assert r.returncode == 0, r.stderr
+    docs = {d["kind"]: d for d in yaml.safe_load_all(r.stdout) if d}
+    pod = docs["Deployment"]["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    # media: the image's entrypoint runs, with no vLLM arguments.
+    assert "args" not in container
+    assert "tt-lab-glm" in container["image"]
+    for probe in ("startupProbe", "livenessProbe", "readinessProbe"):
+        assert container[probe]["httpGet"]["path"] == "/health"
+    assert container["resources"]["requests"]["memory"] == "400Gi"
+    assert docs["ConfigMap"]["data"]["MODEL"] == "GLM-5.3-Flash"
+    assert docs["ConfigMap"]["data"]["DEVICE"] == "blackhole_galaxy"
+    claim = docs["ResourceClaimTemplate"]["spec"]["spec"]["devices"]["requests"][0]
+    assert claim["exactly"]["count"] == 32
+    assert "galaxy-blackhole" in claim["exactly"]["selectors"][0]["cel"]["expression"]

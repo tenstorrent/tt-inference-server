@@ -28,3 +28,16 @@ def test_media_resources_from_explicit_min_ram(media_spec):
 def test_media_owned_paths_include_liveness_path():
     paths = MediaMapper().owned_leaf_paths()
     assert ("probes", "liveness", "path") in paths
+
+
+def test_media_liveness_path_for_an_impl_with_its_own_server(media_spec):
+    # glm-tt serve (tt_lab_glm) has no /tt-liveness: it answers /health and /v1/models.
+    import dataclasses
+
+    from workflows.model_spec import tt_lab_glm_impl
+
+    spec = dataclasses.replace(media_spec, impl=tt_lab_glm_impl)
+    cfg = MediaMapper().map(spec).config
+    assert cfg.probes.liveness.path == "/health"
+    assert cfg.probes.readiness.path is None
+    assert cfg.image == MediaMapper().map(media_spec).config.image

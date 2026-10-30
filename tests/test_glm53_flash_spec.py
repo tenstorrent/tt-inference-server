@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from workflows.helm_generator.cli import DEFAULT_VALUES_PATH, filter_specs, generate
 from workflows.host_packages import host_packages_provide_weights
 from workflows.model_spec import (
     _MODEL_SPECS_DIR,
@@ -18,6 +19,7 @@ from workflows.model_spec import (
 from workflows.run_docker_server import generate_docker_run_command
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import HostSetupManager
+from workflows.utils import get_repo_root_path
 
 GLM_GALAXY_ID = "id_tt-lab-glm_GLM-5.3-Flash_blackhole_galaxy"
 # The GLM-5.3-Flash rows are dev-only, as CI's run.py --dev-mode resolves them.
@@ -120,3 +122,54 @@ def test_glm_galaxy_docker_command_needs_its_packages(tmp_path):
     spec = dataclasses.replace(spec, device_model_spec=device)
     with pytest.raises(ValueError, match="does not exist on this host"):
         generate_docker_run_command(spec, _galaxy_runtime())
+
+
+def test_glm_galaxy_helm_values_in_sync_with_the_dev_spec(tmp_path):
+    """values.yaml's GLM-5.3-Flash entry is generated from this dev row (the chart's
+    test_values_in_sync regenerates from the prod catalog only, which keeps it as is):
+    MODEL_SPECS_ENV=dev python -m workflows.helm_generator --model GLM-5.3-Flash."""
+    work = tmp_path / "values.yaml"
+    work.write_text(DEFAULT_VALUES_PATH.read_text())
+    specs = filter_specs(MODEL_SPECS.values(), model_names=["GLM-5.3-Flash"])
+    assert [spec.model_id for spec in specs] == [GLM_GALAXY_ID]
+    generate(values_path=work, specs=specs)
+    assert work.read_text() == DEFAULT_VALUES_PATH.read_text()
+
+
+def test_glm_galaxy_helm_values():
+    import yaml
+
+    values = yaml.safe_load(DEFAULT_VALUES_PATH.read_text())
+    model = values["models"]["GLM-5.3-Flash"]
+    assert model["defaultEngine"] == "media"
+    impl = model["media"]["blackhole_galaxy"]["impls"]["tt_lab_glm"]
+    spec = MODEL_SPECS[GLM_GALAXY_ID]
+    assert f"{impl['image']['repository']}:{impl['image']['tag']}" == spec.docker_image
+    # glm-tt serve answers /health and /v1/models only; the chart's default /tt-liveness
+    # for a media engine would restart a serving pod.
+    assert impl["probes"]["liveness"]["path"] == "/health"
+    assert impl["resources"]["requests"]["memory"] == f"{spec.min_ram_gb}Gi"
+    env = {item["name"]: item["value"] for item in impl["env"]}
+    assert (
+        env["GLM_TT_EXTRA_ARGS"] == spec.device_model_spec.env_vars["GLM_TT_EXTRA_ARGS"]
+    )
+    assert env["GLM_TT_PACKAGE"] == spec.env_vars["GLM_TT_PACKAGE"]
+    extra = {item["name"]: item["value"] for item in impl["extraEnv"]}
+    assert extra["TT_LAB_DIRTY_MARKER"].startswith(
+        "/home/container_app_user/cache_root/"
+    )
+
+
+def test_glm_galaxy_image_downloads_the_spec_weights_repo():
+    """The image's entrypoint downloads GLM_TT_WEIGHTS_REPO; it must be the spec's."""
+    spec = MODEL_SPECS[GLM_GALAXY_ID]
+    dockerfile = (
+        get_repo_root_path() / "vllm-tt-metal" / "tt-lab-glm.Dockerfile"
+    ).read_text()
+    assert f"GLM_TT_WEIGHTS_REPO={spec.hf_weights_repo} " in dockerfile
+    assert spec.docker_image.startswith(
+        "ghcr.io/tenstorrent/tt-inference-server/tt-lab-glm-ubuntu-22.04-amd64@sha256:"
+    )
+    # The launcher sits where the spec's docker_entrypoint expects it.
+    assert "/home/container_app_user/app/src/" in dockerfile
+    assert LAUNCHER[1].startswith("/home/container_app_user/app/src/")

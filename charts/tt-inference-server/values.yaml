@@ -4577,3 +4577,46 @@ models:
               - name: VLLM_TARGET_DEVICE
                 value: tt
     defaultEngine: vllm
+  GLM-5.3-Flash:
+    media:
+      blackhole_galaxy:
+        defaultImpl: tt_lab_glm
+        impls:
+          tt_lab_glm:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/tt-lab-glm-ubuntu-22.04-amd64@sha256
+              tag: '0000000000000000000000000000000000000000000000000000000000000000'
+            probes:
+              liveness:
+                path: /health
+            resources:
+              requests:
+                memory: 400Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GLM_TT_EXTRA_ARGS
+                value: --users 2 --context 262144 --session-positions 262144 --session-ram-gb 64 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120
+              - name: GLM_TT_MAX_TOKENS
+                value: '131072'
+              - name: GLM_TT_MTP
+                value: glm53-flash-mtp-plan0h.ttq
+              - name: GLM_TT_PACKAGE
+                value: glm-tt-l5-6e3b301c
+              - name: GLM_TT_TTQ
+                value: glm53-flash-plan0h.ttq
+              - name: GLM_TT_VOCAB
+                value: GLM-5.3-Flash-vocab.gguf
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+            # Hand-tuned, kept by the generator (it owns only image, resources.requests.memory,
+            # progressDeadlineSeconds, env and probes.liveness.path). The chart mounts no
+            # /var/lib/tenstorrent, so name the dirty-chip marker: on the node's cache hostPath it
+            # is this host's, and run_glm_tt.py keeps an explicit marker (glm-tt then exits 3
+            # until the chips are reset with tt-smi -glx_reset and the file is deleted) instead of
+            # removing it as a CI shared-cache one.
+            extraEnv:
+              - name: TT_LAB_DIRTY_MARKER
+                value: /home/container_app_user/cache_root/glm-tt.dirty
+    defaultEngine: media
