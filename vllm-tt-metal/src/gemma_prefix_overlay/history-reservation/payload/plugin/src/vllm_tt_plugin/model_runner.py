@@ -1497,12 +1497,23 @@ class TTModelRunner:
         point, so a greedy request carrying them is still greedy.
         """
         batch = self.input_batch
+        # A model declaring ``spec_sampled_verify`` returns, for every verify
+        # row, a token sampled with that request's own temperature/top-k/top-p
+        # and an independent per-position seed. Drafts here are deterministic,
+        # so accepting while the sample equals the draft and committing the first
+        # mismatching sample is exact speculative sampling: a sampled request is
+        # speculable. Penalties still route sampling to the host and stay out.
+        sampled_verify = bool(
+            (getattr(type(self.model), "model_capabilities", None) or {}).get(
+                "spec_sampled_verify", False
+            )
+        )
         # getattr rather than attribute access: the gate has to stay total for
         # any batch the runner is handed. A batch that tracks none of these
         # sets has no sampled request to withhold drafts from, so the answer is
         # the same as an empty set -- speculable.
         for attr in (
-            "random_reqs",
+            *(() if sampled_verify else ("random_reqs",)),
             "presence_penalties_reqs",
             "frequency_penalties_reqs",
             "repetition_penalties_reqs",
@@ -1652,12 +1663,35 @@ class TTModelRunner:
             # A verify has authoritative submitted positions. Its physical
             # acceptance count can exceed the prefix retained at max_model_len.
             positions = self._committed_positions(model_input.input_positions, width)
+        history_kwargs = {}
+        if (getattr(type(self.model), "model_capabilities", None) or {}).get(
+            "spec_token_history", False
+        ):
+            # Each row's full token history (prompt, including prefix-cached
+            # tokens, and every committed output token), as a host view of the
+            # persistent batch's token buffer. Rows without a live request get
+            # None. Read after the commit, so the newest tokens are present.
+            histories = []
+            batch = self.input_batch
+            for row in range(rows):
+                req_id = row_req_ids[row] if row < len(row_req_ids) else None
+                batch_row = (
+                    batch.req_id_to_index.get(req_id) if req_id is not None else None
+                )
+                if batch_row is None:
+                    histories.append(None)
+                else:
+                    histories.append(
+                        batch.token_ids_cpu[batch_row, : int(batch.num_tokens[batch_row])]
+                    )
+            history_kwargs["token_history"] = histories
         drafted = self.model.propose_draft_tokens(
             num_drafts,
             committed,
             positions,
             counts,
             hidden=hidden,
+            **history_kwargs,
         )
         if not isinstance(drafted, DraftOutput):
             raise TypeError(
@@ -2053,7 +2087,14 @@ class TTModelRunner:
                 if _step_verifies(
                     self._spec_supports_narrow_decode,
                     num_valid_drafts,
-                    accepted_counts,
+                    # A model declaring ``spec_stateless_verify`` keeps no
+                    # per-candidate state, so a previous multi-token commit has
+                    # nothing to resolve and does not force a verify.
+                    torch.ones_like(accepted_counts)
+                    if (getattr(type(self.model), "model_capabilities", None) or {}).get(
+                        "spec_stateless_verify", False
+                    )
+                    else accepted_counts,
                     len(row_req_ids),
                 ):
                     self._note_unspeculable_verify_rows(row_req_ids)

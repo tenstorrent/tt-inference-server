@@ -1,23 +1,26 @@
 {
-  "schema": 1,
-  "modules": {
-    "vllm.v1.engine.core": "4570fa94425f70e2279e40431178dac5f5107ecd22a7904530722c2e95fda39b",
-    "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
-    "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
-    "vllm_tt_plugin.model_runner": "e6aefb99e59170f8a337af0f950437e6456132bf548f8cba1423447f577ba521",
-    "models.demos.gemma4_31b_qb2.tt.generator": "1649344fab53ee883b03a95b4acdbbc22f1efd417e0d7186e589a85f17b79e7e",
-    "models.demos.gemma4_31b_qb2.tt.generator_vllm": "6f17209405fb69ba4cc7c2d04769861830e996a9a7288b480e5ae7658b72833c",
-    "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
-    "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
-    "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
-    "vllm_tt_plugin.worker": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341",
-    "vllm_tt_plugin.config": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b",
-    "vllm_tt_plugin.async_decode": "e2491aa165559ea9979428838a5ebce6416e6164b511c0cd39b7eaa705c8c891",
-    "vllm_tt_plugin.input_batch": "51603c76fe0447e64a273faa5550fee8c77963336d538f6d02638476753684dc",
-    "vllm_tt_plugin.lane_scheduler": "59d6339b2ef465a4b0f7e7bec24afc8ab2eb15fbb208bc895b590d4b2a5bf207",
-    "vllm_tt_plugin.model_input": "3b7e664ba688ff1bedb5a90a606593e90820d79cd35d388f3308ff7080dec28f",
-    "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
-    "gemma_history_reservation": "57e537e89d9962c4dcbebc79db83978fe0bb9fb57793b049c4e85ce99d2e035e",
-    "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5"
-  }
+ "schema": 1,
+ "modules": {
+  "vllm.v1.engine.core": "4570fa94425f70e2279e40431178dac5f5107ecd22a7904530722c2e95fda39b",
+  "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
+  "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
+  "vllm_tt_plugin.model_runner": "f4b1ab60b3e9546eed18f71bb52150301384e718784bf2b5f6b80108e844f2c1",
+  "models.demos.gemma4_31b_qb2.tt.generator": "b40afa8d40a2121e945f7b8a09b38daa796b8a294995d03c42de56c1e5aa59b3",
+  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "bfe8576ad7a588aee2ddd9b0bea4de554f6d6e8fd45b8bfa809ea2740d9fa9c3",
+  "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
+  "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
+  "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
+  "vllm_tt_plugin.worker": "1367057f51d810c6480b90c03afd888de12df3dca22e199ee2782a16d39e7341",
+  "vllm_tt_plugin.config": "d7eae684d052f2dfbd970a154d92cc7eca1692c483d20b8fd74460d27f2f299b",
+  "vllm_tt_plugin.async_decode": "e2491aa165559ea9979428838a5ebce6416e6164b511c0cd39b7eaa705c8c891",
+  "vllm_tt_plugin.input_batch": "51603c76fe0447e64a273faa5550fee8c77963336d538f6d02638476753684dc",
+  "vllm_tt_plugin.lane_scheduler": "59d6339b2ef465a4b0f7e7bec24afc8ab2eb15fbb208bc895b590d4b2a5bf207",
+  "vllm_tt_plugin.model_input": "3b7e664ba688ff1bedb5a90a606593e90820d79cd35d388f3308ff7080dec28f",
+  "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
+  "gemma_history_reservation": "3eab7f3130a894d8ae8c26809434ad9349b506f3f31613d80e6317637b4ba049",
+  "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
+  "models.demos.gemma4_31b_qb2.tt.decoder": "fa2f144e07a58d8855bdb6446b959c1a875df3a9b2d45ac0a9a93fffc143aed7",
+  "models.demos.gemma4_31b_qb2.tt.model": "9160bef8fb7b4c2a985d9aa4a27557bb9f5adc2db6412a9a99c91959b44b4de0",
+  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
+ }
 }

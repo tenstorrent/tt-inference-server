@@ -106,7 +106,8 @@ def attest(executor_class, config):
                   tp=p.tensor_parallel_size == 1, pp=p.pipeline_parallel_size == 1,
                   dp=p.data_parallel_size == 1, world=p.world_size == 1,
                   lanes=get_tt_data_parallel_size(config) == 1,
-                  speculation=config.speculative_config is None,
+                  speculation=(config.speculative_config is None
+                               or os.environ.get('GEMMA_SPEC_NGRAM', '0') == '1'),
                   external_kv=getattr(config, 'kv_transfer_config', None) is None,
                   encoder=not getattr(config.model_config, 'is_encoder_decoder', True),
                   serial=os.environ.get('GEMMA_BATCH_PREFILL_MAX_BATCH', '1') == '1',
