@@ -259,7 +259,7 @@ templates:
         override_generation_config: '{"top_k": 32}'
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
         # explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -394,7 +394,7 @@ templates:
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
         # explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
@@ -1191,7 +1191,7 @@ templates:
         override_generation_config: '{"top_k": 32}'
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
         # explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -1267,7 +1267,7 @@ templates:
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
         # explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
@@ -3010,7 +3010,7 @@ templates:
         override_generation_config: '{"top_k": 32}'
         # The MTP contract classes ship synchronous in this phase (supports_async_decode off); the
         # explicit negative flag is needed because False booleans are dropped.
-        no-async-scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         enable-auto-tool-choice: true
