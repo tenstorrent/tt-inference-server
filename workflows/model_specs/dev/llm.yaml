@@ -287,7 +287,8 @@ templates:
         # per-request cost) and runs one 448x448 window (1024 patches) per tower call, which keeps
         # the per-request transient (1.13 GB + 68 MiB) under the reserve's 1 M whole-prefix copy.
         GLM53_VLLM_IMAGES: "1"
-        GLM53_VLLM_PREFIX_CACHING: "0"  # off at 32 slots: the host-store KDA snapshots cost 725-1194 ms per decode step (r3) vs 58-61 ms (r5)
+        GLM53_VLLM_PREFIX_CACHING: "1"  # slot-level APC (doc/serving/prefix_caching.md): multi-turn hits restore the slot's KDA snapshot; served 2026-10-29 (apc_r1)
+        GLM53_VLLM_APC_SNAPSHOTS: "2"  # two snapshot entries per slot in the HOST store (at 1 M x 4 users per row no device ring fits beside the tail chunks' transients: the live fit leaves the warm-ups' allowance): entry 0 rolls with the 16 K-aligned decode crossings (the multi-turn hit), entry 1 keeps the prompt's last chunk end (the repeated prompt); saves read the chips without blocking
         GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 32 distinct requests (one per slot), waves + the SP-first placement
         GLM53_RESIDENT_DECODE: "1"  # resident decode (2026-10-29): the traced step feeds its sampled ids back and advances the live positions on device, so a steady-state step uploads nothing; 14.1 vs 11.0 tok/s per user at 32 users, ids identical to the reload path
         GLM53_VLLM_VISION_RESIDENT: "0"
@@ -340,8 +341,8 @@ templates:
         # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
         media-io-kwargs: {"video": {"video_backend": "glm5next"}}
         mm-processor-cache-gb: 0
-        enable-prefix-caching: false  # follows GLM53_VLLM_PREFIX_CACHING "0" above (off at 32 slots; 2026-10-29)
-        no-async-scheduling: true  # synchronous scheduling for now: the resident chain admits vLLM's async scheduling (supports_async_decode under GLM53_RESIDENT_DECODE), validated separately before it is turned on here
+        enable-prefix-caching: true  # follows GLM53_VLLM_PREFIX_CACHING "1" above; the adapter confirms every hit before the scheduler commits it (confirms_prefix_cache_hits)
+        async-scheduling: true  # vLLM's async scheduling over the resident chain (supports_async_decode under GLM53_RESIDENT_DECODE; the adapter's ids readback is non-blocking and a chain step tolerates the plugin's one-step position lag): the scheduler of step N+1 overlaps device step N
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
