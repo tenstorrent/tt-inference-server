@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "scope": "DRAM-sharded decode matmul with more than one in0 tile row (per_core_M > 1): remove the M == 1 validation; single-row output subblocks when per_core_M > 1 (multi-row subblocks gave wrong results for per_core_N 8/11). Applied on top of the accepted stride+FillPad candidate.",
+ "base_candidate_sha256": "01d961eddddb9f60c23ee27696e72fe2af77f8dcd54432e931fd1e8199771406",
+ "patch": "matmul-dram-sharded-m2.patch",
+ "patch_sha256": "22811aba938906c3f0c53868dacd29af8f6267d474bd940c1cbe49ee15789a0c",
+ "sources": {
+  "ttnn/cpp/ttnn/operations/matmul/device/matmul_device_operation.cpp": {
+   "original": "0aa160afbbff0efeba414a632e5c723a5a5ef4df4916df92154e577ad494a83a",
+   "target": "079e2fd1e634710f1f0543fc070ebf79d9fd08df31a8a0b5cd083f2c068b89c3"
+  },
+  "ttnn/cpp/ttnn/operations/matmul/device/factory/matmul_multicore_reuse_mcast_dram_sharded_program_factory.cpp": {
+   "original": "99952f3c4879176f56379c4f5023394cd02079d950f6790fc77e0db6907d1a3c",
+   "target": "fcba7ab0fec81301f781a88fb283478b3d116136c891274a2bff4c1ae9092234"
+  }
+ },
+ "candidate_sha256": "30afca40d3fb82f4cf92bdb86d2eefd05cf6368c9a3afc024e3fb7c5f572d880",
+ "candidate_provenance": "Reproduced locally (2026-10-30) in an image whose sources and clang-20 hash equal the CI pins and whose stride/FillPad builds reproduced the CI-accepted hashes fb3478.. and 01d961.. bit-for-bit; same recorded compile/link commands. To be confirmed by the CI build in the first M2 serving run (install fails closed on any other hash).",
+ "evidence": "spec-decode LOG L15/L16: per_core_M=2 outputs bit-exact vs two M=32 calls for qkv (sliding/full), o (sliding, full with K block 16), gate/up (1 and 3 readers), down."
+}
