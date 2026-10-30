@@ -291,6 +291,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `AFM-4.5B` | n300, t3k |
 | `DeepSeek-R1-0528` | galaxy |
 | `DeepSeek-R1-Distill-Llama-70B` | galaxy, p150x4, p150x8, p300x2, t3k |
+| `K2-Horizon-7B` | p300x2 |
+| `Kolibri-1-BF16` | p300x2 |
 | `Llama-3.1-70B` | galaxy, p150x4, p150x8, p300x2, t3k |
 | `Llama-3.1-70B-Instruct` | galaxy, p150x4, p150x8, p300x2, t3k |
 | `Llama-3.1-8B` | galaxy, gpu, n150, n300, p150x8, p300, p300x2, t3k |
@@ -301,19 +303,27 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Llama-3.2-3B-Instruct` | n150, n300, t3k |
 | `Llama-3.3-70B-Instruct` | galaxy, p150x4, p150x8, p300x2, t3k |
 | `Mistral-7B-Instruct-v0.3` | n150, n300, t3k |
+| `Muse-Glimmer-30B` | p300x2 |
 | `QwQ-32B` | galaxy, t3k |
 | `Qwen2.5-72B` | galaxy, t3k |
 | `Qwen2.5-72B-Instruct` | galaxy, t3k |
+| `Qwen2.5-VL-32B-Instruct` | t3k |
+| `Qwen2.5-VL-72B-Instruct` | t3k |
+| `Qwen2.5-VL-7B-Instruct` | galaxy, t3k |
 | `Qwen3-32B` | blackhole_galaxy, galaxy, p150x8, p300x2, t3k |
 | `Qwen3-8B` | galaxy, n150, n300, t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
-| `Qwen3.6-27B` | p300x2 |
+| `Qwen3.5-27B` | p150x4 |
+| `Qwen3.6-27B` | p150x4, p300x2 |
 | `Qwen3.8-27B` | p300x2 |
 | `diffusiongemma-26B-A4B-it` | p300x2 |
 | `gemma-3-27b-it` | galaxy |
 | `gemma-4-12B-it` | blackhole_galaxy, p300x2 |
+| `gemma-4-26B-A4B-it` | p300x2 |
 | `gemma-4-31B-it` | blackhole_galaxy, p300x2 |
 | `gpt-oss-120b` | blackhole_galaxy, galaxy, p300x2, t3k |
+| `granite-4.2-30b` | p300x2 |
+| `olmOCR-2-7B-1025` | t3k |
 
 ### Media
 
