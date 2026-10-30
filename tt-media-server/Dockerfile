@@ -304,6 +304,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
+    wget \
+    ca-certificates \
     libjsoncpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
