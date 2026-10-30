@@ -29,7 +29,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
-from ..agentic_traces.charts import TELEMETRY_CHART_PREFIX, write_point_charts
+from ..agentic_traces.charts import (
+    CACHE_HIT_TOKEN_SOURCES,
+    PROMPT_TOKENS_BY_SOURCE,
+    TELEMETRY_CHART_PREFIX,
+    write_point_charts,
+)
 from ..agentic_traces.sweep_export import write_agentic_sweep
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
@@ -42,11 +47,8 @@ from .aiperf_prefix_cache import (
 
 logger = logging.getLogger(__name__)
 
-# vLLM partitions the prompt tokens it scheduled by where they came from, one
-# series per ``source`` label: ``local_cache_hit`` is the GPU prefix cache,
-# ``external_kv_transfer`` a KV-offload tier, ``local_compute`` the rest.
-PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
-_CACHE_HIT_TOKEN_SOURCE = "local_cache_hit"
+# The engine's prompt-token partition by source; see ``CACHE_HIT_TOKEN_SOURCES``.
+PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = (PROMPT_TOKENS_BY_SOURCE,)
 
 
 @dataclass(frozen=True)
@@ -738,10 +740,12 @@ def _parse_prefix_cache_metrics(
             metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
         return metrics
 
-    # Preferred, and what InferenceX's own aggregation reports
+    # Preferred, and InferenceX's own ``server_overall_cache_hit_rate``
     # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions the
     # prompt tokens it scheduled by origin, so the cache's share is a share of a
-    # whole and cannot exceed 100%. The hits/queries pair below is its fallback,
+    # whole and cannot exceed 100%. KV loaded through a connector is counted as
+    # a hit alongside the local prefix cache: neither was prefilled here. The
+    # hits/queries pair below is its fallback,
     # and is only equivalent while nothing queues -- a queued request is
     # re-queried on every scheduling attempt, which inflated the denominator to
     # 10.8x the tokens actually prefilled on a concurrency-8 replay and reported
@@ -749,7 +753,7 @@ def _parse_prefix_cache_metrics(
     by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
     prefilled_tokens = sum(by_source.values())
     if prefilled_tokens > 0:
-        cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
+        cached = sum(by_source.get(s, 0.0) for s in CACHE_HIT_TOKEN_SOURCES)
         return _with_endpoints(
             {
                 "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,

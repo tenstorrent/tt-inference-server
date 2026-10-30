@@ -850,6 +850,31 @@ class TestPrefixCacheMeasurement:
         assert metrics["prefix_cache_hits_measured"] == 4544928.0
         assert metrics["prefix_cache_queries_measured"] == 4771106.0
 
+    def test_token_sources_win_and_count_external_kv_as_hits(self, tmp_path):
+        """Preferred over the hit/query pair; KV from a connector was not
+        prefilled here either, so it is a hit alongside the local cache."""
+        export = _server_metrics_export()
+        export["metrics"]["vllm:prompt_tokens_by_source"] = {
+            "type": "counter",
+            "series": [
+                {
+                    "endpoint_url": "http://127.0.0.1:8000/metrics",
+                    "labels": {"source": source},
+                    "stats": {"total": total},
+                }
+                for source, total in (
+                    ("local_cache_hit", 600.0),
+                    ("external_kv_transfer", 250.0),
+                    ("local_compute", 150.0),
+                )
+            ],
+        }
+        (tmp_path / "server_metrics_export.json").write_text(json.dumps(export))
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(85.0)
+        assert metrics["prefix_cache_hit_tokens_measured"] == 850.0
+        assert metrics["prefix_cache_prompt_tokens_measured"] == 1000.0
+
     def test_warmup_traffic_is_excluded(self, tmp_path):
         """``metrics`` is the profiling phase; ``warmup_metrics`` must not count."""
         _write_server_metrics(tmp_path)
