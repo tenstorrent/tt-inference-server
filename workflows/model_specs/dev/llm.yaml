@@ -3473,12 +3473,11 @@ templates:
   impl: mimo_v2_6_flash
   inference_engine: VLLM
   device_model_specs:
-    # DP=4 lane-DP: the model declares folds_dp_into_lanes, so the plugin runs
-    # --data-parallel-size 4 as four in-process lanes, one TP=8 replica per mesh row.
+    # DP=4: one TP=8 replica per mesh row, each its own engine (submesh_engines below).
     - device: BLACKHOLE_GALAXY
-      # 4 lanes x 4 users. The fast decode path (streaming MoE, compact SWA
+      # 4 engines x 4 users. The fast decode path (streaming MoE, compact SWA
       # attention, slot-parity-independent layer 0) serves at most 4 users per
-      # replica; c=16 is the measured point (~1000 tok/s, TPOT ~13 ms).
+      # replica; c=16 is the measured point (~1000 tok/s, TPOT ~14 ms).
       max_concurrency: 16
       # Full 1M window: LongBench v2 sends up to 900K-token prompts. Each lane's
       # KV pool is capped by MIMO_KV_GB_PER_CHIP. The global KV pair split
@@ -3491,8 +3490,15 @@ templates:
       # First start converts the checkpoint into the TTNN cache (~186 GB): about 45 min of
       # weights plus the experts' MSE preparation (~1 min per MoE layer on the host).
       tensor_cache_timeout: 10800.0
+      # One vLLM engine per mesh row (the launcher discovers each 1x8 row's chips at startup) behind
+      # the launcher's prefix-cache aware proxy on the service port: a row prefills while the others
+      # decode. With the four rows as lanes of one engine (--data-parallel-size 4 alone), a prefill on
+      # any lane stalls every lane's decode. Measured (SPEED-Bench coding, c=16): 835 -> 984 tok/s;
+      # 16 x 256K prompts finish in 320 s instead of 685 (tt-metal mimo-v2.6/row-engines,
+      # doc/vllm_integration/README.md "One engine per Galaxy row").
+      submesh_engines: true
       env_vars:
-        MESH_DEVICE: "(4, 8)"  # one TP=8 replica per row
+        MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         # 4 x 1M requests per lane with the global KV pair split (tt-metal #62679 / #62724),
         # so 1M x 16 runs concurrently. 6.7 is tt-metal's pair-split default; 6.6 holds
@@ -3506,14 +3512,9 @@ templates:
         # Greedy decode rows sample in the decode trace; other rows fall back to
         # host sampling.
         sample_on_device_mode: decode_only
-        # Lane-DP: hold a prefill step until the oldest waiting request is 200 ms
-        # old, every slot is filled, or no request arrived for 25 ms, so prompts
-        # prefill together.
-        prefill_gather_ms: 200
-        prefill_gather_quiet_ms: 25
       vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 4  # per lane
+        data_parallel_size: 4  # the four engines
+        max_num_seqs: 4  # per engine
         block_size: 64  # required by the model
         enable_chunked_prefill: true
         # 4K is the model's native prefill chunk (the MoE prefill takes up to 4096
@@ -3544,12 +3545,15 @@ templates:
       tt_cache_env: MIMO_TT_CACHE
 
 # MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
-# mimo-v2.6-flash serves without it). The MTP layers draft through the plugin's model-owned
-# drafter contract in four draft groups of 2 slots per lane (MIMO_SPEC_SLOTS=8, MIMO_SPEC_GROUPS=4):
-# 1 draft per request (num_speculative_tokens clamps to it) for up to 4 requests per lane (requests
-# go to the least-loaded lane, so 16 at once). Needs an image built
-# from tt-metal mimo-v2.6/dev and vllm-tt-plugin mimo-v2.6-flash/vllm-plugin-dev (lane mode +
-# custom_class).
+# mimo-v2.6-flash serves without it). One MTP layer drafts 1 token for each of an engine's 4
+# requests (MIMO_SPEC_SLOTS=8: a verify runs the 4 requests as 4 groups of 2 slots, the grouped
+# verify attention scanning each request's KV once), through the plugin's model-owned drafter
+# contract. One engine per mesh row, as the entry above. Needs an image built from tt-metal
+# mimo-v2.6/dev (51d0cd357d7 or later: c=16 groups, packed grouped verify) and vllm-tt-plugin
+# mimo-v2.6-flash/single-lane: there an engine at --data-parallel-size 1 runs the model as one
+# lane, which chains verifies and accepts sampled ones on device (without it a sampled verify is
+# accepted on the host: ~93 tok/s). Measured (SPEED-Bench coding, c=16): 1179 tok/s greedy, 1146
+# at T=1.0, 1.92 tokens per verify.
 - weights:
     - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
   impl: mimo_v2_6_flash_mtp
@@ -3561,11 +3565,18 @@ templates:
       default_impl: true
       # Its own persistent volume (keyed by impl), so the first start converts the TTNN cache too.
       tensor_cache_timeout: 10800.0
+      # One vLLM engine per mesh row (the launcher discovers each 1x8 row's chips at startup) behind
+      # the launcher's prefix-cache aware proxy on the service port: a row prefills while the others
+      # decode. With the four rows as lanes of one engine (--data-parallel-size 4 alone), a prefill on
+      # any lane stalls every lane's decode. Measured (SPEED-Bench coding, c=16): 835 -> 984 tok/s;
+      # 16 x 256K prompts finish in 320 s instead of 685 (tt-metal mimo-v2.6/row-engines,
+      # doc/vllm_integration/README.md "One engine per Galaxy row").
+      submesh_engines: true
       env_vars:
-        MESH_DEVICE: "(4, 8)"
+        MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
-        MIMO_SPEC_SLOTS: 8
+        MIMO_SPEC_SLOTS: 8  # a verify holds 4 requests x 2 slots
         MIMO_SPEC_GROUPS: 4
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
@@ -3575,11 +3586,12 @@ templates:
         l1_small_size: 65536
         dispatch_core_axis: col
         sample_on_device_mode: decode_only
-        prefill_gather_ms: 200
-        prefill_gather_quiet_ms: 25
       vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 8  # per lane; the adapter needs --max-num-seqs >= MIMO_SPEC_SLOTS
+        data_parallel_size: 4  # the four engines
+        # Per engine: a verify needs MIMO_SPEC_SLOTS decode slots. Every request drafts while an
+        # engine holds at most 4; the proxy keeps engines within 2 requests of each other, and an
+        # engine holding more runs those steps without drafts.
+        max_num_seqs: 8
         block_size: 64
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096  # 4K prefill chunks, as the default entry
@@ -3590,7 +3602,7 @@ templates:
         tool-call-parser: mimo
         # Async scheduling: plain lane steps overlap, and fused verifies chain on device (the model
         # declares supports_async_spec_decode).
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 1}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # As the default entry: the repo name has no "<N>B" to infer these from.
