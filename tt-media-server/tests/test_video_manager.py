@@ -115,6 +115,15 @@ class TestBuildEncodeCmd:
         with pytest.raises(ValueError, match="Expected 3 RGB channels"):
             VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", 16, 0, "medium")
 
+    @pytest.mark.parametrize(
+        ("fps", "crf", "gop"),
+        [(24, 23, "24"), (25.0, 23, "25"), (16, 0, "16"), (0.4, 23, "1")],
+    )
+    def test_keyframe_every_second(self, fps, crf, gop):
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        cmd = VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", fps, crf, "fast")
+        assert cmd[cmd.index("-g") + 1] == gop
+
     def test_faststart_and_output_path(self):
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         cmd = VideoManager._build_encode_cmd(frames, "/tmp/test.mp4", 24, 0, "medium")
