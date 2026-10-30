@@ -34,14 +34,14 @@
    "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
    "module": "models.demos.gemma4_31b_qb2.tt.generator",
    "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-   "target": "47d3a1621ededd5c37b71231b7e4837ce4f78c4b2c43f27d5559c0d71359dc62"
+   "target": "0ed40f7b31bd2e78d28bb881933deb644c4b139ddee1f5215367ba146a2f8fae"
   },
   {
    "root": "metal",
    "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
    "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
    "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-   "target": "29ddee70a99317e0414dd63acc960103dabbeb2be4431b67fde8071ce13b0927"
+   "target": "0dddbdc228bf9117abe17cfa017467945f30d8cb4002d913286ac435a37d4cc3"
   },
   {
    "root": "metal",
@@ -69,24 +69,24 @@
    "path": "models/demos/gemma4_31b_qb2/tt/decoder.py",
    "module": "models.demos.gemma4_31b_qb2.tt.decoder",
    "base": "5b56a12280e55ee9696a065050a51d5273a6fb8470556bd4697a1bb5499d1ad2",
-   "target": "fa2f144e07a58d8855bdb6446b959c1a875df3a9b2d45ac0a9a93fffc143aed7"
+   "target": "68f27af11ca2a70b3af5a51dffeb3e625b44ae43f8a7dff8913ef076a7aa9fd9"
   },
   {
    "root": "metal",
    "path": "models/demos/gemma4_31b_qb2/tt/model.py",
    "module": "models.demos.gemma4_31b_qb2.tt.model",
    "base": "27fc5fe7da825668949d2fb1a98009064061995c0be8f8cefe69d26076db8d88",
-   "target": "9160bef8fb7b4c2a985d9aa4a27557bb9f5adc2db6412a9a99c91959b44b4de0"
+   "target": "1c4809757e70b577bb845997b04a894782c6fef1758591a9a230729e91a82b11"
   },
   {
    "root": "metal",
    "path": "models/demos/gemma4_31b_qb2/tt/spec_ngram.py",
    "module": "models.demos.gemma4_31b_qb2.tt.spec_ngram",
    "base": null,
-   "target": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
+   "target": "272036a40936df33228ee5e6b8c0cc72a438dd89f5738e1e0ad4826244d01dad"
   }
  ],
- "attestation_sha256": "9758066bf03d1c1ecb4e8c1b6a8cb70f2906348440593e920c35fdc8e77d6fb4",
+ "attestation_sha256": "0adb874ba61abf3364a478d7d8bc86901d4f9acfe889aa7561a41be3546dddc9",
  "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
  "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
  "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",

@@ -86,6 +86,10 @@ def install_runtime(metal):
             verify_sources(metal,bundle,True)
             tmp=installed.with_name(installed.name+'.fillpad-tmp');shutil.copy2(candidate,tmp);tmp.replace(installed)
         require(sha(installed)==target,'Installed binary mismatch');verify_sources(metal,bundle,True)
+        m2=os.environ.get('GEMMA_EXPERIMENT_MATMUL_M2','0')
+        require(m2 in ('0','1'),'Invalid GEMMA_EXPERIMENT_MATMUL_M2')
+        if m2=='1':
+            target=install_matmul_m2(metal,bundle,build,root,target);state['matmul_m2']=target
         import ttnn
         paths=mapped('_ttnncpp.so');require(paths==[str(installed)] and sha(paths[0])==target,'Actual mapped runtime mismatch')
         loaded={}
@@ -97,3 +101,31 @@ def install_runtime(metal):
         logging.getLogger(__name__).info('GEMMA_RUNTIME_STRIDE_PROOF %s',json.dumps(state,sort_keys=True))
         logging.getLogger(__name__).info('GEMMA_RUNTIME_FILLPAD_PROOF %s',json.dumps(state,sort_keys=True))
 def repr_placeholder(path):return 'pathlib.Path('+repr(str(path))+')'
+
+
+def install_matmul_m2(metal,bundle,build,root,base):
+    """Opt-in DRAM-sharded per_core_M>1 matmul patch on top of the accepted stride+FillPad runtime (spec-decode
+    64-row verify). Fail closed: pinned patch, original and patched source hashes, recorded compile/link commands,
+    and the pinned result hash (locally reproduced; see m2-pins.json)."""
+    m2=Path(__file__).with_name('gemma_prefix_overlay')/'fillpad-runtime-m2'
+    pins=json.loads((m2/'m2-pins.json').read_text())
+    require(base==pins['base_candidate_sha256'],'M2 requires the accepted FillPad candidate as base')
+    require(sha(m2/pins['patch'])==pins['patch_sha256'],'M2 patch hash mismatch')
+    installed=build/'lib/_ttnncpp.so'
+    states={n:sha(metal/n) for n in pins['sources']}
+    if sha(installed)!=pins['candidate_sha256']:
+        require(all(states[n]==v['original'] for n,v in pins['sources'].items()),'M2 sources are not the pinned originals')
+        subprocess.run(['patch','--batch','--forward','-p1','-i',str(m2/pins['patch'])],cwd=metal,check=True,timeout=30)
+        require(all(sha(metal/n)==v['target'] for n,v in pins['sources'].items()),'M2 patched sources mismatch')
+        commands=json.loads((bundle/'stride-build-commands.json').read_text())
+        with (root/'m2-build.log').open('w') as log:
+            for phase in ('compile','link'):
+                subprocess.run(commands[phase]['last_command'],cwd=build,shell=True,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=600)
+        built=build/'ttnn/_ttnncpp.so'
+        actual=sha(built)
+        logging.getLogger(__name__).info('GEMMA_RUNTIME_M2_BUILD %s',json.dumps({'candidate_sha256':actual,'pinned':pins['candidate_sha256']}))
+        require(actual==pins['candidate_sha256'],'M2 build differs from pinned candidate: '+actual)
+        tmp=installed.with_name(installed.name+'.m2-tmp');shutil.copy2(built,tmp);tmp.replace(installed)
+    require(sha(installed)==pins['candidate_sha256'],'M2 installed binary mismatch')
+    require(all(sha(metal/n)==v['target'] for n,v in pins['sources'].items()),'M2 installed sources mismatch')
+    return pins['candidate_sha256']

@@ -5,8 +5,8 @@
   "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
   "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
   "vllm_tt_plugin.model_runner": "8da3a7d99fc3f12405bcc5e0d7cfa10becbbbfdbaacff11ecee4cb9af393fec8",
-  "models.demos.gemma4_31b_qb2.tt.generator": "47d3a1621ededd5c37b71231b7e4837ce4f78c4b2c43f27d5559c0d71359dc62",
-  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "29ddee70a99317e0414dd63acc960103dabbeb2be4431b67fde8071ce13b0927",
+  "models.demos.gemma4_31b_qb2.tt.generator": "0ed40f7b31bd2e78d28bb881933deb644c4b139ddee1f5215367ba146a2f8fae",
+  "models.demos.gemma4_31b_qb2.tt.generator_vllm": "0dddbdc228bf9117abe17cfa017467945f30d8cb4002d913286ac435a37d4cc3",
   "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
   "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",
   "vllm.v1.core.sched.async_scheduler": "e586a0ef3c6778be56a93e7f9bb712d4de9de6e7d7fe7e3e1d51dae83ecfc508",
@@ -19,8 +19,8 @@
   "vllm_tt_plugin.loader": "d0dd2023a515506131c380926e37867b89946f495e50a5bf30ee49c8a74c2d41",
   "gemma_history_reservation": "94361d6e604521e827dd7b75f58192eb2df145528ade2b1a06f5ab08d2af04a8",
   "gemma_history_reservation_ledger": "24cb5d13b4113bd470f125e7ba4a7d9d87a1a342ef06b6f614a2af54ff229bc5",
-  "models.demos.gemma4_31b_qb2.tt.decoder": "fa2f144e07a58d8855bdb6446b959c1a875df3a9b2d45ac0a9a93fffc143aed7",
-  "models.demos.gemma4_31b_qb2.tt.model": "9160bef8fb7b4c2a985d9aa4a27557bb9f5adc2db6412a9a99c91959b44b4de0",
-  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
+  "models.demos.gemma4_31b_qb2.tt.decoder": "68f27af11ca2a70b3af5a51dffeb3e625b44ae43f8a7dff8913ef076a7aa9fd9",
+  "models.demos.gemma4_31b_qb2.tt.model": "1c4809757e70b577bb845997b04a894782c6fef1758591a9a230729e91a82b11",
+  "models.demos.gemma4_31b_qb2.tt.spec_ngram": "272036a40936df33228ee5e6b8c0cc72a438dd89f5738e1e0ad4826244d01dad"
  }
 }
