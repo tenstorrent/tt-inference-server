@@ -291,6 +291,7 @@ templates:
         GLM53_VLLM_APC_SNAPSHOTS: "2"  # two snapshot entries per slot in the HOST store (at 1 M x 4 users per row no device ring fits beside the tail chunks' transients: the live fit leaves the warm-ups' allowance): entry 0 rolls with the 16 K-aligned decode crossings (the multi-turn hit), entry 1 keeps the prompt's last chunk end (the repeated prompt); saves read the chips without blocking
         GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 32 distinct requests (one per slot), waves + the SP-first placement
         GLM53_RESIDENT_DECODE: "1"  # resident decode (2026-10-29): the traced step feeds its sampled ids back and advances the live positions on device, so a steady-state step uploads nothing; 14.1 vs 11.0 tok/s per user at 32 users, ids identical to the reload path
+        GLM53_DECODE_SLOT_MASK: "1"  # the live mask gates the KDA decode's state writes: parked slots (mid-prefill, idle) keep their state (the prefill / decode interleave)
         GLM53_VLLM_VISION_RESIDENT: "0"
         GLM53_VLLM_VISION_BATCH_PATCHES: "1024"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
@@ -319,9 +320,14 @@ templates:
         # vLLM's chunk boundaries must keep the model's 32-row chunk contract;
         # 256 = 32 x 8 rows keeps every intermediate chunk tile-aligned per row.
         prefill_chunk_alignment: 256
-        # The traced decode step updates EVERY slot's KDA state in place: no
-        # decode may run while a chunked prefill is mid-prompt (DESIGN.md s.4).
-        decode_interleave_enabled: false
+        # Decode steps run between a prompt's chunks: a slot mid-prefill is parked
+        # (GLM53_DECODE_SLOT_MASK=1 gates its KDA state writes; its DSA row is
+        # rewritten by the next chunk), so a long prompt's prefill no longer stalls
+        # every running decode (doc/mesh/resident_decode.md step 4).
+        decode_interleave_enabled: true
+        # one decode step after every prefill step (a 16 K chunk is ~7 s): the
+        # running decoders get a token per chunk instead of one per two chunks
+        decode_interleave_prefill_steps: 1
       vllm_args:
         max_num_seqs: 32  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
         block_size: 32  # = the latent page (TtLatentCache.block_size); the adapter rejects other sizes
@@ -330,7 +336,7 @@ templates:
         # KDA owner cores on 8 rows), so the scheduler hands the adapter exactly
         # that; the threshold keeps a long prompt on 16 K steps when short
         # prompts share the budget.
-        max_num_batched_tokens: 32768  # a multimodal item is never split across engine chunks (the plugin sets disable_chunked_mm_input), so the step must hold the largest one: a video of up to ~31.9 K tokens (vLLM's 30 000 vision-token cap + per-frame timestamps); the adapter walks the 32 K step in two 16 K device chunks (the 32768 warm-up ladder)
+        max_num_batched_tokens: 131072  # 8 partial prefills of 16 K per step: a burst of long prompts prefills in waves of 8 (2026-10-30: 32 K admitted 2, waves of 2 at ~570 tok/s; 8 x 64 K at 131072 = 1.58 K tok/s, 8/8 needles). A multimodal item is never split across engine chunks (disable_chunked_mm_input)
         long_prefill_token_threshold: 16384
         enable_chunked_prefill: true
         # One image per 448x448 is 256 tokens (grid 32x32 / 4); up to 4 images and 1 video per prompt (the
