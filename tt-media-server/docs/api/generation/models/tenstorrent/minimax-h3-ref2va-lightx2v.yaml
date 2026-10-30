@@ -1,0 +1,68 @@
+openapi: 3.1.0
+info:
+  title: MiniMax-H3 Ref2VA LightX2V generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `tenstorrent/minimax-h3-ref2va-lightx2v` deployment serves: its submit
+    endpoint and the common `/v1/jobs` API. Shared schemas, responses and auth
+    live in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v:
+    post:
+      operationId: submitMiniMaxH3Ref2VALightX2V
+      tags: [MiniMax-H3 Ref2VA LightX2V]
+      summary: Submit a MiniMax-H3 Ref2VA LightX2V job
+      description: |
+        MiniMax-H3 Ref2VA with lightx2v's Turbo distillation adapter: the same
+        request as `minimaxai/minimax-h3-ref2va`, generated in far fewer
+        denoising steps, so faster, with somewhat different output.
+
+        **tt-media-server today:** `MiniMax-H3-Ref2VA-LightX2V`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../minimaxai/minimax-h3-ref2va.yaml#/components/schemas/MiniMaxH3Ref2VARequest"
+            example:
+              prompt: >-
+                The man from Picture 1 walks through the market from Video 1,
+                speaking in the voice of Audio 1.
+              images:
+                - https://storage.internal/inputs/man.png
+              videos:
+                - https://storage.internal/inputs/market.mp4
+              audios:
+                - https://storage.internal/inputs/voice.wav
+              duration: 5
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"

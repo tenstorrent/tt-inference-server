@@ -1,0 +1,559 @@
+openapi: 3.1.0
+info:
+  title: tt-media-server generation API, common parts
+  version: 0.1.0
+  description: |
+    The runner API: what tt-media-server serves to the console, not to
+    customers. Customer auth, public request IDs, the real queue, media
+    ingest and signed output URLs belong to the console, which wraps this API
+    in its own public one.
+
+    Each model has one submit endpoint and one request schema,
+    `POST /v1/generations/{org}/{model}`, covering every task its weights can
+    do (e.g. FLUX.2 klein text to image and editing). Once submitted, a job is
+    the same for every model: status (with the outputs once completed),
+    content, cancel and delete live under `/v1/jobs`, with one schema shared by
+    all four models.
+
+    `{org}/{model}` is the lowercase Hugging Face ID of the upstream model,
+    without format or quantization suffixes: `wan-ai/wan2.2-i2v-a14b`, not
+    `Wan-AI/Wan2.2-I2V-A14B-Diffusers`; `ideogram-ai/ideogram-4`, not
+    `ideogram-ai/ideogram-4-fp8`. Anything that is not plain upstream weights
+    (LoRA merges, distillations, our own quantizations) goes under
+    `tenstorrent/`, e.g. `tenstorrent/wan2.2-i2v-a14b-lightning`.
+
+    A deployment serves one model; submitting to a model it does not serve
+    returns 404. The request schemas are generated from the Pydantic models
+    each pipeline declares; this file is the design for them.
+
+    **tt-media-server today:** `POST /v1/videos/generations/i2v` + `GET
+    /v1/videos/generations/{job_id}` (+ `/download`, `/cancel`, `DELETE`), `GET
+    /v1/videos/jobs`.
+
+    This file holds what every model shares: the `/v1/jobs` API and the shared
+    schemas, responses and auth. Each model has its own complete file under
+    `models/{org}/{model}.yaml`, describing what that model's deployment serves
+    (its submit endpoint plus `/v1/jobs`) and referring here for the rest.
+security:
+  - Bearer: []
+paths:
+  /v1/jobs:
+    get:
+      operationId: listJobs
+      tags: [Jobs]
+      summary: List jobs
+      description: |
+        Every job this deployment still holds, any status.
+
+        **tt-media-server today:** `GET /v1/videos/jobs`.
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      tags: [Jobs]
+      summary: Get a job's status
+      description: |
+        Poll until the status is final (`completed`, `failed`, `cancelled`).
+        A completed job carries its `outputs`, so no second call is needed.
+
+        **tt-media-server today:** `GET /v1/videos/generations/{job_id}`.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteJob
+      tags: [Jobs]
+      summary: Delete a job and its files
+      description: |
+        Only a job in a final state can be deleted; cancel an active one
+        first.
+
+        **tt-media-server today:** `DELETE /v1/videos/generations/{job_id}`
+        (same rules).
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deleted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/StillActive"
+  /v1/jobs/{job_id}/content/{index}:
+    get:
+      operationId: getJobContent
+      tags: [Jobs]
+      summary: Download one output file
+      description: |
+        The file behind `outputs[index].url`. Videos are MP4: H.264 (High
+        profile, yuv420p), faststart, with an AAC audio track when the model
+        generates sound (see `VideoOutput.audio`).
+
+        **tt-media-server today:** `GET
+        /v1/videos/generations/{job_id}/download` (one file only).
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: The file.
+          content:
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+            image/webp:
+              schema:
+                type: string
+                contentMediaType: image/webp
+            video/mp4:
+              schema:
+                type: string
+                contentMediaType: video/mp4
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/NotCompleted"
+  /v1/jobs/{job_id}/cancel:
+    post:
+      operationId: cancelJob
+      tags: [Jobs]
+      summary: Cancel a job
+      description: |
+        A queued job is cancelled at once (`cancelled`). A running one moves
+        to `cancelling`, then to `cancelled` once the pipeline stops.
+
+        **tt-media-server today:** `POST
+        /v1/videos/generations/{job_id}/cancel`, which returns 404 for a job
+        that already finished.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: The job, now `cancelled` or `cancelling`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/AlreadyFinal"
+components:
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer <API_KEY>`, one key per deployment, held by the
+        console. Off when the server runs with `NO_AUTH`.
+
+        **tt-media-server today:** same, `security/api_key_checker.py`.
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Submitted:
+      description: Accepted and queued. Poll `GET /v1/jobs/{job_id}`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Job"
+    Invalid:
+      description: |
+        The request is invalid for this model: an unknown field, a value out of
+        range, or a conflicting combination; or an image URL couldn't be
+        fetched or doesn't hold a supported image. Checked before queueing.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+    Unauthorized:
+      description: Missing or wrong API key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MediaUrlNotAllowed:
+      description: |
+        An image URL violates this deployment's fetch policy: not `https`, a
+        host outside the allowlist, or an address that isn't public.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MediaTooLarge:
+      description: |
+        An input, inline or fetched, is over its limit: 30 MB per image, 50 MB
+        per video, 15 MB per audio clip.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotServed:
+      description: This deployment does not serve that model.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    QueueFull:
+      description: |
+        As many jobs are active as the queue holds (`max_queue_size`).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds; 60 today.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: |
+        The model is not serving yet, or the deployment holds as many job
+        records as it can (`max_jobs`); delete finished jobs to free space.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Unknown or deleted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotCompleted:
+      description: The job is not `completed` (still active, failed or 
+        cancelled).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    StillActive:
+      description: The job is still `queued`, `in_progress` or `cancelling`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AlreadyFinal:
+      description: The job is already `completed`, `failed` or `cancelled`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Media:
+      type: string
+      description: |
+        An `https://` URL, which the server fetches, or a data URI
+        (`data:image/png;base64,…`). Inline images must be data URIs: bare
+        base64 without the `data:` prefix is rejected with 422.
+
+        PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the
+        job is submitted, so a URL only has to stay valid until then (a
+        presigned URL is fine). Which hosts may be fetched is set per
+        deployment: an allowlist of domains, or any public host; private,
+        loopback and cloud-metadata addresses never are, including after a
+        redirect. Submission fails with 400 if a URL is not allowed, 413 if an
+        image is too large, and 422 if a URL can't be fetched (expired, network
+        error, timeout) or doesn't hold a supported image.
+
+        **tt-media-server today:** URL or bare base64.
+    VideoMedia:
+      type: string
+      description: |
+        A video clip: an `https://` URL or a data URI
+        (`data:video/mp4;base64,…`), fetched and checked as for `Media`.
+
+        MP4 or MOV, H.264 or H.265 video, optionally with an AAC or MP3 audio
+        track; at most 50 MB. Each model states the durations it accepts.
+    AudioMedia:
+      type: string
+      description: |
+        An audio clip: an `https://` URL or a data URI
+        (`data:audio/wav;base64,…`), fetched and checked as for `Media`.
+
+        WAV or MP3, mono or stereo; at most 15 MB. Each model states the
+        durations it accepts.
+    Seed:
+      type: integer
+      minimum: 0
+      maximum: 2147483647
+      description: |
+        Omitted = random. Each output reports the seed it was made with.
+    ImageFormat:
+      type: string
+      enum: [png, jpeg, webp]
+      default: png
+      description: |
+        Output image format.
+
+        **tt-media-server today:** `image_return_format` (`JPEG`/`PNG`).
+
+    Job:
+      type: object
+      required: [id, model, status, created_at]
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+          examples: [wan-ai/wan2.2-i2v-a14b, qwen/qwen-image-edit-2511]
+          description: |
+            The `{org}/{model}` it was submitted to.
+
+            **tt-media-server today:** `model` (plus `job_type`).
+        status:
+          type: string
+          enum: [queued, in_progress, cancelling, completed, failed, cancelled]
+          description: |
+            Final states are `completed`, `failed` and `cancelled`.
+
+            **tt-media-server today:** same values.
+        created_at:
+          type: integer
+          description: Unix seconds.
+        completed_at:
+          type: [integer, "null"]
+          description: Unix seconds, once the status is final.
+        expires_at:
+          type: [integer, "null"]
+          description: |
+            Unix seconds when the job and its output files are deleted, once the
+            status is final: `completed_at` plus the server's retention period,
+            24 hours by default. Applies to completed, failed and cancelled jobs
+            alike. Download outputs before then; after it, the job returns 404.
+
+            **tt-media-server today:** deletes finished jobs 24 hours after
+            completion but doesn't report when.
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+          description: Set when `failed`.
+        outputs:
+          oneOf:
+            - type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/Output"
+            - type: "null"
+          description: |
+            Set when `completed`: one per image (`count` of them) or one video.
+
+            **tt-media-server today:** no outputs field, only `GET
+            /v1/videos/generations/{job_id}/download`.
+    JobError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          anyOf:
+            - type: string
+              enum: [processing_error, stale_job, server_restart]
+            - type: string
+          description: |
+            Why the job failed. More codes may be added; treat an unknown one
+            like `processing_error`.
+
+            - `processing_error`: the pipeline raised an error. Resubmitting
+              the same request is unlikely to help.
+            - `stale_job`: the job made no progress for too long and was
+              force-cancelled. An infrastructure failure: safe to resubmit,
+              preferably to another runner.
+            - `server_restart`: the server restarted while the job was queued
+              or running. Safe to resubmit.
+        message:
+          type: string
+          description: Human-readable.
+      description: |
+        **tt-media-server today:** same codes, set in `utils/job_manager.py`.
+    Output:
+      oneOf:
+        - $ref: "#/components/schemas/ImageOutput"
+        - $ref: "#/components/schemas/VideoOutput"
+      discriminator:
+        propertyName: type
+        mapping:
+          image: "#/components/schemas/ImageOutput"
+          video: "#/components/schemas/VideoOutput"
+    OutputBase:
+      type: object
+      required: [type, url, content_type, seed, prompt]
+      properties:
+        type:
+          type: string
+          enum: [image, video]
+        url:
+          type: string
+          format: uri-reference
+          examples: [/v1/jobs/j_8f2c1d/content/0]
+          description: |
+            Where to download the file. Today it is a path relative to this
+            server's base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with
+            the same API key; the runner does not know the host the console
+            reaches it by, so it never returns one. If outputs later move to
+            shared storage, it becomes an absolute URL. Clients handle both: an
+            absolute URL is used as given, a relative one is resolved against
+            the runner's base URL (RFC 3986). Otherwise opaque.
+
+            Internal only. The console's public API returns its own signed
+            storage URLs and never exposes, proxies or rewrites this one, so
+            customers never come to depend on a runner path.
+        content_type:
+          type: string
+          examples: [image/png, video/mp4]
+        seed:
+          type: integer
+          description: |
+            The job's seed (the one chosen at random if the request had none).
+            The same for every output of a job, since a batch is generated from
+            one seed: resubmitting with this seed and the same request,
+            `count` included, reproduces all of them.
+        prompt:
+          type: string
+          description: |
+            The prompt as the model received it. For Ideogram 4, the
+            `structured_prompt` caption as compact JSON, in the model's key
+            order.
+    ImageOutput:
+      allOf:
+        - $ref: "#/components/schemas/OutputBase"
+        - type: object
+          required: [width, height]
+          properties:
+            type:
+              const: image
+            width:
+              type: integer
+            height:
+              type: integer
+    VideoOutput:
+      description: |
+        An MP4 file: H.264 (High profile, yuv420p), faststart. When the model
+        generates sound, an AAC track described by `audio`; otherwise no audio
+        track and `audio` is null.
+      allOf:
+        - $ref: "#/components/schemas/OutputBase"
+        - type: object
+          required: [width, height, fps, num_frames, duration]
+          properties:
+            type:
+              const: video
+            width:
+              type: integer
+            height:
+              type: integer
+            fps:
+              type: integer
+            num_frames:
+              type: integer
+            duration:
+              type: number
+              description: Seconds.
+            audio:
+              oneOf:
+                - $ref: "#/components/schemas/AudioTrack"
+                - type: "null"
+    AudioTrack:
+      type: object
+      required: [codec, sample_rate, channels]
+      properties:
+        codec:
+          type: string
+          enum: [aac]
+        sample_rate:
+          type: integer
+          description: Hz.
+          examples: [32000]
+        channels:
+          type: integer
+          examples: [2]
+    Deleted:
+      type: object
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+        deleted:
+          const: true
+      description: |
+        **tt-media-server today:** same, plus `object`.
+    ValidationError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required: [loc, msg, type]
+            properties:
+              loc:
+                type: array
+                items:
+                  type: [string, integer]
+                examples: [[body, frames]]
+              msg:
+                type: string
+                description: Names what the model accepts.
+              type:
+                type: string
+      description: |
+        Every problem in the request, not just the first: FastAPI's default
+        for a Pydantic validation failure.
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          description: Human-readable.
+      description: FastAPI's default for an `HTTPException`.

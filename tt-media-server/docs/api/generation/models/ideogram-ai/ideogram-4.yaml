@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: Ideogram 4 generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `ideogram-ai/ideogram-4` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/ideogram-ai/ideogram-4:
+    post:
+      operationId: submitIdeogram4
+      tags: [Ideogram 4.0]
+      summary: Submit an Ideogram 4.0 text-to-image job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Ideogram4Request"
+            example:
+              structured_prompt:
+                high_level_description: A neon sign reading "OPEN LATE" on a 
+                  brick wall at night.
+                style_description:
+                  aesthetics: moody, urban, vibrant
+                  lighting: neon glow, deep shadows
+                  medium: graphic_design
+                  art_style: retro neon signage
+                  color_palette: ["#FF2E88", "#1B1B2F", "#F5F5F5"]
+                compositional_deconstruction:
+                  background: A dark red brick wall, wet from rain.
+                  elements:
+                    - type: text
+                      bbox: [350, 150, 650, 850]
+                      text: OPEN LATE
+                      desc: Glowing pink neon letters, slightly flickering.
+              aspect_ratio: "2:3"
+              size: 2K
+              rendering_speed: quality
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"
+  schemas:
+    Ideogram4Request:
+      type: object
+      additionalProperties: false
+      required: [structured_prompt]
+      properties:
+        structured_prompt:
+          $ref: "#/components/schemas/Ideogram4Caption"
+        count:
+          type: integer
+          minimum: 1
+          maximum: 1
+          default: 1
+          description: |
+            Number of images. Only 1 for now; kept so more can be allowed later
+            without a schema change.
+        aspect_ratio:
+          type: string
+          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          default: "1:1"
+          description: |
+            Output shape. Each output reports its exact size.
+        size:
+          type: string
+          enum: [1K, 2K]
+          default: 2K
+          description: |
+            Size tier. With `aspect_ratio`, it fixes the output size. `1K` uses
+            the model's native sizes of about 1 MP; `2K` has a long side of 2048, the
+            open model's maximum (256–2048 per side, multiples of 16):
+
+            | `aspect_ratio` | `1K`      | `2K`      |
+            | -------------- | --------- | --------- |
+            | `1:1`          | 1024×1024 | 2048×2048 |
+            | `16:9`         | 1280×720  | 2048×1152 |
+            | `9:16`         | 720×1280  | 1152×2048 |
+            | `4:3`          | 1152×864  | 2048×1536 |
+            | `3:4`          | 864×1152  | 1536×2048 |
+            | `3:2`          | 1248×832  | 2048×1360 |
+            | `2:3`          | 832×1248  | 1360×2048 |
+        format:
+          $ref: "../../common.yaml#/components/schemas/ImageFormat"
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"
+        rendering_speed:
+          type: string
+          enum: [turbo, default, quality]
+          default: default
+          description: |
+            Speed and quality preset: `turbo` is fastest, `quality` gives the
+            best images, `default` is in between.
+
+    Ideogram4Caption:
+      type: object
+      additionalProperties: false
+      required: [compositional_deconstruction]
+      description: |
+        A structured caption in the format Ideogram 4 was trained on, sent to
+        the model as is. Key order does not matter: the server writes it out in
+        the model's order. Each output reports it as its `prompt`.
+
+        There is no plain-text prompt for now: Ideogram 4 needs a caption like
+        this, and turning plain text into one takes an LLM ("magic prompt"),
+        which this API doesn't run yet.
+
+        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.
+      properties:
+        high_level_description:
+          type: string
+          description: One or two sentences summing up the image. Recommended.
+        style_description:
+          type: object
+          additionalProperties: false
+          required: [aesthetics, lighting, medium]
+          oneOf:
+            - required: [photo]
+              not:
+                required: [art_style]
+            - required: [art_style]
+              not:
+                required: [photo]
+          description: |
+            Visual style. Exactly one of `photo` (photographs) or `art_style`
+            (everything else).
+          properties:
+            aesthetics:
+              type: string
+              examples: ["moody, cinematic, desaturated"]
+            lighting:
+              type: string
+              examples: ["golden hour, rim light, dramatic shadows"]
+            photo:
+              type: string
+              description: Camera and lens, for photographs.
+              examples: ["35mm, f/1.4, bokeh"]
+            medium:
+              type: string
+              examples: [photograph, illustration, 3d_render, painting, 
+                    graphic_design]
+            art_style:
+              type: string
+              description: Art style, for anything but photographs.
+              examples: ["flat vector illustration, bold outlines"]
+            color_palette:
+              $ref: "#/components/schemas/Ideogram4Palette"
+        compositional_deconstruction:
+          type: object
+          additionalProperties: false
+          required: [background, elements]
+          properties:
+            background:
+              type: string
+            elements:
+              type: array
+              items:
+                oneOf:
+                  - $ref: "#/components/schemas/Ideogram4ObjectElement"
+                  - $ref: "#/components/schemas/Ideogram4TextElement"
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    obj: "#/components/schemas/Ideogram4ObjectElement"
+                    text: "#/components/schemas/Ideogram4TextElement"
+    Ideogram4ObjectElement:
+      type: object
+      additionalProperties: false
+      required: [type, desc]
+      properties:
+        type:
+          const: obj
+        bbox:
+          $ref: "#/components/schemas/Ideogram4Bbox"
+        desc:
+          type: string
+        color_palette:
+          $ref: "#/components/schemas/Ideogram4ElementPalette"
+    Ideogram4TextElement:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type:
+          const: text
+        bbox:
+          $ref: "#/components/schemas/Ideogram4Bbox"
+        text:
+          type: string
+          description: The literal text to render.
+        desc:
+          type: string
+        color_palette:
+          $ref: "#/components/schemas/Ideogram4ElementPalette"
+    Ideogram4Bbox:
+      type: array
+      minItems: 4
+      maxItems: 4
+      items:
+        type: integer
+        minimum: 0
+        maximum: 1000
+      description: |
+        `[ymin, xmin, ymax, xmax]` on a 0–1000 grid, origin top left, with
+        `ymin <= ymax` and `xmin <= xmax`.
+    Ideogram4Palette:
+      type: array
+      maxItems: 16
+      items:
+        type: string
+        pattern: "^#[0-9A-F]{6}$"
+      description: Dominant colors as uppercase `#RRGGBB`.
+    Ideogram4ElementPalette:
+      type: array
+      maxItems: 5
+      items:
+        type: string
+        pattern: "^#[0-9A-F]{6}$"
+      description: The element's colors as uppercase `#RRGGBB`.
+
