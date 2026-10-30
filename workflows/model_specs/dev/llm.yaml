@@ -965,6 +965,64 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
+# google/gemma-4-12B-it (text decoder only) TP4 on QB2 (models/demos/gemma4_12b_qb2) from
+# the tt-model-bringup multigoal pipeline (tenstorrent/skills 80095f4, Claude Opus 5.5 high).
+# Requires tt-metal PR #61987 (vkovacevic/gemma-4-12b-it-qb2-model, stacked on the SDPA PR
+# #61986); vllm-tt-plugin main, unmodified (the adapter registers through EXTRA_MODELS_DIR).
+# Server settings are the bring-up's validated stage-10/11 ones (precision b0_lmh4_lofi,
+# 1M-token vLLM-owned KV, full 262144 context). Stage-11 numbers (4096/128): c1 TTFT 211 ms,
+# TPOT 13.2 ms (75.8 t/s/u); c32 463 tok/s (19.7 t/s/u).
+- weights:
+    - google/gemma-4-12B-it
+  impl: gemma4_12b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false  # selectable with --impl gemma4_12b_qb2; needs tt-metal vkovacevic/gemma-4-12b-it-qb2-model
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        VLLM_RPC_TIMEOUT: "300000"
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 0
+        fabric_config: FABRIC_1D_RING
+        prefill_chunk_alignment: 8192
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "8192"
+        # The device sampler covers top_k 1..32; the checkpoint default top_k 64 would
+        # send every request that omits top_k to the host path.
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: gemma4
+        hf-overrides: '{"architectures":["TTGemma4_12BQB2ForCausalLM"]}'
+        # Thinking on for the card evals (the chat template suppresses it otherwise).
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: test_penalties
+        reason: 'test_penalties fails one case at seed 1234 / temperature 0.1 although the penalty path works:
+          presence_penalty=1.2 on repeat_trap returns the baseline text byte for byte. The prompt asks for a
+          repetitive story, so the candidate tokens have already appeared and the flat penalty lowers them
+          together; over the 159 output steps no choice is within 1.2 logits of a flip. presence_penalty=2.0,
+          frequency_penalty=1.2 and repetition_penalty=1.5 change the same text, and presence_penalty=1.2
+          changes the other two prompts; the other 8 cases pass (tt-agentic-bringup-qb2 run 39881826134).
+          Same exemption as gemma-4-31B-it P300X2 (#5327) and Llama-3.3-70B P300X2 (#3888). Measured
+          2026-10-23.'
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
 # Dedicated Gemma 4 26B A4B implementation, the default on QB2.
 - weights:
     - google/gemma-4-26B-A4B-it
