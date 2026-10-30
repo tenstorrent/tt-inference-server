@@ -209,9 +209,15 @@ def test_the_gate_grades_the_i2v_eval(monkeypatch, ctx, tt, verdict):
     assert f"Gate: {'✅' if verdict == 'PASS' else '❌'} {verdict}" in rendered
     if verdict == "FAIL":
         assert "| -3.06 ❌" in rendered
-        assert "- ❌ refs/r1 i2v_subject: -3.06 (limit -1.0)" in rendered
-        # The dimensions the fake did not score, on one line.
-        assert "- Not checked (not scored): refs/r1 i2v_background, " in rendered
+    # Every check is listed, passed or not, with its limit.
+    table = rendered.split("#### Gate checks")[1].splitlines()
+    row = next(r for r in table if r.startswith("| i2v_subject "))
+    assert "refs/r1 (drift)" in row
+    assert f"{-3.06 if verdict == 'FAIL' else 0.0:+.2f} %" in row
+    assert "≥ -1 %" in row
+    assert verdict in row
+    background = next(r for r in table if r.startswith("| i2v_background "))
+    assert "NA" in background and "not scored" in background
     result = _check_evals(ReportSchema(metadata={}, sections=[block]))
     assert result.status == verdict
 

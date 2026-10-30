@@ -446,6 +446,35 @@ def _vbench_number(value: Any, digits: int) -> str:
     return "" if value is None else f"{value:.{digits}f}"
 
 
+def _vbench_check_row(check: Mapping[str, Any]) -> Dict[str, str]:
+    """One gate check: what it measured, its limit and its result."""
+    name = check.get("check") or ""
+    value, threshold = check.get("value"), check.get("threshold")
+    detail = check.get("detail") or ""
+    if check.get("resolution"):
+        # Frame metrics: LPIPS lower is closer, PSNR and SSIM higher.
+        shown = _vbench_number(value, 4)
+        bound = "≤" if name.endswith("lpips") else "≥"
+        limit = "" if threshold is None else f"{bound} {threshold:g}"
+    else:
+        # VBench dimensions: TT's change from the GPU score, in %.
+        shown = "" if value is None else f"{value:+.2f} %"
+        limit = "" if threshold is None else f"≥ {threshold:g} %"
+        if check.get("ci_pct"):
+            low, high = check["ci_pct"]
+            detail += f"; 95% CI [{low:+.2f}, {high:+.2f}] %"
+    status = check.get("status") or ""
+    return {
+        "Check": name,
+        "GPU reference": f"{check.get('reference')} ({check.get('role')})",
+        "Resolution": check.get("resolution") or "",
+        "Value": shown,
+        "Limit": limit,
+        "Result": f"{glyph_for_label(status)} {status}".strip(),
+        "Detail": detail,
+    }
+
+
 @register(VBENCH_KIND)
 def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
     """The I2V eval's VBench scores against each GPU reference, and the gate.
@@ -453,7 +482,8 @@ def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
     Built from the scorer's summary (vbench_i2v.report_summary): one row per
     dimension with each reference's score and TT's change from it, then each
     reference's frame metrics per resolution. A failed gate check is marked in
-    its cell and listed below. Per-clip detail stays in the run's vbench.json.
+    its cell, and every check is listed below with its value and limit.
+    Per-clip detail stays in the run's vbench.json.
     """
     data = block.data if isinstance(block.data, Mapping) else {}
     gate = data.get("gate") or {}
@@ -526,19 +556,15 @@ def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
     if output:
         lines += ["", build_markdown_table(output), "", VBENCH_OUTPUT_NOTE]
 
+    if gate.get("checks"):
+        lines += [
+            "",
+            "#### Gate checks",
+            "",
+            build_markdown_table([_vbench_check_row(c) for c in gate["checks"]]),
+        ]
+
     notes = []
-    unchecked: Dict[str, List[str]] = {}
-    for key, c in checks.items():
-        where = " ".join(str(x) for x in key if x)
-        if c.get("status") == "FAIL":
-            notes.append(
-                f"- ❌ {where}: {c.get('value')} (limit {c.get('threshold')})"
-                + (f", {c['detail']}" if c.get("detail") else "")
-            )
-        elif c.get("status") == "NA":
-            unchecked.setdefault(c.get("detail") or "no result", []).append(where)
-    for reason, where in unchecked.items():
-        notes.append(f"- Not checked ({reason}): {', '.join(where)}")
     for reference in data.get("references") or []:
         run = reference.get("run") or reference["reference"]
         if reference.get("noise_differs"):
