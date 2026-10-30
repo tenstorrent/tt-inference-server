@@ -47,6 +47,38 @@ templates:
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
+      env_vars:
+        # Multicore pipeline for the P150 DRAM-sharded decode matmuls (~+30% decode).
+        TT_DRAM_SHARDED_MULTICORE: "1"
+      vllm_args:
+        limit-mm-per-prompt: '{"image": 10}'
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        l1_small_size: 4096
+        fabric_config: FABRIC_1D
+  model_type: VLM
+  status: EXPERIMENTAL
+  supported_modalities:
+    - text
+    - image
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-3-12b-it
+  model_display_name: gemma-3-12b-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150
+      max_concurrency: 32
+      # KV cache is ~208 KB/token (48 layers x 8 KV heads x 256 x K/V); 32K tokens (~7 GB) plus
+      # ~10 GB of weights fits the 32 GB P150 with room for the vision tower and trace region.
+      max_context: 32768
+      max_tokens_all_users_override: 32768
+      default_impl: true
+      env_vars:
+        # Multicore pipeline for the P150 DRAM-sharded decode matmuls (~+26% decode).
+        TT_DRAM_SHARDED_MULTICORE: "1"
       vllm_args:
         limit-mm-per-prompt: '{"image": 10}'
         mm-processor-cache-gb: 0
