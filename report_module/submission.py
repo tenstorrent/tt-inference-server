@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import re
 import sys
 
 import statistics
@@ -102,6 +103,41 @@ def find_report(run_dir: Path) -> Path:
     return max(matches, key=lambda p: p.stat().st_mtime)
 
 
+#: The sweep point a graded block was run at, as ``target_checks`` names it in
+#: the block's title (``llm_module.target_checks._graded_title``):
+#: ``ISL 1024 / OSL 128, concurrency 1``.
+_TITLE_POINT = re.compile(r"ISL (\d+)(?: / OSL \d+)?, concurrency (\d+)")
+
+
+def registered_point(block: Mapping[str, Any]) -> Optional[Tuple[int, int]]:
+    """``(concurrency, input_length)`` of the sweep point a graded block ran at.
+
+    The block's ``data["input_sequence_length"]`` is AIPerf's measured mean prompt
+    length, which misses the registered length by a token in some runs (1,023 for
+    the 1,024 point, 8,191 for 8,192, ...). Keyed on it, the same point from two
+    repeat runs becomes two points: the run-to-run CoV then compares only the
+    runs that happened to measure the same mean, and reporting distributes
+    weights over the duplicates. The registered point is in the title that
+    ``target_checks`` gives every graded block; it is the identity. ``None`` when
+    the title does not carry it (a block from another tool), in which case the
+    caller falls back to the measured values.
+    """
+    title = block.get("title") or ""
+    m = _TITLE_POINT.search(title)
+    if m is None:
+        return None
+    return int(m.group(2)), int(m.group(1))
+
+
+def point_key(block: Mapping[str, Any]) -> Tuple[Any, Any]:
+    """The key a graded block is merged and compared under across runs."""
+    registered = registered_point(block)
+    if registered is not None:
+        return registered
+    data = block.get("data") or {}
+    return data.get("concurrency"), data.get("input_sequence_length")
+
+
 def _blocks(report: Mapping[str, Any], kind: str) -> List[Mapping[str, Any]]:
     return [s for s in report.get("sections", []) if s.get("kind") == kind]
 
@@ -127,9 +163,10 @@ def graded_points(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
         if graded is None:
             continue
         _, target = graded
+        concurrency, input_length = point_key(block)
         point: Dict[str, Any] = {
-            "concurrency": data.get("concurrency"),
-            "input_length": data.get("input_sequence_length"),
+            "concurrency": concurrency,
+            "input_length": input_length,
         }
         for src, dst in _TARGETS.items():
             point[dst] = target.get(src)
@@ -221,7 +258,7 @@ def run_to_run_cov(runs: Sequence[Mapping[str, Any]]) -> Tuple[Optional[float], 
         for block in _blocks(report, "benchmarks"):
             data = block.get("data") or {}
             mean = data.get("mean_ttft_ms")
-            key = (data.get("concurrency"), data.get("input_sequence_length"))
+            key = point_key(block)
             if (
                 mean is None
                 or None in key

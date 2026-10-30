@@ -115,6 +115,24 @@ def _is_benchmark_section(section: Mapping[str, Any]) -> bool:
     return all(k in data for k in POINT_KEYS)
 
 
+def _point_key(section: Mapping[str, Any], data: Mapping[str, Any]) -> PointKey:
+    """The operating point a section was run at.
+
+    The registered point from the graded title where there is one (see
+    ``report_module.submission.registered_point``: the measured mean prompt
+    length misses the registered length by a token in some runs, and the
+    reported and the measured runs must land on the same key to be compared);
+    the record's own fields otherwise.
+    """
+    from report_module.submission import registered_point
+
+    registered = registered_point(section)
+    if registered is not None:
+        concurrency, isl = registered
+        return (concurrency, isl, data.get("output_sequence_length"))
+    return tuple(data.get(k) for k in POINT_KEYS)
+
+
 def _as_number(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -135,7 +153,7 @@ def collect_points(
             if not isinstance(section, Mapping) or not _is_benchmark_section(section):
                 continue
             data = section["data"]
-            key = tuple(data.get(k) for k in POINT_KEYS)
+            key = _point_key(section, data)
             bucket = points.setdefault(key, {})
             for name, value in data.items():
                 if name in NON_METRIC_FIELDS:

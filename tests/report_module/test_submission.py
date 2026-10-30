@@ -94,8 +94,25 @@ def test_ungraded_points_are_skipped_not_defaulted():
 def test_a_block_with_targets_but_no_operating_point_is_an_error():
     block = _point(1, 128)
     del block["data"]["concurrency"]
+    block["title"] = "AIPerf Benchmark Targets"  # no registered point to fall back on
     with pytest.raises(SubmissionError, match="cannot be placed in the sweep"):
         graded_points(_report(block))
+
+
+def test_the_registered_point_in_the_title_is_the_identity():
+    """AIPerf's measured mean prompt length misses the registered length by a
+    token in some runs; the point is the one the title names."""
+    block = _point(1, 1024)
+    block["data"]["input_sequence_length"] = 1023
+    (point,) = graded_points(_report(block))
+    assert (point["concurrency"], point["input_length"]) == (1, 1024)
+
+
+def test_a_block_without_a_titled_point_keys_on_its_measured_fields():
+    block = _point(32, 2048)
+    block["title"] = "Some other tool"
+    (point,) = graded_points(_report(block))
+    assert (point["concurrency"], point["input_length"]) == (32, 2048)
 
 
 def test_scaling_exponents_are_keyed_by_concurrency():
@@ -137,6 +154,23 @@ def test_cov_is_none_when_runs_cover_different_corners():
     corner32 = _report(_point(32, 128))
     value, _ = run_to_run_cov([corner1, corner32])
     assert value is None
+
+
+def test_repeat_runs_that_measured_a_token_apart_are_one_point():
+    """1,023 and 1,024 measured at the 1,024 point are the same point: merged
+    once, and the CoV computed over both runs."""
+    run1 = _report(_point(1, 1024, mean=100.0), _point(32, 1024, mean=100.0))
+    run2 = _report(_point(1, 1024, mean=102.0), _point(32, 1024, mean=102.0))
+    run2["sections"][0]["data"]["input_sequence_length"] = 1023
+    run2["sections"][1]["data"]["input_sequence_length"] = 1023
+    points = merge_points([run1, run2])
+    assert [(p["concurrency"], p["input_length"]) for p in points] == [
+        (1, 1024),
+        (32, 1024),
+    ]
+    value, evidence = run_to_run_cov([run1, run2])
+    assert set(evidence) == {"conc1_isl1024", "conc32_isl1024"}
+    assert value == pytest.approx(evidence["conc1_isl1024"])
 
 
 def test_cov_is_computed_from_repeats_and_the_worst_point_governs():
