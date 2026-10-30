@@ -55,7 +55,7 @@
    "path": "gemma_history_reservation.py",
    "module": "gemma_history_reservation",
    "base": null,
-   "target": "3eab7f3130a894d8ae8c26809434ad9349b506f3f31613d80e6317637b4ba049"
+   "target": "94361d6e604521e827dd7b75f58192eb2df145528ade2b1a06f5ab08d2af04a8"
   },
   {
    "root": "purelib",
@@ -86,7 +86,7 @@
    "target": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
   }
  ],
- "attestation_sha256": "18bbb809dfe857ba8ee5deee4e05366d3c230e5c4bc2d26d550e357135dd7deb",
+ "attestation_sha256": "9758066bf03d1c1ecb4e8c1b6a8cb70f2906348440593e920c35fdc8e77d6fb4",
  "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
  "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
  "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",

@@ -202,7 +202,9 @@ class Context:
             raise RuntimeError('Unbound scheduler reservation')
         if (getattr(request,'mm_features',None) or request.has_encoder_inputs
                 or getattr(request,'streaming_queue',None) is not None
-                or getattr(scheduler,'num_spec_tokens',0)
+                # Speculative tokens are scheduled only for requests already decoding; the prefill
+                # chunks considered here are unchanged by them (GEMMA_SPEC_NGRAM opt-in).
+                or (getattr(scheduler,'num_spec_tokens',0) and os.environ.get('GEMMA_SPEC_NGRAM','0')!='1')
                 or getattr(scheduler,'num_prefill_lookahead',0)):
             raise RuntimeError('Unsupported reservation scheduling input')
         key=self.key(request)
