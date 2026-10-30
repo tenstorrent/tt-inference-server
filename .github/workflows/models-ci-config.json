@@ -300,8 +300,7 @@
                 },
                 "release": {
                     "devices": [
-                        "T3K",
-                        "GALAXY"
+                        "T3K"
                     ]
                 }
             }
