@@ -5,7 +5,7 @@
   "vllm.v1.executor.uniproc_executor": "c4d8cd1ae17a992968b7923662cb9b5bb706c1413eb526bc614318ac9f975938",
   "vllm_tt_plugin.scheduler": "668f455aa3f44c6be190b81b383c61ede23376545903ea3d11a280e4f4e63273",
   "vllm_tt_plugin.model_runner": "8da3a7d99fc3f12405bcc5e0d7cfa10becbbbfdbaacff11ecee4cb9af393fec8",
-  "models.demos.gemma4_31b_qb2.tt.generator": "e255251340c23171e95976b26d090ab206d982bb9de24272b541ee8e9dcc2222",
+  "models.demos.gemma4_31b_qb2.tt.generator": "ce52b9e358c72934032ddaf343296547db6344c1013e09735ca6186b7459ab5b",
   "models.demos.gemma4_31b_qb2.tt.generator_vllm": "28f3d1d2b235b2912fd0e33bf2fd47c8af7cba7c3176f1c0a052dce3f932fbe4",
   "models.demos.gemma4_31b_qb2.tt.history_bank": "69a7462345797c1b8ad4d896479cc291d7e88c5135adffdcadf1c12b5e7ae70d",
   "vllm.v1.core.sched.scheduler": "abca7134821e2fb5cc8572df5c4a0b570ecf702646254327bc786fc452074983",

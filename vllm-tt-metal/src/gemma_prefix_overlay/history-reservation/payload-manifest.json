@@ -34,7 +34,7 @@
    "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
    "module": "models.demos.gemma4_31b_qb2.tt.generator",
    "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-   "target": "e255251340c23171e95976b26d090ab206d982bb9de24272b541ee8e9dcc2222"
+   "target": "ce52b9e358c72934032ddaf343296547db6344c1013e09735ca6186b7459ab5b"
   },
   {
    "root": "metal",
@@ -86,7 +86,7 @@
    "target": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
   }
  ],
- "attestation_sha256": "6fb96e16e4318893224f0738cd94a1bd94c55d5da359f1b6b43654b4cf900f03",
+ "attestation_sha256": "c8e722b1e3d6d295564ff8fe6f952a2575327fa8ed8582c2f58854fc7c23fabc",
  "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
  "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
  "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
