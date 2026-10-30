@@ -13714,6 +13714,33 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
     )
 
 
+def _minimax_m31_flash_deepswe() -> "EvalTask":
+    """DeepSWE v1.1 for M3.1-Flash: MiMo-V2.6-Flash's task (mini-swe-agent 2.3.0, temperature 1.0,
+    top_p 0.95, 128K max tokens, agent egress blocked except the endpoint), scored against the card.
+
+    The card's 73.7 used mini-SWE-agent 2.4.5 at 512K context; this keeps the 2.3.0 pin the harness
+    was validated with (MiMo's GPU reference). No GPU reference for M3.1-Flash yet.
+    """
+    mimo = next(
+        task
+        for config in _eval_config_list
+        if config.hf_model_repo == "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+        for task in config.tasks
+        if task.task_name == "deepswe"
+    )
+    return replace(
+        mimo,
+        score=replace(
+            mimo.score,
+            published_score=73.7,
+            published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash",
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            mode_reference_scores={},
+        ),
+    )
+
+
 _eval_config_list.append(
     EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M3.1-Flash",
@@ -13722,7 +13749,8 @@ _eval_config_list.append(
             for config in _eval_config_list
             if config.hf_model_repo == "MiniMaxAI/MiniMax-M3"
             for task in config.tasks
-        ],
+        ]
+        + [_minimax_m31_flash_deepswe()],
     )
 )
 

@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""MiniMax-M3.1-Flash reuses MiniMax-M3's eval tasks, without targets."""
+"""MiniMax-M3.1-Flash reuses MiniMax-M3's eval tasks, without targets, plus DeepSWE v1.1."""
 
 from dataclasses import replace
 
@@ -13,6 +13,9 @@ from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
 M3 = "MiniMaxAI/MiniMax-M3"
 M31_FLASH = "MiniMaxAI/MiniMax-M3.1-Flash"
+MIMO = "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+# Not an M3 task: M3.1-Flash adds it with MiMo's harness settings.
+EXTRA = {"deepswe"}
 
 
 def _tasks(repo):
@@ -20,12 +23,14 @@ def _tasks(repo):
 
 
 def test_m31_flash_runs_every_m3_task():
-    assert _tasks(M31_FLASH).keys() == _tasks(M3).keys()
+    assert _tasks(M31_FLASH).keys() == _tasks(M3).keys() | EXTRA
 
 
 def test_m31_flash_tasks_match_m3_apart_from_targets_and_concurrency():
     m3 = _tasks(M3)
     for name, task in _tasks(M31_FLASH).items():
+        if name in EXTRA:
+            continue
         expected = replace(m3[name], score=task.score)
         if task.agentic_eval_config is not None:
             cfg = task.agentic_eval_config
@@ -60,6 +65,8 @@ def test_m31_flash_agentic_concurrency_fits_kix1():
 
 def test_m31_flash_has_no_targets():
     for name, task in _tasks(M31_FLASH).items():
+        if name in EXTRA:
+            continue
         score = task.score
         assert score.published_score is None, name
         assert score.gpu_reference_score is None, name
@@ -100,3 +107,14 @@ def test_m31_flash_tau3_user_sim_and_verifier_call_the_served_m31_name():
             continue
         envs = {**cfg.environment_env, **cfg.verifier_env}
         assert "openai/MiniMaxAI/MiniMax-M3" not in envs.values(), name
+
+
+def test_m31_flash_deepswe_is_mimos_task_scored_against_the_card():
+    # Same harness as MiMo's (mini-swe-agent 2.3.0, endpoint-only egress); the card's
+    # 73.7 is the published score, and there is no GPU reference yet.
+    flash, mimo = _tasks(M31_FLASH)["deepswe"], _tasks(MIMO)["deepswe"]
+    assert flash.agentic_eval_config == mimo.agentic_eval_config
+    assert flash.agentic_eval_config.allow_agent_endpoint
+    assert flash.score.published_score == 73.7
+    assert flash.score.gpu_reference_score is None
+    assert not flash.score.mode_reference_scores
