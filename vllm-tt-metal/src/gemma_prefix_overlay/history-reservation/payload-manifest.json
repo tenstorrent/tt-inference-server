@@ -34,14 +34,14 @@
    "path": "models/demos/gemma4_31b_qb2/tt/generator.py",
    "module": "models.demos.gemma4_31b_qb2.tt.generator",
    "base": "00684caf34b0eca7e0437efb24a7d3b9922537bcf8f2a70b4c58e489a56a54c2",
-   "target": "ce52b9e358c72934032ddaf343296547db6344c1013e09735ca6186b7459ab5b"
+   "target": "47d3a1621ededd5c37b71231b7e4837ce4f78c4b2c43f27d5559c0d71359dc62"
   },
   {
    "root": "metal",
    "path": "models/demos/gemma4_31b_qb2/tt/generator_vllm.py",
    "module": "models.demos.gemma4_31b_qb2.tt.generator_vllm",
    "base": "fed38d6ef30c98442a26a69409f2b9dfb85a80d416bf09f89b01c2cef792663f",
-   "target": "28f3d1d2b235b2912fd0e33bf2fd47c8af7cba7c3176f1c0a052dce3f932fbe4"
+   "target": "29ddee70a99317e0414dd63acc960103dabbeb2be4431b67fde8071ce13b0927"
   },
   {
    "root": "metal",
@@ -86,7 +86,7 @@
    "target": "8bba01d9c65760ea021dba6882e89ff0858cd90256ceffc49671b65df9134040"
   }
  ],
- "attestation_sha256": "c8e722b1e3d6d295564ff8fe6f952a2575327fa8ed8582c2f58854fc7c23fabc",
+ "attestation_sha256": "18bbb809dfe857ba8ee5deee4e05366d3c230e5c4bc2d26d550e357135dd7deb",
  "source_pins_sha256": "25d73edfcb9f85fe3c56333b460217cb4bbfbb166f93c2de937f85051755d533",
  "candidate_patch_sha256": "315f342a633fb09aa1d06aeb3d13adbfafbb4e59a527b4b2eef4c6c698d8c8c0",
  "scope": "Conditional reviewed A24/H3/F458752 source; preserves composed core and accepted A20 source lineage. Actual A24 capacity/admission/API acceptance pending.",
