@@ -1754,8 +1754,9 @@ templates:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         max_num_seqs: 32
-        block_size: 4096
-        mamba_block_size: 4096
+        block_size: 2048
+        mamba_block_size: 2048
+        num_gpu_blocks_override: 385
         mamba_cache_mode: align
         max_num_batched_tokens: 131072
         long_prefill_token_threshold: 4096

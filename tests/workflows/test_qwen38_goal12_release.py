@@ -20,7 +20,9 @@ def test_default_route_is_stage11_autoport():
     d = spec.device_model_spec
     assert d.max_concurrency == 32
     assert int(d.vllm_args['max_num_seqs']) == 32
-    assert int(d.vllm_args['block_size']) == 4096
+    assert int(d.vllm_args['block_size']) == 2048
+    assert int(d.vllm_args['mamba_block_size']) == 2048
+    assert int(d.vllm_args['num_gpu_blocks_override']) == 385
     assert d.vllm_args['enable_prefix_caching'] is True
     assert int(d.vllm_args['shutdown_timeout']) == 30
     assert d.env_vars['TT_MODEL_CLASS_OVERRIDES'].endswith('tt.generator_vllm:Qwen38ForCausalLM')

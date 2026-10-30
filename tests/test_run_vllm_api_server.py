@@ -1655,3 +1655,35 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+@pytest.mark.parametrize("passthrough", [[], ["--block-size", "2048", "--mamba-block-size=2048", "--num-gpu-blocks-override", "385"]])
+def test_qwen38_pool_candidate_runtime_flags(monkeypatch, tmp_path, run_vllm_api_server_module, passthrough):
+    from workflows.model_spec import resolve_model_spec
+    templates = load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+    specs = [s for t in templates for s in t.expand_to_specs() if s.hf_model_repo == "Qwen/Qwen3.8-27B"]
+    spec = resolve_model_spec(specs, model="Qwen/Qwen3.8-27B", device="p300x2", impl=None, catalog_name="Shield")
+    # Exercise the exact JSON serialization mounted as RUNTIME_MODEL_SPEC_JSON_PATH.
+    path = spec.to_json("pool-candidate-host", output_dir=str(tmp_path))
+    runtime = json.loads(path.read_text())
+    defaults = runtime["device_model_spec"]["vllm_args"]
+    expected = {"block_size": 2048, "mamba_block_size": 2048, "num_gpu_blocks_override": 385,
+                "max_num_seqs": 32, "max_model_len": 262144, "max_num_batched_tokens": 131072,
+                "long_prefill_token_threshold": 4096, "shutdown_timeout": 30}
+    for key, value in expected.items():
+        assert int(defaults[key]) == value
+    assert defaults["enable_prefix_caching"] is True
+    assert defaults["mamba_cache_mode"] == "align"
+    assert defaults["async_scheduling"] is True
+    assert defaults["revision"] == defaults["tokenizer_revision"] == "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    assert runtime["device_model_spec"]["max_concurrency"] == 32
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(argparse.Namespace(service_port=None), passthrough, defaults)
+    flags = [a.partition("=")[0].replace("-", "_") for a in sys.argv[1:] if a.startswith("--")]
+    assert len(flags) == len(set(flags)), "duplicate normalized runtime flags"
+    for key, value in expected.items():
+        tokens = sys.argv[1:]
+        match = next(i for i, token in enumerate(tokens) if token.partition("=")[0].lstrip("-").replace("-", "_") == key)
+        actual = tokens[match].partition("=")[2] if "=" in tokens[match] else tokens[match + 1]
+        assert actual == str(value)
+    assert "__enable_prefix_caching" in flags
