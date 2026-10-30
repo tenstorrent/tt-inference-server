@@ -15,6 +15,7 @@ def _training_service_patches(mock_settings):
 
     stack = ExitStack()
     stack.enter_context(patch("model_services.training_service.Manager"))
+    stack.enter_context(patch("model_services.base_job_service.Manager"))
     stack.enter_context(
         patch(
             "model_services.training_service.get_settings",

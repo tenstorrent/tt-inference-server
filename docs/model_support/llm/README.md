@@ -17,6 +17,8 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | [gemma-4-31B-it](gemma-4-31B-it_blackhole_galaxy.md) | - | - | - | [🟢 Complete](gemma-4-31B-it_blackhole_galaxy.md) | - | - | - | [🟢 Complete](gemma-4-31B-it_p300x2.md) | - | - | - | - |
 | [Mistral-7B-Instruct-v0.3](Mistral-7B-Instruct-v0.3_t3k.md) | - | - | - | - | - | - | - | - | - | [🟢 Complete](Mistral-7B-Instruct-v0.3_t3k.md) | [🟢 Complete](Mistral-7B-Instruct-v0.3_n150.md) | [🟢 Complete](Mistral-7B-Instruct-v0.3_n300.md) |
 | [Qwen3.8-27B](Qwen3.8-27B_p300x2.md) | - | - | - | - | - | - | - | [🟢 Complete](Qwen3.8-27B_p300x2.md) | - | - | - | - |
+| [gemma-4-26B-A4B-it](gemma-4-26B-A4B-it_p300x2.md) | - | - | - | - | - | - | - | [🟡 Functional](gemma-4-26B-A4B-it_p300x2.md) | - | - | - | - |
+| [granite-4.2-30b](granite-4.2-30b_p300x2.md) | - | - | - | - | - | - | - | [🟡 Functional](granite-4.2-30b_p300x2.md) | - | - | - | - |
 | [Llama-3.1-8B-Instruct](Llama-3.1-8B-Instruct_p300x2.md) | - | - | - | - | - | - | - | [🟡 Functional](Llama-3.1-8B-Instruct_p300x2.md) | - | - | - | - |
 | [Llama-3.2-1B](Llama-3.2-1B_t3k.md) | - | - | - | - | - | - | - | - | - | [🟡 Functional](Llama-3.2-1B_t3k.md) | [🟡 Functional](Llama-3.2-1B_n150.md) | [🟡 Functional](Llama-3.2-1B_n300.md) |
 | [Llama-3.2-3B](Llama-3.2-3B_t3k.md) | - | - | - | - | - | - | - | - | - | [🟡 Functional](Llama-3.2-3B_t3k.md) | [🟡 Functional](Llama-3.2-3B_n150.md) | [🟡 Functional](Llama-3.2-3B_n300.md) |
@@ -34,4 +36,8 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - | - |
 | [diffusiongemma-26B-A4B-it](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - |
-| [Qwen3.6-27B](Qwen3.6-27B_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - |
+| [K2-Horizon-7B](K2-Horizon-7B_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](K2-Horizon-7B_p300x2.md) | - | - | - | - |
+| [Kolibri-1-BF16](Kolibri-1-BF16_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](Kolibri-1-BF16_p300x2.md) | - | - | - | - |
+| [Muse-Glimmer-30B](Muse-Glimmer-30B_p300x2.md) | - | - | - | - | - | - | - | [🛠️ Experimental](Muse-Glimmer-30B_p300x2.md) | - | - | - | - |
+| [Qwen3.5-27B](Qwen3.5-27B_p150x4.md) | - | - | - | - | - | [🛠️ Experimental](Qwen3.5-27B_p150x4.md) | - | - | - | - | - | - |
+| [Qwen3.6-27B](Qwen3.6-27B_p150x4.md) | - | - | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p150x4.md) | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - |

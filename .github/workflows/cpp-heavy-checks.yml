@@ -1873,7 +1873,9 @@ jobs:
       - name: Install guidellm
         run: |
           uv venv
-          uv pip install guidellm
+          # guidellm 0.7.0 replaced `guidellm benchmark run` with a new
+          # `guidellm run` CLI; the workload step below uses the old one.
+          uv pip install 'guidellm==0.6.1'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Start TSan-instrumented server
@@ -1899,6 +1901,9 @@ jobs:
           # doesn't need them, but inheriting the env is harmless.
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
         run: |
+          # Without pipefail, `| tee` hides a guidellm failure and the race
+          # check below only covers server startup/shutdown.
+          set -o pipefail
           mkdir -p bench_results/tsan_ci
           guidellm benchmark run \
             --target "http://localhost:8001" \
