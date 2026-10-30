@@ -218,6 +218,88 @@ def test_load_chart_shows_hit_rate_when_the_engine_metrics_exist(tmp_path):
     assert "Prefix cache hit rate (engine counters)" in svg
 
 
+def _server_metrics_by_source(path, by_source):
+    """``vllm:prompt_tokens_by_source`` per window, one series per source, next
+    to hit/query counters stuck at zero, as a lane-DP TT server exports them."""
+
+    def series(per_window, labels):
+        return {
+            "endpoint_url": "http://e:1/metrics",
+            "labels": labels,
+            "timeslices": [
+                {
+                    "start_ns": T0 + i * 10**9,
+                    "end_ns": T0 + (i + 1) * 10**9,
+                    "total": v,
+                }
+                for i, v in enumerate(per_window)
+            ],
+        }
+
+    windows = len(next(iter(by_source.values())))
+    zeros = {"type": "counter", "series": [series([0.0] * windows, {})]}
+    doc = {
+        "summary": {},
+        "metrics": {
+            "vllm:prefix_cache_hits": zeros,
+            "vllm:prefix_cache_queries": zeros,
+            "vllm:prompt_tokens_by_source": {
+                "type": "counter",
+                "series": [
+                    series(v, {"source": source}) for source, v in by_source.items()
+                ],
+            },
+        },
+    }
+    path.write_text(json.dumps(doc, indent=2))
+
+
+def test_hit_rate_comes_from_the_token_source_partition(tmp_path):
+    """External KV counts as a hit, and zeroed hit/query counters do not
+    blank the panel."""
+    from llm_module.agentic_traces.charts import (
+        HIT_RATE_CUMULATIVE,
+        HIT_RATE_SOURCE,
+        SOURCE_ENGINE,
+        load_engine_metrics,
+    )
+
+    path = tmp_path / "server_metrics_export.json"
+    _server_metrics_by_source(
+        path,
+        {
+            "local_cache_hit": [60, 0, 30],
+            "external_kv_transfer": [25, 0, 0],
+            "local_compute": [15, 0, 70],
+        },
+    )
+
+    series = load_engine_metrics(path, T0)
+
+    # 85/100, the empty window adds nothing, then 115/200.
+    assert [round(v, 1) for _, v in series[HIT_RATE_CUMULATIVE]] == [
+        85.0,
+        85.0,
+        57.5,
+    ]
+    assert series[HIT_RATE_SOURCE] == [(0.0, SOURCE_ENGINE)]
+
+
+def test_load_chart_shows_hit_rate_from_the_token_source_partition(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    _write_artifacts(artifacts)
+    _server_metrics_by_source(
+        artifacts / "server_metrics_export.json",
+        {"local_cache_hit": [80, 80, 80], "local_compute": [20, 20, 20]},
+    )
+
+    written = write_point_charts(artifacts, tmp_path / "charts")
+
+    svg = (tmp_path / "charts" / written["load"]).read_text()
+    assert "Prefix cache hit rate (engine counters)" in svg
+
+
 def test_load_chart_falls_back_to_tokens_in_flight_without_engine_metrics(tmp_path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()

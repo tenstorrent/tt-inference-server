@@ -338,7 +338,27 @@ def usage_hit_rate(
 SOURCE_ENGINE = 1.0
 SOURCE_USAGE = 2.0
 
+# vLLM partitions the prompt tokens it scheduled by where they came from, one
+# series per ``source`` label: ``local_cache_hit`` is the engine's own prefix
+# cache, ``external_kv_transfer`` KV loaded through a KV connector (an offload
+# tier, or a disaggregated prefill worker), ``local_compute`` the rest. A token
+# from either of the first two was not prefilled here, so both count as hits.
+PROMPT_TOKENS_BY_SOURCE = "vllm:prompt_tokens_by_source"
+CACHE_HIT_TOKEN_SOURCES: Tuple[str, ...] = ("local_cache_hit", "external_kv_transfer")
+
 _MAX_ENGINE_LINES = 4
+
+
+def _by_source(block: Dict, hit: bool) -> Dict:
+    """``block`` narrowed to the cache-hit sources, or to every source."""
+    return {
+        "series": [
+            s
+            for s in block.get("series") or []
+            if not hit
+            or (s.get("labels") or {}).get("source") in CACHE_HIT_TOKEN_SOURCES
+        ]
+    }
 
 
 def load_engine_metrics(
@@ -346,14 +366,17 @@ def load_engine_metrics(
 ) -> Dict[str, List[Tuple[float, float]]]:
     """Engine-side series from ``server_metrics_export.json``, one pass.
 
-    Prefix-cache hit rate from ``vllm:prefix_cache_hits/queries``, KV-cache
-    utilisation per engine (percent) from ``vllm:kv_cache_usage_perc`` and the
-    summed queue from ``vllm:num_requests_waiting``. Whatever the engine did
-    not export is simply absent.
+    Prefix-cache hit rate from ``vllm:prompt_tokens_by_source``, the same
+    partition the report's Cache Hit % is read from, else from
+    ``vllm:prefix_cache_hits/queries``; KV-cache utilisation per engine
+    (percent) from ``vllm:kv_cache_usage_perc`` and the summed queue from
+    ``vllm:num_requests_waiting``. Whatever the engine did not export is simply
+    absent.
     """
     blocks = _stream_metric_blocks(
         path,
         (
+            PROMPT_TOKENS_BY_SOURCE,
             "vllm:prefix_cache_hits",
             "vllm:prefix_cache_queries",
             "vllm:kv_cache_usage_perc",
@@ -361,15 +384,27 @@ def load_engine_metrics(
         ),
     )
     out: Dict[str, List[Tuple[float, float]]] = {}
-    if "vllm:prefix_cache_hits" in blocks and "vllm:prefix_cache_queries" in blocks:
+    by_source = blocks.get(PROMPT_TOKENS_BY_SOURCE)
+    if by_source:
+        out.update(
+            _hit_rate_lines(
+                _summed_windows(_by_source(by_source, hit=True), origin_ns),
+                _summed_windows(_by_source(by_source, hit=False), origin_ns),
+            )
+        )
+    if (
+        not out
+        and "vllm:prefix_cache_hits" in blocks
+        and "vllm:prefix_cache_queries" in blocks
+    ):
         out.update(
             _hit_rate_lines(
                 _summed_windows(blocks["vllm:prefix_cache_hits"], origin_ns),
                 _summed_windows(blocks["vllm:prefix_cache_queries"], origin_ns),
             )
         )
-        if out:
-            out[HIT_RATE_SOURCE] = [(0.0, SOURCE_ENGINE)]
+    if out:
+        out[HIT_RATE_SOURCE] = [(0.0, SOURCE_ENGINE)]
     kv = blocks.get("vllm:kv_cache_usage_perc")
     if kv:
         engines = []
