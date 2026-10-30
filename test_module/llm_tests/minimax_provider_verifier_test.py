@@ -797,7 +797,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--server-url", required=True, help="e.g. http://host:8000")
-    parser.add_argument("--model", default="MiniMaxAI/MiniMax-M3")
+    parser.add_argument(
+        "--model",
+        default="MiniMaxAI/MiniMax-M3.1-Flash",
+        help="served model name (the deployed endpoint serves MiniMax-M3.1-Flash)",
+    )
     parser.add_argument(
         "--tests", default="verifier,format", help="comma-separated: verifier, format"
     )
