@@ -50,7 +50,7 @@ def test_terminal_bench_uses_the_task_resources_unless_published_otherwise():
     )
 
 
-def test_terminal_bench_caps_trials_at_their_budget():
+def test_terminal_bench_caps_cpu_and_leaves_memory_on_auto():
     loose = {
         (model, name): (
             agentic.cpu_enforcement_policy,
@@ -58,6 +58,6 @@ def test_terminal_bench_caps_trials_at_their_budget():
         )
         for model, name, agentic in _terminal_bench_tasks()
         if (agentic.cpu_enforcement_policy, agentic.memory_enforcement_policy)
-        != ("limit", "limit")
+        != ("limit", None)
     }
-    assert not loose, f"Terminal-Bench trials not capped at their budget: {loose}"
+    assert not loose, f"Terminal-Bench trials with another CPU/memory policy: {loose}"

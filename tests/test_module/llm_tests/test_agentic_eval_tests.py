@@ -60,7 +60,7 @@ class FakeHarborConfig:
     override_cpus: Optional[int] = 16
     override_memory_mb: Optional[int] = 48 * 1024
     cpu_enforcement_policy: Optional[str] = "limit"
-    memory_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = None
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = 3 * 60 * 60
     agent_setup_timeout_multiplier: Optional[float] = None

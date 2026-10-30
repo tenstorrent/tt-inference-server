@@ -2,13 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Harbor trials are capped at their CPU and memory budget on every environment.
+"""Harbor trials are capped at their CPU budget on every environment.
 
 Harbor's ``auto`` policy means a hard limit on Docker but only a request on
 Kubernetes, where a trial can then burst to the whole node. The run config
-carries an explicit enforcement policy so both environments apply the same
-ceiling. It reaches Harbor through the config file's ``environment`` block, or
-the ``--cpus`` / ``--memory`` flags when Harbor runs without a config file.
+carries an explicit CPU policy so both environments apply the same ceiling.
+Memory stays on ``auto``: a hard limit on Docker, and on Kubernetes a request
+whose ceiling comes from ``memory_limit_multiplier``. Policies reach Harbor
+through the config file's ``environment`` block, or the ``--cpus`` /
+``--memory`` flags when Harbor runs without a config file.
 """
 
 import json
@@ -59,12 +61,14 @@ def _cli_command(config):
     return captured["cmd"]
 
 
-def test_harbor_eval_config_caps_cpu_and_memory_by_default():
+def test_harbor_eval_config_caps_cpu_and_leaves_memory_on_auto():
+    # Memory stays on ``auto`` so Kubernetes can take memory_limit_multiplier
+    # (which Harbor applies only under ``auto``); Docker's auto is a hard limit.
     config = HarborEvalConfig(
         dataset="terminal-bench/terminal-bench-2-1", agent="terminus-2"
     )
     assert config.cpu_enforcement_policy == "limit"
-    assert config.memory_enforcement_policy == "limit"
+    assert config.memory_enforcement_policy is None
 
 
 def test_policies_reach_the_config_file_environment_block(tmp_path):

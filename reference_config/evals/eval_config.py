@@ -88,6 +88,18 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         if normalized not in {"true", "false"}:
             raise ValueError(f"{env_var} must be 'true' or 'false'")
         kwargs[kwarg] = normalized == "true"
+    memory_limit_multiplier = os.getenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER")
+    if memory_limit_multiplier:
+        # Memory limit = task memory_mb x this; the request stays at memory_mb,
+        # so pods pack the same and a short spike above the budget is not
+        # OOM-killed. Harbor applies it only under the ``auto`` memory policy.
+        try:
+            multiplier = float(memory_limit_multiplier)
+        except ValueError:
+            multiplier = 0.0
+        if multiplier < 1:
+            raise ValueError("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER must be a number >= 1")
+        kwargs["memory_limit_multiplier"] = multiplier
     prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
     if prebuilt_image_mirrors:
         parsed_mirrors = json.loads(prebuilt_image_mirrors)
@@ -291,10 +303,12 @@ class HarborEvalConfig:
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     # Harbor's ``auto`` is a hard limit on Docker but only a request on
-    # Kubernetes, where a trial can burst to the whole node. ``limit`` caps both
-    # (Kubernetes then sets the request to the limit).
+    # Kubernetes, where a trial can burst to the whole node. CPU uses ``limit``
+    # on both (Kubernetes then sets the request to the limit); going over only
+    # throttles. Memory stays on ``auto`` (None): a hard limit on Docker, and on
+    # Kubernetes a request whose ceiling is HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER.
     cpu_enforcement_policy: Optional[str] = "limit"
-    memory_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = None
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
     agent_setup_timeout_multiplier: Optional[float] = None
