@@ -473,6 +473,8 @@ def blocks_for_task(
             "ratio_to_published": ratio_pub,
             "ratio_to_reference": ratio_ref,
             "accuracy_check": accuracy_check,
+            "reference_threshold_informational": getattr(task, "reference_threshold_informational", False),
+            "evaluation_metadata": getattr(task, "evaluation_metadata", {}),
             **evidence,
             "priority": getattr(task, "priority", "must"),
         }
@@ -569,6 +571,12 @@ def _prepare_eval_tokenizer(ctx, task, output_path: Path):
 def _run_eval_task(
     ctx: MediaContext, task, auth_token: str, *, output_path: Path
 ) -> int:
+    from reference_config.evals.qwen38_gpqa_arm import applies
+    if applies(ctx.model_spec) and task.task_name == 'r1_gpqa_diamond':
+        from workflows.qwen38_checkpoint_preflight import ensure_checkpoint_preflight
+        # run_llm_eval supplies a fresh eval-attempt UUID directory. Reverify
+        # the current owned server on every invocation, never a cached receipt.
+        ensure_checkpoint_preflight(ctx.model_spec.hf_model_repo, output_path)
     tokenizer = _prepare_eval_tokenizer(ctx, task, output_path)
     cmd = build_eval_command(
         task,

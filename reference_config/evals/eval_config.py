@@ -468,6 +468,9 @@ class EvalTask:
     # --eval-samples does not name the task; limit modes then take the first N
     # of this list instead of passing ``--limit`` (lm-eval rejects both).
     doc_ids: Optional[List[int]] = None
+    # Only reference comparison is advisory; execution/incomplete errors remain failures.
+    reference_threshold_informational: bool = False
+    evaluation_metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         for name in ("wall_clock_timeout_seconds", "max_attempts"):

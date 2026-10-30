@@ -59,7 +59,9 @@ _MINI_SWE_AGENT = "mini-swe-agent"
 # Custom agents that run inside the task container, as mini-swe-agent does
 # (terminus-2 and other agents run on the host): the tau3 adapter's LLM agent
 # runs run_tau3_llm_agent.py in the container.
-_IN_CONTAINER_AGENT_IMPORTS = ("adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",)
+_ISOLATED_MINI_SWE = "llm_module.agentic.qwen38_isolated_agent:IsolatedMiniSweAgent"
+_ISOLATED_AGENTS = (_ISOLATED_MINI_SWE, "llm_module.agentic.qwen38_isolated_agent:IsolatedTerminus2")
+_IN_CONTAINER_AGENT_IMPORTS = ("adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent", _ISOLATED_MINI_SWE)
 
 
 @dataclass(frozen=True)
@@ -179,7 +181,7 @@ def _apply_mini_swe_agent_defaults(
 def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
     """Copy agent options without injecting connection arguments."""
     agent_kwargs = copy.deepcopy(dict(config.agent_kwargs))
-    if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
+    if config.agent == _MINI_SWE_AGENT and config.agent_import_path in (None, _ISOLATED_MINI_SWE):
         _apply_mini_swe_agent_defaults(agent_kwargs, config)
     return agent_kwargs
 
@@ -314,6 +316,17 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    if owner and config.environment_type == "docker":
+        labels = {"com.tenstorrent.agentic-owner": owner}
+        services = {"main": {"labels": labels}}
+        if config.agent_import_path in _ISOLATED_AGENTS:
+            # This prepared task has a dynamic agent-only policy, so Harbor
+            # creates this sidecar in addition to the main task container.
+            services["harbor-docker-egress-control-sidecar"] = {"labels": labels}
+        overlay = config.jobs_dir / f"{config.task_name}_owned_containers.json"
+        overlay.write_text(json.dumps({"services": services}, indent=2) + "\n")
+        environment_config["extra_docker_compose"] = [str(overlay)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -566,6 +579,15 @@ def run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
+    if config.agent_import_path in _ISOLATED_AGENTS:
+        # A venv console script starts with its bin directory on sys.path.
+        # Expose this checkout to the host child without changing its cwd or
+        # the inherited path used by other dependencies.
+        repo_root = str(Path(__file__).resolve().parents[2])
+        inherited_path = process_env.get("PYTHONPATH")
+        process_env["PYTHONPATH"] = (
+            repo_root if inherited_path is None else repo_root + os.pathsep + inherited_path
+        )
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(

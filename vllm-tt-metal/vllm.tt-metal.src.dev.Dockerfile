@@ -99,11 +99,12 @@ ENV UV_HTTP_RETRIES=10
 # tt-transformers declares a released ttnn, and a resolving install would replace the ttnn
 # built here. Two models pinning different commits fail the build instead of leaving one of
 # them on the other's version.
-RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
+    && if [ -f ${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/ci/bootstrap_metal.py ]; then python3 ${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/ci/bootstrap_metal.py ${TT_METAL_HOME}; fi \
     && bash ./build_metal.sh \
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
@@ -121,6 +122,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
+    && if [ -f ${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/ci/bootstrap_dependencies.py ]; then python3 ${TT_METAL_HOME}/models/autoports/qwen_qwen3_8_27b/ci/bootstrap_dependencies.py ${vllm_tt_plugin_dir}; fi \
     && source docs/install-vllm-tt.sh \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"

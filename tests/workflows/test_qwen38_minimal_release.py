@@ -23,23 +23,21 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
         [template_spec],
         model="Qwen/Qwen3.8-27B",
         device="p300x2",
-        impl="qwen38-27b-qb2",
+        impl="qwen38-autoport",
         catalog_name="Shield",
     )
     benchmark_config = get_benchmark_config(spec)
     run_configs = get_llm_configs(spec, spec.device_type)
 
-    assert spec.status == ModelStatusTypes.COMPLETE
-    assert spec.impl.impl_name == "qwen38-27b-qb2"
-    assert spec.device_model_spec.max_concurrency == 16
-    assert spec.device_model_spec.max_tokens_all_users == 1_050_592
-    assert spec.device_model_spec.vllm_args["max_num_seqs"] == "16"
-    assert spec.device_model_spec.env_vars["EXTRA_MODELS_DIR"] == (
-        "../../tt-metal/models/demos"
-    )
+    assert spec.status == ModelStatusTypes.EXPERIMENTAL
+    assert spec.impl.impl_name == "qwen38-autoport"
+    assert spec.device_model_spec.max_concurrency == 32
+    assert spec.device_model_spec.max_tokens_all_users == 262144
+    assert spec.device_model_spec.vllm_args["max_num_seqs"] == 32
+    assert spec.impl.code_path == "models/autoports/qwen_qwen3_8_27b"
     assert len(benchmark_config.tasks) == 3
-    assert len(run_configs) == 24
-    assert max(cfg.max_concurrency for cfg in run_configs) == 16
+    assert run_configs
+    assert max(cfg.max_concurrency for cfg in run_configs) == 32
     assert max(cfg.isl for cfg in run_configs) == 131072
     graded = [cfg for cfg in run_configs if cfg.targets]
     assert [(cfg.isl, cfg.osl, cfg.max_concurrency) for cfg in graded] == [

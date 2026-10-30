@@ -1735,54 +1735,47 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  impl: qwen38_27b_qb2
+  impl: qwen38_autoport
   inference_engine: VLLM
-  model_type: LLM
-  supported_modalities:
-    - text
   device_model_specs:
     - device: P300X2
-      max_concurrency: 16
+      max_concurrency: 32
       max_context: 262144
-      max_tokens_all_users_override: 1050592
       default_impl: true
+      tensor_cache_timeout: 7200
       env_vars:
-        QWEN_DECODE_BUCKETS: "1"
-        QWEN_COMPACT_DECODE_RESIDUAL: "1"
-        QWEN_COMPACT_DECODE_MLP: "1"
-        QWEN_BATCHED_DECODE_ROPE: "1"
-        QWEN_COMPACT_DECODE_ATTENTION: "1"
-        QWEN_VLLM_KV_POOL_TOKENS: "1050592"
-        QWEN_BATCHED_PREFILL: "1"
-        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
-        QWEN_PREFILL_BATCHED_HEAD: "1"
-        QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
-        QWEN_PREFILL_STARTUP_WARMUP: "1"
-        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
-        HF_MODEL: Qwen/Qwen3.8-27B
-        MESH_DEVICE: "(1, 4)"
-        QWEN_VLLM_HOST_COMPATIBILITY: "1"
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        MESH_DEVICE: P300x2
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
+        QWEN38_PRECISION_CONFIG: "/home/container_app_user/qwen38_selected_precision.json"
+        TT_METAL_TRACE_ALLOC_TRACKING: "0"
+        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
       vllm_args:
-        block_size: "32"
+        shutdown_timeout: 30
+        revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        max_num_seqs: 32
+        block_size: 4096
+        mamba_block_size: 4096
+        mamba_cache_mode: align
+        max_num_batched_tokens: 131072
+        long_prefill_token_threshold: 4096
+        max_logprobs: -1
+        async_scheduling: true
+        enable_prefix_caching: true
+        language_model_only: true
         enable_auto_tool_choice: true
-        hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
-        max-logprobs: "-1"
-        max_num_seqs: "16"
-        no-enable-prefix-caching: true
-        reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
       override_tt_config:
         fabric_config: FABRIC_1D_RING
-        fabric_max_packet_payload_size_bytes: 8192
-        l1_small_size: 24576
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-  status: COMPLETE
+  status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
     Qwen/Qwen3.8-27B:
+      model_path_env: QWEN38_CHECKPOINT
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 

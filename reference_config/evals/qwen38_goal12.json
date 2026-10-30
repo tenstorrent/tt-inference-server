@@ -1,0 +1,20 @@
+{
+  "phase": "unscored-native-swe-isolated-two-task-smoke-timeout-sized",
+  "scored": false,
+  "evals": [
+    "swe_bench_verified"
+  ],
+  "max_concurrent": 32,
+  "sample_count": 2,
+  "dataset": "swebench-verified",
+  "dataset_ref": null,
+  "task_names": [
+    "django__django-11299",
+    "astropy__astropy-14096"
+  ],
+  "isolate_agent_network": true,
+  "limits_source": "release eval_config.py at upstream 411057222c2dc5a4268e693b0bd57bc0e2571f38; no lowered limits",
+  "intent": "isolated_smoke",
+  "reference_threshold_informational": true,
+  "request_timeout_sec": 7200
+}

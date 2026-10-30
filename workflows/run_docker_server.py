@@ -645,6 +645,10 @@ def generate_docker_run_command(
             f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         ]
 
+    owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    if owner:
+        docker_command += ["--label", f"com.tenstorrent.agentic-owner={owner}"]
+
     # setup_config-dependent mounts (cache_root volume)
     if setup_config:
         if setup_config.host_model_volume_root:
@@ -691,6 +695,10 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    from workflows.qwen38_selected_precision import policy_mount
+    precision_mount, precision_env = policy_mount(model_spec)
+    docker_command.extend(precision_mount)
+    docker_env_vars.update(precision_env)
     if quetzal_package_mount:
         docker_env_vars.update(
             quetzal_package_env(quetzal_package_mount, local_server=False)

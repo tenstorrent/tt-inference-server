@@ -29,6 +29,8 @@ class AgenticEvalParser(LLMResultParser):
         result_path: Optional[Path] = None,
         limit_mode: Any = None,
         priority: str = "must",
+        reference_threshold_informational: bool = False,
+        evaluation_metadata: Optional[Mapping[str, Any]] = None,
     ) -> None:
         self.task_name = task_name
         self.score = score
@@ -41,6 +43,8 @@ class AgenticEvalParser(LLMResultParser):
         # acceptance check reads it from block data and defaults to "must"
         # when absent, so it has to travel with the block here too.
         self.priority = priority
+        self.reference_threshold_informational = reference_threshold_informational
+        self.evaluation_metadata = dict(evaluation_metadata or {})
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
@@ -74,6 +78,8 @@ class AgenticEvalParser(LLMResultParser):
                 metrics=metrics,
                 limit_mode=self.limit_mode,
                 priority=self.priority,
+                reference_threshold_informational=self.reference_threshold_informational,
+                evaluation_metadata=self.evaluation_metadata,
             ),
         )
 
@@ -94,6 +100,8 @@ class AgenticEvalParser(LLMResultParser):
                 success=False,
                 subprocess_rc=return_code,
                 priority=self.priority,
+                reference_threshold_informational=self.reference_threshold_informational,
+                evaluation_metadata=self.evaluation_metadata,
             ),
         )
 
@@ -108,6 +116,8 @@ def _build_evals_data(
     error: Optional[str] = None,
     subprocess_rc: Optional[int] = None,
     priority: str = "must",
+    reference_threshold_informational: bool = False,
+    evaluation_metadata: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Shape agentic results like standard lm-eval Blocks for report rendering."""
 
@@ -152,6 +162,8 @@ def _build_evals_data(
         "accuracy_check": accuracy_check,
         "mean_seconds_per_task": metrics.get("mean_seconds_per_task"),
         "priority": priority,
+        "reference_threshold_informational": reference_threshold_informational,
+        "evaluation_metadata": dict(evaluation_metadata or {}),
     }
     if not success:
         data["success"] = False

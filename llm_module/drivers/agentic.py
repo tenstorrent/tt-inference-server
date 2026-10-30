@@ -70,6 +70,8 @@ class AgenticEvalDriver(LLMDriver):
             score=task.score,
             limit_mode=_get_limit_mode(runtime_config),
             priority=getattr(task, "priority", "must"),
+            reference_threshold_informational=getattr(task, "reference_threshold_informational", False),
+            evaluation_metadata=getattr(task, "evaluation_metadata", {}),
         )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -105,6 +107,8 @@ class AgenticEvalDriver(LLMDriver):
             result_path=result_path,
             limit_mode=_get_limit_mode(self.runtime_config),
             priority=getattr(self.task, "priority", "must"),
+            reference_threshold_informational=getattr(self.task, "reference_threshold_informational", False),
+            evaluation_metadata=getattr(self.task, "evaluation_metadata", {}),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
@@ -151,6 +155,8 @@ class HarborAgenticDriver(AgenticEvalDriver):
             venv_python=self.venv_python,
             run_stamp=self._run_stamp,
         )
+        from ..agentic.qwen38_isolation import prepare as prepare_isolated_tasks
+        run_config = prepare_isolated_tasks(run_config)
         dataset_path = prepare_local_dataset(
             run_config.dataset, harbor_python(run_config)
         )

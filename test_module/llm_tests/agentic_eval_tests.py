@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from workflows.workflow_types import EvalLimitMode
+
 import logging
 import os
 from pathlib import Path
@@ -107,6 +109,9 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     to the selected benchmark(s).
     """
     tasks = getattr(ctx.all_params, "tasks", []) or []
+    if getattr(getattr(getattr(ctx, "model_spec", None), "impl", None), "impl_id", None) == "qwen38_autoport":
+        from reference_config.evals.qwen38_goal12 import select_tasks
+        tasks = select_tasks(tasks, EvalLimitMode)
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]

@@ -284,6 +284,10 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     standard = _apply_profile_request_body_overrides(standard, model_spec)
     standard = _apply_profile_score_overrides(standard, model_spec)
 
+    from reference_config.evals.qwen38_gpqa_arm import applies, configure
+    if applies(model_spec):
+        standard = configure(standard, runtime_config)
+
     return _select_tasks(standard, runtime_config)
 
 

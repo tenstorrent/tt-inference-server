@@ -1,0 +1,71 @@
+{
+  "registry_source": "harbor@e76c762fca5267dfb36e1f900f0a7724ed72e735:registry.json",
+  "registry_git_blob": "0861ad066f7213927b380aa24af42b9a874441a1",
+  "registry_sha256": "da1446bce05eabbd72a25eb9eef5a2f5db94645ce88c28e2497581433b3d2e60",
+  "dataset": "swebench-verified",
+  "dataset_version": "1.0",
+  "population": 500,
+  "selection_rule": "Retain five existing release CI tasks in release order; add lexicographically first five remaining task IDs before scoring",
+  "tasks": [
+    {
+      "name": "django__django-11299",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/django__django-11299"
+    },
+    {
+      "name": "astropy__astropy-14096",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-14096"
+    },
+    {
+      "name": "matplotlib__matplotlib-25332",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/matplotlib__matplotlib-25332"
+    },
+    {
+      "name": "sympy__sympy-13551",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/sympy__sympy-13551"
+    },
+    {
+      "name": "scikit-learn__scikit-learn-14629",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/scikit-learn__scikit-learn-14629"
+    },
+    {
+      "name": "astropy__astropy-12907",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-12907"
+    },
+    {
+      "name": "astropy__astropy-13033",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-13033"
+    },
+    {
+      "name": "astropy__astropy-13236",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-13236"
+    },
+    {
+      "name": "astropy__astropy-13398",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-13398"
+    },
+    {
+      "name": "astropy__astropy-13453",
+      "git_url": "https://github.com/laude-institute/harbor-datasets.git",
+      "git_commit_id": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+      "path": "datasets/swebench-verified/astropy__astropy-13453"
+    }
+  ]
+}

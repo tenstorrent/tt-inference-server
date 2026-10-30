@@ -784,6 +784,20 @@ def build_eval_command(
         if limit_arg is not None:
             cmd.extend(["--limit", str(limit_arg)])
 
+    from reference_config.evals.qwen38_gpqa_arm import applies, MANIFEST, selected_arm
+    if applies(model_spec) and task.task_name == 'r1_gpqa_diamond':
+        if len(lm_eval_prefix) < 2 or Path(lm_eval_prefix[1]).name != 'lm_eval_request_overrides.py':
+            raise ValueError('Frozen GPQA arm requires native chat request wrapper')
+        arm = selected_arm()
+        if list(task.doc_ids or []) != arm['selected_doc_ids']:
+            raise ValueError('Frozen GPQA selection differs from declared arm intent')
+        cmd = [str(task_venv_path / 'bin' / 'python'),
+               str(Path(__file__).with_name('qwen38_gpqa_guard.py')),
+               '--intent', arm['intent'],
+               '--manifest', str(MANIFEST),
+               '--audit', str(output_dir_path / 'qwen38-gpqa-identity.json'),
+               '--', *cmd[1:]]
+
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd

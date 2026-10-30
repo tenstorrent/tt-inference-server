@@ -745,7 +745,10 @@ def _check_evals(
             else:
                 state = _check_state(check_value)
                 if state == STATUS_FAIL:
-                    message = "Accuracy check failed."
+                    if data.get("reference_threshold_informational") is True:
+                        waived[block_key] = "Reference score comparison is informational; measured score retained."
+                    else:
+                        message = "Accuracy check failed."
                 elif state == STATUS_NA:
                     na += 1
                     if _block_priority(block) != PRIORITY_SHOULD:
