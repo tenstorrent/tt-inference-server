@@ -18,6 +18,7 @@ from open_ai_api import (
     image,
     llm,
     models,
+    rerank,
     text_to_speech,
     tokenizer,
     tt_maintenance_api,
@@ -68,6 +69,9 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.EMBEDDING.value: [
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
+    ],
+    ModelServices.RERANK.value: [
+        ServiceRoute(rerank.router, "/v1", None, ["Rerank"]),
     ],
 }
 

@@ -44,6 +44,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     BGE_M3 = "BAAI/bge-m3"
+    NEMOTRON_RERANK_1B_V2 = "nvidia/llama-nemotron-rerank-1b-v2"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
@@ -108,6 +109,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     BGE_M3 = "bge-m3"
+    NEMOTRON_RERANK_1B_V2 = "llama-nemotron-rerank-1b-v2"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
@@ -165,6 +167,7 @@ class ModelRunners(Enum):
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
+    NEMOTRON_RERANK = "nemotron-rerank"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -195,6 +198,7 @@ class ModelServices(Enum):
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
     EMBEDDING = "embedding"
+    RERANK = "rerank"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -229,6 +233,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
         ModelRunners.BGEM3,
+    },
+    ModelServices.RERANK: {
+        ModelRunners.NEMOTRON_RERANK,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -446,6 +453,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     # Shares the BGE_M3 name with the MEDIA runner above; must stay AFTER it so
     # the name-only fallback still resolves to MEDIA. MODEL_RUNNER selects this.
     ModelRunners.VLLMForge_BGE_M3: {ModelNames.BGE_M3},
+    ModelRunners.NEMOTRON_RERANK: {ModelNames.NEMOTRON_RERANK_1B_V2},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -1866,6 +1874,27 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.BatchFifo.value,
         "max_batch_size": 32,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    # One P150 per worker. A worker holds one traced model per (batch 1 / 8 / 32) x (128 / 256 / 512
+    # tokens) bucket; max_model_length 512 bounds the buckets (and the trace region) it captures.
+    (ModelRunners.NEMOTRON_RERANK, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.NEMOTRON_RERANK_1B_V2.value,
+            "max_model_length": 512,
+            "max_num_batched_tokens": 512 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "trace_region_size": 400_000_000,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        # A string: the worker sets TT_MM_THROTTLE_PERF only when this is truthy, so an integer 0 would
+        # leave the image default (5) on, which throttles minimal_matmul (FF1 + FF3).
+        "default_throttle_level": "0",
         "use_queue_per_worker": True,
     },
     (ModelRunners.VLLMForge, DeviceTypes.N150): {
