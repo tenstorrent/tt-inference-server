@@ -325,9 +325,12 @@ templates:
         # rewritten by the next chunk), so a long prompt's prefill no longer stalls
         # every running decode (doc/mesh/resident_decode.md step 4).
         decode_interleave_enabled: true
-        # one decode step after every prefill step (a 16 K chunk is ~7 s): the
-        # running decoders get a token per chunk instead of one per two chunks
+        # one prefill step, then eight decode steps (a 16 K sequence-parallel chunk is
+        # ~7.9 s, a decode step ~60 ms): a decoder running beside a 1 M prefill gets 8
+        # tokens per chunk (~1 tok/s) instead of 1 (0.13 tok/s, capstone r4); the
+        # prefill pays ~0.5 s per 16 K chunk (ab_interleave_d8_32 at 128 x 128 x 32)
         decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
       vllm_args:
         max_num_seqs: 32  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
         block_size: 32  # = the latent page (TtLatentCache.block_size); the adapter rejects other sizes
