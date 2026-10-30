@@ -149,8 +149,11 @@ templates:
       default_impl: true
       # Explicit, so benchmarks pick the cached or uncached targets: unset means
       # cached on tt-metal from 9b40b665 but uncached before it.
+      # 480p: the mesh size alone would pick 720p. The I2V eval's references
+      # are calibrated at 480p, with the cache on (refs/r2/tt) and off (refs/r1).
       env_vars:
         WAN22_DBCACHE: "on"
+        WAN22_RESOLUTION: "480p"
     - device: P150X4
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
