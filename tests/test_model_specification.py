@@ -1383,3 +1383,27 @@ class TestKnownIssue:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestSubmeshEngines:
+    """DeviceModelSpec.submesh_engines: one engine per device group behind the launcher's proxy."""
+
+    def _spec(self, data_parallel_size):
+        return DeviceModelSpec(
+            device=DeviceTypes.BLACKHOLE_GALAXY,
+            max_concurrency=16,
+            max_context=32768,
+            vllm_args={"data_parallel_size": data_parallel_size, "max_num_seqs": 4},
+            submesh_engines=True,
+        )
+
+    def test_engines_keep_the_whole_server_data_parallel_math(self):
+        spec = self._spec(4)
+        assert spec.submesh_engines is True
+        # The same client-side numbers as a lane-DP server of DP 4.
+        assert spec.max_tokens_all_users == 4 * 32768
+        assert spec.vllm_args["max_num_seqs"] == 4
+
+    def test_needs_data_parallelism(self):
+        with pytest.raises(AssertionError, match="data_parallel_size"):
+            self._spec(1)

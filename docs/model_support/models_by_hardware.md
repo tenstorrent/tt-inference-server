@@ -28,6 +28,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_galaxy.md) |
+| 🟢 Complete | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_galaxy.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen2.5-72B](llm/Qwen2.5-72B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_galaxy.md) |
@@ -66,6 +67,8 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p150x4.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
+| 🛠️ Experimental | LLM | [Qwen3.5-27B](llm/Qwen3.5-27B_p150x4.md) |
+| 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p150x4.md) |
 
 ## [BH P300](https://tenstorrent.com/hardware/blackhole)
 
@@ -86,6 +89,8 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | LLM | [Qwen3.8-27B](llm/Qwen3.8-27B_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
+| 🟡 Functional | LLM | [gemma-4-26B-A4B-it](llm/gemma-4-26B-A4B-it_p300x2.md) |
+| 🟡 Functional | LLM | [granite-4.2-30b](llm/granite-4.2-30b_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B-Instruct](llm/Llama-3.1-8B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
@@ -95,6 +100,9 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_p300x2.md) |
 | 🛠️ Experimental | LLM | [diffusiongemma-26B-A4B-it](llm/diffusiongemma-26B-A4B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
+| 🛠️ Experimental | LLM | [K2-Horizon-7B](llm/K2-Horizon-7B_p300x2.md) |
+| 🛠️ Experimental | LLM | [Kolibri-1-BF16](llm/Kolibri-1-BF16_p300x2.md) |
+| 🛠️ Experimental | LLM | [Muse-Glimmer-30B](llm/Muse-Glimmer-30B_p300x2.md) |
 | 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
@@ -120,6 +128,8 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_t3k.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_t3k.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_t3k.md) |
+| 🟢 Complete | VLM | [olmOCR-2-7B-1025](vlm/olmOCR-2-7B-1025_t3k.md) |
+| 🟢 Complete | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_t3k.md) |
@@ -127,11 +137,13 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_t3k.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_t3k.md) |
 | 🟡 Functional | LLM | [QwQ-32B](llm/QwQ-32B_t3k.md) |
+| 🟡 Functional | VLM | [Qwen2.5-VL-72B-Instruct](vlm/Qwen2.5-VL-72B-Instruct_t3k.md) |
 | 🟡 Functional | VLM | [Qwen3-VL-32B-Instruct](vlm/Qwen3-VL-32B-Instruct_t3k.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_t3k.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_t3k.md) |
 | 🛠️ Experimental | LLM | [AFM-4.5B](llm/AFM-4.5B_t3k.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_t3k.md) |
+| 🛠️ Experimental | VLM | [Qwen2.5-VL-32B-Instruct](vlm/Qwen2.5-VL-32B-Instruct_t3k.md) |
 
 ## [n150](https://tenstorrent.com/hardware/wormhole)
 
