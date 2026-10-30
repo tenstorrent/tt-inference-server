@@ -657,6 +657,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 8  # 8 users: 4 mesh rows x 2 users per row
       max_context: 1048576  # per request (prompt + output) = max_model_len
+      max_tokens_all_users_override: 8388608  # total KV token budget across users = max_concurrency (8) x max_context (1048576): long benchmark points (256K/512K/1M) keep concurrency 8; benchmark sizing only, not passed to the server
       default_impl: false
       tensor_cache_timeout: 7200.0
       env_vars:
