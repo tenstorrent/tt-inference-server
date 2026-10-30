@@ -1823,7 +1823,8 @@ templates:
 # vllm_metadata.json, so the muse_glimmer_30b_qb2 bundle keeps the EXTRA_MODELS_DIR path.
 # Prefill starts at position 0 (no chunked prefill, no prefix caching) and pads prompts to
 # fixed buckets that warmup compiles; MUSE_VLLM_PREFILL_WARMUP_MAX caps that warmup.
-# MUSE_VLLM_KV_TOKENS is the pooled KV budget (26.6 KB per token per chip in bf16).
+# MUSE_VLLM_KV_TOKENS is the KV budget of the 13 full-attention layers (the 39 sliding layers keep 2304-token rings per
+# slot): 24 x 128K tokens is ~11 GB per chip in the default BFP8, so 24 users fit at the full 131072 context.
 - weights:
     - meta-models/Muse-Glimmer-30B
   impl: muse_glimmer_30b
@@ -1842,7 +1843,7 @@ templates:
         # model's ring all-reduce.
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-        MUSE_VLLM_KV_TOKENS: "262144"
+        MUSE_VLLM_KV_TOKENS: "3145728"
       vllm_args:
         block_size: "64"
         max_num_seqs: "32"
@@ -1866,7 +1867,7 @@ templates:
       env_vars:
         TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
         MESH_DEVICE: "P150x4"
-        MUSE_VLLM_KV_TOKENS: "262144"
+        MUSE_VLLM_KV_TOKENS: "3145728"
       vllm_args:
         block_size: "64"
         max_num_seqs: "32"
