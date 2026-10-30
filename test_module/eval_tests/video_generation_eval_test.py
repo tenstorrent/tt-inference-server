@@ -224,6 +224,8 @@ class VideoGenerationEvalsTest(BaseTest):
         base_url = server_url or SERVER_BASE_URL
         videos_info = []
         self.rejected_videos = []
+        # Step caching per job, from servers that report it (Wan2.2 I2V).
+        self.cache_summaries = {}
 
         headers = {
             "accept": "application/json",
@@ -279,6 +281,8 @@ class VideoGenerationEvalsTest(BaseTest):
                         "image": pair["image"] if pair else None,
                         "camera_motion": pair.get("camera_motion") if pair else None,
                     }
+                    if job_id in self.cache_summaries:
+                        video["cache_summary"] = self.cache_summaries[job_id]
                     if pair and pair.get("shape"):
                         width, height = pair["shape"]
                         video.update(
@@ -348,6 +352,9 @@ class VideoGenerationEvalsTest(BaseTest):
                 logger.info(f"Job {job_id} status: {status}")
 
                 if status == VIDEO_JOB_STATUS_COMPLETED:
+                    summaries = getattr(self, "cache_summaries", None)
+                    if summaries is not None and "cache_summary" in job_data:
+                        summaries[job_id] = job_data["cache_summary"]
                     return self._download_video(base_url, job_id, headers)
                 elif status in [VIDEO_JOB_STATUS_FAILED, VIDEO_JOB_STATUS_CANCELLED]:
                     logger.error(f"Video generation {status}: {job_id}")

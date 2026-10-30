@@ -235,6 +235,30 @@ class TestGetVideoMetadata:
 
         assert response.status_code == 200
         mock_service.get_job_metadata.assert_called_once_with("job_123")
+        assert "cache_summary" not in json.loads(response.body)
+
+    def test_get_video_metadata_returns_the_jobs_cache_summary(
+        self, tmp_path, monkeypatch
+    ):
+        from utils import cache_summary_store
+
+        monkeypatch.setattr(cache_summary_store, "_CACHE_SUMMARY_DIR", tmp_path)
+        summary = [{"name": "high_noise", "executed_steps": 15, "cached_steps": [[3]]}]
+        cache_summary_store.write_cache_summary("job_123", summary)
+        mock_service = MagicMock()
+        mock_service.get_job_metadata = MagicMock(
+            return_value={"id": "job_123", "status": "completed"}
+        )
+
+        response = get_video_metadata(
+            job_id="job_123", service=mock_service, api_key="test_key"
+        )
+
+        assert json.loads(response.body) == {
+            "id": "job_123",
+            "status": "completed",
+            "cache_summary": summary,
+        }
 
     def test_get_video_metadata_not_found(self):
         """Test video metadata retrieval when job not found"""

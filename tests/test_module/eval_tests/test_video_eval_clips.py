@@ -32,6 +32,50 @@ def test_eval_clips_are_kept_with_their_prompts(tmp_path):
     ]
 
 
+def test_each_clips_step_caching_is_kept_beside_the_clips(tmp_path):
+    summary = [{"name": "high_noise", "executed_steps": 15, "cached_steps": [[3]]}]
+    clips = []
+    for i in range(2):
+        path = tmp_path / f"{i}.mp4"
+        path.write_bytes(b"clip")
+        clips.append(
+            {
+                "prompt": "p",
+                "video_path": str(path),
+                "job_id": f"j{i}",
+                "video_id": f"vbi2v_000{i}_832x480",
+            }
+        )
+    # A server that does not report it leaves the clip out.
+    clips[0]["cache_summary"] = summary
+
+    _save_eval_clips(SimpleNamespace(output_path=str(tmp_path / "out")), clips)
+
+    evals = tmp_path / "out/videos/evals"
+    assert json.loads((evals / "cache_summary.json").read_text()) == [
+        {
+            "file": "00_vbi2v_0000_832x480.mp4",
+            "video_id": "vbi2v_0000_832x480",
+            "job_id": "j0",
+            "cache_summary": summary,
+        }
+    ]
+    # Kept for comparison only: not in the index the scorers read.
+    assert all(
+        "cache_summary" not in e for e in json.loads((evals / "index.json").read_text())
+    )
+
+
+def test_no_cache_summaries_write_no_file(tmp_path):
+    path = tmp_path / "0.mp4"
+    path.write_bytes(b"clip")
+    _save_eval_clips(
+        SimpleNamespace(output_path=str(tmp_path / "out")),
+        [{"prompt": "p", "video_path": str(path), "job_id": "j0"}],
+    )
+    assert not (tmp_path / "out/videos/evals/cache_summary.json").exists()
+
+
 def test_no_clips_writes_nothing(tmp_path):
     _save_eval_clips(SimpleNamespace(output_path=str(tmp_path)), [])
     assert not (tmp_path / "videos").exists()

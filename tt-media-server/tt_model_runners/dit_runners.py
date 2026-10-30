@@ -92,6 +92,7 @@ from tt_model_runners.minimax_h3_policy import (
     minimax_h3_frames_are_aligned,
     minimax_h3_parse_aspect_ratio,
 )
+from utils.cache_summary_store import write_cache_summary
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
@@ -1034,11 +1035,21 @@ class TTWan22I2VRunner(TTDiTRunner):
             if recorder is not None:
                 recorder.flush(frames)
         # DBCache's per-expert log (empty when uncached); older tt-metal has none.
-        for expert in getattr(self.pipeline, "cache_summary", list)():
+        cache_summary = getattr(self.pipeline, "cache_summary", list)()
+        for expert in cache_summary:
             self.logger.info(
                 f"Device {self.device_id}: DBCache {expert['name']}: "
                 f"{expert['executed_steps']} steps, cached {expert['cached_steps']}"
             )
+        if not self._warming_up:
+            # Returned with the job's metadata (GET /v1/videos/generations/{id});
+            # best-effort, a video never fails over it.
+            try:
+                write_cache_summary(request._task_id, cache_summary)
+            except Exception as e:
+                self.logger.warning(
+                    f"Device {self.device_id}: cache summary not kept: {e}"
+                )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 

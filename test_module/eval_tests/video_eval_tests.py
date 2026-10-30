@@ -168,7 +168,9 @@ def _save_eval_clips(
 
     These are the clips the quality score is about, so they are worth looking at
     (and comparing with the GPU reference) on every run. Clips rejected for their
-    shape go with the failed clips, out of the index the scorers read.
+    shape go with the failed clips, out of the index the scorers read. Each
+    clip's step caching, when the server reports it, goes in cache_summary.json
+    beside them; it is kept for comparison, not reported or graded.
     """
     for video in rejected:
         save_clip(
@@ -177,7 +179,7 @@ def _save_eval_clips(
             "failed/evals",
             f"{video.get('video_id') or video.get('job_id') or 'clip'}.mp4",
         )
-    index = []
+    index, cache_summaries = [], []
     for i, video in enumerate(videos):
         name = f"{i:02d}_{video.get('video_id') or video.get('job_id') or 'clip'}.mp4"
         if save_clip(video.get("video_path"), ctx.output_path, "evals", name):
@@ -188,9 +190,22 @@ def _save_eval_clips(
                 entry["camera_motion"] = video["camera_motion"]
             entry.update({k: video[k] for k in I2V_CLIP_FIELDS if k in video})
             index.append(entry)
+            if "cache_summary" in video:
+                cache_summaries.append(
+                    {
+                        "file": name,
+                        "video_id": video.get("video_id"),
+                        "job_id": video.get("job_id"),
+                        "cache_summary": video["cache_summary"],
+                    }
+                )
+    evals_dir = Path(ctx.output_path) / "videos" / "evals"
     if index:
-        index_path = Path(ctx.output_path) / "videos" / "evals" / "index.json"
-        index_path.write_text(json.dumps(index, indent=2))
+        (evals_dir / "index.json").write_text(json.dumps(index, indent=2))
+    if cache_summaries:
+        (evals_dir / "cache_summary.json").write_text(
+            json.dumps(cache_summaries, indent=2)
+        )
 
 
 # VBench runs on the host CPU after the clips are made: about 1.3 min per clip on

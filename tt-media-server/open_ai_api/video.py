@@ -53,6 +53,7 @@ from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
+from utils.cache_summary_store import delete_cache_summary, read_cache_summary
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.media_downloader import (
@@ -856,6 +857,10 @@ def get_video_metadata(
     job_data = service.get_job_metadata(job_id)
     if job_data is None:
         raise HTTPException(status_code=404, detail="Video job not found")
+    # Step caching per expert, from runners that report it (Wan2.2 I2V).
+    cache_summary = read_cache_summary(job_id)
+    if cache_summary is not None:
+        job_data = {**job_data, "cache_summary": cache_summary}
 
     return JSONResponse(content=job_data)
 
@@ -982,6 +987,7 @@ async def delete_video_job(
         raise HTTPException(status_code=409, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=404, detail="Video job not found")
+    delete_cache_summary(job_id)
 
     return JSONResponse(
         content={"id": job_id, "object": JobTypes.VIDEO.value, "deleted": True}
