@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import logging
 import math
+import shlex
 import time
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,7 @@ TT_TTS_IMPL = "tt-tts"
 
 # QUAD validation shape from docs/TTS_SHARED_MEMORY_DECODERS.md. Five levels
 # exercise the decoder scaling curve while keeping the default CI run bounded.
+# `--workflow-args "concurrency=... isl=..."` overrides this ladder and the ISL.
 TTS_CI_CONCURRENCY = (1, 2, 4, 8, 16)
 TTS_CI_DURATION_SECONDS = 60.0
 TTS_CI_WARMUP_SECONDS = 20.0
@@ -57,6 +59,7 @@ TTS_CI_TEXT_TOKENS = 128
 TTS_CI_CHARS_PER_TOKEN = 3.46
 TTS_CI_TIMEOUT_SECONDS = 300.0
 TTS_RAW_RESULTS_FILENAME = "tts_load_results.json"
+_TTS_WORKFLOW_ARG_KEYS = ("concurrency", "isl")
 
 
 _LATENCY_SPECS = (
@@ -120,11 +123,57 @@ def _worst_latency_values(rows: list[dict]) -> dict[str, float | None]:
     }
 
 
-def _results_are_complete(rows: list[dict]) -> bool:
+def _positive_int(key: str, value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        parsed = 0
+    if parsed <= 0:
+        raise ValueError(
+            f"TTS benchmark workflow arg {key}={value!r} must be a positive integer"
+        )
+    return parsed
+
+
+def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int]:
+    """Concurrency ladder and ISL (tokens) from ``--workflow-args``.
+
+    ``concurrency=480`` or ``concurrency=64,160,320`` replaces the ladder and
+    ``isl=128`` sets the input length; a key that is not given keeps its CI default.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    params = {}
+    for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
+        key, _, value = token.partition("=")
+        params[key.replace("-", "_")] = value
+    unknown = sorted(set(params) - set(_TTS_WORKFLOW_ARG_KEYS))
+    if unknown:
+        logger.warning(
+            f"TTS benchmark ignores workflow args {unknown}; "
+            f"supported: {list(_TTS_WORKFLOW_ARG_KEYS)}"
+        )
+
+    concurrency = TTS_CI_CONCURRENCY
+    if "concurrency" in params:
+        values = [v for v in params["concurrency"].split(",") if v.strip()]
+        if not values:
+            raise ValueError("TTS benchmark workflow arg concurrency is empty")
+        # dict.fromkeys drops repeats but keeps the order the levels run in.
+        concurrency = tuple(
+            dict.fromkeys(_positive_int("concurrency", v) for v in values)
+        )
+    text_tokens = (
+        _positive_int("isl", params["isl"]) if "isl" in params else TTS_CI_TEXT_TOKENS
+    )
+    return concurrency, text_tokens
+
+
+def _results_are_complete(
+    rows: list[dict], expected_concurrency: tuple[int, ...] = TTS_CI_CONCURRENCY
+) -> bool:
     """Reject partial sweeps and latency-only success in the presence of errors."""
-    expected_concurrency = set(TTS_CI_CONCURRENCY)
     measured_concurrency = {row.get("concurrency") for row in rows}
-    return measured_concurrency == expected_concurrency and all(
+    return measured_concurrency == set(expected_concurrency) and all(
         row.get("num_successful", 0) > 0
         and row.get("error_request_count", 0) == 0
         and all(row.get(field) is not None for _, field, _ in _LATENCY_SPECS)
@@ -148,8 +197,11 @@ def _target_checks(ctx: MediaContext, rows: list[dict]):
             for name, field, target_attr in _LATENCY_SPECS
         ],
     )
+    concurrency, _ = _workflow_params(ctx)
     integrity_check = (
-        ReportCheckTypes.PASS if _results_are_complete(rows) else ReportCheckTypes.FAIL
+        ReportCheckTypes.PASS
+        if _results_are_complete(rows, concurrency)
+        else ReportCheckTypes.FAIL
     )
     for tier in target_checks.values():
         tier["benchmark_integrity"] = 1
@@ -162,7 +214,11 @@ def _target_checks(ctx: MediaContext, rows: list[dict]):
     return target_checks, target_check
 
 
-def _sweep_args(output_path: Path, prewarm: bool = False) -> argparse.Namespace:
+def _sweep_args(
+    output_path: Path,
+    prewarm: bool = False,
+    concurrency: tuple[int, ...] = TTS_CI_CONCURRENCY,
+) -> argparse.Namespace:
     """Arguments consumed by :func:`tts_load_harness.sweep`.
 
     ``prewarm`` (the ``--prewarm`` run.py flag) gates the pre-sweep warmup burst:
@@ -170,7 +226,7 @@ def _sweep_args(output_path: Path, prewarm: bool = False) -> argparse.Namespace:
     burst runs for ``TTS_CI_PREWARM_SECONDS`` and is discarded before the sweep.
     """
     return argparse.Namespace(
-        concurrency=",".join(str(value) for value in TTS_CI_CONCURRENCY),
+        concurrency=",".join(str(value) for value in concurrency),
         duration=TTS_CI_DURATION_SECONDS,
         warmup=TTS_CI_WARMUP_SECONDS,
         warmup_concurrency=TTS_CI_WARMUP_CONCURRENCY,
@@ -190,7 +246,8 @@ def _target(ctx: MediaContext) -> tts_load_harness.Target:
         raise ValueError(
             f"TTS benchmark could not resolve a host from {ctx.base_url!r}"
         )
-    nchars = round(TTS_CI_TEXT_TOKENS * TTS_CI_CHARS_PER_TOKEN)
+    _, text_tokens = _workflow_params(ctx)
+    nchars = round(text_tokens * TTS_CI_CHARS_PER_TOKEN)
     return tts_load_harness.Target(
         host=parsed.hostname,
         port=ctx.server_port,
@@ -240,7 +297,11 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
             },
         )
 
-    document = tts_load_harness.sweep(_sweep_args(output_path, prewarm), _target(ctx))
+    concurrency, text_tokens = _workflow_params(ctx)
+    logger.info(f"TTS benchmark sweep: concurrency={concurrency} isl={text_tokens}")
+    document = tts_load_harness.sweep(
+        _sweep_args(output_path, prewarm, concurrency), _target(ctx)
+    )
     rows, chars_per_request = tts_load_harness.aggregate(document)
     report_rows = _report_rows(rows)
     target_checks, target_check = _target_checks(ctx, report_rows)
@@ -253,8 +314,8 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
         title="Text-to-Speech Load Benchmark",
         id=block_id(ctx) or None,
         targets={
-            "concurrency": list(TTS_CI_CONCURRENCY),
-            "text_tokens": TTS_CI_TEXT_TOKENS,
+            "concurrency": list(concurrency),
+            "text_tokens": text_tokens,
         },
         data={
             "Benchmarks": {
