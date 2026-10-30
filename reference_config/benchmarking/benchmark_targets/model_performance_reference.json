@@ -29,23 +29,17 @@
                 "impl": "glm53_flash",
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 4,
-                "num_prompts": 8,
+                "max_concurrency": 32,
+                "num_prompts": 32,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 545,
-                        "tput_user": 9.7,
-                        "tput": 37.4
-                    },
-                    "measured": {
-                        "ttft_ms": 545,
-                        "tput_user": 9.7,
-                        "tput": 37.4,
-                        "tolerance": 0.1
+                        "ttft_ms": 5500,
+                        "tput_user": 16.6,
+                        "tput": 310
                     }
                 }
             },
@@ -53,7 +47,7 @@
                 "impl": "glm53_flash",
                 "isl": 65536,
                 "osl": 128,
-                "max_concurrency": 4,
+                "max_concurrency": 8,
                 "num_prompts": 8,
                 "task_type": "text",
                 "image_height": null,
@@ -61,15 +55,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 68613,
-                        "tput_user": 2.4,
-                        "tput": 4.2
-                    },
-                    "measured": {
-                        "ttft_ms": 68613,
-                        "tput_user": 2.4,
-                        "tput": 4.2,
-                        "tolerance": 0.1
+                        "ttft_ms": 332000,
+                        "tput_user": 14.0,
+                        "tput": 3.0
                     }
                 }
             },
@@ -125,47 +113,35 @@
                 "impl": "glm53_flash_128k",
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 28,
-                "num_prompts": 28,
+                "max_concurrency": 192,
+                "num_prompts": 192,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 3332,
-                        "tput_user": 5.8,
-                        "tput": 141.8
-                    },
-                    "measured": {
-                        "ttft_ms": 3332,
-                        "tput_user": 5.8,
-                        "tput": 141.8,
-                        "tolerance": 0.1
+                        "ttft_ms": 28000,
+                        "tput_user": 5.5,
+                        "tput": 480
                     }
                 }
             },
             {
                 "impl": "glm53_flash_128k",
-                "isl": 65536,
+                "isl": 130816,
                 "osl": 128,
-                "max_concurrency": 28,
-                "num_prompts": 28,
+                "max_concurrency": 8,
+                "num_prompts": 8,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 389009,
-                        "tput_user": 0.3,
-                        "tput": 4.7
-                    },
-                    "measured": {
-                        "ttft_ms": 389009,
-                        "tput_user": 0.3,
-                        "tput": 4.7,
-                        "tolerance": 0.1
+                        "ttft_ms": 455000,
+                        "tput_user": 12.0,
+                        "tput": 2.2
                     }
                 }
             },
