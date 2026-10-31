@@ -2,7 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""MiniMax-M3.1-Flash reuses MiniMax-M3's eval tasks, without targets, plus DeepSWE v1.1."""
+"""MiniMax-M3.1-Flash reuses most of MiniMax-M3's eval tasks, plus DeepSWE v1.1,
+with the model card's published scores and #5470's GPU references."""
 
 from dataclasses import replace
 
@@ -14,27 +15,42 @@ from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 M3 = "MiniMaxAI/MiniMax-M3"
 M31_FLASH = "MiniMaxAI/MiniMax-M3.1-Flash"
 MIMO = "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+CARD = "https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash"
+ISSUE = "https://github.com/tenstorrent/tt-inference-server/issues/5470"
 # Not an M3 task: M3.1-Flash adds it with MiMo's harness settings.
 EXTRA = {"deepswe"}
+# M3 tasks M3.1-Flash does not run.
+SKIPPED = {"swe_bench_verified"}
+# Agents that take the effort as an agent kwarg instead of in request_body.
+EFFORT_KWARG_AGENTS = {"auto-bench", "tau3_llm_agent"}
+PUBLISHED = {"automation_bench": 62.8, "terminal_bench_4": 38.1, "deepswe": 73.7}
+GPU_REFERENCE = {
+    "r1_gpqa_diamond": 87.88,
+    "longbench2_generate": 63.49,
+    "automation_bench": 61.33,
+}
 
 
 def _tasks(repo):
     return {t.task_name: t for t in ALL_EVAL_CONFIGS[repo].tasks}
 
 
-def test_m31_flash_runs_every_m3_task():
-    assert _tasks(M31_FLASH).keys() == _tasks(M3).keys() | EXTRA
+def test_m31_flash_task_set():
+    assert _tasks(M31_FLASH).keys() == (_tasks(M3).keys() - SKIPPED) | EXTRA
 
 
-def test_m31_flash_tasks_match_m3_apart_from_targets_and_concurrency():
+def test_m31_flash_tasks_match_m3_apart_from_targets_effort_and_concurrency():
     m3 = _tasks(M3)
     for name, task in _tasks(M31_FLASH).items():
         if name in EXTRA:
             continue
-        expected = replace(m3[name], score=task.score)
+        expected = replace(m3[name], score=task.score, request_body=task.request_body)
         if task.agentic_eval_config is not None:
             cfg = task.agentic_eval_config
-            fields = {"n_concurrent_trials": cfg.n_concurrent_trials}
+            fields = {
+                "n_concurrent_trials": cfg.n_concurrent_trials,
+                "agent_kwargs": cfg.agent_kwargs,
+            }
             for name in ("environment_env", "verifier_env"):
                 if hasattr(cfg, name):
                     fields[name] = getattr(cfg, name)
@@ -48,6 +64,19 @@ def test_m31_flash_tasks_match_m3_apart_from_targets_and_concurrency():
         assert expected == task, name
 
 
+def test_m31_flash_asks_for_max_effort_on_every_task():
+    m3 = _tasks(M3)
+    for name, task in _tasks(M31_FLASH).items():
+        cfg = task.agentic_eval_config
+        if cfg is not None and cfg.agent in EFFORT_KWARG_AGENTS:
+            assert cfg.agent_kwargs["reasoning_effort"] == "max", name
+            assert "reasoning_effort" not in task.request_body, name
+        else:
+            assert task.request_body["reasoning_effort"] == "max", name
+        if name in m3:
+            assert "reasoning_effort" not in m3[name].request_body, name
+
+
 def test_m31_flash_agentic_concurrency_fits_kix1():
     # Sized to the KIX1 shield-evals pool (3 x 64 CPUs): trials that don't fit fail
     # Harbor's pod-ready timeout. M3 keeps its IAD-era values.
@@ -56,20 +85,29 @@ def test_m31_flash_agentic_concurrency_fits_kix1():
         "terminal_bench_2_1": (62, 8),
         "terminal_bench_4": (40, 8),
         "tau3_bench_banking": (32, 4),
-        "swe_bench_verified": (62, 8),
+        "automation_bench": (62, 62),
     }
     for name, (flash_n, m3_n) in expected.items():
         assert flash[name].agentic_eval_config.n_concurrent_trials == flash_n, name
         assert m3[name].agentic_eval_config.n_concurrent_trials == m3_n, name
+    assert flash["deepswe"].agentic_eval_config.n_concurrent_trials == 62
 
 
-def test_m31_flash_has_no_targets():
+def test_m31_flash_terminal_bench_runs_terminus_2():
+    for name in ("terminal_bench_2_1", "terminal_bench_4"):
+        assert _tasks(M31_FLASH)[name].agentic_eval_config.agent == "terminus-2"
+
+
+def test_m31_flash_targets():
     for name, task in _tasks(M31_FLASH).items():
-        if name in EXTRA:
-            continue
         score = task.score
-        assert score.published_score is None, name
-        assert score.gpu_reference_score is None, name
+        assert score.published_score == PUBLISHED.get(name), name
+        assert score.published_score_ref == (CARD if name in PUBLISHED else None)
+        assert score.gpu_reference_score == GPU_REFERENCE.get(name), name
+        if name in GPU_REFERENCE:
+            assert score.gpu_reference_score_ref.startswith(ISSUE), name
+        else:
+            assert score.gpu_reference_score_ref is None, name
         assert not score.mode_reference_scores, name
 
 
@@ -110,10 +148,13 @@ def test_m31_flash_tau3_user_sim_and_verifier_call_the_served_m31_name():
 
 
 def test_m31_flash_deepswe_is_mimos_task_scored_against_the_card():
-    # Same harness as MiMo's (mini-swe-agent 2.3.0, endpoint-only egress); the card's
-    # 73.7 is the published score, and there is no GPU reference yet.
+    # Same harness as MiMo's (mini-swe-agent 2.3.0, endpoint-only egress) at
+    # M3.1-Flash's concurrency; the card's 73.7 is the published score, and there
+    # is no GPU reference yet.
     flash, mimo = _tasks(M31_FLASH)["deepswe"], _tasks(MIMO)["deepswe"]
-    assert flash.agentic_eval_config == mimo.agentic_eval_config
+    assert flash.agentic_eval_config == replace(
+        mimo.agentic_eval_config, n_concurrent_trials=62
+    )
     assert flash.agentic_eval_config.allow_agent_endpoint
     assert flash.score.published_score == 73.7
     assert flash.score.gpu_reference_score is None
