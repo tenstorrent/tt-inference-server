@@ -536,7 +536,7 @@ def parse_arguments():
     agentic_group.add_argument(
         "--agentic-benchmark",
         type=str,
-        default=None,
+        default="swebench",
         help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
         "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
         "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
