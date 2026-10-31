@@ -7644,13 +7644,13 @@
                         "tput": 36.2
                     },
                     "measured": {
-                        "ttft_ms": 103.5,
-                        "tput_user": 37.04,
-                        "tput": 36.2,
+                        "ttft_ms": 139.4,
+                        "tput_user": 38.26,
+                        "tput": 37.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 103.5, tput_user 37.04, tput 36.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7668,13 +7668,13 @@
                         "tput": 3165.6
                     },
                     "measured": {
-                        "ttft_ms": 1186.7,
-                        "tput_user": 31.88,
-                        "tput": 3165.6,
+                        "ttft_ms": 2760.3,
+                        "tput_user": 28.53,
+                        "tput": 2267.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1186.7, tput_user 31.88, tput 3165.6; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7692,13 +7692,13 @@
                         "tput": 32.7
                     },
                     "measured": {
-                        "ttft_ms": 388.8,
-                        "tput_user": 36.05,
-                        "tput": 32.7,
+                        "ttft_ms": 740.1,
+                        "tput_user": 36.23,
+                        "tput": 30.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 388.8, tput_user 36.05, tput 32.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7716,13 +7716,13 @@
                         "tput": 26.7
                     },
                     "measured": {
-                        "ttft_ms": 1142.1,
-                        "tput_user": 34.84,
-                        "tput": 26.7,
+                        "ttft_ms": 1398.3,
+                        "tput_user": 34.95,
+                        "tput": 25.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1142.1, tput_user 34.84, tput 26.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7740,13 +7740,13 @@
                         "tput": 14.2
                     },
                     "measured": {
-                        "ttft_ms": 4864.6,
-                        "tput_user": 30.56,
-                        "tput": 14.2,
+                        "ttft_ms": 4987.3,
+                        "tput_user": 29.99,
+                        "tput": 13.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point measured by the tt-shield release run 40276183422 at the PR head (tt-metal eafd079cd3b, tt-inference-server f1ef80da3, vLLM arg/lane_prefix_cache_routing): one 32-chip lane engine on a Blackhole Galaxy (data_parallel_size 4 folded into lanes), the catalog block's serving config, 24/24 sweep points with no device timeout (the fixed-tree run 40265236129 at the same tree measured the same points within 1 %); mean TTFT / 1000 over mean TPOT / output throughput of the vllm bench serve result, tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 4864.6, tput_user 30.56, tput 14.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
             },
             {
                 "isl": 128,
