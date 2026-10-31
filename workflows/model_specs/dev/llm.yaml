@@ -242,6 +242,10 @@ templates:
 # false, which must agree).
 - weights:
     - zai-org/GLM-5.3-Flash
+  # the shield's host setup checks these (none derivable: the repo name carries no parameter count; 164 B bf16
+  # weights = 328 GB on disk, the TT cache of one served configuration ~700 GB, host RAM ~140 GB used while serving)
+  min_disk_gb: 1200
+  min_ram_gb: 256
   impl: glm53_flash
   inference_engine: VLLM
   model_type: LLM
