@@ -19,7 +19,7 @@ def digest(value):
                                     default=str).encode()).hexdigest()
 
 
-INTENTS = ('cost_sample', 'paired_confirmation', 'full_suite')
+INTENTS = ('isolated_smoke', 'cost_sample', 'paired_confirmation', 'full_suite')
 
 
 def authorize(manifest, intent, target, environ=None):

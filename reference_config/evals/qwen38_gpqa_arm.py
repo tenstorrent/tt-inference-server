@@ -9,7 +9,7 @@ from pathlib import Path
 MANIFEST = Path(__file__).with_suffix('.json')
 
 
-INTENTS = ('cost_sample', 'paired_confirmation', 'full_suite')
+INTENTS = ('isolated_smoke', 'cost_sample', 'paired_confirmation', 'full_suite')
 
 
 def selected_arm(intent=None):
@@ -44,7 +44,7 @@ def configure(tasks, runtime_config=None):
     return [replace(task, reference_threshold_informational=True,
         evaluation_metadata={"intent":c["intent"], "selected_doc_ids":ids,
                              "source_manifest_sha256":c["source_manifest_sha256"],
-                             "scored":True}, doc_ids=ids, max_concurrent=c['max_concurrent'],
+                             "scored":c["intent"] != "isolated_smoke"}, doc_ids=ids, max_concurrent=c['max_concurrent'],
         batch_size=1, seed=c['seed'], tokenizer_backend=None, use_chat_api=True,
         apply_chat_template=True, fewshot_as_multiturn=True, capture_reasoning=True,
         model_kwargs={**task.model_kwargs, 'max_length':262144,

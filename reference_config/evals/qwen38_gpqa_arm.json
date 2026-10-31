@@ -38,7 +38,7 @@
   "max_concurrent": 32,
   "seed": 1234,
   "reference_note": "10/198 raw questions match stage11; official r1 prompt/scorer and choice shuffle differ. Not a paired stage11 accuracy comparison.",
-  "intent": "full_suite",
+  "intent": "isolated_smoke",
   "preflight_json": null,
   "go_json": null
 }

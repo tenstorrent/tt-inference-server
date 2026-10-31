@@ -24,7 +24,8 @@ def release_task():
                 for t in c.tasks if t.task_name=='r1_gpqa_diamond')
 
 
-def test_scoped_selection_preserves_official_task_and_scorer():
+def test_scoped_selection_preserves_official_task_and_scorer(monkeypatch):
+    monkeypatch.setenv("TT_QWEN38_GPQA_ARM","full_suite")
     original=release_task()
     selected=configure([original], NS(eval_samples=None,eval_shard=None))[0]
     assert selected.task_name==original.task_name=='r1_gpqa_diamond'
@@ -41,6 +42,7 @@ def test_scoped_selection_preserves_official_task_and_scorer():
 
 @pytest.mark.parametrize('mode',[None,'ci-nightly'])
 def test_exact_command_with_all_ten_ids_and_no_limit(monkeypatch,mode):
+    monkeypatch.setenv("TT_QWEN38_GPQA_ARM","full_suite")
     import llm_module.eval_command as builder
     from workflow_module.engine_types import EvalLimitMode
     rc=NS(eval_samples=None,eval_shard=None,limit_samples_mode=mode)

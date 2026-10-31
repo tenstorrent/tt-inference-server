@@ -20,7 +20,7 @@ def receipts(tmp_path):
     return manifest,{'TT_QWEN38_PREFLIGHT_JSON':str(tmp_path/'preflight.json'),'TT_QWEN38_GO_JSON':str(tmp_path/'go.json')}
 
 
-@pytest.mark.parametrize('intent,count',[('cost_sample',2),('paired_confirmation',2),('full_suite',10)])
+@pytest.mark.parametrize('intent,count',[('isolated_smoke',2),('cost_sample',2),('paired_confirmation',2),('full_suite',10)])
 def test_fixed_selection_command(monkeypatch,intent,count):
     import llm_module.eval_command as builder
     monkeypatch.setenv('TT_QWEN38_GPQA_ARM',intent)
@@ -41,8 +41,11 @@ def test_fixed_selection_command(monkeypatch,intent,count):
 def test_default_full_and_json_configuration(tmp_path,monkeypatch):
     import reference_config.evals.qwen38_gpqa_arm as arms
     monkeypatch.delenv('TT_QWEN38_GPQA_ARM',raising=False)
-    assert selected_arm()['intent']=='full_suite'
+    assert selected_arm()['intent']=='isolated_smoke'
+    assert selected_arm()['selected_doc_ids']==[1,2]
+    monkeypatch.setenv('TT_QWEN38_GPQA_ARM','full_suite')
     assert len(selected_arm()['selected_doc_ids'])==10
+    monkeypatch.delenv('TT_QWEN38_GPQA_ARM')
     config=json.loads(MANIFEST.read_text());config['intent']='cost_sample'
     path=tmp_path/'arm.json';path.write_text(json.dumps(config));monkeypatch.setattr(arms,'MANIFEST',path)
     assert selected_arm()['selected_doc_ids']==[1,2]
@@ -118,3 +121,24 @@ def test_informational_flag_scoped_to_configured_task(monkeypatch):
     assert original.reference_threshold_informational is False
     assert selected.evaluation_metadata['intent']=='paired_confirmation'
     assert selected.score is original.score
+
+
+def test_explicit_isolated_preflight_is_unscored_and_keeps_protocol(monkeypatch):
+    monkeypatch.setenv('TT_QWEN38_GPQA_ARM','isolated_smoke')
+    original=release_task();task=configure([original],NS(eval_samples=None,eval_shard=None))[0]
+    assert task.doc_ids==[1,2]
+    assert task.evaluation_metadata['scored'] is False
+    assert task.score is original.score and task.task_name=='r1_gpqa_diamond'
+    assert task.seed==1234 and task.max_concurrent==32 and task.batch_size==1
+    assert task.model_kwargs['timeout']==12000 and task.gen_kwargs['max_gen_toks']==81920
+    assert original.model_kwargs['timeout']==7200
+    assert task.use_chat_api and task.apply_chat_template and task.capture_reasoning
+    assert task.tokenizer_backend is None and task.model_kwargs['tokenized_requests'] is False
+    manifest=json.loads(MANIFEST.read_text())
+    target=['runner','--samples',json.dumps({manifest['task']:[1,2]})]
+    receipt=authorize(manifest,'isolated_smoke',target,{})
+    assert receipt['scored'] is False and receipt['preflight'] is None
+    with pytest.raises(ValueError,match='selection'):
+        authorize(manifest,'isolated_smoke',['runner','--samples',json.dumps({manifest['task']:manifest['doc_ids']})],{})
+    with pytest.raises(ValueError,match='Missing'):
+        authorize(manifest,'paired_confirmation',target,{})
