@@ -645,7 +645,8 @@ def generate_docker_run_command(
             f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         ]
 
-    owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    from workflows.qwen38_run_identity import current_run_owner
+    owner = current_run_owner(model_spec.hf_model_repo)
     if owner:
         docker_command += ["--label", f"com.tenstorrent.agentic-owner={owner}"]
 

@@ -316,7 +316,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
-    owner = os.getenv("TT_AGENTIC_CONTAINER_OWNER")
+    from workflows.qwen38_run_identity import current_run_owner
+    owner = current_run_owner(config.model_name)
     if owner and config.environment_type == "docker":
         labels = {"com.tenstorrent.agentic-owner": owner}
         services = {"main": {"labels": labels}}

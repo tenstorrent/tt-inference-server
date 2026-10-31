@@ -123,7 +123,8 @@ def ensure_checkpoint_preflight(model_name, jobs_dir, *, runner=subprocess.run):
     jobs_dir.mkdir(parents=True, exist_ok=True)
     output = jobs_dir / 'checkpoint-preflight.json'
     start = time.monotonic()
-    owner = os.getenv('TT_AGENTIC_CONTAINER_OWNER', '')
+    from workflows.qwen38_run_identity import current_run_owner
+    owner = current_run_owner(model_name)
     receipt = {'ok': False, 'owner': owner, 'model': model_name}
     host_fs = os.statvfs(jobs_dir)
     receipt['host_jobs_disk'] = {'path': str(jobs_dir.resolve()), 'free_bytes': host_fs.f_bavail*host_fs.f_frsize, 'total_bytes': host_fs.f_blocks*host_fs.f_frsize}

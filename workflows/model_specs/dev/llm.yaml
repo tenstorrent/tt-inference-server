@@ -1759,7 +1759,7 @@ templates:
         num_gpu_blocks_override: 385
         mamba_cache_mode: align
         max_num_batched_tokens: 131072
-        long_prefill_token_threshold: 4096
+        long_prefill_token_threshold: 2048
         max_logprobs: -1
         async_scheduling: true
         enable_prefix_caching: true

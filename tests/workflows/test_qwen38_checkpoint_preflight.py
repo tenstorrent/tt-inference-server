@@ -40,6 +40,7 @@ def runner_for(items, inspect=None, receipt=None):
 
 def test_missing_owner_fails_without_docker(tmp_path, monkeypatch):
     monkeypatch.delenv('TT_AGENTIC_CONTAINER_OWNER', raising=False)
+    monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
     run, calls = runner_for([CID])
     with pytest.raises(RuntimeError, match='ownership'):
         ensure_checkpoint_preflight('Qwen/Qwen3.8-27B', tmp_path, runner=run)

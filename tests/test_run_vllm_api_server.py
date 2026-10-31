@@ -1669,7 +1669,7 @@ def test_qwen38_pool_candidate_runtime_flags(monkeypatch, tmp_path, run_vllm_api
     defaults = runtime["device_model_spec"]["vllm_args"]
     expected = {"block_size": 2048, "mamba_block_size": 2048, "num_gpu_blocks_override": 385,
                 "max_num_seqs": 32, "max_model_len": 262144, "max_num_batched_tokens": 131072,
-                "long_prefill_token_threshold": 4096, "shutdown_timeout": 30}
+                "long_prefill_token_threshold": 2048, "shutdown_timeout": 30}
     for key, value in expected.items():
         assert int(defaults[key]) == value
     assert defaults["enable_prefix_caching"] is True
