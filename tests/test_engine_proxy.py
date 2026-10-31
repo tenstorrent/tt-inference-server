@@ -78,6 +78,21 @@ def test_router_affinity_and_spill():
     )
 
 
+def test_router_idle_spill():
+    r = lb.Router(["A", "B", "C", "D"], slack=2, idle_spill_at=2)
+    first = r.pick(hashes_of(chat(DOC, "q0")))
+    r.index.record(hashes_of(chat(DOC, "q0")), first)
+    r.inflight = {b: 1 for b in "ABCD"}
+    r.inflight[first] = 1
+    assert r.pick(hashes_of(chat(DOC, "q1"))) == first  # one in flight: stays with its prefix
+    r.inflight[first] = 2
+    assert r.pick(hashes_of(chat(DOC, "q2"))) == first  # no idle engine: the slack rule
+    idle = next(b for b in "ABCD" if b != first)
+    r.inflight[idle] = 0
+    assert r.pick(hashes_of(chat(DOC, "q3"))) == idle and r.stats["idle_spilled"] == 1
+    assert lb.Router(["A", "B"]).idle_spill_at is None
+
+
 def fake_engine(name, healthy=True):
     async def completions(request):
         await request.json()

@@ -15,6 +15,11 @@ chunks (an LRU index of chained chunk hashes):
   holds it, unless that engine has more than ``slack`` requests in flight above the least loaded engine;
 - any other request goes to the least loaded engine (fewest in flight; ties round robin).
 
+With ``idle_spill_at`` (env ``TT_PROXY_IDLE_SPILL_AT``, off by default) a prefix-matched request whose holder already
+has that many requests in flight goes to an idle engine (none in flight) instead, when there is one: the idle engine's
+prefill of the whole prefix stalls no decode there, while one more request on a busy holder slows every request it
+serves (a model may speculate deeper for fewer requests, e.g. MiMo's adaptive draft groups at <= 2 per engine).
+
 So requests sharing a long prefix (a document, a long system prompt, a multi-turn conversation) gather on the engines
 that cached it, and spill to another engine (which then caches it too) instead of queueing on one. Responses stream
 back unchanged.
@@ -30,6 +35,7 @@ The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimenta
 import hashlib
 import itertools
 import json
+import os
 import re
 import time
 from collections import OrderedDict
@@ -199,11 +205,15 @@ class Router:
         slack=2,
         capacity=262144,
         down_s=5.0,
+        idle_spill_at=None,
     ):
         self.backends = list(backends)
         self.chunk_chars = chunk_chars
         self.min_match_chunks = max(1, -(-min_match_chars // chunk_chars))
         self.slack = slack
+        if idle_spill_at is None and os.environ.get("TT_PROXY_IDLE_SPILL_AT"):
+            idle_spill_at = int(os.environ["TT_PROXY_IDLE_SPILL_AT"])
+        self.idle_spill_at = idle_spill_at
         self.down_s = down_s
         self.index = PrefixIndex(capacity)
         self.inflight = {b: 0 for b in self.backends}
@@ -213,6 +223,7 @@ class Router:
         self.stats = {
             "prefix_routed": 0,
             "prefix_spilled": 0,
+            "idle_spilled": 0,
             "least_loaded": 0,
             "matched_chars": 0,
             "retried": 0,
@@ -239,6 +250,14 @@ class Router:
             best = max(lengths.values(), default=0)
             if best >= self.min_match_chunks:
                 holder = self.least_loaded([b for b, n in lengths.items() if n == best])
+                idle = [b for b in cands if self.inflight[b] == 0]
+                if (
+                    self.idle_spill_at is not None
+                    and self.inflight[holder] >= self.idle_spill_at
+                    and idle
+                ):
+                    self.stats["idle_spilled"] += 1
+                    return self.least_loaded(idle)
                 if (
                     self.inflight[holder]
                     <= min(self.inflight[b] for b in cands) + self.slack
