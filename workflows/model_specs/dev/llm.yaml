@@ -2432,6 +2432,12 @@ templates:
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
         DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_APC_GRID: "512"  # APC host tier M0 (snapshot policy on the 512 grid: tip, zone and divergence snapshots; image prompts too with DSV41_APC_IMAGES=1). Needs DSV41_APC_DEFER=1 (the code default, leave unset). DSV41_APC_GRID_LADDER stays 0, DSV41_APC_GRID_FILE unset. Boot cost: warm_apc compiles every multiple of 512 up to DSV41_WARM_APC_GRID_MAX=32768 (unmeasured, check at the rc3 boot)
+        # Structured outputs on the speculative path (model + plugin M1 mode, validated: plain decode c8 47.95 tok/s/user, GSM8K spot 98.0, 28/28 matrix, 256/256 tools). Both M2 switches are set to 0 (M1 mode: a structured row decodes without drafts under the on-device mask); both must be set. The masked trace needs the in-trace sampler.
+        DSV41_STRUCTURED_SPEC: "1"
+        VLLM_TT_STRUCTURED_SPEC: "1"
+        DSV41_INTRACE_SAMPLE: "1"
+        DSV41_STRUCTURED_M2: "0"
+        VLLM_TT_STRUCTURED_M2: "0"
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
@@ -2494,6 +2500,12 @@ templates:
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
         DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_APC_GRID: "512"  # APC host tier M0 (snapshot policy on the 512 grid: tip, zone and divergence snapshots; image prompts too with DSV41_APC_IMAGES=1). Needs DSV41_APC_DEFER=1 (the code default, leave unset). DSV41_APC_GRID_LADDER stays 0, DSV41_APC_GRID_FILE unset. Boot cost: warm_apc compiles every multiple of 512 up to DSV41_WARM_APC_GRID_MAX=32768 (unmeasured, check at the rc3 boot)
+        # Structured outputs on the speculative path (model + plugin M1 mode, validated: plain decode c8 47.95 tok/s/user, GSM8K spot 98.0, 28/28 matrix, 256/256 tools). Both M2 switches are set to 0 (M1 mode: a structured row decodes without drafts under the on-device mask); both must be set. The masked trace needs the in-trace sampler.
+        DSV41_STRUCTURED_SPEC: "1"
+        VLLM_TT_STRUCTURED_SPEC: "1"
+        DSV41_INTRACE_SAMPLE: "1"
+        DSV41_STRUCTURED_M2: "0"
+        VLLM_TT_STRUCTURED_M2: "0"
         DSV41_APC_PAGED: "1"  # device-resident block-paged APC (M1b; B=4 and B=8 entries only: B=16, Up < U, is unsupported and stays on the host tier). Kill switch: unset or 0. The model then advertises the scheduler hit policy model. Knobs: DSV41_APC_PAGED_HOST=1 (host-tier fallback for requests the paged cache owns), DSV41_APC_PAGED_HALO_A (halo-A store slots per mesh row, binding resource), DSV41_APC_PAGED_ZONE_EQ. Hits are bit-identical to a cold prefill; images and B=16 stay on the host tier (DSV41_APC_GRID)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
         DSV41_VLLM_MAX_PARTIAL: "4"  # all four prompts of the B=4 build may be part-way through their prefill (default 3 = slots - 1 is for builds with more users than prefill slots)
@@ -2559,6 +2571,12 @@ templates:
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
         DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_APC_GRID: "512"  # APC host tier M0 (snapshot policy on the 512 grid: tip, zone and divergence snapshots; image prompts too with DSV41_APC_IMAGES=1). Needs DSV41_APC_DEFER=1 (the code default, leave unset). DSV41_APC_GRID_LADDER stays 0, DSV41_APC_GRID_FILE unset. Boot cost: warm_apc compiles every multiple of 512 up to DSV41_WARM_APC_GRID_MAX=32768 (unmeasured, check at the rc3 boot)
+        # Structured outputs on the speculative path (model + plugin M1 mode, validated: plain decode c8 47.95 tok/s/user, GSM8K spot 98.0, 28/28 matrix, 256/256 tools). Both M2 switches are set to 0 (M1 mode: a structured row decodes without drafts under the on-device mask); both must be set. The masked trace needs the in-trace sampler.
+        DSV41_STRUCTURED_SPEC: "1"
+        VLLM_TT_STRUCTURED_SPEC: "1"
+        DSV41_INTRACE_SAMPLE: "1"
+        DSV41_STRUCTURED_M2: "0"
+        VLLM_TT_STRUCTURED_M2: "0"
         DSV41_APC_PAGED: "1"  # device-resident block-paged APC (M1b; B=4 and B=8 entries only: B=16, Up < U, is unsupported and stays on the host tier). Kill switch: unset or 0. The model then advertises the scheduler hit policy model. Knobs: DSV41_APC_PAGED_HOST=1 (host-tier fallback for requests the paged cache owns), DSV41_APC_PAGED_HALO_A (halo-A store slots per mesh row, binding resource), DSV41_APC_PAGED_ZONE_EQ. Hits are bit-identical to a cold prefill; images and B=16 stay on the host tier (DSV41_APC_GRID)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
         DSV41_VLLM_MAX_PARTIAL: "8"  # Up=2: all eight prompts of the B=8 build may be part-way through their prefill
