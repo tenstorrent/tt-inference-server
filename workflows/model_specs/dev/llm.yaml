@@ -2995,6 +2995,7 @@ templates:
       default_impl: false  # the dedicated gemma4_26b_a4b_qb2 profile is the QB2 default; select this one with --impl tt-transformers
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights takes ~95 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PACKED_KV_WRITE_OP: "1"  # the speculative records write their K/V rows through the model-local paged_update_rows op (one program per layer instead of the per-position loop); measured 2026-10-31 on this block vs the loop: prose c1 63.9 vs 56.4 tok/s (+13 %), every other point at parity, coherent at 256K/128K/short, record unit tests greedy-identical
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
         # speculative contract class.
