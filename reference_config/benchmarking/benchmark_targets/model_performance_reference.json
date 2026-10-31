@@ -7266,13 +7266,13 @@
                         "tput": 25.0
                     },
                     "measured": {
-                        "ttft_ms": 118.2,
-                        "tput_user": 25.41,
-                        "tput": 25.0,
+                        "ttft_ms": 134.5,
+                        "tput_user": 29.18,
+                        "tput": 28.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 118.2, tput_user 25.41, tput 25.0. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7290,13 +7290,13 @@
                         "tput": 1804.4
                     },
                     "measured": {
-                        "ttft_ms": 2285.9,
-                        "tput_user": 18.73,
-                        "tput": 1804.4,
+                        "ttft_ms": 3046.0,
+                        "tput_user": 25.1,
+                        "tput": 1520.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2285.9, tput_user 18.73, tput 1804.4. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7314,13 +7314,13 @@
                         "tput": 22.3
                     },
                     "measured": {
-                        "ttft_ms": 546.7,
-                        "tput_user": 24.47,
-                        "tput": 22.3,
+                        "ttft_ms": 451.9,
+                        "tput_user": 28.68,
+                        "tput": 26.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 546.7, tput_user 24.47, tput 22.3. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7338,13 +7338,13 @@
                         "tput": 16.5
                     },
                     "measured": {
-                        "ttft_ms": 2351.0,
-                        "tput_user": 23.5,
-                        "tput": 16.5,
+                        "ttft_ms": 2177.8,
+                        "tput_user": 28.15,
+                        "tput": 19.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2351.0, tput_user 23.5, tput 16.5. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7362,13 +7362,13 @@
                         "tput": 7.5
                     },
                     "measured": {
-                        "ttft_ms": 10728.3,
-                        "tput_user": 20.26,
-                        "tput": 7.5,
+                        "ttft_ms": 8181.7,
+                        "tput_user": 25.65,
+                        "tput": 9.7,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 10728.3, tput_user 20.26, tput 7.5. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7996,13 +7996,13 @@
                         "tput": 43.4
                     },
                     "measured": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 44.19,
-                        "tput": 43.4,
+                        "ttft_ms": 87.1,
+                        "tput_user": 56.95,
+                        "tput": 55.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 72.0, tput_user 44.19, tput 43.4. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -8020,13 +8020,13 @@
                         "tput": 2999.6
                     },
                     "measured": {
-                        "ttft_ms": 1219.4,
-                        "tput_user": 30.03,
-                        "tput": 2999.6,
+                        "ttft_ms": 1596.0,
+                        "tput_user": 42.56,
+                        "tput": 2789.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1219.4, tput_user 30.03, tput 2999.6. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -8044,13 +8044,13 @@
                         "tput": 38.5
                     },
                     "measured": {
-                        "ttft_ms": 296.7,
-                        "tput_user": 41.99,
-                        "tput": 38.5,
+                        "ttft_ms": 272.1,
+                        "tput_user": 54.6,
+                        "tput": 49.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 296.7, tput_user 41.99, tput 38.5. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -8068,13 +8068,13 @@
                         "tput": 28.7
                     },
                     "measured": {
-                        "ttft_ms": 1261.2,
-                        "tput_user": 39.75,
-                        "tput": 28.7,
+                        "ttft_ms": 1190.0,
+                        "tput_user": 54.25,
+                        "tput": 36.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1261.2, tput_user 39.75, tput 28.7. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -8092,13 +8092,13 @@
                         "tput": 13.5
                     },
                     "measured": {
-                        "ttft_ms": 5572.9,
-                        "tput_user": 32.68,
-                        "tput": 13.5,
+                        "ttft_ms": 4374.2,
+                        "tput_user": 51.42,
+                        "tput": 18.7,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_pad256; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 5572.9, tput_user 32.68, tput 13.5. Tolerance 0.2."
             },
             {
                 "isl": 128,
