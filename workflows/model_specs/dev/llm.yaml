@@ -1169,6 +1169,7 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (the shared policy); warmed at boot. Measured 2026-10-31 on this block (plain class, same prefill path): c1 TTFT 150 -> 85 ms, c8 1.03 -> 0.64 s, c32 4.0 -> 2.45 s, decode / extremes / prose unchanged, coherent at 256K/128K/short
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
         # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
         # with the MTP speculative contract class.
