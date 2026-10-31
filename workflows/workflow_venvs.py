@@ -43,7 +43,11 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # review before merging changes. Switch to a specific commit once development
 # is stable.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+# Pinned to the commit validated for the tau3/terminal-bench runs. The
+# "tt-inference-server" branch moves (a push there flipped BaseEnvironment's
+# auto_mounting default to False and emptied the tau3 task's log mounts);
+# override with HARBOR_REF=<branch|sha> only to test a newer Harbor on purpose.
+HARBOR_REF = os.getenv("HARBOR_REF") or "e76c762fca5267dfb36e1f900f0a7724ed72e735"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 

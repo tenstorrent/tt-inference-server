@@ -37,11 +37,20 @@ def _harbor_env_type() -> str:
 def _harbor_env_kwargs() -> Dict[str, Any]:
     """Cluster knobs forwarded as Harbor ``environment.kwargs`` (opt-in).
 
-    Empty unless ``HARBOR_ENV_TYPE=kubernetes`` — so the docker path emits no
-    kwargs.
+    The docker path emits only ``auto_mounting``: recent Harbor defaults it to
+    False, which leaves the ``${HOST_AGENT_LOGS_PATH}:${ENV_AGENT_LOGS_PATH}``
+    mounts of the tau3 task compose empty (agent logs, summary and runtime state
+    are lost and the verifier fails). ``HARBOR_AUTO_MOUNTING=0`` turns it off.
     """
     if _harbor_env_type() != "kubernetes":
-        return {}
+        if os.getenv("HARBOR_AUTO_MOUNTING", "1").strip().lower() in (
+            "0",
+            "false",
+            "no",
+            "off",
+        ):
+            return {}
+        return {"auto_mounting": True}
     if os.getenv("HARBOR_K8S_KUBECONFIG"):
         raise ValueError(
             "HARBOR_K8S_KUBECONFIG is not a Harbor setting and would be "

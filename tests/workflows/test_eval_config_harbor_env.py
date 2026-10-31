@@ -32,7 +32,22 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 def test_harbor_checkout_uses_runtime_branch():
     assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "tt-inference-server"
+    # pinned to a commit, not the moving branch (auto_mounting default flipped)
+    assert len(HARBOR_REF) == 40 and set(HARBOR_REF) <= set("0123456789abcdef")
+
+
+def test_docker_path_enables_auto_mounting_by_default(monkeypatch):
+    monkeypatch.delenv("HARBOR_ENV_TYPE", raising=False)
+    monkeypatch.delenv("HARBOR_AUTO_MOUNTING", raising=False)
+
+    assert _config().environment_kwargs == {"auto_mounting": True}
+
+
+def test_docker_auto_mounting_can_be_disabled(monkeypatch):
+    monkeypatch.delenv("HARBOR_ENV_TYPE", raising=False)
+    monkeypatch.setenv("HARBOR_AUTO_MOUNTING", "0")
+
+    assert _config().environment_kwargs == {}
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):
@@ -42,9 +57,9 @@ def test_defaults_to_docker_with_no_env(monkeypatch):
     cfg = _config()
 
     assert cfg.environment_type == "docker"
-    # No kwargs on the docker path: harbor's docker environment rejects the
-    # kubernetes-only keys, so they must not leak into a local run.
-    assert cfg.environment_kwargs == {}
+    # Only auto_mounting on the docker path: harbor's docker environment rejects
+    # the kubernetes-only keys, so they must not leak into a local run.
+    assert cfg.environment_kwargs == {"auto_mounting": True}
     assert cfg.harbor_timeout_sec is None
     assert cfg.progress_log_interval_sec == 60
 
@@ -271,7 +286,7 @@ def test_harbor_k8s_kubeconfig_is_ignored_on_the_docker_path(monkeypatch):
     cfg = _config()
 
     assert cfg.environment_type == "docker"
-    assert cfg.environment_kwargs == {}
+    assert cfg.environment_kwargs == {"auto_mounting": True}
 
 
 def test_explicit_environment_type_overrides_env(monkeypatch):
