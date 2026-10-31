@@ -557,6 +557,7 @@ templates:
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_SPEC_MAX_CTX: "262144"
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
+        DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
@@ -616,6 +617,7 @@ templates:
         DSV41_VISION: "1"  # device vision tower + image-aware prefill
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
+        DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
         DSV41_VLLM_MAX_PARTIAL: "4"  # all four prompts of the B=4 build may be part-way through their prefill (default 3 = slots - 1 is for builds with more users than prefill slots)
       vllm_args:
@@ -678,6 +680,7 @@ templates:
         DSV41_VISION: "1"  # device vision tower + image-aware prefill
         DSV41_VLLM_CHUNK: "512"  # prefill chunk of the chunked prefill / prefix cache grid
         DSV41_APC: "1"  # model-owned automatic prefix caching (needs enable-prefix-caching below)
+        DSV41_APC_IMAGES: "1"  # APC with images: key = token chain + per-image content hashes, restore at a continuation piece, Engram DEAD at image positions, cache_salt passed to the model; DSV41_APC_IMAGES_STRICT=1 restores the strict no-snapshot-inside-an-image-span rule; TT_MM_PREFIX_CACHE controls vLLM own prefix-cache reads of image requests (unset = the plugin skip stays)
         DSV41_PF_PAGED: read  # paged prefill; read mode forces a bf16 KV pool (APC needs it; DSV41_PF_PAGED=0 = previous dense-table prefill with the fp8 pool)
         DSV41_VLLM_MAX_PARTIAL: "8"  # Up=2: all eight prompts of the B=8 build may be part-way through their prefill
         DSV41_PREFILL_UP: "2"  # users per mesh row of the prefill trace (Up=2: two slots per row, replay cost 1.67x of Up=1, under the 2x bar)
