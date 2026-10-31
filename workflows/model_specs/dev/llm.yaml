@@ -3084,7 +3084,7 @@ templates:
         # trace) and the fused lane decode step. The engine's own defaults keep every one of these off on the (8,4) mesh, so
         # without them the entry serves at 413 ms / 22 tok/s/user (shield release run 40196840603).
         GEMMA4_LANE_PREFILL_TRACE: "1"
-        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,8x128,16x128,32x128"
+        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,8x128,16x128,32x128,1x1024,4x1024"  # the 1024 frames: a 129-1024-token prompt pads to 1024 and had no frame (serial eager prefill, 385 ms per 145-token prompt); measured 2026-10-31 on the lane engine: c1 TTFT 403 -> 323 ms, c8 1.75 -> 1.21 s, rate 1.27 -> 0.87 s, decode unchanged
         GEMMA4_LANE_LMHEAD_IN_TRACE: "1"
         GEMMA4_QKV_NORM_ROPE_FUSED: "1"
         GEMMA4_NORM_FUSED: "1"
@@ -3120,15 +3120,15 @@ templates:
         # column), so K=5 while no lane has more than 5 drafting rows, K=3 up to 8, K=1 up to 16, plain
         # above (the busiest lane decides; a lighter lane takes its K). The plugin's draft cap is published
         # flat at the folded max_num_seqs (128): the per-lane bands are applied by the model.
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3,16:1"
-        GEMMA4_SPEC_MAX_ROWS: "16"  # per lane: above 16 live rows on a lane the step is the plain lane decode (16 x 2 fills the per-column verify tile)
+        GEMMA4_SPEC_K_BY_ROWS: "1:5"  # per lane: K=5 for a lone drafting row on its lane, plain above; measured 2026-10-31 vs the plain lanes entry with the same frames: 128K +11 %, prose c1 +19 %, c1/c8/c128/rate/prose c16 at parity (the 5:5,8:3,16:1 table lost 22 % at c8: a (5,5) record serving 2 rows per lane under synchronous lane verifies, TTFT 6.5 s)
+        GEMMA4_SPEC_MAX_ROWS: "1"  # per lane: above one live row on a lane the step is the plain lane decode
         # Records x rungs: 4 shapes x 5 rungs (2K..256K) + 4 seed traces beside the lane decode trace and the four
         # lane prefill frames; the 26B QB2 measured 17-23 MB per record (4 shapes x 5 rungs ~510 MB in use with its
         # decode traces), the Galaxy column adds the lane gather/scatter collectives per layer. The boot log's
         # "[spec-serving] plan: ... of trace region" and "[spec-serving] captured ... MB in use" lines are the
         # check against the 1.2 GB region below; a TT_FATAL at the capture names the fix (fewer rungs: 4 drops
         # the 2K rung, ~-110 MB; 3 drops 8K too).
-        GEMMA4_SPEC_WIDTH_RUNGS: "5"
+        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # 1 shape x 5 rungs (2K..256K) + 1 seed trace = 5 records (~90 MB) beside the lane decode trace and six lane prefill frames in the 1.2 GB region (boot: "[spec-serving] plan: 5 records")
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # KV pool PER LANE (the plugin applies it to every lane un-divided; vLLM's "Maximum concurrency"
