@@ -306,7 +306,10 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "trace's recorded output, and by how much. Non-zero means the replayed "
     "conversation diverged from what was recorded.",
     "**Cache Hit %**: share of prompt tokens served from cache over the "
-    "profiling window, so the cache-priming warmup is excluded. Read from the "
+    "profiling window, so the cache-priming warmup is excluded. KV loaded "
+    "through a KV connector (an offload tier or a disaggregated prefill "
+    "worker) counts as a hit alongside the engine's own prefix cache, since "
+    "neither was prefilled by the engine. Read from the "
     "serving engine's own counters when `--agentic-traces-metrics-url` names a "
     "worker exporting them, else from the server's per-response usage "
     "accounting (`prompt_tokens_details.cached_tokens`), which is what a "
