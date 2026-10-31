@@ -618,9 +618,14 @@ templates:
         # cohort and prefill together; under "1" their bulks ran between
         # the stragglers' decode steps and filled their windows.
         TT_SCHED_DEFER_FINAL: "hold"
-        TT_V41_DEFER_FINAL: "1"
-        TT_V41_RESTORE_TRACE: "1"
-        TT_V41_RESTORE_TRACE_MAX_WIDTH: "131072"
+        # The cohort's first tokens from one decode step: a multi-chunk request's bulk runs to n - 1
+        # tokens and is joined by the stock path (no park, no restore: the
+        # generator's TT_V41_DEFER_FINAL and the restore captures are off),
+        # and the cohort's parked requests take their first token from one
+        # 32-row round instead of a final chunk each, so the 32 first tokens
+        # come out together and no decode window holds another request's
+        # final (9 to 27 s of finals a cohort at the c32 points).
+        TT_SCHED_FINAL_STEP: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
