@@ -3086,7 +3086,8 @@ templates:
         # trace) and the fused lane decode step. The engine's own defaults keep every one of these off on the (8,4) mesh, so
         # without them the entry serves at 413 ms / 22 tok/s/user (shield release run 40196840603).
         GEMMA4_LANE_PREFILL_TRACE: "1"
-        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,8x128,16x128,32x128,1x1024,4x1024"  # the 1024 frames: a 129-1024-token prompt pads to 1024 and had no frame (serial eager prefill, 385 ms per 145-token prompt); measured 2026-10-31 on the lane engine: c1 TTFT 403 -> 323 ms, c8 1.75 -> 1.21 s, rate 1.27 -> 0.87 s, decode unchanged
+        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,1x256,4x256,8x128,16x128,32x128,1x1024,4x1024"  # lane prefill frames by rows x padded tokens. The 256 frames serve the 129-256-token prompts that the padding policy below rounds to 256 (a chat-templated 128-token benchmark prompt is ~144 tokens): measured 2026-10-31 on the lane engine vs the 1024-only frames: 128/128 c1 TTFT 321 -> 145 ms, c8 1.14 -> 0.51 s, c128 10.0 -> 2.7 s with 23.1 -> 28.5 tok/s/user, 4 req/s 843 -> 242 ms; 128K/256K and decode unchanged. The 1024 frames keep the 513-1024-token prompts traced (serial eager prefill otherwise).
+        GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default); the lane frames above cover the 256 bucket, 512 pads to 1024 and takes the 1024 frame
         GEMMA4_LANE_LMHEAD_IN_TRACE: "1"
         GEMMA4_QKV_NORM_ROPE_FUSED: "1"
         GEMMA4_NORM_FUSED: "1"
