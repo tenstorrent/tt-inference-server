@@ -626,6 +626,11 @@ templates:
         # come out together and no decode window holds another request's
         # final (9 to 27 s of finals a cohort at the c32 points).
         TT_SCHED_FINAL_STEP: "1"
+        # Under the final step a stepped prompt reaches the generator as
+        # n - 1 tokens, so the sweep's prompts (the listed length and the
+        # one or two below it, by the tokenizer) need the finals captured two
+        # tokens either side of each listed length, not one (6 of 128 finals at 64K and 1 at 16K ran eagerly, 4 to 13 s each).
+        TT_V41_TRACE_PREFILL_SLACK: "2"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
