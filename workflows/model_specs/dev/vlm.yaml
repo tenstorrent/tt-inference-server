@@ -572,6 +572,7 @@ templates:
         tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
         enable-auto-tool-choice: true
         tool-call-parser: deepseek_v41  # DSML tool-call parser
+        enable-prompt-tokens-details: true  # vLLM --enable-prompt-tokens-details (0.31): usage.prompt_tokens_details.cached_tokens is returned (prefix-cache hit accounting for clients and tests)
         reasoning-parser: deepseek_v41  # thinking=true requests return the reasoning in the `reasoning` field, not in the content
         default-chat-template-kwargs: '{"thinking": false}'  # non-thinking chat by default (a request can override it)
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
@@ -632,6 +633,7 @@ templates:
         tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
         enable-auto-tool-choice: true
         tool-call-parser: deepseek_v41  # DSML tool-call parser
+        enable-prompt-tokens-details: true  # vLLM --enable-prompt-tokens-details (0.31): usage.prompt_tokens_details.cached_tokens is returned (prefix-cache hit accounting for clients and tests)
         reasoning-parser: deepseek_v41  # thinking=true requests return the reasoning in the `reasoning` field, not in the content
         default-chat-template-kwargs: '{"thinking": false}'  # non-thinking chat by default (a request can override it)
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
@@ -732,6 +734,7 @@ templates:
         tokenizer-mode: deepseek_v41  # vLLM's DeepSeek-V4.1 renderer (chat prompt + tools + DSML), needed for tool calls
         enable-auto-tool-choice: true
         tool-call-parser: deepseek_v41  # DSML tool-call parser
+        enable-prompt-tokens-details: true  # vLLM --enable-prompt-tokens-details (0.31): usage.prompt_tokens_details.cached_tokens is returned (prefix-cache hit accounting for clients and tests)
         reasoning-parser: deepseek_v41  # thinking=true requests return the reasoning in the `reasoning` field, not in the content
         default-chat-template-kwargs: '{"thinking": false}'  # non-thinking chat by default (a request can override it)
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
