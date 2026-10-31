@@ -345,6 +345,7 @@ templates:
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
+        GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the Galaxy DP=4 entry vs the knob off (same tree): 128/128 c1 TTFT 250 -> 134 ms, c8 365 -> 300 ms, c128 5.59 -> 3.05 s; 128K/256K TTFT and decode unchanged.
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
         # speculative contract class.
