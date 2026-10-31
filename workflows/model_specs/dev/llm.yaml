@@ -344,6 +344,7 @@ templates:
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
         # speculative contract class.
@@ -1237,6 +1238,7 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
         # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
         # with the MTP speculative contract class.
