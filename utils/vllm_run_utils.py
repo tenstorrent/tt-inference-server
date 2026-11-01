@@ -4,6 +4,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 import subprocess
 import jwt
@@ -41,12 +42,15 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_ma
         return symlink_path
 
     # Handle single directory/file symlink (standard case)
-    if symlink_path.is_symlink():
-        symlink_path.unlink()
-    assert not symlink_path.exists(), (
+    assert symlink_path.is_symlink() or not symlink_path.exists(), (
         f"symlink location: {symlink_path} has a non-symlink there."
     )
-    symlink_path.symlink_to(weights_dir)
+    # Swapped in atomically: submesh engines run this concurrently, and an unlink then symlink_to
+    # races (one engine's unlink finds the link another just removed).
+    staged = symlink_path.with_name(f".{symlink_path.name}.{os.getpid()}")
+    staged.unlink(missing_ok=True)
+    staged.symlink_to(weights_dir)
+    os.replace(staged, symlink_path)
     return symlink_path
 
 
