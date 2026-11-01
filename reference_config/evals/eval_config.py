@@ -12953,6 +12953,136 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16; tenstorrent/tt-quetzalcoatlus#375); Llama-shaped thinking
+    # checkpoint at fc7c15c2, ctx 65536. Tasks, prompting, timeouts and gen_kwargs copied from Qwen/QwQ-32B (r1 thinking
+    # profile; r1_aime24 omitted). The card publishes only LLM-as-judge scores (MT-Bench JA/EN, AnswerCarefully,
+    # llm-jp-instructions), none for these tasks: every gpu_reference_score is a full-sample GPU run at this revision /
+    # max_context / concurrency (issue #5353; measured 2026-10-17 on A100 40GB, vLLM 0.13.0, transformers 4.57.6, TTIS 31146440e).
+    # Output is Harmony-format and served with NO reasoning parser
+    # (vLLM's openai_gptoss parser assumes the o200k Harmony ids; upstream uses the out-of-tree llm-jp-vllm plugin),
+    # so the graded text carries the analysis and final channels on both the GPU and the TT side.
+    EvalConfig(
+        hf_model_repo="llm-jp/llm-jp-4-8b-thinking",
+        tasks=[
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=80.80,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229409966",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=51.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6229409966",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16; tenstorrent/tt-quetzalcoatlus#375); qwen3_moe at b2cff646.
+    # Tasks, prompting and gen_kwargs copied from Qwen/Qwen2.5-Coder-7B-Instruct. The card publishes agentic-coding scores
+    # only, none for these tasks: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
+    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353; measured 2026-10-17, H100 80GB, vLLM 0.13.0,
+    # transformers 4.57.6, TTIS 31146440e). mbpp_instruct is length-bound at max_gen_toks 256 (318/500 responses hit the cap
+    # before the closing fence, so extract_code returns empty); like-for-like because TT runs the same EvalConfig.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=31.60,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6241501452",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=89.02,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6241501452",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+        ],
+    ),
 ]
 
 
