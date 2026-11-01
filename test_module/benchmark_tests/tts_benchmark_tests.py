@@ -311,7 +311,7 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     return Block(
         kind="benchmarks",
         task_type="text_to_speech",
-        title="Text-to-Speech Load Benchmark",
+        title=f"Text-to-Speech Load Benchmark (ISL {text_tokens})",
         id=block_id(ctx) or None,
         targets={
             "concurrency": list(concurrency),

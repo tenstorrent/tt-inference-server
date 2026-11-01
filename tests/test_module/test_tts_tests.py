@@ -377,11 +377,69 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     assert observed["args"].concurrency == "1,2,4,8,16"
     assert observed["args"].out == str(tmp_path / "tts_load_results.json")
     assert block.kind == "benchmarks"
+    assert block.title == "Text-to-Speech Load Benchmark (ISL 128)"
     assert block.id == "tts-quad"
     assert block.data["Benchmarks"]["num_requests"] == 42
     assert block.data["Benchmarks"]["num_successful"] == 40
     assert block.data["Benchmarks"]["error_request_count"] == 2
     assert len(block.data["Latency by Concurrency"]) == 2
+
+
+def _load_block(monkeypatch, tmp_path, workflow_args):
+    """run_tts_load_benchmark with the harness and grading stubbed out."""
+    ctx = _workflow_ctx(
+        workflow_args,
+        output_path=str(tmp_path),
+        model_spec=SimpleNamespace(impl=SimpleNamespace(impl_name="tt-tts")),
+    )
+    monkeypatch.setattr(
+        benchmark, "require_health", lambda actual, requirement=None: None
+    )
+    monkeypatch.setattr(benchmark, "_target", lambda actual: "target")
+    monkeypatch.setattr(benchmark, "block_id", lambda actual: "tts-quad")
+    monkeypatch.setattr(benchmark.tts_load_harness, "sweep", lambda args, target: {})
+    monkeypatch.setattr(
+        benchmark.tts_load_harness,
+        "aggregate",
+        lambda actual: ([_harness_row(64), _harness_row(160)], 221),
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "_target_checks",
+        lambda actual_ctx, report_rows: (
+            {"target": {"fc_p50_ms_check": ReportCheckTypes.PASS}},
+            ReportCheckTypes.PASS,
+        ),
+    )
+    return benchmark.run_tts_load_benchmark(ctx)
+
+
+def test_load_benchmark_title_names_the_isl(monkeypatch, tmp_path):
+    block = _load_block(monkeypatch, tmp_path, "concurrency=64,160 isl=64")
+    assert block.title == "Text-to-Speech Load Benchmark (ISL 64)"
+    assert block.targets["text_tokens"] == 64
+
+
+def test_sweeps_at_different_isls_render_as_separate_tables(monkeypatch, tmp_path):
+    """The generator collapses consecutive blocks with one heading into a single
+    table, and a sweep's nested data does not survive that; distinct titles keep
+    each ISL's own Latency by Concurrency table in a merged report."""
+    from report_module import ReportGenerator, ReportSchema
+
+    blocks = [
+        _load_block(monkeypatch, tmp_path / str(isl), f"concurrency=64,160 isl={isl}")
+        for isl in (64, 128, 256)
+    ]
+    schema = ReportSchema(
+        metadata={"model_name": "tts-2", "device": "QUAD_GALAXY", "report_id": "r"},
+        sections=blocks,
+    )
+    markdown = ReportGenerator().generate(schema, tmp_path / "report").markdown
+
+    for isl in (64, 128, 256):
+        assert f"Text-to-Speech Load Benchmark (ISL {isl})" in markdown
+    assert markdown.count("Latency by Concurrency") == 3
+    assert '{"num_requests"' not in markdown
 
 
 def test_tts_benchmark_dispatch_preserves_legacy_implementations(monkeypatch):
