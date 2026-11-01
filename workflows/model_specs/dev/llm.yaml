@@ -3598,7 +3598,9 @@ templates:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
         MIMO_SPEC_SLOTS: 8  # a verify holds 4 requests x 2 slots
-        MIMO_SPEC_GROUPS: 4
+        # Throwaway: adaptive draft length per engine: K=3 for up to 2 requests, K=1 for 3-4 (tt-metal mimo-v2.6/dev-mtp-adaptive-k-row-engines, plugin vllm-plugin-dev-lane-k1-row-engines).
+        MIMO_SPEC_GROUPS: "2,4"
+        MIMO_VLLM_TIMING: 1  # throwaway: chained vs host drafts, waits and step timing in the server log
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
@@ -3623,7 +3625,7 @@ templates:
         tool-call-parser: mimo
         # Async scheduling: plain lane steps overlap, and fused verifies chain on device (the model
         # declares supports_async_spec_decode).
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 1}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'  # throwaway: 3 for the K=3 layout (the K=1 layout clamps it)
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # As the default entry: the repo name has no "<N>B" to infer these from.
