@@ -647,6 +647,17 @@ templates:
         # token ids, the Engram inputs and the position inputs) as one
         # ttnn.copy_host_to_device_tensors instead of ~55 single copies.
         TT_V41_PREFILL_HOST_BATCH: "1"
+        # A request's window carries and DSpark rings zeroed on device from one
+        # persistent zero tensor a shape (bit for bit): the
+        # host upload of ~6 MB of zero pages to 32 chips was 23 ms a request as
+        # one batch under TT_METAL_MESH_WRITE_INLINE (the batch runs on the calling
+        # thread, device after device); on device it is 2 to 3 ms.
+        TT_V41_PREFILL_RESET_DEVICE: "1"
+        # The candidate index source's selection bounded at each query's pin
+        # instead of the additive visibility mask (bit for bit
+        # on the composed tree): no ratio-1 mask build and no row-major
+        # add on the chunks of the score buckets over 32K.
+        TT_V41_PREFILL_INDEX_BOUND: "1"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
