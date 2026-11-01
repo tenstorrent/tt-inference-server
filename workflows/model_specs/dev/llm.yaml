@@ -3592,7 +3592,7 @@ templates:
       # any lane stalls every lane's decode. Measured (SPEED-Bench coding, c=16): 835 -> 984 tok/s;
       # 16 x 256K prompts finish in 320 s instead of 685 (tt-metal mimo-v2.6/row-engines,
       # doc/vllm_integration/README.md "One engine per Galaxy row").
-      submesh_engines: true
+      submesh_engines: false  # throwaway: the four rows as lanes of one engine, to bisect LongBench long-context garbage against row engines
       env_vars:
         MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
