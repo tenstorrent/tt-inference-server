@@ -66,7 +66,7 @@ def validate_arm(c):
 
 def arm_metadata(c):
     return {key: c[key] for key in ('intent', 'phase', 'scored', 'sample_count',
-        'task_names', 'cohort', 'request_timeout_sec', 'preflight_json', 'go_json', 'preflight_evidence', 'estimate_decision', 'estimate_evidence') if key in c}
+        'task_names', 'cohort', 'request_timeout_sec', 'output_token_cap', 'preflight_json', 'go_json', 'preflight_evidence', 'estimate_decision', 'estimate_evidence') if key in c}
 
 
 def select_tasks(tasks, limit_mode):
@@ -80,7 +80,33 @@ def select_tasks(tasks, limit_mode):
             raise ValueError('GPQA uses the wrapper evals route, not agentic')
         if cfg.dataset != c['dataset']:
             raise ValueError('Arm dataset differs from release identity')
-        if 'request_timeout_sec' in c:
+        terminal_override = task.task_name == 'terminal_bench_2_1' and any(
+            key in c for key in ('request_timeout_sec', 'output_token_cap'))
+        if terminal_override:
+            if cfg.dataset != 'terminal-bench/terminal-bench-2-1' or cfg.agent != 'terminus-2':
+                raise ValueError('Terminal limit overrides require the native Terminus2 release route')
+            agent_kwargs = copy.deepcopy(cfg.agent_kwargs or {})
+            llm_kwargs = agent_kwargs.setdefault('llm_kwargs', {})
+            updates = {}
+            for control, native in (('request_timeout_sec', 'timeout'), ('output_token_cap', 'max_tokens')):
+                if control not in c:
+                    continue
+                value = c[control]
+                floor = llm_kwargs.get(native)
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not math.isfinite(value) or value <= 0
+                        or (native == 'max_tokens' and type(value) is not int)
+                        or not isinstance(floor, (int, float)) or isinstance(floor, bool)
+                        or not math.isfinite(floor) or floor <= 0 or value < floor
+                        or (native == 'timeout' and cfg.llm_timeout_sec is not None and value < cfg.llm_timeout_sec)):
+                    raise ValueError(control + ' must be positive, correctly typed and at least the native release floor')
+                llm_kwargs[native] = value
+                if native == 'timeout':
+                    updates['llm_timeout_sec'] = value
+            cfg = replace(cfg, agent_kwargs=agent_kwargs, **updates)
+        elif 'output_token_cap' in c:
+            raise ValueError('output_token_cap override is native Terminal Bench-only')
+        elif 'request_timeout_sec' in c:
             if (task.task_name != 'swe_bench_verified' or cfg.dataset != 'swebench-verified'
                     or cfg.agent != 'mini-swe-agent'):
                 raise ValueError('request_timeout_sec override is SWE MiniSwe-only')

@@ -13,6 +13,7 @@ def arm(count=32):
     c=copy.deepcopy(arms.controls())
     population=json.loads(Path('reference_config/evals/qwen38_swe_population.json').read_text())
     c.update(intent='full_suite', scored=True, sample_count=count,
+             evals=['swe_bench_verified'], dataset='swebench-verified', dataset_ref=None, request_timeout_sec=7200,
              task_names=[t['name'] for t in population['tasks'][:count]],
              population_manifest_sha256=SWE_POPULATION_SHA256)
     c['cohort']={'selection_reason':'Distinct agents to measure real cache pressure',

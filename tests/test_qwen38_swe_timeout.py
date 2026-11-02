@@ -15,6 +15,8 @@ from workflows.workflow_types import EvalLimitMode
 @pytest.fixture
 def arm(monkeypatch, tmp_path):
     c = qwen38_goal12.controls()
+    c.pop("cohort", None)
+    c.update(intent="isolated_smoke", scored=False, sample_count=2)
     c.update(dataset='swebench-verified', dataset_ref=None, evals=['swe_bench_verified'],
              task_names=['django__django-11299', 'astropy__astropy-14096'],
              request_timeout_sec=7200)
@@ -63,12 +65,12 @@ def test_no_override_preserves_swe_default(arm):
     assert cfg.agent_kwargs == base.agent_kwargs
 
 
-def test_terminal_override_rejected_and_default_unchanged(arm):
+def test_terminal_timeout_override_and_default_unchanged(arm):
     c, path = arm
     c.update(dataset='terminal-bench/terminal-bench-2-1', evals=['terminal_bench_2_1'])
     path.with_suffix('.json').write_text(json.dumps(c))
-    with pytest.raises(ValueError, match='SWE'):
-        select()
+    selected = select().agentic_eval_config
+    assert selected.llm_timeout_sec == selected.agent_kwargs['llm_kwargs']['timeout'] == 7200
     del c['request_timeout_sec']
     path.with_suffix('.json').write_text(json.dumps(c))
     base = next(t.agentic_eval_config for t in _eval_config_map['Qwen/Qwen3.8-27B'].tasks if t.task_name == 'terminal_bench_2_1')
