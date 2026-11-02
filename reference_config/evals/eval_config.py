@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import copy
 import json
 import logging
 import math
@@ -322,6 +323,8 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    collect_preflight_evidence: bool = False
+    preflight_min_free_bytes: Optional[int] = None
     # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
     # environment is docker and the image is not already local, e.g. the base
     # image every trial's environment build starts FROM: concurrent trials
@@ -468,6 +471,9 @@ class EvalTask:
     # --eval-samples does not name the task; limit modes then take the first N
     # of this list instead of passing ``--limit`` (lm-eval rejects both).
     doc_ids: Optional[List[int]] = None
+
+    collect_preflight_evidence: bool = False
+    preflight_min_free_bytes: Optional[int] = None
 
     def __post_init__(self):
         for name in ("wall_clock_timeout_seconds", "max_attempts"):
@@ -13530,6 +13536,47 @@ _eval_config_list = [
 ]
 
 
+# Fresh-autoport goal-12 fixed ten-task subsets. These are reported, not gated.
+# Gemma31B has no release SWE entry: use the release mini-SWE version and
+# conservative Terminal agent/request/output limits, explicitly documented.
+for _index, _config in enumerate(_eval_config_list):
+    if _config.hf_model_repo == "google/gemma-4-31B-it":
+        _gpqa = next(t for t in _config.tasks if t.task_name == "r1_gpqa_diamond")
+        _terminal = next(t for t in _config.tasks if t.task_name == "terminal_bench_2")
+        _terminal_kwargs = copy.deepcopy(_terminal.agentic_eval_config.agent_kwargs)
+        _terminal_kwargs["model_info"]["max_output_tokens"] = 65536
+        _terminal_kwargs["llm_kwargs"]["max_tokens"] = 65536
+        _terminal_cfg = replace(_terminal.agentic_eval_config,
+            agent_kwargs=_terminal_kwargs, collect_preflight_evidence=True,
+            preflight_min_free_bytes=512 * 1024**3,
+            dataset="gemma4-isolated-terminal", dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
+            n_tasks=10, n_concurrent_trials=32, task_names_map={},
+            allow_agent_endpoint=True)
+        _swe_cfg = HarborEvalConfig(
+            dataset="gemma4-isolated-swe", agent="mini-swe-agent",
+            collect_preflight_evidence=True, preflight_min_free_bytes=512 * 1024**3,
+            n_tasks=10, n_concurrent_trials=32, n_attempts=1,
+            agent_timeout_sec=18000, llm_timeout_sec=3600,
+            allow_agent_endpoint=True, override_cpus=1, override_memory_mb=8192,
+            agent_kwargs={"version": MINI_SWE_AGENT_VERSION, "max_tokens": 65536,
+                "config": {"model": {"model_kwargs": {
+                    "max_tokens": 65536, "temperature": 1.0, "top_p": 0.95,
+                    "extra_body": {"top_k": 20,
+                        "chat_template_kwargs": {"enable_thinking": True}}}}}})
+        _eval_config_list[_index] = replace(_config, tasks=[
+            replace(_gpqa, doc_ids=list(range(10)), max_concurrent=32,
+                collect_preflight_evidence=True, preflight_min_free_bytes=32 * 1024**3,
+                limit_samples_map={}),
+            replace(_terminal, agentic_eval_config=_terminal_cfg, limit_samples_map={}),
+            EvalTask(task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(published_score=None, published_score_ref=None,
+                    gpu_reference_score=None, gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"}),
+                agentic_eval_config=_swe_cfg, limit_samples_map={}),
+        ])
+
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
@@ -13546,3 +13593,16 @@ EVAL_CONFIGS = {
 # RequirementsTargetPack._find_task_template) read this instead, so dropping a
 # task from one model's run set cannot make it unreachable catalog-wide.
 ALL_EVAL_CONFIGS = _eval_config_map
+
+# Keep catalog templates available, but dispatch exactly one budgeted goal-12 suite.
+_fresh_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
+EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(
+    _fresh_config, tasks=[task for task in _fresh_config.tasks if task.task_name == "swe_bench_verified"]
+)
+
+# Remaining frozen cohort partition; the completed probe is excluded without resampling.
+_probe_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
+_probe_task = _probe_config.tasks[0]
+_probe_task = replace(_probe_task, agentic_eval_config=replace(_probe_task.agentic_eval_config,
+    n_tasks=4, n_concurrent_trials=4, exclude_task_names=['astropy__astropy-14508', 'django__django-11532', 'django__django-11734', 'django__django-12125', 'django__django-13417', 'django__django-13741']))
+EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(_probe_config, tasks=[_probe_task])
