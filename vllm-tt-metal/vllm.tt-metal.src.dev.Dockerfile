@@ -68,8 +68,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# User setup
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+# User setup. Ubuntu 24.04 images ship an "ubuntu" user with UID 1000.
+RUN stock_user=$(getent passwd ${CONTAINER_APP_UID} | cut -d: -f1 || true) \
+    && if [ -n "${stock_user}" ]; then userdel "${stock_user}"; fi \
+    && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
