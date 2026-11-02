@@ -8183,5 +8183,128 @@
                 "targets": {}
             }
         ]
+    },
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+        "super_cluster": [
+            {
+                "_comment": [
+                    "SUPER_CLUSTER (remote blaze endpoint): the tt-blaze DeepSeek-V4.1-Flash-1017 reload",
+                    "ring on one Blackhole galaxy (4 stages of 4x2, 3 users, 65,536-position caches),",
+                    "served by tt-d-gen + Dynamo 1.6.0. The key ISLs of the Kimi-K3 scorecard: 10K, 100K,",
+                    "140K, all OSL 1024, at concurrency 1 and at the ring's 3 users. num_prompts: 4 at",
+                    "concurrency 1, 2 waves of 3 at concurrency 3. Targets are the ring's serving SLO,",
+                    "not measured numbers: TTFT <= ISL / 600 s (prefill >= 600 tok/s), >= 40 tok/s per",
+                    "user, so aggregate >= 40 x concurrency. 100K / 140K need a 147,456-position cache",
+                    "depth (validated at 65,536); they move to the quad if the galaxy ring cannot hold it.",
+                    "Run with ONLY_BENCHMARK_TARGETS=1 to skip the default ISL/OSL sweep and run only these."
+                ],
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16666.7,
+                        "tput_user": 40.0,
+                        "tput": 40.0
+                    }
+                }
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 3,
+                "num_prompts": 6,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16666.7,
+                        "tput_user": 40.0,
+                        "tput": 120.0
+                    }
+                }
+            },
+            {
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166666.7,
+                        "tput_user": 40.0,
+                        "tput": 40.0
+                    }
+                }
+            },
+            {
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 3,
+                "num_prompts": 6,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166666.7,
+                        "tput_user": 40.0,
+                        "tput": 120.0
+                    }
+                }
+            },
+            {
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 233333.3,
+                        "tput_user": 40.0,
+                        "tput": 40.0
+                    }
+                }
+            },
+            {
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 3,
+                "num_prompts": 6,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 233333.3,
+                        "tput_user": 40.0,
+                        "tput": 120.0
+                    }
+                }
+            }
+        ]
     }
 }
