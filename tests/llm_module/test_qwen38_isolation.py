@@ -26,14 +26,14 @@ def test_network_receipt_does_not_accept_missing_probe_tools(tmp_path):
     import pytest
     agent = object.__new__(IsolatedTerminus2)
     agent.logs_dir = tmp_path
-    env = SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(return_code=1)))
-    with pytest.raises(RuntimeError, match='requires timeout and bash'):
+    env = SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(return_code=127)), service_exec=AsyncMock(side_effect=[SimpleNamespace(return_code=0,stdout='mode: controlled egress'),SimpleNamespace(return_code=0,stdout='')]))
+    with pytest.raises(RuntimeError, match='could not execute'):
         asyncio.run(agent.run('unchanged', env, None))
     assert env.exec.await_count == 1
     assert not (tmp_path / 'network-isolation.json').exists()
 
 
-def test_network_receipt_rejects_open_egress(tmp_path):
+def test_network_receipt_rejects_open_egress(tmp_path,monkeypatch):
     import asyncio
     import json
     from types import SimpleNamespace
@@ -42,10 +42,10 @@ def test_network_receipt_rejects_open_egress(tmp_path):
     import pytest
     agent = object.__new__(IsolatedTerminus2)
     agent.logs_dir = tmp_path
-    env = SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(return_code=0)))
+    env = object()
+    monkeypatch.setattr('llm_module.agentic.qwen38_egress_probe.audit',AsyncMock(return_value={'ok':False}))
     with pytest.raises(RuntimeError, match='isolation probe failed'):
         asyncio.run(agent.run('unchanged', env, None))
-    assert env.exec.await_count == 3
     assert json.loads((tmp_path / 'network-isolation.json').read_text())['ok'] is False
 
 

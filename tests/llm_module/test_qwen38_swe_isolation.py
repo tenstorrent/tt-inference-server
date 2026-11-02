@@ -73,15 +73,17 @@ def test_materialize_legacy_preserves_native_bytes(tmp_path, monkeypatch, wrong_
     registry.assert_not_awaited()
 
 
-@pytest.mark.parametrize('codes, passes', [([0,1,124], True),([0,0,1],False),([0,127,1],False),([1],False)])
-def test_mini_probe_precedes_unchanged_parent(tmp_path, monkeypatch, codes, passes):
+@pytest.mark.parametrize('passes', [True, False])
+def test_mini_probe_precedes_unchanged_parent(tmp_path, monkeypatch, passes):
     from harbor.agents.installed.mini_swe_agent import MiniSweAgent
     from llm_module.agentic.qwen38_isolated_agent import IsolatedMiniSweAgent
     parent = AsyncMock()
     monkeypatch.setattr(MiniSweAgent,'run',parent)
+    monkeypatch.setattr(MiniSweAgent,'model_connection',property(lambda self:SimpleNamespace(inference_base_url='http://172.17.0.2:8000/v1')))
+    proof=AsyncMock(return_value={'ok':passes,'effective_policy':'inference-host allowlist'})
+    monkeypatch.setattr('llm_module.agentic.qwen38_egress_probe.audit',proof)
     agent=object.__new__(IsolatedMiniSweAgent);agent.logs_dir=tmp_path
-    environment=SimpleNamespace(exec=AsyncMock(side_effect=[SimpleNamespace(return_code=c) for c in codes]))
-    context=object()
+    environment=object();context=object()
     if passes:
         asyncio.run(agent.run('native instruction',environment,context))
         parent.assert_awaited_once_with('native instruction',environment,context)
@@ -89,6 +91,7 @@ def test_mini_probe_precedes_unchanged_parent(tmp_path, monkeypatch, codes, pass
     else:
         with pytest.raises(RuntimeError):asyncio.run(agent.run('native instruction',environment,context))
         parent.assert_not_awaited()
+    proof.assert_awaited_once_with(environment,'http://172.17.0.2:8000/v1')
 
 
 def test_mini_config_keeps_timeout_endpoint_and_owned_sidecar(tmp_path, monkeypatch):
