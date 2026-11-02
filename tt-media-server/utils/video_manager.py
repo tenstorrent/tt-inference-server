@@ -33,26 +33,6 @@ _NORMALIZED_RANGE_MAX = 1.0
 _AV_TIME_BASE = 1_000_000
 
 
-@dataclass(frozen=True)
-class VideoAudioResult:
-    """A runner's raw (un-encoded) output when the model emits a soundtrack.
-
-    An audio model returns this in place of a bare frame array so the encoder
-    muxes video + audio via ``export_to_mp4_with_audio``. Fields map 1:1 to that
-    exporter's arguments, so any future audio runner can reuse this contract.
-    """
-
-    frames: NDArray
-    audio: NDArray
-    sampling_rate: int
-    fps: int = 16
-    # "rgb24": frames are (N, H, W, 3) uint8. "yuv420p": frames are planar (N, H * 3 // 2, W)
-    # uint8 -- exactly ffmpeg's rawvideo yuv420p layout, which the MiniMax-H3 pipeline hands back
-    # under vae_output_type="yuv420" (see MiniMaxH3Output.video_format) so no colour conversion
-    # ever runs on host.
-    pixel_format: str = "rgb24"
-
-
 class VideoManager:
     """MP4 export via FFmpeg subprocess pipe (raw RGB → libx264)."""
 

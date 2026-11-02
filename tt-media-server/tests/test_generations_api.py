@@ -38,7 +38,7 @@ from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
-from utils.video_manager import VideoAudioResult, VideoManager
+from utils.video_manager import VideoManager
 
 _SPEC_DIR = pathlib.Path(__file__).resolve().parents[1] / "docs" / "api" / "generation"
 
@@ -534,31 +534,21 @@ async def test_video_job(generations_app):
     assert content.headers["content-type"] == "video/mp4" and content.content
 
 
-def _sound_video(frames: int = 9) -> VideoAudioResult:
-    return VideoAudioResult(
-        frames=np.zeros((frames, 64, 64, 3), np.uint8),
-        audio=np.zeros((2, 16000 * frames // 25), np.float32),
-        sampling_rate=16000,
-        fps=25,
+def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
+    """An MP4 with sound, not faststart, as the LTX and H3 runners write."""
+    return VideoManager().export_to_mp4_with_audio(
+        np.zeros((frames, 64, 64, 3), np.uint8),
+        np.zeros((2, sampling_rate * frames // fps), np.float32),
+        sampling_rate,
+        fps=fps,
     )
 
 
-@pytest.mark.parametrize("encoded_by_the_pipeline", [False, True])
-async def test_video_with_sound_job(generations_app, encoded_by_the_pipeline):
+async def test_video_with_sound_job(generations_app):
     import av
 
     client, device = generations_app("tt-ltx-2.3-distilled")
-    if encoded_by_the_pipeline:
-        # As LTX's generate() does: an MP4 with sound, not faststart.
-        def video(request):
-            result = _sound_video()
-            return VideoManager().export_to_mp4_with_audio(
-                result.frames, result.audio, result.sampling_rate, fps=result.fps
-            )
-
-        device.video = video
-    else:
-        device.video = lambda request: _sound_video()
+    device.video = lambda request: _sound_video(9, 16000, 25)
     response = await client.post(
         "/v1/generations/lightricks/ltx-2.3-22b-distilled",
         json={"prompt": "a violinist", "duration": 6},
@@ -611,6 +601,82 @@ async def test_disallowed_url_is_400_and_large_image_413(generations_app, monkey
     )
     assert large.status_code == 413
     assert (await client.get("/v1/jobs")).json() == []
+
+
+async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkeypatch):
+    async def fetch(url, **kwargs):
+        raise AssertionError("fetched")
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    import utils.job_manager
+
+    settings = utils.job_manager.get_settings()
+    settings.max_queue_size = 0
+    monkeypatch.setattr("utils.job_manager.get_settings", lambda: settings)
+    client, _ = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={"prompt": "x", "images": ["https://example.com/a.png"]},
+    )
+    assert response.status_code == 429
+
+
+async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
+    png = base64.b64decode(_data_uri().split(",")[1])
+    fetching = 0
+    both = asyncio.Event()
+
+    async def fetch(url, **kwargs):
+        nonlocal fetching
+        fetching += 1
+        if fetching == 2:
+            both.set()
+        await asyncio.wait_for(both.wait(), timeout=5)
+        return png
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={
+            "prompt": "x",
+            "images": ["https://example.com/a.png", "https://example.com/b.png"],
+        },
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    # The runner reads the decoded images, not the files.
+    assert len(request._images["images"]) == 2 and request._files == {}
+
+
+async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypatch):
+    from utils.media_downloader import MediaDownloadPolicyError
+
+    stopped = asyncio.Event()
+
+    async def fetch(url, **kwargs):
+        if url.endswith("a.png"):
+            raise MediaDownloadPolicyError("host is not allowed")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    client, _ = generations_app("tt-qwen-image-edit-2511")
+    response = await asyncio.wait_for(
+        client.post(
+            "/v1/generations/qwen/qwen-image-edit-2511",
+            json={
+                "prompt": "x",
+                "images": ["https://example.com/a.png", "https://example.com/b.png"],
+            },
+        ),
+        timeout=5,
+    )
+    assert response.status_code == 400
+    assert stopped.is_set()
 
 
 async def test_schema_errors_are_422(generations_app):
@@ -1067,12 +1133,7 @@ async def test_a_clip_in_another_format_is_422(generations_app):
 
 async def test_h3_keyframes_job(generations_app):
     client, device = generations_app("tt-minimax-h3-fl2va")
-    device.video = lambda request: VideoAudioResult(
-        frames=np.zeros((request.frames, 64, 64, 3), np.uint8),
-        audio=np.zeros((2, 48000 * request.frames // 24), np.float32),
-        sampling_rate=48000,
-        fps=24,
-    )
+    device.video = lambda request: _sound_video(request.frames, 48000, 24)
     response = await client.post(
         "/v1/generations/minimaxai/minimax-h3-fl2va",
         json={"prompt": "a lighthouse", "first_frame": _data_uri(600, 800)},

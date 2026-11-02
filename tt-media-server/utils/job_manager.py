@@ -278,6 +278,12 @@ class JobManager:
 
         return job.to_public_dict()
 
+    def check_admission(self) -> None:
+        """Raise the 429 or 503 that ``create_job`` would, before costly
+        request preparation. ``create_job`` checks again."""
+        with self._jobs_lock:
+            self._enforceAdmissionLimits()
+
     def _enforceAdmissionLimits(self) -> None:
         """Reject new work when outstanding jobs or stored records are full."""
         activeCount = sum(1 for job in self._jobs.values() if not job.is_terminal())

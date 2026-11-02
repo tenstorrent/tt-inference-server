@@ -36,7 +36,7 @@ from utils.media_probe import (
     media_format_error,
     probe_reference_media,
 )
-from utils.video_manager import VideoAudioResult, VideoManager, probe_video
+from utils.video_manager import VideoManager, probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
@@ -87,27 +87,17 @@ def _digest_data_uri(value: str) -> str:
 def _write_video(result: Any, fps: int, path: Path) -> None:
     """Write a runner's video to ``path`` as a faststart MP4.
 
-    The result is frames, frames with a soundtrack, or the path of an MP4 the
-    pipeline wrote itself, which is remuxed for faststart.
+    The result is frames, or the path of an MP4 the pipeline wrote itself,
+    which is remuxed for faststart.
     """
-    if isinstance(result, VideoAudioResult):
-        encoded = VideoManager().export_to_mp4_with_audio(
-            result.frames,
-            result.audio,
-            result.sampling_rate,
-            fps=result.fps,
-            pixel_format=result.pixel_format,
-        )
-    elif isinstance(result, str):
+    if isinstance(result, str):
         try:
             VideoManager.ensure_faststart(result, str(path))
         finally:
             Path(result).unlink(missing_ok=True)
         return
-    else:
-        # The encoder already writes faststart MP4s.
-        encoded = VideoManager().export_to_mp4(result, fps=fps)
-    shutil.move(encoded, path)
+    # The encoder already writes faststart MP4s.
+    shutil.move(VideoManager().export_to_mp4(result, fps=fps), path)
 
 
 def read_manifest(result_path: str) -> list[dict]:
@@ -134,6 +124,7 @@ class GenerationService(BaseJobService):
                 detail="Model is not ready",
                 headers={"Retry-After": "30"},
             )
+        self._job_manager.check_admission()
 
         await self._load_media(request)
         request._width, request._height = request.output_size()
@@ -181,40 +172,72 @@ class GenerationService(BaseJobService):
             loc = ("body", name, index) if is_list else ("body", name)
             errors.append({"loc": loc, "msg": message, "type": "value_error"})
 
-        for name, values in media.items():
-            kind = request.media_kind(name)
-            loaded = []
-            for index, value in enumerate(values):
-                try:
-                    if value.startswith("https://"):
-                        data = await download_media_url(
-                            value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]
-                        )
-                    else:
-                        data = _decode_data_uri(value, kind)
-                    if kind == "image":
-                        decoded = await asyncio.to_thread(decode_image, data)
-                    else:
-                        decoded = await asyncio.to_thread(probe_reference_media, data)
-                        if message := media_format_error(kind, decoded):
-                            raise ValueError(message)
-                    loaded.append((data, decoded))
-                except MediaDownloadPolicyError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-                except MediaDownloadTooLargeError:
-                    raise _too_large(kind)
-                except (MediaDownloadFetchError, binascii.Error, ValueError) as e:
-                    error(name, index, str(e))
-                except (UnidentifiedImageError, OSError):
-                    error(
-                        name,
-                        index,
-                        "not a decodable image (PNG, JPEG, WebP, ...)"
-                        if kind == "image"
-                        else "not a readable video or audio file",
+        async def load(kind: str, value: str) -> tuple[bytes, Any]:
+            try:
+                if value.startswith("https://"):
+                    data = await download_media_url(
+                        value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]
                     )
-            request._files[name] = [data for data, _ in loaded]
-            decoded = [decoded for _, decoded in loaded]
+                else:
+                    data = _decode_data_uri(value, kind)
+            except MediaDownloadPolicyError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except MediaDownloadTooLargeError:
+                raise _too_large(kind)
+            if kind == "image":
+                return data, await asyncio.to_thread(decode_image, data)
+            probe = await asyncio.to_thread(probe_reference_media, data)
+            if message := media_format_error(kind, probe):
+                raise ValueError(message)
+            return data, probe
+
+        inputs = [
+            (name, index, request.media_kind(name), value)
+            for name, values in media.items()
+            for index, value in enumerate(values)
+        ]
+        tasks = [
+            asyncio.ensure_future(load(kind, value)) for _, _, kind, value in inputs
+        ]
+        try:
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_EXCEPTION
+                )
+                for task in done:
+                    # A refused input fails the request: stop the other fetches.
+                    if isinstance(task.exception(), HTTPException):
+                        raise task.exception()
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        loaded: dict[str, list[tuple[bytes, Any]]] = {name: [] for name in media}
+        for (name, index, kind, _), task in zip(inputs, tasks):
+            result = task.exception() or task.result()
+            if isinstance(
+                result, (MediaDownloadFetchError, binascii.Error, ValueError)
+            ):
+                error(name, index, str(result))
+            elif isinstance(result, (UnidentifiedImageError, OSError)):
+                error(
+                    name,
+                    index,
+                    "not a decodable image (PNG, JPEG, WebP, ...)"
+                    if kind == "image"
+                    else "not a readable video or audio file",
+                )
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                loaded[name].append(result)
+        for name, items in loaded.items():
+            kind = request.media_kind(name)
+            # Only runners that decode their inputs read the files.
+            if kind != "image" or request.RUNNER_DECODES_IMAGES:
+                request._files[name] = [data for data, _ in items]
+            decoded = [decoded for _, decoded in items]
             if kind == "image":
                 request._images[name] = decoded
             else:
