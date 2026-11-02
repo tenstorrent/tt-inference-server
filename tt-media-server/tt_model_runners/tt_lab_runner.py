@@ -42,7 +42,7 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 # --serve-batch replies: (id, value) pairs; value is a token or one of these.
 STOPPED, LENGTH, READY, CANCELLED = -1, -2, -3, -4
 # --serve-batch messages.
-SUBMIT, CANCEL, SUBMIT_FLAGS = 1, 2, 3
+SUBMIT, CANCEL, SUBMIT_FLAGS, SUBMIT_SAMPLED = 1, 2, 3, 4
 FLAG_IGNORE_EOS = 1
 
 
@@ -280,15 +280,27 @@ class TTLabRunner(BaseDeviceRunner):
             for sink in sinks:
                 sink(exc)
 
-    def _submit(self, tokens, limit, sink, ignore_eos=False):
-        """Register `sink` for this request's replies and send it to the worker."""
+    def _submit(self, tokens, limit, sink, ignore_eos=False, request=None):
+        """Register `sink` for this request's replies and send it to the worker.
+
+        A request with temperature > 0 goes as message 4 (Gemma batch worker, TT_LAB_SAMPLING=1):
+        temperature, top_p, top_k (0: the device's 64) and a 64-bit seed (random when omitted)."""
         if not self.health_check():
             raise RuntimeError("tt-lab silicon process is not running")
         with self._sinks_lock:
             self._next_id = (self._next_id + 1) & 0x7FFFFFFF
             rid = self._next_id
             self._sinks[rid] = sink
-        if ignore_eos:
+        temperature = getattr(request, "temperature", None) if request is not None else None
+        if temperature:
+            top_p = request.top_p if request.top_p is not None else 1.0
+            top_k = request.top_k if request.top_k not in (None, -1) else 0
+            seed = request.seed if request.seed is not None else int.from_bytes(os.urandom(8), "little")
+            seed &= (1 << 64) - 1
+            header = struct.pack("<5iffiII", SUBMIT_SAMPLED, rid, len(tokens), limit,
+                                 FLAG_IGNORE_EOS if ignore_eos else 0, float(temperature), float(top_p), int(top_k),
+                                 seed & 0xFFFFFFFF, seed >> 32)
+        elif ignore_eos:
             header = struct.pack("<5i", SUBMIT_FLAGS, rid, len(tokens), limit, FLAG_IGNORE_EOS)
         else:
             header = struct.pack("<4i", SUBMIT, rid, len(tokens), limit)
@@ -332,7 +344,7 @@ class TTLabRunner(BaseDeviceRunner):
                 pass
 
         try:
-            rid = self._submit(tokens, limit, sink, getattr(request, "ignore_eos", False))
+            rid = self._submit(tokens, limit, sink, getattr(request, "ignore_eos", False), request)
         except BaseException:
             slots.release()
             raise
@@ -377,7 +389,7 @@ class TTLabRunner(BaseDeviceRunner):
         import queue
         replies = queue.Queue()
         tokens, limit = validate_request(request, self.tokenizer)
-        rid = self._submit(tokens, limit, replies.put, getattr(request, "ignore_eos", False))
+        rid = self._submit(tokens, limit, replies.put, getattr(request, "ignore_eos", False), request)
         stream = TextStream(self.tokenizer, request)
         deadline = time.monotonic() + self.timeout
         while True:

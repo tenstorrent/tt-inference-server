@@ -13,17 +13,32 @@ CONTEXT_LENGTH = int(os.environ.get("MAX_MODEL_LENGTH", 4096))
 IGNORE_EOS_SUPPORTED = (os.environ.get("MODEL_RUNNER") == "tt-lab-gemma"
                         and int(os.environ.get("TT_GEMMA31_SLOTS", "1")) > 1
                         and os.environ.get("TT_LAB_IGNORE_EOS") == "1")
+# Sampling (temperature > 0, top_p, top_k <= 64, seed): Gemma's batch worker with a tt-lab binary that has
+# message 4 (device top-k candidates); TT_LAB_SAMPLING=1 declares it.
+SAMPLING_SUPPORTED = (os.environ.get("MODEL_RUNNER") == "tt-lab-gemma"
+                      and int(os.environ.get("TT_GEMMA31_SLOTS", "1")) > 1
+                      and os.environ.get("TT_LAB_SAMPLING") == "1")
 
 
 def validate_request(request, tokenizer):
     if request.model not in ACCEPTED_MODEL_NAMES:
         raise ValueError(f"This worker serves only {SERVED_MODEL_NAME}")
-    if request.temperature not in (None, 0, 0.0) or request.n != 1:
-        raise ValueError("tt-lab supports greedy generation only: temperature=0 (or omitted), n=1")
+    if request.n != 1:
+        raise ValueError("tt-lab supports n=1 only")
+    if request.temperature not in (None, 0, 0.0):
+        if not SAMPLING_SUPPORTED:
+            raise ValueError("tt-lab supports greedy generation only here: temperature=0 (or omitted)")
+        if not request.temperature > 0:
+            raise ValueError("temperature must be >= 0")
+        if request.top_p is not None and not 0 < request.top_p <= 1:
+            raise ValueError("top_p must be in (0, 1]")
+        if request.top_k not in (None, -1, 0) and not 1 <= request.top_k <= 64:
+            raise ValueError("tt-lab samples from the 64 most likely tokens: top_k must be 1-64 (or -1/0: 64)")
+    elif request.top_p not in (None, 1, 1.0) or request.top_k not in (None, -1, 0):
+        if not SAMPLING_SUPPORTED:
+            raise ValueError("tt-lab does not support top_p or top_k sampling")
     if request.adapter or request.presence_penalty or request.frequency_penalty:
         raise ValueError("tt-lab does not support adapters or sampling penalties")
-    if request.top_p not in (None, 1, 1.0) or request.top_k not in (None, -1, 0):
-        raise ValueError("tt-lab does not support top_p or top_k sampling")
     if request.repetition_penalty not in (None, 1, 1.0):
         raise ValueError("tt-lab does not support repetition_penalty")
     unsupported = ("echo", "suffix", "logprobs", "use_beam_search", "min_p",
