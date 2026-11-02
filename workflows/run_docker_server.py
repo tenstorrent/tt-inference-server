@@ -700,6 +700,12 @@ def generate_docker_run_command(
     precision_mount, precision_env = policy_mount(model_spec)
     docker_command.extend(precision_mount)
     docker_env_vars.update(precision_env)
+    from workflows.qwen38_serving_events import events_mount
+    event_mount, event_env = events_mount(
+        model_spec, repo_root_path / "workflow_logs", container_name
+    )
+    docker_command.extend(event_mount)
+    docker_env_vars.update(event_env)
     if quetzal_package_mount:
         docker_env_vars.update(
             quetzal_package_env(quetzal_package_mount, local_server=False)
