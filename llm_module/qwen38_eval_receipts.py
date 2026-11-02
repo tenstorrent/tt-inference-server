@@ -12,6 +12,8 @@ def verify_receipts(intent, eval_name, source_manifest_sha256, controls, environ
     if intent not in ('cost_sample', 'paired_confirmation', 'full_suite'):
         raise ValueError('Unknown evaluation intent')
     env = os.environ if environ is None else environ
+    if env.get("TT_QWEN38_LOCAL_SERVER_JSON"):
+        raise ValueError("Local proof is not supported by this release route")
     def receipt(variable, field):
         path = env.get(variable) or controls.get(field)
         if not path:
@@ -21,6 +23,14 @@ def verify_receipts(intent, eval_name, source_manifest_sha256, controls, environ
             raise ValueError('Receipt model mismatch')
         if data.get('source_manifest_sha256') != source_manifest_sha256:
             raise ValueError('Receipt source manifest mismatch')
+        if data.get("scope") == "local_measurement":
+            raise ValueError("Local receipt cannot prove the release route")
+        if controls.get("cohort") is not None:
+            from reference_config.evals.qwen38_goal12 import compute_cohort_binding
+            binding = compute_cohort_binding(controls)
+            if (controls["cohort"] != binding or binding.get("scope") != "release"
+                    or data.get("cohort") != binding):
+                raise ValueError("Receipt explicit cohort binding mismatch")
         return data, str(path)
 
     preflight, preflight_path = receipt('TT_QWEN38_PREFLIGHT_JSON', 'preflight_json')
