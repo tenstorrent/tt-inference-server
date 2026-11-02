@@ -39,7 +39,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [IFM/K2-Horizon-7B](https://huggingface.co/IFM/K2-Horizon-7B) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 524288 |
 | Implementation Code | [k2-horizon-7b-qb2](https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/k2_horizon_7b_qb2) |

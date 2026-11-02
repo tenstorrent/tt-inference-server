@@ -39,7 +39,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [meta-models/Muse-Glimmer-30B](https://huggingface.co/meta-models/Muse-Glimmer-30B) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
 | Implementation Code | [muse-glimmer-30b-qb2](https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/muse_glimmer_30b_qb2) |
