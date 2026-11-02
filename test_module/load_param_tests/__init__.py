@@ -23,18 +23,6 @@ from .cnn_load_test import CnnLoadTest, run_cnn_load
 from .cnn_param_test import CnnParamTest, run_cnn_param
 from .embedding_load_test import EmbeddingLoadTest, run_embedding_load
 from .embedding_param_test import EmbeddingParamTest, run_embedding_param
-from .image_generation_load_test import (
-    ImageGenerationLoadTest,
-    run_image_generation_load,
-)
-from .image_generation_lora_load_test import (
-    ImageGenerationLoraLoadTest,
-    run_image_generation_lora_load,
-)
-from .image_generation_param_test import (
-    ImageGenerationParamTest,
-    run_image_generation_param,
-)
 from .image_generation_api_contract_test import (
     ImageGenerationAPIContractTest,
     run_image_generation_api_contract,
@@ -47,6 +35,18 @@ from .image_generation_api_test import (
     ImageGenerationAPITest,
     run_image_generation_api,
 )
+from .image_generation_load_test import (
+    ImageGenerationLoadTest,
+    run_image_generation_load,
+)
+from .image_generation_lora_load_test import (
+    ImageGenerationLoraLoadTest,
+    run_image_generation_lora_load,
+)
+from .image_generation_param_test import (
+    ImageGenerationParamTest,
+    run_image_generation_param,
+)
 from .img2img_generation_param_test import (
     Img2ImgGenerationParamTest,
     run_img2img_generation_param,
@@ -55,6 +55,15 @@ from .inpainting_generation_param_test import (
     InpaintingGenerationParamTest,
     run_inpainting_generation_param,
 )
+from .qwen_image_edit_contract_test import (
+    QwenImageEditContractTest,
+    run_qwen_image_edit_contract,
+)
+from .qwen_image_edit_param_test import (
+    QwenImageEditParamTest,
+    run_qwen_image_edit_param,
+)
+from .qwen_image_edit_test import QwenImageEditTest, run_qwen_image_edit
 from .tts_load_test import TTSLoadTest, run_tts_load
 from .tts_param_test import TTSParamTest, run_tts_param
 from .video_generation_i2v_param_test import (
@@ -78,7 +87,6 @@ from .wan_i2v_create_contract_test import (
     run_wan_i2v_create_contract,
 )
 
-
 __all__ = [
     "AudioTranscriptionLoadDp2Chunk30Test",
     "AudioTranscriptionLoadDp2Chunk5Test",
@@ -97,6 +105,9 @@ __all__ = [
     "ImageGenerationParamTest",
     "Img2ImgGenerationParamTest",
     "InpaintingGenerationParamTest",
+    "QwenImageEditContractTest",
+    "QwenImageEditParamTest",
+    "QwenImageEditTest",
     "TTSLoadTest",
     "TTSParamTest",
     "TestCase",
@@ -131,4 +142,7 @@ __all__ = [
     "run_video_generation_load",
     "run_video_generation_param",
     "run_wan_i2v_create_contract",
+    "run_qwen_image_edit",
+    "run_qwen_image_edit_contract",
+    "run_qwen_image_edit_param",
 ]

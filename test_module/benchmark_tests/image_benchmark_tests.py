@@ -29,6 +29,7 @@ from .._test_common import (
     block_id,
     run_tiered_check,
 )
+from .._test_common.image_output_check import check_image_output, save_image
 from ..context import MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
 
@@ -51,6 +52,15 @@ STRENGTH_IMG2IMG = 0.6
 GUIDANCE_SCALE_INPAINTING = 8.0
 SEED_INPAINTING = 0
 STRENGTH_INPAINTING = 0.99
+
+# Qwen-Image-Edit: two transformer forwards per step (true-CFG) on all 32 chips;
+# ~43 s per 50-step edit upstream (CFG-parallel), and a new prompt length re-captures
+# the denoise trace, so the inpainting 90 s timeout is too short.
+# The model card's reference workload: 1024px in and out, batch 1, 40 steps.
+QWEN_IMAGE_EDIT_INFERENCE_STEPS = 40
+QWEN_IMAGE_EDIT_CANVAS = (1024, 1024)
+QWEN_IMAGE_EDIT_REQUEST_TIMEOUT_S = 600
+SEED_QWEN_IMAGE_EDIT = 0
 
 # Z-Image-Turbo is a Decoupled-DMD distilled model: 8 NFEs (≈9 scheduler steps),
 # guidance_scale must be 0.0 — non-zero CFG degrades quality on Turbo variants.
@@ -203,6 +213,68 @@ def _generate_image_inpainting(
     return True, elapsed
 
 
+def _generate_image_instruction_edit(
+    ctx: MediaContext, num_inference_steps: int = QWEN_IMAGE_EDIT_INFERENCE_STEPS
+) -> tuple[bool, float]:
+    # Instruction edit (Qwen-Image-Edit): /edits with an input image and no mask.
+    # Reuses the inpainting payload's image as the input.
+    logger.info("🏞️ Editing image by instruction")
+    headers = {
+        "accept": "application/json",
+        "Authorization": "Bearer your-secret-key",
+        "Content-Type": "application/json",
+    }
+    with open(f"{ctx.test_payloads_path}/image_client_inpainting_payload", "r") as f:
+        input_image = json.load(f)["inpaint_image"]
+
+    payload = {
+        "prompt": "Turn the scene into a snowy winter evening.",
+        "image": input_image,
+        "seed": SEED_QWEN_IMAGE_EDIT,
+        "number_of_images": 1,
+        "num_inference_steps": num_inference_steps,
+    }
+    start_time = time.time()
+    response = requests.post(
+        f"{ctx.base_url}/v1/images/edits",
+        json=payload,
+        headers=headers,
+        timeout=QWEN_IMAGE_EDIT_REQUEST_TIMEOUT_S,
+    )
+    elapsed = time.time() - start_time
+
+    if response.status_code != 200:
+        logger.error(
+            f"❌ Instruction edit failed with status {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+        raise RuntimeError(
+            f"Instruction edit failed with status {response.status_code}"
+        )
+
+    # A 200 is not a working edit: the image must decode at the served canvas and
+    # not be black or flat. A bad image fails the benchmark like a failed request.
+    images = response.json().get("images") or []
+    problem = (
+        check_image_output(images[0], QWEN_IMAGE_EDIT_CANVAS)
+        if len(images) == 1
+        else f"expected 1 image, got {len(images)}"
+    )
+    if problem:
+        if images:
+            save_image(
+                images[0],
+                getattr(ctx, "output_path", None),
+                "failed/benchmarks",
+                f"instruction_edit_{int(start_time)}.jpg",
+            )
+        logger.error(f"❌ Instruction edit returned a bad image: {problem}")
+        raise RuntimeError(f"Instruction edit returned a bad image: {problem}")
+
+    logger.info(f"✅ Instruction edit successful in {elapsed:.2f}s")
+    return True, elapsed
+
+
 def _build_image_status_list(
     ctx: MediaContext,
     num_calls: int,
@@ -274,6 +346,20 @@ def _run_inpainting_generation_benchmark(
         num_calls,
         SDXL_INPAINTING_INFERENCE_STEPS,
         _generate_image_inpainting,
+        concurrency=concurrency,
+    )
+
+
+def _run_qwen_image_edit_benchmark(
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
+) -> list[ImageGenerationTestStatus]:
+    logger.info("Running Qwen-Image-Edit benchmark.")
+    return _build_image_status_list(
+        ctx,
+        num_calls,
+        QWEN_IMAGE_EDIT_INFERENCE_STEPS,
+        _generate_image_instruction_edit,
+        generator_steps_kwarg=True,
         concurrency=concurrency,
     )
 
@@ -415,6 +501,8 @@ IMAGE_BENCHMARK_DISPATCH: dict[
     "tt-flux.1-schnell": _run_flux_1_schnell_benchmark,
     "tt-motif-image-6b-preview": _run_motif_image_6b_preview_benchmark,
     "tt-z-image-turbo": _run_z_image_turbo_benchmark,
+    "tt-qwen-image-edit": _run_qwen_image_edit_benchmark,
+    "tt-qwen-image-edit-2511": _run_qwen_image_edit_benchmark,
 }
 
 

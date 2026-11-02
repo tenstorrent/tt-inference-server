@@ -6,11 +6,14 @@ from typing import Optional
 
 from config.settings import get_settings
 from domain.image_to_image_request import ImageToImageRequest
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 # Runners whose edit path requires a mask (mask-based inpainting). Other runners
 # (e.g. FLUX.1-Kontext, which edits by instruction only) accept a missing mask.
 _MASK_REQUIRED_RUNNERS = {"tt-sdxl-edit"}
+# Both the original Qwen-Image-Edit and the 2511 (Edit-Plus) weights share the same
+# serving policy (true-CFG default, input validation, square canvas).
+_QWEN_IMAGE_EDIT_RUNNERS = {"tt-qwen-image-edit", "tt-qwen-image-edit-2511"}
 
 
 class ImageEditRequest(ImageToImageRequest):
@@ -28,3 +31,79 @@ class ImageEditRequest(ImageToImageRequest):
         if v is None and get_settings().model_runner in _MASK_REQUIRED_RUNNERS:
             raise ValueError(f"mask is required for {get_settings().model_runner}")
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _qwen_image_edit_default_cfg(cls, data):
+        # The inherited guidance_scale default (5.0) is SDXL's. Fill in the
+        # Qwen-Image-Edit reference true-CFG scale here, as a field value, so it
+        # survives model_dump() into the per-image segment requests.
+        if (
+            isinstance(data, dict)
+            and data.get("guidance_scale") is None
+            and get_settings().model_runner in _QWEN_IMAGE_EDIT_RUNNERS
+        ):
+            from tt_model_runners.qwen_image_edit_policy import (
+                QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE,
+            )
+
+            data = {**data, "guidance_scale": QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE}
+        return data
+
+    @model_validator(mode="after")
+    def _qwen_image_edit_valid_inputs(self):
+        # Clean 422s for inputs the worker would fail on: a worker-side failure is
+        # a 500 and counts towards restarting the 32-chip worker. The image check
+        # mirrors ImageManager.base64_to_pil_image and fully decodes the image (so
+        # truncated files fail here too). URLs are rejected: /v1/images/edits does
+        # not download media (only the video endpoints do), so a URL would reach
+        # the worker's decoder and fail there.
+        if get_settings().model_runner not in _QWEN_IMAGE_EDIT_RUNNERS:
+            return self
+        from tt_model_runners.qwen_image_edit_policy import (
+            QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS,
+        )
+
+        if self.seed is not None and not 0 <= self.seed < 2**63:
+            raise ValueError(f"seed must be in [0, 2**63), got {self.seed}")
+        image = self.image
+        if not image:
+            raise ValueError("image must be a non-empty base64-encoded image")
+        if image[:8].lower().startswith(("http://", "https://")):
+            raise ValueError(
+                "image must be a base64-encoded image; URLs are not supported on "
+                "/v1/images/edits"
+            )
+        import base64
+        from io import BytesIO
+
+        from PIL import Image
+
+        if image.startswith("data:"):
+            image = image.split(",", 1)[-1]
+        image += "=" * (-len(image) % 4)
+        size = None
+        try:
+            with Image.open(BytesIO(base64.b64decode(image))) as im:
+                if im.width * im.height <= QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS:
+                    im.load()
+                else:
+                    size = im.size
+        except Exception as e:  # binascii.Error, OSError, DecompressionBombError, ...
+            raise ValueError(f"image is not a decodable image: {e}") from e
+        if size is not None:
+            raise ValueError(
+                f"image is {size[0]}x{size[1]}; at most "
+                f"{QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS} pixels are accepted"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _qwen_image_edit_square_canvas(self):
+        # Clean 422 for a canvas the pipeline cannot render, instead of a 500
+        # from the worker.
+        if get_settings().model_runner in _QWEN_IMAGE_EDIT_RUNNERS:
+            from tt_model_runners.qwen_image_edit_policy import qwen_image_edit_side
+
+            qwen_image_edit_side(self.width, self.height)
+        return self

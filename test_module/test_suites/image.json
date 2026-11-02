@@ -343,6 +343,39 @@
                     }
                 }
             ]
+        },
+        {
+            "models": [
+                "qwen_image_edit"
+            ],
+            "devices": [
+                "galaxy",
+                "blackhole_galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "QwenImageEditContractTest",
+                    "enabled": true,
+                    "description": "Qwen-Image-Edit request contract: auth and validation refusals"
+                },
+                {
+                    "template": "QwenImageEditTest",
+                    "enabled": true,
+                    "description": "One instruction edit, graded on the returned image",
+                    "targets": {
+                        "num_inference_steps": 20
+                    }
+                },
+                {
+                    "template": "QwenImageEditParamTest",
+                    "enabled": true,
+                    "description": "Parameter sweep graded on the returned images",
+                    "targets": {
+                        "num_inference_steps": 20
+                    }
+                }
+            ]
         }
     ],
     "test_suites": [

@@ -212,6 +212,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
+| Qwen-Image-Edit | galaxy, bh-galaxy |
 
 ## Basic Single Host Deployment
 
@@ -230,6 +231,38 @@ tt-run --rank-binding <rank_bindings.yaml> \
                 MODEL=<MODEL> DEVICE=galaxy_quad \
                 uvicorn main:app --host 0.0.0.0 --lifespan on --port 8000"
 ```
+
+### Qwen-Image-Edit (WH Galaxy, experimental)
+
+Instruction-based image editing: an input image plus a prompt. One edit runs on all 32 chips of a
+Wormhole Galaxy (`DEVICE=galaxy`): CFG-parallel by default, with the cond and uncond forwards running
+concurrently on two 4x4 submeshes (TP=4 x SP=4 each); the `bh-galaxy` entry is untested. The VL
+image+text encode, scheduler and true-CFG run on host; the
+transformer and VAE run on device. Needs a tt-metal build that ships
+`models/tt_dit/pipelines/qwenimage_edit` (branch `sdawle/tvardhineni/qwen3-image-edit-wh`, not on main yet).
+
+```bash
+export MODEL=Qwen-Image-Edit DEVICE=galaxy MODEL_RUNNER=tt-qwen-image-edit
+export TT_DIT_CACHE_DIR=/home/container_app_user/cache_root/tt_dit_cache  # keep it on a volume
+uvicorn main:app --lifespan on --port 8000
+```
+
+Only `POST /v1/images/edits` is served (`image` is required, `mask` and `strength` are ignored):
+
+```bash
+curl -s localhost:8000/v1/images/edits -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d "{\"prompt\": \"Give the cat a blue wizard hat.\", \"image\": \"$(base64 -w0 cats.jpg)\",
+       \"num_inference_steps\": 20, \"seed\": 0}"
+```
+
+- The output is a square 1024x1024 image; the input is letterboxed into it, preserving its aspect ratio.
+  `width`/`height`, if given, must both be 1024.
+- `guidance_scale` is the true-CFG scale (default 4.0); `negative_prompt` defaults to `" "`.
+- `num_inference_steps` defaults to 20 (12-50). Each step is two transformer forwards (cond + uncond).
+- Upstream numbers (WH Galaxy, 50 steps, CFG-parallel): ~43 s warm wall per 1024x1024 edit.
+- The denoise trace is keyed on the prompt's token length and the step count, so a request with a new
+  prompt length or step count re-captures it (the first request is slower).
 
 ## VLLM with TT Plugin Setup
 
