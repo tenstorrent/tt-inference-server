@@ -854,10 +854,8 @@ def parse_arguments():
         )
 
     if args.agentic_benchmark and args.workflow != "agentic":
-        parser.error(
-            "--agentic-benchmark selects which agentic eval(s) to run and requires "
-            f"--workflow agentic (got --workflow {args.workflow})."
-        )
+        # This branch sets a default agentic benchmark; it only applies to --workflow agentic.
+        args.agentic_benchmark = None
 
     if args.repeat_evals is not None and args.repeat_evals < 1:
         parser.error(
