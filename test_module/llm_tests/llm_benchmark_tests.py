@@ -24,6 +24,7 @@ from llm_module import (
     GuideLLMDriver,
     LLMDriver,
     VLLMBenchDriver,
+    VLLMStructuredOutputDriver,
 )
 from llm_module.runner import RunnerResult
 
@@ -133,12 +134,54 @@ def run_llm_bench(
         driver.name,
         len(configs),
     )
-    return run_llm_performance(
+    result = run_llm_performance(
         ctx,
         driver=driver,
         configs=configs,
         auth_token=auth_token,
         goodput=goodput,
+    )
+    if tools == "vllm" and not uses_fixed_workload(metadata):
+        result = _with_structured_output(ctx, result, auth_token, venv_python)
+    return result
+
+
+def _with_structured_output(
+    ctx: MediaContext,
+    result: RunnerResult,
+    auth_token: str,
+    venv_python: Optional[Path],
+) -> RunnerResult:
+    """``result`` plus the runs of vLLM's structured-output benchmark
+    (``STRUCTURED_OUTPUT_PAIRS``), which v1 ran with the text sweep. They
+    run in the same LLM_VLLM venv, whose setup fetched the script."""
+    from llm_module.benchmark_configs import get_structured_output_configs
+
+    configs = get_structured_output_configs(
+        ctx.model_spec,
+        ctx.device,
+        limit_samples_mode=getattr(ctx.runtime_config, "limit_samples_mode", None),
+    )
+    if not configs:
+        return result
+    logger.info(
+        "Running structured-output benchmark over %d run(s), chat_template_kwargs=%s",
+        len(configs),
+        configs[0].chat_template_kwargs,
+    )
+    structured = run_llm_performance(
+        ctx,
+        driver=VLLMStructuredOutputDriver(
+            venv_python=Path(venv_python) if venv_python else Path(sys.executable)
+        ),
+        configs=configs,
+        output_subdir="llm_structured_output",
+        auth_token=auth_token,
+    )
+    return RunnerResult(
+        blocks=[*result.blocks, *structured.blocks],
+        return_codes=[*result.return_codes, *structured.return_codes],
+        parse_failures=[*result.parse_failures, *structured.parse_failures],
     )
 
 

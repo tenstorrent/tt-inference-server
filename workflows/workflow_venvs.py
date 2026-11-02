@@ -881,6 +881,8 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 # BENCHMARKS_VLLM venv work_dir by fetch_structured_output_scripts().
 # Used to locate the structured-output benchmark script at run time.
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
+# Written into work_dir after a complete fetch; holds the vLLM version fetched.
+STRUCTURED_OUTPUT_VERSION_STAMP = ".vllm_benchmarks_version"
 
 
 def _force_identity_encoding(client_path: Path) -> None:
@@ -915,9 +917,24 @@ def _fetch_structured_output_scripts(
     """Fetch the structured-output benchmark driver scripts for ``pin_version``.
 
     They aren't published on PyPI, so they're pulled from the matching vLLM
-    source tag at venv setup time rather than vendored into this repo.
+    source tag at venv setup time rather than vendored into this repo. Setup
+    runs on every launch, so files already fetched for ``pin_version`` (per
+    the stamp written after a complete fetch) are kept rather than fetched again.
     """
     work_dir = venv_config.venv_path / "work_dir"
+    stamp = work_dir / STRUCTURED_OUTPUT_VERSION_STAMP
+    if (
+        stamp.is_file()
+        and stamp.read_text().strip() == pin_version
+        and all(
+            (work_dir / dst_rel).is_file()
+            for _, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES
+        )
+    ):
+        logger.info(
+            f"structured-output scripts for vllm {pin_version} already in {work_dir}"
+        )
+        return True
     raw_base = _vllm_benchmarks_raw_base(pin_version)
     for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
         dst = work_dir / dst_rel
@@ -931,6 +948,7 @@ def _fetch_structured_output_scripts(
             return False
         if dst_rel == "backend_request_func.py":
             _force_identity_encoding(dst)
+    stamp.write_text(f"{pin_version}\n")
     return True
 
 
@@ -938,7 +956,7 @@ def fetch_structured_output_scripts(
     venv_config: "VenvConfig",
     model_spec: "ModelSpec",
 ) -> bool:
-    """Hook for BENCHMARKS_VLLM: fetch scripts pinned to VLLM_PIN_VERSION."""
+    """Hook for BENCHMARKS_VLLM and LLM_VLLM: fetch scripts pinned to VLLM_PIN_VERSION."""
     logger.info("running fetch_structured_output_scripts() ...")
     return _fetch_structured_output_scripts(venv_config, VLLM_PIN_VERSION)
 
@@ -1034,8 +1052,11 @@ _venv_config_list = [
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
         # 0.13.0 for every other model. See llm-vllm-overrides.txt.
         overrides_file="llm-vllm-overrides.txt",
-        extra_dirs=("artifacts",),
+        extra_dirs=("artifacts", "work_dir"),
         python_version="3.11",
+        # The structured-output benchmark (llm_module/structured_output_client.py)
+        # runs vLLM's script from work_dir.
+        setup_function=fetch_structured_output_scripts,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.LLM_VLLM_TOKEN_TIMING,

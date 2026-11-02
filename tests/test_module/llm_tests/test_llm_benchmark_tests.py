@@ -95,6 +95,10 @@ def _capture_goodput(monkeypatch, tmp_path, tools):
         "llm_module.benchmark_configs.get_llm_configs",
         lambda *a, **k: [object()],
     )
+    monkeypatch.setattr(
+        "llm_module.benchmark_configs.get_structured_output_configs",
+        lambda *a, **k: [],
+    )
     seen = {}
 
     def _capture(ctx, *, driver, configs, auth_token="", goodput=None):
