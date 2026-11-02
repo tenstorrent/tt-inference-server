@@ -109,3 +109,20 @@ def test_smoke_selection_is_model_scoped_and_keeps_release_config(smoke_arm):
     assert [task.task_name for task in _select_agentic_tasks(ctx)] == [
         "terminal_bench_2_1", "swe_bench_verified"]
     assert original == snapshot
+
+
+def test_qwen_seed_override_preserves_shared_default_and_other_models():
+    from dataclasses import replace
+    templates = load_templates_from_yaml(get_repo_root_path() / 'workflows/model_specs/dev/llm.yaml')
+    specs = [s for t in templates for s in t.expand_to_specs()]
+    qwen = resolve_model_spec([s for s in specs if s.hf_model_repo == 'Qwen/Qwen3.8-27B'],
+                              model='Qwen/Qwen3.8-27B', device='p300x2', impl=None, catalog_name='Shield')
+    assert int(qwen.device_model_spec.vllm_args['seed']) == 0
+    # Exercise the actual dataclass default merger without the model override.
+    inherited = replace(qwen.device_model_spec, vllm_args={})
+    assert int(inherited.vllm_args['seed']) == 9472
+    other = next(s for s in specs if s.hf_model_repo != 'Qwen/Qwen3.8-27B'
+                 and int(s.device_model_spec.vllm_args['seed']) == 9472)
+    assert int(other.device_model_spec.vllm_args['seed']) == 9472
+    assert qwen.device_model_spec.vllm_args['tool_call_parser'] == 'qwen3_coder'
+    assert int(qwen.device_model_spec.vllm_args['long_prefill_token_threshold']) == 2048
