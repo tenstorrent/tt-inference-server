@@ -71,6 +71,8 @@ def _task(task_name="gpqa", score=None, min_context_required=None):
 
 def _ctx(max_context=131072):
     ctx = MagicMock()
+    ctx.model_spec.metadata = {}
+    ctx.model_spec.device_model_spec.vllm_args = {}
     ctx.model_spec.model_name = "test-llm"
     ctx.model_spec.hf_model_repo = "org/test-llm"
     ctx.model_spec.device_model_spec.max_context = max_context

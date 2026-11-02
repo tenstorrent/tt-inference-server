@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from utils.url_helpers import build_base_url
+from utils.pinned_artifacts import get_pinned_revision
 from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
 from llm_module.request_overrides import resolve_request_body
@@ -605,7 +606,11 @@ def build_eval_command(
 
     lm_eval_prefix = [str(lm_eval_exec)]
     request_body = resolve_request_body(task)
-    if request_body:
+    response_evidence = (
+        getattr(task, "collect_preflight_evidence", False)
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+    )
+    if request_body or response_evidence:
         _check_request_overrides_supported(task, request_body, model_spec)
         # One wrapper covers every payload patch for a task that opts into
         # request overrides (body, seed drop, reasoning capture). Tasks without
@@ -618,6 +623,11 @@ def build_eval_command(
             "--request-body",
             json.dumps(request_body, sort_keys=True),
         ]
+        if response_evidence:
+            lm_eval_prefix += [
+                "--response-evidence",
+                str(Path(output_path) / "api_response_evidence.jsonl"),
+            ]
         if not getattr(task, "propagate_seed_to_gen_kwargs", True):
             lm_eval_prefix.append("--drop-server-seed")
         if getattr(task, "capture_reasoning", False):
@@ -650,6 +660,9 @@ def build_eval_command(
 
     if tokenizer_path is not None:
         effective_model_kwargs["tokenizer"] = tokenizer_path
+    revision = get_pinned_revision(model_spec)
+    if revision and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON:
+        effective_model_kwargs["revision"] = revision
     model_kwargs_list = [f"{k}={v}" for k, v in effective_model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)

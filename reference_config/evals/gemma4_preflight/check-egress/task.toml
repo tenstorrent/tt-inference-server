@@ -1,0 +1,17 @@
+schema_version = "1.4"
+[task]
+name = "gemma4-preflight/check-egress"
+version = "1.0.0"
+authors = []
+keywords = []
+[agent]
+timeout_sec = 18000
+network_mode = "no-network"
+[verifier]
+timeout_sec = 120
+network_mode = "no-network"
+[environment]
+build_timeout_sec = 600
+cpus = 1
+memory_mb = 1024
+storage_mb = 1024

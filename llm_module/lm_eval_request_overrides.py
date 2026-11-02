@@ -27,6 +27,10 @@
 from __future__ import annotations
 
 import argparse
+import contextvars
+import hashlib
+import time
+from pathlib import Path
 import base64
 import io
 import json
@@ -51,6 +55,8 @@ SUPPORTED_EVAL_CLASSES = (
 # ``--harness lmms-eval`` patch covers.
 SUPPORTED_LMMS_EVAL_CLASSES = ("openai_compatible", "openai_compatible_chat")
 _PATCH_MARKER = "_tt_request_overrides"
+_RESPONSE_MARKER = "_tt_response_evidence"
+_REQUEST_EVIDENCE = contextvars.ContextVar("request_evidence", default=None)
 
 
 # Self-contained on purpose: the eval runner launches this file by path from
@@ -88,6 +94,7 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument("--drop-server-seed", action="store_true")
     parser.add_argument("--preserve-reasoning", action="store_true")
+    parser.add_argument("--response-evidence", type=Path)
     parser.add_argument(
         "--harness", choices=("lm-eval", "lmms-eval"), default="lm-eval"
     )
@@ -98,7 +105,7 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
             f"--request-body must be a JSON object, got {type(body).__name__}"
         )
     if opts.harness == "lmms-eval" and (
-        opts.drop_server_seed or opts.preserve_reasoning
+        opts.drop_server_seed or opts.preserve_reasoning or opts.response_evidence
     ):
         raise SystemExit(
             "--drop-server-seed / --preserve-reasoning patch the lm-eval adapters "
@@ -108,7 +115,9 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     return opts, theirs
 
 
-def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str]:
+def patch_api_adapters(
+    body: Dict[str, Any], drop_server_seed: bool, response_evidence: Path | None = None
+) -> List[str]:
     """Wrap ``_create_payload`` on every adapter class in
     ``lm_eval.models.openai_completions`` that defines its own. Returns the
     patched class names."""
@@ -131,12 +140,84 @@ def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str
 
         def _create_payload(self, *args, _original=original, **kwargs):
             payload = merge_request_body(_original(self, *args, **kwargs), body)
-            return _drop_server_seed(payload) if drop_server_seed else payload
+            payload = _drop_server_seed(payload) if drop_server_seed else payload
+            if response_evidence is not None:
+                _REQUEST_EVIDENCE.set(
+                    {
+                        "payload_sha256": hashlib.sha256(
+                            json.dumps(
+                                payload, sort_keys=True, separators=(",", ":")
+                            ).encode()
+                        ).hexdigest(),
+                        "max_tokens": payload.get("max_tokens"),
+                        "started_monotonic": time.monotonic(),
+                    }
+                )
+            return payload
 
         setattr(_create_payload, _PATCH_MARKER, original)
         cls._create_payload = _create_payload
         patched.append(name)
+    if response_evidence is not None:
+        patch_response_evidence(response_evidence)
     return patched
+
+
+def patch_response_evidence(path: Path) -> None:
+    """Observe decoded API metadata before the harness discards it; never alter scoring."""
+    from lm_eval.models import openai_completions
+
+    cls = openai_completions.LocalChatCompletion
+    original = (
+        getattr(cls.parse_generations, _RESPONSE_MARKER, None) or cls.parse_generations
+    )
+
+    def parse_generations(outputs, **kwargs):
+        request = _REQUEST_EVIDENCE.get()
+        for output in outputs if isinstance(outputs, list) else [outputs]:
+            usage = output.get("usage") or {}
+            counts = {
+                key: usage.get(key)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+            }
+            details = usage.get("completion_tokens_details") or {}
+            counts["reasoning_tokens"] = details.get("reasoning_tokens")
+            for value in counts.values():
+                if value is not None and (
+                    not isinstance(value, int) or isinstance(value, bool)
+                ):
+                    raise ValueError("API usage counts must be integers or null")
+            row = {
+                "request": (
+                    None
+                    if request is None
+                    else {
+                        key: value
+                        for key, value in request.items()
+                        if key != "started_monotonic"
+                    }
+                ),
+                "elapsed_seconds": (
+                    None
+                    if request is None
+                    else time.monotonic() - request["started_monotonic"]
+                ),
+                "usage": counts,
+                "choices": [
+                    {
+                        "index": choice.get("index"),
+                        "finish_reason": choice.get("finish_reason"),
+                    }
+                    for choice in output["choices"]
+                ],
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a") as stream:
+                stream.write(json.dumps(row, sort_keys=True) + "\n")
+        return original(outputs, **kwargs)
+
+    setattr(parse_generations, _RESPONSE_MARKER, original)
+    cls.parse_generations = staticmethod(parse_generations)
 
 
 def _wav_bytes(array, sampling_rate: int) -> bytes:
@@ -262,6 +343,8 @@ def require_patched_adapter(model_name: str) -> None:
 def main() -> None:
     opts, harness_argv = parse_argv(sys.argv[1:])
     model_name = lm_eval_model_name(harness_argv)
+    if opts.response_evidence and model_name != "local-chat-completions":
+        raise SystemExit("Response evidence supports local-chat-completions only")
     if opts.harness == "lmms-eval":
         require_supported_lmms_model(model_name)
         patch_openai_chat_client(opts.body)
@@ -270,7 +353,9 @@ def main() -> None:
     else:
         if opts.preserve_reasoning:
             os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
-        patched = patch_api_adapters(opts.body, opts.drop_server_seed)
+        patched = patch_api_adapters(
+            opts.body, opts.drop_server_seed, opts.response_evidence
+        )
         require_patched_adapter(model_name)
         from lm_eval.__main__ import cli_evaluate
     print(

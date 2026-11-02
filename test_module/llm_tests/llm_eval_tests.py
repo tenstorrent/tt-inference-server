@@ -20,6 +20,7 @@ from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.request_overrides import resolve_request_body
 from llm_module.eval_command import _resolve_eval_samples, build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
+from llm_module.agentic.preflight_evidence import collect_disk_evidence
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
 from utils.pinned_artifacts import get_pinned_revision, resolve_tokenizer
@@ -555,13 +556,18 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 
 def _prepare_eval_tokenizer(ctx, task, output_path: Path):
     if (
-        task.task_name.startswith("longbench_")
-        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
         and get_pinned_revision(ctx.model_spec)
     ):
         return resolve_tokenizer(
             ctx.model_spec,
-            output_path / f"eval_{ctx.model_spec.model_id}" / "longbench_protocol",
+            output_path
+            / f"eval_{ctx.model_spec.model_id}"
+            / (
+                "longbench_protocol"
+                if task.task_name.startswith("longbench_")
+                else "tokenizer_protocol"
+            ),
         )
     return None
 
@@ -710,9 +716,13 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         # attempt when this subprocess fails or produces malformed results.
         output_path = Path(ctx.output_path) / f"eval-attempt-{uuid.uuid4().hex}"
         output_path.mkdir(parents=True)
+        if getattr(task, "collect_preflight_evidence", False):
+            collect_disk_evidence(output_path, "after_model_ready", getattr(task, "preflight_min_free_bytes", None))
         started_at = time.perf_counter()
         rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
         elapsed_seconds = time.perf_counter() - started_at
+        if getattr(task, "collect_preflight_evidence", False):
+            collect_disk_evidence(output_path, "after_tasks")
         if rc == _DEADLINE_RC:
             # A task killed at its deadline is incomplete, not a score. Never
             # let it reach the scorer: whatever partial result files landed on

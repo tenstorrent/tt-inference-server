@@ -1,0 +1,53 @@
+{
+  "terminal": {
+    "source": "terminal-bench/terminal-bench-2",
+    "ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+    "tasks": [
+      "build-cython-ext",
+      "build-pmars",
+      "code-from-image",
+      "configure-git-webserver",
+      "constraints-scheduling",
+      "custom-memory-heap-crash",
+      "feal-linear-cryptanalysis",
+      "financial-document-processor",
+      "fix-code-vulnerability",
+      "fix-git"
+    ]
+  },
+  "swe": {
+    "source": "https://github.com/laude-institute/harbor-datasets.git",
+    "ref": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+    "version": "1.0",
+    "tasks": [
+      "astropy__astropy-14508",
+      "django__django-11532",
+      "django__django-11734",
+      "django__django-12125",
+      "django__django-13417",
+      "django__django-13741",
+      "django__django-14034",
+      "pylint-dev__pylint-7080",
+      "scikit-learn__scikit-learn-25973",
+      "scikit-learn__scikit-learn-26323"
+    ],
+    "selection": "random.Random(42).sample(sorted(all500names),10)"
+  },
+  "gpqa": {
+    "task": "r1_gpqa_diamond",
+    "harness_commit": "af401ef3dd3d2d90e55680990ed1f0c9f7892448",
+    "doc_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "concurrency_reason": "Batch32 remains validated serving shape; only ten tasks exist in requested subset so at most10 agents can run, excluding retries."
+}
