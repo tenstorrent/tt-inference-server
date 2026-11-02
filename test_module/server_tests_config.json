@@ -106,7 +106,8 @@
       "IFM/K2-Horizon-MoVA-36B-A4B",
       "IFM/K2-Horizon-7B",
       "llm-jp/llm-jp-4-8b-thinking",
-      "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+      "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+      "Qwen/Qwen3.5-9B-Base"
     ]
   },
   "available_markers": {
@@ -1143,6 +1144,16 @@
       "id_name": "Qwen--Qwen3-Coder-30B-A3B-Instruct",
       "weights": [
         "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+      ]
+    },
+    "Qwen/Qwen3.5-9B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3.5-9B-Base",
+      "weights": [
+        "Qwen/Qwen3.5-9B-Base"
       ]
     }
   },
