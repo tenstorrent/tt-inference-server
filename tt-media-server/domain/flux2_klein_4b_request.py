@@ -38,6 +38,15 @@ KLEIN_STEPS = 4
 class Flux2klein4bRequest(GenerationRequest):
     MODEL_ID = "black-forest-labs/flux.2-klein-4b"
     OUTPUT_TYPE = "image"
+    TITLE = "FLUX.2 klein 4B"
+    SUMMARY = "Submit a FLUX.2 klein 4B job"
+    DESCRIPTION = "Text to image, or editing when `images` is given."
+    EXAMPLE = {
+        "prompt": "a lighthouse on a cliff, golden hour",
+        "aspect_ratio": "16:9",
+        "size": "2K",
+        "format": "webp",
+    }
     MEDIA_FIELDS = ("images",)
 
     prompt: str = Field(min_length=1)
@@ -51,14 +60,22 @@ class Flux2klein4bRequest(GenerationRequest):
         default=None,
         description=(
             "Output shape. Omitted = the ratio here closest to the first image's, "
-            "or `1:1` without images."
+            "or `1:1` without images. Each output reports its exact size."
         ),
     )
     size: KleinSize = Field(
         default="1K",
         description=(
-            "Size tier. With `aspect_ratio`, it fixes the output size: about 1 MP "
-            "at `1K` (1024×1024 for `1:1`), twice the sides at `2K`."
+            "Size tier. With `aspect_ratio`, it fixes the output size:\n\n"
+            "| `aspect_ratio` | `1K` (about 1 MP) | `2K` (about 4 MP) |\n"
+            "| -------------- | ----------------- | ----------------- |\n"
+            "| `1:1`          | 1024×1024         | 2048×2048         |\n"
+            "| `16:9`         | 1376×768          | 2752×1536         |\n"
+            "| `9:16`         | 768×1376          | 1536×2752         |\n"
+            "| `4:3`          | 1184×896          | 2368×1792         |\n"
+            "| `3:4`          | 896×1184          | 1792×2368         |\n"
+            "| `3:2`          | 1248×832          | 2496×1664         |\n"
+            "| `2:3`          | 832×1248          | 1664×2496         |"
         ),
     )
     format: ImageFormat = "png"

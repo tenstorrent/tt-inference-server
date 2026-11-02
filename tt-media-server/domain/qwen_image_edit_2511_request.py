@@ -31,6 +31,17 @@ QWEN_EDIT_SIZES: dict[str, tuple[int, int]] = {
 class QwenImageEdit2511Request(GenerationRequest):
     MODEL_ID = "qwen/qwen-image-edit-2511"
     OUTPUT_TYPE = "image"
+    TITLE = "Qwen-Image-Edit-2511"
+    SUMMARY = "Submit a Qwen-Image-Edit-2511 job"
+    EXAMPLE = {
+        "prompt": "put the person from the second image on the bench in the first",
+        "negative_prompt": "blurry",
+        "images": [
+            "https://storage.internal/inputs/bench.jpg",
+            "data:image/jpeg;base64,/9j/4AAQ…",
+        ],
+        "format": "png",
+    }
     MEDIA_FIELDS = ("images",)
 
     prompt: str = Field(min_length=1, description="The edit instruction.")
@@ -46,7 +57,8 @@ class QwenImageEdit2511Request(GenerationRequest):
         max_length=3,
         description=(
             "The image(s) to edit or combine. Each is resized to the supported "
-            "size closest to its aspect ratio."
+            "size closest to its aspect ratio. At most 3, as in tt_dit's "
+            "Qwen-Image-Edit-2511 pipeline."
         ),
     )
     count: Count = 1
@@ -55,7 +67,9 @@ class QwenImageEdit2511Request(GenerationRequest):
         description=(
             "Output shape, at about 1 MP: `1:1` 1024×1024, `16:9` 1376×768, "
             "`9:16` 768×1376, `4:3` 1184×896, `3:4` 896×1184, `3:2` 1248×832, "
-            "`2:3` 832×1248. Omitted = the ratio closest to the last image's."
+            "`2:3` 832×1248 (diffusers' edit sizes, as in tt_dit's pipeline). "
+            "Omitted = the ratio closest to the last image's, as in diffusers' "
+            "reference pipeline. Each output reports its exact size."
         ),
     )
     format: ImageFormat = "png"

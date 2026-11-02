@@ -28,14 +28,30 @@ WAN_NEGATIVE_PROMPT = (
 class Wan22i2vA14bRequest(GenerationRequest):
     MODEL_ID = "wan-ai/wan2.2-i2v-a14b"
     OUTPUT_TYPE = "video"
+    TITLE = "Wan2.2 I2V A14B"
+    SUMMARY = "Submit a Wan2.2 image-to-video job"
+    EXAMPLE = {
+        "prompt": "the boat drifts out of the harbour at dawn",
+        "first_frame": "data:image/png;base64,iVBORw0KGgo…",
+        "last_frame": "https://storage.internal/inputs/end.png",
+        "aspect_ratio": "16:9",
+        "size": "720p",
+        "frames": 81,
+        "seed": 1234,
+    }
     MEDIA_FIELDS = ("first_frame", "last_frame")
 
     prompt: str = Field(min_length=1)
     negative_prompt: str = Field(
         default=WAN_NEGATIVE_PROMPT,
         description=(
-            "Omitted = Wan2.2's reference default (`sample_neg_prompt`). A "
-            "request's `negative_prompt` replaces it rather than adding to it."
+            "Omitted = Wan2.2's reference default (`sample_neg_prompt` in "
+            "`wan/configs/shared_config.py`), a list of common defects in "
+            "Chinese: oversaturated, overexposed, static, blurry details, "
+            "subtitles, worst quality, JPEG artifacts, deformed hands and faces, "
+            "extra fingers, three legs, cluttered background, walking backwards, "
+            "and similar. A request's `negative_prompt` replaces it rather than "
+            "adding to it."
         ),
     )
     first_frame: Media = Field(
@@ -52,19 +68,27 @@ class Wan22i2vA14bRequest(GenerationRequest):
         ),
     )
     aspect_ratio: WanRatio = Field(
-        description="Output shape. With `size`, it fixes the output size."
+        description="Output shape. With `size`, it fixes the output size (see `size`)."
     )
     size: WanSize = Field(
         description=(
-            "Size tier. With `aspect_ratio`, it fixes the output size: 832×480 or "
-            "480×832 at `480p`, 1280×720 or 720×1280 at `720p`."
+            "Size tier. With `aspect_ratio`, it fixes the output size:\n\n"
+            "| `aspect_ratio` | `480p`  | `720p`   |\n"
+            "| -------------- | ------- | -------- |\n"
+            "| `16:9`         | 832×480 | 1280×720 |\n"
+            "| `9:16`         | 480×832 | 720×1280 |\n\n"
+            "These are Wan2.2's reference sizes."
         )
     )
     frames: int = Field(
         default=81,
         ge=81,
         le=81,
-        description=f"Number of frames. Only 81 for now, played at {WAN_FPS} fps.",
+        description=(
+            "Number of frames. Only 81 for now, the default of Wan2.2's reference "
+            f"config. Played at a fixed {WAN_FPS} fps (the reference config's), so "
+            "about 5 s; the output reports `fps` and `duration`."
+        ),
     )
     seed: Optional[Seed] = None
 

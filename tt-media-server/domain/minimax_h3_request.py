@@ -93,6 +93,18 @@ def _within_1_4_and_4_1(width: int, height: int) -> bool:
     return width <= 4 * height and height <= 4 * width
 
 
+_H3_SIZE_TABLE = (
+    "| `aspect_ratio` | `768p`    |\n"
+    "| -------------- | --------- |\n"
+    "| `21:9`         | 1536×672  |\n"
+    "| `16:9`         | 1344×768  |\n"
+    "| `4:3`          | 1024×768  |\n"
+    "| `1:1`          | 768×768   |\n"
+    "| `3:4`          | 768×1024  |\n"
+    "| `9:16`         | 768×1344  |"
+)
+
+
 class _MiniMaxH3Request(GenerationRequest):
     OUTPUT_TYPE = "video"
     # Reference images can each decode to hundreds of MB, too much to send to
@@ -108,8 +120,8 @@ class _MiniMaxH3Request(GenerationRequest):
         default="768p",
         description=(
             "Size tier: a short edge of 768, the area capped at 768×1344, sides "
-            "multiples of 32 (`16:9` 1344×768, `21:9` 1536×672). Only `768p` for "
-            "now; kept so other tiers can be added without a schema change."
+            f"multiples of 32:\n\n{_H3_SIZE_TABLE}\n\nOnly `768p` for now; kept so "
+            "other tiers can be added without a schema change."
         ),
     )
     duration: int = Field(
@@ -168,10 +180,35 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
     aspect_ratio: Optional[H3KeyframesRatio] = Field(
         default=None,
         description=(
-            "Output shape. With a frame: only `adaptive` (the default), meaning "
-            "the output follows the first frame's shape, or the last frame's when "
-            "there is no first frame. Without frames: one of the listed ratios, "
-            "default `16:9`. Each output reports its exact size."
+            "Output shape.\n\n"
+            "- With a frame: only `adaptive` (the default), meaning the output "
+            "follows the first frame's shape, or the last frame's when there is no "
+            "first frame. Any other value is rejected with 422.\n"
+            "- Without frames: one of the listed ratios, default `16:9`; "
+            "`adaptive` is rejected with 422.\n\n"
+            "Each output reports its exact size."
+        ),
+    )
+    size: Literal["768p"] = Field(
+        default="768p",
+        description=(
+            "Size tier: a short edge of 768, the area capped at 768×1344, sides "
+            "multiples of 32. For the listed ratios:\n\n"
+            f"{_H3_SIZE_TABLE}\n\n"
+            "`adaptive` applies the same rule to the frame's own shape. Only "
+            "`768p` for now; kept so other tiers can be added without a schema "
+            "change."
+        ),
+    )
+    duration: int = Field(
+        default=5,
+        ge=4,
+        le=15,
+        description=(
+            "Seconds. The video runs at 24 fps and its length is rounded up to the "
+            "frame counts the model generates (17k + 5), so it is slightly longer: "
+            "5 s gives 124 frames (5.17 s), 15 s gives 362 frames (15.08 s). Each "
+            "output reports its exact `duration` and `num_frames`."
         ),
     )
 
@@ -218,20 +255,47 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
         return super().output_size()
 
 
+_FL2VA_EXAMPLE = {
+    "prompt": (
+        "The woman turns toward the window and smiles as rain begins to tap on the "
+        "glass."
+    ),
+    "first_frame": "https://storage.internal/inputs/woman.png",
+    "duration": 5,
+}
+
+
 class MiniMaxH3FL2VARequest(_MiniMaxH3KeyframesRequest):
+    """Shared by every MiniMax-H3 FL2VA deployment, whatever its sampling
+    (e.g. `tenstorrent/minimax-h3-fl2va-lightx2v`)."""
+
     MODEL_ID = "minimaxai/minimax-h3-fl2va"
+    TITLE = "MiniMax-H3 FL2VA"
+    SUMMARY = "Submit a MiniMax-H3 FL2VA job"
+    DESCRIPTION = (
+        "Video with sound from text, optionally pinned to a first and/or last "
+        "frame. Runs the `FL2VA` checkpoint of `MiniMaxAI/MiniMax-H3`; without "
+        "frames it is text-to-video."
+    )
+    EXAMPLE = _FL2VA_EXAMPLE
 
 
 class MiniMaxH3FL2VALightX2VRequest(_MiniMaxH3KeyframesRequest):
+    """Shared by every MiniMax-H3 FL2VA deployment, whatever its sampling
+    (e.g. `tenstorrent/minimax-h3-fl2va-lightx2v`)."""
+
     MODEL_ID = "tenstorrent/minimax-h3-fl2va-lightx2v"
+    TITLE = "MiniMax-H3 FL2VA LightX2V"
+    SUMMARY = "Submit a MiniMax-H3 FL2VA LightX2V job"
+    DESCRIPTION = (
+        "MiniMax-H3 FL2VA with lightx2v's Turbo distillation adapter: the same "
+        "request as `minimaxai/minimax-h3-fl2va`, generated in far fewer "
+        "denoising steps, so faster, with somewhat different output."
+    )
+    EXAMPLE = _FL2VA_EXAMPLE
 
 
 class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
-    """References: at most 12 in total, and at least one image or video. Video
-    and audio clips are 2–15 s each and at most 15 s combined per kind. A
-    reference video's soundtrack counts toward the audio limits as well as the
-    video ones, and once toward the 12-reference total."""
-
     MEDIA_FIELDS = ("images", "videos", "audios")
     MEDIA_KINDS = {"videos": "video", "audios": "audio"}
 
@@ -245,12 +309,12 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
         ),
     )
     images: list[Media] = Field(
-        default=[],
+        default_factory=list,
         max_length=9,
         description="Reference images, aspect ratio from 1:4 to 4:1.",
     )
     videos: list[VideoMedia] = Field(
-        default=[],
+        default_factory=list,
         max_length=3,
         description=(
             "Reference video clips, 2–15 s each, at most 15 s combined. A clip's "
@@ -259,12 +323,12 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
         ),
     )
     audios: list[AudioMedia] = Field(
-        default=[],
+        default_factory=list,
         max_length=3,
         description=(
             "Reference audio clips, 2–15 s each. The audio limits cover these "
             "clips plus the soundtrack of every reference video that has one: at "
-            "most 3 audio references and at most 15 s of audio combined."
+            "most 3 audio references and at most 15 s of audio combined, or 422."
         ),
     )
     aspect_ratio: H3Ratio = Field(
@@ -344,9 +408,49 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
         return errors
 
 
+_REF2VA_DOC = """Shared by every MiniMax-H3 Ref2VA deployment, whatever its sampling
+(e.g. `tenstorrent/minimax-h3-ref2va-lightx2v`).
+
+References: at most 12 in total, and at least one image or video (audio
+alone is rejected with 422). Video and audio clips are 2–15 s each and
+at most 15 s combined per kind.
+
+A reference video's soundtrack is audio conditioning: it counts toward
+the audio limits (at most 3 audio references, at most 15 s of audio
+combined) as well as the video ones. A video with sound counts once
+toward the 12-reference total."""
+_REF2VA_EXAMPLE = {
+    "prompt": (
+        "The man from Picture 1 walks through the market from Video 1, speaking in "
+        "the voice of Audio 1."
+    ),
+    "images": ["https://storage.internal/inputs/man.png"],
+    "videos": ["https://storage.internal/inputs/market.mp4"],
+    "audios": ["https://storage.internal/inputs/voice.wav"],
+    "duration": 5,
+}
+
+
 class MiniMaxH3Ref2VARequest(_MiniMaxH3ReferencesRequest):
+    __doc__ = _REF2VA_DOC
     MODEL_ID = "minimaxai/minimax-h3-ref2va"
+    TITLE = "MiniMax-H3 Ref2VA"
+    SUMMARY = "Submit a MiniMax-H3 Ref2VA job"
+    DESCRIPTION = (
+        "Video with sound from text plus reference images, videos and audio "
+        "clips. Runs the `Ref2VA` checkpoint of `MiniMaxAI/MiniMax-H3`."
+    )
+    EXAMPLE = _REF2VA_EXAMPLE
 
 
 class MiniMaxH3Ref2VALightX2VRequest(_MiniMaxH3ReferencesRequest):
+    __doc__ = _REF2VA_DOC
     MODEL_ID = "tenstorrent/minimax-h3-ref2va-lightx2v"
+    TITLE = "MiniMax-H3 Ref2VA LightX2V"
+    SUMMARY = "Submit a MiniMax-H3 Ref2VA LightX2V job"
+    DESCRIPTION = (
+        "MiniMax-H3 Ref2VA with lightx2v's Turbo distillation adapter: the same "
+        "request as `minimaxai/minimax-h3-ref2va`, generated in far fewer "
+        "denoising steps, so faster, with somewhat different output."
+    )
+    EXAMPLE = _REF2VA_EXAMPLE

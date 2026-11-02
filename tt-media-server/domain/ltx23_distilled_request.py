@@ -15,6 +15,19 @@ class Ltx23DistilledRequest(GenerationRequest):
 
     MODEL_ID = "lightricks/ltx-2.3-22b-distilled"
     OUTPUT_TYPE = "video"
+    TITLE = "LTX-2.3 22B distilled"
+    SUMMARY = "Submit an LTX-2.3 22B distilled job"
+    DESCRIPTION = (
+        "Video with sound from text. Runs the distilled checkpoint of "
+        "`Lightricks/LTX-2.3` (`ltx-2.3-22b-distilled-1.1`)."
+    )
+    EXAMPLE = {
+        "prompt": (
+            "A fishing boat rocks in a harbour at dawn as gulls call overhead and "
+            "waves slap against the hull."
+        ),
+        "seed": 42,
+    }
 
     prompt: str = Field(min_length=1)
     aspect_ratio: Literal["16:9"] = Field(

@@ -6,7 +6,7 @@
 serves, and the jobs it creates under /v1/jobs. Design:
 docs/api/generation/."""
 
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional, Union
 
 from config.constants import JobTypes
 from config.settings import settings
@@ -15,6 +15,7 @@ from domain.generation_requests import GENERATION_REQUESTS
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Security
 from fastapi.responses import FileResponse
 from model_services.generation_service import GenerationService, read_manifest
+from pydantic import BaseModel, Field
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 
@@ -22,6 +23,64 @@ router = APIRouter(dependencies=[Security(get_api_key)])
 
 _NOT_FOUND = "Job not found"
 _OUTPUTS_GONE = "Job outputs are gone"
+
+
+class Error(BaseModel):
+    """FastAPI's default for an `HTTPException`."""
+
+    detail: str = Field(description="Human-readable.")
+
+
+Responses = dict[Union[int, str], dict[str, Any]]
+
+
+def _error(description: str, retry_after: Optional[str] = None) -> dict[str, Any]:
+    response: dict[str, Any] = {"model": Error, "description": description}
+    if retry_after is not None:
+        header: dict[str, Any] = {"schema": {"type": "integer"}}
+        if retry_after:
+            header["description"] = retry_after
+        response["headers"] = {"Retry-After": header}
+    return response
+
+
+_UNAUTHORIZED: Responses = {401: _error("Missing or wrong API key.")}
+_JOB_NOT_FOUND: Responses = {404: _error("Unknown or deleted.")}
+_SUBMIT_RESPONSES: Responses = {
+    202: {"description": "Accepted and queued. Poll `GET /v1/jobs/{job_id}`."},
+    400: _error(
+        "An image URL violates this deployment's fetch policy: not `https`, a "
+        "host outside the allowlist, or an address that isn't public."
+    ),
+    **_UNAUTHORIZED,
+    404: _error("This deployment does not serve that model."),
+    413: _error(
+        "An input, inline or fetched, is over its limit: 30 MB per image, 50 MB "
+        "per video, 15 MB per audio clip."
+    ),
+    422: {
+        "description": (
+            "The request is invalid for this model: an unknown field, a value out "
+            "of range, or a conflicting combination; or an image URL couldn't be "
+            "fetched or doesn't hold a supported image. Checked before queueing."
+        ),
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+            }
+        },
+    },
+    429: _error(
+        "As many jobs are active as the queue holds (`max_queue_size`).",
+        retry_after="Seconds; 60 today.",
+    ),
+    503: _error(
+        "The model is not serving yet, or the deployment holds as many job "
+        "records as it can (`max_jobs`); delete finished jobs to free space.",
+        retry_after="",
+    ),
+}
+_FILE_TYPES = ("image/png", "image/jpeg", "image/webp", "video/mp4")
 
 
 def _job_or_404(service: GenerationService, job_id: str) -> dict:
@@ -68,11 +127,16 @@ def _add_submit_route(request_model) -> None:
         f"/v1/generations/{request_model.MODEL_ID}",
         status_code=202,
         response_model=Job,
-        tags=[request_model.MODEL_ID],
-        summary=f"Submit a {request_model.MODEL_ID} job",
+        tags=[request_model.TITLE],
+        summary=request_model.SUMMARY,
+        description=request_model.DESCRIPTION,
+        responses=_SUBMIT_RESPONSES,
     )
     async def submit(
-        request: Annotated[request_model, Body()],
+        request: Annotated[
+            request_model,
+            Body(openapi_examples={"example": {"value": request_model.EXAMPLE}}),
+        ],
         service: GenerationService = Depends(service_resolver),
     ) -> Job:
         return Job.from_metadata(
@@ -88,6 +152,9 @@ if settings.model_runner in GENERATION_REQUESTS:
     "/v1/jobs",
     response_model=list[Job],
     tags=["Jobs"],
+    summary="List jobs",
+    response_description="The jobs.",
+    responses=_UNAUTHORIZED,
 )
 def list_jobs(service: GenerationService = Depends(service_resolver)) -> list[Job]:
     """Every job this deployment still holds, any status."""
@@ -102,6 +169,9 @@ def list_jobs(service: GenerationService = Depends(service_resolver)) -> list[Jo
     "/v1/jobs/{job_id}",
     response_model=Job,
     tags=["Jobs"],
+    summary="Get a job's status",
+    response_description="The job.",
+    responses={**_UNAUTHORIZED, **_JOB_NOT_FOUND},
 )
 def get_job(job_id: str, service: GenerationService = Depends(service_resolver)) -> Job:
     """Poll until the status is final (`completed`, `failed`, `cancelled`). A
@@ -112,7 +182,18 @@ def get_job(job_id: str, service: GenerationService = Depends(service_resolver))
     return job
 
 
-@router.delete("/v1/jobs/{job_id}", response_model=Deleted, tags=["Jobs"])
+@router.delete(
+    "/v1/jobs/{job_id}",
+    response_model=Deleted,
+    tags=["Jobs"],
+    summary="Delete a job and its files",
+    response_description="Deleted.",
+    responses={
+        **_UNAUTHORIZED,
+        **_JOB_NOT_FOUND,
+        409: _error("The job is still `queued`, `in_progress` or `cancelling`."),
+    },
+)
 async def delete_job(
     job_id: str, service: GenerationService = Depends(service_resolver)
 ) -> Deleted:
@@ -124,18 +205,37 @@ async def delete_job(
         raise HTTPException(status_code=409, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    return Deleted(id=job_id)
+    return Deleted(id=job_id, deleted=True)
 
 
-@router.get("/v1/jobs/{job_id}/content/{index}", tags=["Jobs"])
+@router.get(
+    "/v1/jobs/{job_id}/content/{index}",
+    response_class=FileResponse,
+    tags=["Jobs"],
+    summary="Download one output file",
+    responses={
+        200: {
+            "description": "The file.",
+            "content": {
+                content_type: {
+                    "schema": {"type": "string", "contentMediaType": content_type}
+                }
+                for content_type in _FILE_TYPES
+            },
+        },
+        **_UNAUTHORIZED,
+        **_JOB_NOT_FOUND,
+        409: _error("The job is not `completed` (still active, failed or cancelled)."),
+    },
+)
 def get_job_content(
     job_id: str,
     index: Annotated[int, Path(ge=0)],
     service: GenerationService = Depends(service_resolver),
 ) -> FileResponse:
     """The file behind `outputs[index].url`. Videos are MP4: H.264 (High
-    profile, yuv420p), faststart, with an AAC audio track if the output's
-    `audio` is true."""
+    profile, yuv420p), faststart, with an AAC audio track when the model
+    generates sound (see `VideoOutput.audio`)."""
     metadata = _job_or_404(service, job_id)
     result_path = service.get_job_result_path(job_id)
     if metadata["status"] != "completed" or result_path is None:
@@ -158,6 +258,13 @@ def get_job_content(
     "/v1/jobs/{job_id}/cancel",
     response_model=Job,
     tags=["Jobs"],
+    summary="Cancel a job",
+    response_description="The job, now `cancelled` or `cancelling`.",
+    responses={
+        **_UNAUTHORIZED,
+        **_JOB_NOT_FOUND,
+        409: _error("The job is already `completed`, `failed` or `cancelled`."),
+    },
 )
 def cancel_job(
     job_id: str, service: GenerationService = Depends(service_resolver)

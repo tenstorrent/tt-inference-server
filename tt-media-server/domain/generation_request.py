@@ -4,7 +4,7 @@
 
 import re
 from fractions import Fraction
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar, Literal, Optional
 
 from domain.base_request import BaseRequest
 from PIL import Image
@@ -32,49 +32,76 @@ def _media_checker(kind: MediaKind, example: str):
     return AfterValidator(check)
 
 
+class SchemaComponent:
+    """Makes an annotated type a named schema of its own, which the fields
+    using it refer to, so a field's description doesn't replace the type's."""
+
+    def __init__(self, name: str, description: str):
+        self.name = name
+        self.description = description
+
+    def __get_pydantic_core_schema__(self, source, handler):
+        schema = handler(source)
+        schema["ref"] = self.name
+        return schema
+
+    def __get_pydantic_json_schema__(self, schema, handler):
+        json_schema = handler(schema)
+        handler.resolve_ref_schema(json_schema)["description"] = self.description
+        return json_schema
+
+
 Media = Annotated[
     str,
     _media_checker("image", "data:image/png;base64,..."),
-    Field(
-        description=(
-            "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:image/png;base64,…`). PNG, JPEG or "
-            "WebP, at most 30 MB per image."
-        )
+    SchemaComponent(
+        "Media",
+        "An `https://` URL, which the server fetches, or a data URI "
+        "(`data:image/png;base64,…`). Inline images must be data URIs: bare "
+        "base64 without the `data:` prefix is rejected with 422.\n\n"
+        "PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the "
+        "job is submitted, so a URL only has to stay valid until then (a "
+        "presigned URL is fine). Which hosts may be fetched is set per "
+        "deployment: an allowlist of domains, or any public host; private, "
+        "loopback and cloud-metadata addresses never are, including after a "
+        "redirect. Submission fails with 400 if a URL is not allowed, 413 if an "
+        "image is too large, and 422 if a URL can't be fetched (expired, network "
+        "error, timeout) or doesn't hold a supported image.",
     ),
 ]
 VideoMedia = Annotated[
     str,
     _media_checker("video", "data:video/mp4;base64,..."),
-    Field(
-        description=(
-            "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:video/mp4;base64,…`). MP4 or MOV, "
-            "H.264 or H.265 video, optionally with an AAC or MP3 audio track; at "
-            "most 50 MB."
-        )
+    SchemaComponent(
+        "VideoMedia",
+        "A video clip: an `https://` URL or a data URI "
+        "(`data:video/mp4;base64,…`), fetched and checked as for `Media`.\n\n"
+        "MP4 or MOV, H.264 or H.265 video, optionally with an AAC or MP3 audio "
+        "track; at most 50 MB. Each model states the durations it accepts.",
     ),
 ]
 AudioMedia = Annotated[
     str,
     _media_checker("audio", "data:audio/wav;base64,..."),
-    Field(
-        description=(
-            "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:audio/wav;base64,…`). WAV or MP3, "
-            "mono or stereo; at most 15 MB."
-        )
+    SchemaComponent(
+        "AudioMedia",
+        "An audio clip: an `https://` URL or a data URI "
+        "(`data:audio/wav;base64,…`), fetched and checked as for `Media`.\n\n"
+        "WAV or MP3, mono or stereo; at most 15 MB. Each model states the "
+        "durations it accepts.",
     ),
 ]
 Seed = Annotated[
     int,
-    Field(
-        ge=0,
-        le=MAX_SEED,
-        description="Omitted = random. Each output reports the seed it was made with.",
+    Field(ge=0, le=MAX_SEED),
+    SchemaComponent(
+        "Seed", "Omitted = random. Each output reports the seed it was made with."
     ),
 ]
-ImageFormat = Literal["png", "jpeg", "webp"]
+ImageFormat = Annotated[
+    Literal["png", "jpeg", "webp"],
+    SchemaComponent("ImageFormat", "Output image format."),
+]
 Count = Annotated[
     int,
     Field(
@@ -110,6 +137,11 @@ class GenerationRequest(BaseRequest):
     # Hugging Face ID.
     MODEL_ID: ClassVar[str]
     OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
+    # The submit route's tag, summary and description, and an example request.
+    TITLE: ClassVar[str]
+    SUMMARY: ClassVar[str]
+    DESCRIPTION: ClassVar[Optional[str]] = None
+    EXAMPLE: ClassVar[dict]
     # Fields holding media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
     # The kind of each media field that does not hold images.
