@@ -19,7 +19,8 @@
 
 A port of LongText-Bench's own scorer (X-Omni, ``textbench/`` at
 ``2b8237bb``): ``evaluate_text_reward.py`` reads each image with
-Qwen2.5-VL-7B-Instruct (bf16, its prompt, ``max_new_tokens`` 1024) and
+Qwen2.5-VL-7B-Instruct (bf16, its prompt, ``max_new_tokens`` 1024; here at
+the revision the GPU references were scored with) and
 ``summary_scores.py`` matches the words it read against the prompt's text.
 Both are kept as they are, quirks included, so scores stay comparable with
 published ones:
@@ -52,6 +53,7 @@ from pathlib import Path
 
 X_OMNI_COMMIT = "2b8237bb3789638c290eeda3e83ed81bd3652c3b"
 OCR_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
+OCR_REVISION = "cc594898137f460bfe9f0759e9844b3ce807cfb5"
 OCR_PROMPT = (
     "Recognize the text in the image, only reply with the text content, "
     "but avoid repeating previously mentioned content. "
@@ -128,9 +130,12 @@ class QwenOCR:
 
         self.device = device
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            OCR_MODEL, torch_dtype=torch.bfloat16, device_map=device
+            OCR_MODEL,
+            revision=OCR_REVISION,
+            torch_dtype=torch.bfloat16,
+            device_map=device,
         )
-        self.processor = AutoProcessor.from_pretrained(OCR_MODEL)
+        self.processor = AutoProcessor.from_pretrained(OCR_MODEL, revision=OCR_REVISION)
 
     def __call__(self, image_path: Path) -> str:
         import torch
@@ -175,7 +180,7 @@ def score(images_dir: Path, data_dir: Path, ocr=None) -> dict:
         results[case_id] = score_case(cases[case_id]["text"], ocr(path))
         print(f"{case_id}: {results[case_id]['accuracy']}", flush=True)
     return {
-        "scorer": f"LongText-Bench (X-Omni {X_OMNI_COMMIT[:8]}), OCR {OCR_MODEL}",
+        "scorer": f"LongText-Bench (X-Omni {X_OMNI_COMMIT[:8]}), OCR {OCR_MODEL} at {OCR_REVISION[:8]}",
         "images": len(results),
         "missing": sorted(set(cases) - set(present)),
         "scores": summarize(cases, results),
