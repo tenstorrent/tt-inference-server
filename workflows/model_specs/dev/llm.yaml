@@ -3548,9 +3548,11 @@ templates:
 # mimo-v2.6-flash serves without it). The MTP layers draft for each of an engine's requests in its
 # own draft group of a verify (MIMO_SPEC_SLOTS=8: 3 drafts each in groups of 4 slots for up to 2
 # requests, 1 draft each in groups of 2 for 3-4; the grouped verify attention scans each request's
-# KV once), through the plugin's model-owned drafter contract. One engine per mesh row, as the entry above. Needs an image built from tt-metal
-# mimo-v2.6/dev (51d0cd357d7 or later: c=16 groups, packed grouped verify) and vllm-tt-plugin
-# mimo-v2.6-flash/single-lane: there an engine at --data-parallel-size 1 runs the model as one
+# KV once), through the plugin's model-owned drafter contract. One engine per mesh row, as the
+# entry above. Needs an image built from tt-metal mimo-v2.6/dev with
+# mimo-v2.6/spec-decode-throughput merged (adaptive draft groups; without it the model fails to
+# import on MIMO_SPEC_GROUPS=adaptive) and vllm-tt-plugin mimo-v2.6-flash/single-lane: there an
+# engine at --data-parallel-size 1 runs the model as one
 # lane, which chains verifies and accepts sampled ones on device (without it a sampled verify is
 # accepted on the host: ~93 tok/s). Measured (SPEED-Bench coding, c=16): 1179 tok/s greedy, 1146
 # at T=1.0, 1.92 tokens per verify.
