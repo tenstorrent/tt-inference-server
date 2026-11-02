@@ -262,7 +262,9 @@ def _get_shared_client() -> httpx.AsyncClient:
         or _shared_client_loop is not loop
     ):
         _shared_client = httpx.AsyncClient(
-            trust_env=not settings.media_url_allow_public_hosts
+            trust_env=not settings.media_url_allow_public_hosts,
+            # Some hosts, e.g. Wikimedia's, refuse httpx's default agent.
+            headers={"User-Agent": "tt-media-server"},
         )
         _shared_client_loop = loop
     _shared_client.cookies.clear()
