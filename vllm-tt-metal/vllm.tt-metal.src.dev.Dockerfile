@@ -232,6 +232,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
+    && stock_user=$(getent passwd ${CONTAINER_APP_UID} | cut -d: -f1 || true) \
+    && if [ -n "${stock_user}" ]; then userdel "${stock_user}"; fi \
     && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} ${APP_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
