@@ -11,6 +11,8 @@ with its prompt, inputs, shape and seed; the image is saved with the run
 and noise (``image_compare``, in its own venv). The comparison is a report
 section; the eval is graded by the compare gate
 (``image_compare_gate.json``), NA until a calibration run sets its thresholds.
+Text-to-image cases are also scored on their benchmarks (``text_image_scores``)
+and compared with the GPU run's scores.
 
 Until tt-media-server serves the generation API, Qwen-Image-Edit is asked
 through today's ``/v1/images/edits``, which takes one input on a 1024 square:
@@ -48,6 +50,7 @@ from .._test_common.image_clients import (
 from .._test_common.image_eval_data import EVAL_DATA, eval_subset, letterbox, load_cases
 from .._test_common.image_generation_api import ImageModel, model_for
 from ..context import MediaContext
+from .text_image_scores import score_text_images
 
 logger = logging.getLogger(__name__)
 
@@ -165,12 +168,18 @@ def run_compare(
 
 
 def grade(
-    result: dict, model_id: str, reference: str, config: dict | None = None
+    result: dict,
+    model_id: str,
+    reference: str,
+    config: dict | None = None,
+    text_image: dict | None = None,
 ) -> dict:
     """The compare gate's checks per group, and the verdict as a ReportCheckTypes name.
 
     A threshold the config leaves null is not checked (NA); a gate with nothing
     set is NA. Calibration means are per group, over the cases both runs have.
+    A text-to-image benchmark the run has fails if TT's score is more than
+    ``text_image_max_drop`` below the GPU run's, or if it could not be scored.
     """
     config = config if config is not None else json.loads(GATE_CONFIG.read_text())
     limits = (config.get("models", {}).get(model_id) or {}).get(reference) or {}
@@ -227,6 +236,24 @@ def grade(
                     "clips": len(shared),
                 }
             )
+    for name, drop in (limits.get("text_image_max_drop") or {}).items():
+        score = (text_image or {}).get(name)
+        if drop is None or score is None:
+            continue
+        check = {"group": "t2i", "check": f"min_{name}"}
+        if "error" in score:
+            checks.append({**check, "status": "FAIL", "detail": score["error"]})
+            continue
+        floor = round(score["gpu"] - drop, 4)
+        checks.append(
+            {
+                **check,
+                "value": score["tt"],
+                "threshold": floor,
+                "status": "PASS" if score["tt"] >= floor else "FAIL",
+                "detail": f"GPU {score['gpu']} over the same {score['images']} images",
+            }
+        )
     statuses = {c["status"] for c in checks}
     verdict = "FAIL" if "FAIL" in statuses else "PASS" if statuses else "NA"
     return {"verdict": verdict, "checks": checks, "reference": reference}
@@ -260,7 +287,12 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         if not index
         else run_compare(out_dir, data_dir, client.reference)
     )
-    gate = grade(result, model.model_id, client.reference) if result else None
+    text_image = score_text_images(out_dir, data_dir, client.reference, index, usable)
+    gate = (
+        grade(result or {}, model.model_id, client.reference, text_image=text_image)
+        if result or text_image
+        else None
+    )
     data: dict[str, Any] = {
         "heading": f"{model.model_id} on {ctx.device.name}",
         "model": model.model_id,
@@ -280,6 +312,8 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
             },
             **{k: result[k] for k in ("lpips_error", "dino_error") if k in result},
         )
+    if text_image:
+        data["text_image"] = text_image
     if problem:
         data["error"] = problem
     if gate:

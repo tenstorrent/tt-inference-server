@@ -660,6 +660,29 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
         )
     if rows:
         lines += ["", build_markdown_table(rows), "", IMAGE_COMPARE_NOTE]
+    scored = {
+        name: t for name, t in (data.get("text_image") or {}).items() if "tt" in t
+    }
+    if scored:
+        lines += [
+            "",
+            "#### Text to image",
+            "",
+            build_markdown_table(
+                [
+                    {
+                        "Benchmark": t.get("title", name),
+                        "Images": t.get("images"),
+                        "TT": t.get("tt"),
+                        "GPU": t.get("gpu"),
+                        "Δ": t.get("delta"),
+                    }
+                    for name, t in scored.items()
+                ]
+            ),
+            "",
+            "Scored as the GPU run was (LongText 0–1, DPG 0–100), over the images both runs scored.",
+        ]
     if checks:
         lines += [
             "",
@@ -689,6 +712,13 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
         )
     for case_id, error in (data.get("compare_failed") or {}).items():
         notes.append(f"- {case_id}: not compared, {error}")
+    for name, t in (data.get("text_image") or {}).items():
+        if t.get("error"):
+            notes.append(f"- {t.get('title', name)}: not scored, {t['error']}")
+        elif t.get("not_scored"):
+            notes.append(
+                f"- {t.get('title', name)}: left out by its scorer, {', '.join(t['not_scored'])}"
+            )
     for key in ("lpips_error", "dino_error"):
         if data.get(key):
             notes.append(

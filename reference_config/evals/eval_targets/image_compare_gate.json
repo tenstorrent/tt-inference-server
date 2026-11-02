@@ -3,6 +3,7 @@
     "Image model compare gate (test_module/eval_tests/image_compare_eval.py), per the validation plans' release CI.",
     "Each run's images are compared case by case with a GPU run made from the same inputs and noise (refs/<run> in the model's eval data). Per group (kind, reference count, size):",
     "max_image_lpips: an image fails above it. mean_margin: the group fails if its mean PSNR or SSIM drops, or LPIPS rises, more than this from the calibration's mean over the same cases. min_mean_dino: the group's mean DINO similarity must reach it.",
+    "text_image_max_drop: per text-to-image benchmark the run has (longtext, dpg; text_image_scores.py), the most TT's score may fall below the GPU run's over the same cases, in the benchmark's units (LongText 0-1, DPG 0-100). A benchmark that could not be scored fails.",
     "Every threshold is set from the first CI run (the calibration run), generously, and changed only with review. Until then a group's checks are NA: the comparison is reported, not gated."
   ],
   "models": {
@@ -11,7 +12,10 @@
       "refs/r1": {"max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {}}
     },
     "black-forest-labs/flux.2-klein-4b": {
-      "refs/r1": {"max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {}}
+      "refs/r1": {
+        "max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {},
+        "text_image_max_drop": {"longtext": null, "dpg": null}
+      }
     }
   }
 }
