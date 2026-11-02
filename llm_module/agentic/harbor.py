@@ -417,7 +417,7 @@ def run(config: HarborRunConfig) -> int:
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     from llm_module.agentic import host_monitor
 
-    stop_host_monitor = host_monitor.start(job_dir)
+    stop_host_monitor = host_monitor.start(job_dir, interval_s=20.0)
     try:
         rc = run_with_progress(
             cmd,
