@@ -1,0 +1,1 @@
+Write the decimal answer to 6 times 7 to /app/result.txt. Use the terminal to create the file. Then finish.
