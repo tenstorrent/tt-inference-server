@@ -1687,3 +1687,26 @@ def test_qwen38_pool_candidate_runtime_flags(monkeypatch, tmp_path, run_vllm_api
         actual = tokens[match].partition("=")[2] if "=" in tokens[match] else tokens[match + 1]
         assert actual == str(value)
     assert "__enable_prefix_caching" in flags
+
+
+@pytest.mark.parametrize("inherited", [None, "4096"])
+def test_qwen38_serialized_worker_block_environment(monkeypatch, tmp_path, run_vllm_api_server_module, inherited):
+    """CI must set the worker opt-in as well as the scheduler CLI via mounted JSON."""
+    from workflows.model_spec import resolve_model_spec
+    templates = load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+    specs = [s for t in templates for s in t.expand_to_specs() if s.hf_model_repo == "Qwen/Qwen3.8-27B"]
+    spec = resolve_model_spec(specs, model="Qwen/Qwen3.8-27B", device="p300x2", impl=None, catalog_name="Shield")
+    runtime = json.loads(spec.to_json("worker-env", output_dir=str(tmp_path)).read_text())
+    key = "QWEN38_SCHEDULER_BLOCK_SIZE"
+    if inherited is None:
+        monkeypatch.delenv(key, raising=False)
+    else:
+        monkeypatch.setenv(key, inherited)
+    # Entry point executes this producer before the vLLM worker is spawned.
+    # Track every environment key so this test cannot leak configuration.
+    for name in run_vllm_api_server_module._model_spec_env_vars(runtime):
+        monkeypatch.setenv(name, os.environ.get(name, ""))
+    run_vllm_api_server_module.set_runtime_env_vars(runtime)
+    flags = runtime["device_model_spec"]["vllm_args"]
+    assert os.environ.get(key) == str(flags["block_size"]) == str(flags["mamba_block_size"]) == "2048"
+    assert flags["num_gpu_blocks_override"] == 385
