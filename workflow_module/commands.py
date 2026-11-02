@@ -96,19 +96,20 @@ _FATAL_STARTUP_MARKERS = (
 )
 
 
-def _server_boot_attempts() -> int:
+def _server_boot_attempts(model_spec: Any = None) -> int:
     """How many times to try bringing the server up.
 
     Defaults to 2. Galaxy bring-up can hit an intermittent device stall during the
     model's prefill warmup sweep, and a single stall otherwise fails an entire
     release run. Set TT_SERVER_BOOT_ATTEMPTS=1 to restore strict fail-fast.
 
-    A retry is only meaningful if bring-up waits long enough to observe whether the
-    server actually came up, so this also governs the readiness wait below.
+    Model-specific env_vars take precedence over the host environment. The attempt
+    count never disables readiness validation for an observable server.
     """
     import os
 
-    raw = os.getenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+    configured = getattr(model_spec, "env_vars", {}) or {}
+    raw = configured.get("TT_SERVER_BOOT_ATTEMPTS", os.getenv("TT_SERVER_BOOT_ATTEMPTS", "2"))
     try:
         return max(1, int(raw))
     except ValueError:
@@ -306,12 +307,6 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
     import urllib.error
     import urllib.request
 
-    # Readiness polling rides along with the retry opt-in. With a single attempt
-    # there is nothing to do differently if the server is unhealthy, and polling
-    # would add process/network calls to a path that deliberately has none.
-    if _server_boot_attempts() <= 1:
-        return None
-
     port = _payload_get(payload, "service_port") or getattr(
         spec.runtime_config, "service_port", None
     )
@@ -424,7 +419,7 @@ class ServerCommand(Command):
 
     def execute(self) -> CommandResult:
         spec = self.launch
-        attempts = _server_boot_attempts()
+        attempts = _server_boot_attempts(spec.model_spec)
         last_error = None
         attempts_made = 0
 

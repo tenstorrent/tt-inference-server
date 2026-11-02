@@ -1,0 +1,45 @@
+{
+  "terminal": {
+    "source": "terminal-bench/terminal-bench-2",
+    "ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+    "tasks": [
+      "build-cython-ext",
+      "build-pmars",
+      "code-from-image",
+      "configure-git-webserver",
+      "constraints-scheduling",
+      "custom-memory-heap-crash",
+      "feal-linear-cryptanalysis",
+      "financial-document-processor",
+      "fix-code-vulnerability",
+      "fix-git"
+    ]
+  },
+  "swe": {
+    "source": "https://github.com/laude-institute/harbor-datasets.git",
+    "ref": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+    "version": "1.0",
+    "tasks": [
+      "django__django-14608",
+      "sphinx-doc__sphinx-10466"
+    ],
+    "selection": "random.Random(42).shuffle(sorted(all500names minus all10scheduled and diagnosticseen)); select first task, then first subsequent task from a different repository"
+  },
+  "gpqa": {
+    "task": "r1_gpqa_diamond",
+    "harness_commit": "af401ef3dd3d2d90e55680990ed1f0c9f7892448",
+    "doc_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "concurrency_reason": "Held-out matched pair contains two tasks from distinct repositories; at most two agents run concurrently while serving retains validated physical batch32."
+}
