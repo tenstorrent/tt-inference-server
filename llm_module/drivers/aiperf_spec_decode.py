@@ -86,6 +86,16 @@ def _local_tokenizer(name: str) -> str:
         token=os.environ.get("HF_TOKEN"),
         allow_patterns=["tokenizer*", "special_tokens_map.json", "chat_template*", "config.json", "generation_config.json"],
     )
+    # The spec-decode venv pins transformers<5 (CPU torch 2.4). Gemma 4 ships
+    # extra_special_tokens as a list (transformers 5 format); 4.x expects a dict
+    # and fails with "'list' object has no attribute 'keys'". Convert the local copy.
+    cfg = Path(path) / "tokenizer_config.json"
+    if cfg.is_file():
+        data = json.loads(cfg.read_text())
+        extra = data.get("extra_special_tokens")
+        if isinstance(extra, list):
+            data["extra_special_tokens"] = {f"extra_special_token_{i}": t for i, t in enumerate(extra)}
+            cfg.write_text(json.dumps(data, indent=2))
     logger.info("[spec-decode] tokenizer %s resolved to %s", name, path)
     return path
 
