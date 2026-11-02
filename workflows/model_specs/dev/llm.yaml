@@ -641,6 +641,15 @@ templates:
         # one or two below it, by the tokenizer) need the finals captured two
         # tokens either side of each listed length, not one (6 of 128 finals at 64K and 1 at 16K ran eagerly, 4 to 13 s each).
         TT_V41_TRACE_PREFILL_SLACK: "2"
+        # The streaming detokenizer primed with the prompt's last 16 ids: vLLM primes
+        # tokenizers' DecodeStream with the whole prompt and the stream's
+        # first step decodes it twice, 0.26 us an id, in the API server's
+        # output loop before any of a step's outputs is streamed; under the
+        # final step a cohort's 32 first tokens paid it 32 times in a row,
+        # 9.7 s at 1M, while the engine decoded on. The
+        # plugin's general entry point installs the bounded stream; at
+        # least 4 (a character's ids), the text emitted unchanged.
+        TT_DETOK_PRIME_TOKENS: "16"
         # The prefill call's host copies in one dispatch round each
         # (bit for bit): a request's state reset (40
         # zero-fills of the window carries) and each chunk's staging (the
