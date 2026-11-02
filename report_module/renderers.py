@@ -595,7 +595,8 @@ IMAGE_COMPARE_NOTE = (
     "higher is closer, LPIPS lower, DINO similarity 1 is the same. For edits, "
     "how TT's changes to the input match the GPU's (correlation of the change "
     "maps, overlap of the changed regions), and how far the unchanged parts "
-    "moved against the input, TT / GPU."
+    "moved against the input, TT / GPU. For multi-reference cases, how close "
+    "each output is to its references (DINO), TT / GPU."
 )
 
 
@@ -632,6 +633,12 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
         drift = ""
         if "drift_px_tt" in g or "drift_px_gpu" in g:
             drift = f"{_number(g.get('drift_px_tt'), 1)} / {_number(g.get('drift_px_gpu'), 1)}"
+        to_refs = ""
+        if "reference_similarity_tt" in g:
+            to_refs = (
+                f"{_number(g.get('reference_similarity_tt'), 3)} / "
+                f"{_number(g.get('reference_similarity_gpu'), 3)}"
+            )
         rows.append(
             {
                 "Group": group,
@@ -643,6 +650,7 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
                 "Change corr.": _number(g.get("change_correlation"), 3),
                 "Change IoU": _number(g.get("change_iou"), 3),
                 "Drift px TT / GPU": drift,
+                "To refs TT / GPU": to_refs,
                 "Worst": (
                     f"{worst.get('case_id')} ({_number(worst.get('lpips', worst.get('psnr')), 3)})"
                     if worst

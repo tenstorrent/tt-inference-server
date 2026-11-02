@@ -14,7 +14,10 @@ Per case, TT's image against the GPU's:
   correlation of the two change maps, and the overlap (IoU) of the regions
   each changed;
 - for an edit: spatial drift, how far the parts that should not change moved
-  against the input (masked phase correlation), for TT and for the GPU.
+  against the input (masked phase correlation), for TT and for the GPU;
+- for a multi-reference case: how close each output is to its references
+  (mean DINOv2 similarity to them), TT's and the GPU's, so a subject TT drops
+  shows as a lower number than the GPU's. Faces are not checked separately yet.
 
 The edit checks need the output in the input's own ratio; a case that asks for
 another ratio recomposes the scene, so they are left out for it. Results are
@@ -117,6 +120,16 @@ def dino_scorer(device: str):
             torch.nn.functional.cosine_similarity(embed(image), embed(reference)).item()
         )
 
+    def to_references(image, references) -> float:
+        """Mean similarity of ``image`` to each of ``references``."""
+        own = embed(image)
+        sims = [
+            float(torch.nn.functional.cosine_similarity(own, embed(r)).item())
+            for r in references
+        ]
+        return sum(sims) / len(sims)
+
+    score.to_references = to_references
     return score
 
 
@@ -228,6 +241,13 @@ def compare_case(
     # Single-image edits only: a multi-reference output is a new scene, not an edit.
     kind = case.get("kind") or case.get("task")
     images = case.get("images") or []
+    if kind == "multi_ref" and "dino" in scorers:
+        references = [load_rgb(data_dir / path) for path in images]
+        to_references = scorers["dino"].to_references
+        result["reference_similarity"] = {
+            "tt": round(to_references(tt, references), 4),
+            "gpu": round(to_references(gpu, references), 4),
+        }
     if len(images) == 1 and kind != "multi_ref":
         given = load_rgb(source or data_dir / images[0])
         size = (tt.shape[1], tt.shape[0])
@@ -261,6 +281,15 @@ def summarize(cases: dict, results: dict) -> dict:
             values = [r["drift_px"][side] for _, r in items if "drift_px" in r]
             if values:
                 entry[f"drift_px_{side}"] = round(statistics.fmean(values), 2)
+            values = [
+                r["reference_similarity"][side]
+                for _, r in items
+                if "reference_similarity" in r
+            ]
+            if values:
+                entry[f"reference_similarity_{side}"] = round(
+                    statistics.fmean(values), 4
+                )
         if any("lpips" in r for _, r in items):
             worst = max(items, key=lambda item: item[1].get("lpips", -1))
             entry["worst"] = {"case_id": worst[0], "lpips": worst[1]["lpips"]}
