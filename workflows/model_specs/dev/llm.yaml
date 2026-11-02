@@ -197,6 +197,263 @@ templates:
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
+# =============================================================================
+# GLM-5.3-Flash on the Blackhole Galaxy (tt-metal models/demos/glm53_flash,
+# tt-metal PR #63440): the 8x4 mesh = TP4 over the columns x 8 rows, ONE vLLM
+# engine per mesh (the rows are the model's own data parallelism; no
+# data_parallel_size). Galaxy only: the model is not registered on any other
+# device (QB2 / LoudBox / (2,4) blocks are bring-up configs, not serving ones).
+#
+# Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
+# profile pattern): glm53_flash = the 1 M-context profile (the default),
+# glm53_flash_128k = the 128 K-context profile. Both serve text + image + video
+# (GLM53FlashForConditionalGeneration: vLLM's SupportsMultiModal with the
+# upstream Glm5Next processor, the vision tower on device at prefill; a
+# multimodal prompt takes the eager stream prefill).
+#
+# Capacity (tt/memory_plan.py: user-partitioned DSA cache, heads2users prefill,
+# 512 MB trace region, 31.33 GiB DRAM per chip). The routed experts are held in
+# ONE layout at these contexts (the regions per-expert lists; decode runs
+# through them): the second layout (the streaming decode copy) costs 9.41 GiB
+# per chip and leaves no 1 M user. The model keeps that second copy only where
+# the planner says it fits (GLM53_PREFILL_EXPERTS=auto in tt/mesh_model.py).
+#   context  users/row  slots on the mesh (8 rows x users/row)
+#   1 M      4          32   (0.12 GiB free after the caches)
+#   128 K    24         192  (6 per chip; 7 per chip = 224 runs out of DRAM at boot under the wave ladder)
+#
+# Admission = the slot count: under per-row prefill ownership
+# (GLM53_VLLM_ROWS_INDEPENDENT "1": GLM53MeshModel.prefill_wave,
+# doc/mesh/row_ownership.md) every slot holds a distinct request, so
+# max_num_seqs / max_concurrency = the slots (32 on the 1 M profile, 192 on the
+# 128 K profile). Without it the sequence-parallel prefill writes a prompt into
+# slot `user` of EVERY row (tt/functional_decoder.py prefill_forward) and the
+# engine admits only users-per-row requests.
+#
+# The slot-level prefix cache (GLM53_VLLM_PREFIX_CACHING and
+# enable-prefix-caching, which must agree) is on for both profiles with the KDA
+# snapshot ring on device (one entry per slot). The host store is only the
+# fallback when no entry fits: at 192 slots it cost 725-1194 ms per decode step
+# (58-61 ms without), which is why the 128 K profile ran without the cache
+# before the device ring landed.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  # the shield's host setup checks these (none derivable: the repo name carries no parameter count; 164 B bf16
+  # weights = 328 GB on disk, the TT cache of one served configuration ~700 GB, host RAM ~140 GB used while serving)
+  min_disk_gb: 1200
+  min_ram_gb: 256
+  impl: glm53_flash
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+    - image
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # = the engine's admission: the 32 slots (4 per row x 8 rows) under per-row
+      # prefill ownership (GLM53_VLLM_ROWS_INDEPENDENT below).
+      max_concurrency: 32
+      max_context: 1048576  # 1024 * 1024: the advertised context (doc/context_contract.json)
+      # The logical KV pool: every slot owns a full context on device, so the pool
+      # is max_num_seqs x max_model_len (the adapter's get_max_tokens_all_users);
+      # the benchmark concurrency cap derives from it.
+      max_tokens_all_users_override: 33554432  # 32 x 1048576
+      default_impl: true
+      # Cold boot converts the checkpoint into the tensorbin weight cache
+      # (GLM53_MESH_CACHE, default $TT_CACHE_PATH/glm53_mesh): ~60 s of host
+      # conversion per MoE layer on the 8x4 plus the writes, budgeted at 2 h; a
+      # warm cache boots in ~10 min (45 layers x 5-11 s + the traces).
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): bare
+        # + TT-prefixed names (the plugin prefixes every checkpoint architecture
+        # with "TT" before it resolves the class). vLLM has no upstream Glm5Next
+        # model, so this override IS the registration (no plugin edit).
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration"
+        # The Galaxy mesh: MESH_DEVICE=BH-Galaxy is inferred from the device type
+        # (the plugin opens (8, 4)); GLM53_MESH_SHAPE pins the model's own view
+        # of it (fabric capability, planner) to the same shape.
+        GLM53_MESH_SHAPE: "8,4"
+        # The model's validated Galaxy defaults apply (tt/moe.py, mhc.py, dsa.py:
+        # stream experts, sharded mHC norm, regions prefill, ...); only the
+        # serving-side knobs are set here.
+        GLM53_MODEL_TRACE_MB: "512"  # the planner's trace-region term (= trace_region_size below)
+        # Image + video serving (tt/generator_vllm.py GLM53FlashForConditionalGeneration, the
+        # override above): the vision tower runs on device at prefill. Resident, its weights cost
+        # 1.05 GiB per chip, which the 1 M x 4 point does not have (0.12 GiB spare after the
+        # caches: tt/memory_plan.py vision_tower_bytes), so this profile builds the tower per
+        # image request from host-cached weights inside the prefill reserve (the upload is the
+        # per-request cost) and runs one 448x448 window (1024 patches) per tower call, which keeps
+        # the per-request transient (1.13 GB + 68 MiB) under the reserve's 1 M whole-prefix copy.
+        GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_PREFIX_CACHING: "1"  # slot-level APC (doc/serving/prefix_caching.md): a multi-turn hit restores the slot's KDA snapshot
+        GLM53_VLLM_APC_SNAPSHOTS: "2"  # KDA snapshot entries requested per slot: entry 0 rolls with the 16 K-aligned decode crossings (the multi-turn hit), entry 1 keeps the prompt's last chunk end (the repeated prompt). The device ring holds min(requested, live DRAM fit) entries, one per slot at 1 M x 4 users per row; only a ring that fits nothing falls back to the host store (tt/generator_vllm.py _prefix_cache_plan)
+        GLM53_VLLM_APC_WARMUP_ALLOWANCE_MIB: "400"  # the DRAM the ring fit (after the model build) leaves free for the warm-ups, which
+        # grow the resident set by ~880 MiB of which the 512 MiB trace region is already in the planner's reserve. The model's
+        # 768 MiB default refuses the device ring at 1 M and falls back to the host store, whose chunk-end saves cost ~23 s per
+        # 1 M prefill and whose restores ~4 s per hit
+        GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 32 distinct requests (one per slot), waves + the SP-first placement
+        GLM53_RESIDENT_DECODE: "1"  # resident decode (doc/mesh/resident_decode.md): the traced step feeds its sampled ids back and advances the live positions on device, so a steady-state step uploads nothing (ids identical to the reload path)
+        GLM53_REGIONS_T: "4096"  # the routed experts' prefill sub-chunk (model default 2048): fewer expert passes per 16 K chunk
+        # (~6 % off the single-user 1 M prefill) and the 1 M DRAM plan holds the larger transient; the 32-user 1 M cell has not
+        # run at 4096 yet
+        GLM53_PAGED_SPARSE: "1"  # the sparse attention of every prefill path (waves, the eager row / slab forms) reads the paged
+        # latent cache in place (custom_ops/paged_sparse_sdpa) instead of a whole-prefix ROW_MAJOR copy per DSA layer per
+        # chunk (~1 GiB near 1 M: the transient that fragments the single-user 1 M cell)
+        GLM53_DECODE_SLOT_MASK: "1"  # the live mask gates the KDA decode's state writes: parked slots (mid-prefill, idle) keep their state (the prefill / decode interleave)
+        GLM53_DEVICE_SAMPLING: "1"  # sampled requests (temperature / top-p: the eval entries) draw on the device inside the traced step (greedy requests bit-identical); without it a sampled row returns the full-vocab logits to the host each step, a quarter of the greedy rate at 32 users
+        GLM53_VLLM_VISION_RESIDENT: "0"  # the tower is built per image request (GLM53_VLLM_IMAGES above)
+        GLM53_VLLM_VISION_BATCH_PATCHES: "1024"  # one tower call per image window of at most 1024 patches = one 448 x 448 image (the tower's native grid). The cap sizes the per-request vision reserve (the tower built per request: ~1146 MiB at 1024; a 4096-patch reserve does not fit the 32 x 1 M cell); mm-processor-kwargs below bounds every image to it (an oversized window raises inside the engine step and kills the engine)
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized
+        # for a single generation step") trips on long-context prefill: an eager 16 K chunk
+        # at 64 K+ positions runs 9-11 s and the 1 M tail chunks longer, so a single wait
+        # can exceed 5 s without any hang (observed as "TIMEOUT: device timeout in fetch
+        # queue wait" on a 64 K random-prompt benchmark). 120 s keeps tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
+        # Eager warm-up prefill ladder (the adapter walks each length in 16 K
+        # device chunks at boot): 128 = the short-prompt programs, 32768 = a full
+        # 16 K chunk AND its continuation at start 16384, so the first long
+        # request compiles nothing mid-session. The traced short-prompt ladder
+        # (256 / 512 / 1024 / 2048 on 8 rows: tt/trace_prefill.py
+        # supported_prefill_lengths) is captured at boot by the adapter.
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        # 2D torus on the Blackhole Galaxy (the plugin's hardware default and the
+        # model's mesh_device_params); relaxed init as the model tests run.
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912  # 512 MiB: the 45-layer decode trace + the per-length prefill traces
+        l1_small_size: 32768  # the composite collectives' L1-small region (tt/mesh.py mesh_device_params)
+        # The head's greedy argmax is the only device sampler (max_device_top_k 1):
+        # greedy rows sample on device, other rows on host from the returned logits.
+        sample_on_device_mode: all
+        # vLLM's chunk boundaries must keep the model's 32-row chunk contract;
+        # 256 = 32 x 8 rows keeps every intermediate chunk tile-aligned per row.
+        prefill_chunk_alignment: 256
+        # Decode steps run between a prompt's chunks: a slot mid-prefill is parked
+        # (GLM53_DECODE_SLOT_MASK=1 gates its KDA state writes; its DSA row is
+        # rewritten by the next chunk), so a long prompt's prefill no longer stalls
+        # every running decode (doc/mesh/resident_decode.md step 4).
+        decode_interleave_enabled: true
+        # one prefill step, then eight decode steps (a 16 K sequence-parallel chunk is
+        # ~7.9 s, a decode step ~60 ms): a decoder running beside a 1 M prefill gets 8
+        # tokens per chunk (~1 tok/s) instead of 1 (0.13 tok/s); the prefill pays
+        # ~0.5 s per 16 K chunk
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 32  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
+        block_size: 32  # = the latent page (TtLatentCache.block_size); the adapter rejects other sizes
+        # One device prefill chunk per engine step: the model walks long prompts
+        # in 16 K-token chunks (tt/mesh_model.py prefill_chunked; 32 K exceeds the
+        # KDA owner cores on 8 rows), so the scheduler hands the adapter exactly
+        # that; the threshold keeps a long prompt on 16 K steps when short
+        # prompts share the budget.
+        max_num_batched_tokens: 131072  # 8 partial prefills of 16 K per step: a burst of long prompts prefills in waves of 8, one per row (at 32768 only two share a step and the burst prefills at a third of the rate). A multimodal item is never split across engine chunks (disable_chunked_mm_input)
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        # One image per 448x448 is 256 tokens (grid 32x32 / 4); up to 4 images and 1 video per prompt (the
+        # upstream Glm5Next processor's limits; video frames are sampled at 2 fps in 2-frame groups).
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        # The HF processor's resize budget (Glm5NextImageProcessor / Glm5NextVideoProcessor `max_image_tokens`, in merged
+        # tokens of 2 x 2 patches, default 8000 / 240000): 256 tokens = 1024 patches = the tower call cap
+        # (GLM53_VLLM_VISION_BATCH_PATCHES), so no image or 2-frame video window can exceed it (an oversized window
+        # raises inside the engine step; `max_pixels` is not a kwarg of this processor and is ignored). Larger images are
+        # downscaled to the tower's native 448 x 448 grid.
+        mm-processor-kwargs: '{"max_image_tokens": 256}'
+        # vLLM 0.30.0 resolves the video loader from transformers' model_type -> video-processor map, which transformers
+        # >= 5.19 returns as a per-backend dict ({'torchvision': 'Glm5NextVideoProcessor'}); the registry lookup on that dict
+        # raises (HTTP 400 on every clip). Naming the registered backend skips the lookup (fixed upstream after 0.30).
+        media-io-kwargs: {"video": {"video_backend": "glm5next"}}
+        mm-processor-cache-gb: 0
+        enable-prefix-caching: true  # follows GLM53_VLLM_PREFIX_CACHING "1" above; the adapter confirms every hit before the scheduler commits it (confirms_prefix_cache_hits)
+        async-scheduling: true  # vLLM's async scheduling over the resident chain (supports_async_decode under GLM53_RESIDENT_DECODE; the adapter's ids readback is non-blocking and a chain step tolerates the plugin's one-step position lag): the scheduler of step N+1 overlaps device step N
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+# The 128 K profile: 192 slots (24 users per row x 8 rows at 128 K), each a
+# distinct request under per-row prefill ownership; text + image + video with
+# the vision tower resident on every chip. Differs from the 1 M profile in what
+# the slot count and the 128 K DRAM plan allow: the prefix cache is off, no
+# resident decode, no decode interleave, synchronous scheduling.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  impl: glm53_flash_128k
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+    - image
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 192  # = the slots under per-row prefill ownership: 24 per row = 6 per chip (7 per chip = 224 runs out of DRAM at boot)
+      max_context: 131072  # 128 * 1024
+      max_tokens_all_users_override: 25165824  # 192 x 131072
+      default_impl: false
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm:GLM53FlashForConditionalGeneration"
+        GLM53_MESH_SHAPE: "8,4"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"  # as the 1 M profile: a long-context prefill wait exceeds the 5 s default without any hang
+        GLM53_MODEL_TRACE_MB: "512"
+        GLM53_DEVICE_SAMPLING: "1"  # as the 1 M profile: sampled requests draw on the device inside the traced step
+        # Image + video serving with the vision tower resident on every chip (1.05 GiB per chip:
+        # the planner still fits 28 users per row at 128 K beside it; tt/memory_plan.py).
+        GLM53_VLLM_IMAGES: "1"
+        GLM53_VLLM_PREFIX_CACHING: "1"  # slot-level APC as the 1 M profile; the KDA snapshot ring on device (one entry per
+        # slot, the live ring-fit check after the build: 128 K slots leave the headroom 1 M slots do not); the host store
+        # (725-1194 ms per decode step at 192 slots, 2026-10-29) is only the fallback when no entry fits
+        GLM53_VLLM_APC_SNAPSHOTS: "1"
+        GLM53_VLLM_APC_WARMUP_ALLOWANCE_MIB: "400"
+        GLM53_RESIDENT_DECODE: "1"  # resident decode as the 1 M profile: the traced step feeds its sampled ids back on device
+        GLM53_DECODE_SLOT_MASK: "1"  # the live mask gates the KDA decode's state writes (parked slots keep their state)
+        GLM53_VLLM_ROWS_INDEPENDENT: "1"  # per-row prefill ownership: 192 distinct requests (one per slot), waves + the SP-first placement
+        GLM53_VLLM_VISION_RESIDENT: "1"
+        GLM53_VLLM_WARMUP_PREFILL: "128,32768"  # 128 = the short-prompt programs; 32768 = two 16384 chunks (the only eager bucket the traced ladder 256-2048 does not build)
+      override_tt_config:
+        fabric_config: FABRIC_2D_TORUS_XY
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 536870912
+        l1_small_size: 32768
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 256
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 192  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
+        block_size: 32
+        max_num_batched_tokens: 32768  # holds the largest multimodal item whole (see the 1 M profile)
+        long_prefill_token_threshold: 16384
+        enable_chunked_prefill: true
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
+        # the multimodal processor settings as the 1 M profile (see its notes): the image budget bound to the tower
+        # call cap, the video loader backend named for vLLM 0.30.0
+        mm-processor-kwargs: '{"max_image_tokens": 256}'
+        media-io-kwargs: {"video": {"video_backend": "glm5next"}}
+        mm-processor-cache-gb: 0
+        enable-prefix-caching: true  # follows GLM53_VLLM_PREFIX_CACHING "1" above; every hit is confirmed by the adapter
+        async-scheduling: true  # vLLM's async scheduling over the resident chain (supports_async_decode under GLM53_RESIDENT_DECODE)
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_mtp
