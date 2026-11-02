@@ -77,6 +77,15 @@ void signalHandler(int signal) {
   std::raise(signal);
 }
 
+// Wildcard origin is safe here: every route requires a Bearer token instead
+// of cookies, so there is no credentialed cross-origin state to leak.
+void addCorsHeaders(const drogon::HttpResponsePtr& resp) {
+  resp->addHeader("Access-Control-Allow-Origin", "*");
+  resp->addHeader("Access-Control-Allow-Headers",
+                  "Authorization, Content-Type");
+  resp->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+}
+
 /** Map the runtime ModelService to the metrics layout this binary's runner
  *  publishes into shared memory. */
 tt::worker::MetricsLayout metricsLayoutFromConfig() {
@@ -274,6 +283,14 @@ int main(int argc, char* argv[]) {
   drogon::app().registerSyncAdvice(
       [activeService = modelSvc](
           const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        // Preflight requests never carry a Bearer token, so answer them here,
+        // ahead of both the route-allow and auth checks below.
+        if (req->method() == drogon::Options) {
+          auto resp = drogon::HttpResponse::newHttpResponse();
+          addCorsHeaders(resp);
+          resp->addHeader("Access-Control-Max-Age", "600");
+          return resp;
+        }
         const std::string& path = req->path();
         const std::string method = req->methodString();
         if (tt::api::RouteRegistry::instance().isAllowed(activeService, method,
@@ -337,6 +354,7 @@ int main(int argc, char* argv[]) {
   drogon::app().registerPreSendingAdvice(
       [](const drogon::HttpRequestPtr& req,
          const drogon::HttpResponsePtr& resp) {
+        addCorsHeaders(resp);
         tt::metrics::ServerMetrics::instance().onHttpResponse(
             req->methodString(), static_cast<int>(resp->statusCode()));
       });
