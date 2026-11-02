@@ -19,7 +19,7 @@ from llm_module.agentic.swe500_mirror_environment import ExactMirrorDockerEnviro
 # Branch defaults (env overrides): low CPU weight for task containers; optional CPU set that keeps
 # tasks off the inference server's physical cores (Ryzen 7 9700X: core k = CPUs k and k+8).
 TASK_CPU_SHARES = 64
-TASK_CPUSET = ''
+TASK_CPUSET = '4-7,12-15'
 
 
 class IsolatedNetworkDockerEnvironment(DockerEnvironment):
