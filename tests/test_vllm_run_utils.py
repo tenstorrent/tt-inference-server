@@ -21,6 +21,15 @@ def test_create_model_symlink_replaces_an_existing_link(tmp_path):
     assert [p.name for p in links.iterdir()] == ["model"]
 
 
+def test_create_model_symlink_leaves_a_correct_link_alone(tmp_path):
+    weights = tmp_path / "weights"
+    weights.mkdir()
+    link = create_model_symlink(tmp_path, "model", weights)
+    inode = link.lstat().st_ino
+    assert create_model_symlink(tmp_path, "model", weights) == link
+    assert link.lstat().st_ino == inode
+
+
 def test_create_model_symlink_refuses_a_non_symlink(tmp_path):
     weights = tmp_path / "weights"
     weights.mkdir()
