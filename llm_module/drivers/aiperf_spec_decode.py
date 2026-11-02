@@ -64,6 +64,32 @@ from .aiperf_prefix_cache import _normalize_metrics_url
 logger = logging.getLogger(__name__)
 
 
+def _local_tokenizer(name: str) -> str:
+    """Download a Hub tokenizer into a writable local dir and return its path.
+
+    AIPerf's worker processes load the tokenizer themselves; on CI runners that
+    failed for google/gemma-4-31B-it without a logged cause (the shared HF cache
+    is not writable). Resolving it here surfaces any download error in this
+    process and gives the workers a plain local path.
+    """
+    if Path(name).is_dir():
+        return name
+    import os
+    import tempfile
+
+    from huggingface_hub import snapshot_download
+
+    dest = Path(tempfile.gettempdir()) / "aiperf_tokenizers" / name.replace("/", "__")
+    path = snapshot_download(
+        repo_id=name,
+        local_dir=str(dest),
+        token=os.environ.get("HF_TOKEN"),
+        allow_patterns=["tokenizer*", "special_tokens_map.json", "chat_template*", "config.json", "generation_config.json"],
+    )
+    logger.info("[spec-decode] tokenizer %s resolved to %s", name, path)
+    return path
+
+
 def _safe_path_component(value: str, *, fallback: str = "unknown") -> str:
     """Return a filesystem-safe single path component (no '/', no '..')."""
     if not value:
@@ -306,7 +332,7 @@ def _build_aiperf_cmd(
         "--model",
         model_name,
         "--tokenizer",
-        tokenizer,
+        _local_tokenizer(tokenizer),
         "--endpoint-type",
         "chat",
         "--streaming",
