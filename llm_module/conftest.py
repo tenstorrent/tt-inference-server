@@ -108,6 +108,13 @@ def pytest_addoption(parser):
         "its own without --schema-default-sampling), e.g. '{\"top_k\": 0}'",
     )
     group.addoption(
+        "--schema-non-strict",
+        action="store_true",
+        default=False,
+        help="send the tool with strict=false (a frontend that validates strict schemas against "
+        "OpenAI's structured-output rules, Dynamo 1.6, rejects the KVV cases otherwise)",
+    )
+    group.addoption(
         "--schema-cache-bypass",
         action="store_true",
         default=False,

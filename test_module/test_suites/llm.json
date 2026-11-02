@@ -334,7 +334,8 @@
           "_comment": "The tt-blaze reload ring served by tt-d-gen + Dynamo 1.6.0 (deepseek_v41 tool-call parser). Copied from the Kimi-K3 block; workers 3 = the ring's users, so no request queues behind the 3 slots.",
           "_comment_threshold": "No pass_rate_threshold target yet, so the suite default of 100% applies. Set it to mean - 3 sample std of 10 GPU vLLM runs, as for Kimi-K2.7-Code.",
           "test_config": {
-            "workers": 3
+            "workers": 3,
+            "non_strict": true
           }
         },
         {
@@ -344,6 +345,7 @@
           "_comment": "tt-d-gen has no guided decoding, so tool_choice=required is not enforced; kept informational as for Kimi-K3.",
           "test_config": {
             "workers": 3,
+            "non_strict": true,
             "tool_choice": "required",
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"

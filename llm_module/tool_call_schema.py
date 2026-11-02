@@ -477,6 +477,11 @@ class SuiteSettings:
     # even when the model wrote the right value. An upstream bug (GPU vLLM
     # returns the same output), not a model or device one.
     exclude_ref_schemas: bool = False
+    #: ``strict`` on the tool definition. Dynamo 1.6 validates a strict tool's schema against OpenAI's
+    #: structured-output rules (every object needs additionalProperties false, every property required)
+    #: and answers HTTP 400 otherwise; the KVV cases do not satisfy them, so a server without guided
+    #: decoding is run non-strict. The client's own validation of the arguments is unchanged.
+    strict: bool = True
 
     def __post_init__(self) -> None:
         for name, value, allowed in (
@@ -563,7 +568,7 @@ def build_request(
                     "name": TOOL_NAME,
                     "description": description,
                     "parameters": schema,
-                    "strict": True,
+                    "strict": settings.strict,
                 },
             }
         ],

@@ -85,6 +85,7 @@ _PYTEST_OPTIONS = (
     ("sampling_params", "--schema-sampling-params", "json"),
     ("cache_bypass", "--schema-cache-bypass", "flag"),
     ("exclude_ref_schemas", "--schema-exclude-ref", "flag"),
+    ("non_strict", "--schema-non-strict", "flag"),
 )
 
 

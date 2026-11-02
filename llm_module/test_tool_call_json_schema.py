@@ -72,6 +72,7 @@ def _settings(config: pytest.Config) -> SuiteSettings:
         ),
         cache_bypass=config.getoption("--schema-cache-bypass"),
         exclude_ref_schemas=config.getoption("--schema-exclude-ref"),
+        strict=not config.getoption("--schema-non-strict"),
     )
 
 
