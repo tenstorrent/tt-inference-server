@@ -7,6 +7,8 @@ needs one per live trial. This reuses the SWE500 trial-network allocator exactly
 and changes nothing else about the task environment, agent or verifier.
 """
 import json
+import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -27,7 +29,24 @@ class IsolatedNetworkDockerEnvironment(DockerEnvironment):
     async def _run_docker_compose_command(self, command, *args, **kwargs):
         if command and command[0] == 'up' and self._isolated_network is None:
             await self._allocate_network()
-        return await super()._run_docker_compose_command(command, *args, **kwargs)
+        result = await super()._run_docker_compose_command(command, *args, **kwargs)
+        if command and command[0] == 'up':
+            await self._lower_task_cpu_weight()
+        return result
+
+    async def _lower_task_cpu_weight(self):
+        # Task containers may use all host CPUs (override_cpus=16). Docker shares contended CPU by
+        # per-container weight, so with many busy tasks the inference server's host process (one
+        # container among up to 41) fell behind and every decode step slowed. A low weight lets tasks
+        # use spare CPU freely but yields it to the server first. GEMMA_TASK_CPU_SHARES=0 disables it.
+        shares = int(os.environ.get('GEMMA_TASK_CPU_SHARES', '64'))
+        if shares <= 0:
+            return
+        project = re.sub(r'[^a-z0-9_-]', '-', ('0' + self.session_id.lower()) if not re.match(r'^[a-z0-9]', self.session_id.lower()) else self.session_id.lower())
+        ids = (await self._docker_output('docker', 'ps', '-q', '--filter', f'label=com.docker.compose.project={project}')).split()
+        if ids:
+            await self._docker_output('docker', 'update', '--cpu-shares', str(shares), *ids)
+            self.logger.info('TASK_CPU_WEIGHT %s', json.dumps({'trial': self.session_id, 'containers': len(ids), 'cpu_shares': shares}))
 
     _allocate_network = ExactMirrorDockerEnvironment._allocate_network
     _docker_output = ExactMirrorDockerEnvironment.__dict__['_docker_output']  # staticmethod object
