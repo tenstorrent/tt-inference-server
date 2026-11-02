@@ -23,7 +23,7 @@ from pathlib import Path
 EVAL_DATA = {
     "black-forest-labs/flux.2-klein-4b": (
         "Tenstorrent/flux.2-klein-4b-refs",
-        "2e19ff47b3de365b7e6c271453980eaaf571787d",
+        "b54cd658a1af88112648ee8991b0e7679026a500",
     ),
     "qwen/qwen-image-edit-2511": (
         "Tenstorrent/qwen-image-edit-2511-refs",
@@ -31,6 +31,8 @@ EVAL_DATA = {
     ),
 }
 SUBSETS = ("dev", "ci", "all")
+# A reference run's text-to-image scores (longtext_score.py, dpg_score.py).
+REFERENCE_SCORES = ("longtext.json", "dpg.json")
 # TT's Qwen-Image-Edit runner today (tt-metal tvardhineni/qwen-image-edit-2511-rc,
 # QwenImageEditPipeline.__call__): one input, padded to a square canvas.
 SQUARE_SIDE = 1024
@@ -90,6 +92,8 @@ def load_cases(
     files = {path for case in cases for path in case.get("images") or []}
     files |= {f"{reference}/{case['case_id']}.png" for case in cases}
     files |= {f"{reference}/index.json", f"{reference}/provenance.json"}
+    # The reference run's text-to-image scores, where it has them.
+    files |= {f"{reference}/{name}" for name in REFERENCE_SCORES}
     return snapshot(model_id, ["cases/*", *sorted(files)]), cases
 
 
