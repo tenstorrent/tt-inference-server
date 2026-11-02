@@ -13530,6 +13530,40 @@ _eval_config_list = [
 ]
 
 
+# Fresh-autoport goal-12 fixed ten-task subsets. These are reported, not gated.
+# Gemma31B has no release SWE entry: use the release mini-SWE version and
+# conservative Terminal agent/request/output limits, explicitly documented.
+for _index, _config in enumerate(_eval_config_list):
+    if _config.hf_model_repo == "google/gemma-4-31B-it":
+        _gpqa = next(t for t in _config.tasks if t.task_name == "r1_gpqa_diamond")
+        _terminal = next(t for t in _config.tasks if t.task_name == "terminal_bench_2")
+        _terminal_cfg = replace(_terminal.agentic_eval_config,
+            dataset="gemma4-isolated-terminal", dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
+            n_tasks=10, n_concurrent_trials=32, task_names_map={},
+            allow_agent_endpoint=True)
+        _swe_cfg = HarborEvalConfig(
+            dataset="gemma4-isolated-swe", agent="mini-swe-agent",
+            n_tasks=10, n_concurrent_trials=32, n_attempts=1,
+            agent_timeout_sec=18000, llm_timeout_sec=3600,
+            allow_agent_endpoint=True, override_cpus=1, override_memory_mb=8192,
+            agent_kwargs={"version": MINI_SWE_AGENT_VERSION, "max_tokens": 32768,
+                "config": {"model": {"model_kwargs": {
+                    "temperature": 1.0, "top_p": 0.95,
+                    "extra_body": {"top_k": 20,
+                        "chat_template_kwargs": {"enable_thinking": True}}}}}})
+        _eval_config_list[_index] = replace(_config, tasks=[
+            replace(_gpqa, doc_ids=list(range(10)), max_concurrent=32,
+                limit_samples_map={}),
+            replace(_terminal, agentic_eval_config=_terminal_cfg, limit_samples_map={}),
+            EvalTask(task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(published_score=None, published_score_ref=None,
+                    gpu_reference_score=None, gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"}),
+                agentic_eval_config=_swe_cfg, limit_samples_map={}),
+        ])
+
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
@@ -13546,3 +13580,9 @@ EVAL_CONFIGS = {
 # RequirementsTargetPack._find_task_template) read this instead, so dropping a
 # task from one model's run set cannot make it unreachable catalog-wide.
 ALL_EVAL_CONFIGS = _eval_config_map
+
+# Keep catalog templates available, but dispatch exactly one budgeted goal-12 suite.
+_fresh_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
+EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(
+    _fresh_config, tasks=[task for task in _fresh_config.tasks if task.task_name == "swe_bench_verified"]
+)
