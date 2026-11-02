@@ -12,6 +12,10 @@
         --speech-ids voice.json --outdir tts_correctness
     python tts_correctness.py score --outdir tts_correctness --asr-model distil-large-v3
 
+``run.py --workflow evals`` (or ``release``) runs this check for the tt-tts server
+through :func:`run_check`; ``--workflow-args "eval_requests=100 eval_concurrency=100
+eval_refs=5"`` sets its size.
+
 Each response, reference or load, fails on either of:
   * no audio: HTTP error, transport error, or a header-only WAV.
   * transcript: ASR (faster-whisper) WER against the input text above
@@ -125,12 +129,12 @@ def score(records: list[dict], text: str, args: argparse.Namespace) -> dict:
             if r["transcript"] is not None:
                 r.update(word_errors(ref_words, normalize(r["transcript"])))
 
+    # References only feed the informational duration/PCM fields; with none
+    # (--refs 0, or every reference failed) those fields are None.
     refs = [r for r in records if r["tag"] == "ref" and r["ok"]]
-    if not refs:
-        raise SystemExit("no successful reference request; nothing to compare with")
     ref_hashes = {r["sha256"] for r in refs}
     deterministic = len(refs) > 1 and len(ref_hashes) == 1
-    ref_dur = st.median(r["audio_s"] for r in refs)
+    ref_dur = st.median(r["audio_s"] for r in refs) if refs else None
     wer_limit = None if args.no_asr else args.max_wer
 
     for r in records:
@@ -139,7 +143,7 @@ def score(records: list[dict], text: str, args: argparse.Namespace) -> dict:
             reasons.append(r["error"] or "no audio")
         else:
             r["duration_ratio"] = r["audio_s"] / ref_dur if ref_dur else None
-            r["pcm_matches_ref"] = r["sha256"] in ref_hashes
+            r["pcm_matches_ref"] = r["sha256"] in ref_hashes if refs else None
             if wer_limit is not None and r.get("wer", 0) > wer_limit:
                 reasons.append(f"wer {r['wer']:.1%} > {wer_limit:.1%}")
         r["reasons"] = reasons
@@ -167,11 +171,16 @@ def report(summary: dict, records: list[dict], worst: int = 10) -> str:
         q = st.quantiles(values, n=20, method="inclusive")
         return f"p50 {q[9]:.1%}  p95 {q[18]:.1%}  max {max(values):.1%}"
 
+    ref_dur = summary["reference_duration_s"]
     lines = [
-        f"References: {summary['references']}, "
-        f"{'deterministic (byte-identical)' if summary['deterministic'] else 'not byte-identical'}, "
-        f"duration {summary['reference_duration_s']:.2f} s, "
-        f"{summary['reference_failures']} failed",
+        f"References: {summary['references']} ok, "
+        f"{summary['reference_failures']} failed"
+        + (
+            f", {'byte-identical' if summary['deterministic'] else 'not byte-identical'}"
+            f", duration {ref_dur:.2f} s"
+            if ref_dur is not None
+            else ""
+        ),
     ]
     for tag in ("ref", "load"):
         wers = [
@@ -239,12 +248,63 @@ def _speech_ids(args: argparse.Namespace) -> list[int]:
     return []
 
 
+def run_check(
+    tgt: harness.Target,
+    refs: int,
+    requests: int,
+    concurrency: int,
+    args: argparse.Namespace,
+) -> dict:
+    """Send the reference and load requests, score them and save the results.
+
+    ``args`` carries the scoring options (see :func:`score`) and ``outdir``, which
+    receives ``wav/`` and :data:`RESULTS_FILE`. Returns the results document.
+    """
+    os.makedirs(os.path.join(args.outdir, "wav"), exist_ok=True)
+    logger.info(
+        "Text %d chars, voice prompt %d speech IDs", len(tgt.text), len(tgt.speech_ids)
+    )
+    t0 = time.time()
+    logger.info("[ref] %d sequential requests", refs)
+    records = send(tgt, "ref", refs, 1, args.outdir)
+    logger.info("[load] %d requests at concurrency %d", requests, concurrency)
+    records += send(tgt, "load", requests, concurrency, args.outdir)
+    logger.info("Sent in %.0f s", time.time() - t0)
+    doc = {
+        "meta": {
+            "host": tgt.host,
+            "port": tgt.port,
+            "text": tgt.text,
+            "speech_ids": tgt.speech_ids,
+            "refs": refs,
+            "requests": requests,
+            "concurrency": concurrency,
+            "started": t0,
+        },
+        "records": records,
+    }
+    doc["summary"] = score(records, tgt.text, args)
+    _save(doc, args.outdir)
+    return doc
+
+
+def _save(doc: dict, outdir: str) -> None:
+    with open(os.path.join(outdir, RESULTS_FILE), "w") as f:
+        json.dump(doc, f, indent=1)
+
+
+def _finish(doc: dict) -> int:
+    """Print the report; exit status 1 when any reference or load response failed."""
+    summary = doc["summary"]
+    print(report(summary, doc["records"]))
+    return 1 if summary["load_failures"] or summary["reference_failures"] else 0
+
+
 def _run(args: argparse.Namespace) -> int:
     text = args.text
     if args.text_file:
         with open(args.text_file) as f:
             text = f.read().strip()
-    os.makedirs(os.path.join(args.outdir, "wav"), exist_ok=True)
     tgt = harness.Target(
         host=args.host,
         port=args.port,
@@ -254,38 +314,15 @@ def _run(args: argparse.Namespace) -> int:
         text=text,
         speech_ids=_speech_ids(args),
     )
-    logger.info(
-        "Text %d chars, voice prompt %d speech IDs", len(text), len(tgt.speech_ids)
-    )
-    t0 = time.time()
-    logger.info("[ref] %d sequential requests", args.refs)
-    records = send(tgt, "ref", args.refs, 1, args.outdir)
-    logger.info("[load] %d requests at concurrency %d", args.requests, args.concurrency)
-    records += send(tgt, "load", args.requests, args.concurrency, args.outdir)
-    logger.info("Sent in %.0f s", time.time() - t0)
-    doc = {
-        "meta": {
-            "host": args.host,
-            "port": args.port,
-            "text": text,
-            "speech_ids": tgt.speech_ids,
-            "refs": args.refs,
-            "requests": args.requests,
-            "concurrency": args.concurrency,
-            "started": t0,
-        },
-        "records": records,
-    }
-    return _score_and_save(doc, args)
+    return _finish(run_check(tgt, args.refs, args.requests, args.concurrency, args))
 
 
-def _score_and_save(doc: dict, args: argparse.Namespace) -> int:
-    summary = score(doc["records"], doc["meta"]["text"], args)
-    doc["summary"] = summary
-    with open(os.path.join(args.outdir, RESULTS_FILE), "w") as f:
-        json.dump(doc, f, indent=1)
-    print(report(summary, doc["records"]))
-    return 1 if summary["load_failures"] or summary["reference_failures"] else 0
+def _rescore(args: argparse.Namespace) -> int:
+    with open(os.path.join(args.outdir, RESULTS_FILE)) as f:
+        doc = json.load(f)
+    doc["summary"] = score(doc["records"], doc["meta"]["text"], args)
+    _save(doc, args.outdir)
+    return _finish(doc)
 
 
 # ----------------------------------------------------------------------------- CLI
@@ -340,11 +377,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
-    if args.command == "run":
-        sys.exit(_run(args))
-    with open(os.path.join(args.outdir, RESULTS_FILE)) as f:
-        doc = json.load(f)
-    sys.exit(_score_and_save(doc, args))
+    sys.exit(_run(args) if args.command == "run" else _rescore(args))
 
 
 if __name__ == "__main__":

@@ -166,7 +166,12 @@ def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int | None]:
     for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
         key, _, value = token.partition("=")
         params[key.replace("-", "_")] = value
-    unknown = sorted(set(params) - set(_TTS_WORKFLOW_ARG_KEYS))
+    # eval_* keys belong to the correctness eval (both run under --workflow release).
+    unknown = sorted(
+        k
+        for k in set(params) - set(_TTS_WORKFLOW_ARG_KEYS)
+        if not k.startswith("eval_")
+    )
     if unknown:
         logger.warning(
             f"TTS benchmark ignores workflow args {unknown}; "

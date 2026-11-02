@@ -108,6 +108,14 @@ DISPLAY_NAMES: Dict[str, str] = {
     "lora_configs": "LoRA Configs",
     # Audio / TTS
     "wer": "WER",
+    # TTS correctness eval
+    "requests": "Requests",
+    "load_failures": "Load Failures",
+    "references": "References",
+    "reference_failures": "Reference Failures",
+    "max_wer": "Max WER",
+    "failed_responses": "Failed Responses",
+    "results": "Results",
     "rtr": "RTR",
     "t/s/u": "T/S/U",
     "audio_duration": "Audio Duration (s)",

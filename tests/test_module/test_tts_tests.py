@@ -284,6 +284,15 @@ def test_workflow_args_override_ladder_and_isl(workflow_args, expected):
     assert benchmark._workflow_params(_workflow_ctx(workflow_args)) == expected
 
 
+def test_eval_workflow_args_are_left_to_the_eval_without_warning(caplog):
+    ctx = _workflow_ctx("concurrency=600,700 eval_requests=20 eval_concurrency=10")
+
+    with caplog.at_level("WARNING"):
+        assert benchmark._workflow_params(ctx) == ((600, 700), None)
+
+    assert "ignores workflow args" not in caplog.text
+
+
 @pytest.mark.parametrize(
     "workflow_args",
     ["concurrency=0", "concurrency=abc", "concurrency=", "isl=-1", "isl"],

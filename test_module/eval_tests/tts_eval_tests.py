@@ -5,11 +5,15 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import logging
+import os
+import shlex
 import sys
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -30,6 +34,20 @@ DEFAULT_WER_THRESHOLD = 0.20
 DEFAULT_QUALITY_SAMPLE_COUNT = 10
 _NUM_CALLS_SENTINEL = 2
 TTS_QUALITY_DEPS = ("numpy", "torch", "transformers", "librosa", "datasets")
+
+# tt-tts correctness eval: one prompt sent many times, every response transcribed.
+TT_TTS_IMPL = "tt-tts"
+CORRECTNESS_REFS = 5
+CORRECTNESS_REQUESTS = 100
+CORRECTNESS_CONCURRENCY = 100
+CORRECTNESS_ASR_MODEL = "distil-large-v3"
+CORRECTNESS_MAX_WER = 0.05
+CORRECTNESS_TIMEOUT_SECONDS = 300.0
+CORRECTNESS_DIR = "tts_correctness"
+# --workflow-args keys; prefixed so `--workflow release` can also pass the
+# benchmark's own `concurrency=`/`isl=` in the same string.
+_CORRECTNESS_ARG_PREFIX = "eval_"
+_CORRECTNESS_ARG_KEYS = ("refs", "requests", "concurrency")
 
 
 def _tts_sample_count(ctx: MediaContext) -> int:
@@ -78,6 +96,7 @@ def _tts_eval_block(
     wer: Optional[float],
     accuracy_check: ReportCheckTypes,
     error: Optional[str] = None,
+    extra: Optional[dict] = None,
 ) -> Block:
     """Build a canonical TTS eval Block (accuracy/quality fields only)."""
     data = {
@@ -89,6 +108,8 @@ def _tts_eval_block(
         "wer": wer,
         "accuracy_check": accuracy_check,
     }
+    if extra:
+        data.update(extra)
     if error is not None:
         data["error"] = error
     return Block(
@@ -145,8 +166,122 @@ def _run_tts_quality_eval(ctx: MediaContext) -> dict:
     return dict(test.run_tests().data)
 
 
+def _correctness_params(ctx: MediaContext) -> dict:
+    """``eval_refs``/``eval_requests``/``eval_concurrency`` from ``--workflow-args``.
+
+    Keys without the ``eval_`` prefix belong to other workflows and are ignored.
+    """
+    params = {
+        "refs": CORRECTNESS_REFS,
+        "requests": CORRECTNESS_REQUESTS,
+        "concurrency": CORRECTNESS_CONCURRENCY,
+    }
+    rc = getattr(ctx, "runtime_config", None)
+    for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
+        key, _, value = token.partition("=")
+        if not key.startswith(_CORRECTNESS_ARG_PREFIX):
+            continue
+        key = key[len(_CORRECTNESS_ARG_PREFIX) :]
+        if key not in _CORRECTNESS_ARG_KEYS:
+            logger.warning(
+                f"TTS correctness eval ignores workflow arg {token!r}; supported: "
+                f"{[_CORRECTNESS_ARG_PREFIX + k for k in _CORRECTNESS_ARG_KEYS]}"
+            )
+            continue
+        try:
+            params[key] = int(value)
+        except ValueError:
+            params[key] = -1
+        if params[key] < (0 if key == "refs" else 1):
+            raise ValueError(f"TTS correctness eval workflow arg {token!r} is invalid")
+    return params
+
+
+def _run_tts_correctness_eval(ctx: MediaContext, task) -> Block:
+    """Same-prompt correctness check for the tt-tts server (any failure = FAIL).
+
+    Sends ``refs`` sequential references, then ``requests`` copies of the same
+    prompt at ``concurrency``; each response fails on no audio or Whisper WER
+    above :data:`CORRECTNESS_MAX_WER`. WAVs and per-response transcripts land in
+    ``<output_path>/tts_correctness``.
+    """
+    if not _can_import("faster_whisper"):
+        reason = "TTS correctness eval needs faster-whisper, which is not installed"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            wer=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+        )
+    from ..benchmark_tests import tts_correctness, tts_load_harness
+
+    params = _correctness_params(ctx)
+    parsed = urlparse(ctx.base_url)
+    if not parsed.hostname:
+        raise ValueError(f"TTS eval could not resolve a host from {ctx.base_url!r}")
+    target = tts_load_harness.Target(
+        host=parsed.hostname,
+        port=ctx.server_port,
+        timeout=CORRECTNESS_TIMEOUT_SECONDS,
+        text=tts_correctness.DEFAULT_TEXT,
+    )
+    outdir = Path(ctx.output_path) / CORRECTNESS_DIR
+    args = argparse.Namespace(
+        outdir=str(outdir),
+        no_asr=False,
+        asr_model=CORRECTNESS_ASR_MODEL,
+        asr_threads=os.cpu_count() or 8,
+        max_wer=CORRECTNESS_MAX_WER,
+    )
+    logger.info(
+        "Running TTS correctness eval: refs=%d requests=%d concurrency=%d asr=%s",
+        params["refs"],
+        params["requests"],
+        params["concurrency"],
+        CORRECTNESS_ASR_MODEL,
+    )
+    doc = tts_correctness.run_check(
+        target, params["refs"], params["requests"], params["concurrency"], args
+    )
+    summary = doc["summary"]
+    logger.info("\n%s", tts_correctness.report(summary, doc["records"]))
+
+    graded = [r for r in doc["records"] if r["tag"] in ("ref", "load")]
+    passed = sum(1 for r in graded if r["pass"])
+    failed = [f"{r['tag']}_{r['i']:03d}" for r in graded if not r["pass"]]
+    wers = [r["wer"] for r in graded if r.get("wer") is not None]
+    accuracy_check = (
+        ReportCheckTypes.FAIL
+        if summary["load_failures"] or summary["reference_failures"]
+        else ReportCheckTypes.PASS
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=round(100.0 * passed / len(graded), 2) if graded else None,
+        wer=sum(wers) / len(wers) if wers else None,
+        accuracy_check=accuracy_check,
+        extra={
+            "requests": summary["load_requests"],
+            "concurrency": params["concurrency"],
+            "load_failures": summary["load_failures"],
+            "references": params["refs"],
+            "reference_failures": summary["reference_failures"],
+            "max_wer": CORRECTNESS_MAX_WER,
+            "failed_responses": ", ".join(failed) or None,
+            "results": str(outdir / tts_correctness.RESULTS_FILE),
+        },
+    )
+
+
 def run_tts_eval(ctx: MediaContext) -> Block:
     """Run the WER quality eval for a TTS model (SpeechT5, etc.).
+
+    The tt-tts server instead runs the same-prompt correctness check
+    (:func:`_run_tts_correctness_eval`), where any malformed response fails.
 
     ``accuracy_check`` reflects Word Error Rate against the quality threshold;
     a missing transcription toolchain or a run that produced no usable samples
@@ -158,6 +293,9 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
     task = ctx.all_params.tasks[0]
+    impl_name = getattr(getattr(ctx.model_spec, "impl", None), "impl_name", None)
+    if impl_name == TT_TTS_IMPL:
+        return _run_tts_correctness_eval(ctx, task)
 
     missing = _missing_quality_deps()
     if missing:

@@ -108,9 +108,15 @@ class TestScore:
         assert summary["reference_failures"] == 1
         assert summary["load_failures"] == 1
 
-    def test_no_successful_reference_aborts(self):
-        with pytest.raises(SystemExit):
-            correctness.score([_rec("ref", 0, ok=False)], TEXT, _args())
+    def test_without_successful_references_load_is_still_scored(self):
+        records = [_rec("ref", 0, ok=False, error="http 429: full"), _rec("load", 0)]
+        summary = correctness.score(records, TEXT, _args())
+        assert summary["references"] == 0
+        assert summary["reference_failures"] == 1
+        assert summary["reference_duration_s"] is None
+        assert records[1]["pass"] is True
+        assert records[1]["duration_ratio"] is None
+        assert "References: 0 ok, 1 failed" in correctness.report(summary, records)
 
 
 def test_report_lists_failures_with_transcripts(monkeypatch):
