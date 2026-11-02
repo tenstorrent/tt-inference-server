@@ -17,6 +17,7 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
+    FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
@@ -76,6 +77,7 @@ class ModelNames(Enum):
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
+    FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
@@ -137,6 +139,7 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
+    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
@@ -212,6 +215,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
         ModelRunners.TT_FLUX_1_KONTEXT_DEV,
+        ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
@@ -401,6 +405,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
+    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
@@ -1010,6 +1015,17 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    # FLUX.2 klein 4B: the 4x8 ring of tt-metal's flux2_klein demo
+    # (demo_flux2_klein.py MESH_SHAPE, TRACE_REGION_SIZE), unthrottled like its CI.
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 900,
+        "trace_region_size": 256000000,
+        "default_throttle_level": "0",
+    },
     # FLUX.1-Kontext-dev shares the FLUX.1-dev transformer/VAE/encoders, so device
     # configs mirror TT_FLUX_1_DEV. P300 (1,2) is the layout validated end-to-end.
     (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.P300): {
@@ -1142,7 +1158,6 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 130000000,
-
         # No matmul throttle: the image default (TT_MM_THROTTLE_PERF=5) costs ~15 %
         # per denoise step (792-813 vs 673-694 ms on WH Galaxy, identical outputs).
         # A string: the worker applies it only when truthy (int 0 would be skipped).

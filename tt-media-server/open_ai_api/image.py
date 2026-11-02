@@ -4,6 +4,7 @@
 
 from config.constants import ModelRunners
 from config.settings import settings
+from domain.flux2_klein_request import Flux2KleinImageRequest
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
@@ -92,6 +93,33 @@ async def generate_image(
         result = await service.process_request(image_generate_request)
         _elapsed = round(_time.time() - _t0, 2)
         return JSONResponse(content={"images": result, "generation_time": _elapsed})
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+flux2_klein_router = APIRouter()
+
+
+@flux2_klein_router.post("/generations")
+async def generate_flux2_klein_image(
+    request: Flux2KleinImageRequest,
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    FLUX.2 klein: text to image, or editing with up to four reference images.
+
+    Returns:
+        JSONResponse: The generated images as a list of base64 strings.
+
+    Raises:
+        HTTPException: If image generation fails.
+    """
+    try:
+        result = await service.process_request(request)
+        return JSONResponse(content={"images": result})
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -273,5 +301,9 @@ elif settings.model_runner in (
 ):
     # Instruction edit only (an input image is required): /edits, no mask.
     router.include_router(edit_image_router)
+elif settings.model_runner == ModelRunners.TT_FLUX_2_KLEIN_4B.value:
+    # Text to image and reference editing on one endpoint, with the references
+    # and canvas sizes the shared request does not take.
+    router.include_router(flux2_klein_router)
 else:
     router.include_router(generate_image_router)

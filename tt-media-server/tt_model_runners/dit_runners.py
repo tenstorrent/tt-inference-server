@@ -50,6 +50,20 @@ except ImportError:
     # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
     # precise error if the Kontext runner is actually requested.
     Flux1KontextPipeline = None
+FLUX2_KLEIN_IMPORT_ERROR = None
+try:
+    from models.tt_dit.pipelines.flux2_klein.pipeline_flux2_klein import (
+        Flux2KleinPipeline,
+        Flux2KleinRequest,
+    )
+    from models.tt_dit.pipelines.flux2_klein.weights_flux2_klein import (
+        resolve_weights_dir as resolve_flux2_klein_weights,
+    )
+except ImportError as _flux2_klein_import_error:
+    # Not on tt-metal main yet (branch nwoodall/flux2-klein-bringup). Contained
+    # like Qwen-Image-Edit below: the other runners stay loadable.
+    Flux2KleinPipeline = None
+    FLUX2_KLEIN_IMPORT_ERROR = repr(_flux2_klein_import_error)
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -121,6 +135,7 @@ dit_runner_log_map = {
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
     ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
+    ModelRunners.TT_FLUX_2_KLEIN_4B.value: "FLUX.2-klein-4B",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
@@ -504,6 +519,95 @@ class TTFluxKontextRunner(TTDiTRunner):
         )
         self.logger.debug(f"Device {self.device_id}: Kontext inference completed")
         return images
+
+
+# FLUX.2 klein 4B (the distilled model: 4 steps, no CFG) on the Blackhole Galaxy
+# 4x8 ring, as tt-metal's demo_flux2_klein.py opens it: SP8 x TP4, FABRIC_1D_RING
+# with 8 KB router packets. One request is text to image with 0 to 4 reference
+# images; the pipeline sizes the references and draws the initial noise from the
+# seed (packing.make_noise: CPU torch.randn, as diffusers does for the seed).
+FLUX2_KLEIN_L1_SMALL_SIZE = 65536
+FLUX2_KLEIN_TRACE_REGION_SIZE = 256_000_000
+FLUX2_KLEIN_FABRIC_PACKET_BYTES = 8192
+
+
+class TTFlux2KleinRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def _weights_dir(self):
+        # A pre-mounted snapshot (MODEL_WEIGHTS_DIR) when there is one, else the
+        # Hugging Face cache, downloading the snapshot if it is not there.
+        path = self.settings.model_weights_path
+        return resolve_flux2_klein_weights(
+            "distilled",
+            "4b",
+            weights_dir=path if path and os.path.isdir(path) else None,
+            allow_download=True,
+        )
+
+    def create_pipeline(self):
+        if Flux2KleinPipeline is None:
+            raise ImportError(
+                "FLUX.2 klein requires models.tt_dit.pipelines.flux2_klein, which "
+                f"could not be imported from this tt-metal build ({FLUX2_KLEIN_IMPORT_ERROR})."
+            )
+        try:
+            return Flux2KleinPipeline(
+                self.ttnn_device,
+                snapshots={"distilled": self._weights_dir()},
+                size="4b",
+                resident=("distilled",),
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "FLUX.2 klein pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        router = ttnn.FabricRouterConfig()
+        router.max_packet_payload_size_bytes = FLUX2_KLEIN_FABRIC_PACKET_BYTES
+        return {
+            "l1_small_size": FLUX2_KLEIN_L1_SMALL_SIZE,
+            "trace_region_size": FLUX2_KLEIN_TRACE_REGION_SIZE,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+            "fabric_router_config": router,
+        }
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        references = tuple(
+            self.image_manager.base64_to_pil_image(image, target_mode="RGB")
+            for image in getattr(request, "images", None) or []
+        )
+        result = self.pipeline.generate(
+            Flux2KleinRequest(
+                prompt=request.prompt,
+                width=getattr(request, "width", None),
+                height=getattr(request, "height", None),
+                seed=int(request.seed or 0),
+                steps=request.num_inference_steps,
+                images=references,
+                return_final_tokens=False,
+                return_text=False,
+            )
+        )
+        self.logger.info(
+            f"Device {self.device_id}: FLUX.2 klein {result.image.size[0]}x{result.image.size[1]}, "
+            f"{len(references)} reference(s), {result.steps} steps, seed {result.seed}, "
+            f"layout {result.layout}"
+        )
+        return [result.image]
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
