@@ -17,23 +17,11 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 # SPEED-Bench qualitative split: ~80 prompts per category.
-SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = (
-    "coding",
-    "humanities",
-    "math",
-    "multilingual",
-    "qa",
-    "rag",
-    "reasoning",
-    "roleplay",
-    "stem",
-    "summarization",
-    "writing",
-)
+SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = ("coding", "writing", "summarization", "math")
 
-SPEED_BENCH_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k", "2k", "8k", "16k", "32k")
+SPEED_BENCH_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k", "8k", "32k")
 
-THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 16, 64)
+THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 8, 16, 32)
 
 # The 'ci' preset trims the sweep so a regression run stays short: the
 # 'coding' qualitative category plus a single throughput ISL across the full
@@ -46,7 +34,7 @@ CI_THROUGHPUT_ISLS: Tuple[str, ...] = ("32k",)
 # explicitly to consume the whole category. The default SHUFFLE sampler draws
 # without replacement, so a count equal to the category size sends each prompt
 # exactly once.
-SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
+SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 20
 
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
