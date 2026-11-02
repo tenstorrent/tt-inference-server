@@ -254,7 +254,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1000000000  # ~110-320 MB plain decode traces (the Galaxy 12B measured ~320 MB with four warmup batches) + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~37 MB = ~555 MB (31B ~1.25x the measured 12B record); ~2.3 GB DRAM spare after weights and the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1000000000  # ~175 MB plain decode traces + 16 speculative records (4 shapes x 4 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x ~40 MB = ~815 MB in use (the measurement on GEMMA4_SPEC_WIDTH_RUNGS above); ~2.3 GB DRAM spare after weights and the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -359,7 +359,7 @@ templates:
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: prose +25..+50 %, code +40..+55 % over the plain step), K=3 at 6-8 rows (conc 32: +3..+27 %); a K=1 record at 16 rows lands at plain, so above 8 rows per engine (conc > 32) the step is the plain decode
         GEMMA4_SPEC_EXTRA_SHAPES: "5:3"  # a (5,3) record beside the (5,5), as measured on the QB2 block (chosen most at 2-5 rows); 4 shapes x 4 rungs = 16 records, the count the trace region was sized for
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
-        GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 960 MB trace region
+        GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 1.2 GB trace region (trace_region_size below)
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
@@ -573,7 +573,8 @@ templates:
 
 # 31B dFlash candidate drafter on the plugin's speculative contract (impl gemma4_dflash_contract, not a
 # default): a twin of the two Blackhole tt_transformers default entries above (same modalities, pools,
-# hybrid KV groups, chunked prefill, warmup ladder, mm limits and targets), measured against the MTP
+# chunked prefill budget, warmup ladder, mm limits and targets; the KV layout differs: bounded sliding
+# ring, no hybrid KV groups or prefix caching), measured against the MTP
 # default by the shield release flow; the better one becomes the 31B default. dFlash is the faster
 # drafter at batch 1 and its scaling is unknown.
 - weights:
@@ -601,15 +602,16 @@ templates:
         # schedules the drafts (speculative_config below). The adapter speculates only while one request is
         # live today (a shared step continues as plain decode), so the MTP entries' GEMMA4_SPEC_K_BY_ROWS /
         # GEMMA4_SPEC_MAX_ROWS table does not apply here; batched dFlash is the follow-up. The class pins
-        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps), so the plugin serves
-        # this entry without vLLM prefix caching although the knobs below mirror the default entry.
+        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps) and the knobs below
+        # keep the bounded sliding ring the drafter was measured on, so this entry serves without hybrid KV
+        # groups or prefix caching.
         GEMMA4_DFLASH_VERIFY: "5"  # verify positions per draft: the contract K (= num_speculative_tokens below)
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
         GEMMA4_DFLASH_WIDTH_RUNGS: "3"  # keep the 3 largest rungs of the dFlash verify-width set: the dFlash adapter captures its own GEMMA4_DFLASH_* ladder, not the MTP records, so this (not GEMMA4_SPEC_WIDTH_RUNGS) is the knob its class reads
-        # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone). Bounded sliding ring as on the CI leg:
-        # an exact 1024-position ring has no room for the K + 1 verify rows, so 16 headroom blocks make it 2048.
+        # Bounded sliding ring as on the CI leg: an exact 1024-position ring has no room for the K + 1 verify
+        # rows, so 16 headroom blocks (x GEMMA4_PAGE_BLOCK_SIZE 64) make it 2048.
         GEMMA4_SPEC_RING_HEADROOM_BLOCKS: "16"
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
@@ -618,14 +620,13 @@ templates:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool: 3 users at 256K at max_num_batched_tokens 16384. Each pool block id costs 1.39 MB per chip
-        # (the full-attention group runs 128-token blocks, vLLM unifying its page size with the sliding group),
-        # so 13,600 blocks = 19 GB of the 21.8 GB free after weights; a larger pool OOMs at the KV allocation.
+        # KV pool as on the MTP default entry (3 users at 256K at max_num_batched_tokens 16384); that entry's
+        # per-block derivation is under hybrid KV groups and does not transfer to the bounded ring here.
         GEMMA4_MAX_TOKENS_ALL_USERS: "606208"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
-        # bounded device rings stay off; chunked prefill stays untraced on this path.
+        # The bounded sliding ring the dFlash drafter was measured on: one KV group, no vLLM-managed
+        # sliding KV and so no prefix caching; chunked prefill stays untraced on this path.
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "0"  # bounded ring: one KV group, no per-group tables
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # the sliding ring the dFlash drafter was measured on (O(window) ingest, V=5)
         GEMMA4_PREFIX_CACHING: "0"  # no prefix caching into a bounded ring
@@ -633,7 +634,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1000000000  # as on the MTP default (~110 MB plain decode traces + the speculative captures); the dFlash width set's record size is unmeasured on the contract rail, so the boot log's trace-region projection line is the check
+        trace_region_size: 1000000000  # as on the MTP default (~175 MB plain decode traces + the speculative captures); the dFlash width set's record size is unmeasured on the contract rail, so the boot log's trace-region projection line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -641,8 +642,8 @@ templates:
       vllm_args:
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        # The speculative contract classes ship synchronous in this phase (supports_async_decode off); the
-        # explicit negative flag is needed because False booleans are dropped.
+        # The dFlash contract class ships synchronous in this phase (supports_async_decode off, unlike the MTP
+        # class on the default entries); the explicit negative flag is needed because False booleans are dropped.
         no-async-scheduling: true
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
@@ -653,15 +654,9 @@ templates:
         # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
-        # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
-        # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
-        # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
-        # rounds starved decode under async scheduling. 65536/4096 measured
-        # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
+        # Token-chunked prefill (tenstorrent/vllm#448) at the MTP default entry's budget (16384/4096); the KV
+        # pool above is sized against it.
         enable_chunked_prefill: true
-        # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
-        # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
@@ -694,15 +689,16 @@ templates:
         # schedules the drafts (speculative_config below). The adapter speculates only while one request is
         # live today (a shared step continues as plain decode), so the MTP entries' GEMMA4_SPEC_K_BY_ROWS /
         # GEMMA4_SPEC_MAX_ROWS table does not apply here; batched dFlash is the follow-up. The class pins
-        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps), so the plugin serves
-        # this entry without vLLM prefix caching although the knobs below mirror the default entry.
+        # supports_prefix_caching off (the drafter seeds from the prompt's prefill taps) and the knobs below
+        # keep the bounded sliding ring the drafter was measured on, so this entry serves without hybrid KV
+        # groups or prefix caching.
         GEMMA4_DFLASH_VERIFY: "5"  # verify positions per draft: the contract K (= num_speculative_tokens below)
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # drafter argmax over the vocab shards (routes around the TTSampling path)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "0"  # no spec-ISL ceiling: every prompt length speculates on the contract rail
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"  # generation horizon per session (sizes the verify-width ladder rungs)
         GEMMA4_DFLASH_WIDTH_RUNGS: "4"  # keep the 4 largest rungs of the dFlash verify-width set: the dFlash adapter captures its own GEMMA4_DFLASH_* ladder, not the MTP records, so this (not GEMMA4_SPEC_WIDTH_RUNGS) is the knob its class reads
-        # No GEMMA4_DFLASH_SERVE_BLOCK (the block-output rail is gone). Bounded sliding ring as on the CI leg:
-        # an exact 1024-position ring has no room for the K + 1 verify rows, so 16 headroom blocks make it 2048.
+        # Bounded sliding ring as on the CI leg: an exact 1024-position ring has no room for the K + 1 verify
+        # rows, so 16 headroom blocks (x GEMMA4_PAGE_BLOCK_SIZE 64) make it 2048.
         GEMMA4_SPEC_RING_HEADROOM_BLOCKS: "16"
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -723,8 +719,8 @@ templates:
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
-        # bounded device rings stay off. Traced chunked prefill still carries one chunk
+        # The bounded sliding ring the dFlash drafter was measured on: one KV group, no vLLM-managed
+        # sliding KV and so no prefix caching. Traced chunked prefill still carries one chunk
         # table for all layers; keep it untraced until per-layer traced chunk tables land.
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "0"  # bounded ring: one KV group, no per-group tables
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # the sliding ring the dFlash drafter was measured on (O(window) ingest, V=5)
@@ -741,8 +737,8 @@ templates:
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
-        # The speculative contract classes ship synchronous in this phase (supports_async_decode off); the
-        # explicit negative flag is needed because False booleans are dropped.
+        # The dFlash contract class ships synchronous in this phase (supports_async_decode off, unlike the MTP
+        # class on the default entries); the explicit negative flag is needed because False booleans are dropped.
         no-async-scheduling: true
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
@@ -750,9 +746,7 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill. vLLM charges each sliding-window group
-        # window + max_num_batched_tokens per request, so the 65536 budget used
-        # elsewhere would reserve the whole context per request under hybrid groups.
+        # Token-chunked prefill at the MTP default entry's budget (16384/4096).
         enable_chunked_prefill: true
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
@@ -1210,7 +1204,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1000000000  # ~87 MB plain decode traces on an 8-chip text column; the QB2 multimodal entry warms more buckets, so 1 GB + 20 speculative records (4 shapes x 5 default rungs) x ~27 MB = ~627 MB (12B TP8 measured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1000000000  # ~131 MB plain decode traces (this multimodal entry warms more buckets than an 8-chip text column's ~87 MB) + 25 speculative records (5 shapes x 5 default rungs) x ~26 MB = ~780 MB in use (the measurement on GEMMA4_SPEC_EXTRA_SHAPES above); the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
@@ -1235,6 +1229,16 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: test_penalties
+        reason: 'test_penalties[presence_penalty-1.2-repeat_trap] fails the "must not reduce diversity" rule at
+          seed 1234 / temperature 0.1 although the penalty changes the output: the repeat-trap prompt asks for
+          a repetitive story and presence_penalty=1.2 yields a different repetitive story whose unique-token
+          ratio drops 0.0816 -> 0.0630, past the 90%-of-baseline rule (tt-shield run 41376385063 at metal
+          f0044ee454e); the other 8 penalty cases, all evals and the gated rows pass. The same case passed at
+          the previous metal head (41338095912): the fp32-prefill change moved a near-threshold ratio. Same
+          exemption as the 31B P300X2 entry and Llama-3.3-70B P300X2 (#3888). Measured 2026-11-02.'
     # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
     # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
     # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
@@ -1259,7 +1263,7 @@ templates:
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: +9..+25 % over the quiet plain entry), K=3 at 6-8 rows (conc 32: +11..+25 %); a K=1 record at 16 rows cannot pay, so above 8 rows per engine (conc > 32) the step is the plain decode
-        GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's, as measured on the QB2 block (the (1,3) at 1.56x the plain step is the record chosen most at one row); 5 shapes x 4 rungs x ~26 MB + ~110 MB plain traces of the 1.2 GB region
+        GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's, as measured on the QB2 block (the (1,3) at 1.56x the plain step is the record chosen most at one row); the trace budget is on trace_region_size below
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
         GEMMA4_ROPE_PERUSER_B1: "1"
@@ -1267,12 +1271,13 @@ templates:
         # (dropped 2026-10-30 with the 31B entry, see its comment).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
-        # 11 x 256K users per engine (44 per Galaxy); bfloat8_b KV halves pool bytes. Was
-        # 3047424: with the four decode graphs (1,4,8,32) that left no DRAM headroom and the
-        # 131072-prompt benchmark points failed with Out of Memory on a 60 MB buffer
-        # (2026-10-06 02:36, banks at 4.19 of 4.21 GB).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "2621440"  # 10 users x 256K per engine (was 11 = 2883584): the assistant drafter weights and the 1.2 GB trace region need ~1 GB of DRAM per chip that the 11-user pool left no room for (shield 12B Galaxy boot OOM at 98 % DRAM); 40 x 256K users across the four engines
+        # 10 x 256K users per engine (40 per Galaxy; per user 2x the 31B pool: 8 full layers x 8 KV heads
+        # vs 10 x 16); bfloat8_b KV halves pool bytes. The ceiling is DRAM: the four decode graphs
+        # (1,4,8,32), the assistant drafter weights and the 1.2 GB trace region need ~1 GB per chip, which
+        # an 11-user pool (2883584) left no room for (shield 12B Galaxy boot OOM at 98 % DRAM), and a
+        # 3047424 pool failed the 131072-prompt benchmark points with Out of Memory on a 60 MB buffer
+        # (banks at 4.19 of 4.21 GB).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2621440"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
@@ -1284,7 +1289,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1200000000  # ~320 MB plain decode traces (four warmup batches, measured on the Galaxy: 16 records filled 768 MB) + 20 speculative records (4 shapes x 5 default rungs) x ~27 MB = ~627 MB per engine (12B TP8 measured); the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1200000000  # ~320 MB plain decode traces (four warmup batches; measured on the Galaxy: 16 records filled 768 MB) + 20 speculative records at the 5 default rungs (no GEMMA4_SPEC_WIDTH_RUNGS here) x ~27 MB (12B TP8 measured) = ~860 MB per engine of the 1.2 GB region; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
         # On-device decode sampling required on TP so token ids >= 65536 are
         # reachable (host sampling only sees device 0's vocab shard).
@@ -3040,7 +3045,7 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1500000000  # the former 1.2 GB covered the B=1 + B=32 lean MoE decode traces alone; + 12 speculative records (4 shapes x 3 rungs, GEMMA4_SPEC_WIDTH_RUNGS) at an unmeasured MoE record size (~37 MB by the 31B estimate); ~9 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1500000000  # ~133 MB of B=1 + B=32 lean MoE decode traces + 20 speculative records (4 shapes x 5 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x 17-23 MB = ~510 MB in use (the measurement on GEMMA4_SPEC_WIDTH_RUNGS above); ~9 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
@@ -3132,18 +3137,19 @@ templates:
         # vLLM schedules the drafts, speculative_config below; plain lane decode is the fallback). On the lane
         # engine the table is PER LANE (per mesh column): the step's record is the smallest covering the
         # BUSIEST lane's drafting rows and one K serves every lane that step (one captured graph per
-        # column), so K=5 while no lane has more than 5 drafting rows, K=3 up to 8, K=1 up to 16, plain
-        # above (the busiest lane decides; a lighter lane takes its K). The plugin's draft cap is published
-        # flat at the folded max_num_seqs (128): the per-lane bands are applied by the model.
+        # column), so the busiest lane decides and a lighter lane takes its K; with the lone-row table
+        # below, any lane with more than one drafting row makes the step the plain lane decode. The
+        # plugin's draft cap is published flat at the folded max_num_seqs (128): the per-lane bands are
+        # applied by the model.
         GEMMA4_SPEC_K_BY_ROWS: "1:5"  # per lane: K=5 for a lone drafting row on its lane, plain above; measured 2026-10-31 vs the plain lanes entry with the same frames: 128K +11 %, prose c1 +19 %, c1/c8/c128/rate/prose c16 at parity (the 5:5,8:3,16:1 table lost 22 % at c8: a (5,5) record serving 2 rows per lane under synchronous lane verifies, TTFT 6.5 s)
         GEMMA4_SPEC_MAX_ROWS: "1"  # per lane: above one live row on a lane the step is the plain lane decode
-        # Records x rungs: 4 shapes x 5 rungs (2K..256K) + 4 seed traces beside the lane decode trace and the four
-        # lane prefill frames; the 26B QB2 measured 17-23 MB per record (4 shapes x 5 rungs ~510 MB in use with its
-        # decode traces), the Galaxy column adds the lane gather/scatter collectives per layer. The boot log's
-        # "[spec-serving] plan: ... of trace region" and "[spec-serving] captured ... MB in use" lines are the
-        # check against the 1.2 GB region below; a TT_FATAL at the capture names the fix (fewer rungs: 4 drops
-        # the 2K rung, ~-110 MB; 3 drops 8K too).
-        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # 1 shape x 5 rungs (2K..256K) + 1 seed trace = 5 records (~90 MB) beside the lane decode trace and six lane prefill frames in the 1.2 GB region (boot: "[spec-serving] plan: 5 records")
+        # Records x rungs: with the lone-row table above, 1 shape x 5 rungs (2K..256K) + 1 seed trace = 5 records
+        # (~90 MB; the 26B QB2 measured 17-23 MB per record, the Galaxy column adds the lane gather/scatter
+        # collectives per layer) beside the lane decode trace and the eight lane prefill frames
+        # (GEMMA4_LANE_PREFILL_TRACE_BUCKETS) in the 1.2 GB region below. The boot log's "[spec-serving] plan:
+        # ... of trace region" ("plan: 5 records") and "[spec-serving] captured ... MB in use" lines are the
+        # check; a TT_FATAL at the capture names the fix (fewer rungs: 4 drops the 2K rung, 3 drops 8K too).
+        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # the full verify-width ladder (2K..256K); the record budget is in the comment above
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # KV pool PER LANE (the plugin applies it to every lane un-divided; vLLM's "Maximum concurrency"

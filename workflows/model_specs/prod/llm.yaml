@@ -2665,19 +2665,6 @@ templates:
           # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
-      known_issues:
-        - workflow_type: SPEC_TESTS
-          task_name: test_penalties
-          reason: 'test_penalties[presence_penalty-1.2-repeat_trap] fails the "must not
-            reduce diversity" rule at seed 1234 / temperature 0.1 although the penalty
-            changes the output: the repeat-trap prompt asks for a repetitive story and
-            presence_penalty=1.2 yields a different repetitive story whose unique-token
-            ratio drops 0.0816 -> 0.0630, past the 90%-of-baseline rule (tt-shield run
-            41376385063 at metal f0044ee454e); the other 8 penalty cases, all evals and
-            the gated rows pass. The same case passed at the previous metal head
-            (41338095912): the fp32-prefill change moved a near-threshold ratio. Same
-            exemption as the 31B P300X2 entry and Llama-3.3-70B P300X2 (#3888).
-            Measured 2026-11-02.'
       # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
       # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
       # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
