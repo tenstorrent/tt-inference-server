@@ -115,13 +115,15 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
-# install is delegated to its own docs/install-vllm-tt.sh rather than restated here
+# install is delegated to its own docs/install-vllm-tt.sh rather than restated here.
+# A plugin ref that ships docs/install-vllm-omni.sh also gets vLLM-Omni.
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
+    && if [ -f docs/install-vllm-omni.sh ]; then source docs/install-vllm-omni.sh; fi \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 

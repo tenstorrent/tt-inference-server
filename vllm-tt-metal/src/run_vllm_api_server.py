@@ -1297,6 +1297,43 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+# vLLM-Omni applies any other engine argument on its command line to every stage, over
+# the per-stage values in the deploy config, so an Omni server gets only these.
+OMNI_SERVER_ARGS = {
+    "host",
+    "port",
+    "served_model_name",
+    "stage_init_timeout",
+    "init_timeout",
+    "trust_remote_code",
+}
+
+
+def omni_deploy_config(default_vllm_args) -> Optional[str]:
+    """The deploy config of a spec served by vLLM-Omni, resolved against the plugin
+    checkout when relative; None for a plain vLLM spec."""
+    for key, value in default_vllm_args.items():
+        if _normalize_vllm_arg_name(key) == "deploy_config":
+            path = Path(value)
+            if path.is_absolute():
+                return str(path)
+            return str(Path(os.environ["vllm_tt_plugin_dir"]) / path)
+    return None
+
+
+def set_omni_sys_argv(args, remaining_sys_argv, default_vllm_args, deploy_config):
+    """sys.argv for `vllm serve <model> --omni`, from the spec's server arguments."""
+    server_args = {
+        key: value
+        for key, value in default_vllm_args.items()
+        if _normalize_vllm_arg_name(key) in OMNI_SERVER_ARGS
+    }
+    server_args["deploy-config"] = deploy_config
+    set_vllm_sys_argv(args, remaining_sys_argv, server_args)
+    sys.argv[1:1] = ["serve", default_vllm_args["model"], "--omni"]
+    logger.info(f"vLLM-Omni command:\n{shlex.join(sys.argv)}")
+
+
 def absorb_plugin_config_into_additional_config(default_vllm_args):
     """Translate the fork-only ``plugin_config`` into ``additional_config['tt']``.
 
@@ -1478,6 +1515,11 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    deploy_config = omni_deploy_config(default_vllm_args)
+    if deploy_config:
+        set_omni_sys_argv(args, remaining_sys_argv, default_vllm_args, deploy_config)
+        runpy.run_module("vllm_omni.entrypoints.cli.main", run_name="__main__")
+        return
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)

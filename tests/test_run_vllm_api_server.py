@@ -1655,3 +1655,50 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+def test_an_omni_spec_serves_through_vllm_omni_with_server_args_only(
+    monkeypatch, run_vllm_api_server_module
+):
+    """vLLM-Omni applies engine arguments to every stage, so only server arguments and
+    the deploy config reach its command line."""
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    monkeypatch.setenv("vllm_tt_plugin_dir", "/plugin")
+    default_vllm_args = {
+        "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "block_size": "64",
+        "max_model_len": "65536",
+        "additional_config": '{"tt": {}}',
+        "deploy-config": "deploy/tts.yaml",
+        "port": 8000,
+        "trust-remote-code": True,
+        "stage-init-timeout": "600",
+    }
+
+    deploy_config = run_vllm_api_server_module.omni_deploy_config(default_vllm_args)
+    run_vllm_api_server_module.set_omni_sys_argv(
+        argparse.Namespace(service_port=7001), [], default_vllm_args, deploy_config
+    )
+
+    assert sys.argv == [
+        "run_vllm_api_server.py",
+        "serve",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "--omni",
+        "--port",
+        "7001",
+        "--trust-remote-code",
+        "--stage-init-timeout",
+        "600",
+        "--deploy-config",
+        "/plugin/deploy/tts.yaml",
+    ]
+
+
+def test_a_plain_vllm_spec_has_no_deploy_config(run_vllm_api_server_module):
+    assert (
+        run_vllm_api_server_module.omni_deploy_config(
+            {"model": "m", "max_model_len": "8192"}
+        )
+        is None
+    )

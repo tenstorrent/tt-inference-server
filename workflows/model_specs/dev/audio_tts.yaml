@@ -156,6 +156,35 @@ templates:
       default_impl: true
   status: EXPERIMENTAL
 
+# Qwen3-TTS on vLLM-Omni (`vllm serve --omni`), PoC: the talker stage on one chip
+# streams codec chunks to the Code2Wav stage on another. The deploy config, from the
+# vllm-tt-plugin ref, sets each stage's engine arguments; the image needs Ubuntu 24.04
+# (Python 3.12) for vLLM-Omni 0.30.0. tenstorrent/vllm-tt-plugin#180
+- weights:
+    - Qwen/Qwen3-TTS-12Hz-1.7B-Base
+  impl: qwen3_tts
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: TEXT_TO_SPEECH
+  inference_engine: VLLM
+  # Each stage captures its own traces as it starts.
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 2048  # the talker stage's max_model_len
+      default_impl: true
+      vllm_args:
+        deploy-config: poc/qwen3-tts-omni/deploy/tt_qwen3_tts.yaml
+        trust-remote-code: true
+        stage-init-timeout: "600"
+        init-timeout: "900"
+      env_vars:
+        # Two chips of the Galaxy, each opened as an N150.
+        TT_VISIBLE_DEVICES: "0,1"
+        MESH_DEVICE: N150
+  status: EXPERIMENTAL
+
 - weights:
     - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
   impl: qwen3_tts
