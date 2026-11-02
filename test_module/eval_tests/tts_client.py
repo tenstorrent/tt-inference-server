@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Request/response adapters for the TTS evals (media_server, qwen3_cpp)."""
+"""Request/response adapters for the TTS evals (media_server, qwen3_cpp, vllm_omni)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ DEFAULT_API_KEY = "your-secret-key"
 
 TTS_API_MEDIA_SERVER = "media_server"
 TTS_API_QWEN3_CPP = "qwen3_cpp"
+TTS_API_VLLM_OMNI = "vllm_omni"
 
 QWEN3_RELEASES = ("base", "custom_voice", "voice_design")
 # in_context also puts the clip's codec tokens and transcript in the prompt.
@@ -209,7 +210,80 @@ class MediaServerTTSClient(TTSClient):
         return "media_server (seeded JSON, base64 reference_audio)"
 
 
-class Qwen3CppTTSClient(TTSClient):
+class StreamedWavTTSClient(TTSClient):
+    """A server that answers with a PCM16 WAV streamed under a placeholder-size header."""
+
+    @abstractmethod
+    def build_request(self, text: str, voice: Optional[VoiceClip]) -> dict:
+        """Return ``aiohttp`` post kwargs (``json=`` or ``data=``) for one request."""
+
+    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
+        request = self.build_request(text, voice)
+        timeout = aiohttp.ClientTimeout(total=timeout_s)
+        async with aiohttp.ClientSession(
+            headers=auth_headers(), timeout=timeout
+        ) as session:
+            async with session.post(url, **request) as response:
+                if response.status != 200:
+                    body = (await response.text())[:300]
+                    logger.error(
+                        f"Synthesis failed (clone={voice is not None}): "
+                        f"HTTP {response.status}: {body}"
+                    )
+                    return None
+                body = await response.read()
+        try:
+            audio = decode_streamed_wav(body)
+        except ValueError as e:
+            logger.error(f"Unreadable WAV from the server: {e}")
+            return None
+        if audio.seconds < MIN_AUDIO_SECONDS:
+            # The stream ended early: the server failed after the 200.
+            logger.error(
+                f"Server returned {audio.seconds:.2f}s of audio "
+                f"(< {MIN_AUDIO_SECONDS}s); counting the sample as failed"
+            )
+            return None
+        return audio
+
+    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
+        # TTFT is the first byte after the WAV header: some servers send the header
+        # before any audio is ready.
+        request = self.build_request(text, voice)
+        timeout = aiohttp.ClientTimeout(total=timeout_s)
+        start = time.monotonic()
+        body = bytearray()
+        arrivals = []
+        async with aiohttp.ClientSession(
+            headers=auth_headers(), timeout=timeout
+        ) as session:
+            async with session.post(url, **request) as response:
+                if response.status != 200:
+                    error_text = (await response.text())[:300]
+                    logger.error(
+                        f"TTS request failed with status {response.status}: {error_text}"
+                    )
+                    return TimedSynthesis(False)
+                async for chunk in response.content.iter_any():
+                    body += chunk
+                    arrivals.append((len(body), time.monotonic()))
+        elapsed = time.monotonic() - start
+        try:
+            sample_rate, channels, offset = parse_pcm16_wav_header(bytes(body))
+        except ValueError as e:
+            logger.error(f"Unreadable WAV from the server: {e}")
+            return TimedSynthesis(False)
+        seconds = (len(body) - offset) // (2 * channels) / float(sample_rate)
+        if seconds < MIN_AUDIO_SECONDS:
+            logger.error(
+                f"Server returned {seconds:.2f}s of audio (< {MIN_AUDIO_SECONDS}s)"
+            )
+            return TimedSynthesis(False)
+        first_audio = next(t for size, t in arrivals if size > offset)
+        return TimedSynthesis(True, elapsed, (first_audio - start) * 1000, seconds)
+
+
+class Qwen3CppTTSClient(StreamedWavTTSClient):
     """Qwen3-TTS on the C++ media server: JSON or multipart in, streamed WAV out."""
 
     def __init__(
@@ -275,70 +349,6 @@ class Qwen3CppTTSClient(TTSClient):
         )
         return {"data": form}
 
-    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
-        request = self.build_request(text, voice)
-        timeout = aiohttp.ClientTimeout(total=timeout_s)
-        async with aiohttp.ClientSession(
-            headers=auth_headers(), timeout=timeout
-        ) as session:
-            async with session.post(url, **request) as response:
-                if response.status != 200:
-                    body = (await response.text())[:300]
-                    logger.error(
-                        f"Synthesis failed (clone={voice is not None}): "
-                        f"HTTP {response.status}: {body}"
-                    )
-                    return None
-                body = await response.read()
-        try:
-            audio = decode_streamed_wav(body)
-        except ValueError as e:
-            logger.error(f"Unreadable WAV from the server: {e}")
-            return None
-        if audio.seconds < MIN_AUDIO_SECONDS:
-            # The stream ended early: the server failed after the 200.
-            logger.error(
-                f"Server returned {audio.seconds:.2f}s of audio "
-                f"(< {MIN_AUDIO_SECONDS}s); counting the sample as failed"
-            )
-            return None
-        return audio
-
-    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
-        # TTFT is the first byte after the WAV header: the header comes at once, audio only when the utterance is done.
-        request = self.build_request(text, voice)
-        timeout = aiohttp.ClientTimeout(total=timeout_s)
-        start = time.monotonic()
-        body = bytearray()
-        arrivals = []
-        async with aiohttp.ClientSession(
-            headers=auth_headers(), timeout=timeout
-        ) as session:
-            async with session.post(url, **request) as response:
-                if response.status != 200:
-                    error_text = (await response.text())[:300]
-                    logger.error(
-                        f"TTS request failed with status {response.status}: {error_text}"
-                    )
-                    return TimedSynthesis(False)
-                async for chunk in response.content.iter_any():
-                    body += chunk
-                    arrivals.append((len(body), time.monotonic()))
-        elapsed = time.monotonic() - start
-        try:
-            sample_rate, channels, offset = parse_pcm16_wav_header(bytes(body))
-        except ValueError as e:
-            logger.error(f"Unreadable WAV from the server: {e}")
-            return TimedSynthesis(False)
-        seconds = (len(body) - offset) // (2 * channels) / float(sample_rate)
-        if seconds < MIN_AUDIO_SECONDS:
-            logger.error(
-                f"Server returned {seconds:.2f}s of audio (< {MIN_AUDIO_SECONDS}s)"
-            )
-            return TimedSynthesis(False)
-        first_audio = next(t for size, t in arrivals if size > offset)
-        return TimedSynthesis(True, elapsed, (first_audio - start) * 1000, seconds)
-
     def describe(self):
         voice = {
             "base": f"{self.clone_mode} clone",
@@ -347,6 +357,51 @@ class Qwen3CppTTSClient(TTSClient):
         }[self.release]
         return (
             f"qwen3_cpp release={self.release} ({voice}), "
+            f"language={self.language or 'server default'}"
+        )
+
+
+class VllmOmniTTSClient(StreamedWavTTSClient):
+    """Qwen3-TTS Base on vLLM-Omni's /v1/audio/speech: JSON in, streamed WAV out."""
+
+    can_clone = True
+    has_default_voice = False
+
+    def __init__(
+        self, *, language: Optional[str] = None, clone_mode: str = "voice_only"
+    ):
+        if clone_mode not in QWEN3_CLONE_MODES:
+            raise ValueError(
+                f"clone_mode must be one of {QWEN3_CLONE_MODES}, got {clone_mode!r}"
+            )
+        self.language = language
+        self.clone_mode = clone_mode
+
+    def build_request(self, text: str, voice: Optional[VoiceClip]) -> dict:
+        if voice is None:
+            raise ValueError("a Base deployment cannot speak without a clip")
+        fields = {
+            "input": text,
+            "task_type": "Base",
+            "ref_audio": "data:audio/wav;base64,"
+            + base64.b64encode(voice.wav_bytes).decode("utf-8"),
+            "response_format": "wav",
+            "stream": True,
+            "stream_format": "audio",
+        }
+        if self.language:
+            fields["language"] = self.language
+        if self.clone_mode == "in_context":
+            if not voice.transcript:
+                raise ValueError("an in-context clone needs the clip's transcript")
+            fields["ref_text"] = voice.transcript
+        else:
+            fields["x_vector_only_mode"] = True
+        return {"json": fields}
+
+    def describe(self):
+        return (
+            f"vllm_omni Base ({self.clone_mode} clone), "
             f"language={self.language or 'server default'}"
         )
 
@@ -364,8 +419,14 @@ def make_tts_client(targets: Mapping[str, Any]) -> TTSClient:
             description=targets.get("description"),
             clone_mode=targets.get("clone_mode", "voice_only"),
         )
+    if api == TTS_API_VLLM_OMNI:
+        return VllmOmniTTSClient(
+            language=targets.get("language"),
+            clone_mode=targets.get("clone_mode", "voice_only"),
+        )
     raise ValueError(
-        f"Unknown tts_api {api!r}; known: {TTS_API_MEDIA_SERVER}, {TTS_API_QWEN3_CPP}"
+        f"Unknown tts_api {api!r}; known: {TTS_API_MEDIA_SERVER}, "
+        f"{TTS_API_QWEN3_CPP}, {TTS_API_VLLM_OMNI}"
     )
 
 
@@ -430,11 +491,14 @@ __all__ = [
     "MIN_AUDIO_SECONDS",
     "MediaServerTTSClient",
     "Qwen3CppTTSClient",
+    "StreamedWavTTSClient",
     "SynthesizedAudio",
     "TTSClient",
     "TTS_API_MEDIA_SERVER",
     "TTS_API_QWEN3_CPP",
+    "TTS_API_VLLM_OMNI",
     "TimedSynthesis",
+    "VllmOmniTTSClient",
     "VoiceClip",
     "auth_headers",
     "decode_streamed_wav",

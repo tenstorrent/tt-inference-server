@@ -11098,6 +11098,8 @@ _eval_config_list = [
             ),
         ],
     ),
+    # GALAXY is the vLLM-Omni deployment (two chips, vllm_omni client); the others are
+    # the C++ media server. Same gates on both.
     # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145 / 4.420 (Base / CustomVoice / VoiceDesign).
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
@@ -11124,6 +11126,20 @@ _eval_config_list = [
                     "secs_floor": 0.90,
                     "margin_threshold": 0.06,
                 },
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "clone_mode": "voice_only",
+                            "language": "English",
+                            "min_reference_seconds": 3,
+                            "max_reference_seconds": 12,
+                            "secs_baseline": "cross_speaker",
+                            "secs_floor": 0.90,
+                            "margin_threshold": 0.06,
+                        }
+                    }
+                },
             ),
             EvalTask(
                 task_name="tts_naturalness",
@@ -11144,6 +11160,18 @@ _eval_config_list = [
                     "min_reference_seconds": 3,
                     "max_reference_seconds": 12,
                     "utmos_threshold": 4.2,
+                },
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "clone_mode": "voice_only",
+                            "language": "English",
+                            "min_reference_seconds": 3,
+                            "max_reference_seconds": 12,
+                            "utmos_threshold": 4.2,
+                        }
+                    }
                 },
             ),
         ],

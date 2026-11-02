@@ -19,6 +19,7 @@ from test_module.eval_tests.tts_client import (
     MediaServerTTSClient,
     Qwen3CppTTSClient,
     SynthesizedAudio,
+    VllmOmniTTSClient,
     VoiceClip,
     decode_streamed_wav,
     make_tts_client,
@@ -106,6 +107,13 @@ class TestMakeClient:
         )
         assert not client.can_clone and client.has_default_voice
 
+    def test_vllm_omni_clones_and_has_no_default_voice(self):
+        client = make_tts_client({"tts_api": "vllm_omni", "language": "English"})
+        assert isinstance(client, VllmOmniTTSClient)
+        assert client.can_clone and not client.has_default_voice
+        with pytest.raises(ValueError, match="clone_mode"):
+            make_tts_client({"tts_api": "vllm_omni", "clone_mode": "icl"})
+
     def test_unknown_api_and_release_are_rejected(self):
         with pytest.raises(ValueError, match="tts_api"):
             make_tts_client({"tts_api": "grpc"})
@@ -157,6 +165,38 @@ class TestQwen3Requests:
         client = Qwen3CppTTSClient("base", clone_mode="in_context")
         with pytest.raises(ValueError, match="transcript"):
             client.build_request("hi", VoiceClip(b"RIFF"))
+
+
+class TestVllmOmniRequests:
+    CLIP = VoiceClip(b"RIFF....WAVE", transcript="what the clip says")
+    DATA_URL = "data:audio/wav;base64,UklGRi4uLi5XQVZF"
+
+    def test_voice_only_clone_streams_a_wav_from_an_x_vector(self):
+        request = VllmOmniTTSClient(language="English").build_request("hi", self.CLIP)
+        assert request == {
+            "json": {
+                "input": "hi",
+                "task_type": "Base",
+                "ref_audio": self.DATA_URL,
+                "response_format": "wav",
+                "stream": True,
+                "stream_format": "audio",
+                "language": "English",
+                "x_vector_only_mode": True,
+            }
+        }
+
+    def test_in_context_clone_sends_the_transcript_instead(self):
+        client = VllmOmniTTSClient(clone_mode="in_context")
+        fields = client.build_request("hi", self.CLIP)["json"]
+        assert fields["ref_text"] == "what the clip says"
+        assert "x_vector_only_mode" not in fields
+        with pytest.raises(ValueError, match="transcript"):
+            client.build_request("hi", VoiceClip(b"RIFF"))
+
+    def test_base_cannot_speak_without_a_clip(self):
+        with pytest.raises(ValueError, match="without a clip"):
+            VllmOmniTTSClient().build_request("hi", None)
 
 
 class _FakeResponse:
@@ -229,6 +269,23 @@ class TestQwen3Synthesize:
     def test_http_400_is_a_failed_sample(self, fake_server):
         fake_server(400, b'{"error": "speaker is required"}')
         assert self._run(Qwen3CppTTSClient("custom_voice", speaker="ryan")) is None
+
+
+class TestVllmOmniSynthesize:
+    def test_streamed_audio_is_decoded(self, fake_server):
+        n = int(24000 * (MIN_AUDIO_SECONDS + 0.1))
+        calls = fake_server(200, _wav_header() + _pcm(np.zeros(n)))
+        audio = asyncio.run(
+            VllmOmniTTSClient().synthesize(
+                "http://x/v1/audio/speech",
+                "hi",
+                seed=3,
+                voice=TestVllmOmniRequests.CLIP,
+            )
+        )
+        assert audio is not None and audio.sample_rate == 24000
+        assert len(audio.samples) == n
+        assert calls[0][1]["json"]["stream"] is True
 
 
 class _JsonResponse(_FakeResponse):

@@ -19,6 +19,7 @@ from report_module.schema import Block
 
 from workflow_module import accept_blocks
 from workflow_module.context_helpers import get_num_calls
+from workflow_module.target_pack import get_target_pack
 
 from .._test_common import ReportCheckTypes, block_id, sweep_envelope
 from ..context import HardwareRequirement, MediaContext, require_health
@@ -67,10 +68,13 @@ class _PlaceholderTask:
 _PLACEHOLDER_TASK = _PlaceholderTask()
 
 
-def _resolve_eval_tasks(ctx: MediaContext) -> list:
-    """Return all eval tasks for this model ([] if none is registered)."""
-    tasks = getattr(ctx.all_params, "tasks", None)
-    return list(tasks) if tasks else []
+def resolve_eval_tasks(ctx: MediaContext) -> list:
+    """Return all eval tasks for this model with ``ctx.device``'s overrides applied
+    ([] if none is registered)."""
+    tasks = getattr(ctx.all_params, "tasks", None) or []
+    pack = get_target_pack()
+    device = getattr(ctx, "device", None)
+    return [pack.resolve_eval_task_for_device(task, device) for task in tasks]
 
 
 # EVALS_META injects add_bos_token for lm-eval; it is not a TTS eval target.
@@ -437,7 +441,7 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
 
-    tasks = _resolve_eval_tasks(ctx)
+    tasks = resolve_eval_tasks(ctx)
     if not tasks:
         reason = (
             f"No EvalConfig registered for {ctx.model_spec.model_name!r} "

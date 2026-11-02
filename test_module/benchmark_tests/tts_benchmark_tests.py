@@ -38,6 +38,7 @@ from ..eval_tests.tts_client import (
     VoiceClip,
     make_tts_client,
 )
+from ..eval_tests.tts_eval_tests import resolve_eval_tasks
 from ..test_status import TtsTestStatus
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def _tts_test_text(ctx: MediaContext) -> str:
 
 def _tts_client_targets(ctx: MediaContext) -> dict:
     """Client settings (``tts_api`` etc.) from the model's eval tasks, else {}."""
-    for task in getattr(ctx.all_params, "tasks", None) or []:
+    for task in resolve_eval_tasks(ctx):
         kwargs = getattr(task, "model_kwargs", None) or {}
         if "tts_api" in kwargs:
             return dict(kwargs)

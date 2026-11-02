@@ -154,6 +154,17 @@ class TestClientTargets:
         )
         assert bool(client.description) == described
 
+    def test_the_galaxy_deployment_speaks_to_vllm_omni(self):
+        from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
+
+        repo = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+        ctx = SimpleNamespace(
+            all_params=ALL_EVAL_CONFIGS[repo], device=SimpleNamespace(name="GALAXY")
+        )
+        client = tts_client.make_tts_client(bench._tts_client_targets(ctx))
+        assert isinstance(client, tts_client.VllmOmniTTSClient)
+        assert (client.clone_mode, client.language) == ("voice_only", "English")
+
 
 class TestMediaServerBenchmark:
     def test_request_and_metrics_are_unchanged(self, server, clock):

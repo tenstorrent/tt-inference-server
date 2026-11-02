@@ -7039,6 +7039,20 @@
             }
         ]
     },
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base": {
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 10,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "rtr": 1.0
+                    }
+                }
+            }
+        ]
+    },
     "gemma-4-31B-it": {
         "p300x2": [
             {
