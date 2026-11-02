@@ -27,6 +27,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from llm_module.agentic.local_datasets import local_task_pattern
+from llm_module.agentic.preflight_evidence import collect_disk_evidence, public_tls_control
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
     make_terminal_bench_probe,
@@ -130,6 +131,7 @@ class HarborRunConfig:
     # allowlist, for tasks that block agent egress
     # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
     allow_agent_endpoint: bool = False
+    collect_preflight_evidence: bool = False
     # Pulled before ``harbor run`` on the docker environment (see
     # ``prepull_images``).
     prepull_images: list[str] = field(default_factory=list)
@@ -488,6 +490,11 @@ def prepull_images(
 
 def run(config: HarborRunConfig) -> int:
     harbor_exec = harbor_python(config).parent / "harbor"
+    collect_evidence = config.collect_preflight_evidence
+    if collect_evidence:
+        collect_disk_evidence(config.jobs_dir, "after_model_ready")
+        if config.dataset == "gemma4-preflight":
+            public_tls_control(config.jobs_dir)
 
     if config.prepull_images and config.environment_type == "docker":
         prepull_images(
@@ -583,6 +590,10 @@ def run(config: HarborRunConfig) -> int:
         enforce_deadlines=config.enforce_agent_deadline,
         log=logger,
     )
+    if collect_evidence:
+        collect_disk_evidence(config.jobs_dir, "after_tasks")
+        if config.dataset == "gemma4-preflight":
+            public_tls_control(config.jobs_dir, "after_tasks")
     # A watchdog timeout can still leave useful per-trial diagnostics in
     # result.json. Annotate that file, but preserve rc=124: Harbor computes
     # accuracy over completed trials, so treating a partial file as success can

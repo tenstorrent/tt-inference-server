@@ -800,6 +800,10 @@ def generate_docker_run_command(
             ]
         # fmt: on
 
+    owner = os.environ.get("TT_SHIELD_JOB_OWNER")
+    if owner:
+        docker_command.extend(["--label", f"io.tenstorrent.shield.job-owner={owner}"])
+
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
