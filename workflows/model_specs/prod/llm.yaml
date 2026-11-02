@@ -3409,3 +3409,51 @@ templates:
 
 
 
+
+# Fresh autoport: serving settings measured by this bringup.
+- weights:
+  - google/gemma-4-31B-it
+  tt_metal_commit: d80d9482a418cf04ddcbeecf6adb67010d3091e6
+  version: 0.26.0
+  impl: gemma4_fresh_autoport
+  inference_engine: VLLM
+  min_disk_gb: 82
+  min_ram_gb: 77.5
+  model_type: LLM
+  supported_modalities:
+  - text
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 262144
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P300x2
+      OMP_NUM_THREADS: '8'
+      GEMMA4_ALLOW_HOST_SAMPLING: '1'
+      TT_MODEL_CLASS_OVERRIDES: TTGemma4ForConditionalGeneration=models.autoports.google_gemma_4_31b_it.tt.generator_vllm:Gemma4ForCausalLM
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_mode: decode_only
+      trace_region_size: 134217728
+      fabric_config: FABRIC_1D_RING
+      seeded_sampling_policy: auto
+    vllm_args:
+      revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+      tokenizer-revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+      max_num_seqs: '32'
+      block_size: '32'
+      max_num_batched_tokens: '4096'
+      enable-prefix-caching: true
+      enable-chunked-prefill: true
+      language-model-only: true
+      reasoning-parser: gemma4
+      default-chat-template-kwargs: '{"enable_thinking":true}'
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4

@@ -39,6 +39,7 @@ from llm_module.agentic.deepswe import DEEPSWE_DATASET, generate_deepswe
 # all (DeepSWE) is checked out here too.
 _GENERATORS: Dict[str, Callable[[Path], Path]] = {
     DEEPSWE_DATASET: generate_deepswe,
+    "gemma4-preflight": lambda python: Path(__file__).resolve().parents[2] / "reference_config/evals/gemma4_preflight",
 }
 
 

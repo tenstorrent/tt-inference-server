@@ -247,6 +247,7 @@ release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_
 # Initialize flags for whether to build each image locally.
 build_dev_image=true
 build_release_image=true
+pushed_tags=()
 
 if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
     build=true
@@ -341,7 +342,23 @@ generate_model_specs_json()
             )
         fi
 
-        docker build \
+        # Registry export avoids unpacking the completed image into containerd
+        # before uploading it. Non-push builds keep the local-image contract.
+        BUILD_COMMAND=(docker build)
+        EXPORT_ARGS=()
+        push_dev_direct=false
+        if [ "$push_images" = true ] && { [ "$force_push" = true ] || ! check_image_not_exists_remote "$dev_image_tag"; }; then
+            push_dev_direct=true
+            BUILD_COMMAND=(docker buildx build)
+            EXPORT_ARGS+=(--push)
+            if [ "$release" = true ] && [ "$force_push" != true ] && check_image_not_exists_remote "$release_image_tag"; then
+                build_release_image=false
+            fi
+            if [ "$release" = true ] && [ "$build_release_image" = true ]; then
+                EXPORT_ARGS+=(-t "$release_image_tag")
+            fi
+        fi
+        "${BUILD_COMMAND[@]}" "${EXPORT_ARGS[@]}" \
         -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
@@ -350,6 +367,15 @@ generate_model_specs_json()
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
+        if [ "$push_dev_direct" = true ]; then
+            docker manifest inspect "$dev_image_tag" >/dev/null
+            pushed_tags+=("$dev_image_tag")
+            if [ "$release" = true ] && [ "$build_release_image" = true ]; then
+                docker manifest inspect "$release_image_tag" >/dev/null
+                pushed_tags+=("$release_image_tag")
+                build_release_image=false
+            fi
+        fi
         echo "✅ built image: ${dev_image_tag}"
     else
         echo "skipping, build_dev_image=${build_dev_image}"
@@ -359,7 +385,14 @@ generate_model_specs_json()
     # NOTE: release image is only tagged during release flow
     if [ "$release" = true ] && [ "$build_release_image" = true ]; then
         echo "tagging: ${dev_image_tag} -> ${release_image_tag}"
-        docker tag "${dev_image_tag}" "${release_image_tag}"
+        if [ "$push_images" = true ] && ! check_image_not_exists_local "$dev_image_tag"; then
+            # A cached remote dev image need not be downloaded just to add a tag.
+            docker buildx imagetools create --tag "$release_image_tag" "$dev_image_tag"
+            docker manifest inspect "$release_image_tag" >/dev/null
+            pushed_tags+=("$release_image_tag")
+        else
+            docker tag "${dev_image_tag}" "${release_image_tag}"
+        fi
     else
         echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi
@@ -401,6 +434,16 @@ if [ "${push_images}" = true ]; then
             continue
         fi
 
+        already_pushed=false
+        for pushed_tag in "${pushed_tags[@]}"; do
+            if [ "$image_tag" = "$pushed_tag" ]; then
+                already_pushed=true
+                break
+            fi
+        done
+        if [ "$already_pushed" = true ]; then
+            continue
+        fi
         if should_push_image "${image_tag}"; then
             echo "Pushing ${image_tag} ..."
             docker push "${image_tag}"
