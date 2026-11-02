@@ -112,28 +112,25 @@ components:
             without a schema change.
         aspect_ratio:
           type: string
-          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          enum: ["1:1", "16:9", "9:16", "2:3"]
           default: "1:1"
           description: |
-            Output shape. Each output reports its exact size.
+            Output shape. Only these for now; more can be allowed later without
+            a schema change. Each output reports its exact size.
         size:
           type: string
-          enum: [1K, 2K]
+          enum: [2K]
           default: 2K
           description: |
-            Size tier. With `aspect_ratio`, it fixes the output size. `1K` uses
-            the model's native sizes of about 1 MP; `2K` has a long side of 2048, the
-            open model's maximum (256–2048 per side, multiples of 16):
+            Size tier: a long side of 2048, the open model's maximum. Only `2K`
+            for now; `1K` can be allowed later without a schema change.
 
-            | `aspect_ratio` | `1K`      | `2K`      |
-            | -------------- | --------- | --------- |
-            | `1:1`          | 1024×1024 | 2048×2048 |
-            | `16:9`         | 1280×720  | 2048×1152 |
-            | `9:16`         | 720×1280  | 1152×2048 |
-            | `4:3`          | 1152×864  | 2048×1536 |
-            | `3:4`          | 864×1152  | 1536×2048 |
-            | `3:2`          | 1248×832  | 2048×1360 |
-            | `2:3`          | 832×1248  | 1360×2048 |
+            | `aspect_ratio` | `2K`      |
+            | -------------- | --------- |
+            | `1:1`          | 2048×2048 |
+            | `16:9`         | 2048×1152 |
+            | `9:16`         | 1152×2048 |
+            | `2:3`          | 1360×2048 |
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

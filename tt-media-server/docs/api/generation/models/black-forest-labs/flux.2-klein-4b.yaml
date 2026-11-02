@@ -24,7 +24,7 @@ paths:
               $ref: "#/components/schemas/Flux2klein4bRequest"
             example:
               prompt: a lighthouse on a cliff, golden hour
-              aspect_ratio: "16:9"
+              aspect_ratio: "1:1"
               size: 2K
               format: webp
       responses:
@@ -67,11 +67,13 @@ components:
           minLength: 1
         images:
           type: array
-          maxItems: 4
+          maxItems: 1
           items:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
-            Images to edit or draw from. Omitted = text to image.
+            Image to edit or draw from: 0 or 1 for now; a list so more can be
+            allowed later without a schema change. Omitted = text to image.
+            Resized and center-cropped to the output size.
         count:
           type: integer
           minimum: 1
@@ -82,10 +84,11 @@ components:
             without a schema change.
         aspect_ratio:
           type: string
-          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          enum: ["1:1"]
+          default: "1:1"
           description: |
-            Output shape. Omitted = the ratio here closest to the first image's,
-            or `1:1` without images. Each output reports its exact size.
+            Output shape. Only `1:1` for now; more can be allowed later without
+            a schema change. Each output reports its exact size.
         size:
           type: string
           enum: [1K, 2K]
@@ -93,15 +96,9 @@ components:
           description: |
             Size tier. With `aspect_ratio`, it fixes the output size:
 
-            | `aspect_ratio` | `1K` (about 1 MP) | `2K` (about 4 MP) |
-            | -------------- | ----------------- | ----------------- |
-            | `1:1`          | 1024×1024         | 2048×2048         |
-            | `16:9`         | 1376×768          | 2752×1536         |
-            | `9:16`         | 768×1376          | 1536×2752         |
-            | `4:3`          | 1184×896          | 2368×1792         |
-            | `3:4`          | 896×1184          | 1792×2368         |
-            | `3:2`          | 1248×832          | 2496×1664         |
-            | `2:3`          | 832×1248          | 1664×2496         |
+            | `aspect_ratio` | `1K`      | `2K`      |
+            | -------------- | --------- | --------- |
+            | `1:1`          | 1024×1024 | 2048×2048 |
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:
