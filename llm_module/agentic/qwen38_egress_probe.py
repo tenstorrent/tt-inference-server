@@ -2,6 +2,8 @@
 """Application-layer denial proof for Harbor's transparent GOST boundary."""
 import datetime
 import json
+import hashlib
+import re
 import shlex
 from urllib.parse import urlsplit
 
@@ -33,6 +35,22 @@ if sys.argv[1]:
  except Exception as e:out['inference_health_error_type']=type(e).__name__
 print(json.dumps(out))
 '''
+
+
+class IsolationAuditError(RuntimeError):
+    def __init__(self, message, diagnostic):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+def inference_probe_endpoint(connection):
+    # Native/custom MiniSwe configs retain their endpoint in user-supplied
+    # execution state even when the common configurable/inferred URL is None.
+    endpoint = connection.execution_base_url or connection.inference_base_url
+    if not endpoint:
+        raise IsolationAuditError('Isolation proof has no native execution endpoint',
+                                  {'stage':'endpoint','execution_endpoint_present':False})
+    return endpoint
 
 
 def denial_evidence(probe, log_rows):
@@ -67,7 +85,14 @@ async def audit(environment, inference_url=None):
         hosts=await environment.service_exec(command='cat /opt/egress-sidecar/allowlist.txt',service=SERVICE,timeout_sec=10)
         actual=sorted(x.strip() for x in (hosts.stdout or '').splitlines() if x.strip())
         if show.return_code or hosts.return_code or 'mode: controlled egress' not in (show.stdout or '') or actual!=expected:
-            raise RuntimeError('Isolation probe policy is not the exact declared inference allowlist')
+            safe_hosts=[h for h in actual if len(h)<=253 and re.fullmatch(r'[a-zA-Z0-9_.:-]+',h)]
+            raise IsolationAuditError('Isolation probe policy is not the exact declared inference allowlist', {
+                'stage':'policy','show_return_code':show.return_code,'hosts_return_code':hosts.return_code,
+                'controlled_egress_observed':'mode: controlled egress' in (show.stdout or ''),
+                'expected_hosts':expected,'safe_observed_hosts':safe_hosts,
+                'unrecognized_host_lines':len(actual)-len(safe_hosts),
+                'show_stdout_sha256':hashlib.sha256((show.stdout or '').encode()).hexdigest(),
+                'hosts_stdout_sha256':hashlib.sha256((hosts.stdout or '').encode()).hexdigest()})
         return {'controlled_egress':True,'allowed_hosts':actual}
     before=await policy()
     since=datetime.datetime.now(datetime.timezone.utc).isoformat()

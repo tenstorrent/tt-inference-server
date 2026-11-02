@@ -10,9 +10,14 @@ class _PublicEgressProbe:
     inference_host_exception = False
 
     async def run(self, instruction, environment, context):
-        from llm_module.agentic.qwen38_egress_probe import audit
-        endpoint = self.model_connection.inference_base_url if self.inference_host_exception else None
-        receipt = await audit(environment, endpoint)
+        from llm_module.agentic.qwen38_egress_probe import audit, inference_probe_endpoint, IsolationAuditError
+        try:
+            endpoint = inference_probe_endpoint(self.model_connection) if self.inference_host_exception else None
+            receipt = await audit(environment, endpoint)
+        except IsolationAuditError as error:
+            (self.logs_dir / 'network-isolation.json').write_text(json.dumps({
+                'ok':False,'required_policy':'no-network','diagnostic':error.diagnostic},indent=2)+'\n')
+            raise
         (self.logs_dir / 'network-isolation.json').write_text(json.dumps(receipt, indent=2)+'\n')
         if not receipt['ok']:
             raise RuntimeError('Agent sandbox isolation probe failed; refusing model trajectory')

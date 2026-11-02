@@ -79,7 +79,7 @@ def test_mini_probe_precedes_unchanged_parent(tmp_path, monkeypatch, passes):
     from llm_module.agentic.qwen38_isolated_agent import IsolatedMiniSweAgent
     parent = AsyncMock()
     monkeypatch.setattr(MiniSweAgent,'run',parent)
-    monkeypatch.setattr(MiniSweAgent,'model_connection',property(lambda self:SimpleNamespace(inference_base_url='http://172.17.0.2:8000/v1')))
+    monkeypatch.setattr(MiniSweAgent,'model_connection',property(lambda self:SimpleNamespace(execution_base_url='http://172.17.0.2:8000/v1',inference_base_url=None)))
     proof=AsyncMock(return_value={'ok':passes,'effective_policy':'inference-host allowlist'})
     monkeypatch.setattr('llm_module.agentic.qwen38_egress_probe.audit',proof)
     agent=object.__new__(IsolatedMiniSweAgent);agent.logs_dir=tmp_path
