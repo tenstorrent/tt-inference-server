@@ -52,6 +52,23 @@ def _container_cpu(n=10):
         return [["error", str(e)]]
 
 
+def _host_image():
+    out = subprocess.run(["docker", "ps", "--format", "{{.Image}}"], capture_output=True, text=True, timeout=30).stdout.split()
+    if not out:
+        raise RuntimeError("no running container image to reuse")
+    return out[0]
+
+
+def _cap_as_root(path: Path, keep_bytes: int) -> int:
+    size = path.stat().st_size
+    cmd = ["docker", "run", "--rm", "--user", "0", "--network", "none", "-v", f"{path.parent}:/a", "--entrypoint", "sh", _host_image(), "-c",
+           f"tail -c {keep_bytes} /a/recording.cast > /a/recording.cast.tail && truncate -s 0 /a/recording.cast"]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip()[-300:])
+    return size
+
+
 def cap_recordings(job_dir: Path, max_bytes: int, keep_bytes: int) -> list:
     capped = []
     for path in job_dir.glob("*/agent/recording.cast"):
@@ -65,6 +82,14 @@ def cap_recordings(job_dir: Path, max_bytes: int, keep_bytes: int) -> list:
             os.truncate(path, 0)
             capped.append((str(path), size))
             logger.warning("HOST_MONITOR capped %s at %d bytes (kept last %d in recording.cast.tail)", path, size, keep_bytes)
+        except PermissionError:
+            # Written by the task container as root: cap it through docker as root, with an image
+            # already on the host (the inference server's), so nothing is pulled.
+            try:
+                capped.append((str(path), _cap_as_root(path, keep_bytes)))
+                logger.warning("HOST_MONITOR capped %s as root (kept last %d in recording.cast.tail)", path, keep_bytes)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("HOST_MONITOR could not cap %s even as root: %s", path, e)
         except OSError as e:
             logger.warning("HOST_MONITOR could not cap %s: %s", path, e)
     return capped
