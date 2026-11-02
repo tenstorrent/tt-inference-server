@@ -17,8 +17,10 @@ and compared with the GPU run's scores.
 Until tt-media-server serves the generation API, Qwen-Image-Edit is asked
 through today's ``/v1/images/edits``, which takes one input on a 1024 square:
 its cases with one input are sent already padded to that square, and compared
-with the GPU run made the same way (``refs/r1_square``). Set
-``IMAGE_EVAL_API=generation`` to use the generation API instead.
+with the GPU run made the same way (``refs/r1_square``). FLUX.2 klein is asked
+through ``/v1/images/generations`` with the case's references, size and seed,
+and compared with ``refs/r1``. Set ``IMAGE_EVAL_API=generation`` to use the
+generation API instead.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from report_module.schema import Block
 
 from .._test_common import ReportCheckTypes, block_id
 from .._test_common.image_clients import (
+    Flux2KleinImagesClient,
     GenerationAPIClient,
     GenerationError,
     LegacyEditsClient,
@@ -65,7 +68,10 @@ GATE_CONFIG = (
 COMPARE_TIMEOUT_SECONDS = 2 * 60 * 60
 API_ENV = "IMAGE_EVAL_API"
 # Models whose deployments still serve only today's API, and the client for it.
-LEGACY_CLIENTS = {"qwen/qwen-image-edit-2511": LegacyEditsClient}
+LEGACY_CLIENTS = {
+    "qwen/qwen-image-edit-2511": LegacyEditsClient,
+    "black-forest-labs/flux.2-klein-4b": Flux2KleinImagesClient,
+}
 
 
 def eval_model(hf_model_repo: str) -> ImageModel | None:

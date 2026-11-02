@@ -11,6 +11,9 @@
   onto a 1024 square and renders that square, so its cases compare against the
   GPU run made the same way (``refs/r1_square``); it is asked for the
   reference's steps and CFG so only the padding differs from R1's request.
+- ``Flux2KleinImagesClient``: what FLUX.2 klein serves until the generation
+  API, ``POST /v1/images/generations`` with the case's references, size and
+  seed, which answers with the image; compared with ``refs/r1``.
 
 Both return the image's bytes and what they sent, minus the image data.
 """
@@ -36,6 +39,7 @@ from .generation_api import (
 from .image_generation_api import ImageModel
 
 LEGACY_EDITS_PATH = "/v1/images/edits"
+LEGACY_GENERATIONS_PATH = "/v1/images/generations"
 
 
 class GenerationError(RuntimeError):
@@ -141,21 +145,59 @@ class GenerationAPIClient:
         }
 
 
-class LegacyEditsClient:
+class _LegacyImagesClient:
+    """A ``/v1/images/*`` endpoint that answers with the image: ``{"images": [b64]}``."""
+
+    name: str
+    path: str
+    max_images: int | None
+    reference: str
+
+    def __init__(self, base_url: str, model: ImageModel, request_timeout: float = 900):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.request_timeout = request_timeout
+
+    def request(self, case: dict, inputs: list[bytes]) -> dict:
+        raise NotImplementedError
+
+    async def generate(
+        self, session: aiohttp.ClientSession, case: dict, inputs: list[bytes]
+    ) -> tuple[bytes, dict]:
+        request = self.request(case, inputs)
+        timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+        async with session.post(
+            f"{self.base_url}{self.path}",
+            json=request,
+            headers=auth_headers(),
+            timeout=timeout,
+        ) as response:
+            body = await response.text()
+            if response.status != 200:
+                raise GenerationError(
+                    f"{self.path} returned {response.status}: {body[:300]}"
+                )
+        images = json.loads(body).get("images") or []
+        if not images:
+            raise GenerationError(f"{self.path} returned no image")
+        encoded = images[0].split(",", 1)[-1]
+        return base64.b64decode(encoded + "=" * (-len(encoded) % 4)), {
+            "api": self.name,
+            "request": _strip_images(request),
+        }
+
+
+class LegacyEditsClient(_LegacyImagesClient):
     """Qwen-Image-Edit's ``/v1/images/edits`` today: one input on a 1024 square, PNG."""
 
     name = "legacy_edits"
+    path = LEGACY_EDITS_PATH
     max_images = 1
     reference = "refs/r1_square"
     # The GPU reference's sampling (the model card's).
     steps = 40
     true_cfg_scale = 4.0
     negative_prompt = " "
-
-    def __init__(self, base_url: str, model: ImageModel, request_timeout: float = 900):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.request_timeout = request_timeout
 
     def request(self, case: dict, inputs: list[bytes]) -> dict:
         return {
@@ -168,25 +210,24 @@ class LegacyEditsClient:
             "image_return_format": "PNG",
         }
 
-    async def generate(
-        self, session: aiohttp.ClientSession, case: dict, inputs: list[bytes]
-    ) -> tuple[bytes, dict]:
-        request = self.request(case, inputs)
-        timeout = aiohttp.ClientTimeout(total=self.request_timeout)
-        async with session.post(
-            f"{self.base_url}{LEGACY_EDITS_PATH}",
-            json=request,
-            headers=auth_headers(),
-            timeout=timeout,
-        ) as response:
-            body = await response.text()
-            if response.status != 200:
-                raise GenerationError(f"edit returned {response.status}: {body[:300]}")
-        images = json.loads(body).get("images") or []
-        if not images:
-            raise GenerationError("edit returned no image")
-        encoded = images[0].split(",", 1)[-1]
-        return base64.b64decode(encoded + "=" * (-len(encoded) % 4)), {
-            "api": self.name,
-            "request": _strip_images(request),
+
+class Flux2KleinImagesClient(_LegacyImagesClient):
+    """FLUX.2 klein's ``/v1/images/generations`` today: the case's references, size and seed, PNG."""
+
+    name = "flux2_klein_images"
+    path = LEGACY_GENERATIONS_PATH
+    max_images = None
+    reference = "refs/r1"
+    # The distilled model's sampling, as R1 ran it (guidance 1.0: no CFG to send).
+    steps = 4
+
+    def request(self, case: dict, inputs: list[bytes]) -> dict:
+        return {
+            "prompt": case["prompt"],
+            "images": [base64.b64encode(data).decode("ascii") for data in inputs],
+            "width": case["width"],
+            "height": case["height"],
+            "num_inference_steps": self.steps,
+            "seed": case["seed"],
+            "image_return_format": "PNG",
         }

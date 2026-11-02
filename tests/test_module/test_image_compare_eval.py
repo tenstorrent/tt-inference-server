@@ -24,6 +24,7 @@ from report_module.schema import Block  # noqa: E402
 from test_module._test_common import image_compare as scorer  # noqa: E402
 from test_module._test_common import image_eval_data as data  # noqa: E402
 from test_module._test_common.image_clients import (  # noqa: E402
+    Flux2KleinImagesClient,
     GenerationAPIClient,
     LegacyEditsClient,
 )
@@ -364,9 +365,29 @@ def test_only_a_model_with_eval_data_is_compared(monkeypatch):
     assert isinstance(eval_.make_client(QWEN, "http://x"), LegacyEditsClient)
     monkeypatch.setenv(eval_.API_ENV, "generation")
     assert isinstance(eval_.make_client(QWEN, "http://x"), GenerationAPIClient)
-    assert isinstance(
-        eval_.make_client(MODELS["black-forest-labs/flux.2-klein-4b"], "http://x"),
-        GenerationAPIClient,
+    klein = MODELS["black-forest-labs/flux.2-klein-4b"]
+    assert isinstance(eval_.make_client(klein, "http://x"), GenerationAPIClient)
+    monkeypatch.delenv(eval_.API_ENV)
+    assert isinstance(eval_.make_client(klein, "http://x"), Flux2KleinImagesClient)
+
+
+def test_klein_is_asked_for_the_cases_references_size_and_seed():
+    client = Flux2KleinImagesClient(
+        "http://x", MODELS["black-forest-labs/flux.2-klein-4b"]
+    )
+    case = {"prompt": "p", "width": 1376, "height": 768, "seed": 7}
+    request = client.request(case, [b"a", b"b"])
+    assert request["images"] == [base64.b64encode(b).decode() for b in (b"a", b"b")]
+    assert (request["width"], request["height"], request["seed"]) == (1376, 768, 7)
+    assert (request["num_inference_steps"], request["image_return_format"]) == (
+        4,
+        "PNG",
+    )
+    # All of a case's references are sent; R1 is the reference run.
+    assert (client.max_images, client.reference, client.path) == (
+        None,
+        "refs/r1",
+        "/v1/images/generations",
     )
 
 
