@@ -66,6 +66,7 @@
       "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "moonshotai/Kimi-K3",
+      "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
       "zai-org/GLM-5.3",
@@ -646,6 +647,16 @@
       "id_name": "kimi-k3",
       "weights": [
         "moonshotai/Kimi-K3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "deepseek_v41_flash_1017": {
+      "id_name": "deepseek-v4.1-flash-1017",
+      "weights": [
+        "deepseek-ai/DeepSeek-V4.1-Flash-1017"
       ],
       "category": "LLM",
       "compatible_devices": [
