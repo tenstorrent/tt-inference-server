@@ -121,10 +121,15 @@ class Target:
     text: str = ""
     # Client-side audio chunk cap; 0 = uncapped. This does not limit server decoding.
     max_chunks: int = 0
+    # Voice prompt as speech token IDs; empty sends text only.
+    speech_ids: list = field(default_factory=list, repr=False)
     request: bytes = field(default=b"", repr=False)
 
     def __post_init__(self) -> None:
-        body = json.dumps({"text": self.text}).encode()
+        payload: dict = {"text": self.text}
+        if self.speech_ids:
+            payload["speech_ids"] = self.speech_ids
+        body = json.dumps(payload).encode()
         self.request = (
             b"POST " + self.path.encode() + b" HTTP/1.1\r\n"
             b"Host: " + self.host.encode() + b"\r\n"
@@ -143,11 +148,17 @@ def build_text(nchars: int) -> str:
 # --------------------------------------------------------------------------- client
 
 
-def request(tgt: Target, uid: int = -1, rec: dict | None = None) -> dict:
+def request(
+    tgt: Target,
+    uid: int = -1,
+    rec: dict | None = None,
+    body: bytearray | None = None,
+) -> dict:
     """Read a chunked WAV response and retain timings even on failure.
 
     FC/SC/TC use monotonic offsets from request start. Wall-clock t_send/t_end
     delimit client occupancy. A supplied record is registered before execution.
+    A supplied ``body`` receives the raw response body (WAV header and PCM).
     """
     # A caller may register the record BEFORE the send (see run_closed/dump), so that
     # a request still in flight when the join deadline expires is still in the record
@@ -221,6 +232,8 @@ def request(tgt: Target, uid: int = -1, rec: dict | None = None) -> dict:
         def note(payload: bytes) -> None:
             """Account one body payload; the first WAV_HEADER_BYTES are not audio."""
             n = len(payload)
+            if body is not None:
+                body.extend(payload)
             if audio["hdr_left"]:
                 take = min(audio["hdr_left"], n)
                 audio["hdr_left"] -= take
