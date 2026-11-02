@@ -52,15 +52,18 @@ EVALS_COMMON_LM_EVAL_COMMIT = "af401ef3dd3d2d90e55680990ed1f0c9f7892448"
 # files, and test_module/llm_tests/minimax_verifier_grading.py grades their
 # output. Pinned to an upstream commit: the `verify` gate is blocking, so a
 # moving branch (or a fork) must not change what is graded. This commit is
-# MiniMax-AI/MiniMax-Provider-Verifier main as of #67, which carries the
-# `reasoning_content` fix vLLM servers need. The `verify` cases set no
-# `targets`: they are graded against the README defaults in VERIFY_METRICS
-# (minimax_verifier_grading.py). The GPU vLLM measurements in MiniMax-M3's
+# MiniMax-AI/MiniMax-Provider-Verifier main as of #85, which adds the
+# MiniMax-M3.1-Flash baseline and format checks. verify.py, sample.jsonl and
+# validator/ are unchanged since #67 (the `reasoning_content` fix vLLM servers
+# need), so what `verify` grades for MiniMax-M3 and M2.7 is unchanged too.
+# The `verify` cases set no `targets`: they are graded against the README
+# defaults in VERIFY_METRICS (minimax_verifier_grading.py). The GPU vLLM
+# measurements in MiniMax-M3's
 # `_comment_threshold` (test_module/test_suites/llm.json) are reference only.
 # Moving the pin can change scores: re-measure them there when it does, but
 # don't add them as `targets` unless the gates are deliberately changed.
 MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
-MINIMAX_VERIFIER_COMMIT = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
+MINIMAX_VERIFIER_COMMIT = "336ccc735f9f13fdfacdacdda8733eb9e2813095"
 MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
 # The full tree is ~870 MB, mostly official-deployment baselines for every
 # model x 10 loops. Only these paths are extracted (see export_repo_commit):
@@ -74,6 +77,7 @@ MINIMAX_VERIFIER_PATHS = (
     "validator",
     "m3_format_check",
     "output-dir/MiniMax-M3/loop_01",
+    "output-dir/MiniMax-M3.1-Flash/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
 # zapier/AutomationBench, run by the automation_bench agentic eval. There are

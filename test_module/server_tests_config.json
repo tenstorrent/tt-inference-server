@@ -63,6 +63,7 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
+      "MiniMaxAI/MiniMax-M3.1-Flash",
       "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
@@ -615,6 +616,16 @@
       "id_name": "minimax-m3",
       "weights": [
         "MiniMaxAI/MiniMax-M3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "minimax_m3_1_flash": {
+      "id_name": "minimax-m3.1-flash",
+      "weights": [
+        "MiniMaxAI/MiniMax-M3.1-Flash"
       ],
       "category": "LLM",
       "compatible_devices": [

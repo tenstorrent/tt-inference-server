@@ -18,7 +18,9 @@ other spec tests'. One test case runs one suite and becomes one Block:
 * ``text`` / ``stream`` / ``image`` / ``video`` / ``reasoning_effort``: an
   ``m3_format_check`` pytest suite for the chat-completions contract, graded on
   its pass rate (``pass_rate_threshold``, 100% by default) with skipped and
-  xfailed tests excluded and waived failures taken out.
+  xfailed tests excluded and waived failures taken out. ``format_check_model``
+  picks the model's files (``FORMAT_CHECK_FILES``: MiniMax-M3's by default,
+  or MiniMax-M3.1-Flash's, the only ones with ``reasoning_effort``).
 
 Status: PASS / FAIL from the grading; ERROR when the suite produced no verdict
 (no output, nothing ran, or the server was never reached).
@@ -69,15 +71,29 @@ from .vllm_param_conformance_test import VLLMParamConformanceTest, _truncate_mes
 logger = logging.getLogger(__name__)
 
 VERIFY_SUITE = "verify"
-# m3_format_check suite -> pytest file (run from that directory, so its
-# pytest.ini and conftest.py apply).
-PYTEST_SUITES = {
-    "text": "m3_text_tests.py",
-    "stream": "m3_stream_tests.py",
-    "image": "m3_image_tests.py",
-    "video": "m3_video_tests.py",
-    "reasoning_effort": "m3_a_reasoning_effort_tests.py",
+# m3_format_check suite -> pytest file, per model (``format_check_model``);
+# run from that directory, so its pytest.ini and conftest.py apply. Files are
+# passed explicitly, so the MiniMax-M3.1-Flash ones (``*_test.py``) are
+# collected although pytest.ini only globs ``m3_*_tests.py``.
+DEFAULT_FORMAT_CHECK_MODEL = "m3"
+FORMAT_CHECK_FILES = {
+    "m3": {
+        "text": "m3_text_tests.py",
+        "stream": "m3_stream_tests.py",
+        "image": "m3_image_tests.py",
+        "video": "m3_video_tests.py",
+    },
+    "m3_1_flash": {
+        "text": "m3_1_flash_text_test.py",
+        "stream": "m3_1_flash_stream_test.py",
+        "image": "m3_1_flash_image_test.py",
+        "video": "m3_1_flash_video_test.py",
+        "reasoning_effort": "m3_1_flash_reasoning_effort_tests.py",
+    },
 }
+PYTEST_SUITES = tuple(
+    dict.fromkeys(suite for files in FORMAT_CHECK_FILES.values() for suite in files)
+)
 SUITES = (VERIFY_SUITE, *PYTEST_SUITES)
 FORMAT_CHECK_DIR = "m3_format_check"
 VERIFY_SAMPLE = "sample.jsonl"
@@ -339,7 +355,7 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
             python,
             "-m",
             "pytest",
-            PYTEST_SUITES[suite],
+            self._format_check_file(suite),
             "-p",
             "no:cacheprovider",
             "-q",
@@ -393,6 +409,22 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
                 {**f, "message": _truncate_message(f["message"])} for f in graded[key]
             ]
         return graded
+
+    def _format_check_file(self, suite: str) -> str:
+        """The pytest file for *suite* in this case's ``format_check_model``
+        (test_config only: an environment override would reach every case)."""
+        model = str(self.config.get("format_check_model") or DEFAULT_FORMAT_CHECK_MODEL)
+        files = FORMAT_CHECK_FILES.get(model)
+        if files is None:
+            raise ValueError(
+                f"format_check_model must be one of {sorted(FORMAT_CHECK_FILES)}, "
+                f"got {model!r}"
+            )
+        if suite not in files:
+            raise ValueError(
+                f"suite {suite!r} has no {model} format check; it has {sorted(files)}"
+            )
+        return files[suite]
 
     def _include_slow(self) -> bool:
         """Run the cases marked slow (512k/1M-token prompts, long videos);
