@@ -1086,6 +1086,20 @@ class TestOverrideArgsIntegration:
             service_port="8000",
         )
 
+    @pytest.mark.parametrize("owner", [None, "41424783922.1.run-tests"])
+    def test_container_ownership_label_is_explicit(self, monkeypatch, owner):
+        if owner is None:
+            monkeypatch.delenv("TT_SHIELD_JOB_OWNER", raising=False)
+        else:
+            monkeypatch.setenv("TT_SHIELD_JOB_OWNER", owner)
+        command, _ = generate_docker_run_command(
+            self._make_mock_model_spec(), self._make_mock_runtime_config())
+        labels = [command[i + 1] for i, arg in enumerate(command) if arg == "--label"]
+        expected = [] if owner is None else [f"io.tenstorrent.shield.job-owner={owner}"]
+        assert labels == expected
+        if owner is not None:
+            assert command.index("--label") < command.index("test:image")
+
     def test_generate_docker_run_command_mounts_runtime_spec_json(
         self, mock_setup_config
     ):
