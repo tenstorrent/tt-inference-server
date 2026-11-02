@@ -11101,9 +11101,43 @@ _eval_config_list = [
     # GALAXY is the vLLM-Omni deployment (two chips, vllm_omni client); the others are
     # the C++ media server. Same gates on both.
     # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145 / 4.420 (Base / CustomVoice / VoiceDesign).
+    # WER 0.014 measured on GALAXY (vLLM-Omni) over 10 LibriTTS-R texts; not on N150.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         tasks=[
+            EvalTask(
+                task_name="tts_generation",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=98.6,  # 100 * (1 - mean WER)
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "wer_threshold": 0.20,
+                },
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "clone_mode": "voice_only",
+                            "language": "English",
+                            "min_reference_seconds": 3,
+                            "max_reference_seconds": 12,
+                            "wer_threshold": 0.20,
+                        }
+                    }
+                },
+            ),
             EvalTask(
                 task_name="tts_speaker_similarity",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,

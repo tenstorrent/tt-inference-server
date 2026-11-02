@@ -15,6 +15,7 @@ import pytest
 from test_module._test_common import ReportCheckTypes
 from test_module._test_common import TestConfig as _TestConfig
 from test_module.eval_tests import tts_eval_tests, tts_naturalness_test
+from test_module.eval_tests import tts_quality_test as wer_mod
 from test_module.eval_tests import tts_speaker_similarity_test as secs_mod
 from test_module.eval_tests.tts_client import (
     SynthesizedAudio,
@@ -344,6 +345,76 @@ class TestNaturalnessFailedSamples:
         assert not _naturalness_result(monkeypatch, good=5, targets=targets)["success"]
 
 
+class _CloneOnlyClient:
+    """Records each request; the second one fails."""
+
+    can_clone = True
+    has_default_voice = False
+
+    def __init__(self):
+        self.requests = []
+
+    def describe(self):
+        return "clone-only"
+
+    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
+        self.requests.append((text, voice))
+        if len(self.requests) == 2:
+            return None
+        return SynthesizedAudio(samples=np.zeros(24000), sample_rate=24000)
+
+
+class TestWerThroughAClient:
+    CLIPS = [("a", b"A", "text a"), ("b", b"B", "text b"), ("c", b"C", "text c")]
+
+    def _run(self, monkeypatch, targets):
+        client = _CloneOnlyClient()
+        monkeypatch.setattr(
+            wer_mod, "iter_speaker_clips", lambda *a, **k: iter(self.CLIPS)
+        )
+        monkeypatch.setattr(wer_mod, "make_tts_client", lambda t: client)
+        test = wer_mod.TTSQualityTest(_config(), targets)
+        test.base_url = "http://fake"
+        monkeypatch.setattr(test, "_load_whisper_model", lambda: None)
+        monkeypatch.setattr(
+            test, "_download_samples", lambda **k: pytest.fail("media-server path")
+        )
+        heard = iter(["text b", "wrong"])
+        monkeypatch.setattr(test, "_transcribe_samples", lambda a, sr: next(heard))
+        return client, asyncio.run(test._run_specific_test_async())
+
+    def test_clones_read_the_next_speakers_text_and_wer_is_scored(self, monkeypatch):
+        targets = {"tts_api": "vllm_omni", "sample_count": 3, "cleanup": False}
+        client, result = self._run(monkeypatch, targets)
+        assert [text for text, _ in client.requests] == ["text b", "text c", "text a"]
+        assert [voice.wav_bytes for _, voice in client.requests] == [b"A", b"B", b"C"]
+        assert result["valid_samples"] == 2 and result["total_samples"] == 3
+        assert result["avg_wer"] == pytest.approx(0.5)
+        assert not result["success"]
+
+    def test_the_task_threshold_is_the_gate(self, monkeypatch):
+        targets = {"tts_api": "vllm_omni", "cleanup": False, "wer_threshold": 0.6}
+        _, result = self._run(monkeypatch, targets)
+        assert result["wer_threshold"] == 0.6 and result["success"]
+
+    def test_the_runner_passes_the_task_targets(self, monkeypatch):
+        seen = {}
+
+        class _Fake:
+            def __init__(self, config, targets, ctx):
+                seen["targets"] = targets
+
+            def run_tests(self):
+                return SimpleNamespace(data={"success": True})
+
+        monkeypatch.setattr(wer_mod, "TTSQualityTest", _Fake)
+        monkeypatch.setattr(tts_eval_tests, "get_num_calls", lambda ctx: 2)
+        task = SimpleNamespace(model_kwargs={"tts_api": "vllm_omni"})
+        tts_eval_tests._run_tts_quality_eval(SimpleNamespace(base_url="x"), task)
+        assert seen["targets"]["tts_api"] == "vllm_omni"
+        assert seen["targets"]["wer_threshold"] == DEFAULT_WER_THRESHOLD
+
+
 class TestEvalBlockSampleCounts:
     def test_counts_reach_the_report_and_no_audio_is_a_fail(self, monkeypatch):
         result = {
@@ -397,10 +468,12 @@ class TestQwen3EvalConfig:
 
         return {t.task_name: t for t in _eval_config_map[repo].tasks}
 
-    @pytest.mark.parametrize("size", ["1.7B", "0.6B"])
-    def test_base_registers_secs_and_naturalness_on_clones(self, size):
+    @pytest.mark.parametrize(
+        "size, wer", [("1.7B", {"tts_generation"}), ("0.6B", set())]
+    )
+    def test_base_registers_secs_and_naturalness_on_clones(self, size, wer):
         tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-Base")
-        assert set(tasks) == {"tts_speaker_similarity", "tts_naturalness"}
+        assert set(tasks) == {"tts_speaker_similarity", "tts_naturalness"} | wer
         for task in tasks.values():
             targets = tts_eval_tests._task_targets(task)
             client = make_tts_client(targets)
@@ -444,7 +517,8 @@ class TestQwen3EvalConfig:
     def test_0b6_has_its_own_thresholds_and_never_sends_a_description(self, release):
         small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
         large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
-        assert set(small) == set(large)
+        # WER is calibrated only on the 1.7B Base.
+        assert set(small) == set(large) - {"tts_generation"}
         for name, task in small.items():
             targets = tts_eval_tests._task_targets(task)
             assert "description" not in targets

@@ -37,7 +37,6 @@ TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
 # Naturalness scores clips with a torch.hub MOS predictor (needs torchaudio).
 TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 
-# WER speaks only the Python media server's contract; SECS/naturalness use tts_client.
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
@@ -154,7 +153,7 @@ def _tts_eval_block(
     )
 
 
-def _run_tts_quality_eval(ctx: MediaContext) -> dict:
+def _run_tts_quality_eval(ctx: MediaContext, task) -> dict:
     """Run ``TTSQualityTest`` against the live server and return its result data.
 
     Imported lazily so the module doesn't pull in numpy/torch at import time;
@@ -168,6 +167,12 @@ def _run_tts_quality_eval(ctx: MediaContext) -> dict:
     from .tts_quality_test import TTSQualityTest
 
     sample_count = _tts_sample_count(ctx)
+    targets = {
+        "sample_count": sample_count,
+        "wer_threshold": DEFAULT_WER_THRESHOLD,
+        "cleanup": True,
+        **_task_targets(task),
+    }
     test = TTSQualityTest(
         TestConfig(
             {
@@ -177,19 +182,10 @@ def _run_tts_quality_eval(ctx: MediaContext) -> dict:
                 "break_on_failure": False,
             }
         ),
-        targets={
-            "sample_count": sample_count,
-            "wer_threshold": DEFAULT_WER_THRESHOLD,
-            "cleanup": True,
-        },
+        targets=targets,
         ctx=ctx,
     )
-    logger.info(
-        "Running TTSQualityTest: samples=%s wer_threshold=%s base_url=%s",
-        sample_count,
-        DEFAULT_WER_THRESHOLD,
-        ctx.base_url,
-    )
+    logger.info("Running TTSQualityTest: base_url=%s targets=%s", ctx.base_url, targets)
     return dict(test.run_tests().data)
 
 
@@ -209,7 +205,7 @@ def _run_wer_task(ctx: MediaContext, task) -> Block:
         )
 
     try:
-        result = _run_tts_quality_eval(ctx)
+        result = _run_tts_quality_eval(ctx, task)
     except Exception as e:
         reason = f"TTS quality eval failed to run: {type(e).__name__}: {e}"
         logger.exception(reason)

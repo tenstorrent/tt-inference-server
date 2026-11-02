@@ -6,6 +6,10 @@
 
 WER measures TTS quality by transcribing generated audio and comparing
 with the original text. Lower WER indicates better speech intelligibility.
+
+With ``tts_api`` in its targets, the test speaks through that ``tts_client``,
+and a server that can only clone reads each text in another speaker's voice.
+Without it, the test speaks the Python media server's request format.
 """
 
 import asyncio
@@ -21,8 +25,10 @@ from pathlib import Path
 import aiohttp
 import numpy as np
 
-from .._libritts import disable_audio_decode, resolve_split
+from .._libritts import disable_audio_decode, iter_speaker_clips, resolve_split
 from .._test_common import BaseTest
+from .tts_client import make_tts_client
+from .tts_naturalness_test import naturalness_battery
 
 logger = logging.getLogger(__name__)
 
@@ -71,19 +77,26 @@ class TTSQualityTest(BaseTest):
         )
 
         try:
-            # Download samples from LibriTTS-R
-            self._download_samples(count=sample_count, split=dataset_split)
+            if "tts_api" in self.targets:
+                battery = self._client_battery(sample_count, dataset_split)
+                if not battery:
+                    return {"success": False, "error": "could not load eval texts"}
+                self._load_whisper_model()
+                results = await self._run_client_test(battery)
+            else:
+                # Download samples from LibriTTS-R
+                self._download_samples(count=sample_count, split=dataset_split)
 
-            # Load metadata
-            metadata = self._load_metadata()
-            if not metadata:
-                return {"success": False, "error": "No metadata found"}
+                # Load metadata
+                metadata = self._load_metadata()
+                if not metadata:
+                    return {"success": False, "error": "No metadata found"}
 
-            # Load Whisper model for transcription
-            self._load_whisper_model()
+                # Load Whisper model for transcription
+                self._load_whisper_model()
 
-            # Generate audio and calculate WER
-            results = await self._run_quality_test(metadata, batch_size)
+                # Generate audio and calculate WER
+                results = await self._run_quality_test(metadata, batch_size)
 
             # Calculate overall WER
             wer_values = [r["wer"] for r in results if r.get("wer") is not None]
@@ -143,6 +156,49 @@ class TTSQualityTest(BaseTest):
         """Unload Whisper model to free memory."""
         self._whisper_model = None
         self._whisper_processor = None
+
+    def _client_battery(self, sample_count: int, split: str) -> list:
+        """``[(text, voice_or_None)]`` for the configured client: one LibriTTS-R
+        speaker per sample, as the naturalness eval picks them."""
+        self.client = make_tts_client(self.targets)
+        cloned = not self.client.has_default_voice
+        logger.info(f"WER: client={self.client.describe()}, cloned={cloned}")
+        clips = list(
+            iter_speaker_clips(
+                split,
+                sample_count,
+                min_seconds=self.targets.get("min_reference_seconds"),
+                max_seconds=self.targets.get("max_reference_seconds"),
+            )
+        )
+        if not clips or (cloned and len(clips) < 2):
+            return []
+        return naturalness_battery(clips, cloned)
+
+    async def _run_client_test(self, battery: list) -> list[dict]:
+        """Synthesize each text through ``self.client`` and score its WER."""
+        results = []
+        for i, (text, voice) in enumerate(battery):
+            audio = await self.client.synthesize(self.url, text, seed=i, voice=voice)
+            if audio is None:
+                logger.error(f"Synthesis failed for sample {i}")
+                results.append({"wer": None, "error": "synthesis failed"})
+                continue
+            transcribed_text = await asyncio.to_thread(
+                self._transcribe_samples, audio.samples, audio.sample_rate
+            )
+            wer = self._calculate_wer(text, transcribed_text)
+            logger.info(f"Sample {i}: WER={wer * 100:.1f}%")
+            results.append(
+                {
+                    "sample_id": i,
+                    "wer": wer,
+                    "original_text": text,
+                    "transcribed_text": transcribed_text,
+                    "audio_duration": audio.seconds,
+                }
+            )
+        return results
 
     async def _run_quality_test(
         self, metadata: list[dict], batch_size: int
@@ -228,9 +284,24 @@ class TTSQualityTest(BaseTest):
 
         try:
             import librosa
-            import torch
 
             audio, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000)
+            return self._transcribe_samples(audio, sr)
+        except Exception as e:
+            logger.warning(f"Whisper transcription failed: {e}")
+            return self._transcribe_audio_fallback(audio_bytes)
+
+    def _transcribe_samples(self, audio: np.ndarray, sample_rate: int) -> str:
+        """Transcribe mono float samples using Whisper, at any sample rate."""
+        if self._whisper_model is None:
+            return self._transcribe_audio_fallback(b"")
+
+        try:
+            import librosa
+            import torch
+
+            if sample_rate != 16000:
+                audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=16000)
 
             input_features = self._whisper_processor(
                 audio, sampling_rate=16000, return_tensors="pt"
@@ -248,7 +319,7 @@ class TTSQualityTest(BaseTest):
 
         except Exception as e:
             logger.warning(f"Whisper transcription failed: {e}")
-            return self._transcribe_audio_fallback(audio_bytes)
+            return self._transcribe_audio_fallback(b"")
 
     def _transcribe_audio_fallback(self, audio_bytes: bytes) -> str:
         """Fallback transcription - returns empty string."""
