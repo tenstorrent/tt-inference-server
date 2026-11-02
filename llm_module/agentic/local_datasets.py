@@ -7,10 +7,17 @@
 A registry copy can lag behind the adapter that produced it, for example when
 the adapter has since fixed its task Dockerfiles. A dataset with an entry in
 ``_GENERATORS`` is then built from the adapter in the pinned Harbor checkout
-and handed to Harbor as a local path. Generated tasks keep the registry task
-names in ``task.toml``, but Harbor filters a local dataset by directory name,
-so configured task-name patterns are translated with
-:func:`local_task_pattern`.
+and handed to Harbor as a local path.
+
+``sierra-research/tau3-bench`` is generated this way: its registry copy
+predates the tau3 adapter pinning tau2-bench, so its task Dockerfiles clone
+tau2-bench ``main`` at build time and never install ``websockets``, which the
+tau2 evaluator now imports, and every verifier reports ``No module named
+'websockets'``.
+
+Generated tasks keep the registry task names in ``task.toml``, but Harbor
+filters a local dataset by directory name, so configured task-name patterns
+are translated with :func:`local_task_pattern`.
 
 ``sierra-research/tau3-bench`` is generated this way: its registry copy
 predates the tau3 adapter pinning tau2-bench, so its task Dockerfiles clone
