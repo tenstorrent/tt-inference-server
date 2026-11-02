@@ -13530,6 +13530,25 @@ _eval_config_list = [
 ]
 
 
+# Dedicated fresh-autoport branch: unscored route/isolation preflight only.
+# Keep the release terminal limits; this cohort tests infrastructure, not accuracy.
+for _index, _config in enumerate(_eval_config_list):
+    if _config.hf_model_repo == "google/gemma-4-31B-it":
+        _terminal = next(t for t in _config.tasks if t.task_name == "terminal_bench_2")
+        _eval_config_list[_index] = replace(_config, tasks=[*_config.tasks, replace(
+            _terminal,
+            task_name="gemma4_preflight_unscored",
+            score=EvalTaskScore(published_score=None, published_score_ref=None,
+                gpu_reference_score=None, gpu_reference_score_ref=None,
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"}),
+            limit_samples_map={},
+            agentic_eval_config=replace(_terminal.agentic_eval_config,
+                dataset="gemma4-preflight", dataset_ref=None,
+                n_tasks=2, n_concurrent_trials=2, task_names_map={},
+                allow_agent_endpoint=True, override_cpus=1, override_memory_mb=1024),
+        )])
+
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
