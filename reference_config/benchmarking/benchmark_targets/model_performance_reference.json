@@ -1,4 +1,254 @@
 {
+    "zai-org/GLM-5.3-Flash": {
+        "blackhole_galaxy": [
+            {
+                "impl": "glm53_flash",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 265,
+                        "tput_user": 60,
+                        "tput": 60
+                    },
+                    "measured": {
+                        "ttft_ms": 995,
+                        "tput_user": 17.7,
+                        "tput": 15.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5500,
+                        "tput_user": 16.6,
+                        "tput": 310
+                    },
+                    "measured": {
+                        "ttft_ms": 4554,
+                        "tput_user": 10.7,
+                        "tput": 249.5,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5500,
+                        "tput_user": 16.6,
+                        "tput": 530
+                    },
+                    "measured": {
+                        "ttft_ms": 5062,
+                        "tput_user": 15.6,
+                        "tput": 462.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 7475,
+                        "tput_user": 17.2,
+                        "tput": 8.6
+                    },
+                    "measured": {
+                        "ttft_ms": 7475,
+                        "tput_user": 17.2,
+                        "tput": 8.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 60499,
+                        "tput_user": 17.0,
+                        "tput": 1.9
+                    },
+                    "measured": {
+                        "ttft_ms": 60499,
+                        "tput_user": 17.0,
+                        "tput": 1.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 3908974,
+                        "tput_user": 0.066,
+                        "tput": 0.6
+                    },
+                    "measured": {
+                        "ttft_ms": 3908974,
+                        "tput_user": 0.066,
+                        "tput": 0.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 1047612,
+                "osl": 160,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 504604,
+                        "tput_user": 15.0,
+                        "tput": 0.3
+                    },
+                    "measured": {
+                        "ttft_ms": 390000,
+                        "tput_user": 16.0,
+                        "tput": 0.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash",
+                "isl": 1047612,
+                "osl": 160,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16700000,
+                        "tput_user": 15.0,
+                        "tput": 0.3
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_128k",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 265,
+                        "tput_user": 60,
+                        "tput": 60
+                    },
+                    "measured": {
+                        "ttft_ms": 228,
+                        "tput_user": 6.6,
+                        "tput": 6.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_128k",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 192,
+                "num_prompts": 192,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 28000,
+                        "tput_user": 5.5,
+                        "tput": 480
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_128k",
+                "isl": 130816,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 455000,
+                        "tput_user": 12.0,
+                        "tput": 2.2
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-4-31b-it": {
         "p300x2": [
             {

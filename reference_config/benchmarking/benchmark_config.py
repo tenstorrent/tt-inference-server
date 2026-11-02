@@ -126,6 +126,11 @@ SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 # still filtered by ``isl + osl <= max_context``. Scoped per model so other
 # long-context specs keep their existing sweeps.
 MODEL_EXTRA_ISL_OSL_PAIRS = {
+    # 1 M-context GLM-5.3-Flash on the Blackhole Galaxy (models/demos/glm53_flash): the advertised
+    # point, 1 047 612 + 160 <= 1 048 576; concurrency 32 = the capstone (32 resident 1 M prompts).
+    "GLM-5.3-Flash": [
+        (1047612, 160),
+    ],
     # 512K-context autoport: extend the sweep to its full window.
     "K2-Horizon-7B": [
         # Decode across a page-table capacity bucket (4096 -> 8192 at 32 users,
