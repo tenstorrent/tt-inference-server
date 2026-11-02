@@ -3275,6 +3275,35 @@ templates:
       # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url`. The device entry is a placeholder so the model
+# resolves through MODEL_SPECS / EVAL_CONFIGS; no local TT serving is implied.
+# The endpoint is the tt-blaze DeepSeek-V4.1-Flash-1017 reload ring on one
+# Blackhole galaxy (4 stages of 4x2, 3 users, 65,536-position caches), served
+# by tt-d-gen behind the Dynamo 1.6.0 frontend, which renders the native V4.1
+# chat template and ships the deepseek_v41 reasoning / tool-call parsers.
+- weights:
+    - deepseek-ai/DeepSeek-V4.1-Flash-1017
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 3
+      max_context: 65536  # 64 * 1024; the ring's per-user cache depth
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    deepseek-ai/DeepSeek-V4.1-Flash-1017:
+      remote_api_model: deepseek-ai/DeepSeek-V4.1-Flash-1017
+      # Dynamo 1.6.0 parsers for the V4.1 family (ai-dynamo #15030).
+      reasoning_parser_name: deepseek_v41
+      tool_call_parser_name: deepseek_v41
+      # DeepSeek ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode, agentic-traces) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
+
 - weights:
     - MiniMaxAI/MiniMax-M3
   impl: blaze
