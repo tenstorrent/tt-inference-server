@@ -3544,6 +3544,12 @@ templates:
         # decode's buffers.
         max_num_batched_tokens: 4096
         enable-prefix-caching: true
+        # vLLM 0.30 defaults this to 0: the five sliding-window KV groups then keep cached blocks only
+        # at the end of each prompt, and a hit needs every group (with the one full-attention group),
+        # so a request that shares a long prefix but ends differently reuses 0 tokens. At 1024 a hit
+        # lands at most 1,023 tokens short of the shared prefix (tt-metal #63569: warm TTFT 0.29 s vs
+        # 3.00 s cold at 22K, 21,504 of 22,271 tokens cached; throughput unchanged).
+        prefix-cache-retention-interval: 1024
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
@@ -3617,6 +3623,7 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096  # 4K prefill chunks, as the default entry
         enable-prefix-caching: true
+        prefix-cache-retention-interval: 1024  # as the default entry: prefix hits on the SWA groups
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
