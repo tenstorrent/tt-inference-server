@@ -214,10 +214,22 @@ def patch_openai_chat_client(body: Dict[str, Any]) -> None:
         merged = merge_request_body(dict(extra_body or {}), body)
         if "messages" in kwargs:
             kwargs["messages"] = encode_audio_parts(kwargs["messages"])
-        return original(self, *args, extra_body=merged, **kwargs)
+        return blank_missing_content(original(self, *args, extra_body=merged, **kwargs))
 
     setattr(create, _PATCH_MARKER, original)
     Completions.create = create
+
+
+def blank_missing_content(response: Any) -> Any:
+    """A chat completion whose message content is null (a reasoning model that
+    spent the whole token budget on its thinking trace) gets an empty string on
+    that choice, in place: lmms-eval's scorers index the content as text and
+    crash on None. Anything without choices passes through."""
+    for choice in getattr(response, "choices", None) or []:
+        message = getattr(choice, "message", None)
+        if message is not None and getattr(message, "content", "") is None:
+            message.content = ""
+    return response
 
 
 def require_supported_lmms_model(model_name: str) -> None:
