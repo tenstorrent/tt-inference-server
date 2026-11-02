@@ -41,6 +41,8 @@ def smoke_arm(request, tmp_path, monkeypatch):
 
     task_name, dataset, agent, names, cap, timeout = request.param
     controls = qwen38_goal12.controls()
+    controls.pop("cohort", None)
+    controls.pop("output_token_cap", None)
     controls.pop("request_timeout_sec", None)
     if timeout is not None:
         controls["request_timeout_sec"] = timeout
