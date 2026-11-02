@@ -13646,6 +13646,10 @@ _MINIMAX_M31_FLASH_CONCURRENT_TRIALS = {
 }
 # Tasks that run with each task's declared CPU and memory instead of M3's override.
 _MINIMAX_M31_FLASH_TASK_DECLARED_RESOURCES = {"terminal_bench_2_1"}
+# terminus-2 drops reasoning from the chat history by default. MiniMax models
+# expect their earlier reasoning back each turn; without it every turn re-plans
+# from the terminal output alone (~90% of each response is reasoning).
+_MINIMAX_M31_FLASH_INTERLEAVED_THINKING = {"terminal_bench_4"}
 
 
 # MiniMax-M3.1-Flash: same architecture, tokenizer and chat template as M3, so
@@ -13752,6 +13756,17 @@ def _minimax_m31_flash_task(task: "EvalTask") -> "EvalTask":
             task,
             agentic_eval_config=replace(
                 task.agentic_eval_config, override_cpus=None, override_memory_mb=None
+            ),
+        )
+    if task.task_name in _MINIMAX_M31_FLASH_INTERLEAVED_THINKING:
+        task = replace(
+            task,
+            agentic_eval_config=replace(
+                task.agentic_eval_config,
+                agent_kwargs={
+                    **task.agentic_eval_config.agent_kwargs,
+                    "interleaved_thinking": True,
+                },
             ),
         )
     published = _MINIMAX_M31_FLASH_PUBLISHED.get(task.task_name)
