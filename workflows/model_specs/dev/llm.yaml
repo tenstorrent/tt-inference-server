@@ -3578,9 +3578,10 @@ templates:
         MIMO_SPEC_DECODE: mtp
         MIMO_SPEC_SLOTS: 8
         # Adaptive draft groups: an engine with 1-2 requests verifies each with 3 drafts (groups of 4
-        # slots, every MTP layer), one with 3-4 requests each with 1 draft (groups of 2). AgentX c=16
-        # (tt-metal mimo-v2.6/agentx-speed): Out Tok/s/User 92.0 -> 113.2, ~3.1 tokens per verify
-        # at 1-2 requests.
+        # slots, every MTP layer), one with 3-4 requests each with 1 draft (groups of 2), ~3.1 tokens
+        # per verify at 1-2 requests. AgentX c=16 with tt-metal mimo-v2.6/agentx-best (adaptive groups,
+        # fused MoE stream, fabric row reduce, qkv prefetch) and prefill_chunk_alignment 256: Out
+        # Tok/s/User 92.0 -> 134.1, full-response tokens/s per request 77.7 -> 112.0.
         MIMO_SPEC_GROUPS: adaptive
         # Verify attention on the whole compute grid (the groups' share of 8 x 8 cores is idle-heavy).
         MIMO_SDPA_FULL_GRID: 1
@@ -3592,6 +3593,9 @@ templates:
         l1_small_size: 65536
         dispatch_core_axis: col
         sample_on_device_mode: decode_only
+        # Prefill chunks after the first start on 256-token boundaries, so a later 4096-token chunk
+        # keeps a traced shape (AgentX: 4096-token chunk 866 -> 757 ms).
+        prefill_chunk_alignment: 256
       vllm_args:
         data_parallel_size: 4  # the four engines
         # Per engine: a verify needs MIMO_SPEC_SLOTS decode slots. Every request drafts while an
