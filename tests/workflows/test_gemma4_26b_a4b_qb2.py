@@ -120,7 +120,8 @@ def test_gemma4_26b_release_eval_cohort():
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 24
     assert terminal.n_concurrent_trials == 24
     assert terminal.n_attempts == 1
-    assert terminal.override_cpus == 16
+    assert terminal.override_cpus is None
+    assert terminal.override_memory_mb is None
     assert terminal_task.request_body["seed"] == 9472
 
     # MMMU-Pro: the preset subset is graded against its same-protocol GPU
