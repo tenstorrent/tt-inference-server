@@ -1018,7 +1018,7 @@ templates:
           changes the other two prompts; the other 8 cases pass (tt-agentic-bringup-qb2 run 39881826134).
           Same exemption as gemma-4-31B-it P300X2 (#5327) and Llama-3.3-70B P300X2 (#3888). Measured
           2026-10-23.'
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
