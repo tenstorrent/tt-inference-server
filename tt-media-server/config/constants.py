@@ -1329,6 +1329,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
