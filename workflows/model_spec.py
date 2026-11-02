@@ -502,7 +502,15 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b_qb2",
 )
 
+gemma4_fresh_autoport_impl = ImplSpec(
+    impl_id="gemma4_fresh_autoport",
+    impl_name="gemma4-fresh-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/google_gemma_4_31b_it",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "gemma4_fresh_autoport": gemma4_fresh_autoport_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,
