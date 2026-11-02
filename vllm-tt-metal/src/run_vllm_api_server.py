@@ -11,6 +11,7 @@ import re
 import runpy
 import shlex
 import sys
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -1435,6 +1436,41 @@ def inject_tt_colocated_fabric_config(default_vllm_args):
     )
 
 
+def collect_fresh_gemma_topology(model_spec):
+    """Read UMD connectivity before this serving process creates any devices."""
+    # vLLM profile env is applied later; read its mounted runtime spec here.
+    enabled = os.getenv(
+        "GEMMA4_CI_TOPOLOGY_DIAGNOSTIC",
+        str(_model_spec_env_vars(model_spec).get("GEMMA4_CI_TOPOLOGY_DIAGNOSTIC", "0")),
+    )
+    if enabled != "1":
+        return
+    if model_spec.get("impl", {}).get("impl_id") != "gemma4_fresh_autoport":
+        return
+    metal_root = Path(os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal"))
+    candidates = [metal_root / "build/tools/umd/system_health",
+                  metal_root / "build_Release/tools/umd/system_health"]
+    binary = next((p for p in candidates if p.is_file() and os.access(p, os.X_OK)), None)
+    if binary is None:
+        raise RuntimeError("Gemma topology diagnostic requires built UMD tools/umd/system_health")
+    output = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")) / "logs"
+    output.mkdir(parents=True, exist_ok=True)
+    descriptor = output / "gemma4-ci-physical-cluster.yaml"
+    log = output / "gemma4-ci-system-health.log"
+    logger.info("Running bounded UMD connectivity diagnostic before engine startup: %s", binary)
+    try:
+        with log.open("w") as stream:
+            subprocess.run([str(binary), "--path", str(descriptor)],
+                           stdout=stream, stderr=subprocess.STDOUT, timeout=120, check=True)
+    finally:
+        # Existing CI captures container stdout; full files remain in owned cache logs.
+        for path in (log, descriptor):
+            if path.exists():
+                with path.open(errors="replace") as stream:
+                    text = stream.read(131072)
+                logger.info("UMD diagnostic artifact %s (first 128KiB):\n%s", path, text)
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -1454,6 +1490,7 @@ def main():
     elif args.device:
         device_type = normalize_device_type(args.device)
 
+    collect_fresh_gemma_topology(model_spec)
     admit_quetzal_bundle(model_spec)
 
     if device_type and not os.getenv("TT_CACHE_PATH"):

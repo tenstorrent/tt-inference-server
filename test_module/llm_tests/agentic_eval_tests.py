@@ -107,6 +107,8 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     to the selected benchmark(s).
     """
     tasks = getattr(ctx.all_params, "tasks", []) or []
+    if getattr(getattr(ctx.model_spec, "impl", None), "impl_id", None) == "gemma4_fresh_autoport":
+        tasks = [t for t in tasks if t.task_name == "gemma4_preflight_unscored"]
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]

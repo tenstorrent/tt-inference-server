@@ -1655,3 +1655,123 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+@pytest.mark.parametrize("catalog", ["dev", "prod"])
+def test_fresh_gemma_revision_survives_runtime_spec_and_launcher(
+    run_vllm_api_server_module, monkeypatch, catalog
+):
+    import subprocess
+    import os
+    from types import SimpleNamespace
+    code = """
+import json
+from dataclasses import asdict
+from workflows.model_spec import get_runtime_model_spec
+from utils.pinned_artifacts import get_pinned_revision
+spec, _, _ = get_runtime_model_spec(model='gemma-4-31B-it', device='p300x2', impl='gemma4-fresh-autoport')
+expected = '842da3794eaa0b77d5f08bae87a17459d91ff475'
+assert get_pinned_revision(spec, required=True) == expected
+runtime_spec = json.loads(json.dumps(asdict(spec)))
+assert get_pinned_revision(runtime_spec, required=True) == expected
+print(json.dumps(runtime_spec['device_model_spec']['vllm_args']))
+"""
+    args = json.loads(subprocess.check_output(
+        [sys.executable, '-c', code],
+        env=dict(os.environ, MODEL_SPECS_ENV=catalog), text=True
+    ))
+    monkeypatch.setattr(sys, 'argv', ['run_vllm_api_server.py'])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        SimpleNamespace(service_port=None), [], args
+    )
+    expected = '842da3794eaa0b77d5f08bae87a17459d91ff475'
+    assert sys.argv[sys.argv.index('--revision') + 1] == expected
+    assert sys.argv[sys.argv.index('--tokenizer_revision') + 1] == expected
+
+@pytest.mark.parametrize('enabled,impl', [(False, 'gemma4_fresh_autoport'), (True, 'tt-transformers')])
+def test_topology_diagnostic_is_opt_in_and_model_scoped(run_vllm_api_server_module, monkeypatch, enabled, impl):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv('GEMMA4_CI_TOPOLOGY_DIAGNOSTIC', '1' if enabled else '0')
+    run = MagicMock()
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    module.collect_fresh_gemma_topology({'impl': {'impl_id': impl}})
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize('build_dir', ['build', 'build_Release'])
+def test_topology_diagnostic_bounded_owned_output(run_vllm_api_server_module, monkeypatch, tmp_path, build_dir):
+    module = run_vllm_api_server_module
+    binary = tmp_path / build_dir / 'tools/umd/system_health'
+    binary.parent.mkdir(parents=True)
+    binary.write_text('#!/bin/sh\nexit 0\n')
+    binary.chmod(0o755)
+    monkeypatch.setenv('TT_METAL_HOME', str(tmp_path))
+    monkeypatch.setenv('CACHE_ROOT', str(tmp_path / 'cache'))
+    monkeypatch.setenv('GEMMA4_CI_TOPOLOGY_DIAGNOSTIC', '1')
+    run = MagicMock()
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    module.collect_fresh_gemma_topology({'impl': {'impl_id': 'gemma4_fresh_autoport'}})
+    args, kwargs = run.call_args
+    assert args[0] == [str(binary), '--path', str(tmp_path / 'cache/logs/gemma4-ci-physical-cluster.yaml')]
+    assert kwargs['timeout'] == 120 and kwargs['check'] is True
+    assert kwargs['stderr'] == module.subprocess.STDOUT
+    assert 'shell' not in kwargs
+
+
+def test_topology_diagnostic_missing_binary_fails_clearly(run_vllm_api_server_module, monkeypatch, tmp_path):
+    monkeypatch.setenv('TT_METAL_HOME', str(tmp_path))
+    monkeypatch.setenv('GEMMA4_CI_TOPOLOGY_DIAGNOSTIC', '1')
+    with pytest.raises(RuntimeError, match='requires built UMD'):
+        run_vllm_api_server_module.collect_fresh_gemma_topology({'impl': {'impl_id': 'gemma4_fresh_autoport'}})
+
+
+def test_topology_diagnostic_timeout_propagates_before_serving(run_vllm_api_server_module, monkeypatch, tmp_path):
+    module = run_vllm_api_server_module
+    binary = tmp_path / 'build/tools/umd/system_health'
+    binary.parent.mkdir(parents=True)
+    binary.write_text('stub')
+    binary.chmod(0o755)
+    monkeypatch.setenv('TT_METAL_HOME', str(tmp_path))
+    monkeypatch.setenv('CACHE_ROOT', str(tmp_path / 'cache'))
+    monkeypatch.setenv('GEMMA4_CI_TOPOLOGY_DIAGNOSTIC', '1')
+    monkeypatch.setattr(module.subprocess, 'run', MagicMock(side_effect=module.subprocess.TimeoutExpired('health', 120)))
+    with pytest.raises(module.subprocess.TimeoutExpired):
+        module.collect_fresh_gemma_topology({'impl': {'impl_id': 'gemma4_fresh_autoport'}})
+
+
+def test_topology_diagnostic_runs_before_engine_path(run_vllm_api_server_module, monkeypatch):
+    module = run_vllm_api_server_module
+    class DiagnosticStop(Exception): pass
+    args = types.SimpleNamespace(tt_device=None, device='p300x2', engine=None, model='gemma-4-31B-it', impl='gemma4_fresh_autoport')
+    monkeypatch.setattr(module, 'parse_args', lambda: (args, []))
+    monkeypatch.setattr(module, 'load_model_spec', lambda **kwargs: {'impl': {'impl_id': 'gemma4_fresh_autoport'}})
+    diagnostic = MagicMock(side_effect=DiagnosticStop)
+    engine = MagicMock()
+    monkeypatch.setattr(module, 'collect_fresh_gemma_topology', diagnostic)
+    monkeypatch.setattr(module.runpy, 'run_module', engine)
+    with pytest.raises(DiagnosticStop): module.main()
+    diagnostic.assert_called_once()
+    engine.assert_not_called()
+
+
+def test_topology_diagnostic_reads_actual_mounted_spec_before_env_setup(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    from dataclasses import asdict
+    from workflows.model_spec import get_runtime_model_spec
+    model, _, _ = get_runtime_model_spec(
+        model='gemma-4-31B-it', device='p300x2', impl='gemma4-fresh-autoport'
+    )
+    spec = json.loads(json.dumps(asdict(model)))
+    assert spec['env_vars']['GEMMA4_CI_TOPOLOGY_DIAGNOSTIC'] == '1'
+    binary = tmp_path / 'build/tools/umd/system_health'
+    binary.parent.mkdir(parents=True)
+    binary.write_text('stub')
+    binary.chmod(0o755)
+    monkeypatch.setenv('TT_METAL_HOME', str(tmp_path))
+    monkeypatch.setenv('CACHE_ROOT', str(tmp_path / 'cache'))
+    monkeypatch.delenv('GEMMA4_CI_TOPOLOGY_DIAGNOSTIC', raising=False)
+    run = MagicMock()
+    monkeypatch.setattr(run_vllm_api_server_module.subprocess, 'run', run)
+    run_vllm_api_server_module.collect_fresh_gemma_topology(spec)
+    run.assert_called_once()
