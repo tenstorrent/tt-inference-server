@@ -1042,6 +1042,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     # The meshes Ideogram4Pipeline has parallelism presets for.
     (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
