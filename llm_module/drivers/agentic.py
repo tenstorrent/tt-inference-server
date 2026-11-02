@@ -279,6 +279,9 @@ def build_harbor_config(
         progress_log_interval_sec=cfg.progress_log_interval_sec,
         enforce_agent_deadline=cfg.enforce_agent_deadline,
         allow_agent_endpoint=getattr(cfg, "allow_agent_endpoint", False),
+        collect_preflight_evidence=getattr(cfg, "collect_preflight_evidence", False),
+        offline_task_prerequisites=getattr(cfg, "offline_task_prerequisites", False),
+        preflight_min_free_bytes=getattr(cfg, "preflight_min_free_bytes", None),
         prepull_images=list(getattr(cfg, "prepull_images", [])),
         venv_python=venv_python,
     )
