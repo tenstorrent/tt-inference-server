@@ -1655,3 +1655,40 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+@pytest.mark.parametrize("catalog", ["dev", "prod"])
+def test_fresh_gemma_revision_survives_runtime_spec_and_launcher(
+    run_vllm_api_server_module, monkeypatch, catalog
+):
+    import subprocess
+    import os
+    from types import SimpleNamespace
+    code = """
+import json
+from dataclasses import asdict
+from workflows.model_spec import get_runtime_model_spec
+from utils.pinned_artifacts import get_pinned_revision
+spec, _, _ = get_runtime_model_spec(model='gemma-4-31B-it', device='p300x2', impl='gemma4-fresh-autoport')
+expected = '842da3794eaa0b77d5f08bae87a17459d91ff475'
+assert get_pinned_revision(spec, required=True) == expected
+runtime_spec = json.loads(json.dumps(asdict(spec)))
+assert get_pinned_revision(runtime_spec, required=True) == expected
+print(json.dumps(runtime_spec['device_model_spec']['vllm_args']))
+"""
+    args = json.loads(subprocess.check_output(
+        [sys.executable, '-c', code],
+        env=dict(os.environ, MODEL_SPECS_ENV=catalog), text=True
+    ))
+    monkeypatch.setattr(sys, 'argv', ['run_vllm_api_server.py'])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        SimpleNamespace(service_port=None), [], args
+    )
+    expected = '842da3794eaa0b77d5f08bae87a17459d91ff475'
+    assert sys.argv[sys.argv.index('--revision') + 1] == expected
+    assert sys.argv[sys.argv.index('--tokenizer_revision') + 1] == expected
+    assert sys.argv.count('--enable-auto-tool-choice') == 1
+    assert sys.argv[sys.argv.index('--tool-call-parser') + 1] == 'gemma4'
+    assert sys.argv[sys.argv.index('--reasoning-parser') + 1] == 'gemma4'
+    assert sys.argv[sys.argv.index('--max_num_seqs') + 1] == '32'
+    assert sys.argv[sys.argv.index('--max_num_batched_tokens') + 1] == '4096'
