@@ -5,7 +5,7 @@
 from typing import Literal, Optional
 
 from config.constants import LTX_HEIGHT, LTX_WIDTH, snap_num_frames
-from domain.generation_request import GenerationRequest, Seed
+from domain.generation_request import GenerationModel, GenerationRequest, Seed
 from pydantic import Field
 
 
@@ -13,21 +13,7 @@ class Ltx23DistilledRequest(GenerationRequest):
     """One output shape for now: 1920×1080, 6 s at 25 fps. The shape fields are
     kept so more can be allowed later without a schema change."""
 
-    MODEL_ID = "lightricks/ltx-2.3-22b-distilled"
     OUTPUT_TYPE = "video"
-    TITLE = "LTX-2.3 22B distilled"
-    SUMMARY = "Submit an LTX-2.3 22B distilled job"
-    DESCRIPTION = (
-        "Video with sound from text. Runs the distilled checkpoint of "
-        "`Lightricks/LTX-2.3` (`ltx-2.3-22b-distilled-1.1`)."
-    )
-    EXAMPLE = {
-        "prompt": (
-            "A fishing boat rocks in a harbour at dawn as gulls call overhead and "
-            "waves slap against the hull."
-        ),
-        "seed": 42,
-    }
 
     prompt: str = Field(min_length=1)
     aspect_ratio: Literal["16:9"] = Field(
@@ -62,3 +48,22 @@ class Ltx23DistilledRequest(GenerationRequest):
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return [(LTX_WIDTH, LTX_HEIGHT)]
+
+
+LTX_2_3_22B_DISTILLED = GenerationModel(
+    id="lightricks/ltx-2.3-22b-distilled",
+    request=Ltx23DistilledRequest,
+    title="LTX-2.3 22B distilled",
+    summary="Submit an LTX-2.3 22B distilled job",
+    description=(
+        "Video with sound from text. Runs the distilled checkpoint of "
+        "`Lightricks/LTX-2.3` (`ltx-2.3-22b-distilled-1.1`)."
+    ),
+    example={
+        "prompt": (
+            "A fishing boat rocks in a harbour at dawn as gulls call overhead and "
+            "waves slap against the hull."
+        ),
+        "seed": 42,
+    },
+)

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import re
+from dataclasses import dataclass
 from fractions import Fraction
 from typing import Annotated, ClassVar, Literal, Optional
 
@@ -133,15 +134,7 @@ def closest_ratio(width: int, height: int, ratios) -> str:
 class GenerationRequest(BaseRequest):
     model_config = ConfigDict(extra="forbid")
 
-    # The `{org}/{model}` of the submit path, the upstream model's lowercase
-    # Hugging Face ID.
-    MODEL_ID: ClassVar[str]
     OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
-    # The submit route's tag, summary and description, and an example request.
-    TITLE: ClassVar[str]
-    SUMMARY: ClassVar[str]
-    DESCRIPTION: ClassVar[Optional[str]] = None
-    EXAMPLE: ClassVar[dict]
     # Fields holding media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
     # The kind of each media field that does not hold images.
@@ -197,3 +190,46 @@ class GenerationRequest(BaseRequest):
     def model_prompt(self) -> str:
         """The prompt as the model gets it."""
         return getattr(self, "prompt")
+
+
+# Inputs for the example requests: a sailboat at dawn, 256×256, inline; and
+# public files, which a deployment fetches only if it allows public hosts.
+EXAMPLE_PNG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEABAMAAACuXLVVAAAAFVBMVEX0smbw"
+    "jFr61oz/7KooTm4cOFQeHiinjRUIAAAB7klEQVR42u2d222DQBBF90EBSyqIqGDTQ8pOC2khogOoAPIR"
+    "RVEk46xmZ3dMOPfLNmZ9dOeFANt+dLYKDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AIQQQgghhBBCCCGEEEIIIYQQQsbyVXvH7Jxz71YAXx9fieAn0W6v7s359PN8EQMM4j1/fWN63FfhMkEp"
+    "duJQigHSPUN6AOS/iFoDRKV6UryFI3UE8Ldi4DsCpFsxkFkQ5CWoY0HQjHbqBOAP6kBkQU0VZI3aCar1"
+    "lroA+MNeJIlBVSPKRiE4bsd9AJJqO66bBdnCAa87Es9+R2W2BogGAOmuBelqOVAfg2oHsjWAuQPR3IFs"
+    "DRCvngO1MVAAiJ0B1oqtjXIgWydhNK+C3BVgF29s50BNDIZJg+Bl/n70dMVOWLeKkgPP1gDBGsB+HItj"
+    "ID5b/vFgDpwXoCQEU+GL29zIgdJ1Z5EDBRcaSs86jK1yoHDG7u2SsOxAbz1pFRRd8Ss57bAt53QgqBXY"
+    "3BJgU3nLqWfB3CoCpQBbqwicZxzPjSLwAJ1Q55fbd/EyxceEi3EO/ONjwuXqDgAAAAAADPyPCTnANAQA"
+    "AADohExDcoBpCAAAANAJmYbkANMQAAAAoBMyDckBpiEAAABweYBPtZUsv0RpNtoAAAAASUVORK5CYII="
+)
+EXAMPLE_IMAGE_URL = (
+    "https://interactive-examples.mdn.mozilla.net/media/examples/plumeria.jpg"
+)
+EXAMPLE_VIDEO_URL = (
+    "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+)
+EXAMPLE_AUDIO_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/c/ce/"
+    "Carolina_Wren_%28Thryothorus_ludovicianus%29_-_New_Jersey_2023-02-23.mp3"
+)
+
+
+@dataclass(frozen=True)
+class GenerationModel:
+    """What a deployment serves: the model, the request it takes, and its
+    submit route's docs. Deployments that differ only in sampling take the same
+    request."""
+
+    # The `{org}/{model}` of the submit path, the upstream model's lowercase
+    # Hugging Face ID.
+    id: str
+    request: type[GenerationRequest]
+    # The submit route's tag, summary and description, and an example request.
+    title: str
+    summary: str
+    example: dict
+    description: Optional[str] = None

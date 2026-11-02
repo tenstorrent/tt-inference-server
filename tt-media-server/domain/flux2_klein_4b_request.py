@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from domain.generation_request import (
     Count,
+    GenerationModel,
     GenerationRequest,
     ImageFormat,
     Media,
@@ -36,22 +37,12 @@ KLEIN_STEPS = 4
 
 
 class Flux2klein4bRequest(GenerationRequest):
-    MODEL_ID = "black-forest-labs/flux.2-klein-4b"
     OUTPUT_TYPE = "image"
-    TITLE = "FLUX.2 klein 4B"
-    SUMMARY = "Submit a FLUX.2 klein 4B job"
-    DESCRIPTION = "Text to image, or editing when `images` is given."
-    EXAMPLE = {
-        "prompt": "a lighthouse on a cliff, golden hour",
-        "aspect_ratio": "16:9",
-        "size": "2K",
-        "format": "webp",
-    }
     MEDIA_FIELDS = ("images",)
 
     prompt: str = Field(min_length=1)
-    images: Optional[list[Media]] = Field(
-        default=None,
+    images: list[Media] = Field(
+        default_factory=list,
         max_length=4,
         description="Images to edit or draw from. Omitted = text to image.",
     )
@@ -94,3 +85,18 @@ class Flux2klein4bRequest(GenerationRequest):
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return [size for sizes in KLEIN_SIZES.values() for size in sizes.values()]
+
+
+FLUX2_KLEIN_4B = GenerationModel(
+    id="black-forest-labs/flux.2-klein-4b",
+    request=Flux2klein4bRequest,
+    title="FLUX.2 klein 4B",
+    summary="Submit a FLUX.2 klein 4B job",
+    description="Text to image, or editing when `images` is given.",
+    example={
+        "prompt": "a lighthouse on a cliff, golden hour",
+        "aspect_ratio": "16:9",
+        "size": "2K",
+        "format": "webp",
+    },
+)

@@ -41,7 +41,7 @@ from utils.video_manager import VideoManager, probe_video
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
 
-_IMAGE_FORMATS = {
+IMAGE_FORMATS = {
     "png": ("PNG", "image/png"),
     "jpeg": ("JPEG", "image/jpeg"),
     "webp": ("WEBP", "image/webp"),
@@ -111,8 +111,9 @@ class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
 
-    async def submit(self, request: GenerationRequest) -> dict:
-        """Validate what the request schema can't, fetch its media, and queue it.
+    async def submit(self, request: GenerationRequest, model_id: str) -> dict:
+        """Validate what the request schema can't, fetch its media, and queue it
+        as a job of the model `model_id`.
 
         Returns the job's public metadata.
         """
@@ -145,7 +146,7 @@ class GenerationService(BaseJobService):
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=JobTypes.GENERATION,
-            model=request.MODEL_ID,
+            model=model_id,
             request=request,
             task_function=self.process_request,
             start_event=request._start_event,
@@ -297,7 +298,7 @@ class GenerationService(BaseJobService):
             "prompt": request._prompt,
         }
         if request.OUTPUT_TYPE == "image":
-            pil_format, content_type = _IMAGE_FORMATS[request.format]
+            pil_format, content_type = IMAGE_FORMATS[request.format]
             path = directory / f"{index}.{request.format}"
             image = result.convert("RGB") if pil_format == "JPEG" else result
             image.save(path, format=pil_format)

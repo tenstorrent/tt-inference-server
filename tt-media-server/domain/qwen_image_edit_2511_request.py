@@ -5,8 +5,11 @@
 from typing import Literal, Optional
 
 from domain.generation_request import (
+    EXAMPLE_IMAGE_URL,
+    EXAMPLE_PNG,
     Count,
     GenerationRequest,
+    GenerationModel,
     ImageFormat,
     Media,
     Seed,
@@ -29,19 +32,7 @@ QWEN_EDIT_SIZES: dict[str, tuple[int, int]] = {
 
 
 class QwenImageEdit2511Request(GenerationRequest):
-    MODEL_ID = "qwen/qwen-image-edit-2511"
     OUTPUT_TYPE = "image"
-    TITLE = "Qwen-Image-Edit-2511"
-    SUMMARY = "Submit a Qwen-Image-Edit-2511 job"
-    EXAMPLE = {
-        "prompt": "put the person from the second image on the bench in the first",
-        "negative_prompt": "blurry",
-        "images": [
-            "https://storage.internal/inputs/bench.jpg",
-            "data:image/jpeg;base64,/9j/4AAQ…",
-        ],
-        "format": "png",
-    }
     MEDIA_FIELDS = ("images",)
 
     prompt: str = Field(min_length=1, description="The edit instruction.")
@@ -84,3 +75,17 @@ class QwenImageEdit2511Request(GenerationRequest):
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return list(QWEN_EDIT_SIZES.values())
+
+
+QWEN_IMAGE_EDIT_2511 = GenerationModel(
+    id="qwen/qwen-image-edit-2511",
+    request=QwenImageEdit2511Request,
+    title="Qwen-Image-Edit-2511",
+    summary="Submit a Qwen-Image-Edit-2511 job",
+    example={
+        "prompt": "put the flower from the first image on the water in the second",
+        "negative_prompt": "blurry",
+        "images": [EXAMPLE_IMAGE_URL, EXAMPLE_PNG],
+        "format": "png",
+    },
+)

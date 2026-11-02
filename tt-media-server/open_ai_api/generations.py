@@ -11,10 +11,15 @@ from typing import Annotated, Any, Optional, Union
 from config.constants import JobTypes
 from config.settings import settings
 from domain.generation_job import Deleted, Job
-from domain.generation_requests import GENERATION_REQUESTS
+from domain.generation_models import GENERATION_MODELS
+from domain.generation_request import GenerationModel
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Security
 from fastapi.responses import FileResponse
-from model_services.generation_service import GenerationService, read_manifest
+from model_services.generation_service import (
+    IMAGE_FORMATS,
+    GenerationService,
+    read_manifest,
+)
 from pydantic import BaseModel, Field
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -80,7 +85,9 @@ _SUBMIT_RESPONSES: Responses = {
         retry_after="",
     ),
 }
-_FILE_TYPES = ("image/png", "image/jpeg", "image/webp", "video/mp4")
+_FILE_TYPES = [content_type for _, content_type in IMAGE_FORMATS.values()] + [
+    "video/mp4"
+]
 
 
 def _job_or_404(service: GenerationService, job_id: str) -> dict:
@@ -122,30 +129,30 @@ def _job(service: GenerationService, metadata: dict) -> Optional[Job]:
     return Job.from_metadata(metadata, settings.job_retention_seconds, outputs)
 
 
-def _add_submit_route(request_model) -> None:
+def _add_submit_route(model: GenerationModel) -> None:
     @router.post(
-        f"/v1/generations/{request_model.MODEL_ID}",
+        f"/v1/generations/{model.id}",
         status_code=202,
         response_model=Job,
-        tags=[request_model.TITLE],
-        summary=request_model.SUMMARY,
-        description=request_model.DESCRIPTION,
+        tags=[model.title],
+        summary=model.summary,
+        description=model.description,
         responses=_SUBMIT_RESPONSES,
     )
     async def submit(
         request: Annotated[
-            request_model,
-            Body(openapi_examples={"example": {"value": request_model.EXAMPLE}}),
+            model.request,
+            Body(openapi_examples={"example": {"value": model.example}}),
         ],
         service: GenerationService = Depends(service_resolver),
     ) -> Job:
         return Job.from_metadata(
-            await service.submit(request), settings.job_retention_seconds
+            await service.submit(request, model.id), settings.job_retention_seconds
         )
 
 
-if settings.model_runner in GENERATION_REQUESTS:
-    _add_submit_route(GENERATION_REQUESTS[settings.model_runner])
+if settings.model_runner in GENERATION_MODELS:
+    _add_submit_route(GENERATION_MODELS[settings.model_runner])
 
 
 @router.get(
@@ -237,11 +244,13 @@ def get_job_content(
     profile, yuv420p), faststart, with an AAC audio track when the model
     generates sound (see `VideoOutput.audio`)."""
     metadata = _job_or_404(service, job_id)
-    result_path = service.get_job_result_path(job_id)
-    if metadata["status"] != "completed" or result_path is None:
+    if metadata["status"] != "completed":
         raise HTTPException(
             status_code=409, detail=f"Job is {metadata['status']}, not completed"
         )
+    result_path = service.get_job_result_path(job_id)
+    if result_path is None:
+        raise HTTPException(status_code=404, detail=_OUTPUTS_GONE)
     try:
         outputs = read_manifest(result_path)
     except FileNotFoundError:

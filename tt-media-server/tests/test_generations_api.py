@@ -26,12 +26,8 @@ from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
-from domain.minimax_h3_request import (
-    MiniMaxH3FL2VALightX2VRequest,
-    MiniMaxH3FL2VARequest,
-    MiniMaxH3Ref2VALightX2VRequest,
-    MiniMaxH3Ref2VARequest,
-)
+from domain.generation_models import GENERATION_MODELS
+from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
@@ -79,23 +75,13 @@ def _resolved(schema: dict, defs: dict) -> dict:
 
 
 @pytest.mark.parametrize(
-    "request_model",
-    [
-        Wan22i2vA14bRequest,
-        QwenImageEdit2511Request,
-        Flux2klein4bRequest,
-        Ideogram4Request,
-        Ltx23DistilledRequest,
-        MiniMaxH3FL2VARequest,
-        MiniMaxH3FL2VALightX2VRequest,
-        MiniMaxH3Ref2VARequest,
-        MiniMaxH3Ref2VALightX2VRequest,
-    ],
+    "model", GENERATION_MODELS.values(), ids=lambda model: model.id
 )
-def test_request_schema_matches_the_spec(request_model):
-    path = _SPEC_DIR / "models" / f"{request_model.MODEL_ID}.yaml"
+def test_request_schema_matches_the_spec(model):
+    request_model = model.request
+    path = _SPEC_DIR / "models" / f"{model.id}.yaml"
     spec = yaml.safe_load(path.read_text())
-    submit = spec["paths"][f"/v1/generations/{request_model.MODEL_ID}"]["post"]
+    submit = spec["paths"][f"/v1/generations/{model.id}"]["post"]
     # A variant's file takes its base model's schema by reference.
     file, _, pointer = submit["requestBody"]["content"]["application/json"]["schema"][
         "$ref"

@@ -4,7 +4,14 @@
 
 from typing import Literal, Optional
 
-from domain.generation_request import GenerationRequest, Media, Seed
+from domain.generation_request import (
+    EXAMPLE_IMAGE_URL,
+    EXAMPLE_PNG,
+    GenerationModel,
+    GenerationRequest,
+    Media,
+    Seed,
+)
 from pydantic import Field
 
 WanRatio = Literal["16:9", "9:16"]
@@ -26,19 +33,7 @@ WAN_NEGATIVE_PROMPT = (
 
 
 class Wan22i2vA14bRequest(GenerationRequest):
-    MODEL_ID = "wan-ai/wan2.2-i2v-a14b"
     OUTPUT_TYPE = "video"
-    TITLE = "Wan2.2 I2V A14B"
-    SUMMARY = "Submit a Wan2.2 image-to-video job"
-    EXAMPLE = {
-        "prompt": "the boat drifts out of the harbour at dawn",
-        "first_frame": "data:image/png;base64,iVBORw0KGgo…",
-        "last_frame": "https://storage.internal/inputs/end.png",
-        "aspect_ratio": "16:9",
-        "size": "720p",
-        "frames": 81,
-        "seed": 1234,
-    }
     MEDIA_FIELDS = ("first_frame", "last_frame")
 
     prompt: str = Field(min_length=1)
@@ -102,3 +97,23 @@ class Wan22i2vA14bRequest(GenerationRequest):
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return [size for sizes in WAN_SIZES.values() for size in sizes.values()]
+
+
+WAN22_I2V_A14B = GenerationModel(
+    id="wan-ai/wan2.2-i2v-a14b",
+    request=Wan22i2vA14bRequest,
+    title="Wan2.2 I2V A14B",
+    summary="Submit a Wan2.2 image-to-video job",
+    example={
+        "prompt": (
+            "A close-up of pink plumeria blossoms; the view slowly pulls back and "
+            "turns into a sailboat drifting across the sea at dawn."
+        ),
+        "first_frame": EXAMPLE_IMAGE_URL,
+        "last_frame": EXAMPLE_PNG,
+        "aspect_ratio": "16:9",
+        "size": "720p",
+        "frames": 81,
+        "seed": 1234,
+    },
+)

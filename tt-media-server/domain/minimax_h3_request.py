@@ -14,7 +14,11 @@ The served envelope mirrors tt-metal's models/tt_dit/pipelines/minimax_h3
 from typing import Annotated, Literal, Optional
 
 from domain.generation_request import (
+    EXAMPLE_AUDIO_URL,
+    EXAMPLE_IMAGE_URL,
+    EXAMPLE_VIDEO_URL,
     AudioMedia,
+    GenerationModel,
     GenerationRequest,
     Media,
     Seed,
@@ -255,44 +259,43 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
         return super().output_size()
 
 
-_FL2VA_EXAMPLE = {
-    "prompt": (
-        "The woman turns toward the window and smiles as rain begins to tap on the "
-        "glass."
-    ),
-    "first_frame": "https://storage.internal/inputs/woman.png",
-    "duration": 5,
-}
-
-
 class MiniMaxH3FL2VARequest(_MiniMaxH3KeyframesRequest):
     """Shared by every MiniMax-H3 FL2VA deployment, whatever its sampling
     (e.g. `tenstorrent/minimax-h3-fl2va-lightx2v`)."""
 
-    MODEL_ID = "minimaxai/minimax-h3-fl2va"
-    TITLE = "MiniMax-H3 FL2VA"
-    SUMMARY = "Submit a MiniMax-H3 FL2VA job"
-    DESCRIPTION = (
+
+_FL2VA_EXAMPLE = {
+    "prompt": (
+        "The plumeria flower sways in a warm breeze as soft morning light moves "
+        "across its petals."
+    ),
+    "first_frame": EXAMPLE_IMAGE_URL,
+    "duration": 5,
+}
+MINIMAX_H3_FL2VA = GenerationModel(
+    id="minimaxai/minimax-h3-fl2va",
+    request=MiniMaxH3FL2VARequest,
+    title="MiniMax-H3 FL2VA",
+    summary="Submit a MiniMax-H3 FL2VA job",
+    description=(
         "Video with sound from text, optionally pinned to a first and/or last "
         "frame. Runs the `FL2VA` checkpoint of `MiniMaxAI/MiniMax-H3`; without "
         "frames it is text-to-video."
-    )
-    EXAMPLE = _FL2VA_EXAMPLE
-
-
-class MiniMaxH3FL2VALightX2VRequest(_MiniMaxH3KeyframesRequest):
-    """Shared by every MiniMax-H3 FL2VA deployment, whatever its sampling
-    (e.g. `tenstorrent/minimax-h3-fl2va-lightx2v`)."""
-
-    MODEL_ID = "tenstorrent/minimax-h3-fl2va-lightx2v"
-    TITLE = "MiniMax-H3 FL2VA LightX2V"
-    SUMMARY = "Submit a MiniMax-H3 FL2VA LightX2V job"
-    DESCRIPTION = (
+    ),
+    example=_FL2VA_EXAMPLE,
+)
+MINIMAX_H3_FL2VA_LIGHTX2V = GenerationModel(
+    id="tenstorrent/minimax-h3-fl2va-lightx2v",
+    request=MiniMaxH3FL2VARequest,
+    title="MiniMax-H3 FL2VA LightX2V",
+    summary="Submit a MiniMax-H3 FL2VA LightX2V job",
+    description=(
         "MiniMax-H3 FL2VA with lightx2v's Turbo distillation adapter: the same "
         "request as `minimaxai/minimax-h3-fl2va`, generated in far fewer "
         "denoising steps, so faster, with somewhat different output."
-    )
-    EXAMPLE = _FL2VA_EXAMPLE
+    ),
+    example=_FL2VA_EXAMPLE,
+)
 
 
 class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
@@ -408,49 +411,50 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
         return errors
 
 
-_REF2VA_DOC = """Shared by every MiniMax-H3 Ref2VA deployment, whatever its sampling
-(e.g. `tenstorrent/minimax-h3-ref2va-lightx2v`).
+class MiniMaxH3Ref2VARequest(_MiniMaxH3ReferencesRequest):
+    """Shared by every MiniMax-H3 Ref2VA deployment, whatever its sampling
+    (e.g. `tenstorrent/minimax-h3-ref2va-lightx2v`).
 
-References: at most 12 in total, and at least one image or video (audio
-alone is rejected with 422). Video and audio clips are 2–15 s each and
-at most 15 s combined per kind.
+    References: at most 12 in total, and at least one image or video (audio
+    alone is rejected with 422). Video and audio clips are 2–15 s each and
+    at most 15 s combined per kind.
 
-A reference video's soundtrack is audio conditioning: it counts toward
-the audio limits (at most 3 audio references, at most 15 s of audio
-combined) as well as the video ones. A video with sound counts once
-toward the 12-reference total."""
+    A reference video's soundtrack is audio conditioning: it counts toward
+    the audio limits (at most 3 audio references, at most 15 s of audio
+    combined) as well as the video ones. A video with sound counts once
+    toward the 12-reference total."""
+
+
 _REF2VA_EXAMPLE = {
     "prompt": (
-        "The man from Picture 1 walks through the market from Video 1, speaking in "
-        "the voice of Audio 1."
+        "The plumeria from Picture 1 sways in the garden from Video 1 while the "
+        "wren from Audio 1 sings nearby."
     ),
-    "images": ["https://storage.internal/inputs/man.png"],
-    "videos": ["https://storage.internal/inputs/market.mp4"],
-    "audios": ["https://storage.internal/inputs/voice.wav"],
+    "images": [EXAMPLE_IMAGE_URL],
+    "videos": [EXAMPLE_VIDEO_URL],
+    "audios": [EXAMPLE_AUDIO_URL],
     "duration": 5,
 }
-
-
-class MiniMaxH3Ref2VARequest(_MiniMaxH3ReferencesRequest):
-    __doc__ = _REF2VA_DOC
-    MODEL_ID = "minimaxai/minimax-h3-ref2va"
-    TITLE = "MiniMax-H3 Ref2VA"
-    SUMMARY = "Submit a MiniMax-H3 Ref2VA job"
-    DESCRIPTION = (
+MINIMAX_H3_REF2VA = GenerationModel(
+    id="minimaxai/minimax-h3-ref2va",
+    request=MiniMaxH3Ref2VARequest,
+    title="MiniMax-H3 Ref2VA",
+    summary="Submit a MiniMax-H3 Ref2VA job",
+    description=(
         "Video with sound from text plus reference images, videos and audio "
         "clips. Runs the `Ref2VA` checkpoint of `MiniMaxAI/MiniMax-H3`."
-    )
-    EXAMPLE = _REF2VA_EXAMPLE
-
-
-class MiniMaxH3Ref2VALightX2VRequest(_MiniMaxH3ReferencesRequest):
-    __doc__ = _REF2VA_DOC
-    MODEL_ID = "tenstorrent/minimax-h3-ref2va-lightx2v"
-    TITLE = "MiniMax-H3 Ref2VA LightX2V"
-    SUMMARY = "Submit a MiniMax-H3 Ref2VA LightX2V job"
-    DESCRIPTION = (
+    ),
+    example=_REF2VA_EXAMPLE,
+)
+MINIMAX_H3_REF2VA_LIGHTX2V = GenerationModel(
+    id="tenstorrent/minimax-h3-ref2va-lightx2v",
+    request=MiniMaxH3Ref2VARequest,
+    title="MiniMax-H3 Ref2VA LightX2V",
+    summary="Submit a MiniMax-H3 Ref2VA LightX2V job",
+    description=(
         "MiniMax-H3 Ref2VA with lightx2v's Turbo distillation adapter: the same "
         "request as `minimaxai/minimax-h3-ref2va`, generated in far fewer "
         "denoising steps, so faster, with somewhat different output."
-    )
-    EXAMPLE = _REF2VA_EXAMPLE
+    ),
+    example=_REF2VA_EXAMPLE,
+)

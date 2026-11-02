@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from domain.generation_request import (
     Count,
+    GenerationModel,
     GenerationRequest,
     ImageFormat,
     SchemaComponent,
@@ -168,38 +169,7 @@ class Ideogram4Caption(_Strict):
 
 
 class Ideogram4Request(GenerationRequest):
-    MODEL_ID = "ideogram-ai/ideogram-4"
     OUTPUT_TYPE = "image"
-    TITLE = "Ideogram 4.0"
-    SUMMARY = "Submit an Ideogram 4.0 text-to-image job"
-    EXAMPLE = {
-        "structured_prompt": {
-            "high_level_description": (
-                'A neon sign reading "OPEN LATE" on a brick wall at night.'
-            ),
-            "style_description": {
-                "aesthetics": "moody, urban, vibrant",
-                "lighting": "neon glow, deep shadows",
-                "medium": "graphic_design",
-                "art_style": "retro neon signage",
-                "color_palette": ["#FF2E88", "#1B1B2F", "#F5F5F5"],
-            },
-            "compositional_deconstruction": {
-                "background": "A dark red brick wall, wet from rain.",
-                "elements": [
-                    {
-                        "type": "text",
-                        "bbox": [350, 150, 650, 850],
-                        "text": "OPEN LATE",
-                        "desc": "Glowing pink neon letters, slightly flickering.",
-                    }
-                ],
-            },
-        },
-        "aspect_ratio": "2:3",
-        "size": "2K",
-        "rendering_speed": "quality",
-    }
 
     structured_prompt: Ideogram4Caption
     count: Count = 1
@@ -247,3 +217,39 @@ class Ideogram4Request(GenerationRequest):
             ensure_ascii=False,
             separators=(",", ":"),
         )
+
+
+IDEOGRAM_4 = GenerationModel(
+    id="ideogram-ai/ideogram-4",
+    request=Ideogram4Request,
+    title="Ideogram 4.0",
+    summary="Submit an Ideogram 4.0 text-to-image job",
+    example={
+        "structured_prompt": {
+            "high_level_description": (
+                'A neon sign reading "OPEN LATE" on a brick wall at night.'
+            ),
+            "style_description": {
+                "aesthetics": "moody, urban, vibrant",
+                "lighting": "neon glow, deep shadows",
+                "medium": "graphic_design",
+                "art_style": "retro neon signage",
+                "color_palette": ["#FF2E88", "#1B1B2F", "#F5F5F5"],
+            },
+            "compositional_deconstruction": {
+                "background": "A dark red brick wall, wet from rain.",
+                "elements": [
+                    {
+                        "type": "text",
+                        "bbox": [350, 150, 650, 850],
+                        "text": "OPEN LATE",
+                        "desc": "Glowing pink neon letters, slightly flickering.",
+                    }
+                ],
+            },
+        },
+        "aspect_ratio": "2:3",
+        "size": "2K",
+        "rendering_speed": "quality",
+    },
+)
