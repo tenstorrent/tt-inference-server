@@ -20,8 +20,6 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
-
-from .._test_common import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,
@@ -29,6 +27,7 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 )
 from workflow_module.context_helpers import is_sdxl_num_prompts_enabled
 
+from .._test_common import TestConfig as ServerTestConfig
 from .._test_common import block_id
 from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
@@ -457,6 +456,13 @@ def run_image_eval(ctx: MediaContext) -> Block:
     )
 
     runner_in_use = require_health(ctx, HardwareRequirement.ANY_CHIP)
+
+    # A model with GPU reference images is graded against them, case by case.
+    from .image_compare_eval import eval_model, run_image_compare_eval
+
+    compare_model = eval_model(ctx.model_spec.hf_model_repo)
+    if compare_model is not None:
+        return run_image_compare_eval(ctx, compare_model)
 
     eval_method = IMAGE_EVAL_DISPATCH.get(runner_in_use, _run_image_generation_eval)
     try:

@@ -588,6 +588,110 @@ def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+IMAGE_COMPARE_KIND = "image_compare"
+
+IMAGE_COMPARE_NOTE = (
+    "TT's image against the GPU's from the same inputs and noise: PSNR and SSIM "
+    "higher is closer, LPIPS lower, DINO similarity 1 is the same. For edits, "
+    "how TT's changes to the input match the GPU's (correlation of the change "
+    "maps, overlap of the changed regions), and how far the unchanged parts "
+    "moved against the input, TT / GPU."
+)
+
+
+def _number(value: Any, digits: int) -> str:
+    return "" if value is None else f"{value:.{digits}f}"
+
+
+@register(IMAGE_COMPARE_KIND)
+def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
+    """An image model's eval: TT's images against the GPU's, per group, and the gate."""
+    data = block.data if isinstance(block.data, Mapping) else {}
+    gate = data.get("gate") or {}
+    checks = gate.get("checks") or []
+    intro = (
+        f"{data.get('num_generated', 0)} of {data.get('num_cases', 0)} {data.get('subset', '')} cases "
+        f"made through {data.get('api', '?')}, against the GPU run {data.get('reference', '?')}."
+    )
+    if gate:
+        verdict = gate.get("verdict", "NA")
+        failed = sum(c.get("status") == "FAIL" for c in checks)
+        intro += f" Gate: {glyph_for_label(verdict)} {verdict}".rstrip()
+        intro += (
+            f" ({failed} of {len(checks)} checks failed)."
+            if checks
+            else " (nothing calibrated yet)."
+        )
+    lines = [f"### Image compare: {data.get('heading') or block.title}", "", intro]
+    if data.get("error"):
+        lines += ["", f"{data['error']}."]
+
+    rows = []
+    for group, g in (data.get("groups") or {}).items():
+        worst = g.get("worst") or {}
+        drift = ""
+        if "drift_px_tt" in g or "drift_px_gpu" in g:
+            drift = f"{_number(g.get('drift_px_tt'), 1)} / {_number(g.get('drift_px_gpu'), 1)}"
+        rows.append(
+            {
+                "Group": group,
+                "Cases": g.get("cases"),
+                "PSNR (dB)": _number(g.get("psnr"), 2),
+                "SSIM": _number(g.get("ssim"), 3),
+                "LPIPS": _number(g.get("lpips"), 3),
+                "DINO": _number(g.get("dino"), 3),
+                "Change corr.": _number(g.get("change_correlation"), 3),
+                "Change IoU": _number(g.get("change_iou"), 3),
+                "Drift px TT / GPU": drift,
+                "Worst": (
+                    f"{worst.get('case_id')} ({_number(worst.get('lpips', worst.get('psnr')), 3)})"
+                    if worst
+                    else ""
+                ),
+            }
+        )
+    if rows:
+        lines += ["", build_markdown_table(rows), "", IMAGE_COMPARE_NOTE]
+    if checks:
+        lines += [
+            "",
+            "#### Gate checks",
+            "",
+            build_markdown_table(
+                [
+                    {
+                        "Group": c.get("group"),
+                        "Check": c.get("check"),
+                        "Value": c.get("value"),
+                        "Limit": c.get("threshold"),
+                        "Result": f"{glyph_for_label(c.get('status', ''))} {c.get('status', '')}".strip(),
+                        "Detail": c.get("detail", ""),
+                    }
+                    for c in checks
+                ]
+            ),
+        ]
+
+    notes = []
+    for f in data.get("generation_failed") or []:
+        notes.append(f"- ❌ {f.get('case_id')}: not made, {f.get('problem')}")
+    if data.get("not_served"):
+        notes.append(
+            f"- Not sent ({len(data['not_served'])}): more inputs than {data.get('api')} takes"
+        )
+    for case_id, error in (data.get("compare_failed") or {}).items():
+        notes.append(f"- {case_id}: not compared, {error}")
+    for key in ("lpips_error", "dino_error"):
+        if data.get(key):
+            notes.append(
+                f"- {key.split('_')[0].upper()} unavailable: {data[key][:200]}"
+            )
+    if notes:
+        lines += ["", *notes]
+    lines += ["", "Per-case metrics: compare.json with the eval images."]
+    return "\n".join(lines)
+
+
 @register(BENCHMARKS_KIND)
 def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
     """Render a benchmark block plus whichever notes apply.
