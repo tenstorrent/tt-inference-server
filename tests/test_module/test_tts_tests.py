@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+import json
 import math
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -150,6 +153,10 @@ def _harness_row(concurrency=1, *, offset=0.0, errors=0):
         "ttft_p95": 520.0 + offset,
         "ttf4_p50": 540.0 + offset,
         "ttf4_p95": 560.0 + offset,
+        "ttfb_max": 300.0 + offset,
+        "ttfs_max": 230.0 + offset,
+        "ttft_max": 530.0 + offset,
+        "ttf4_max": 570.0 + offset,
     }
 
 
@@ -164,7 +171,64 @@ def test_report_rows_use_fc_sc_tc_names_and_normalize_nan():
     assert result["tc_p95_ms"] == 520.0
     assert result["c4_p50_ms"] == 540.0
     assert result["c4_p95_ms"] == 560.0
+    assert (result["fc_max_ms"], result["sc_max_ms"]) == (300.0, 230.0)
+    assert (result["tc_max_ms"], result["c4_max_ms"]) == (530.0, 570.0)
     assert "ttfb_p50" not in result
+
+
+def test_aggregate_reports_max_and_counts_empty_audio_as_errors():
+    harness = benchmark.tts_load_harness
+
+    def rec(t_send, ok=True, error=None, ttfb=0.1, gaps=(0.6, 0.9, 1.2)):
+        return {
+            "conc": 4,
+            "t_send": t_send,
+            "t_end": t_send + 5.0,
+            "ok": ok,
+            "error": error,
+            "ttfb_s": ttfb if ok else None,
+            "sc_s": 0.2 if ok else None,
+            "tc_gaps": list(gaps) if ok else [],
+            "nchunks": 5 if ok else 0,
+            "chars": 10 if t_send == 1.0 else 30,
+        }
+
+    doc = {
+        "meta": {"chars_per_request": 100},
+        "levels": [{"conc": 4, "window_start": 0.0, "window_end": 60.0}],
+        "records": [
+            rec(1.0),
+            rec(2.0, ttfb=0.4, gaps=(0.6, 0.9, 1.5)),
+            rec(3.0, ok=False, error="empty audio (header only)"),
+            rec(4.0, ok=False, error="http 429: full"),
+        ],
+    }
+
+    [row], _ = harness.aggregate(doc)
+
+    assert (row["n_ok"], row["n_err"]) == (2, 2)
+    assert row["errors"] == {"empty audio (header only)": 1, "http 429: full": 1}
+    assert row["ttfb_max"] == pytest.approx(400.0)
+    assert row["ttfs_max"] == pytest.approx(200.0)
+    assert row["ttft_max"] == pytest.approx(600.0)
+    assert row["ttf4_max"] == pytest.approx(1500.0)
+    # Characters/hour credits each delivered response's own text (10 + 30 chars).
+    assert row["mchar_h"] == pytest.approx(40 / 60.0 * 3600.0 / 1e6)
+
+
+def test_prewarm_sends_drawn_prompts(monkeypatch):
+    harness = benchmark.tts_load_harness
+    sent = []
+    base = harness.Target(host="quad-driver.example", text="base")
+
+    def fake_request(target, uid, rec):
+        sent.append(target.text)
+        time.sleep(0.01)
+
+    monkeypatch.setattr(harness, "request", fake_request)
+    done = harness.prewarm(base, 2, 0.05, draw=lambda: base.with_prompt("drawn", [7]))
+
+    assert done > 0 and sent and set(sent) == {"drawn"}
 
 
 def test_worst_latency_values_require_every_concurrency_to_pass():
@@ -184,7 +248,7 @@ def test_worst_latency_values_require_every_concurrency_to_pass():
     }
 
 
-def test_target_uses_context_host_port_and_ci_text_shape():
+def test_target_uses_context_host_port_and_replay_preflight_text():
     ctx = SimpleNamespace(
         base_url="http://quad-driver.example:8123",
         server_port=8123,
@@ -194,9 +258,8 @@ def test_target_uses_context_host_port_and_ci_text_shape():
 
     assert target.host == "quad-driver.example"
     assert target.port == 8123
-    assert len(target.text) == round(
-        benchmark.TTS_CI_TEXT_TOKENS * benchmark.TTS_CI_CHARS_PER_TOKEN
-    )
+    assert target.text == benchmark.DEFAULT_TTS_TEXT
+    assert target.speech_ids == []
 
 
 def _workflow_ctx(workflow_args, **fields):
@@ -208,12 +271,12 @@ def _workflow_ctx(workflow_args, **fields):
 @pytest.mark.parametrize(
     "workflow_args, expected",
     [
-        (None, ((1, 2, 4, 8, 16), 128)),
-        ("", ((1, 2, 4, 8, 16), 128)),
+        (None, ((1, 2, 4, 8, 16), None)),
+        ("", ((1, 2, 4, 8, 16), None)),
         ("concurrency=480 isl=256", ((480,), 256)),
-        ("concurrency=64,160,320,160", ((64, 160, 320), 128)),
+        ("concurrency=64,160,320,160", ((64, 160, 320), None)),
         ("isl=64", ((1, 2, 4, 8, 16), 64)),
-        ("concurrency=32 other-key=1", ((32,), 128)),
+        ("concurrency=32 other-key=1", ((32,), None)),
     ],
     ids=("unset", "empty", "single-level", "ladder", "isl-only", "unknown-key"),
 )
@@ -238,6 +301,65 @@ def test_target_text_follows_isl_workflow_arg():
     target = benchmark._target(ctx)
 
     assert len(target.text) == round(256 * benchmark.TTS_CI_CHARS_PER_TOKEN)
+
+
+def test_traffic_draw_replays_the_captured_mix():
+    with open(benchmark.TTS_CI_TRAFFIC_DATASET) as f:
+        ladder = json.load(f)["ladder"]
+    texts = {t["text"] for t in ladder["texts"]}
+    sizes = {v["voice_speech_ids"] for v in ladder["voices"]}
+    base = benchmark.tts_load_harness.Target(host="quad-driver.example", port=8123)
+
+    draw = benchmark._traffic_draw(base)
+    draws = [draw() for _ in range(200)]
+
+    assert all(t.host == "quad-driver.example" and t.port == 8123 for t in draws)
+    assert all(t.text in texts and len(t.speech_ids) in sizes for t in draws)
+    assert len({t.text for t in draws}) > 1
+    assert len({len(t.speech_ids) for t in draws}) > 1
+    ids = [i for t in draws for i in t.speech_ids]
+    assert 0 <= min(ids) and max(ids) < benchmark.TTS_CODEBOOK_SIZE
+    body = json.loads(draws[0].request.split(b"\r\n\r\n", 1)[1])
+    assert body == {"text": draws[0].text, "speech_ids": draws[0].speech_ids}
+    # Seeded: the same draws every run.
+    again = benchmark._traffic_draw(base)
+    assert [again().text for _ in range(5)] == [t.text for t in draws[:5]]
+
+
+def test_run_closed_sends_drawn_prompts_after_ramped_starts(monkeypatch):
+    harness = benchmark.tts_load_harness
+    sent, offsets = [], []
+    base = harness.Target(host="quad-driver.example", text="base")
+    prompts = iter(range(10_000))
+
+    def fake_request(target, uid, rec):
+        sent.append(target)
+        rec.update(ok=True, chars=len(target.text), t_end=time.time())
+        time.sleep(0.01)
+
+    real_wait = threading.Event.wait
+
+    def recording_wait(self, timeout=None):
+        if timeout is None:  # Thread.start() waiting for the thread to run
+            return real_wait(self)
+        offsets.append(timeout)
+        return real_wait(self, 0)
+
+    monkeypatch.setattr(harness, "request", fake_request)
+    monkeypatch.setattr(threading.Event, "wait", recording_wait)
+    recs, _, _ = harness.run_closed(
+        base,
+        4,
+        0.05,
+        0.0,
+        draw=lambda: base.with_prompt(f"p{next(prompts)}", [1, 2]),
+        ramp=20.0,
+    )
+
+    assert recs and sent
+    assert all(t.text.startswith("p") and t.speech_ids == [1, 2] for t in sent)
+    assert len(offsets) == 4 and all(0 <= o < 20.0 for o in offsets)
+    assert len(set(offsets)) == 4
 
 
 def test_integrity_check_grades_the_requested_ladder(monkeypatch):
@@ -267,12 +389,12 @@ def test_tts_latency_targets_are_inclusive():
                 **_harness_row(concurrency),
                 "ttfb_p50": 100.0,
                 "ttfb_p95": 125.0,
-                "ttfs_p50": 180.0,
-                "ttfs_p95": 180.0,
-                "ttft_p50": 360.0,
-                "ttft_p95": 360.0,
-                "ttf4_p50": 680.0,
-                "ttf4_p95": 680.0,
+                "ttfs_p50": 300.0,
+                "ttfs_p95": 300.0,
+                "ttft_p50": 600.0,
+                "ttft_p95": 600.0,
+                "ttf4_p50": 960.0,
+                "ttf4_p95": 960.0,
             }
             for concurrency in benchmark.TTS_CI_CONCURRENCY
         ]
@@ -350,9 +472,10 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     monkeypatch.setattr(benchmark, "_target", lambda actual: "target")
     monkeypatch.setattr(benchmark, "block_id", lambda actual: "tts-quad")
 
-    def fake_sweep(args, target):
+    def fake_sweep(args, target, draw=None):
         observed["args"] = args
         observed["target"] = target
+        observed["draw"] = draw
         return document
 
     monkeypatch.setattr(benchmark.tts_load_harness, "sweep", fake_sweep)
@@ -376,6 +499,11 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     assert observed["target"] == "target"
     assert observed["args"].concurrency == "1,2,4,8,16"
     assert observed["args"].out == str(tmp_path / "tts_load_results.json")
+    # No isl workflow arg: replay the captured traffic with ramped worker starts.
+    assert callable(observed["draw"])
+    assert observed["args"].ramp == benchmark.TTS_CI_WARMUP_SECONDS
+    assert block.targets["text_tokens"] is None
+    assert block.targets["workload"] == "tts_staged_2026-10-27.json"
     assert block.kind == "benchmarks"
     assert block.id == "tts-quad"
     assert block.data["Benchmarks"]["num_requests"] == 42
@@ -451,7 +579,7 @@ def test_sweep_runs_a_nonascending_ladder_in_the_requested_order(monkeypatch, tm
     harness = benchmark.tts_load_harness
     ran = []
 
-    def fake_run_closed(target, conc, duration, warmup):
+    def fake_run_closed(target, conc, duration, warmup, **kwargs):
         ran.append(conc)
         return [], 0.0, 1.0
 

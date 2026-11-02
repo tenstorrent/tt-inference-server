@@ -7,15 +7,25 @@
 The load generator remains usable as a standalone CLI. This module supplies
 the workflow-facing policy (the CI sweep shape), translates its aggregate rows
 to the common report schema, and grades the six FC/SC/TC percentile SLOs.
+
+By default every request replays the captured client traffic of 2026-10-27
+(datasets/tts_staged_2026-10-27.json): a text and a voice prompt length drawn
+independently, weighted by how often each appeared, so the ISL mix matches it
+(p50 ~740 tokens, 200-1600). The capture kept only voice prompt lengths, so
+voice prompts are seeded random speech IDs: right ISL, but no real voice.
+``--workflow-args isl=N`` instead sends one fixed text of ~N tokens, no voice.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import math
+import random
 import shlex
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -54,9 +64,14 @@ TTS_CI_WARMUP_SECONDS = 20.0
 TTS_CI_WARMUP_CONCURRENCY = 100
 TTS_CI_PREWARM_SECONDS = 60.0
 TTS_CI_SETTLE_SECONDS = 5.0
-# Default input length (ISL) for the TTS benchmark, in tokens.
-TTS_CI_TEXT_TOKENS = 128
+# Fixed-text mode (`isl=N`): characters per text token.
 TTS_CI_CHARS_PER_TOKEN = 3.46
+# Default traffic: texts and voice prompt lengths of the captured client run.
+TTS_CI_TRAFFIC_DATASET = (
+    Path(__file__).resolve().parent / "datasets" / "tts_staged_2026-10-27.json"
+)
+TTS_CI_SEED = 42
+TTS_CODEBOOK_SIZE = 65536  # speech token IDs are <|s_0|>..<|s_65535|>
 TTS_CI_TIMEOUT_SECONDS = 300.0
 TTS_RAW_RESULTS_FILENAME = "tts_load_results.json"
 _TTS_WORKFLOW_ARG_KEYS = ("concurrency", "isl")
@@ -97,12 +112,16 @@ def _report_rows(rows: list[dict]) -> list[dict]:
                 "average_chunks": _finite(row["chunks"]),
                 "fc_p50_ms": _finite(row["ttfb_p50"]),
                 "fc_p95_ms": _finite(row["ttfb_p95"]),
+                "fc_max_ms": _finite(row.get("ttfb_max")),
                 "sc_p50_ms": _finite(row["ttfs_p50"]),
                 "sc_p95_ms": _finite(row["ttfs_p95"]),
+                "sc_max_ms": _finite(row.get("ttfs_max")),
                 "tc_p50_ms": _finite(row["ttft_p50"]),
                 "tc_p95_ms": _finite(row["ttft_p95"]),
+                "tc_max_ms": _finite(row.get("ttft_max")),
                 "c4_p50_ms": _finite(row["ttf4_p50"]),
                 "c4_p95_ms": _finite(row["ttf4_p95"]),
+                "c4_max_ms": _finite(row.get("ttf4_max")),
             }
         )
     return report_rows
@@ -135,11 +154,12 @@ def _positive_int(key: str, value: str) -> int:
     return parsed
 
 
-def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int]:
-    """Concurrency ladder and ISL (tokens) from ``--workflow-args``.
+def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int | None]:
+    """Concurrency ladder and fixed ISL (tokens) from ``--workflow-args``.
 
     ``concurrency=480`` or ``concurrency=64,160,320`` replaces the ladder and
-    ``isl=128`` sets the input length; a key that is not given keeps its CI default.
+    ``isl=128`` sends a fixed text of that length; without ``isl`` the ISL is
+    None and requests replay the captured traffic mix.
     """
     rc = getattr(ctx, "runtime_config", None)
     params = {}
@@ -162,9 +182,7 @@ def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int]:
         concurrency = tuple(
             dict.fromkeys(_positive_int("concurrency", v) for v in values)
         )
-    text_tokens = (
-        _positive_int("isl", params["isl"]) if "isl" in params else TTS_CI_TEXT_TOKENS
-    )
+    text_tokens = _positive_int("isl", params["isl"]) if "isl" in params else None
     return concurrency, text_tokens
 
 
@@ -218,12 +236,14 @@ def _sweep_args(
     output_path: Path,
     prewarm: bool = False,
     concurrency: tuple[int, ...] = TTS_CI_CONCURRENCY,
+    ramp: float = 0.0,
 ) -> argparse.Namespace:
     """Arguments consumed by :func:`tts_load_harness.sweep`.
 
     ``prewarm`` (the ``--prewarm`` run.py flag) gates the pre-sweep warmup burst:
     off by default (0 s, no burst); when set, a ``TTS_CI_WARMUP_CONCURRENCY``-wide
     burst runs for ``TTS_CI_PREWARM_SECONDS`` and is discarded before the sweep.
+    ``ramp`` spreads each level's worker starts over that many seconds.
     """
     return argparse.Namespace(
         concurrency=",".join(str(value) for value in concurrency),
@@ -232,6 +252,7 @@ def _sweep_args(
         warmup_concurrency=TTS_CI_WARMUP_CONCURRENCY,
         prewarm=TTS_CI_PREWARM_SECONDS if prewarm else 0.0,
         settle=TTS_CI_SETTLE_SECONDS,
+        ramp=ramp,
         arrival="closed",
         rate=None,
         max_inflight=0,
@@ -247,13 +268,45 @@ def _target(ctx: MediaContext) -> tts_load_harness.Target:
             f"TTS benchmark could not resolve a host from {ctx.base_url!r}"
         )
     _, text_tokens = _workflow_params(ctx)
-    nchars = round(text_tokens * TTS_CI_CHARS_PER_TOKEN)
+    text = (
+        tts_load_harness.build_text(round(text_tokens * TTS_CI_CHARS_PER_TOKEN))
+        if text_tokens
+        else DEFAULT_TTS_TEXT  # replay: only preflight and prewarm send this
+    )
     return tts_load_harness.Target(
         host=parsed.hostname,
         port=ctx.server_port,
         timeout=TTS_CI_TIMEOUT_SECONDS,
-        text=tts_load_harness.build_text(nchars),
+        text=text,
     )
+
+
+def _traffic_draw(
+    base: tts_load_harness.Target,
+    dataset: Path = TTS_CI_TRAFFIC_DATASET,
+    seed: int = TTS_CI_SEED,
+):
+    """Per-request prompts drawn like the captured traffic (see module docstring)."""
+    with open(dataset) as f:
+        ladder = json.load(f)["ladder"]
+    texts = [t["text"] for t in ladder["texts"]]
+    text_weights = [t["count"] for t in ladder["texts"]]
+    sizes = [v["voice_speech_ids"] for v in ladder["voices"]]
+    size_weights = [v["count"] for v in ladder["voices"]]
+    id_rng = random.Random(seed)
+    voices = {
+        n: [id_rng.randrange(TTS_CODEBOOK_SIZE) for _ in range(n)]
+        for n in sorted(set(sizes))
+    }
+    rng, lock = random.Random(seed), threading.Lock()
+
+    def draw() -> tts_load_harness.Target:
+        with lock:
+            text = rng.choices(texts, text_weights)[0]
+            size = rng.choices(sizes, size_weights)[0]
+        return base.with_prompt(text, voices[size])
+
+    return draw
 
 
 def run_tts_load_benchmark(ctx: MediaContext) -> Block:
@@ -272,8 +325,13 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     if prewarm_only:
         # Warm the server and stop -- no sweep, no latency metrics. Lets a caller
         # prime the board once and then run measured sweeps separately.
+        target = _target(ctx)
+        replay = _workflow_params(ctx)[1] is None
         requests_done = tts_load_harness.prewarm(
-            _target(ctx), TTS_CI_WARMUP_CONCURRENCY, TTS_CI_PREWARM_SECONDS
+            target,
+            TTS_CI_WARMUP_CONCURRENCY,
+            TTS_CI_PREWARM_SECONDS,
+            _traffic_draw(target) if replay else None,
         )
         return Block(
             kind="benchmarks",
@@ -298,9 +356,19 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
         )
 
     concurrency, text_tokens = _workflow_params(ctx)
-    logger.info(f"TTS benchmark sweep: concurrency={concurrency} isl={text_tokens}")
+    workload = f"isl={text_tokens}" if text_tokens else TTS_CI_TRAFFIC_DATASET.name
+    logger.info(f"TTS benchmark sweep: concurrency={concurrency} {workload}")
+    target = _target(ctx)
+    replay = text_tokens is None
     document = tts_load_harness.sweep(
-        _sweep_args(output_path, prewarm, concurrency), _target(ctx)
+        _sweep_args(
+            output_path,
+            prewarm,
+            concurrency,
+            ramp=TTS_CI_WARMUP_SECONDS if replay else 0.0,
+        ),
+        target,
+        _traffic_draw(target) if replay else None,
     )
     rows, chars_per_request = tts_load_harness.aggregate(document)
     report_rows = _report_rows(rows)
@@ -316,6 +384,7 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
         targets={
             "concurrency": list(concurrency),
             "text_tokens": text_tokens,
+            "workload": workload,
         },
         data={
             "Benchmarks": {

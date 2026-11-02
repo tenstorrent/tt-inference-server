@@ -75,6 +75,7 @@ scripts/examples/example_data
 !tt-media-server/monitoring/grafana/**/*.json
 !test_module/exabox/multi_user_turn_bench/prompts.json
 !test_module/exabox/summarize_bench/prompts_32k.jsonl
+!test_module/benchmark_tests/datasets/*.json
 .github/workflows/*.json
 
 venv*/**

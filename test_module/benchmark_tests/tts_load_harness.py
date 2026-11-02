@@ -59,7 +59,8 @@ import statistics as st
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 
 
 # Support both direct execution and package imports.
@@ -139,6 +140,10 @@ class Target:
             b"Connection: keep-alive\r\n\r\n" + body
         )
 
+    def with_prompt(self, text: str, speech_ids: list) -> "Target":
+        """The same endpoint with another text and voice prompt."""
+        return replace(self, text=text, speech_ids=speech_ids)
+
 
 def build_text(nchars: int) -> str:
     base = "The quick brown fox jumps over the lazy dog. "
@@ -179,6 +184,7 @@ def request(
             "bytes": 0,
             "audio_s": 0.0,
             "chars": len(tgt.text),
+            "voice_speech_ids": len(tgt.speech_ids),
             "ok": False,
             "capped": False,
             "status": None,
@@ -301,18 +307,32 @@ def _serializable(rec: dict, conc: int) -> dict:
 
 
 def run_closed(
-    tgt: Target, conc: int, duration: float, warmup: float
+    tgt: Target,
+    conc: int,
+    duration: float,
+    warmup: float,
+    draw: Callable[[], Target] | None = None,
+    ramp: float = 0.0,
 ) -> tuple[list, float, float]:
-    """Closed loop: each worker sends its next request as soon as one completes."""
+    """Closed loop: each worker sends its next request as soon as one completes.
+
+    ``draw`` supplies a fresh Target (prompt) per request instead of ``tgt``.
+    ``ramp`` > 0 starts each worker at a seeded uniform random offset in
+    [0, ramp) s, so first requests don't all complete and resend in lockstep.
+    """
     stop = threading.Event()
     out, lock = [], threading.Lock()
+    rng = random.Random(f"ramp-{conc}")
+    offsets = [rng.uniform(0, ramp) if ramp > 0 else 0.0 for _ in range(conc)]
 
     def worker(uid: int) -> None:
+        stop.wait(offsets[uid])
         while not stop.is_set():
+            t = draw() if draw else tgt
             rec = {"uid": uid, "t_send": time.time(), "t_end": None}
             with lock:
                 out.append(rec)  # registered BEFORE the send, never vanishes
-            request(tgt, uid, rec)
+            request(t, uid, rec)
 
     logger.info("  warmup %.0fs @ conc=%d ...", warmup, conc)
     threads = [
@@ -486,7 +506,12 @@ def _preflight(tgt: Target) -> dict:
     )
 
 
-def prewarm(tgt: Target, conc: int, duration: float) -> int:
+def prewarm(
+    tgt: Target,
+    conc: int,
+    duration: float,
+    draw: Callable[[], Target] | None = None,
+) -> int:
     """Prime the server before the measured sweep: run ``conc`` concurrent requests
     for ``duration`` seconds and discard every result.
 
@@ -507,7 +532,7 @@ def prewarm(tgt: Target, conc: int, duration: float) -> int:
     def worker() -> None:
         while not stop.is_set():
             rec = {"uid": -1, "t_send": time.time(), "t_end": None}
-            request(tgt, -1, rec)
+            request(draw() if draw else tgt, -1, rec)
             with lock:
                 done[0] += 1
 
@@ -523,19 +548,25 @@ def prewarm(tgt: Target, conc: int, duration: float) -> int:
     return done[0]
 
 
-def sweep(args: argparse.Namespace, tgt: Target) -> dict:
-    """Run every concurrency level and return the results document."""
+def sweep(
+    args: argparse.Namespace, tgt: Target, draw: Callable[[], Target] | None = None
+) -> dict:
+    """Run every concurrency level and return the results document.
+
+    ``draw`` gives each prewarm and closed-loop request its own prompt; ``tgt``
+    still serves the preflight requests.
+    """
     # Run the levels in the order given (repeats dropped), so a caller can choose
     # e.g. a high level first.
     levels = list(
         dict.fromkeys(int(x) for x in args.concurrency.split(",") if x.strip())
     )
     logger.info(
-        "target http://%s:%d%s  chars/req=%d  levels=%s",
+        "target http://%s:%d%s  %s  levels=%s",
         tgt.host,
         tgt.port,
         tgt.path,
-        len(tgt.text),
+        "prompt per request" if draw else f"chars/req={len(tgt.text)}",
         levels,
     )
     if tgt.max_chunks:
@@ -549,7 +580,7 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
     prewarm_conc = int(getattr(args, "warmup_concurrency", 0) or 0)
     prewarm_s = float(getattr(args, "prewarm", 0.0) or 0.0)
     prewarmed = (
-        prewarm(tgt, prewarm_conc, prewarm_s) if prewarm_conc and prewarm_s else 0
+        prewarm(tgt, prewarm_conc, prewarm_s, draw) if prewarm_conc and prewarm_s else 0
     )
 
     probe = _preflight(tgt)
@@ -590,7 +621,14 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         elif args.arrival == "burst":
             recs, w0, w1 = run_burst(tgt, conc)
         else:
-            recs, w0, w1 = run_closed(tgt, conc, args.duration, args.warmup)
+            recs, w0, w1 = run_closed(
+                tgt,
+                conc,
+                args.duration,
+                args.warmup,
+                draw=draw,
+                ramp=getattr(args, "ramp", 0.0),
+            )
 
         in_win = _arrival_cohort(recs, w0, w1)
         ok = [r for r in in_win if r["ok"]]
@@ -647,6 +685,8 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         if conc != levels[-1]:
             time.sleep(args.settle)
 
+    if draw and all_recs:
+        meta["chars_per_request"] = round(st.mean(r["chars"] for r in all_recs))
     meta["finished"] = time.time()
     with open(args.out, "w") as f:
         json.dump(doc, f)
