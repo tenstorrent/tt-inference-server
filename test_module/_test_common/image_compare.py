@@ -19,8 +19,9 @@ Per case, TT's image against the GPU's:
   (mean DINOv2 similarity to them), TT's and the GPU's, so a subject TT drops
   shows as a lower number than the GPU's. Faces are not checked separately yet.
 
-The edit checks need the output in the input's own ratio; a case that asks for
-another ratio recomposes the scene, so they are left out for it. Results are
+The edit checks need the output in about the input's ratio (the API's closest);
+a case that asks for another ratio recomposes the scene, so they are left out
+for it. Results are
 summed up per group (kind, reference count, size): means and the worst case.
 
 Runs in the VBENCH_I2V venv (torch, pyiqa, scikit-image, transformers), which
@@ -50,8 +51,13 @@ DINO_MODEL = "facebook/dinov2-small"
 EDIT_LONG_SIDE = 256
 # A pixel whose mean change from the input exceeds this (0-255) has changed.
 CHANGE_THRESHOLD = 20.0
-# Within this ratio difference the output keeps the input's frame.
-SAME_RATIO_TOLERANCE = 0.03
+# Within this ratio difference (16%) the output keeps the input's frame. An
+# edit's output is snapped to the API ratio closest to its input's; both
+# outputs are compared with the same resized input, so the stretch is shared.
+# This covers 178 of FLUX.2 klein's 180 edits and 175 of Qwen-Image-Edit's;
+# the rest have inputs far wider or taller than any API ratio, and a case asked
+# for another ratio recomposes the scene, so neither is checked.
+SAME_RATIO_TOLERANCE = 0.15
 
 
 def load_rgb(path: Path):
