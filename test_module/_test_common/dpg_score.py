@@ -73,6 +73,10 @@ resolved then (its VQA pipeline imports OFA, so fairseq too). Linux only:
 ``decord`` has no macOS wheels. mPLUG answers in about 1 s on a CPU, so the
 110 DPG images (10 to 20 questions each) take about half an hour without a GPU
 (``--device cpu``). Its weights come from ModelScope's hub (modelscope.cn).
+modelscope 1.9.5's downloader refuses a file the hub sends without a
+``Content-Length``; if it does, download the model with a current modelscope
+(``modelscope download --model <id> --local_dir <dir>``) and pass the folder
+as ``--vqa-model``.
 """
 
 from __future__ import annotations
@@ -177,12 +181,12 @@ def summarize(cases: dict, items: dict, results: dict) -> dict:
 class MPLUG:
     """mPLUG-large VQA, as DPG-Bench's scorer loads it."""
 
-    def __init__(self, device: str = "gpu"):
+    def __init__(self, device: str = "gpu", model: str = VQA_MODEL):
         from modelscope.pipelines import pipeline
         from modelscope.utils.constant import Tasks
 
         self.pipeline = pipeline(
-            Tasks.visual_question_answering, model=VQA_MODEL, device=device
+            Tasks.visual_question_answering, model=model, device=device
         )
 
     def __call__(self, image, question: str) -> str:
@@ -250,8 +254,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--device", default="gpu", help="modelscope's device: gpu or cpu"
     )
+    parser.add_argument(
+        "--vqa-model",
+        default=VQA_MODEL,
+        help=f"default: {VQA_MODEL} from ModelScope's hub; or a local download of it",
+    )
     args = parser.parse_args(argv)
-    result = score(args.images_dir, args.data_dir, MPLUG(args.device), args.csv)
+    result = score(
+        args.images_dir, args.data_dir, MPLUG(args.device, args.vqa_model), args.csv
+    )
     (args.out or args.images_dir / "dpg.json").write_text(
         json.dumps(result, indent=1) + "\n"
     )
