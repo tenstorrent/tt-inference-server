@@ -27,17 +27,24 @@ def hashes(path):
 SWE_MANIFEST_SHA256 = "6bfb8ef0da677db83ef33c3a147c6820b72a159a2d9a99b7ef0f9c13a16ca418"
 
 
-def frozen_swe_tasks(names):
+SWE_POPULATION_SHA256 = "ec0d3f6a63c8625de212b709b8f8363514189f78a43c9fabf992049ef248bd9f"
+
+
+def frozen_swe_tasks(names, population_manifest_sha256=None):
     """Use registry-verified Git identities, never mutable legacy resolution."""
     from harbor.models.trial.config import TaskConfig
     from reference_config.evals import qwen38_goal12
-    raw = Path(qwen38_goal12.__file__).with_name('qwen38_swe_tasks.json').read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SWE_MANIFEST_SHA256:
+    if population_manifest_sha256 not in (None, SWE_POPULATION_SHA256):
+        raise ValueError('Unapproved SWE population manifest')
+    filename = 'qwen38_swe_population.json' if population_manifest_sha256 else 'qwen38_swe_tasks.json'
+    expected = population_manifest_sha256 or SWE_MANIFEST_SHA256
+    raw = Path(qwen38_goal12.__file__).with_name(filename).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError('Frozen SWE manifest checksum mismatch')
     manifest = json.loads(raw)
     by_name = {row['name']: row for row in manifest['tasks']}
     if not names or len(set(names)) != len(names) or not set(names) <= by_name.keys():
-        raise ValueError('SWE selection must be a unique subset of the frozen ten tasks')
+        raise ValueError('SWE selection must be a unique subset of the selected frozen manifest')
     tasks = [TaskConfig(**{k: v for k, v in by_name[name].items() if k != 'name'}) for name in names]
     return tasks, {k: v for k, v in manifest.items() if k != 'tasks'}
 
@@ -52,13 +59,13 @@ async def materialize(output):
     if not c['isolate_agent_network']:
         raise ValueError('Task preparation requires agent network isolation')
     from llm_module.qwen38_eval_receipts import verify_receipts
-    source_manifest = SWE_MANIFEST_SHA256 if c['dataset'] == 'swebench-verified' else str(c.get('dataset_ref', '')).removeprefix('sha256:')
+    source_manifest = (c.get('population_manifest_sha256') or SWE_MANIFEST_SHA256) if c['dataset'] == 'swebench-verified' else str(c.get('dataset_ref', '')).removeprefix('sha256:')
     release_receipts = verify_receipts(c['intent'], c['evals'][0], source_manifest, c)
     provenance = None
     if c['dataset'] == 'swebench-verified':
         if c.get('dataset_ref') is not None:
             raise ValueError('Legacy SWE uses frozen Git identities, not a package dataset_ref')
-        tasks, provenance = frozen_swe_tasks(c['task_names'])
+        tasks, provenance = frozen_swe_tasks(c['task_names'], c.get('population_manifest_sha256'))
     else:
         if not str(c.get('dataset_ref', '')).startswith('sha256:'):
             raise ValueError('Isolation requires an immutable dataset digest')
