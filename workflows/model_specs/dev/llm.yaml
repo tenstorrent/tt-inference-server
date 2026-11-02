@@ -811,7 +811,8 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
-# Dedicated Gemma 4 26B A4B implementation, the default on QB2.
+# Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
+# is the tt_transformers entry below (32 users, the MTP speculative contract).
 - weights:
     - google/gemma-4-26B-A4B-it
   impl: gemma4_26b_a4b_qb2
@@ -820,7 +821,7 @@ templates:
     - device: P300X2
       max_concurrency: 1
       max_context: 262144
-      default_impl: true
+      default_impl: false
       env_vars:
         MESH_DEVICE: "P300x2"
         OMP_NUM_THREADS: "8"
@@ -3008,7 +3009,7 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 262144  # the model's max_position_embeddings; the pool below holds 5 users at 256K
-      default_impl: false  # the dedicated gemma4_26b_a4b_qb2 profile is the QB2 default; select this one with --impl tt-transformers
+      default_impl: true  # the QB2 default (release scope); the single-user gemma4_26b_a4b_qb2 profile stays selectable with --impl gemma4-26b-a4b-qb2
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights takes ~95 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # the speculative records write their K/V rows through the model-local paged_update_rows op (one program per layer instead of the per-position loop); measured 2026-10-31 on this block vs the loop: prose c1 63.9 vs 56.4 tok/s (+13 %), every other point at parity, coherent at 256K/128K/short, record unit tests greedy-identical
