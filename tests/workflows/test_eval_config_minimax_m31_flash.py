@@ -28,6 +28,10 @@ GPU_REFERENCE = {
     "r1_gpqa_diamond": 87.88,
     "longbench2_generate": 63.49,
     "automation_bench": 61.33,
+    "terminal_bench_2_1": 80.9,
+    "terminal_bench_4": 22.22,
+    "tau3_bench_banking": 29.9,
+    "deepswe": 73.45,
 }
 
 
@@ -149,13 +153,13 @@ def test_m31_flash_tau3_user_sim_and_verifier_call_the_served_m31_name():
 
 def test_m31_flash_deepswe_is_mimos_task_scored_against_the_card():
     # Same harness as MiMo's (mini-swe-agent 2.3.0, endpoint-only egress) at
-    # M3.1-Flash's concurrency; the card's 73.7 is the published score, and there
-    # is no GPU reference yet.
+    # M3.1-Flash's concurrency; the card's 73.7 is the published score, and the
+    # GPU reference is #5470's run with this harness.
     flash, mimo = _tasks(M31_FLASH)["deepswe"], _tasks(MIMO)["deepswe"]
     assert flash.agentic_eval_config == replace(
         mimo.agentic_eval_config, n_concurrent_trials=62
     )
     assert flash.agentic_eval_config.allow_agent_endpoint
     assert flash.score.published_score == 73.7
-    assert flash.score.gpu_reference_score is None
+    assert flash.score.gpu_reference_score == 73.45
     assert not flash.score.mode_reference_scores

@@ -13678,6 +13678,23 @@ _MINIMAX_M31_FLASH_GPU_REFERENCE = {
         61.33,
         "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6446885867",
     ),
+    "terminal_bench_2_1": (
+        80.9,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6573194167",
+    ),
+    # With interleaved thinking (10.9% without it, on an interrupted run).
+    "terminal_bench_4": (
+        22.22,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6573194167",
+    ),
+    "tau3_bench_banking": (
+        29.9,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6573194167",
+    ),
+    "deepswe": (
+        73.45,
+        "https://github.com/tenstorrent/tt-inference-server/issues/5470#issuecomment-6573194167",
+    ),
 }
 _MINIMAX_M31_FLASH_M3_TASKS = (
     "r1_gpqa_diamond",
@@ -13791,7 +13808,7 @@ def _minimax_m31_flash_deepswe() -> "EvalTask":
     top_p 0.95, 128K max tokens, agent egress blocked except the endpoint), scored against the card.
 
     The card's 73.7 used mini-SWE-agent 2.4.5 at 512K context; this keeps the 2.3.0 pin the harness
-    was validated with (MiMo's GPU reference). No GPU reference for M3.1-Flash yet.
+    was validated with (MiMo's GPU reference); M3.1-Flash's GPU reference (#5470) used it too.
     """
     return next(
         task
