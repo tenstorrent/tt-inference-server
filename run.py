@@ -697,6 +697,7 @@ def parse_arguments():
     spec_decode_group.add_argument(
         "--spec-decode",
         action="store_true",
+        default=True,
         help="Switch --workflow benchmarks to the AIPerf speculative-decoding sweep over "
         "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
         "rate / mean accepted length. The server's speculative_config is out of scope and "
