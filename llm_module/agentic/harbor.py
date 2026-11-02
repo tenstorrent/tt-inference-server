@@ -27,6 +27,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from llm_module.agentic.local_datasets import local_task_pattern
+from llm_module.agentic.preflight_evidence import collect_disk_evidence, public_tls_control
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
     make_terminal_bench_probe,
@@ -100,6 +101,7 @@ class HarborRunConfig:
     # ... for the ``kubernetes`` environment). Only expressible through the
     # config file, so a non-empty value forces that path.
     environment_kwargs: dict[str, Any] = field(default_factory=dict)
+    offline_task_prerequisites: bool = False
     # Per-request LLM read timeout, injected into a mini-swe-agent run as
     # ``model.model_kwargs.timeout`` (see ``_apply_mini_swe_agent_defaults``).
     # litellm's OpenAI-compatible path otherwise defaults to an infinite read
@@ -130,6 +132,8 @@ class HarborRunConfig:
     # allowlist, for tasks that block agent egress
     # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
     allow_agent_endpoint: bool = False
+    collect_preflight_evidence: bool = False
+    preflight_min_free_bytes: int | None = None
     # Pulled before ``harbor run`` on the docker environment (see
     # ``prepull_images``).
     prepull_images: list[str] = field(default_factory=list)
@@ -321,6 +325,26 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if config.environment_kwargs:
         environment_config["kwargs"] = config.environment_kwargs
 
+    if config.offline_task_prerequisites:
+        from llm_module.agentic.offline_prerequisites import prepare
+        smoke = config.dataset == "gemma4-preflight"
+        if smoke and (config.n_tasks != 2 or task_names or exclude_task_names
+                      or config.dataset_path is None):
+            raise ValueError("Preflight requires exact original two-task selection")
+        if config.environment_type != "docker" or (not smoke and (
+            config.dataset != "gemma4-isolated-terminal" or config.n_tasks != 1
+            or task_names or exclude_task_names or config.dataset_path is None
+        )):
+            raise ValueError("Offline prerequisites require the frozen one-task Docker probe")
+        task_dir = Path(dataset_config["path"]) / "build-cython-ext" if not smoke else Path(dataset_config["path"])
+        if not smoke:
+            selected = sorted(path for path in Path(dataset_config["path"]).iterdir()
+                              if path.is_dir() and (path / "task.toml").is_file())
+            if not selected or selected[0] != task_dir:
+                raise ValueError("Pinned Harbor sorted first-task selection mismatch")
+        overlay = prepare(config.jobs_dir, task_dir, smoke=smoke)
+        environment_config["extra_docker_compose"] = [str(overlay)]
+
     agent_config: dict[str, Any] = {
         "model_name": config.model_name,
         "override_timeout_sec": config.agent_timeout_sec,
@@ -389,6 +413,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
         or bool(config.environment_env)
         or bool(config.verifier_env)
         or bool(config.environment_kwargs)
+        or config.offline_task_prerequisites
         # The Hub ref is only expressible in the config file's datasets block.
         or bool(config.dataset_ref)
     )
@@ -488,6 +513,11 @@ def prepull_images(
 
 def run(config: HarborRunConfig) -> int:
     harbor_exec = harbor_python(config).parent / "harbor"
+    collect_evidence = config.collect_preflight_evidence
+    if collect_evidence:
+        collect_disk_evidence(config.jobs_dir, "after_model_ready", config.preflight_min_free_bytes, require_docker_root=config.environment_type == "docker")
+        if config.dataset == "gemma4-preflight":
+            public_tls_control(config.jobs_dir)
 
     if config.prepull_images and config.environment_type == "docker":
         prepull_images(
@@ -496,6 +526,9 @@ def run(config: HarborRunConfig) -> int:
 
     if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)
+        if config.offline_task_prerequisites:
+            from llm_module.agentic.offline_prerequisites import confirm_target_image
+            confirm_target_image(config.jobs_dir)
         cmd = [str(harbor_exec), "run", "--config", str(harbor_config_path)]
         if config.yes:
             cmd.append("--yes")
@@ -583,6 +616,10 @@ def run(config: HarborRunConfig) -> int:
         enforce_deadlines=config.enforce_agent_deadline,
         log=logger,
     )
+    if collect_evidence:
+        collect_disk_evidence(config.jobs_dir, "after_tasks")
+        if config.dataset == "gemma4-preflight":
+            public_tls_control(config.jobs_dir, "after_tasks")
     # A watchdog timeout can still leave useful per-trial diagnostics in
     # result.json. Annotate that file, but preserve rc=124: Harbor computes
     # accuracy over completed trials, so treating a partial file as success can
