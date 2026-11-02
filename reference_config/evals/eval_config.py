@@ -594,6 +594,48 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# DeepSeek-V4.1-Flash-1017 on the tt-blaze reload ring (one Blackhole galaxy,
+# 3 users), served by tt-d-gen behind the Dynamo 1.6.0 frontend; its EvalConfig
+# sits with the other DeepSeek models below. The ring holds 65,536 positions
+# per user: reserving 4,096 for the prompt and the chat template leaves the
+# generation budget every chat task sends as max_gen_toks.
+DSV41_FLASH_1017_RING_MAX_CONTEXT = 64 * 1024
+DSV41_FLASH_1017_RING_MAX_GEN_TOKS = DSV41_FLASH_1017_RING_MAX_CONTEXT - 4 * 1024
+# Dynamo renders the native V4.1 template and reads the reasoning effort per
+# request (low / medium / high / max / none / 1..100; default 75), so the chat
+# tasks send it as a top-level request field, as the gpt-oss block does; the
+# Harbor agents get it through their own effort knob / extra_body.
+DSV41_FLASH_1017_REASONING_EFFORT = "max"
+# Per-request client timeout (lm-eval ClientTimeout total): 61,440 tokens at
+# the ring's 40 tok/s per user is ~26 min, x4 for queueing behind other users.
+DSV41_FLASH_1017_REQUEST_TIMEOUT_S = 2 * 60 * 60
+
+
+def _dsv41_flash_1017_ring_gen_kwargs() -> Dict[str, Any]:
+    """Sampling of the 1017 model card (temperature 1.0, top_p 1.0) at max
+    reasoning effort, inside the ring's generation budget. Returns a fresh dict
+    so no two tasks share one."""
+    return {
+        # Chat API streaming as the Kimi-K3 tasks use it: long generations
+        # stay alive through proxies instead of idling for 20+ min.
+        "stream": "true",
+        "do_sample": "true",
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "max_gen_toks": DSV41_FLASH_1017_RING_MAX_GEN_TOKS,
+        # The server stops at its own EOS; no client-side stop strings.
+        "until": [],
+        "reasoning_effort": DSV41_FLASH_1017_REASONING_EFFORT,
+    }
+
+
+def _dsv41_flash_1017_ring_model_kwargs() -> Dict[str, Any]:
+    return {
+        "max_length": DSV41_FLASH_1017_RING_MAX_CONTEXT,
+        "timeout": DSV41_FLASH_1017_REQUEST_TIMEOUT_S,
+    }
+
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -4831,6 +4873,380 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # DeepSeek-V4.1-Flash-1017 on the tt-blaze reload ring: one Blackhole galaxy
+    # (4 stages of 4x2), 3 users, 65,536-position caches, served by tt-d-gen
+    # behind the Dynamo 1.6.0 frontend and evaluated through --server-url (the
+    # SUPER_CLUSTER placeholder spec in workflows/model_specs/dev/llm.yaml).
+    #
+    # Settings: the 1017 model card's temperature 1.0 / top_p 1.0 at
+    # reasoning_effort=max, with the ring's 61,440-token generation budget
+    # instead of the card's >= 256K, so long-reasoning rows are a lower bound.
+    # References: published GPQA / Terminal-Bench numbers and the GPU scores
+    # (8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max) come
+    # from the cleonidouTT/deepseek-4-1-flash-evals EvalConfig of the pre-1017
+    # DeepSeek-V4.1-Flash checkpoint; AIME25 and LiveCodeBench v6 come from
+    # the ISTA-DASLab quantization card of the 1017 checkpoint (its base FP8
+    # row, measured at reasoning effort 50); HLE from the 1017 card itself.
+    # Every chat task sends max_concurrent=3 (the ring's user count).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond; cross-check of the
+                # 185/198 the tt-blaze eval harness measured on the same ring.
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                # Always-on thinking: the answer follows a separate
+                # reasoning_content field that would otherwise be dropped.
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # The 1017 card lists no GPQA; the pre-1017 card's 90.9 is
+                    # confirmed by ISTA-DASLab's 90.91 on the 1017 checkpoint.
+                    published_score=90.9,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                    # Full 198-sample run, max-effort thinking. 91.41% +/- 2.00;
+                    # an earlier full run on the same server scored 88.89% +/- 2.24.
+                    gpu_reference_score=91.41,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-25 (cleonidouTT/deepseek-4-1-flash-evals)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # AIME 2025, 30 problems, one sample each (the card reports
+                # AIME at max effort with a 256K budget; 61K here).
+                task_name="aime25",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=100.0,
+                    published_score_ref="https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF (base FP8/FP4 row, AIME25 100.00, reasoning effort 50)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.50,  # 30 samples * 0.5 = 15 samples
+                },
+            ),
+            EvalTask(
+                # HMMT February 2026 (MathArena) as avg@4: 33 problems x 4
+                # samples, graded by the lm-eval fork's r1_evals equivalence
+                # checker. Custom task shipped with the K2-Horizon evals. No
+                # published number for this checkpoint. The pinned harness
+                # copies its model seed into every payload, which would make
+                # the 4 samples identical, hence propagate_seed_to_gen_kwargs.
+                task_name="k2_hmmt_feb_2026_avg4",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                capture_reasoning=True,
+                propagate_seed_to_gen_kwargs=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench on the chat endpoint, scored on the "v6" window
+                # (contest_date >= 2025-02-01, 131 problems) via doc_ids; the
+                # task runs the generated code on the eval host.
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                capture_reasoning=True,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=89.7,
+                    published_score_ref="https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF (base FP8/FP4 row, LCB v6 89.71, reasoning effort 50)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # Humanity's Last Exam, text-only multiple-choice subset (the
+                # K2-Horizon custom task), first 200 docs of the filtered set.
+                # The card's 44.0 is HLE's LLM-judge protocol over the whole
+                # text-only set (42.6 with images), so this exact-match subset
+                # score is not directly comparable to it.
+                task_name="k2_hle_text_mc",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=44.0,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017 (HLE w/o tools, text-only 44.0; full set, LLM-judge protocol)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                doc_ids=list(range(200)),
+            ),
+            EvalTask(
+                # IFEval, prompt-level strict accuracy. Neither card publishes
+                # IFEval for this checkpoint, and there is no GPU reference yet.
+                task_name="leaderboard_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=3,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs=_dsv41_flash_1017_ring_model_kwargs(),
+                gen_kwargs=_dsv41_flash_1017_ring_gen_kwargs(),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Measured with the DeepSeek Harness (Minimal mode), not
+                    # Terminus 2; the card's per-harness table has no Terminus
+                    # column, so treat this as a loose reference. The 1017 card
+                    # itself only reports Terminal-Bench 4.0 (42.3).
+                    published_score=90.6,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (DSH Minimal harness)",
+                    # 226/267 trials (N=3) on all 89 tasks. Includes 6
+                    # qemu-startup / qemu-alpine-ssh trials lost to "Failed to
+                    # start tmux session" (harness bug) and 5 agent timeouts at
+                    # 4h. The fixed 10-task CI_NIGHTLY subset below has no GPU
+                    # reference yet; rerun the same ids on the GPU spec for one.
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2_1 full (89 tasks x 3), terminus-2, 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-27 (cleonidouTT/deepseek-4-1-flash-evals)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                # Lands in terminus-2's llm_call_kwargs.extra_body, i.e. the
+                # request body of every agent call.
+                request_body={
+                    "reasoning_effort": DSV41_FLASH_1017_REASONING_EFFORT,
+                },
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # One trial per ring user.
+                    n_concurrent_trials=3,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    # 4 h as the GPU reference run: at ~40 tok/s per user a
+                    # max-effort turn can take minutes.
+                    agent_timeout_sec=4 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        # Input + output must fit the ring's 65,536 positions:
+                        # 36K of context for Terminus 2 to summarise at, 24K
+                        # per turn for thinking + command, 4K headroom.
+                        "model_info": {
+                            "max_input_tokens": 36 * 1024,
+                            "max_output_tokens": 24 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 1.0,
+                            "max_tokens": 24 * 1024,
+                            "timeout": 2 * 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        # The fixed 10-task set of the scorecard: Kimi-K3's 5
+                        # CI_NIGHTLY tasks plus 5 more from the Harbor
+                        # terminal-bench registry (git, security, sysadmin,
+                        # build/debug, algorithms), 3 of them from Harbor's
+                        # terminal-bench-sample.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/sqlite-with-gcov",
+                            "terminal-bench/chess-best-move",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not published by DeepSeek; Artificial Analysis retired
+                    # tau3-Banking before this model was indexed.
+                    published_score=None,
+                    published_score_ref=None,
+                    # Best of two full runs: 39/97 at n_concurrent_trials=8
+                    # (2026-09-28; 17 trials still hit the 3600s
+                    # agent_timeout_sec). The 2026-09-27 run at 16 concurrent
+                    # scored 31.96 with 34 timeouts. The fixed 15-task
+                    # CI_NIGHTLY subset below has no GPU reference yet.
+                    gpu_reference_score=40.21,
+                    gpu_reference_score_ref="run.py --workflow agentic tau3_bench_banking full (97), n_concurrent_trials=8, 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-28 (cleonidouTT/deepseek-4-1-flash-evals)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent, the
+                    # simulated user and the Natural Language verifier; the
+                    # calls of one trial are sequential, so 3 trials keep the
+                    # ring's 3 users busy without queueing.
+                    n_concurrent_trials=3,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    # 2 h (the GPU reference's 3600 s timed out 17 of 97 trials
+                    # on hardware ~5x faster per user).
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The Harbor tau3 agent's own effort knob (forwarded as
+                        # --reasoning-effort); request_body is not wired for
+                        # this agent.
+                        "reasoning_effort": DSV41_FLASH_1017_REASONING_EFFORT,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so top_p has to be pinned here to reach the agent.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 1.0}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # Literal values only: "${VAR:-default}" templates are not
+                    # resolved on this path (see the Kimi-K3 tau3 entry).
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+                    },
+                    task_names_map={
+                        # The fixed 15-task set of the scorecard: Kimi-K3's 5
+                        # CI_NIGHTLY tasks plus 10 more spread evenly over the
+                        # 001-100 id range (the domain has 97 tasks, so check
+                        # the ids against the dataset before the GPU rerun).
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-008",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-015",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-029",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-036",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-043",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-057",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-064",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-071",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-082",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-089",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
         ],
