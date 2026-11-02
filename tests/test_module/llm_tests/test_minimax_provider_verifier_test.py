@@ -278,6 +278,27 @@ def test_a_pytest_suite_runs_in_the_format_check_dir(fake, tmp_path):
     assert not list((fake.dir / "m3_format_check" / "logs").iterdir())
 
 
+@pytest.mark.parametrize(
+    "suite, expected",
+    [
+        ("text", "m3_1_flash_text_test.py"),
+        ("reasoning_effort", "m3_1_flash_reasoning_effort_tests.py"),
+    ],
+)
+def test_format_check_model_picks_the_model_files(fake, tmp_path, suite, expected):
+    _run(tmp_path, {"suite": suite, "format_check_model": "m3_1_flash"})
+
+    assert fake.calls[0]["command"][3] == expected
+
+
+def test_a_suite_the_format_check_model_lacks_is_an_error(fake, tmp_path):
+    block = _run(tmp_path, {"suite": "reasoning_effort"})
+
+    assert not fake.calls
+    assert block.data["status"] == "error"
+    assert "has no m3 format check" in block.data["error"]["message"]
+
+
 def test_slow_cases_run_by_default(fake, tmp_path):
     _run(tmp_path, {"suite": "text"})
 

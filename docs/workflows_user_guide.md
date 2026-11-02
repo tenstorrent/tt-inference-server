@@ -364,11 +364,11 @@ The run routes to the workflow engine, which emits the report in-process to `wor
 
 ## Tool-Call Schema Tests
 
-> **Internal.** Runs as part of `spec_tests` for the models enrolled in `test_module/test_suites/llm.json` (MiniMax-M3 and Kimi-K2.7-Code on `super_cluster`).
+> **Internal.** Runs as part of `spec_tests` for the models enrolled in `test_module/test_suites/llm.json` (MiniMax-M3, MiniMax-M3.1-Flash and Kimi-K2.7-Code on `super_cluster`).
 
 `ToolCallSchemaConformanceTest` checks that tool-call arguments validate against the tool's JSON Schema. It offers each of 204 walle cases (from the [Kimi Vendor Verifier](https://github.com/MoonshotAI/Kimi-Vendor-Verifier)) as a `strict` tool, in non-streaming and streaming mode, and validates the returned arguments with `jsonschema`. It passes when the pass rate reaches `pass_rate_threshold` (100% by default; per model through `targets`).
 
-The enrolled models run it twice: `tool_choice` `auto`, then `required`. The `required` run sets `non_blocking`, so acceptance waives its FAIL (an ERROR still blocks).
+The enrolled models run it twice: `tool_choice` `auto`, then `required`. The `required` run sets `non_blocking`, so acceptance waives its FAIL (an ERROR still blocks). MiniMax-M3.1-Flash's `auto` run is non-blocking too: it has no `pass_rate_threshold` yet (the GPU SGLang measurement is in its `_comment_threshold`).
 
 ```bash
 python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \
@@ -395,12 +395,13 @@ The run logs a `[tool-call-schema progress] N/M done` line every ~5% of cases. T
 
 `MiniMaxProviderVerifierTest` runs [MiniMax-Provider-Verifier](https://github.com/MiniMax-AI/MiniMax-Provider-Verifier), MiniMax's own check of a third-party deployment. The verifier's tests run unchanged. The grading (metrics, thresholds, pass/fail) is done here, in `test_module/llm_tests/minimax_verifier_grading.py`, so thresholds are set per model in `llm.json` like the other spec tests'. One test case runs one suite and reports one block:
 
-| Suite | What it checks | Graded on | MiniMax-M3 | MiniMax-M2.7 |
-|---|---|---|---|---|
-| `verify` | `verify.py` replays 102 recorded agentic conversations | 7 tool-call metrics, each against a threshold (below) | blocking | blocking |
-| `text` / `stream` / `image` / `video` | `m3_format_check` pytest suites: the chat-completions contract, SSE streaming, image and video input | pass rate (skipped and xfailed tests excluded) ≥ `pass_rate_threshold`, 100% by default | non-blocking | — |
+| Suite | What it checks | Graded on | MiniMax-M3 | MiniMax-M3.1-Flash | MiniMax-M2.7 |
+|---|---|---|---|---|---|
+| `verify` | `verify.py` replays 102 recorded agentic conversations | 7 tool-call metrics, each against a threshold (below) | blocking | blocking | blocking |
+| `text` / `stream` / `image` / `video` | `m3_format_check` pytest suites: the chat-completions contract, SSE streaming, image and video input | pass rate (skipped and xfailed tests excluded) ≥ `pass_rate_threshold`, 100% by default | non-blocking | non-blocking | — |
+| `reasoning_effort` | `m3_format_check` pytest suite: `reasoning_effort` levels and `thinking.type` | as above | — | non-blocking | — |
 
-Non-blocking suites are reported in full, but acceptance waives their FAIL (an ERROR still blocks).
+Non-blocking suites are reported in full, but acceptance waives their FAIL (an ERROR still blocks). Each model has its own `m3_format_check` files, picked by the case's `format_check_model` (`m3`, the default, or `m3_1_flash`; `FORMAT_CHECK_FILES` in `minimax_provider_verifier_test.py`).
 
 The `verify` metrics and their default thresholds come from the verifier README. A test case's `targets` override any of them by key, e.g. `"targets": {"tool_calls_schema_accuracy": 0.97}`:
 
@@ -414,7 +415,7 @@ The `verify` metrics and their default thresholds come from the verifier README.
 | `language_following_success_rate` | Language-Following-Success-Rate | ≥ 40% |
 | `scenario_check_pass_rate` | Scenario-Check-Pass-Rate | ≥ 100% |
 
-For now MiniMax-M3 and MiniMax-M2.7 are both graded against the README thresholds, which are calibrated on means of 10 runs of MiniMax's official deployment. For MiniMax-M3, per-model targets were also measured with the same method as the tool-call schema tests: the mean minus 3 sample standard deviations over 10 `verify.py` runs on GPU vLLM. They are not applied, but are kept in `_comment_threshold` in `llm.json`, with the `targets` that would apply them, in case the gates are revisited. GPU vLLM averages 96.70% on ToolCalls-Match-Rate, below the README's 97%. On both models, Scenario-Check keeps the README's 100% but is advisory (`advisory_metrics` in the case's `test_config`): it is graded and shown against 100%, and a miss is listed under `advisory_failed_metrics` without failing the run. It is a single case, so one miss would fail the whole `verify` run, and on MiniMax-M3 GPU vLLM fails it in 2 of 10 runs.
+For now all three models are graded against the README thresholds, which are calibrated on means of 10 runs of MiniMax's official deployment. For MiniMax-M3, per-model targets were also measured with the same method as the tool-call schema tests: the mean minus 3 sample standard deviations over 10 `verify.py` runs on GPU vLLM. They are not applied, but are kept in `_comment_threshold` in `llm.json`, with the `targets` that would apply them, in case the gates are revisited. GPU vLLM averages 96.70% on ToolCalls-Match-Rate, below the README's 97%. On MiniMax-M3 and MiniMax-M3.1-Flash, Scenario-Check keeps the README's 100% but is advisory (`advisory_metrics` in the case's `test_config`): it is graded and shown against 100%, and a miss is listed under `advisory_failed_metrics` without failing the run. It is a single case, so one miss would fail the whole `verify` run, and on MiniMax-M3 GPU vLLM fails it in 2 of 10 runs.
 
 The verifier is not vendored. The `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) exports it from upstream MiniMax-AI/MiniMax-Provider-Verifier, pinned to the commit set in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_COMMIT`). The pin keeps what the blocking `verify` gate grades fixed; move it deliberately. The `verify` cases set no `targets` and are graded against the README defaults (`VERIFY_METRICS` in `minimax_verifier_grading.py`). When the pin moves, re-measure the GPU vLLM reference numbers in MiniMax-M3's `_comment_threshold`, but leave them as reference: don't add them as `targets` unless the gates are deliberately changed. An export that is already at the pinned commit needs no network. If the download fails the setup fails: an export of another commit is not used in its place.
 
@@ -444,6 +445,7 @@ Settings go in the test case's `test_config`. `MINIMAX_VERIFIER_<KEY>` overrides
 | `include_slow` | `true` | run the cases marked slow (512k/1M-token prompts, long videos) |
 | `verify_loops` / `verify_limit` | `1` / all | run `verify.py` N times and grade the mean; only the first N cases |
 | `verify_baseline` | none | checkout directory holding the official deployment's `*_results.jsonl` |
+| `format_check_model` | `m3` | which model's `m3_format_check` files the pytest suites run (`m3`, `m3_1_flash`); `test_config` only, no env override |
 | `pass_rate_threshold` | `1.0` | pytest suites; `targets` overrides it per model |
 | `waived_tests` | none | `{"<test-id regex>": "<reason>"}`: matching pytest failures are listed but not graded |
 | `pytest_args` | none | extra arguments for the pytest suites, e.g. `-k basic` |

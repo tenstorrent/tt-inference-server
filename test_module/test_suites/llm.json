@@ -244,6 +244,106 @@
     },
     {
       "models": [
+        "minimax_m3_1_flash"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto, non-blocking, not gated yet ($ref schemas excluded, MiniMax parser bug)",
+          "_comment": "exclude_ref_schemas: same tool-call parser as MiniMax-M3 (minimax_m3), which does not follow $ref -> $defs; see MiniMax-M3's case.",
+          "_comment_threshold": "No pass_rate_threshold yet. 10 spec_tests runs on GPU SGLang (2026-11-02): auto mean 85.21%, sample std 0.48%, range 84.32-85.80%, mean - 3 std 83.76%; required mean 97.16%, std 0.37%, mean - 3 std 96.04%. Most auto failures are SGLang's MiniMax tool parser returning {} for array/anyOf arguments (mostly streaming), plus 6 HTTP 400s on $id schemas with a '#' fragment, so this measures SGLang's parser rather than the TT server. To gate, set targets.pass_rate_threshold and drop non_blocking.",
+          "test_config": {
+            "exclude_ref_schemas": true,
+            "non_blocking": true,
+            "non_blocking_reason": "not gated yet: the GPU SGLang measurement reflects SGLang's tool parser, not the TT server"
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking ($ref schemas excluded, MiniMax parser bug)",
+          "test_config": {
+            "exclude_ref_schemas": true,
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
+          "_comment": "As on MiniMax-M3; verify_baseline is MiniMax's official MiniMax-M3.1-Flash deployment (README: Query-Success 100%, ToolCalls-Match 98.70%, Schema-Accuracy 99.64%, Language-Following 85%, Scenario-Check 90%, pass@10 means).",
+          "_comment_threshold": "Scenario-Check-Pass-Rate keeps the README's 100% but is advisory (advisory_metrics), as on MiniMax-M3: a single case, and the official deployment itself averages 90%.",
+          "test_config": {
+            "suite": "verify",
+            "verify_baseline": "output-dir/MiniMax-M3.1-Flash/loop_01",
+            "advisory_metrics": ["scenario_check_pass_rate"]
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check text (MiniMax-M3.1-Flash cases): chat-completions contract, non-blocking",
+          "test_config": {
+            "suite": "text",
+            "format_check_model": "m3_1_flash",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check stream (MiniMax-M3.1-Flash cases): SSE protocol, non-blocking",
+          "test_config": {
+            "suite": "stream",
+            "format_check_model": "m3_1_flash",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check image (MiniMax-M3.1-Flash cases): image input, non-blocking",
+          "test_config": {
+            "suite": "image",
+            "format_check_model": "m3_1_flash",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check video (MiniMax-M3.1-Flash cases): video input, non-blocking",
+          "test_config": {
+            "suite": "video",
+            "format_check_model": "m3_1_flash",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check reasoning_effort (MiniMax-M3.1-Flash cases): effort levels and thinking.type, non-blocking",
+          "test_config": {
+            "suite": "reasoning_effort",
+            "format_check_model": "m3_1_flash",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
         "minimax_m2_7"
       ],
       "devices": [

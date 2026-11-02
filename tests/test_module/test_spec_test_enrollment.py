@@ -154,5 +154,40 @@ def test_minimax_provider_verifier_runs_only_for_minimax_models():
         ("verify", False),
         ("video", True),
     ]
+    assert verifier_suites("MiniMaxAI/MiniMax-M3.1-Flash") == [
+        ("image", True),
+        ("reasoning_effort", True),
+        ("stream", True),
+        ("text", True),
+        ("verify", False),
+        ("video", True),
+    ]
     assert verifier_suites("MiniMaxAI/MiniMax-M2.7") == [("verify", False)]
     assert verifier_suites("moonshotai/Kimi-K2.7-Code") == []
+
+
+def test_minimax_m31_flash_runs_its_own_format_checks_and_tool_call_schema():
+    """M3.1-Flash's format checks use its m3_1_flash files and its verify run
+    the M3.1-Flash baseline; both tool_choice runs of the tool-call schema
+    suite are enrolled, non-blocking (not gated yet)."""
+    cases = [
+        case
+        for suite in SuiteTestFilter()
+        .filter_by_model("MiniMaxAI/MiniMax-M3.1-Flash")
+        .get_tests()
+        for case in suite.get("test_cases", [])
+    ]
+    verifier = [c for c in cases if c.get("name") == "MiniMaxProviderVerifierTest"]
+    for case in verifier:
+        config = case["test_config"]
+        if config["suite"] == "verify":
+            assert config["verify_baseline"] == "output-dir/MiniMax-M3.1-Flash/loop_01"
+        else:
+            assert config["format_check_model"] == "m3_1_flash"
+
+    schema = sorted(
+        (c["test_config"]["tool_choice"], c["test_config"]["non_blocking"])
+        for c in cases
+        if c.get("name") == "ToolCallSchemaConformanceTest"
+    )
+    assert schema == [("auto", True), ("required", True)]
