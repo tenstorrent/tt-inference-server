@@ -35,6 +35,23 @@ def _top_processes(n=8):
         return [["error", str(e)]]
 
 
+def _container_cpu(n=10):
+    """Per-container CPU and memory (docker stats), top n by CPU, so a busy task can be named."""
+    try:
+        out = subprocess.run(["docker", "stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"],
+                             capture_output=True, text=True, timeout=30).stdout
+        rows = []
+        for line in out.splitlines():
+            name, cpu, mem = (line.split("\t") + ["", "", ""])[:3]
+            try:
+                rows.append([name, float(cpu.rstrip("%")), mem.split("/")[0].strip()])
+            except ValueError:
+                continue
+        return sorted(rows, key=lambda r: -r[1])[:n]
+    except Exception as e:  # noqa: BLE001 - diagnostics only
+        return [["error", str(e)]]
+
+
 def cap_recordings(job_dir: Path, max_bytes: int, keep_bytes: int) -> list:
     capped = []
     for path in job_dir.glob("*/agent/recording.cast"):
@@ -69,7 +86,7 @@ def start(job_dir: Path, interval_s: float = 60.0, max_bytes: int = 1 << 30, kee
                     mem = {line.split(":")[0]: int(line.split()[1]) for line in f if line.startswith(("MemTotal", "MemAvailable"))}
                 rec = dict(t=time.time(), cpu_busy_pct=round(100.0 * (1 - idle / total), 1) if total else None,
                            loadavg=os.getloadavg(), ncpu=os.cpu_count(), mem_avail_gb=round(mem.get("MemAvailable", 0) / 2**20, 1),
-                           disk_free_gb=round(st.f_bavail * st.f_frsize / 2**30, 1), top=_top_processes(),
+                           disk_free_gb=round(st.f_bavail * st.f_frsize / 2**30, 1), top=_top_processes(), containers=_container_cpu(),
                            capped=cap_recordings(job_dir, max_bytes, keep_bytes))
                 with open(job_dir / "host_resources.jsonl", "a") as f:
                     f.write(json.dumps(rec) + "\n")

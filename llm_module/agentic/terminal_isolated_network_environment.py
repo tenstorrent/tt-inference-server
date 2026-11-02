@@ -16,6 +16,12 @@ from harbor.environments.docker.docker import DockerEnvironment
 from llm_module.agentic.swe500_mirror_environment import ExactMirrorDockerEnvironment
 
 
+# Branch defaults (env overrides): low CPU weight for task containers; optional CPU set that keeps
+# tasks off the inference server's physical cores (Ryzen 7 9700X: core k = CPUs k and k+8).
+TASK_CPU_SHARES = 64
+TASK_CPUSET = ''
+
+
 class IsolatedNetworkDockerEnvironment(DockerEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,14 +45,16 @@ class IsolatedNetworkDockerEnvironment(DockerEnvironment):
         # per-container weight, so with many busy tasks the inference server's host process (one
         # container among up to 41) fell behind and every decode step slowed. A low weight lets tasks
         # use spare CPU freely but yields it to the server first. GEMMA_TASK_CPU_SHARES=0 disables it.
-        shares = int(os.environ.get('GEMMA_TASK_CPU_SHARES', '64'))
-        if shares <= 0:
+        shares = int(os.environ.get('GEMMA_TASK_CPU_SHARES', str(TASK_CPU_SHARES)))
+        cpuset = os.environ.get('GEMMA_TASK_CPUSET', TASK_CPUSET)
+        if shares <= 0 and not cpuset:
             return
         project = re.sub(r'[^a-z0-9_-]', '-', ('0' + self.session_id.lower()) if not re.match(r'^[a-z0-9]', self.session_id.lower()) else self.session_id.lower())
         ids = (await self._docker_output('docker', 'ps', '-q', '--filter', f'label=com.docker.compose.project={project}')).split()
         if ids:
-            await self._docker_output('docker', 'update', '--cpu-shares', str(shares), *ids)
-            self.logger.info('TASK_CPU_WEIGHT %s', json.dumps({'trial': self.session_id, 'containers': len(ids), 'cpu_shares': shares}))
+            args = (['--cpu-shares', str(shares)] if shares > 0 else []) + (['--cpuset-cpus', cpuset] if cpuset else [])
+            await self._docker_output('docker', 'update', *args, *ids)
+            self.logger.info('TASK_CPU_WEIGHT %s', json.dumps({'trial': self.session_id, 'containers': len(ids), 'cpu_shares': shares, 'cpuset': cpuset}))
 
     _allocate_network = ExactMirrorDockerEnvironment._allocate_network
     _docker_output = ExactMirrorDockerEnvironment.__dict__['_docker_output']  # staticmethod object
