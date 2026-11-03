@@ -3,8 +3,18 @@
   "source_manifest_sha256": "fb01e42fbed84a24ad4f7c57b6355afa2abbd27e7cc3a27418e20b861fd6b5d7",
   "evals": {
     "gpqa_diamond_cot_zeroshot": {
-      "decision": "stop",
-      "evidence": null,
+      "decision": "go",
+      "evidence": {
+        "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-password-combine/completion-accounting.json",
+        "evidence_sha256": "561bf860a777cbc327358ac3f73d031e533ec01afb0d73d8e810b81e66df11d5",
+        "closed_effort_hours": 23.514899487098063,
+        "available_effort_hours": 6.485100512901937,
+        "firstwave_reservation_hours": 5.5,
+        "remaining_unallocated_hours": 0.985100512901937,
+        "actual_combine_closed": true,
+        "higher_retry_funded": false,
+        "no_cancel_policy": "Dispatched CI continues under operator grant; actual allocation including default cleanup charged, no automatic termination at coordinator stop."
+      },
       "doc_ids": [
         12,
         15
@@ -12,7 +22,8 @@
       "first_wave_box_hours": 5.5,
       "point_prediction_hours": 3.00538,
       "prediction_basis": "guess; different prompts/C1-to-C2 transfer unvalidated",
-      "higher_retry_funded": false
+      "higher_retry_funded": false,
+      "reason": "Selected originaldocs12/15 repair only; fullpopulation198 remains STOP. Same original prompts/scorer, output98304/request18000; no new scoregate."
     }
   }
 }

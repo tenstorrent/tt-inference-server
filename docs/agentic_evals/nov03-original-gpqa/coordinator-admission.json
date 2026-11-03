@@ -1,12 +1,23 @@
 {
-  "decision": "stop",
+  "decision": "go",
   "budget_seconds": 19800,
   "doc_ids": [
     12,
     15
   ],
-  "actual_combine_closed": false,
-  "budget_evidence": null,
-  "reason": "Await actual combine closure/free >=5.5h and coordinator admission before07:08:55UTC",
-  "higher_retry_funded": false
+  "actual_combine_closed": true,
+  "budget_evidence": {
+    "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-password-combine/completion-accounting.json",
+    "evidence_sha256": "561bf860a777cbc327358ac3f73d031e533ec01afb0d73d8e810b81e66df11d5",
+    "closed_effort_hours": 23.514899487098063,
+    "available_effort_hours": 6.485100512901937,
+    "firstwave_reservation_hours": 5.5,
+    "remaining_unallocated_hours": 0.985100512901937,
+    "actual_combine_closed": true,
+    "higher_retry_funded": false,
+    "no_cancel_policy": "Dispatched CI continues under operator grant; actual allocation including default cleanup charged, no automatic termination at coordinator stop."
+  },
+  "reason": "Actual owned combine closed; original two progressing cutoff cases require original-protocol repair; first-wave5.5h fits actual6.4851h remaining.",
+  "higher_retry_funded": false,
+  "admitted_utc": "2026-11-03T05:08:34.399147+00:00"
 }
