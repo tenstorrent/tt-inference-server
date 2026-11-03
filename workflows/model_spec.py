@@ -466,6 +466,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# Qwen/Qwen3.8-Flash-Next TP=8 on a BH LoudBox. The vLLM adapter
+# (tools/qwen38_vllm.py) and its EXTRA_MODELS_DIR bundle exist only on the tt-metal
+# branch atupe/qwen38-flash-next, not on main.
+qwen38_flash_next_impl = ImplSpec(
+    impl_id="qwen38_flash_next",
+    impl_name="qwen38-flash-next",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen38_flash_next",
+)
 # Aleph-Alpha/Kolibri-1 TP4 autoport produced by the tt-model-bringup pipeline. Like
 # other autoports, the code_path lives under models/autoports/ and exists only on a
 # tt-metal branch (vkovacevic/kolibri-1-qb2-model), not on main.
@@ -512,6 +521,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "qwen38_flash_next": qwen38_flash_next_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,

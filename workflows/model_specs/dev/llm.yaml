@@ -1786,6 +1786,73 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen/Qwen3.8-Flash-Next (qwen4_exp: MoE, Gated DeltaNet + QSA hybrid attention, n-gram
+# embedding) TP=8 on a BH LoudBox, 1x8 line (models/demos/blackhole/qwen38_flash_next).
+# Needs tt-metal branch atupe/qwen38-flash-next (the adapter tools/qwen38_vllm.py and its
+# bundle tools/vllm_bundle are not on main) and vllm-tt-plugin main >= 82322af (vLLM 0.30).
+# The plugin finds the bundle one folder deep, so EXTRA_MODELS_DIR names the bundle dir.
+# The adapter serves decode-only device sampling (sample_on_device_mode "all" is refused),
+# runs every prompt as one prefill (no chunked prefill) and keeps its own traces
+# (trace_region_size 0). Decode-width buckets 1..32 and lane compaction are on by default.
+# First start converts the dense weights to BF4 and builds the n-gram embedding shards
+# under TT_CACHE_PATH.
+- weights:
+    - Qwen/Qwen3.8-Flash-Next
+  impl: qwen38_flash_next
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      # Resident contexts are 8128 / 32704 / 65472 / 131008 / 262080 (2^k - 64). The
+      # per-lane resident state scales with the context: 32 lanes fit at 32704; at 262080
+      # only 4 do (the pool cap leaves no KV blocks), so this entry serves 32K x 32 users.
+      max_context: 32704
+      # KV pool the adapter reports at 32704 x 32 (max_tokens_all_users=656983), rounded down.
+      max_tokens_all_users_override: 655360
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/p150_x8_1x8_line_mesh_graph_descriptor.textproto"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/vllm_bundle"
+        QWEN38_VLLM_ALLOW_BF4_CONVERSION: "1"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+        # The traced chain checks this before ttnn is imported.
+        TT_METAL_TRACE_ALLOC_TRACKING: "1"
+        OMP_NUM_THREADS: "4"
+        # A lone request decodes on the single-user chain (the text_demo B=1 program), and
+        # async decode overlaps the plugin's host work with the device step. Both are off
+        # by default in the adapter and need tt-metal eb448771303 or later.
+        QWEN38_HYBRID_SINGLE: "1"
+        QWEN38_ASYNC_DECODE: "1"
+      override_tt_config:
+        l1_small_size: 24576
+        trace_region_size: 0
+        sample_on_device_mode: decode_only
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "32"
+        hf-overrides: '{"architectures":["TTQwen4ExpForConditionalGeneration"]}'
+        no-enable-prefix-caching: true
+        enable_chunked_prefill: false
+        enable-auto-tool-choice: true
+        reasoning-parser: qwen3
+        tool-call-parser: qwen3_coder
+        # The checkpoint the tt-metal model pins (checkpoint.py PINNED_CHECKPOINT_REVISION);
+        # the hub's main moved to de4b8e4d on 2026-08-27.
+        revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+        tokenizer_revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3.8-Flash-Next:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 # IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
 # the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
 # TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the
