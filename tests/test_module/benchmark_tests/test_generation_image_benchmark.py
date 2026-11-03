@@ -112,3 +112,34 @@ def test_a_job_is_submitted_polled_to_completion_and_deleted(monkeypatch):
     ok, seconds = asyncio.run(body())
     assert ok and seconds >= 0
     assert server.requests[0]["rendering_speed"] == "default" and not server.jobs
+
+
+@pytest.mark.parametrize(
+    ("repo", "side", "num_images", "seconds"),
+    [
+        ("black-forest-labs/FLUX.2-klein-4B", 1024, 0, 0.35),
+        ("black-forest-labs/FLUX.2-klein-4B", 2048, 1, 2.19),
+        ("black-forest-labs/FLUX.2-klein-4B", 2048, 3, 3.48),
+        ("black-forest-labs/flux-3-image-klein", 1024, 0, 1.23),
+        ("black-forest-labs/flux-3-image-klein", 2048, 1, 2.24),
+        ("black-forest-labs/flux-3-image-klein", 4096, 10, 23.30),
+    ],
+)
+def test_klein_and_flux3_have_a_target_per_size_and_input_count(
+    repo, side, num_images, seconds
+):
+    targets = get_performance_targets(
+        repo, "blackhole_galaxy", (side, side), None, {"num_images": num_images}
+    )
+    assert targets.ttft_ms == round(seconds * 1000)
+
+
+def test_klein_runs_its_release_shapes_with_no_input_and_one():
+    configs = bench.BENCHMARKS["tt-flux.2-klein-4b"]
+    assert [(c.shape, c.num_images, c.request["size"]) for c in configs] == [
+        ((1024, 1024), 0, "1K"),
+        ((1024, 1024), 1, "1K"),
+        ((2048, 2048), 0, "2K"),
+        ((2048, 2048), 1, "2K"),
+    ]
+    assert all(c.match == {"num_images": c.num_images} for c in configs)

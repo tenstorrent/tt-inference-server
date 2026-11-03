@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Benchmarks for the image models the generations API serves (Qwen-Image-Edit-2511, Ideogram 4).
+"""Benchmarks for the image models the generations API serves (Qwen-Image-Edit-2511, Ideogram 4, FLUX.2 klein 4B).
 
 Each configuration a model's GPU requirement was measured at is run in turn
 and graded against its own entry in ``model_performance_reference.json``:
@@ -11,6 +11,8 @@ and graded against its own entry in ``model_performance_reference.json``:
   (1024x1024); the entries are keyed by ``num_images``.
 - Ideogram 4: one image at 2048x2048 with the default (20 steps) and quality
   (48 steps) presets; the entries are keyed by ``preset``.
+- FLUX.2 klein 4B: its release shapes, 1024x1024 and 2048x2048, with no input
+  image and with one; the entries are keyed by ``num_images``.
 
 A request is one job: ``POST /v1/generations/{model}``, then ``GET
 /v1/jobs/{id}`` until it is final. Its time runs from the submit to the poll
@@ -52,6 +54,9 @@ POLL_INTERVAL_SECONDS = 0.25
 JOB_TIMEOUT_SECONDS = 30 * 60
 SEED = 42
 QWEN_PROMPT = "Put the subjects of these images together on a sunny beach."
+T2I_PROMPT = (
+    "A lighthouse on a cliff at golden hour, waves breaking on the rocks below."
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,22 @@ BENCHMARKS: dict[str, list[BenchmarkConfig]] = {
             num_images=n,
         )
         for n in (1, 2, 3)
+    ],
+    # Its release shapes: 1:1 at 1K and 2K, with no reference or one.
+    "tt-flux.2-klein-4b": [
+        BenchmarkConfig(
+            name=f"{side}_{n}_input{'s' if n != 1 else ''}",
+            match={"num_images": n},
+            shape=(side, side),
+            request={
+                "prompt": QWEN_PROMPT if n else T2I_PROMPT,
+                "aspect_ratio": "1:1",
+                "size": size,
+            },
+            num_images=n,
+        )
+        for side, size in ((1024, "1K"), (2048, "2K"))
+        for n in (0, 1)
     ],
     "tt-ideogram-4": [
         BenchmarkConfig(

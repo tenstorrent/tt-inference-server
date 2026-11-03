@@ -6004,6 +6004,382 @@
             }
         ]
     },
+    "black-forest-labs/FLUX.2-klein-4B": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with no input image, 4 steps, no CFG, prompt padded to 512 tokens, in 0.35 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 350,
+                        "end_to_end_latency_ms": 350,
+                        "tput_user": 2.8571
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 1 input image, 4 steps, no CFG, prompt padded to 512 tokens, in 0.7 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 700,
+                        "end_to_end_latency_ms": 700,
+                        "tput_user": 1.4286
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 2 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 1.11 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1110,
+                        "end_to_end_latency_ms": 1110,
+                        "tput_user": 0.9009
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 3 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 1.59 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 3,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1590,
+                        "end_to_end_latency_ms": 1590,
+                        "tput_user": 0.6289
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with no input image, 4 steps, no CFG, prompt padded to 512 tokens, in 1.69 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1690,
+                        "end_to_end_latency_ms": 1690,
+                        "tput_user": 0.5917
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 1 input image, 4 steps, no CFG, prompt padded to 512 tokens, in 2.19 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2190,
+                        "end_to_end_latency_ms": 2190,
+                        "tput_user": 0.4566
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 2 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 2.8 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2800,
+                        "end_to_end_latency_ms": 2800,
+                        "tput_user": 0.3571
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 3 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 3.48 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 3,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 3480,
+                        "end_to_end_latency_ms": 3480,
+                        "tput_user": 0.2874
+                    }
+                }
+            }
+        ]
+    },
+    "black-forest-labs/flux-3-image-klein": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.23 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1230,
+                        "end_to_end_latency_ms": 1230,
+                        "tput_user": 0.813
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.63 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1630,
+                        "end_to_end_latency_ms": 1630,
+                        "tput_user": 0.6135
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.11 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2110,
+                        "end_to_end_latency_ms": 2110,
+                        "tput_user": 0.4739
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.63 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2630,
+                        "end_to_end_latency_ms": 2630,
+                        "tput_user": 0.3802
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 6.91 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6910,
+                        "end_to_end_latency_ms": 6910,
+                        "tput_user": 0.1447
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.81 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1810,
+                        "end_to_end_latency_ms": 1810,
+                        "tput_user": 0.5525
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.24 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2240,
+                        "end_to_end_latency_ms": 2240,
+                        "tput_user": 0.4464
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.87 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2870,
+                        "end_to_end_latency_ms": 2870,
+                        "tput_user": 0.3484
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 4.1 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 4100,
+                        "end_to_end_latency_ms": 4100,
+                        "tput_user": 0.2439
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 9.42 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 9420,
+                        "end_to_end_latency_ms": 9420,
+                        "tput_user": 0.1062
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 12.15 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12150,
+                        "end_to_end_latency_ms": 12150,
+                        "tput_user": 0.0823
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 12.94 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12940,
+                        "end_to_end_latency_ms": 12940,
+                        "tput_user": 0.0773
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 14.13 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 14130,
+                        "end_to_end_latency_ms": 14130,
+                        "tput_user": 0.0708
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 16.02 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16020,
+                        "end_to_end_latency_ms": 16020,
+                        "tput_user": 0.0624
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 23.3 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 23300,
+                        "end_to_end_latency_ms": 23300,
+                        "tput_user": 0.0429
+                    }
+                }
+            }
+        ]
+    },
     "black-forest-labs/FLUX.1-dev": {
         "t3k": [
             {
