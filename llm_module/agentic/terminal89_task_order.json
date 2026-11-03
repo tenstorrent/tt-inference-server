@@ -1,0 +1,371 @@
+{
+ "description": "Terminal-Bench 2.0 tasks, longest first: 75th percentile of trial minutes over 8 Gemma 4 31B QB2 runs at 40 concurrent trials. Used to start long tasks in the first wave.",
+ "runs": [
+  41504230315,
+  41521290799,
+  41504235993,
+  40688113708,
+  41198694239,
+  41198696520,
+  41451905931,
+  41451900990
+ ],
+ "tasks": [
+  {
+   "name": "terminal-bench/make-mips-interpreter",
+   "p75_min": 183.9
+  },
+  {
+   "name": "terminal-bench/circuit-fibsqrt",
+   "p75_min": 182.7
+  },
+  {
+   "name": "terminal-bench/winning-avg-corewars",
+   "p75_min": 182.6
+  },
+  {
+   "name": "terminal-bench/feal-linear-cryptanalysis",
+   "p75_min": 181.8
+  },
+  {
+   "name": "terminal-bench/break-filter-js-from-html",
+   "p75_min": 181.3
+  },
+  {
+   "name": "terminal-bench/write-compressor",
+   "p75_min": 181.0
+  },
+  {
+   "name": "terminal-bench/compile-compcert",
+   "p75_min": 181.0
+  },
+  {
+   "name": "terminal-bench/polyglot-rust-c",
+   "p75_min": 181.0
+  },
+  {
+   "name": "terminal-bench/dna-assembly",
+   "p75_min": 180.9
+  },
+  {
+   "name": "terminal-bench/regex-chess",
+   "p75_min": 180.9
+  },
+  {
+   "name": "terminal-bench/path-tracing",
+   "p75_min": 180.8
+  },
+  {
+   "name": "terminal-bench/train-fasttext",
+   "p75_min": 180.7
+  },
+  {
+   "name": "terminal-bench/protein-assembly",
+   "p75_min": 180.5
+  },
+  {
+   "name": "terminal-bench/tune-mjcf",
+   "p75_min": 180.5
+  },
+  {
+   "name": "terminal-bench/schemelike-metacircular-eval",
+   "p75_min": 180.4
+  },
+  {
+   "name": "terminal-bench/fix-ocaml-gc",
+   "p75_min": 175.7
+  },
+  {
+   "name": "terminal-bench/build-pov-ray",
+   "p75_min": 173.1
+  },
+  {
+   "name": "terminal-bench/db-wal-recovery",
+   "p75_min": 169.2
+  },
+  {
+   "name": "terminal-bench/gpt2-codegolf",
+   "p75_min": 168.6
+  },
+  {
+   "name": "terminal-bench/largest-eigenval",
+   "p75_min": 168.0
+  },
+  {
+   "name": "terminal-bench/rstan-to-pystan",
+   "p75_min": 162.9
+  },
+  {
+   "name": "terminal-bench/make-doom-for-mips",
+   "p75_min": 158.9
+  },
+  {
+   "name": "terminal-bench/qemu-startup",
+   "p75_min": 154.5
+  },
+  {
+   "name": "terminal-bench/password-recovery",
+   "p75_min": 153.5
+  },
+  {
+   "name": "terminal-bench/feal-differential-cryptanalysis",
+   "p75_min": 143.2
+  },
+  {
+   "name": "terminal-bench/extract-moves-from-video",
+   "p75_min": 142.8
+  },
+  {
+   "name": "terminal-bench/mteb-leaderboard",
+   "p75_min": 140.5
+  },
+  {
+   "name": "terminal-bench/caffe-cifar-10",
+   "p75_min": 139.2
+  },
+  {
+   "name": "terminal-bench/large-scale-text-editing",
+   "p75_min": 138.6
+  },
+  {
+   "name": "terminal-bench/fix-code-vulnerability",
+   "p75_min": 136.1
+  },
+  {
+   "name": "terminal-bench/distribution-search",
+   "p75_min": 132.9
+  },
+  {
+   "name": "terminal-bench/build-cython-ext",
+   "p75_min": 128.2
+  },
+  {
+   "name": "terminal-bench/polyglot-c-py",
+   "p75_min": 127.5
+  },
+  {
+   "name": "terminal-bench/mcmc-sampling-stan",
+   "p75_min": 125.9
+  },
+  {
+   "name": "terminal-bench/chess-best-move",
+   "p75_min": 125.3
+  },
+  {
+   "name": "terminal-bench/path-tracing-reverse",
+   "p75_min": 124.9
+  },
+  {
+   "name": "terminal-bench/dna-insert",
+   "p75_min": 124.7
+  },
+  {
+   "name": "terminal-bench/mailman",
+   "p75_min": 111.2
+  },
+  {
+   "name": "terminal-bench/adaptive-rejection-sampler",
+   "p75_min": 105.6
+  },
+  {
+   "name": "terminal-bench/llm-inference-batching-scheduler",
+   "p75_min": 104.1
+  },
+  {
+   "name": "terminal-bench/filter-js-from-html",
+   "p75_min": 88.9
+  },
+  {
+   "name": "terminal-bench/extract-elf",
+   "p75_min": 76.3
+  },
+  {
+   "name": "terminal-bench/gcode-to-text",
+   "p75_min": 75.1
+  },
+  {
+   "name": "terminal-bench/raman-fitting",
+   "p75_min": 71.8
+  },
+  {
+   "name": "terminal-bench/sqlite-db-truncate",
+   "p75_min": 70.5
+  },
+  {
+   "name": "terminal-bench/reshard-c4-data",
+   "p75_min": 62.7
+  },
+  {
+   "name": "terminal-bench/bn-fit-modify",
+   "p75_min": 49.6
+  },
+  {
+   "name": "terminal-bench/pytorch-model-cli",
+   "p75_min": 49.5
+  },
+  {
+   "name": "terminal-bench/code-from-image",
+   "p75_min": 45.9
+  },
+  {
+   "name": "terminal-bench/sam-cell-seg",
+   "p75_min": 42.3
+  },
+  {
+   "name": "terminal-bench/nginx-request-logging",
+   "p75_min": 42.1
+  },
+  {
+   "name": "terminal-bench/financial-document-processor",
+   "p75_min": 41.5
+  },
+  {
+   "name": "terminal-bench/portfolio-optimization",
+   "p75_min": 37.5
+  },
+  {
+   "name": "terminal-bench/mteb-retrieve",
+   "p75_min": 37.4
+  },
+  {
+   "name": "terminal-bench/cobol-modernization",
+   "p75_min": 35.1
+  },
+  {
+   "name": "terminal-bench/sanitize-git-repo",
+   "p75_min": 33.6
+  },
+  {
+   "name": "terminal-bench/overfull-hbox",
+   "p75_min": 33.4
+  },
+  {
+   "name": "terminal-bench/model-extraction-relu-logits",
+   "p75_min": 33.0
+  },
+  {
+   "name": "terminal-bench/torch-pipeline-parallelism",
+   "p75_min": 33.0
+  },
+  {
+   "name": "terminal-bench/query-optimize",
+   "p75_min": 32.5
+  },
+  {
+   "name": "terminal-bench/video-processing",
+   "p75_min": 31.2
+  },
+  {
+   "name": "terminal-bench/custom-memory-heap-crash",
+   "p75_min": 30.9
+  },
+  {
+   "name": "terminal-bench/count-dataset-tokens",
+   "p75_min": 29.6
+  },
+  {
+   "name": "terminal-bench/pytorch-model-recovery",
+   "p75_min": 29.2
+  },
+  {
+   "name": "terminal-bench/prove-plus-comm",
+   "p75_min": 29.2
+  },
+  {
+   "name": "terminal-bench/sparql-university",
+   "p75_min": 29.1
+  },
+  {
+   "name": "terminal-bench/configure-git-webserver",
+   "p75_min": 29.0
+  },
+  {
+   "name": "terminal-bench/git-multibranch",
+   "p75_min": 26.8
+  },
+  {
+   "name": "terminal-bench/regex-log",
+   "p75_min": 24.9
+  },
+  {
+   "name": "terminal-bench/crack-7z-hash",
+   "p75_min": 24.2
+  },
+  {
+   "name": "terminal-bench/constraints-scheduling",
+   "p75_min": 23.3
+  },
+  {
+   "name": "terminal-bench/hf-model-inference",
+   "p75_min": 21.8
+  },
+  {
+   "name": "terminal-bench/merge-diff-arc-agi-task",
+   "p75_min": 21.5
+  },
+  {
+   "name": "terminal-bench/install-windows-3-11",
+   "p75_min": 19.6
+  },
+  {
+   "name": "terminal-bench/build-pmars",
+   "p75_min": 19.6
+  },
+  {
+   "name": "terminal-bench/openssl-selfsigned-cert",
+   "p75_min": 17.7
+  },
+  {
+   "name": "terminal-bench/torch-tensor-parallelism",
+   "p75_min": 17.4
+  },
+  {
+   "name": "terminal-bench/modernize-scientific-stack",
+   "p75_min": 17.2
+  },
+  {
+   "name": "terminal-bench/sqlite-with-gcov",
+   "p75_min": 16.7
+  },
+  {
+   "name": "terminal-bench/qemu-alpine-ssh",
+   "p75_min": 15.6
+  },
+  {
+   "name": "terminal-bench/vulnerable-secret",
+   "p75_min": 15.4
+  },
+  {
+   "name": "terminal-bench/pypi-server",
+   "p75_min": 14.4
+  },
+  {
+   "name": "terminal-bench/kv-store-grpc",
+   "p75_min": 14.2
+  },
+  {
+   "name": "terminal-bench/multi-source-data-merger",
+   "p75_min": 12.1
+  },
+  {
+   "name": "terminal-bench/headless-terminal",
+   "p75_min": 11.8
+  },
+  {
+   "name": "terminal-bench/cancel-async-tasks",
+   "p75_min": 10.4
+  },
+  {
+   "name": "terminal-bench/git-leak-recovery",
+   "p75_min": 10.0
+  },
+  {
+   "name": "terminal-bench/log-summary-date-ranges",
+   "p75_min": 7.6
+  },
+  {
+   "name": "terminal-bench/fix-git",
+   "p75_min": 7.0
+  }
+ ]
+}
