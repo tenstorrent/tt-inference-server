@@ -74,7 +74,12 @@ def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,m
     c={'runtime_repo_paths':{'metal':'/actual/metal','plugin':'/actual/plugin'}}
     monkeypatch.setattr(a,'controls',lambda:c)
     observed={'host_tis_sha':'1'*40,'metal_sha':'2'*40,'plugin_sha':'3'*40,'image_digest':'sha256:actual'}
-    p=tmp_path/'pre.json';p.write_text(json.dumps({'runtime_sources':observed}))
+    import hashlib
+    approved={'run.py':'approved-hash'}
+    monkeypatch.setattr(a,'source_files',lambda:approved)
+    controls_hash=hashlib.sha256((a.ROOT/'reference_config/evals/qwen38_gpqa_original.json').read_bytes()).hexdigest()
+    pre={'runtime_sources':dict(observed,host_tis_sha=None),'host_source_files':approved,'selected_controls_sha256':controls_hash}
+    p=tmp_path/'pre.json';p.write_text(json.dumps(pre))
     monkeypatch.setenv('TT_QWEN38_PREFLIGHT_JSON',str(p))
     seen=[]
     def run(cmd,**kwargs):
@@ -84,5 +89,17 @@ def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,m
     receipt=a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
     assert receipt['observed']==observed
     assert all(cmd[2]=='a'*64 for cmd in seen if cmd[0]=='docker')
-    p.write_text(json.dumps({'runtime_sources':dict(observed,metal_sha='dispatch-wish-ref')}))
+    assert json.loads((tmp_path/'original-observed-preflight.json').read_text())['runtime_sources']['host_tis_sha']==observed['host_tis_sha']
+    monkeypatch.setenv('TT_QWEN38_PREFLIGHT_JSON',str(p))
+    p.write_text(json.dumps({**pre,'runtime_sources':dict(observed,metal_sha='dispatch-wish-ref')}))
     with pytest.raises(ValueError,match='Actual runtime'):a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
+
+def test_approved_source_manifest_detects_edits_and_added_tracked_code(tmp_path):
+    from workflows.qwen38_original_admission import source_files
+    (tmp_path/'one.py').write_text('original\n')
+    def ls(*a,**kw):return NS(stdout=b'one.py\0')
+    first=source_files(tmp_path,ls)
+    (tmp_path/'one.py').write_text('changed\n')
+    assert source_files(tmp_path,ls)!=first
+    (tmp_path/'two.py').write_text('new\n')
+    assert source_files(tmp_path,lambda *a,**kw:NS(stdout=b'one.py\0two.py\0')).keys()!=first.keys()

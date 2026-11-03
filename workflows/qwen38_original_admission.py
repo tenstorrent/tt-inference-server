@@ -11,6 +11,12 @@ import urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 CLOCK=ROOT/'workflow_logs/qwen38-original-allocation.json'
 
+def source_files(root=ROOT,runner=subprocess.run):
+    result=runner(['git','-C',str(root),'ls-files','-z','--','*.py','*.sh','*.toml'],
+                  capture_output=True,check=True,timeout=30)
+    names=result.stdout.decode().split('\0')
+    return {name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in names if name}
+
 def controls():
     return json.loads((ROOT/'reference_config/evals/qwen38_gpqa_original.json').read_text())
 
@@ -84,10 +90,24 @@ def runtime_identity(checkpoint,output_path,runner=subprocess.run):
         if len(observed[name+'_sha'])!=40:raise ValueError('Runtime commit unavailable; explicit source-equivalence proof needed')
     pre=json.loads(Path(os.environ['TT_QWEN38_PREFLIGHT_JSON']).read_text())
     expected=pre['runtime_sources']
+    approved=pre.get('host_source_files')
+    if not approved or source_files()!=approved:
+        raise ValueError('Actual host code tree differs from independently approved source files')
+    control_path=ROOT/'reference_config/evals/qwen38_gpqa_original.json'
+    if pre.get('selected_controls_sha256')!=hashlib.sha256(control_path.read_bytes()).hexdigest():
+        raise ValueError('Selected controls differ from coordinator approval')
     for key,value in observed.items():
-        if expected.get(key)!=value:raise ValueError('Actual runtime identity differs from coordinator receipt: '+key)
+        if key!='host_tis_sha' and expected.get(key)!=value:
+            raise ValueError('Actual runtime identity differs from coordinator receipt: '+key)
     receipt={'observed':observed,'container_id':cid,'checkpoint_ok':checkpoint['ok'],
              'basis':'Host checkout git HEAD; immutable owned server Docker image ID and actual container checkout git HEADs. No dispatch-ref substitution.'}
+    # Preserve coordinator checks; only fill identities from actual observations.
+    # The approval binds a code-file manifest, avoiding a self-referential commit.
+    derived={**pre,'runtime_sources':{**expected,**observed},
+             'runtime_identity_receipt':'original-runtime-identity.json'}
+    derived_path=Path(output_path)/'original-observed-preflight.json'
+    derived_path.write_text(json.dumps(derived,indent=2)+'\n')
+    os.environ['TT_QWEN38_PREFLIGHT_JSON']=str(derived_path)
     p=Path(output_path)/'original-runtime-identity.json';p.write_text(json.dumps(receipt,indent=2)+'\n')
     os.environ['TT_QWEN38_ORIGINAL_RUNTIME_JSON']=str(p)
     return receipt
