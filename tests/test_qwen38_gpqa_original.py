@@ -15,6 +15,7 @@ def test_original_command(monkeypatch):
     monkeypatch.setattr(builder,'get_venv_provisioner',lambda:NS(venv_path=lambda _:Path('/fake/venv')))
     rc=NS(eval_samples=None,eval_shard=None,limit_samples_mode=None)
     task=configure([release_task()],rc)[0]
+    assert task.score.published_score is None and task.score.gpu_reference_score is None
     assert task.doc_ids==[12,15] and task.max_attempts==1 and task.max_concurrent==32
     assert 'stream' not in task.gen_kwargs and task.gen_kwargs['max_gen_toks']==98304
     cmd=build_eval_command(task,spec(),None,'/tmp/results',8000,runtime_config=rc)

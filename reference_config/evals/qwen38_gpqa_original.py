@@ -15,7 +15,10 @@ def configure(tasks,runtime_config=None):
     if mode and EvalLimitMode.from_string(mode)==EvalLimitMode.SMOKE_TEST:
         raise ValueError('Original repair cannot use smoke truncation')
     task=next(t for c in ALL_EVAL_CONFIGS.values() for t in c.tasks if t.task_name==TASK)
-    return [replace(task, doc_ids=[12,15],num_fewshot=0,batch_size=1,max_concurrent=32,
+    # Borrow only the catalog protocol, never another model's numeric reference.
+    score=replace(task.score,published_score=None,published_score_ref=None,
+        gpu_reference_score=None,gpu_reference_score_ref=None,mode_reference_scores={})
+    return [replace(task, score=score,doc_ids=[12,15],num_fewshot=0,batch_size=1,max_concurrent=32,
         seed=1234,max_attempts=1,reference_threshold_informational=True,
         tokenizer_backend=None,use_chat_api=True,apply_chat_template=True,
         fewshot_as_multiturn=True,capture_reasoning=True,
