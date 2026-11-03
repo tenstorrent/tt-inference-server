@@ -5191,11 +5191,13 @@ _eval_config_list = [
                     agent="tau3_llm_agent",
                     agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
-                    # A single served instance is shared by the agent, the
-                    # simulated user and the Natural Language verifier; the
-                    # calls of one trial are sequential, so 3 trials keep the
-                    # ring's 3 users busy without queueing.
-                    n_concurrent_trials=3,
+                    # One trial at a time: the ring serializes prefills, so
+                    # three concurrent trials finish the subset no sooner but
+                    # queue every call behind the other two (a 79K-token call
+                    # waited past 10 min, job 170497), and the simulated user's
+                    # own LLM calls keep the SDK's 600 s default. Sequential,
+                    # each call waits only for its own prefill.
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -5225,7 +5227,10 @@ _eval_config_list = [
                         # verbatim into the harbor config file, and the adapter
                         # shlex.quotes this value onto the container command
                         # line, which fails with TypeError on a dict.
-                        "llm_args_json": '{"top_p": 1.0}',
+                        # timeout: the per-call HTTP budget litellm gets (the
+                        # adapter spreads these into the completion call; the
+                        # SDK default of 600 s timed out at 79K tokens).
+                        "llm_args_json": '{"top_p": 1.0, "timeout": 3600}',
                         "max_steps": 200,
                         # The simulated user's turn is an LLM call on the same
                         # ring, queued behind the trials' prefills: 1 h for the
