@@ -5,19 +5,31 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from test_module._test_common import SkipTest
+from test_module._test_common.video_output_check import (
+    deployment_resolution,
+    expected_video_shape,
+)
 from test_module._test_common import video_generation_routing as routing
 from test_module.benchmark_tests import video_benchmark_tests as mod
+from tests.test_module.video_clips import (
+    black_frames,
+    gradient,
+    moving_frames,
+    write_clip,
+)
 
 
-def _ctx(model_name):
+def _ctx(model_name, device="t3k"):
     return SimpleNamespace(
         model_spec=SimpleNamespace(model_name=model_name, hf_model_repo=model_name),
-        device=SimpleNamespace(name="t3k"),
+        device=SimpleNamespace(name=device),
     )
 
 
@@ -178,6 +190,281 @@ def test_t2v_generation_routes_to_base_endpoint(monkeypatch):
     assert "image_prompts" not in captured["payload"]
 
 
+def test_every_dev_wan_i2v_variant_but_prodia_has_a_step_profile():
+    # Keys must match the catalog's `weights` names exactly, or the variant is
+    # silently skipped again.
+    catalog = (
+        Path(__file__).resolve().parents[3] / "workflows/model_specs/dev/video.yaml"
+    )
+    names = {
+        entry["weights"][0]
+        for entry in yaml.safe_load(catalog.read_text())["templates"]
+        if entry["weights"][0].startswith("Wan-AI/Wan2.2-I2V-")
+    }
+    profiled = {name for name in mod.VIDEO_INFERENCE_STEPS if "-I2V-" in name}
+    assert profiled == names - {"Wan-AI/Wan2.2-I2V-A14B-Prodia"}
+
+
+@pytest.mark.parametrize(
+    "model,device,expected",
+    [
+        ("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "GALAXY", (81, 1280, 720)),
+        ("Wan-AI/Wan2.2-I2V-Lightning", "BLACKHOLE_GALAXY", (81, 1280, 720)),
+        ("Wan-AI/Wan2.2-T2V-A14B-Diffusers", "T3K", (81, 832, 480)),
+        ("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "P300X2", (81, 832, 480)),
+        ("genmo/mochi-1-preview", "T3K", None),
+    ],
+)
+def test_expected_video_shape(model, device, expected):
+    assert expected_video_shape(model, device) == expected
+
+
+@pytest.mark.parametrize(
+    "resolution,device,expected",
+    [
+        ("480p", "BLACKHOLE_GALAXY", (81, 832, 480)),
+        ("720p", "T3K", (81, 1280, 720)),
+    ],
+)
+def test_deployment_resolution_overrides_the_mesh_default(resolution, device, expected):
+    ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", device)
+    ctx.model_spec.env_vars = {"WAN22_RESOLUTION": resolution}
+    assert (
+        expected_video_shape(
+            ctx.model_spec.hf_model_repo,
+            ctx.device.name,
+            deployment_resolution(ctx.model_spec),
+        )
+        == expected
+    )
+
+
+class TestCheckVideoOutput:
+    """Real clips through the benchmark's output check (T3K: 832x480, 81 frames)."""
+
+    @pytest.fixture(autouse=True)
+    def _deps(self):
+        pytest.importorskip("numpy")
+        pytest.importorskip("imageio_ffmpeg")
+        pytest.importorskip("imageio.v3")
+
+    def test_valid_wan_clip_passes(self, tmp_path):
+        clip = write_clip(tmp_path / "ok.mp4", moving_frames(81, 832, 480))
+        ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "T3K")
+        assert mod._check_video_output(ctx, str(clip)) is None
+
+    def test_wrong_frame_count_fails(self, tmp_path):
+        clip = write_clip(tmp_path / "short.mp4", moving_frames(80, 832, 480))
+        ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "T3K")
+        assert "80 frames, expected 81" in mod._check_video_output(ctx, str(clip))
+
+    def test_wrong_resolution_fails(self, tmp_path):
+        clip = write_clip(tmp_path / "small.mp4", moving_frames(81, 832, 480))
+        ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "GALAXY")
+        assert "832x480, expected 1280x720" in mod._check_video_output(ctx, str(clip))
+
+    def test_frozen_clip_fails(self, tmp_path):
+        clip = write_clip(tmp_path / "frozen.mp4", [gradient(832, 480)] * 81)
+        ctx = _ctx("Wan-AI/Wan2.2-I2V-A14B-Diffusers", "T3K")
+        assert "frozen" in mod._check_video_output(ctx, str(clip))
+
+    def test_black_clip_fails_for_unpinned_models_too(self, tmp_path):
+        clip = write_clip(tmp_path / "black.mp4", black_frames(24))
+        assert "black" in mod._check_video_output(
+            _ctx("genmo/mochi-1-preview"), str(clip)
+        )
+
+    def test_undecodable_clip_fails(self, tmp_path):
+        junk = tmp_path / "junk.mp4"
+        junk.write_bytes(b"not a video")
+        problem = mod._check_video_output(_ctx("genmo/mochi-1-preview"), str(junk))
+        assert problem.startswith("clip could not be checked")
+
+
+@pytest.mark.parametrize("problem,expected_status", [(None, True), ("black", False)])
+def test_failed_output_check_marks_the_generation_failed(
+    monkeypatch, problem, expected_status
+):
+    monkeypatch.setattr(
+        mod, "_generate_video", lambda *a, **k: (True, 10.0, "job-1", "/tmp/x.mp4")
+    )
+    monkeypatch.setattr(
+        mod, "_check_video_output", lambda ctx, path, shape=None: problem
+    )
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    [result] = mod._run_video_generation_benchmark(ctx, num_calls=1)
+    assert result.status is expected_status
+
+
+def test_only_a_failed_benchmark_clip_is_kept(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        mod, "_generate_video", lambda *a, **k: (True, 10.0, "job-1", str(clip))
+    )
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.output_path = str(tmp_path / "out")
+    kept = tmp_path / "out/videos/failed/benchmarks/clip.mp4"
+
+    monkeypatch.setattr(mod, "_check_video_output", lambda ctx, path, shape=None: None)
+    mod._run_video_generation_benchmark(ctx, num_calls=1)
+    assert not kept.exists()
+
+    monkeypatch.setattr(
+        mod, "_check_video_output", lambda ctx, path, shape=None: "black"
+    )
+    mod._run_video_generation_benchmark(ctx, num_calls=1)
+    assert kept.read_bytes() == b"mp4"
+
+
+WAN_I2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+SHAPES = [(832, 480), (480, 832), (1280, 720), (720, 1280)]
+
+
+def test_bh_galaxy_wan_i2v_has_a_target_per_shape():
+    from test_module._test_common.target_check import (
+        get_performance_targets,
+        performance_target_shapes,
+    )
+
+    assert performance_target_shapes(WAN_I2V, "blackhole_galaxy") == SHAPES
+    ttft = {
+        (shape, dbcache): get_performance_targets(
+            WAN_I2V, "blackhole_galaxy", shape, dbcache
+        ).ttft_ms
+        for shape in SHAPES
+        for dbcache in (False, True)
+    }
+    # Uncached: 8x H200 uncached; cached: 8x H200 with the DBCache recipe.
+    assert ttft == {
+        ((832, 480), False): 43400,
+        ((480, 832), False): 43400,
+        ((1280, 720), False): 144300,
+        ((720, 1280), False): 144300,
+        ((832, 480), True): 25400,
+        ((480, 832), True): 25400,
+        ((1280, 720), True): 76300,
+        ((720, 1280), True): 76300,
+    }
+    # A deployment that leaves DBCache unset gets no targets rather than the wrong ones.
+    assert (
+        get_performance_targets(WAN_I2V, "blackhole_galaxy", (832, 480)).ttft_ms is None
+    )
+    # Devices without per-shape entries keep one benchmark at the served shape.
+    assert performance_target_shapes(WAN_I2V, "t3k") == []
+    assert get_performance_targets(WAN_I2V, "t3k").ttft_ms == 540000
+    assert get_performance_targets(WAN_I2V, "t3k", (832, 480)).ttft_ms is None
+
+
+def test_the_deployments_dbcache_setting_picks_the_targets():
+    from types import SimpleNamespace
+
+    from test_module._test_common.target_check import deployment_dbcache
+
+    def spec(env):
+        return SimpleNamespace(env_vars=env)
+
+    assert deployment_dbcache(spec({"WAN22_DBCACHE": "on"})) is True
+    assert deployment_dbcache(spec({"WAN22_DBCACHE": " OFF "})) is False
+    assert deployment_dbcache(spec({})) is None
+    assert deployment_dbcache(SimpleNamespace()) is None
+
+
+def test_the_bh_galaxy_i2v_spec_states_its_dbcache_setting():
+    from pathlib import Path
+
+    import yaml
+
+    catalog = Path(__file__).parents[3] / "workflows/model_specs/dev/video.yaml"
+    templates = yaml.safe_load(catalog.read_text())["templates"]
+    (template,) = [t for t in templates if t["weights"] == [WAN_I2V]]
+    (device,) = [
+        d for d in template["device_model_specs"] if d["device"] == "BLACKHOLE_GALAXY"
+    ]
+    # Quoted in the YAML: a bare on/off would load as a bool.
+    assert device["env_vars"]["WAN22_DBCACHE"] in ("on", "off")
+
+
+@pytest.mark.parametrize(
+    "shape,aspect_ratio,size",
+    [((832, 480), "16:9", "480p"), ((720, 1280), "9:16", "720p")],
+)
+def test_i2v_payload_asks_for_the_shape(shape, aspect_ratio, size):
+    from test_module._test_common.video_generation_routing import (
+        build_video_generation_payload,
+    )
+
+    payload = build_video_generation_payload(
+        prompt="p",
+        num_inference_steps=40,
+        model_name=WAN_I2V,
+        image_b64="ZmFrZQ==",
+        shape=shape,
+    )
+    assert (payload["aspect_ratio"], payload["size"]) == (aspect_ratio, size)
+    plain = build_video_generation_payload(
+        prompt="p", num_inference_steps=40, model_name=WAN_I2V, image_b64="ZmFrZQ=="
+    )
+    # Without a shape, the generations API's default: 16:9 at the device's size.
+    assert (plain["aspect_ratio"], plain["size"]) == ("16:9", "480p")
+
+
+def test_requested_shape_overrides_the_deployment_shape(tmp_path):
+    pytest.importorskip("numpy")
+    pytest.importorskip("imageio_ffmpeg")
+    clip = write_clip(tmp_path / "ok.mp4", moving_frames(81, 832, 480))
+    ctx = _ctx(WAN_I2V, "BLACKHOLE_GALAXY")
+    assert mod._check_video_output(ctx, str(clip), (832, 480)) is None
+    assert "832x480, expected 480x832" in mod._check_video_output(
+        ctx, str(clip), (480, 832)
+    )
+
+
+@pytest.mark.parametrize(
+    "dbcache,target_ms,check",
+    [("off", 144300, "PASS"), ("on", 76300, "FAIL")],
+)
+def test_every_shape_runs_and_one_unserved_shape_fails_the_block(
+    monkeypatch, dbcache, target_ms, check
+):
+    # The deployment serves 1280x720 only: the other three shapes come back
+    # the wrong size, so their generations fail and so does the block. A
+    # 140 s clip meets the uncached 720p target but not the cached one.
+    calls = []
+
+    def fake_generate(ctx, prompt, num_inference_steps, image_b64=None, shape=None):
+        calls.append(shape)
+        return True, 140.0, "job", "/tmp/x.mp4"
+
+    monkeypatch.setattr(mod, "_generate_video", fake_generate)
+    monkeypatch.setattr(mod, "_load_fixture_image_base64", lambda: "ZmFrZQ==")
+    monkeypatch.setattr(
+        mod,
+        "_check_video_output",
+        lambda ctx, path, shape=None: None if shape == (1280, 720) else "wrong size",
+    )
+    monkeypatch.setattr(mod, "save_clip", lambda *a, **k: None)
+    ctx = _ctx(WAN_I2V, "BLACKHOLE_GALAXY")
+    ctx.model_spec.cli_args = {"device": "blackhole_galaxy"}
+    ctx.model_spec.env_vars = {"WAN22_DBCACHE": dbcache}
+
+    block = mod._run_video_benchmark_by_shape(ctx, 2, SHAPES)
+
+    assert calls == [s for s in SHAPES for _ in range(2)]
+    rows = {r["shape"]: r for r in block.data["records"]}
+    assert list(rows) == ["832x480", "480x832", "1280x720", "720x1280"]
+    assert rows["1280x720"]["num_successful"] == 2
+    assert rows["1280x720"]["ttft"] == 140.0
+    assert {r["dbcache"] for r in rows.values()} == {dbcache}
+    assert rows["832x480"]["num_successful"] == 0
+    assert block.data["num_requests"] == 8
+    assert block.data["status"] == "fail"
+    target = block.data["target_checks"]["target"]
+    assert target["ttft_1280x720"] == target_ms
+    assert target["ttft_1280x720_check"] == mod.ReportCheckTypes[check]
+    assert target["ttft_832x480_check"] == mod.ReportCheckTypes.NA
+
+
 def test_minimax_h3_fl2va_lightx2v_has_its_four_step_profile():
     assert mod.VIDEO_INFERENCE_STEPS["MiniMaxAI/MiniMax-H3-FL2VA-LightX2V"] == 4
 
@@ -232,7 +519,7 @@ def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
 def test_minimax_h3_fl2va_benchmark_loads_the_keyframe(monkeypatch):
     seen = {}
 
-    def _fake_generate(ctx, prompt, num_inference_steps, image_b64):
+    def _fake_generate(ctx, prompt, num_inference_steps, image_b64, shape=None):
         seen["image_b64"] = image_b64
         return True, 9.0, "job", "/tmp/h3.mp4"
 
@@ -300,7 +587,7 @@ def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
 def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
     seen = {}
 
-    def _fake_generate(ctx, prompt, num_inference_steps, image_b64):
+    def _fake_generate(ctx, prompt, num_inference_steps, image_b64, shape=None):
         seen["image_b64"] = image_b64
         return True, 9.0, "job", "/tmp/ref.mp4"
 
