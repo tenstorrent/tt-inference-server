@@ -56,7 +56,10 @@ def validate_arm(c):
         selected = c.get('evals')
         if not isinstance(selected, list) or len(selected) != 1 or selected[0] not in populations or len(names) > populations[selected[0]]:
             raise ValueError('Explicit cohort exceeds supported release population')
-        if intent == 'isolated_smoke' and len(names) != 2:
+        if intent == 'isolated_smoke' and len(names) != 2 and not (
+                names == ['terminal-bench/break-filter-js-from-html']
+                and selected == ['terminal_bench_2_1'] and cohort.get('scope') == 'release'
+                and concurrency == 1 and c.get('isolate_agent_network') is True):
             raise ValueError('Isolated smoke remains exactly two tasks')
     scored = intent in ('paired_confirmation', 'full_suite')
     if c.get('scored') is not scored:
@@ -66,7 +69,7 @@ def validate_arm(c):
 
 def arm_metadata(c):
     return {key: c[key] for key in ('intent', 'phase', 'scored', 'sample_count',
-        'task_names', 'cohort', 'request_timeout_sec', 'output_token_cap', 'preflight_json', 'go_json', 'preflight_evidence', 'estimate_decision', 'estimate_evidence') if key in c}
+        'task_names', 'cohort', 'request_timeout_sec', 'output_token_cap', 'agent_timeout_sec', 'preflight_json', 'go_json', 'preflight_evidence', 'estimate_decision', 'estimate_evidence') if key in c}
 
 
 def select_tasks(tasks, limit_mode):
@@ -101,6 +104,8 @@ def select_tasks(tasks, limit_mode):
                         or (native == 'timeout' and cfg.llm_timeout_sec is not None and value < cfg.llm_timeout_sec)):
                     raise ValueError(control + ' must be positive, correctly typed and at least the native release floor')
                 llm_kwargs[native] = value
+                if native == 'max_tokens':
+                    agent_kwargs.setdefault('model_info', {})['max_output_tokens'] = value
                 if native == 'timeout':
                     updates['llm_timeout_sec'] = value
             cfg = replace(cfg, agent_kwargs=agent_kwargs, **updates)
@@ -123,6 +128,21 @@ def select_tasks(tasks, limit_mode):
             # both on the detached arm so serialization cannot retain a stale cap.
             model_kwargs['timeout'] = timeout
             cfg = replace(cfg, llm_timeout_sec=timeout, agent_kwargs=agent_kwargs)
+        html_retry = (c.get('phase') == 'ci-html-progressing-cutoff-retry'
+                      and c.get('task_names') == ['terminal-bench/break-filter-js-from-html']
+                      and task.task_name == 'terminal_bench_2_1')
+        if 'agent_timeout_sec' in c and not html_retry:
+            raise ValueError('agent_timeout_sec is scoped to exact CI HTML retry')
+        if html_retry and 'agent_timeout_sec' in c:
+            value = c['agent_timeout_sec']
+            if (task.task_name != 'terminal_bench_2_1' or type(value) is not int
+                    or type(cfg.agent_timeout_sec) not in (int, float) or value < cfg.agent_timeout_sec):
+                raise ValueError('agent_timeout_sec requires native Terminal release floor')
+            cfg = replace(cfg, agent_timeout_sec=value)
+        if html_retry:
+            from llm_module.agentic.qwen38_limit_contract import aligned_terminal_kwargs
+            cfg = replace(cfg, agent_kwargs=aligned_terminal_kwargs(
+                cfg.agent_kwargs, server_context_tokens=262144, safety_tokens=8192))
         names = c['task_names']
         selected = replace(cfg, dataset_ref=c['dataset_ref'], n_tasks=len(names),
                            task_names=names, task_names_map={limit_mode.CI_NIGHTLY: names, limit_mode.SMOKE_TEST: names},

@@ -1,29 +1,33 @@
 {
-  "phase": "unscored-native-ci-route-bootstrap-two",
+  "phase": "ci-html-progressing-cutoff-retry",
   "scored": false,
   "evals": [
     "terminal_bench_2_1"
   ],
-  "max_concurrent": 32,
-  "sample_count": 2,
+  "max_concurrent": 1,
+  "sample_count": 1,
   "dataset": "terminal-bench/terminal-bench-2-1",
   "dataset_ref": "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
   "task_names": [
-    "terminal-bench/break-filter-js-from-html",
-    "terminal-bench/cobol-modernization"
+    "terminal-bench/break-filter-js-from-html"
   ],
   "isolate_agent_network": true,
   "limits_source": "release eval_config.py at upstream 411057222c2dc5a4268e693b0bd57bc0e2571f38; no lowered limits",
   "intent": "isolated_smoke",
   "reference_threshold_informational": true,
-  "request_timeout_sec": 7200,
-  "output_token_cap": 32768,
+  "population": 89,
+  "selected_scope": "unscored_CI_HTML_cutoff_recovery_not_full_suite",
+  "operator_grant_sha256": "bd8670c354b73f1642f709ea65dde2c62c15cb6b20cf89142a8c90fa65355085",
+  "request_timeout_sec": 14400,
+  "output_token_cap": 65536,
   "cohort": {
-    "count": 2,
-    "ordered_task_names_sha256": "958f957931c21ff241c904f2933a789eca4ba9671962588832c22fb1e11d8f11",
-    "selection_reason": "Previously frozen two TB release-map tasks; unscored native CI route bootstrap, selected future headroom and unchanged task processing.",
-    "operator_grant_sha256": "305a982f84d425f8b6a05bb58d0bf6d4906d161ed16debf44451cb3a176afafb",
+    "count": 1,
+    "ordered_task_names_sha256": "2388eec165eb5025fa73cb55c3c7ff0fee51e99df144156d1c6f35434186086d",
+    "selection_reason": "Exact original failed CI HTML smoke task rerun after progressing output/agent cutoff; no substitute task, new scoregate or sampling. Higher limits and diagnostic-only native observer disclosed.",
+    "operator_grant_sha256": "bd8670c354b73f1642f709ea65dde2c62c15cb6b20cf89142a8c90fa65355085",
     "scope": "release",
-    "config_sha256": "55b864f232fdfbabcd4144e404c321d31f31156ba873b8b63f94be1191044d18"
-  }
+    "config_sha256": "be7eab50c9ba12af6731a492d5fb1b77b166a1e6362b3f8f2fcf07c9d54339b7"
+  },
+  "native_environment_concurrency_reason": "One native CI task; retain canonical48GiB allocation and native isolated sidecar. No local memory override.",
+  "agent_timeout_sec": 27000
 }

@@ -335,6 +335,9 @@ def setup_evals_agentic(
     if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
         return False
 
+    from workflows.qwen38_harbor_diagnostics_patch import install
+    install(harbor_dir)
+
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
     # so a plain editable install omits it. Quoted so the shell does not

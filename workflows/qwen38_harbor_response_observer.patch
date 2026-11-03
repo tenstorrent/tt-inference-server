@@ -1,0 +1,44 @@
+diff --git a/src/harbor/llms/lite_llm.py b/src/harbor/llms/lite_llm.py
+index c7fced4c..b34cdce4 100644
+--- a/src/harbor/llms/lite_llm.py
++++ b/src/harbor/llms/lite_llm.py
+@@ -61,6 +61,30 @@ Here is the prompt:
+ 
+ 
+ class LiteLLM(BaseLLM):
++    # Candidate opt-in host diagnostics. Never forwarded to the provider.
++    supports_raw_response_observer = True
++
++    def _observe_raw_response(self, response):
++        observer = getattr(self, '_raw_response_observer', None)
++        if observer is None:
++            return
++        try:
++            choice = response['choices'][0]
++            message = choice['message']
++            usage = response.get('usage') or {}
++            observer({
++                'finish_reason': choice.get('finish_reason'),
++                'usage': {name: usage.get(name) for name in
++                          ('prompt_tokens', 'completion_tokens', 'total_tokens')},
++                'content': message.get('content'),
++                'reasoning_content': message.get('reasoning_content'),
++            })
++        except Exception as error:
++            try:
++                self._logger.warning('Raw response diagnostic unavailable: %s', type(error).__name__)
++            except Exception:
++                pass
++
+     def __init__(
+         self,
+         model_name: str,
+@@ -427,6 +451,8 @@ class LiteLLM(BaseLLM):
+         if isinstance(response, CustomStreamWrapper):
+             raise NotImplementedError("Streaming is not supported for T bench yet")
+ 
++        self._observe_raw_response(response)
++
+         # Extract usage information
+         usage_info = self._extract_usage_info(response)
+ 

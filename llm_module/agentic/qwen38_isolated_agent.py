@@ -3,6 +3,7 @@
 """Terminus-2 with a pre-trajectory egress denial receipt; generation unchanged."""
 import json
 from harbor.agents.terminus_2.terminus_2 import Terminus2
+from llm_module.agentic.qwen38_native_diagnostics import NativeDiagnosticMixin
 from harbor.agents.installed.mini_swe_agent import MiniSweAgent
 
 
@@ -24,7 +25,7 @@ class _PublicEgressProbe:
         await super().run(instruction, environment, context)
 
 
-class IsolatedTerminus2(_PublicEgressProbe, Terminus2):
+class IsolatedTerminus2(_PublicEgressProbe, NativeDiagnosticMixin, Terminus2):
     pass
 
 
