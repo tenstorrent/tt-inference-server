@@ -1,0 +1,75 @@
+{
+  "terminal": {
+    "source": "terminal-bench/terminal-bench-2",
+    "ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+    "tasks": [
+      "build-cython-ext",
+      "build-pmars",
+      "code-from-image",
+      "configure-git-webserver",
+      "constraints-scheduling",
+      "custom-memory-heap-crash",
+      "feal-linear-cryptanalysis",
+      "financial-document-processor",
+      "fix-code-vulnerability",
+      "fix-git"
+    ]
+  },
+  "swe": {
+    "source": "https://github.com/laude-institute/harbor-datasets.git",
+    "ref": "86723674f04e4209ac479d0fb75d9d9f44b4377e",
+    "version": "1.0",
+    "tasks": [
+      "astropy__astropy-12907",
+      "astropy__astropy-13033",
+      "astropy__astropy-13236",
+      "astropy__astropy-13398",
+      "astropy__astropy-13453",
+      "astropy__astropy-13579",
+      "astropy__astropy-13977",
+      "astropy__astropy-14096",
+      "astropy__astropy-14182",
+      "astropy__astropy-14309",
+      "astropy__astropy-14365",
+      "astropy__astropy-14369",
+      "astropy__astropy-14508",
+      "astropy__astropy-14539",
+      "astropy__astropy-14598",
+      "astropy__astropy-14995",
+      "astropy__astropy-7166",
+      "astropy__astropy-7336",
+      "astropy__astropy-7606",
+      "astropy__astropy-7671",
+      "astropy__astropy-8707",
+      "astropy__astropy-8872",
+      "django__django-10097",
+      "django__django-10554",
+      "django__django-10880",
+      "django__django-10914",
+      "django__django-10973",
+      "django__django-10999",
+      "django__django-11066",
+      "django__django-11087",
+      "django__django-11095",
+      "django__django-11099"
+    ],
+    "selection": "sorted(all500names)[:32]  # deterministic prefix, reproducible"
+  },
+  "gpqa": {
+    "task": "r1_gpqa_diamond",
+    "harness_commit": "af401ef3dd3d2d90e55680990ed1f0c9f7892448",
+    "doc_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "concurrency_reason": "Batch32 remains validated serving shape; only ten tasks exist in requested subset so at most10 agents can run, excluding retries."
+}
