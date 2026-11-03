@@ -1316,7 +1316,11 @@ _eval_config_list = [
                 # results. thinking=True (the template's default, stated so the task opts in) routes
                 # the task through llm_module/lmms_eval_request_overrides.py, which hands the harness
                 # an empty answer instead. batch_size fans each batch out over the client's thread
-                # pool (up to 32 requests in flight; its num_concurrent is not a knob of this client).
+                # pool (its num_concurrent is not a knob of this client): 4 = the 1 M profile's users
+                # per row. A multimodal prompt prefills sequence-parallel (the row-local wave path has
+                # no vision scatter) and needs its slot index free on every mesh row, so the engine
+                # keeps at most users_per_row such prompts in flight; the fifth of a batch of 32
+                # had no path and the engine died (tt-shield release run 41423561217, 2026-11-02).
                 # The model card publishes no MMMU number.
                 eval_class="openai_compatible",
                 task_name="mmmu_val",
@@ -1324,7 +1328,7 @@ _eval_config_list = [
                 apply_chat_template=False,
                 use_chat_api=True,
                 thinking=True,
-                batch_size=32,
+                batch_size=4,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
