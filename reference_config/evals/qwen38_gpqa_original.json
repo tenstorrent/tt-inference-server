@@ -42,7 +42,6 @@
     "selection.py": "5f8264dce91dd1282b84487d703e7e2bb11bef5fd6c93f91b4e51342a4fb76ab",
     "metrics.py": "f4794761c3f53fc036336e79c65dca355ea26a8d4cb00b27155ea2ab4846dbb2"
   },
-  "admitted": false,
   "task_source_sha256": {
     "tasks/gpqa/cot_zeroshot/utils.py": "b603828710f1fb3e1b8fe42726b188544ef8dbd12d25f4ca676e42ca4d1a251b",
     "tasks/gpqa/cot_zeroshot/_gpqa_cot_zeroshot_yaml": "809e56db15e55c08aebe73ddd712194e507649fa7c432112ccaf0bad61383ff9",

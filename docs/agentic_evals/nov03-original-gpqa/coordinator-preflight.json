@@ -1020,7 +1020,7 @@
     "workflows/workflow_types.py": "77776526e05feecd2083801b0d0f391930cdcf4ba715561e0fd1d89a50063d14",
     "workflows/workflow_venvs.py": "de8a817795565a140b74ef4fd1eb6699a9f250464decedda75476f0496ae6423"
   },
-  "selected_controls_sha256": "5d87155044ebda960c528a05b257aea789d3d9af7dda88e4a1056a7e680fedc9",
+  "selected_controls_sha256": "c553f0e3d66881c32fd202a3a68631cf2d55cea998b971cb97f7d57529137cd2",
   "runtime_sources": {
     "host_tis_sha": null,
     "metal_sha": null,
