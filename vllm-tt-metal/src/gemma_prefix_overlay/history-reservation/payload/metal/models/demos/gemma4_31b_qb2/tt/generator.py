@@ -210,19 +210,44 @@ class Gemma4Generator:
         expected = set(range(len(self.model.layers))) if state.vllm_owned else {l.kind for l in self.model.layers}
         if set(tables) != expected:
             raise ValueError("Page tables must cover each loaded layer kind exactly")
+        # Layers that share a scheduler table receive the same source tensor. Check each distinct
+        # source once per call and let its layers share one host snapshot, so an unchanged step costs
+        # one comparison per table group instead of one per layer; changed layers still get their copy.
+        memo = {}
         for kind, table in tables.items():
-            table = table.int().contiguous()
-            if tuple(table.shape) != (state.batch, state.capacity // 128):
-                raise ValueError("Page table shape disagrees with cache batch/capacity")
+            source = id(table)
+            entry = memo.get(source)
+            if entry is None:
+                table = table.int().contiguous()
+                if tuple(table.shape) != (state.batch, state.capacity // 128):
+                    raise ValueError("Page table shape disagrees with cache batch/capacity")
+                entry = memo[source] = {"table": table, "snapshot": None, "host": {}}
+            table = entry["table"]
+            uploaded = state.uploaded_tables.get(kind)
             if kind not in state.device_tables:
                 state.device_tables[kind] = self._upload(table)
-                state.uploaded_tables[kind] = table.clone()
+                if entry["snapshot"] is None:
+                    entry["snapshot"] = table.clone()
+                state.uploaded_tables[kind] = entry["snapshot"]
                 self.counters["page_table_refreshes"] += 1
-            elif not torch.equal(table, state.uploaded_tables[kind]):
-                if tuple(table.shape) != tuple(state.uploaded_tables[kind].shape):
+            elif uploaded is entry["snapshot"]:
+                continue
+            elif not torch.equal(table, uploaded):
+                if tuple(table.shape) != tuple(uploaded.shape):
                     raise ValueError("Changing table capacity requires a new CacheState")
-                self._refresh(table, state.device_tables[kind], "page_table_refreshes")
-                state.uploaded_tables[kind] = table.clone()
+                dest = state.device_tables[kind]
+                host = entry["host"].get((dest.dtype, dest.layout))
+                if host is None:
+                    host = entry["host"][(dest.dtype, dest.layout)] = ttnn.from_torch(table, dtype=dest.dtype, layout=dest.layout)
+                ttnn.copy_host_to_device_tensor(host, dest)
+                self.counters["page_table_refreshes"] += 1
+                if entry["snapshot"] is None:
+                    entry["snapshot"] = table.clone()
+                state.uploaded_tables[kind] = entry["snapshot"]
+            elif entry["snapshot"] is None:
+                entry["snapshot"] = uploaded
+            else:
+                state.uploaded_tables[kind] = entry["snapshot"]
         return state.device_tables
 
     def _validate_cache(self, state, tables):
