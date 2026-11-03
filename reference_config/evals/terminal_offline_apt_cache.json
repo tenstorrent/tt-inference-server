@@ -1,0 +1,1378 @@
+{
+  "schema_version": 1,
+  "scope": "unscored_mandatory_acquisition_only",
+  "repositories": {
+    "debian": {
+      "base_url": "https://deb.debian.org/debian",
+      "keyring_name": "debian-archive-keyring.gpg",
+      "keyring_sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017",
+      "suites": {
+        "trixie": {
+          "inrelease": {
+            "sha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
+            "bytes": 140421,
+            "url": "https://deb.debian.org/debian/dists/trixie/InRelease"
+          },
+          "release_fields": {
+            "Suite": "stable",
+            "Codename": "trixie",
+            "Date": "Sat, 12 Sep 2026 07:55:41 UTC"
+          },
+          "signers": [
+            "4CB50190207B4758A3F73A796ED0E7B82643E131",
+            "B8E5F13176D2A7A75220028078DBA3BC47EF2265",
+            "41587F7DB8C774BCCF131416762F67A0B2C39DE4"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498",
+              "bytes": 9678380,
+              "url": "https://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz"
+            },
+            "main/source/Sources.xz": {
+              "sha256": "6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9",
+              "bytes": 10540436,
+              "url": "https://deb.debian.org/debian/dists/trixie/main/source/Sources.xz"
+            }
+          }
+        },
+        "trixie-updates": {
+          "inrelease": {
+            "sha256": "34507e00782424756b7c4d46b1717e6c055722b59dac6e713f3f88b0505a476f",
+            "bytes": 47340,
+            "url": "https://snapshot.debian.org/archive/debian/20261102T180000Z/dists/trixie-updates/InRelease"
+          },
+          "release_fields": {
+            "Suite": "stable-updates",
+            "Codename": "trixie-updates",
+            "Date": "Mon, 02 Nov 2026 14:10:08 UTC",
+            "Valid-Until": "Mon, 09 Nov 2026 14:10:08 UTC"
+          },
+          "signers": [
+            "4CB50190207B4758A3F73A796ED0E7B82643E131",
+            "B8E5F13176D2A7A75220028078DBA3BC47EF2265"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "7b52592d46eb9bf694ffd99b90fb521064a6bfd1d0a9f69f22cabf31cb7ea38e",
+              "bytes": 1108,
+              "url": "https://snapshot.debian.org/archive/debian/20261102T180000Z/dists/trixie-updates/main/binary-amd64/Packages.xz"
+            }
+          }
+        }
+      }
+    },
+    "debian-security": {
+      "base_url": "https://security.debian.org/debian-security",
+      "keyring_name": "debian-archive-keyring.gpg",
+      "keyring_sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017",
+      "suites": {
+        "trixie-security": {
+          "inrelease": {
+            "sha256": "0796dd8165e0abf519d5159e23cb762b4c8bc35b45a71272d0951c01fdcb659a",
+            "bytes": 43409,
+            "url": "https://snapshot.debian.org/archive/debian-security/20261102T180000Z/dists/trixie-security/InRelease"
+          },
+          "release_fields": {
+            "Suite": "stable-security",
+            "Codename": "trixie-security",
+            "Date": "Mon, 02 Nov 2026 16:23:48 UTC",
+            "Valid-Until": "Mon, 09 Nov 2026 16:23:48 UTC"
+          },
+          "signers": [
+            "B0CAB9266E8C3929798B3EEEBDE6D2B9216EC7A8",
+            "89C87ACEA5DD6B8E6A7068808E9F831205B4BA95"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "1ad4745db3be309e6840ed9991d840799accf2675a693c1a6339de343cf44473",
+              "bytes": 296896,
+              "url": "https://snapshot.debian.org/archive/debian-security/20261102T180000Z/dists/trixie-security/main/binary-amd64/Packages.xz"
+            }
+          }
+        }
+      }
+    },
+    "ubuntu": {
+      "base_url": "https://archive.ubuntu.com/ubuntu",
+      "keyring_name": "ubuntu-archive-keyring.gpg",
+      "keyring_sha256": "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31",
+      "suites": {
+        "noble": {
+          "inrelease": {
+            "sha256": "cdb2f31d809f589719a53c6ad15f255b27569c4059542ada282aaa21b8e164b0",
+            "bytes": 255850,
+            "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble/InRelease"
+          },
+          "release_fields": {
+            "Suite": "noble",
+            "Codename": "noble",
+            "Date": "Thu, 25 Apr 2024 15:10:33 UTC"
+          },
+          "signers": [
+            "F6ECB3762474EDA9D21B7022871920D1991BC93C"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "2a6a199e1031a5c279cb346646d594993f35b1c03dd4a82aaa0323980dd92451",
+              "bytes": 1401160,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble/main/binary-amd64/Packages.xz"
+            },
+            "universe/binary-amd64/Packages.xz": {
+              "sha256": "ba9057fa1b91438cc8a1d26808d00c85389fe101d0c1496254df97236405599a",
+              "bytes": 15037908,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble/universe/binary-amd64/Packages.xz"
+            },
+            "restricted/binary-amd64/Packages.xz": {
+              "sha256": "aa3f9520f4e46cdcd610c7f0ce9450cda430f20085b028845e95122e9d61680c",
+              "bytes": 93924,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble/restricted/binary-amd64/Packages.xz"
+            },
+            "multiverse/binary-amd64/Packages.xz": {
+              "sha256": "8080460fe0864ab72bfc2a6d52e76d8c82d55f2cc2188a12f83d6fbe3e1750ea",
+              "bytes": 269224,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble/multiverse/binary-amd64/Packages.xz"
+            }
+          }
+        },
+        "noble-updates": {
+          "inrelease": {
+            "sha256": "6b1d7bab86063d6f0f3c4271263c5d23302b4bfbec551335f04f0e4bf60843f4",
+            "bytes": 126125,
+            "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-updates/InRelease"
+          },
+          "release_fields": {
+            "Suite": "noble-updates",
+            "Codename": "noble",
+            "Date": "Mon, 02 Nov 2026  9:56:25 UTC"
+          },
+          "signers": [
+            "F6ECB3762474EDA9D21B7022871920D1991BC93C"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "4292c6f61b84c8685c73f6db585fce9974f293a0e62fb070a4c7a2572e333996",
+              "bytes": 1407612,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-updates/main/binary-amd64/Packages.xz"
+            },
+            "universe/binary-amd64/Packages.xz": {
+              "sha256": "2dd82d93dc7fab28f67d5120aa122d8896b557ce4984995635a7dfff1353386d",
+              "bytes": 1707340,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-updates/universe/binary-amd64/Packages.xz"
+            },
+            "restricted/binary-amd64/Packages.xz": {
+              "sha256": "5b91384f0ebf6941f8fdb691adde20ba8ff8b3bd823cb21bf32e6bf448ed9355",
+              "bytes": 1812868,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-updates/restricted/binary-amd64/Packages.xz"
+            },
+            "multiverse/binary-amd64/Packages.xz": {
+              "sha256": "f99e154c0eee0b2fa6a01c2a0ba7a19f68949c3296032bbec5cbdbaa110e42cf",
+              "bytes": 50680,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-updates/multiverse/binary-amd64/Packages.xz"
+            }
+          }
+        },
+        "noble-backports": {
+          "inrelease": {
+            "sha256": "e171cc776cfff1f57836e685d2413422352a33629285999ae0022e8e9bd1417a",
+            "bytes": 126173,
+            "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-backports/InRelease"
+          },
+          "release_fields": {
+            "Suite": "noble-backports",
+            "Codename": "noble",
+            "Date": "Mon, 02 Nov 2026  9:58:46 UTC",
+            "NotAutomatic": "yes",
+            "ButAutomaticUpgrades": "yes"
+          },
+          "signers": [
+            "F6ECB3762474EDA9D21B7022871920D1991BC93C"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "b962c8d83acab25c27b3367cf94b8566d0da28bdf696eb324c263836d9e41a94",
+              "bytes": 40624,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-backports/main/binary-amd64/Packages.xz"
+            },
+            "universe/binary-amd64/Packages.xz": {
+              "sha256": "4d689e32b0131a398ecbe07597d51b55074a20f70d66587c2c9c14d8f6fcc040",
+              "bytes": 30964,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-backports/universe/binary-amd64/Packages.xz"
+            },
+            "restricted/binary-amd64/Packages.xz": {
+              "sha256": "0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275",
+              "bytes": 32,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-backports/restricted/binary-amd64/Packages.xz"
+            },
+            "multiverse/binary-amd64/Packages.xz": {
+              "sha256": "e224a0da236577f82600151bef134d7ddb3eebd0fed8f4574f65dc7e88e0bf2d",
+              "bytes": 748,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-backports/multiverse/binary-amd64/Packages.xz"
+            }
+          }
+        }
+      }
+    },
+    "ubuntu-security": {
+      "base_url": "https://security.ubuntu.com/ubuntu",
+      "keyring_name": "ubuntu-archive-keyring.gpg",
+      "keyring_sha256": "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31",
+      "suites": {
+        "noble-security": {
+          "inrelease": {
+            "sha256": "f73aa2e3cf0e9aaf721e05564f456c2d058137477f99cd6967857237690a6b93",
+            "bytes": 126127,
+            "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-security/InRelease"
+          },
+          "release_fields": {
+            "Suite": "noble-security",
+            "Codename": "noble",
+            "Date": "Mon, 02 Nov 2026 14:51:21 UTC"
+          },
+          "signers": [
+            "F6ECB3762474EDA9D21B7022871920D1991BC93C"
+          ],
+          "indexes": {
+            "main/binary-amd64/Packages.xz": {
+              "sha256": "b54c17917f7756866d0e666d42a6497c2f3c8c37d57d407de13d42ca935a4f03",
+              "bytes": 1153272,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-security/main/binary-amd64/Packages.xz"
+            },
+            "universe/binary-amd64/Packages.xz": {
+              "sha256": "04fe4313903aaf81f7746b8b6eef2e6f2402e4606d8205e1e11222fd4bb9f095",
+              "bytes": 1223744,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-security/universe/binary-amd64/Packages.xz"
+            },
+            "restricted/binary-amd64/Packages.xz": {
+              "sha256": "29e7cbf6a3908fba83bf75263aeaa288d5e6839f670677f078a3dfac44a47cd7",
+              "bytes": 1720796,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-security/restricted/binary-amd64/Packages.xz"
+            },
+            "multiverse/binary-amd64/Packages.xz": {
+              "sha256": "80ea3c5875729fc29893b7105f3e81a584fa4489f4fa701056ec1603f46b254c",
+              "bytes": 45428,
+              "url": "https://snapshot.ubuntu.com/ubuntu/20261102T180000Z/dists/noble-security/multiverse/binary-amd64/Packages.xz"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tasks": {
+    "build-pmars": {
+      "image": "alexgshaw/build-pmars@sha256:57a82706f7491e0b2d1ff7e927e97ae5339892dd09c47ac43290b4ba1f5abc6f",
+      "image_manifest_digest": "sha256:57a82706f7491e0b2d1ff7e927e97ae5339892dd09c47ac43290b4ba1f5abc6f",
+      "dpkg_status_sha256": "1a48f6adc61419527891fdcee6edad16d2d3bed8d96e6a1ba7f193c03a4bb31b",
+      "task_files": {
+        "task.toml": "d93d75308eccbc9695a4975717c74a5c4249149398377e52e69194031eaac3d0",
+        "instruction.md": "1606850579342a8b8f2189de0e499fae6be21198150d8dd1e4d18c2efbcf3b82",
+        "environment/Dockerfile": "ff0a9f766151b6304a33b8fe8787dc27d75f6ea679eec4e9a4f2c8876fe08b25"
+      },
+      "origins": [
+        "debian",
+        "debian-security"
+      ],
+      "requested_packages": [
+        "build-essential",
+        "dpkg-dev"
+      ],
+      "selected_packages": [
+        {
+          "name": "perl-base",
+          "version": "5.40.1-6+deb13u1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/p/perl/perl-base_5.40.1-6+deb13u1_amd64.deb",
+          "sha256": "b795464137a0f4d443fc9284f4b93e883fb83883cb533adf300ac660807a352a",
+          "bytes": 1666320,
+          "url": "https://deb.debian.org/debian/pool/main/p/perl/perl-base_5.40.1-6+deb13u1_amd64.deb"
+        },
+        {
+          "name": "libc6",
+          "version": "2.41-12+deb13u4",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb",
+          "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9",
+          "bytes": 2846580,
+          "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+        },
+        {
+          "name": "liblocale-gettext-perl",
+          "version": "1.07-7+b1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/libl/liblocale-gettext-perl/liblocale-gettext-perl_1.07-7+b1_amd64.deb",
+          "sha256": "764c10c723ccd6e45e5637c0be3c74f20997971da9aad77b8cca73c13494a493",
+          "bytes": 15344,
+          "url": "https://deb.debian.org/debian/pool/main/libl/liblocale-gettext-perl/liblocale-gettext-perl_1.07-7+b1_amd64.deb"
+        },
+        {
+          "name": "bzip2",
+          "version": "1.0.8-6",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/bzip2/bzip2_1.0.8-6_amd64.deb",
+          "sha256": "6b5fbe71f0fc41e85919bc4b3c514e6c47577c5005dbf1f5af6e4a49cc221aab",
+          "bytes": 40520,
+          "url": "https://deb.debian.org/debian/pool/main/b/bzip2/bzip2_1.0.8-6_amd64.deb"
+        },
+        {
+          "name": "manpages",
+          "version": "6.9.1-1",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/m/manpages/manpages_6.9.1-1_all.deb",
+          "sha256": "91b7df0b4bd4e1a3b8ba5b229abd844e03f4c82c45ccb8c964a035190c29a501",
+          "bytes": 1393160,
+          "url": "https://deb.debian.org/debian/pool/main/m/manpages/manpages_6.9.1-1_all.deb"
+        },
+        {
+          "name": "perl-modules-5.40",
+          "version": "5.40.1-6+deb13u1",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/p/perl/perl-modules-5.40_5.40.1-6+deb13u1_all.deb",
+          "sha256": "4c46cdd8f3135aa1c95f07e817f8e5d9be590687441ac1c27e3a8c49400f35ce",
+          "bytes": 3013728,
+          "url": "https://deb.debian.org/debian/pool/main/p/perl/perl-modules-5.40_5.40.1-6+deb13u1_all.deb"
+        },
+        {
+          "name": "libgdbm6t64",
+          "version": "1.24-2",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gdbm/libgdbm6t64_1.24-2_amd64.deb",
+          "sha256": "e7b42c68c391e278733adb3c1efdacd24d660862bd7bac0efbc10a91e5696dfc",
+          "bytes": 75176,
+          "url": "https://deb.debian.org/debian/pool/main/g/gdbm/libgdbm6t64_1.24-2_amd64.deb"
+        },
+        {
+          "name": "libgdbm-compat4t64",
+          "version": "1.24-2",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gdbm/libgdbm-compat4t64_1.24-2_amd64.deb",
+          "sha256": "2cbd43cf2dfbf57ff48188b5d79d29cf7ea8f0dedaa61ab0bcc02eceff50ea01",
+          "bytes": 50280,
+          "url": "https://deb.debian.org/debian/pool/main/g/gdbm/libgdbm-compat4t64_1.24-2_amd64.deb"
+        },
+        {
+          "name": "libperl5.40",
+          "version": "5.40.1-6+deb13u1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/p/perl/libperl5.40_5.40.1-6+deb13u1_amd64.deb",
+          "sha256": "e44777ff47ad248d1debd57e1f96ab5e89061a341008ae39880ba3b5fc15f273",
+          "bytes": 4325996,
+          "url": "https://deb.debian.org/debian/pool/main/p/perl/libperl5.40_5.40.1-6+deb13u1_amd64.deb"
+        },
+        {
+          "name": "perl",
+          "version": "5.40.1-6+deb13u1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/p/perl/perl_5.40.1-6+deb13u1_amd64.deb",
+          "sha256": "ef145c247787d6f40dcdefd5b417502484827cde0d555998c17fd5b27ec1e1dd",
+          "bytes": 267736,
+          "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.40.1-6+deb13u1_amd64.deb"
+        },
+        {
+          "name": "xz-utils",
+          "version": "5.8.1-1+deb13u2",
+          "architecture": "amd64",
+          "origin": "debian-security",
+          "path": "pool/updates/main/x/xz-utils/xz-utils_5.8.1-1+deb13u2_amd64.deb",
+          "sha256": "66b060ef2f09722c947ba019da5e9a63f6bac9d7bf90b32339a72c0390acc53f",
+          "bytes": 659760,
+          "url": "https://security.debian.org/debian-security/pool/updates/main/x/xz-utils/xz-utils_5.8.1-1+deb13u2_amd64.deb"
+        },
+        {
+          "name": "libsframe1",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/libsframe1_2.44-3_amd64.deb",
+          "sha256": "38f625dfdc582717029ac3a3e97c51d994ec2e7a0e9b230c6b44e40d1276311f",
+          "bytes": 78360,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/libsframe1_2.44-3_amd64.deb"
+        },
+        {
+          "name": "binutils-common",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/binutils-common_2.44-3_amd64.deb",
+          "sha256": "002da5d23f8757dee97a2c0a40e0e1d4d85a43da094488ee2ee7068d4d3691f9",
+          "bytes": 2508768,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/binutils-common_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libbinutils",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/libbinutils_2.44-3_amd64.deb",
+          "sha256": "4f4664c8a8f0ad0c8631c39fab02e3d8d86ccc6f4436a1d59f059dbcb0492679",
+          "bytes": 534440,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/libbinutils_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libgprofng0",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/libgprofng0_2.44-3_amd64.deb",
+          "sha256": "0d36d0bde85c467ac6735dded08e19dd30ae1369e3908b9eb48ccc0d6ff66648",
+          "bytes": 807764,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/libgprofng0_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libctf-nobfd0",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/libctf-nobfd0_2.44-3_amd64.deb",
+          "sha256": "e280b2be3db6e584500e865c251605b95c346767d87ccb2524e44992048fc657",
+          "bytes": 155672,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/libctf-nobfd0_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libctf0",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/libctf0_2.44-3_amd64.deb",
+          "sha256": "120cafcd93132a276fa92a8fb4cf39b23d14e5a3e348f4f5580638d71ca95ac5",
+          "bytes": 88616,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/libctf0_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libjansson4",
+          "version": "2.14-2+b3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/j/jansson/libjansson4_2.14-2+b3_amd64.deb",
+          "sha256": "60707a62fe6c1228c3389b12a13ca4efd76defc5532473e547a29e99cf7d2a6e",
+          "bytes": 39792,
+          "url": "https://deb.debian.org/debian/pool/main/j/jansson/libjansson4_2.14-2+b3_amd64.deb"
+        },
+        {
+          "name": "binutils-x86-64-linux-gnu",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/binutils-x86-64-linux-gnu_2.44-3_amd64.deb",
+          "sha256": "e6741ce95ff0f7a131c8d9faa3528ccbbc453078bbc62a97da81340ed7462c53",
+          "bytes": 1013844,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/binutils-x86-64-linux-gnu_2.44-3_amd64.deb"
+        },
+        {
+          "name": "binutils",
+          "version": "2.44-3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/binutils/binutils_2.44-3_amd64.deb",
+          "sha256": "6bc08c02539ba53b5e748142397144c499f9b20b5fa9bb56431545db124addeb",
+          "bytes": 265400,
+          "url": "https://deb.debian.org/debian/pool/main/b/binutils/binutils_2.44-3_amd64.deb"
+        },
+        {
+          "name": "libc-dev-bin",
+          "version": "2.41-12+deb13u4",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/glibc/libc-dev-bin_2.41-12+deb13u4_amd64.deb",
+          "sha256": "2c21175d6a8283ed566d154c0c0bc06f60836e53b0b9e1f74c14eac586b68c24",
+          "bytes": 59960,
+          "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc-dev-bin_2.41-12+deb13u4_amd64.deb"
+        },
+        {
+          "name": "linux-libc-dev",
+          "version": "6.12.115-2",
+          "architecture": "all",
+          "origin": "debian-security",
+          "path": "pool/updates/main/l/linux/linux-libc-dev_6.12.115-2_all.deb",
+          "sha256": "235ba2cb2ea677f4acaf402b027e76d305342870f6d80d822d7ee9713e2f0ff5",
+          "bytes": 3049692,
+          "url": "https://security.debian.org/debian-security/pool/updates/main/l/linux/linux-libc-dev_6.12.115-2_all.deb"
+        },
+        {
+          "name": "libcrypt-dev",
+          "version": "1:4.4.38-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/libx/libxcrypt/libcrypt-dev_4.4.38-1_amd64.deb",
+          "sha256": "98e2333aea8d64ca68f9b75c16256d3a05492fd8f9e6dba96adbc6f19e4f5a09",
+          "bytes": 119040,
+          "url": "https://deb.debian.org/debian/pool/main/libx/libxcrypt/libcrypt-dev_4.4.38-1_amd64.deb"
+        },
+        {
+          "name": "rpcsvc-proto",
+          "version": "1.4.3-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.3-1_amd64.deb",
+          "sha256": "32ac0692694f8a34cc90c895f4fc739680fb2ef0e2d4870a68833682bf1c81a3",
+          "bytes": 63268,
+          "url": "https://deb.debian.org/debian/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.3-1_amd64.deb"
+        },
+        {
+          "name": "libc6-dev",
+          "version": "2.41-12+deb13u4",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/glibc/libc6-dev_2.41-12+deb13u4_amd64.deb",
+          "sha256": "1fda734dabcd80b77266a09ab62b0f1e3e16d8091db62899890b2200745632a2",
+          "bytes": 1994660,
+          "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc6-dev_2.41-12+deb13u4_amd64.deb"
+        },
+        {
+          "name": "libisl23",
+          "version": "0.27-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/i/isl/libisl23_0.27-1_amd64.deb",
+          "sha256": "ac8518042e81c00de1effb72bba7e88ac4ecd488f7ea8b9e3ebc63159cb53b35",
+          "bytes": 659152,
+          "url": "https://deb.debian.org/debian/pool/main/i/isl/libisl23_0.27-1_amd64.deb"
+        },
+        {
+          "name": "libmpfr6",
+          "version": "4.2.2-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/m/mpfr4/libmpfr6_4.2.2-1_amd64.deb",
+          "sha256": "75dddce11dabc7fc543712c33dc27b7f2ee66a111763eb5eac654d010b42cd92",
+          "bytes": 729320,
+          "url": "https://deb.debian.org/debian/pool/main/m/mpfr4/libmpfr6_4.2.2-1_amd64.deb"
+        },
+        {
+          "name": "libmpc3",
+          "version": "1.3.1-1+b3",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/m/mpclib3/libmpc3_1.3.1-1+b3_amd64.deb",
+          "sha256": "2af0a5c128e03694a41c0b011bd8a958b7297436cdb3a15ddad7866dae8c300b",
+          "bytes": 52244,
+          "url": "https://deb.debian.org/debian/pool/main/m/mpclib3/libmpc3_1.3.1-1+b3_amd64.deb"
+        },
+        {
+          "name": "cpp-14-x86-64-linux-gnu",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/cpp-14-x86-64-linux-gnu_14.2.0-19_amd64.deb",
+          "sha256": "ef274b5379f5f97fc71619d39ecc84d039d3e184570d207b909c90afaa5d79e0",
+          "bytes": 11047460,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/cpp-14-x86-64-linux-gnu_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "cpp-14",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/cpp-14_14.2.0-19_amd64.deb",
+          "sha256": "3bae5fe03c56c6d021900ab4fb79e35c6f75eee72a73fccc6f28a39db559d6a0",
+          "bytes": 1280,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/cpp-14_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "cpp-x86-64-linux-gnu",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/cpp-x86-64-linux-gnu_14.2.0-1_amd64.deb",
+          "sha256": "d902f484e38bce59e82efc0df2fe20139a0932ca759ecafdfe6e5b6c72238eb8",
+          "bytes": 4840,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/cpp-x86-64-linux-gnu_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "cpp",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/cpp_14.2.0-1_amd64.deb",
+          "sha256": "a6ba40550aadec80437813e0fce5516574945ff40e72306a5b378c03af3a6544",
+          "bytes": 1568,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/cpp_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "libcc1-0",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libcc1-0_14.2.0-19_amd64.deb",
+          "sha256": "2d587e3bfba4aec701946b7ba0c1640b97b6d8dd0a34ba1c70ae85261ecedefa",
+          "bytes": 42796,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libcc1-0_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libgomp1",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libgomp1_14.2.0-19_amd64.deb",
+          "sha256": "72b7a1a33c48f3195efeb044111b34ae684b1e640bb6495c832443b798601cd5",
+          "bytes": 137148,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgomp1_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libitm1",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libitm1_14.2.0-19_amd64.deb",
+          "sha256": "febdb3c528cde1a3abe952e17a1d3cfa7ccaca5b6f506d983d34385dad199490",
+          "bytes": 25956,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libitm1_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libatomic1",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libatomic1_14.2.0-19_amd64.deb",
+          "sha256": "212b399aae2f7299203d261a57e49372e09565a9a5ea971905f94a3960366c05",
+          "bytes": 9308,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libatomic1_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libasan8",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libasan8_14.2.0-19_amd64.deb",
+          "sha256": "771899ade7310fe31aa538a509354c33d62bbe4e408b4e5fc1e513988dc42645",
+          "bytes": 2725272,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libasan8_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "liblsan0",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/liblsan0_14.2.0-19_amd64.deb",
+          "sha256": "a0df07da76287a45e665d584363dc2a6a1c4e240aee41b8bbc0f67cdff97cd68",
+          "bytes": 1204164,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/liblsan0_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libtsan2",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libtsan2_14.2.0-19_amd64.deb",
+          "sha256": "529d7f68227d16975076c5f842e8b687faea1b5df8e0dcf62e436d5402844ca5",
+          "bytes": 2460216,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libtsan2_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libubsan1",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libubsan1_14.2.0-19_amd64.deb",
+          "sha256": "9205a1bef7d6a52ffc06548e0cde169ff303e688c12d9be3a98f734449077e22",
+          "bytes": 1074340,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libubsan1_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libhwasan0",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libhwasan0_14.2.0-19_amd64.deb",
+          "sha256": "2cdaf797cad8ac30a964ab081370682dd065ae1b0305a0be9d8e0e14cd0657d7",
+          "bytes": 1487768,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libhwasan0_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libquadmath0",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libquadmath0_14.2.0-19_amd64.deb",
+          "sha256": "f5b51cf0ece3ec3bb7494d0cdbff3ce715ae00cfb2b6ed787f7db91319d64a7b",
+          "bytes": 145068,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libquadmath0_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "libgcc-14-dev",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libgcc-14-dev_14.2.0-19_amd64.deb",
+          "sha256": "ca6f2d36d96b19b3eb71405b0b80134d8c89380b02204a2512e5c58ceb090628",
+          "bytes": 2672328,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgcc-14-dev_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "gcc-14-x86-64-linux-gnu",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/gcc-14-x86-64-linux-gnu_14.2.0-19_amd64.deb",
+          "sha256": "a17ef039f1ba482051c3efb5c2c24070002e60dd0bd09fd456ec31481a11b725",
+          "bytes": 21389968,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/gcc-14-x86-64-linux-gnu_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "gcc-14",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/gcc-14_14.2.0-19_amd64.deb",
+          "sha256": "21500408b5019d8d29f70ce58488e2eea469a1adb4b5fd7db45e819b5efcac4e",
+          "bytes": 540064,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/gcc-14_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "gcc-x86-64-linux-gnu",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/gcc-x86-64-linux-gnu_14.2.0-1_amd64.deb",
+          "sha256": "04c28c2760b0094b3d7758154ac095303dd00599b63ebad4086a325b607308b7",
+          "bytes": 1436,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/gcc-x86-64-linux-gnu_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "gcc",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/gcc_14.2.0-1_amd64.deb",
+          "sha256": "eee65c41a441c57c05f754ced1b9d093956966a1c7da9938c3ec00d3dc2f905d",
+          "bytes": 5136,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/gcc_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "libstdc++-14-dev",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/libstdc++-14-dev_14.2.0-19_amd64.deb",
+          "sha256": "4b962fac5f1af0bd8b1b3f97e0f47b9d8e9a79e88802143f00ebfbd78ad87a7b",
+          "bytes": 2375760,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libstdc++-14-dev_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "g++-14-x86-64-linux-gnu",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/g++-14-x86-64-linux-gnu_14.2.0-19_amd64.deb",
+          "sha256": "c66b009fedd340520279d1af2f91d0668e9f64f0c08fe62179ca1c75e556be58",
+          "bytes": 12114812,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/g++-14-x86-64-linux-gnu_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "g++-14",
+          "version": "14.2.0-19",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-14/g++-14_14.2.0-19_amd64.deb",
+          "sha256": "4706ab29eab3d81e93582b45b229fdedc71f1eec3071996a448cf2c8beb83f3a",
+          "bytes": 22544,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/g++-14_14.2.0-19_amd64.deb"
+        },
+        {
+          "name": "g++-x86-64-linux-gnu",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/g++-x86-64-linux-gnu_14.2.0-1_amd64.deb",
+          "sha256": "15e10fc3948ec76be8d51b23e75ad9df9c39588c94f1f47059cee02c117c7583",
+          "bytes": 1200,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/g++-x86-64-linux-gnu_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "g++",
+          "version": "4:14.2.0-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/gcc-defaults/g++_14.2.0-1_amd64.deb",
+          "sha256": "f86661c021ab2acb39ceb87315e7c2d4d420fdadc19945d5d589f3953410445c",
+          "bytes": 1344,
+          "url": "https://deb.debian.org/debian/pool/main/g/gcc-defaults/g++_14.2.0-1_amd64.deb"
+        },
+        {
+          "name": "make",
+          "version": "4.4.1-2",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/m/make-dfsg/make_4.4.1-2_amd64.deb",
+          "sha256": "70a9709e665383b06068ccd423d62ea191b65355f318a25565dbf324b254cec6",
+          "bytes": 463104,
+          "url": "https://deb.debian.org/debian/pool/main/m/make-dfsg/make_4.4.1-2_amd64.deb"
+        },
+        {
+          "name": "libdpkg-perl",
+          "version": "1.22.22",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/d/dpkg/libdpkg-perl_1.22.22_all.deb",
+          "sha256": "b41eaeb4879091023f8c1a058510844a244d3d0bd0f437e0e05d58213e36fd9f",
+          "bytes": 650808,
+          "url": "https://deb.debian.org/debian/pool/main/d/dpkg/libdpkg-perl_1.22.22_all.deb"
+        },
+        {
+          "name": "patch",
+          "version": "2.8-2",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/p/patch/patch_2.8-2_amd64.deb",
+          "sha256": "80c46a0085b33acc74bf451fddb6a70cb43d4ebcc4a873aec04d8d0a63ffc630",
+          "bytes": 134328,
+          "url": "https://deb.debian.org/debian/pool/main/p/patch/patch_2.8-2_amd64.deb"
+        },
+        {
+          "name": "dpkg-dev",
+          "version": "1.22.22",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/d/dpkg/dpkg-dev_1.22.22_all.deb",
+          "sha256": "6d4020421740a70e1fb9c41b07f8bb8306d93aef6fea1a8ce11a1f839921f414",
+          "bytes": 1337268,
+          "url": "https://deb.debian.org/debian/pool/main/d/dpkg/dpkg-dev_1.22.22_all.deb"
+        },
+        {
+          "name": "build-essential",
+          "version": "12.12",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/b/build-essential/build-essential_12.12_amd64.deb",
+          "sha256": "a45159aebea0d98d6652ac5a56b7fff164a7733a7dc736b9f8715ca504519d3a",
+          "bytes": 4624,
+          "url": "https://deb.debian.org/debian/pool/main/b/build-essential/build-essential_12.12_amd64.deb"
+        },
+        {
+          "name": "libfakeroot",
+          "version": "1.37.1.1-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/f/fakeroot/libfakeroot_1.37.1.1-1_amd64.deb",
+          "sha256": "9fe004890f90884c23c24c4fb7eaf5afd55b0b79f3bc05c498a9f54191098a81",
+          "bytes": 29556,
+          "url": "https://deb.debian.org/debian/pool/main/f/fakeroot/libfakeroot_1.37.1.1-1_amd64.deb"
+        },
+        {
+          "name": "fakeroot",
+          "version": "1.37.1.1-1",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/f/fakeroot/fakeroot_1.37.1.1-1_amd64.deb",
+          "sha256": "df17a351eaac7168ac56c197abf0d015ae34fc9dbba0c1d507a76409034311de",
+          "bytes": 75996,
+          "url": "https://deb.debian.org/debian/pool/main/f/fakeroot/fakeroot_1.37.1.1-1_amd64.deb"
+        },
+        {
+          "name": "libalgorithm-diff-perl",
+          "version": "1.201-1",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/liba/libalgorithm-diff-perl/libalgorithm-diff-perl_1.201-1_all.deb",
+          "sha256": "3a8b61891f0ce9bd310088ce2d269d63b5afd88b9196fa4f046fd890faea4a17",
+          "bytes": 43296,
+          "url": "https://deb.debian.org/debian/pool/main/liba/libalgorithm-diff-perl/libalgorithm-diff-perl_1.201-1_all.deb"
+        },
+        {
+          "name": "libalgorithm-diff-xs-perl",
+          "version": "0.04-9",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/liba/libalgorithm-diff-xs-perl/libalgorithm-diff-xs-perl_0.04-9_amd64.deb",
+          "sha256": "4b2e9b2c8d02ce7a1b5bab78f2e059b15eda0fbd09e92c22ac96b82968aae98b",
+          "bytes": 11100,
+          "url": "https://deb.debian.org/debian/pool/main/liba/libalgorithm-diff-xs-perl/libalgorithm-diff-xs-perl_0.04-9_amd64.deb"
+        },
+        {
+          "name": "libalgorithm-merge-perl",
+          "version": "0.08-5",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/liba/libalgorithm-merge-perl/libalgorithm-merge-perl_0.08-5_all.deb",
+          "sha256": "46dbe02369411b46f676ddb55fa8ee3a98f7a15607ddab785979c25bacb5d7db",
+          "bytes": 11788,
+          "url": "https://deb.debian.org/debian/pool/main/liba/libalgorithm-merge-perl/libalgorithm-merge-perl_0.08-5_all.deb"
+        },
+        {
+          "name": "libfile-fcntllock-perl",
+          "version": "0.22-4+b4",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/libf/libfile-fcntllock-perl/libfile-fcntllock-perl_0.22-4+b4_amd64.deb",
+          "sha256": "4b2407a812b395d0a304288710e5041955f6b3242ca9eb56fef386dc703114e3",
+          "bytes": 34564,
+          "url": "https://deb.debian.org/debian/pool/main/libf/libfile-fcntllock-perl/libfile-fcntllock-perl_0.22-4+b4_amd64.deb"
+        },
+        {
+          "name": "manpages-dev",
+          "version": "6.9.1-1",
+          "architecture": "all",
+          "origin": "debian",
+          "path": "pool/main/m/manpages/manpages-dev_6.9.1-1_all.deb",
+          "sha256": "9de42b48394935236a31385e4bae816911cd20dc3f20250531964aec44082f63",
+          "bytes": 2122084,
+          "url": "https://deb.debian.org/debian/pool/main/m/manpages/manpages-dev_6.9.1-1_all.deb"
+        },
+        {
+          "name": "sq",
+          "version": "1.3.1-2+b2",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/r/rust-sequoia-sq/sq_1.3.1-2+b2_amd64.deb",
+          "sha256": "139eef26508ea7ac9d643e595775994c5c7eb10f3506f7b4ca4a962d89f11923",
+          "bytes": 5653376,
+          "url": "https://deb.debian.org/debian/pool/main/r/rust-sequoia-sq/sq_1.3.1-2+b2_amd64.deb"
+        },
+        {
+          "name": "dpkg",
+          "version": "1.22.22",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/d/dpkg/dpkg_1.22.22_amd64.deb",
+          "sha256": "3e800c6d75e8e709007ed1c356e5fa8509a75c1694fb0a1183709abc9cfdc1f3",
+          "bytes": 1537216,
+          "url": "https://deb.debian.org/debian/pool/main/d/dpkg/dpkg_1.22.22_amd64.deb"
+        },
+        {
+          "name": "libc-bin",
+          "version": "2.41-12+deb13u4",
+          "architecture": "amd64",
+          "origin": "debian",
+          "path": "pool/main/g/glibc/libc-bin_2.41-12+deb13u4_amd64.deb",
+          "sha256": "dc8c79647fe3a5f37f72a400414f70263d0212f010ff2c09f990e30d91e38d1c",
+          "bytes": 638452,
+          "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc-bin_2.41-12+deb13u4_amd64.deb"
+        },
+        {
+          "name": "liblzma5",
+          "version": "5.8.1-1+deb13u2",
+          "architecture": "amd64",
+          "origin": "debian-security",
+          "path": "pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb",
+          "sha256": "b38acab30f295bf1066a6632e31cbd0a1980f2924b38040cda131d5dea5384ec",
+          "bytes": 309696,
+          "url": "https://security.debian.org/debian-security/pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb"
+        }
+      ],
+      "solver_host_seconds": 3.8049242510460317,
+      "solver_scope": "Exact original-image apt3.0.3/loader/libraries, original target apt settings with execution hooks disabled for --simulate safety, frozen status and paired original/offline signed indexes; real fixture confirmation remains required.",
+      "original_sources": {
+        "etc/apt/sources.list.d/debian.sources": "Types: deb\n# http://snapshot.debian.org/archive/debian/20250811T000000Z\nURIs: http://deb.debian.org/debian\nSuites: trixie trixie-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\n# http://snapshot.debian.org/archive/debian-security/20250811T000000Z\nURIs: http://deb.debian.org/debian-security\nSuites: trixie-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n"
+      },
+      "source_candidate": {
+        "name": "pmars",
+        "version": "0.9.4-1",
+        "origin": "debian",
+        "components": [
+          {
+            "path": "pool/main/p/pmars/pmars_0.9.4-1.dsc",
+            "sha256": "086f191d145a98d7bce648dcba5bed17a429d110c4a5c7ea6724bd6e3e65d5f2",
+            "bytes": 1891,
+            "url": "https://deb.debian.org/debian/pool/main/p/pmars/pmars_0.9.4-1.dsc"
+          },
+          {
+            "path": "pool/main/p/pmars/pmars_0.9.4.orig.tar.xz",
+            "sha256": "d0467d602c37af6e887ac81f4cbb812d090224411196d3401023843630fdd00d",
+            "bytes": 136288,
+            "url": "https://deb.debian.org/debian/pool/main/p/pmars/pmars_0.9.4.orig.tar.xz"
+          },
+          {
+            "path": "pool/main/p/pmars/pmars_0.9.4-1.debian.tar.xz",
+            "sha256": "ca468a97c0fd603e59e0e7c48ef7c9f24a8ac66b5d8c6d5061c4567ccedabfe1",
+            "bytes": 4100,
+            "url": "https://deb.debian.org/debian/pool/main/p/pmars/pmars_0.9.4-1.debian.tar.xz"
+          }
+        ]
+      }
+    },
+    "configure-git-webserver": {
+      "image": "alexgshaw/configure-git-webserver@sha256:9e48389b917fd4650dda1f64406bd7198bbf20dc1c6b0e5c4d81a3c16369f88c",
+      "image_manifest_digest": "sha256:9e48389b917fd4650dda1f64406bd7198bbf20dc1c6b0e5c4d81a3c16369f88c",
+      "dpkg_status_sha256": "13ff68ba52beb617a1c91df3c4b5a5fc407bf2c5b03bf6a1c79735b108abb351",
+      "task_files": {
+        "task.toml": "0bead2b18f81cc8a7ba5fce32800ce3e2ab3a509a5be4a28cb3accf0a634ce6f",
+        "instruction.md": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
+        "environment/Dockerfile": "8c87039a43581841b7ef11d80c4ff1a5c5f43011877e167403063d55435aaa19"
+      },
+      "origins": [
+        "ubuntu",
+        "ubuntu-security"
+      ],
+      "requested_packages": [
+        "git"
+      ],
+      "selected_packages": [
+        {
+          "name": "perl-base",
+          "version": "5.38.2-3.2ubuntu0.6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/p/perl/perl-base_5.38.2-3.2ubuntu0.6_amd64.deb",
+          "sha256": "50e1b2c2646387a94664fbea144af1d1b16cf6e0778426baa198166ca3246697",
+          "bytes": 1825574,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/perl/perl-base_5.38.2-3.2ubuntu0.6_amd64.deb"
+        },
+        {
+          "name": "perl-modules-5.38",
+          "version": "5.38.2-3.2ubuntu0.6",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/p/perl/perl-modules-5.38_5.38.2-3.2ubuntu0.6_all.deb",
+          "sha256": "9c4c90145209d4f85be9255417008e8decb9cd5d189f446fd39ad096e31199cf",
+          "bytes": 3110182,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/perl/perl-modules-5.38_5.38.2-3.2ubuntu0.6_all.deb"
+        },
+        {
+          "name": "libgdbm6t64",
+          "version": "1.23-5.1build1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/g/gdbm/libgdbm6t64_1.23-5.1build1_amd64.deb",
+          "sha256": "18d6d74a5c038b458d95ba0c0909e0f086cd50bb9a0fee32697902724fc5645e",
+          "bytes": 34440,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gdbm/libgdbm6t64_1.23-5.1build1_amd64.deb"
+        },
+        {
+          "name": "libgdbm-compat4t64",
+          "version": "1.23-5.1build1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/g/gdbm/libgdbm-compat4t64_1.23-5.1build1_amd64.deb",
+          "sha256": "fb8564afd7b7d74d55207070ba50339478e22d29a39ec740dc482f069ac7ee65",
+          "bytes": 6710,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gdbm/libgdbm-compat4t64_1.23-5.1build1_amd64.deb"
+        },
+        {
+          "name": "libperl5.38t64",
+          "version": "5.38.2-3.2ubuntu0.6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/p/perl/libperl5.38t64_5.38.2-3.2ubuntu0.6_amd64.deb",
+          "sha256": "e9e5ac9a657e0cacf5f0de977c1573c696ee74515d5136c4e9a0ce9467d32ae7",
+          "bytes": 4863614,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/perl/libperl5.38t64_5.38.2-3.2ubuntu0.6_amd64.deb"
+        },
+        {
+          "name": "perl",
+          "version": "5.38.2-3.2ubuntu0.6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/p/perl/perl_5.38.2-3.2ubuntu0.6_amd64.deb",
+          "sha256": "1a2341674a1c69e3247537ab243dc3d5878b74a39a696964232e1a4f5a27502d",
+          "bytes": 231438,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/perl/perl_5.38.2-3.2ubuntu0.6_amd64.deb"
+        },
+        {
+          "name": "adduser",
+          "version": "3.137ubuntu1",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/a/adduser/adduser_3.137ubuntu1_all.deb",
+          "sha256": "542aff2395eb912a56833e11a78076342779689d8fede7adcf08d1d6b0d0cd8b",
+          "bytes": 100872,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/adduser/adduser_3.137ubuntu1_all.deb"
+        },
+        {
+          "name": "less",
+          "version": "590-2ubuntu2.1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/l/less/less_590-2ubuntu2.1_amd64.deb",
+          "sha256": "f26481c7f5e492e7536f9e75a9aa237f4772b637cdc933f356bc567e180b8a39",
+          "bytes": 141544,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/l/less/less_590-2ubuntu2.1_amd64.deb"
+        },
+        {
+          "name": "libbsd0",
+          "version": "0.12.1-1build1.1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libb/libbsd/libbsd0_0.12.1-1build1.1_amd64.deb",
+          "sha256": "f3857b0863ac5cfd4263e9bf6cfb1d4be88d5321e4070d5bc2b62b0949e6c86f",
+          "bytes": 41238,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libb/libbsd/libbsd0_0.12.1-1build1.1_amd64.deb"
+        },
+        {
+          "name": "libexpat1",
+          "version": "2.6.1-2ubuntu0.6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/e/expat/libexpat1_2.6.1-2ubuntu0.6_amd64.deb",
+          "sha256": "494b8e672f722130c6bca6a7bc4cc31a43ca891a31d60d868bfdd699a3c20b13",
+          "bytes": 98940,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/e/expat/libexpat1_2.6.1-2ubuntu0.6_amd64.deb"
+        },
+        {
+          "name": "netbase",
+          "version": "6.4",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/n/netbase/netbase_6.4_all.deb",
+          "sha256": "8cdbc9c3dca01e660759bf9d840f72e45ac72faf5d19ca1faecacaf6a60c1a87",
+          "bytes": 13112,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/netbase/netbase_6.4_all.deb"
+        },
+        {
+          "name": "libcbor0.10",
+          "version": "0.10.2-1.2ubuntu2",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libc/libcbor/libcbor0.10_0.10.2-1.2ubuntu2_amd64.deb",
+          "sha256": "6ae45862612eb5d9918a005b882a67b722428cfde06d56bb651d3c04a47f4d2d",
+          "bytes": 25844,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcbor/libcbor0.10_0.10.2-1.2ubuntu2_amd64.deb"
+        },
+        {
+          "name": "libedit2",
+          "version": "3.1-20230828-1build1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libe/libedit/libedit2_3.1-20230828-1build1_amd64.deb",
+          "sha256": "3afbc8ddf835049dd4d88275b9d13680e4c4cdd59e191cbd63424152cc08e00e",
+          "bytes": 97586,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libedit/libedit2_3.1-20230828-1build1_amd64.deb"
+        },
+        {
+          "name": "libfido2-1",
+          "version": "1.14.0-1build3",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libf/libfido2/libfido2-1_1.14.0-1build3_amd64.deb",
+          "sha256": "1dfed970b870e3c949b983f2bcc28e33e1a1207c6cf5a60ee2cb226bb02b1da7",
+          "bytes": 83526,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libf/libfido2/libfido2-1_1.14.0-1build3_amd64.deb"
+        },
+        {
+          "name": "libxau6",
+          "version": "1:1.0.9-1build6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libxau/libxau6_1.0.9-1build6_amd64.deb",
+          "sha256": "e40d29f1d1a62393bacaedebe0da3d9006084152a9f7e5e029293f08ce1c5c80",
+          "bytes": 7160,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxau/libxau6_1.0.9-1build6_amd64.deb"
+        },
+        {
+          "name": "libxdmcp6",
+          "version": "1:1.1.3-0ubuntu6",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libxdmcp/libxdmcp6_1.1.3-0ubuntu6_amd64.deb",
+          "sha256": "bcd336fce11ce2a45f34d0f95e6980af22529f22147e8f98c156e5cee8ee42bb",
+          "bytes": 10254,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxdmcp/libxdmcp6_1.1.3-0ubuntu6_amd64.deb"
+        },
+        {
+          "name": "libxcb1",
+          "version": "1.15-1ubuntu2",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libxcb/libxcb1_1.15-1ubuntu2_amd64.deb",
+          "sha256": "e1c6611d11ad7398326f1bf028afc34c3b14c51d917a3426b966ed4b9687fa58",
+          "bytes": 47730,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb1_1.15-1ubuntu2_amd64.deb"
+        },
+        {
+          "name": "libx11-data",
+          "version": "2:1.8.7-1ubuntu0.1",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libx11/libx11-data_1.8.7-1ubuntu0.1_all.deb",
+          "sha256": "5cb70f7a8e7178e0bae4fd49eee49feaed623d2d821caf6ea5862b66f9e9630b",
+          "bytes": 115970,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libx11/libx11-data_1.8.7-1ubuntu0.1_all.deb"
+        },
+        {
+          "name": "libx11-6",
+          "version": "2:1.8.7-1ubuntu0.1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libx11/libx11-6_1.8.7-1ubuntu0.1_amd64.deb",
+          "sha256": "9102f73477081a9a57994c80587ca9760341f644ed51bdfa46f2248083d418b3",
+          "bytes": 653072,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libx11/libx11-6_1.8.7-1ubuntu0.1_amd64.deb"
+        },
+        {
+          "name": "libxext6",
+          "version": "2:1.3.4-1build2",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libxext/libxext6_1.3.4-1build2_amd64.deb",
+          "sha256": "45783969a9ece9d7b7b733b8c60981584c53c6bc5ee3b42d295d2f80d1285679",
+          "bytes": 30406,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxext/libxext6_1.3.4-1build2_amd64.deb"
+        },
+        {
+          "name": "libxmuu1",
+          "version": "2:1.1.3-3build2",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/libx/libxmu/libxmuu1_1.1.3-3build2_amd64.deb",
+          "sha256": "27428f8d7b63c38424177d5b3b8b2b89d519956ccfe969927cd0a20cdec977c0",
+          "bytes": 8958,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxmu/libxmuu1_1.1.3-3build2_amd64.deb"
+        },
+        {
+          "name": "openssh-client",
+          "version": "1:9.6p1-3ubuntu13.20",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/o/openssh/openssh-client_9.6p1-3ubuntu13.20_amd64.deb",
+          "sha256": "5fb4429e9eff60a5b4ddb68ccf0c46ee67066b445794ede5fe181e64c4a8b795",
+          "bytes": 908792,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openssh/openssh-client_9.6p1-3ubuntu13.20_amd64.deb"
+        },
+        {
+          "name": "xauth",
+          "version": "1:1.1.2-1build1",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/x/xauth/xauth_1.1.2-1build1_amd64.deb",
+          "sha256": "037e70571f39384e28c4ad0db07b44de11f0911ee6c02445560979b417012650",
+          "bytes": 25594,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/x/xauth/xauth_1.1.2-1build1_amd64.deb"
+        },
+        {
+          "name": "libcurl3t64-gnutls",
+          "version": "8.5.0-2ubuntu10.16",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/c/curl/libcurl3t64-gnutls_8.5.0-2ubuntu10.16_amd64.deb",
+          "sha256": "f3993897876cd03ea10941c9b364965ff95d0226459f31f6c5f5b93562c80798",
+          "bytes": 336534,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl3t64-gnutls_8.5.0-2ubuntu10.16_amd64.deb"
+        },
+        {
+          "name": "liberror-perl",
+          "version": "0.17029-2",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/libe/liberror-perl/liberror-perl_0.17029-2_all.deb",
+          "sha256": "1907af6bf33dd8684447c09f216c675d2b8559fadd8ddace29fbf83c6fb2a636",
+          "bytes": 25632,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/liberror-perl/liberror-perl_0.17029-2_all.deb"
+        },
+        {
+          "name": "git-man",
+          "version": "1:2.43.0-1ubuntu7.4",
+          "architecture": "all",
+          "origin": "ubuntu",
+          "path": "pool/main/g/git/git-man_2.43.0-1ubuntu7.4_all.deb",
+          "sha256": "77f57651734edc24b5a9e7863bc261bf302060ac3c12bbb08a459966ea4d30a6",
+          "bytes": 1100786,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/git/git-man_2.43.0-1ubuntu7.4_all.deb"
+        },
+        {
+          "name": "git",
+          "version": "1:2.43.0-1ubuntu7.4",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/g/git/git_2.43.0-1ubuntu7.4_amd64.deb",
+          "sha256": "c79b7948ef9860c97ec74293a90178676e63368a0711c95c28a55af4edf1adab",
+          "bytes": 3680654,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/git/git_2.43.0-1ubuntu7.4_amd64.deb"
+        },
+        {
+          "name": "patch",
+          "version": "2.7.6-7build3",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/p/patch/patch_2.7.6-7build3_amd64.deb",
+          "sha256": "fb7d78ed25c2788a607802270f3c28ac5ed6857bfb6cce9f73ad2cafac9159b3",
+          "bytes": 104048,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/patch/patch_2.7.6-7build3_amd64.deb"
+        },
+        {
+          "name": "curl",
+          "version": "8.5.0-2ubuntu10.16",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/c/curl/curl_8.5.0-2ubuntu10.16_amd64.deb",
+          "sha256": "3c5ca6af64370cfb0fac85876d8025563005cbd399fcaf7e34bbde9051058ae0",
+          "bytes": 226386,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/c/curl/curl_8.5.0-2ubuntu10.16_amd64.deb"
+        },
+        {
+          "name": "libcurl4t64",
+          "version": "8.5.0-2ubuntu10.16",
+          "architecture": "amd64",
+          "origin": "ubuntu",
+          "path": "pool/main/c/curl/libcurl4t64_8.5.0-2ubuntu10.16_amd64.deb",
+          "sha256": "8196381b41f0078083a2a52b43f7e7ca9b0b79e5325451bf3948e4af7693cd8d",
+          "bytes": 344412,
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl4t64_8.5.0-2ubuntu10.16_amd64.deb"
+        }
+      ],
+      "solver_host_seconds": 5.292852092999965,
+      "solver_scope": "Exact original-image apt2.8.3/loader/libraries, original target apt settings with execution hooks disabled for --simulate safety, frozen status and paired original/offline signed indexes; real fixture confirmation remains required.",
+      "original_sources": {
+        "etc/apt/sources.list.d/ubuntu.sources": "# See http://help.ubuntu.com/community/UpgradeNotes for how to upgrade to\n# newer versions of the distribution.\n\n## Ubuntu distribution repository\n##\n## The following settings can be adjusted to configure which packages to use from Ubuntu.\n## Mirror your choices (except for URIs and Suites) in the security section below to\n## ensure timely security updates.\n##\n## Types: Append deb-src to enable the fetching of source package.\n## URIs: A URL to the repository (you may add multiple URLs)\n## Suites: The following additional suites can be configured\n##   <name>-updates   - Major bug fix updates produced after the final release of the\n##                      distribution.\n##   <name>-backports - software from this repository may not have been tested as\n##                      extensively as that contained in the main release, although it includes\n##                      newer versions of some applications which may provide useful features.\n##                      Also, please note that software in backports WILL NOT receive any review\n##                      or updates from the Ubuntu security team.\n## Components: Aside from main, the following components can be added to the list\n##   restricted  - Software that may not be under a free license, or protected by patents.\n##   universe    - Community maintained packages. Software in this repository receives maintenance\n##                 from volunteers in the Ubuntu community, or a 10 year security maintenance\n##                 commitment from Canonical when an Ubuntu Pro subscription is attached.\n##   multiverse  - Community maintained of restricted. Software from this repository is\n##                 ENTIRELY UNSUPPORTED by the Ubuntu team, and may not be under a free\n##                 licence. Please satisfy yourself as to your rights to use the software.\n##                 Also, please note that software in multiverse WILL NOT receive any\n##                 review or updates from the Ubuntu security team.\n##\n## See the sources.list(5) manual page for further settings.\nTypes: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: noble noble-updates noble-backports\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\n## Ubuntu security updates. Aside from URIs and Suites,\n## this should mirror your choices in the previous section.\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: noble-security\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+      }
+    }
+  },
+  "limitations": [
+    "Sparse archives do not preserve arbitrary package choice; no full task parity.",
+    "Target apt and image execution unverified."
+  ],
+  "metadata_download_bytes": 47378589,
+  "metadata_host_seconds": 3.369370416039601,
+  "fixture_source_sha256": {
+    "llm_module/agentic/offline_apt_cache.py": "4a4e52f9fcec0b4d98e37d81fe81fd041ec7c2fcc60c61dc4452c15571bff8b6",
+    "llm_module/agentic/offline_apt_probe.sh": "827e1c3dd25544d7ad14c8e6027778c797735253b26e4a7e5c05b1cdb055b2fc",
+    "llm_module/agentic/offline_apt_fixtures.py": "4aa669216919ddfcb1b04964156ac17628f6434f0a042a1dae973e2ef834d814",
+    "llm_module/agentic/frozen_terminal_inputs.py": "fdbacf5ddbb9c420238f70d4976f14e851497e827930169238d6186f197e4750"
+  },
+  "original_task_registry": {
+    "origin": "https://ofhuhcpkvzjlejydnvyd.supabase.co",
+    "dataset": "terminal-bench/terminal-bench-2",
+    "dataset_ref": "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b",
+    "population": 89,
+    "harbor_commit": "e76c762fca5267dfb36e1f900f0a7724ed72e735",
+    "tasks": {
+      "build-pmars": {
+        "task_ref": "sha256:796773c1d8b991b9b936b3513308b1a4d2ea1772ae9d9b29103f58748d6e2c17",
+        "archive_path": "packages/terminal-bench/build-pmars/796773c1d8b991b9b936b3513308b1a4d2ea1772ae9d9b29103f58748d6e2c17/archive.harbor",
+        "files": {
+          "environment/Dockerfile": {
+            "sha256": "ff0a9f766151b6304a33b8fe8787dc27d75f6ea679eec4e9a4f2c8876fe08b25",
+            "size_bytes": 316
+          },
+          "instruction.md": {
+            "sha256": "1606850579342a8b8f2189de0e499fae6be21198150d8dd1e4d18c2efbcf3b82",
+            "size_bytes": 528
+          },
+          "task.toml": {
+            "sha256": "d93d75308eccbc9695a4975717c74a5c4249149398377e52e69194031eaac3d0",
+            "size_bytes": 975
+          }
+        },
+        "archive_bytes": 4325,
+        "archive_sha256": "0a92a68f5505d0ba08b8c60833efb85fbc184b54a3ca68973b0152da4521e221"
+      },
+      "configure-git-webserver": {
+        "task_ref": "sha256:a73cf484283083f52b5d4c07c4a7027111fca3cfa3aaf108235d4aff57ef1d8d",
+        "archive_path": "packages/terminal-bench/configure-git-webserver/a73cf484283083f52b5d4c07c4a7027111fca3cfa3aaf108235d4aff57ef1d8d/archive.harbor",
+        "files": {
+          "environment/Dockerfile": {
+            "sha256": "8c87039a43581841b7ef11d80c4ff1a5c5f43011877e167403063d55435aaa19",
+            "size_bytes": 195
+          },
+          "instruction.md": {
+            "sha256": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
+            "size_bytes": 451
+          },
+          "task.toml": {
+            "sha256": "0bead2b18f81cc8a7ba5fce32800ce3e2ab3a509a5be4a28cb3accf0a634ce6f",
+            "size_bytes": 895
+          }
+        },
+        "archive_bytes": 3975,
+        "archive_sha256": "d887cab6bf195053bf88439c920f830f20c2db477a981f6b5b91f99f00b38e4b"
+      }
+    }
+  }
+}

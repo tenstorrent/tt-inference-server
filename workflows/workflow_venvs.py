@@ -43,7 +43,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # review before merging changes. Switch to a specific commit once development
 # is stable.
 HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
-HARBOR_REF = "tt-inference-server"
+HARBOR_REF = "e76c762fca5267dfb36e1f900f0a7724ed72e735"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "af401ef3dd3d2d90e55680990ed1f0c9f7892448"
 
