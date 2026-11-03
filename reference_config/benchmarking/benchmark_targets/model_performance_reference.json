@@ -5916,6 +5916,94 @@
             }
         ]
     },
+    "Qwen/Qwen-Image-Edit-2511": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 1 input image edited to 1024x1024 (40 steps, true CFG) in 11.32 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11320,
+                        "end_to_end_latency_ms": 11320,
+                        "tput_user": 0.0883
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 2 input images edited to 1024x1024 (40 steps, true CFG) in 13.4 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13400,
+                        "end_to_end_latency_ms": 13400,
+                        "tput_user": 0.0746
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 3 input images edited to 1024x1024 (40 steps, true CFG) in 14.06 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 3,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 14060,
+                        "end_to_end_latency_ms": 14060,
+                        "tput_user": 0.0711
+                    }
+                }
+            }
+        ]
+    },
+    "ideogram-ai/ideogram-4": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: one H200 (the only GPU reference; no multi-GPU one), Ideogram's code, fp8 weights with bf16 math, compiled, cuDNN attention, no cache-dit: one 2048x2048 image at V4_DEFAULT_20 (20 steps, CFG) in 50.46 s end to end, median of 3. tput_user is images per second.",
+                "preset": "V4_DEFAULT_20",
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50460,
+                        "end_to_end_latency_ms": 50460,
+                        "tput_user": 0.0198
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU reference; no multi-GPU one), Ideogram's code, fp8 weights with bf16 math, compiled, cuDNN attention, no cache-dit: one 2048x2048 image at V4_QUALITY_48 (48 steps, CFG) in 119.35 s end to end, median of 3. tput_user is images per second.",
+                "preset": "V4_QUALITY_48",
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 48,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119350,
+                        "end_to_end_latency_ms": 119350,
+                        "tput_user": 0.0084
+                    }
+                }
+            }
+        ]
+    },
     "black-forest-labs/FLUX.1-dev": {
         "t3k": [
             {

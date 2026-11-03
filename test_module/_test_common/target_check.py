@@ -114,6 +114,7 @@ def get_performance_targets(
     device_str: Optional[str],
     shape: Optional[tuple[int, int]] = None,
     dbcache: Optional[bool] = None,
+    match: Optional[dict] = None,
 ) -> PerformanceTargets:
     """Look up performance targets for ``hf_model_repo`` on ``device_str``.
 
@@ -124,6 +125,9 @@ def get_performance_targets(
     is used instead of the first one. An entry with a ``dbcache`` key applies
     only to a deployment with that step-caching setting (``dbcache``), so a
     cached and an uncached deployment are graded against their own targets.
+    ``match`` picks among entries that differ in another request setting
+    (e.g. ``{"num_images": 2}``): an entry with one of its keys applies only
+    when the value matches.
 
     Returns an empty ``PerformanceTargets`` (all ``None``) if no entry is
     found; callers handle that as ``ReportCheckTypes.NA``.
@@ -148,10 +152,15 @@ def get_performance_targets(
         for entry in device_list
         if "dbcache" not in entry or entry["dbcache"] == dbcache
     ]
+    for key, value in (match or {}).items():
+        device_list = [
+            entry for entry in device_list if key not in entry or entry[key] == value
+        ]
     where = (
         f"device '{device_key}'"
         + (f" at {shape[0]}x{shape[1]}" if shape is not None else "")
         + ("" if dbcache is None else f" with DBCache {'on' if dbcache else 'off'}")
+        + "".join(f", {key} {value}" for key, value in (match or {}).items())
     )
     if device_list:
         logger.info(f"Found performance targets for model '{hf_model_repo}' on {where}")
@@ -196,7 +205,9 @@ class MetricSpec:
 
 
 def load_targets(
-    ctx: "MediaContext", shape: Optional[tuple[int, int]] = None
+    ctx: "MediaContext",
+    shape: Optional[tuple[int, int]] = None,
+    match: Optional[dict] = None,
 ) -> PerformanceTargets:
     device_str = ctx.model_spec.cli_args.get("device")
     targets = get_performance_targets(
@@ -204,6 +215,7 @@ def load_targets(
         device_str,
         shape,
         deployment_dbcache(ctx.model_spec),
+        match,
     )
     logger.info(f"Performance targets: {targets}")
     return targets
@@ -297,9 +309,10 @@ def run_tiered_check(
     ctx: "MediaContext",
     specs: Sequence[MetricSpec],
     shape: Optional[tuple[int, int]] = None,
+    match: Optional[dict] = None,
 ) -> tuple[dict[str, dict], ReportCheckTypes]:
     """Convenience wrapper: load targets, build 3-tier dict, log and summarise."""
-    targets = load_targets(ctx, shape)
+    targets = load_targets(ctx, shape, match)
     target_checks = evaluate_tiered(targets, specs)
     _log_tiered(target_checks)
     summary = summary_from_tiered(target_checks)
