@@ -3083,7 +3083,7 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
-  version: "0.26.0"
+  version: "0.26.1"
   tt_metal_commit: "09acccb"
   vllm_commit: "6098002"
   device_model_specs:
@@ -3131,7 +3131,7 @@ templates:
           # Normalizes assistant history (few-shot as multi-turn) for the K2 template.
         middleware: 
           models.demos.k2_horizon_7b_qb2.tests.benchmark_chat_middleware.K2BenchmarkChatMiddleware
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3155,7 +3155,7 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
-  version: "0.26.0"
+  version: "0.26.1"
   tt_metal_commit: "09acccb"
   vllm_commit: "6098002"
   device_model_specs:
@@ -3189,7 +3189,7 @@ templates:
         sample_on_device_mode: all
         trace_region_size: 0
         fabric_config: FABRIC_1D_RING
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   metadata:
     meta-models/Muse-Glimmer-30B:

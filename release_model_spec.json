@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.26.0",
+  "release_version": "0.26.1",
   "model_specs": {
     "openai/gpt-oss-120b": {
       "T3K": {
@@ -15426,9 +15426,9 @@
             "min_ram_gb": 17.5,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.26.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002",
-            "status": "EXPERIMENTAL",
+            "version": "0.26.1",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002",
+            "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/k2_horizon_7b_qb2",
             "override_tt_config": {
               "sample_on_device_mode": "all",
@@ -15593,9 +15593,9 @@
             "min_ram_gb": 75.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.26.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002",
-            "status": "EXPERIMENTAL",
+            "version": "0.26.1",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002",
+            "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/muse_glimmer_30b_qb2",
             "override_tt_config": {
               "sample_on_device_mode": "all",

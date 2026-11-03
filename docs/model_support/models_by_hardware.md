@@ -86,6 +86,8 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [FLUX.1-schnell](image/FLUX.1-schnell_p300x2.md) |
 | 🟢 Complete | LLM | [gemma-4-12B-it](llm/gemma-4-12B-it_p300x2.md) |
 | 🟢 Complete | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
+| 🟢 Complete | LLM | [K2-Horizon-7B](llm/K2-Horizon-7B_p300x2.md) |
+| 🟢 Complete | LLM | [Muse-Glimmer-30B](llm/Muse-Glimmer-30B_p300x2.md) |
 | 🟢 Complete | LLM | [Qwen3.8-27B](llm/Qwen3.8-27B_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
@@ -100,9 +102,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_p300x2.md) |
 | 🛠️ Experimental | LLM | [diffusiongemma-26B-A4B-it](llm/diffusiongemma-26B-A4B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
-| 🛠️ Experimental | LLM | [K2-Horizon-7B](llm/K2-Horizon-7B_p300x2.md) |
 | 🛠️ Experimental | LLM | [Kolibri-1-BF16](llm/Kolibri-1-BF16_p300x2.md) |
-| 🛠️ Experimental | LLM | [Muse-Glimmer-30B](llm/Muse-Glimmer-30B_p300x2.md) |
 | 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
