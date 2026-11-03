@@ -187,13 +187,19 @@ def overall(name: str, cases: dict) -> float:
     return round(100 * sum(c["score"] for c in cases.values()) / len(cases), 2)
 
 
-def compare_scores(name: str, tt: dict, gpu: dict) -> dict:
-    """TT's score and the GPU run's over the cases both scored."""
-    shared = sorted(set(tt["cases"]) & set(gpu["cases"]))
+def compare_scores(
+    name: str, tt: dict, gpu: dict, made: set[str] | None = None
+) -> dict:
+    """TT's score and the GPU run's over the cases both scored, of those the run
+    ``made`` (any other image the scorer found is not this run's)."""
+    scored, failed = set(tt["cases"]), set(tt.get("failed") or {})
+    if made is not None:
+        scored, failed = scored & made, failed & made
+    shared = sorted(scored & set(gpu["cases"]))
     entry = {
         "title": BENCHMARKS[name].title,
         "images": len(shared),
-        "not_scored": sorted(set(tt.get("failed") or {})),
+        "not_scored": sorted(failed),
     }
     if not shared:
         return {**entry, "error": "no case scored in both runs"}
@@ -243,5 +249,5 @@ def score_text_images(
         if problem:
             scores[name] = {"title": benchmark.title, "error": problem}
             continue
-        scores[name] = compare_scores(name, tt, json.loads(gpu_path.read_text()))
+        scores[name] = compare_scores(name, tt, json.loads(gpu_path.read_text()), made)
     return scores

@@ -54,6 +54,17 @@ def test_dpg_is_the_mean_image_score_times_100_and_lists_what_its_scorer_left_ou
     assert "error" in t2i.compare_scores("dpg", {"cases": {}}, DPG_GPU)
 
 
+def test_only_the_cases_the_run_made_are_compared():
+    # dpg_b is in the folder from an earlier run, scored or not.
+    tt = {"cases": {"dpg_a": {"score": 0.8}, "dpg_b": {"score": 0.1}}}
+    score = t2i.compare_scores("dpg", tt, DPG_GPU, made={"dpg_a"})
+    assert (score["images"], score["tt"], score["gpu"]) == (1, 80.0, 90.0)
+    failed = {"cases": {"dpg_a": {"score": 0.8}}, "failed": {"dpg_b": "KeyError"}}
+    assert (
+        t2i.compare_scores("dpg", failed, DPG_GPU, made={"dpg_a"})["not_scored"] == []
+    )
+
+
 def test_only_benchmarks_the_run_made_images_for_are_scored(tmp_path, monkeypatch):
     (tmp_path / "refs" / "r1").mkdir(parents=True)
     (tmp_path / "refs" / "r1" / "dpg.json").write_text(json.dumps(DPG_GPU))
