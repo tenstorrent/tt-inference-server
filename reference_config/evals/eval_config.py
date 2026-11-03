@@ -12423,6 +12423,52 @@ _eval_config_list = [
             ),
         ],
     ),
+    # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4 autoport, P300X2), branch-only: GPQA Diamond
+    # alone, so a CI dispatch runs just it. Model-card settings: reasoning_effort=high (the
+    # chat template default), temperature 1.0, top_p 0.95; 32768 output tokens as in the
+    # bring-up's stage-11 run and the card's HF example.
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=80.8,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    # Host-sampled decode at 32 users ran ~4 tok/s/user in the bring-up:
+                    # a 32768-token answer needs ~2.3 h, plus queueing.
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
