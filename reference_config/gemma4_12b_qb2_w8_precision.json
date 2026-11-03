@@ -1,0 +1,120 @@
+{
+ "schema": "gemma4_12b_precision/v1",
+ "config_id": "w8_lmh4_lofi",
+ "description": "BFP8 weights on every layer (no BFP4 exceptions) + BFP4 LoFi LM head",
+ "weights": {
+  "groups": {
+   "qkv": "fused q/k/v projection (column-parallel by head)",
+   "o": "o_proj (row-parallel, decode all-reduce / prefill reduce-scatter after it)",
+   "gate_up": "gate_proj + up_proj (FF1 + FF3, column-parallel; prefill packed copy uses the same dtype)",
+   "down": "down_proj (FF2, row-parallel)"
+  },
+  "default": {
+   "qkv": "bfp8",
+   "o": "bfp8",
+   "gate_up": "bfp8",
+   "down": "bfp8"
+  },
+  "layer_exceptions": []
+ },
+ "compute_fidelity": {
+  "decode_matmul": {
+   "default": {
+    "qkv": "lofi",
+    "o": "lofi",
+    "gate_up": "lofi",
+    "down": "lofi"
+   },
+   "layer_exceptions": []
+  },
+  "prefill_matmul": {
+   "default": {
+    "qkv": "lofi",
+    "o": "lofi",
+    "gate_up": "lofi",
+    "down": "lofi"
+   },
+   "layer_exceptions": [
+    {
+     "layers": "47",
+     "fidelity": {
+      "qkv": "hifi2",
+      "o": "hifi2",
+      "gate_up": "hifi2",
+      "down": "hifi2"
+     }
+    }
+   ]
+  },
+  "lm_head": "lofi",
+  "sdpa_decode": "hifi2fp32",
+  "sdpa_prefill": {
+   "sliding": "hifi2",
+   "full": "hifi2fp32"
+  },
+  "fixed": {
+   "norms": "hifi4fp32",
+   "rope_decode": "hifi4",
+   "sdpa_prefill_short_chunk": "hifi2"
+  }
+ },
+ "lm_head": {
+  "dtype": "bfp4"
+ },
+ "kv_cache": {
+  "dtype": "bfp8"
+ },
+ "ccl": {
+  "decode_all_reduce": {
+   "o": "bfp8",
+   "down": "bfp8"
+  },
+  "prefill_reduce_scatter_o": "bf16",
+  "prefill_all_gather": {
+   "qkv": "bf16",
+   "gate_up": "bfp8"
+  },
+  "prefill_reduce_scatter_down": "follows_prefill_mlp_product"
+ },
+ "activations": {
+  "residual": "bf16",
+  "decode_intermediates": "bf16",
+  "decode_intermediates_note": "decode matmul outputs kept on chip (qkv, gate_up, the MLP product, norm outputs) are BF16; the o_proj and down outputs that feed the decode all-reduce take ccl.decode_all_reduce (BFP8)",
+  "prefill_mlp_intermediates": {
+   "default": {
+    "gate_up": "bfp8",
+    "product": "bfp8"
+   },
+   "layer_exceptions": [
+    {
+     "layers": "10-11",
+     "dtype": {
+      "gate_up": "bf16",
+      "product": "bf16"
+     }
+    }
+   ]
+  }
+ },
+ "logits": {
+  "dtype": "bf16",
+  "softcap": "30 * tanh(x / 30) on device into the persistent BF16 logits buffer"
+ },
+ "sampling": {
+  "sampler": "split_topk",
+  "input_dtype": "bf16",
+  "note": "on-device two-level top-32 per chip over the vocab-sharded BF16 logits; greedy = lowest-id argmax"
+ },
+ "selection": {
+  "selected_from": "b0_lmh4_lofi (the stage-9 selection) without its BFP4 weight exceptions (layers 13-26 / 35-39 gate_up, 13-24 down, 13-25 qkv / o, 24 / 36 / 37 qkv), after GPQA Diamond scored 66.7 against the 74.2 same-protocol GPU reference",
+  "accuracy_check": "teacher forcing on GPQA reasoning traces (thinking on, 8 traces, 8000 positions) against HF bf16 on the CPU: KL(HF || TT) x1000 74 -> 28, top-1 0.925 -> 0.952, top-1 misses where HF p >= 0.9: 12 -> 0; HF bf16 vs fp32 reference: 0.3, 0.994, 0. A CPU emulation of the block-float weights on the HF model gives KL x1000 30 for the BFP4 exceptions and 1.0 for BFP8 everywhere",
+  "speed": "local vLLM 128/128: 1 user 12.6 -> 13.2 ms/token, 32 users 1383 -> 1332 tok/s",
+  "previous_selection": {
+   "config_id": "b0_lmh4_lofi",
+   "selected_from": "re-selection in the vLLM stage (doc/datatype_sweep/README.md 'Stage-9 re-selection'): the previous selection gu4all_down4_13_46_o4in_lmh4 fails the recall set (11 / 14). b0_lmh4_lofi is selected by scripts/aggregate.py's rule: the fastest config that passes the token gate, the v5 screen, the full-context check and the recall set, where accepted configs with overlapping TF repetition ranges are tied and the tie goes to the fewest matmul math-fidelity passes (b0_lmh4_hifi2 is bit-identical and tied; same-session token-out LoFi 12.261-12.262 ms vs HiFi2 12.264-12.265 ms, logs/stage9/perf_token_out_*_ab*.json)",
+   "token_gate": "min(run_prefill_check, run_teacher_forcing) on bringup/references/gemma4_12b_it_aime24_chat.refpt: top-1 >= 0.90, top-5 >= 0.98, top-100 = 1.00"
+  },
+  "safe_fallback": "precision='baseline' (configs/baseline_stage7.json) or GEMMA4_PRECISION_CONFIG=<path>",
+  "consumed_by": "tt/precision.py PrecisionConfig.load(None) in Gemma4Model.__init__ (build_generator and every adapter built on them); Gemma4Model verifies the built model against it"
+ }
+}
