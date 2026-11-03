@@ -706,9 +706,11 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
     notes = []
     for f in data.get("generation_failed") or []:
         notes.append(f"- ❌ {f.get('case_id')}: not made, {f.get('problem')}")
-    if data.get("not_served"):
+    not_served = data.get("not_served") or {}
+    if not_served:
         notes.append(
-            f"- Not sent ({len(data['not_served'])}): more inputs than {data.get('api')} takes"
+            f"- Not sent ({len(not_served)}), outside what the deployment serves: "
+            + "; ".join(f"{c} ({why})" for c, why in not_served.items())
         )
     for case_id, error in (data.get("compare_failed") or {}).items():
         notes.append(f"- {case_id}: not compared, {error}")

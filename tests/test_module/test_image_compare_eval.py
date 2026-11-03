@@ -24,6 +24,7 @@ from test_module._test_common import image_compare as scorer  # noqa: E402
 from test_module._test_common import image_eval_data as data  # noqa: E402
 from test_module._test_common.image_clients import (  # noqa: E402
     GenerationAPIClient,
+    request_schema,
 )
 from test_module._test_common.image_generation_api import MODELS  # noqa: E402
 from test_module.eval_tests import image_compare_eval as eval_  # noqa: E402
@@ -191,12 +192,27 @@ def gpu_image(root: Path, case: dict):
 
 
 class DeploymentServer(FakeImageServer):
-    """The generation API, answering each case with the GPU's own image."""
+    """The generation API, answering each case with the GPU's own image, and
+    publishing ``openapi`` if given."""
 
-    def __init__(self, root: Path, cases: list[dict], fail: set[str] = frozenset()):
+    def __init__(
+        self,
+        root: Path,
+        cases: list[dict],
+        fail: set[str] = frozenset(),
+        openapi: dict | None = None,
+    ):
         super().__init__(QWEN)
         self.by_seed = {c["seed"]: c for c in cases}
-        self.root, self.fail = root, fail
+        self.root, self.fail, self.openapi = root, fail, openapi
+
+    def routes(self):
+        if self.openapi is None:
+            return super().routes()
+        return [web.get("/openapi.json", self.publish), *super().routes()]
+
+    async def publish(self, request):
+        return web.json_response(self.openapi)
 
     def _finish(self, job: dict, status: str) -> None:
         case = self.by_seed[job["_request"]["seed"]]
@@ -210,7 +226,9 @@ class DeploymentServer(FakeImageServer):
             job["_image"] = buf.getvalue()
 
 
-def run_eval(tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True):
+def run_eval(
+    tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True, openapi=None
+):
     root = tmp_path / "data"
     cases = make_dataset(root)
     for case in cases:
@@ -236,7 +254,7 @@ def run_eval(tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True):
         lambda blocks, envelope=None: accepted.extend(blocks),
     )
     monkeypatch.delenv("API_KEY", raising=False)
-    server = DeploymentServer(root, cases, fail)
+    server = DeploymentServer(root, cases, fail, openapi)
 
     async def body():
         app = web.Application(client_max_size=64 * 1024 * 1024)
@@ -274,13 +292,107 @@ def test_the_eval_sends_each_cases_inputs_and_compares_with_r1(tmp_path, monkeyp
         "refs/r1",
         "ci",
     )
-    assert d["num_generated"] == 3 and d["not_served"] == []
+    assert d["num_generated"] == 3 and d["not_served"] == {}
     assert d["groups"]["edit"]["psnr"] == 100.0
     # TT changed its input exactly where the GPU did.
     assert d["groups"]["edit"]["change_iou"] == 1.0
     # Nothing calibrated: reported, not gated.
     assert d["gate"]["verdict"] == "NA"
     assert evals.kind == "evals" and evals.data["accuracy_check"].name == "NA"
+
+
+def published(images: dict, aspect_ratios: list[str]) -> dict:
+    """An OpenAPI document as FastAPI and pydantic write one for Qwen's route."""
+    return {
+        "paths": {
+            QWEN.submit_path: {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Request"}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Ratio": {"type": "string", "enum": aspect_ratios},
+                "Request": {
+                    "type": "object",
+                    "required": ["prompt", "images"],
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "images": images,
+                        "aspect_ratio": {
+                            "anyOf": [
+                                {"$ref": "#/components/schemas/Ratio"},
+                                {"type": "null"},
+                            ]
+                        },
+                        "format": {"const": "png", "type": "string"},
+                        "seed": {"type": "integer"},
+                    },
+                },
+            }
+        },
+    }
+
+
+ONE_IMAGE = {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 1}
+
+
+def test_a_case_outside_the_published_schema_is_not_served():
+    client = GenerationAPIClient("http://x", QWEN)
+    openapi = published(ONE_IMAGE, ["1:1", "16:9"])
+    schema = request_schema(openapi, QWEN.submit_path)
+    case = {"prompt": "p", "images": ["a.png"], "aspect_ratio": "16:9", "seed": 1}
+    assert client.unserved(case, (openapi, schema)) == []
+    assert client.unserved({**case, "aspect_ratio": "2:3"}, (openapi, schema)) == [
+        "aspect_ratio '2:3' (serves 1:1, 16:9)"
+    ]
+    assert client.unserved({**case, "images": ["a", "b"]}, (openapi, schema)) == [
+        "2 image(s) (serves 1 to 1)"
+    ]
+    assert client.unserved({**case, "images": []}, (openapi, schema)) == [
+        "no images, which it requires"
+    ]
+    # A field the deployment does not take.
+    ideogram = GenerationAPIClient("http://x", MODELS["ideogram-ai/ideogram-4"])
+    assert "no size field" in ideogram.unserved(
+        {"structured_prompt": {}, "aspect_ratio": "1:1", "size": "1K", "seed": 1},
+        (
+            {},
+            {
+                "properties": {
+                    "structured_prompt": {},
+                    "aspect_ratio": {},
+                    "seed": {},
+                    "format": {},
+                }
+            },
+        ),
+    )
+    # No published schema: every case is sent.
+    assert client.unserved({**case, "aspect_ratio": "2:3"}, None) == []
+    assert request_schema({"paths": {}}, QWEN.submit_path) is None
+
+
+def test_the_eval_leaves_out_what_the_deployment_does_not_serve(tmp_path, monkeypatch):
+    pytest.importorskip("skimage")
+    evals, [section], seen = run_eval(
+        tmp_path, monkeypatch, openapi=published(ONE_IMAGE, ["16:9"])
+    )
+    # The 2-reference case is not sent, and is listed, not failed.
+    assert [len(b["images"]) for b in seen] == [1, 1]
+    assert section.data["not_served"] == {"case2": "2 image(s) (serves 1 to 1)"}
+    assert section.data["generation_failed"] == []
+    assert evals.data["num_cases"] == 2
+    assert "Not sent (1), outside what the deployment serves: case2" in (
+        render_image_compare(section, {})
+    )
 
 
 def test_a_case_the_deployment_could_not_make_fails_the_eval(tmp_path, monkeypatch):
@@ -390,7 +502,7 @@ def test_the_section_renders_groups_and_notes():
             "subset": "ci",
             "num_cases": 3,
             "num_generated": 2,
-            "not_served": ["case2"],
+            "not_served": {"case2": "aspect_ratio '2:3' (serves 1:1)"},
             "groups": {
                 "edit": {
                     "cases": 2,

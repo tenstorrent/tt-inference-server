@@ -8,13 +8,19 @@
   submit to ``/v1/generations/{model}``, poll ``/v1/jobs``, download the PNG.
 
 It returns the image's bytes and what it sent, minus the image data.
+
+A deployment may serve fewer shapes than the design allows (an initial release:
+some ratios, sizes or input counts). It says which in the request schema it
+publishes (``/openapi.json``), and ``unserved`` tells which cases fall outside it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
+import urllib.request
 from typing import Any
 from urllib.parse import urljoin
 
@@ -29,9 +35,77 @@ from .generation_api import (
 )
 from .image_generation_api import ImageModel
 
+OPENAPI_PATH = "/openapi.json"
+
 
 class GenerationError(RuntimeError):
     pass
+
+
+def _resolve(openapi: dict, schema: dict) -> dict:
+    while "$ref" in schema:
+        node: Any = openapi
+        for part in schema["$ref"].removeprefix("#/").split("/"):
+            node = node[part]
+        schema = node
+    return schema
+
+
+def _alternatives(openapi: dict, schema: dict) -> list[dict]:
+    """A field's schemas, anyOf, oneOf and allOf flattened, null left out."""
+    schema = _resolve(openapi, schema)
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in schema:
+            return [s for part in schema[key] for s in _alternatives(openapi, part)]
+    return [] if schema.get("type") == "null" else [schema]
+
+
+def request_schema(openapi: dict, submit_path: str) -> dict | None:
+    """The request body schema ``openapi`` publishes for ``submit_path``, if any."""
+    try:
+        body = openapi["paths"][submit_path]["post"]["requestBody"]
+        schema = body["content"]["application/json"]["schema"]
+    except (KeyError, TypeError):
+        return None
+    return _resolve(openapi, schema)
+
+
+def unserved(openapi: dict, schema: dict, request: dict, num_images: int) -> list[str]:
+    """What of ``request`` (with ``num_images`` images) the published ``schema``
+    does not take: a field it lacks, a value outside a field's fixed set, a
+    number of images outside its bounds, or a required field left out."""
+    properties = schema.get("properties") or {}
+    problems = []
+    for name, value in request.items():
+        if name not in properties:
+            problems.append(f"no {name} field")
+            continue
+        allowed: dict = {}  # in the schema's order
+        for option in _alternatives(openapi, properties[name]):
+            if "enum" in option:
+                allowed.update(dict.fromkeys(option["enum"]))
+            elif "const" in option:
+                allowed[option["const"]] = None
+            else:
+                break  # free values
+        else:
+            if allowed and value not in allowed:
+                served = ", ".join(map(str, allowed))
+                problems.append(f"{name} {value!r} (serves {served})")
+    if num_images:
+        arrays = [
+            o
+            for o in _alternatives(openapi, properties.get("images", {"type": "null"}))
+            if o.get("type") == "array"
+        ]
+        low = min((a.get("minItems", 0) for a in arrays), default=math.inf)
+        high = max((a.get("maxItems", math.inf) for a in arrays), default=0)
+        if not low <= num_images <= high:
+            problems.append(f"{num_images} image(s) (serves {low} to {high})")
+    for name in schema.get("required") or ():
+        if name not in request and not (name == "images" and num_images):
+            problems.append(f"no {name}, which it requires")
+    return problems
 
 
 def _strip_images(request: dict) -> dict:
@@ -51,7 +125,6 @@ class GenerationAPIClient:
     """One image per case through the generation API, as PNG."""
 
     name = "generation_api"
-    max_images: int | None = None
     reference = "refs/r1"
 
     def __init__(
@@ -65,6 +138,30 @@ class GenerationAPIClient:
         self.model = model
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
+
+    def published_schema(self, timeout: float = 30) -> tuple[dict, dict] | None:
+        """The deployment's OpenAPI document and this model's request schema in
+        it; None if it publishes neither."""
+        get = urllib.request.Request(
+            f"{self.base_url}{OPENAPI_PATH}", headers=auth_headers()
+        )
+        try:
+            with urllib.request.urlopen(get, timeout=timeout) as response:
+                openapi = json.loads(response.read())
+        except (OSError, ValueError):
+            return None
+        schema = request_schema(openapi, self.model.submit_path)
+        return (openapi, schema) if schema else None
+
+    def unserved(self, case: dict, published: tuple[dict, dict] | None) -> list[str]:
+        """Why the deployment does not serve ``case``, by its published schema;
+        nothing when it serves it or publishes no schema."""
+        if published is None:
+            return []
+        openapi, schema = published
+        return unserved(
+            openapi, schema, self.request(case, []), len(case.get("images") or [])
+        )
 
     def request(self, case: dict, inputs: list[bytes]) -> dict:
         request: dict[str, Any] = {

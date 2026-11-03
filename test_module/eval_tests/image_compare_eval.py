@@ -15,6 +15,9 @@ Text-to-image cases are also scored on their benchmarks (``text_image_scores``)
 and compared with the GPU run's scores.
 
 Every model is asked through the generation API (``/v1/generations/{model}``).
+A case the deployment does not serve, by the request schema it publishes (an
+initial release serves some shapes only), is not sent and is listed as not
+served; text-to-image scores compare TT and GPU over the cases both have.
 """
 
 from __future__ import annotations
@@ -244,12 +247,19 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
     runtime_config = getattr(ctx, "runtime_config", None)
     subset = eval_subset(getattr(runtime_config, "limit_samples_mode", None))
     data_dir, cases = load_cases(model.model_id, subset, client.reference)
-    usable = [
-        c
+    published = client.published_schema()
+    if published is None:
+        logger.warning(
+            f"{model.model_id}: the deployment publishes no request schema; sending every case"
+        )
+    not_served = {
+        c["case_id"]: "; ".join(why)
         for c in cases
-        if client.max_images is None or len(c.get("images") or []) == client.max_images
-    ]
-    skipped = [c["case_id"] for c in cases if c not in usable]
+        if (why := client.unserved(c, published))
+    }
+    usable = [c for c in cases if c["case_id"] not in not_served]
+    for case_id, why in not_served.items():
+        logger.info(f"⏭️  {case_id}: not served, {why}")
     logger.info(
         f"{model.model_id}: {len(usable)} of {len(cases)} {subset} cases through {client.name}, "
         f"against {client.reference}"
@@ -277,7 +287,7 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         "num_cases": len(cases),
         "num_generated": len(index),
         "generation_failed": failures,
-        "not_served": skipped,
+        "not_served": not_served,
     }
     if result:
         data.update(
