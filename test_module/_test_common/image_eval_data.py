@@ -23,7 +23,7 @@ from pathlib import Path
 EVAL_DATA = {
     "black-forest-labs/flux.2-klein-4b": (
         "Tenstorrent/flux.2-klein-4b-refs",
-        "b54cd658a1af88112648ee8991b0e7679026a500",
+        "6fa54cad3af7730e811cd9284324ff2c1e030c25",
     ),
     "qwen/qwen-image-edit-2511": (
         "Tenstorrent/qwen-image-edit-2511-refs",
