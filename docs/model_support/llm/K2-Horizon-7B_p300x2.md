@@ -22,7 +22,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_K2-Horizon-7B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002 \
   --model IFM/K2-Horizon-7B \
   --tt-device p300x2
 ```
@@ -39,10 +39,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [IFM/K2-Horizon-7B](https://huggingface.co/IFM/K2-Horizon-7B) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 524288 |
 | Implementation Code | [k2-horizon-7b-qb2](https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/k2_horizon_7b_qb2) |
 | tt-metal Commit | `09acccb` |
 | vLLM Commit | `6098002` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002` |

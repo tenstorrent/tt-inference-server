@@ -22,7 +22,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Muse-Glimmer-30B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002 \
   --model meta-models/Muse-Glimmer-30B \
   --tt-device p300x2
 ```
@@ -39,10 +39,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [meta-models/Muse-Glimmer-30B](https://huggingface.co/meta-models/Muse-Glimmer-30B) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
 | Implementation Code | [muse-glimmer-30b-qb2](https://github.com/tenstorrent/tt-metal/tree/09acccb/models/demos/muse_glimmer_30b_qb2) |
 | tt-metal Commit | `09acccb` |
 | vLLM Commit | `6098002` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.0-09acccb-6098002` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.26.1-09acccb-6098002` |

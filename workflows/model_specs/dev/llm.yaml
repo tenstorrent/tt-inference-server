@@ -1842,7 +1842,7 @@ templates:
         tool-call-parser: k2_horizon
         # Normalizes assistant history (few-shot as multi-turn) for the K2 template.
         middleware: models.demos.k2_horizon_7b_qb2.tests.benchmark_chat_middleware.K2BenchmarkChatMiddleware
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1897,7 +1897,7 @@ templates:
         sample_on_device_mode: all
         trace_region_size: 0
         fabric_config: FABRIC_1D_RING
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   metadata:
     meta-models/Muse-Glimmer-30B:
