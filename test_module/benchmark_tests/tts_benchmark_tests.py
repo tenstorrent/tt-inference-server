@@ -175,6 +175,11 @@ def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]
     voice = None if client.has_default_voice else _benchmark_voice_clip()
     logger.info(f"TTS client: {client.describe()}, cloned={voice is not None}")
 
+    # A server's first request after start-up runs far slower than the rest, so
+    # one untimed request keeps it out of the averages.
+    logger.info("Warm-up request (not timed)...")
+    asyncio.run(_generate_speech(ctx, client, test_text, voice))
+
     for i in range(num_calls):
         logger.info(f"Generating speech {i + 1}/{num_calls}...")
         status, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(

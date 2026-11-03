@@ -257,6 +257,18 @@ class TestRunBenchmark:
             "description": "A calm voice.",
         }
 
+    def test_a_warm_up_request_precedes_the_timed_ones(self, monkeypatch):
+        calls = []
+
+        async def fake_generate(ctx, client, text, voice=None):
+            calls.append(text)
+            return (len(calls) > 1, 1.0, 100.0, 1.0, 1.0)
+
+        monkeypatch.setattr(bench, "_generate_speech", fake_generate)
+        statuses = bench._run_tts_benchmark(_ctx(CUSTOM_VOICE), 2)
+        assert len(calls) == 3
+        assert [s.status for s in statuses] == [True, True]
+
     def test_failures_are_reported_not_raised(self, server):
         server(_Response(status=401))
         statuses = bench._run_tts_benchmark(_ctx(CUSTOM_VOICE), 1)
