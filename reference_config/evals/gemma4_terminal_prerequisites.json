@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "task": "build-cython-ext",
+  "source": {
+    "url": "https://github.com/SPOCKnots/pyknotid.git",
+    "ref": "0.5.3",
+    "commit": "441c807dbec2ee32e1da572e24e58d52a4eb7afa",
+    "license": "MIT"
+  },
+  "dependencies": [
+    {
+      "name": "appdirs",
+      "version": "1.4.4",
+      "filename": "appdirs-1.4.4-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/3b/00/2344469e2084fb287c2e0b57b72910309874c3245463acd6cf5e3db69324/appdirs-1.4.4-py2.py3-none-any.whl",
+      "sha256": "a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128",
+      "bytes": 9566
+    },
+    {
+      "name": "certifi",
+      "version": "2026.10.23",
+      "filename": "certifi-2026.10.23-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+      "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+      "bytes": 135082
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.2",
+      "filename": "charset_normalizer-3.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/4b/85/41d27f234b82e47c167a5f6c0f62501dc0c640585ff4aba79e08a390336a/charset_normalizer-3.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "7218e8f32b0956cfcd048fd42d9d5779809745ca1d86113ca56f66e7ae1549c4",
+      "bytes": 254660
+    },
+    {
+      "name": "cython",
+      "version": "3.3.1",
+      "filename": "cython-3.3.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/a3/04/5445c845d08948b4006c72b5bc202b63f108ff0b87161a993dc5922106a0/cython-3.3.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "85be5442e8f465c7c5e80837ac2a85a2ce04034e616445113092e85b65d0ab94",
+      "bytes": 3413336
+    },
+    {
+      "name": "freetype-py",
+      "version": "2.5.1",
+      "filename": "freetype_py-2.5.1-py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/b6/36/853cad240ec63e21a37a512ee19c896b655ce1772d803a3dd80fccfe63fe/freetype_py-2.5.1-py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl",
+      "sha256": "289b443547e03a4f85302e3ac91376838e0d11636050166662a4f75e3087ed0b",
+      "bytes": 1043856
+    },
+    {
+      "name": "hsluv",
+      "version": "5.0.5",
+      "filename": "hsluv-5.0.5-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/6e/f2/84ae3176b3ccbc26ed470d599499c85170d378bf27bfd2db6aa9eaff7d98/hsluv-5.0.5-py3-none-any.whl",
+      "sha256": "ac1caa7837ad0ca94b48a574a19778f2303fce7f4a34ce5eafe751a40ec143db",
+      "bytes": 5656
+    },
+    {
+      "name": "idna",
+      "version": "3.20",
+      "filename": "idna-3.20-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+      "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+      "bytes": 69583
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.1",
+      "filename": "iniconfig-2.3.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl",
+      "sha256": "9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7",
+      "bytes": 7552
+    },
+    {
+      "name": "kiwisolver",
+      "version": "1.5.1",
+      "filename": "kiwisolver-1.5.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/ab/43/86aacc027959108b4c66eeae8b73cedb057dfa6eb3a335d05ad65197081c/kiwisolver-1.5.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "74ad5c3dad54a4641b4c28cd15ded70899d04459c6c7aeacafea716be97cce6d",
+      "bytes": 1477992
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "filename": "mpmath-1.3.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl",
+      "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+      "bytes": 536198
+    },
+    {
+      "name": "networkx",
+      "version": "3.7",
+      "filename": "networkx-3.7-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/7e/cd/fe58041e9011f307c490e3e17dd48cc516448f7c698a3f2d9d9d65d7e6a8/networkx-3.7-py3-none-any.whl",
+      "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0",
+      "bytes": 2142205
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.0",
+      "filename": "numpy-2.3.0-cp313-cp313-manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/1c/12/734dce1087eed1875f2297f687e671cfe53a091b6f2f55f0c7241aad041b/numpy-2.3.0-cp313-cp313-manylinux_2_28_x86_64.whl",
+      "sha256": "87717eb24d4a8a64683b7a4e91ace04e2f5c7c77872f823f02a94feee186168f",
+      "bytes": 16628765
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "filename": "packaging-26.3-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "bytes": 129956
+    },
+    {
+      "name": "peewee",
+      "version": "4.5.3",
+      "filename": "peewee-4.5.3-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/76/e3/1f3847b62db730a58c6f6d689c060d7228721f3a66e612a27cda297e875a/peewee-4.5.3-py3-none-any.whl",
+      "sha256": "4c5db9d2a3c4ae9a5725b229c29af51dbd063193f3a6c03b837974a90e44548c",
+      "bytes": 194532
+    },
+    {
+      "name": "planarity",
+      "version": "1.0.0",
+      "filename": "planarity-1.0.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/9b/04/2321173a19ac665382b7165f89d1da3c162ae4f8802f6d9efbea7237d544/planarity-1.0.0.tar.gz",
+      "sha256": "9129d2429fc54c70a976cdf59b21a9c6a542466cf49747c1bbce1f27d59f4f3e",
+      "bytes": 682477
+    },
+    {
+      "name": "pluggy",
+      "version": "1.7.0",
+      "filename": "pluggy-1.7.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl",
+      "sha256": "7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec",
+      "bytes": 27082
+    },
+    {
+      "name": "pygments",
+      "version": "2.21.0",
+      "filename": "pygments-2.21.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+      "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+      "bytes": 1250147
+    },
+    {
+      "name": "pytest",
+      "version": "8.4.1",
+      "filename": "pytest-8.4.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl",
+      "sha256": "539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7",
+      "bytes": 365474
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "filename": "requests-2.34.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "bytes": 73075
+    },
+    {
+      "name": "setuptools",
+      "version": "84.2.1",
+      "filename": "setuptools-84.2.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl",
+      "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2",
+      "bytes": 876263
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "filename": "sympy-1.14.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl",
+      "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5",
+      "bytes": 6299353
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1",
+      "filename": "tqdm-4.70.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl",
+      "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73",
+      "bytes": 80199
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0",
+      "filename": "urllib3-2.8.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+      "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+      "bytes": 135717
+    },
+    {
+      "name": "vispy",
+      "version": "0.17.0",
+      "filename": "vispy-0.17.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/f3/50/d1f5b5da39484aa250d31944195f25109bd5c36ae9d6be0f0f8db77558f9/vispy-0.17.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "89d6ecd17c4ede82b617066efdee4645094101c14c95c4cdce74276804c0fc01",
+      "bytes": 3108373
+    },
+    {
+      "name": "wheel",
+      "version": "0.48.0",
+      "filename": "wheel-0.48.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl",
+      "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab",
+      "bytes": 33320
+    }
+  ],
+  "resolved_at": "2026-11-02T17:50:13.459434+00:00",
+  "basis": "Unconstrained source setup.py dependencies plus Cython/setuptools/wheel, numpy2.3.0 constrained by taskDockerfile. Latest compatible binary resolver snapshot, planarity latest sourceonly distribution downloadedwithout executingmetadata. No arbitrary historicalpins, packageinstall or targetfix.",
+  "resolver": "pip download only-binary all Python3.13 cp313 manylinux2_28/2014/2_17 x86_64; planarity PyPI latest sdist no codeexecution",
+  "platform": "CPython3.13 Linux x86_64 manylinux<=2.28",
+  "runtime_verified": false,
+  "equivalence_limitation": "Host platformresolver cache only; actual taskimage initialinstalledinventory and resolver must confirm. No claim original releaseparity.",
+  "task_files": {
+    "task.toml": "271249fbf86f370375ce91e2cd7d2423ea35d05ffef31290cc7f786542f84f7f",
+    "instruction.md": "7e52874e45f88505bd21540229719de6639a401477557d814489981d472f0e34",
+    "environment/Dockerfile": "cb6cf421cb9b69d43bd25cd491e49bda982fbb865d47515178d017eda727194e"
+  },
+  "upstream_task_ref": "sha256:38e42b5662bb3c6b8610d193d5ef1b47ee3a8f4bd07eb860ceaab17e9406a368",
+  "preparation_semantics": "Read-only source/package cache only. Agent must clone, modify and install target. Overlay changes environment; equivalent scoring acceptance requires separate confirmation.",
+  "upstream_task_files": {
+    "task.toml": "a9417f528b6b55a275b1964a9b9757b1ca89d3615f3428bd0cdfe3804d24caab",
+    "instruction.md": "7e52874e45f88505bd21540229719de6639a401477557d814489981d472f0e34",
+    "environment/Dockerfile": "cb6cf421cb9b69d43bd25cd491e49bda982fbb865d47515178d017eda727194e"
+  },
+  "existing_isolation_transform": "gemma4_isolated.isolate_manifest forces agent network_mode=no-network and removes task agent allowed_hosts; this existing selected policy predates prerequisite overlay. Only task.toml differs from upstream; instruction and Dockerfile unchanged.",
+  "target_image": {
+    "tag": "alexgshaw/build-cython-ext:20251031",
+    "repository": "alexgshaw/build-cython-ext",
+    "digest": "sha256:3612a38fadb89a96f74a1a951fb0b0af734198fd160571eeaba6401593234594",
+    "basis": "Frozen task.toml image; linux/amd64 Harbor Hub/Docker registry inspection2026-11-02T15:10:26Z"
+  },
+  "smoke_task_files": {
+    "check-egress/environment/Dockerfile": "082dba0d5dd12e8a4dfb6b6d126de2d34eb75c789a72947d87da0721ea9b5b41",
+    "check-egress/instruction.md": "4c82bd964fcba48514d8a55ad0f4bb2758b134e48aaf3c4a28e76b9f0b8055eb",
+    "check-egress/task.toml": "2cc04c2d15a66bf51859d5d2a94d17d1946569b282102158deb6426ca6c6808f",
+    "check-egress/tests/test.sh": "43bc3c980d8caf1f579106bac15aeaf6ca3e0b5d295b0c6eda4edba9b9f2b8ae",
+    "write-result/environment/Dockerfile": "082dba0d5dd12e8a4dfb6b6d126de2d34eb75c789a72947d87da0721ea9b5b41",
+    "write-result/instruction.md": "0462be33b75ebb32b36f7fe522bd9771ca7d3007ce4ad8a62e28987abb5a07d3",
+    "write-result/task.toml": "4a8935776197c3ea7e84d4c0593b3943d152a3f2caa5eb995ff3b6814575abde",
+    "write-result/tests/test.sh": "45620b88df74485ebd92cb22292f3dbb6481abf3a269df411d088e92d2b49ed8"
+  }
+}
