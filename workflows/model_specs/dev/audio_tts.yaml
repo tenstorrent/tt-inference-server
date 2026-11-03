@@ -171,11 +171,12 @@ templates:
   has_builtin_warmup: true
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 1
+      # Each stage batches up to 4 requests (max_num_seqs in the deploy config).
+      max_concurrency: 4
       max_context: 2048  # the talker stage's max_model_len
       default_impl: true
       vllm_args:
-        deploy-config: poc/qwen3-tts-omni/deploy/tt_qwen3_tts.yaml
+        deploy-config: poc/qwen3-tts-omni/deploy/tt_qwen3_tts_4seqs.yaml
         trust-remote-code: true
         stage-init-timeout: "600"
         init-timeout: "900"

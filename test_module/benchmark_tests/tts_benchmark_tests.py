@@ -34,6 +34,7 @@ from .._test_common import (
 from ..context import TEST_PAYLOADS_PATH, MediaContext, require_health
 from ..eval_tests.tts_client import (
     MediaServerTTSClient,
+    TimedSynthesis,
     TTSClient,
     VoiceClip,
     make_tts_client,
@@ -47,6 +48,25 @@ logger = logging.getLogger(__name__)
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 # Reference clip for deployments that can only clone (Qwen3-TTS Base).
 VOICE_CLIP_PAYLOAD = "image_client_audio_payload"
+# Concurrency sweep prompts: about 2, 9 and 40 s of speech.
+SWEEP_PROMPTS = {
+    "short": "Good morning. Today is a beautiful day.",
+    "medium": (
+        "The quick brown fox jumps over the lazy dog. She sells sea shells by the "
+        "sea shore, and the shells she sells are surely sea shells."
+    ),
+    "long": (
+        "It was the best of times, it was the worst of times, it was the age of "
+        "wisdom, it was the age of foolishness, it was the epoch of belief, it was "
+        "the epoch of incredulity, it was the season of Light, it was the season of "
+        "Darkness, it was the spring of hope, it was the winter of despair, we had "
+        "everything before us, we had nothing before us, we were all going direct to "
+        "Heaven, we were all going direct the other way. In short, the period was so "
+        "far like the present period, that some of its noisiest authorities insisted "
+        "on its being received, for good or for evil, in the superlative degree of "
+        "comparison only."
+    ),
+}
 
 
 def _tts_num_calls(ctx: MediaContext, is_eval: bool = False) -> int:
@@ -200,6 +220,106 @@ def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]
     return status_list
 
 
+def _playback_wait(arrivals: list[tuple[float, float]]) -> tuple[float, float]:
+    """(total, longest) wait of a player that starts at the first audio chunk and
+    plays in real time; ``arrivals`` is (seconds, audio seconds so far) per chunk."""
+    clock = arrivals[0][0]
+    total = longest = received = 0.0
+    for at, cumulative in arrivals:
+        wait = max(0.0, at - clock)
+        total += wait
+        longest = max(longest, wait)
+        clock = max(clock, at) + cumulative - received
+        received = cumulative
+    return total, longest
+
+
+def _sweep_row(prompt: str, concurrency: int, results: list[TimedSynthesis]) -> dict:
+    """One row of the concurrency sweep: ``concurrency`` requests sent together."""
+    done = [r for r in results if r.ok]
+    row = {
+        "prompt": prompt,
+        "concurrency": concurrency,
+        "failed_requests": len(results) - len(done),
+    }
+    if not done:
+        return row
+    if any(not r.arrivals for r in done):
+        raise ValueError("the concurrency sweep needs a streaming TTS client")
+    ttfa = [r.ttft_ms / 1000 for r in done]
+    rtr = [r.audio_seconds / r.elapsed_s for r in done]
+    # Audio per second once the first chunk is out: how fast a stream refills.
+    stream = [r.audio_seconds / (r.elapsed_s - t) for r, t in zip(done, ttfa)]
+    waits = [_playback_wait(r.arrivals) for r in done]
+    row.update(
+        ttfa_min=min(ttfa),
+        ttfa_max=max(ttfa),
+        rtr_min=min(rtr),
+        rtr_mean=sum(rtr) / len(rtr),
+        rtr_max=max(rtr),
+        stream_rate_min=min(stream),
+        playback_wait_total=max(total for total, _ in waits),
+        playback_wait_longest=max(longest for _, longest in waits),
+        audio_s_per_s=sum(r.audio_seconds for r in done)
+        / max(r.elapsed_s for r in done),
+    )
+    return row
+
+
+async def _speak_together(
+    client: TTSClient, url: str, text: str, voice: Optional[VoiceClip], count: int
+) -> list[TimedSynthesis]:
+    return list(
+        await asyncio.gather(
+            *(
+                client.timed_synthesize(url, text, voice=voice, timeout_s=300)
+                for _ in range(count)
+            )
+        )
+    )
+
+
+def _run_tts_concurrency_sweep(ctx: MediaContext, levels: list[int]) -> Block:
+    """Send each sweep prompt ``C`` times at once for every ``C`` in ``levels``; one
+    row per (prompt, C). The gate is the slowest request at C=1; a failed request
+    anywhere in the sweep counts as RTR 0."""
+    client = make_tts_client(_tts_client_targets(ctx))
+    voice = None if client.has_default_voice else _benchmark_voice_clip()
+    url = f"{ctx.base_url}/v1/audio/speech"
+    logger.info(f"TTS concurrency sweep: client={client.describe()}, C={levels}")
+
+    # Same reason as in _run_tts_benchmark: the clip's first request is slow.
+    asyncio.run(client.timed_synthesize(url, DEFAULT_TTS_TEXT, voice=voice))
+
+    records = []
+    for prompt, text in SWEEP_PROMPTS.items():
+        for concurrency in levels:
+            results = asyncio.run(
+                _speak_together(client, url, text, voice, concurrency)
+            )
+            records.append(_sweep_row(prompt, concurrency, results))
+            logger.info(f"Sweep row: {records[-1]}")
+
+    failed = sum(row["failed_requests"] for row in records)
+    single = [row for row in records if row["concurrency"] == 1 and "rtr_min" in row]
+    if failed or not single:
+        logger.error(f"{failed} sweep request(s) failed; gating on RTR 0")
+        rtr_gate, ttfa_ms = 0.0, None
+    else:
+        rtr_gate = min(row["rtr_min"] for row in single)
+        ttfa_ms = max(row["ttfa_max"] for row in single) * 1000
+    target_checks, _ = _tts_target_checks(ctx, ttfa_ms, rtr_gate)
+
+    return Block(
+        kind="benchmarks",
+        task_type="text_to_speech",
+        title="Text-to-Speech Benchmark",
+        id=block_id(ctx) or None,
+        targets={"concurrency": list(levels), "prompts": list(SWEEP_PROMPTS)},
+        data={"records": records, "target_checks": target_checks},
+    )
+
+
 def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> Optional[float]:
     valid = [getattr(s, attr) for s in status_list if getattr(s, attr) is not None]
     return sum(valid) / len(valid) if valid else None
@@ -265,6 +385,10 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
     require_health(ctx)
+
+    levels = _tts_client_targets(ctx).get("benchmark_concurrency")
+    if levels:
+        return _run_tts_concurrency_sweep(ctx, levels)
 
     try:
         num_calls = _tts_num_calls(ctx, is_eval=False)

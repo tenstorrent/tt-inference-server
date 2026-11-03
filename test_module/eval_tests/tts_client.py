@@ -13,8 +13,8 @@ import os
 import struct
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, List, Mapping, Optional, Tuple
 
 import aiohttp
 
@@ -80,6 +80,9 @@ class TimedSynthesis:
     elapsed_s: float = 0.0
     ttft_ms: Optional[float] = None
     audio_seconds: Optional[float] = None
+    # (seconds since the request, audio seconds received so far) per audio chunk;
+    # empty when the response is not streamed.
+    arrivals: List[Tuple[float, float]] = field(default_factory=list)
 
 
 class TTSClient(ABC):
@@ -279,8 +282,19 @@ class StreamedWavTTSClient(TTSClient):
                 f"Server returned {seconds:.2f}s of audio (< {MIN_AUDIO_SECONDS}s)"
             )
             return TimedSynthesis(False)
-        first_audio = next(t for size, t in arrivals if size > offset)
-        return TimedSynthesis(True, elapsed, (first_audio - start) * 1000, seconds)
+        frame_bytes = 2 * channels
+        audio_arrivals = [
+            (t - start, (size - offset) // frame_bytes / float(sample_rate))
+            for size, t in arrivals
+            if size > offset
+        ]
+        return TimedSynthesis(
+            True,
+            elapsed,
+            audio_arrivals[0][0] * 1000,
+            seconds,
+            audio_arrivals,
+        )
 
 
 class Qwen3CppTTSClient(StreamedWavTTSClient):

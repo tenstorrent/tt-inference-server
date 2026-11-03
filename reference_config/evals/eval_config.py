@@ -11134,6 +11134,44 @@ _eval_config_list = [
                             "min_reference_seconds": 3,
                             "max_reference_seconds": 12,
                             "wer_threshold": 0.20,
+                            # The TTS benchmark reads its client from this task; the
+                            # deploy config batches up to 4 requests.
+                            "benchmark_concurrency": [1, 2, 3, 4],
+                        }
+                    }
+                },
+            ),
+            EvalTask(
+                task_name="tts_concurrency_isolation",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "concurrency": 4,
+                    "max_wer_gap": 0.10,
+                },
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "clone_mode": "voice_only",
+                            "language": "English",
+                            "min_reference_seconds": 3,
+                            "max_reference_seconds": 12,
+                            "concurrency": 4,
+                            "max_wer_gap": 0.10,
                         }
                     }
                 },

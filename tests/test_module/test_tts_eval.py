@@ -15,6 +15,7 @@ import pytest
 from test_module._test_common import ReportCheckTypes
 from test_module._test_common import TestConfig as _TestConfig
 from test_module.eval_tests import tts_eval_tests, tts_naturalness_test
+from test_module.eval_tests import tts_isolation_test as iso_mod
 from test_module.eval_tests import tts_quality_test as wer_mod
 from test_module.eval_tests import tts_speaker_similarity_test as secs_mod
 from test_module.eval_tests.tts_client import (
@@ -469,7 +470,8 @@ class TestQwen3EvalConfig:
         return {t.task_name: t for t in _eval_config_map[repo].tasks}
 
     @pytest.mark.parametrize(
-        "size, wer", [("1.7B", {"tts_generation"}), ("0.6B", set())]
+        "size, wer",
+        [("1.7B", {"tts_generation", "tts_concurrency_isolation"}), ("0.6B", set())],
     )
     def test_base_registers_secs_and_naturalness_on_clones(self, size, wer):
         tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-Base")
@@ -517,8 +519,11 @@ class TestQwen3EvalConfig:
     def test_0b6_has_its_own_thresholds_and_never_sends_a_description(self, release):
         small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
         large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
-        # WER is calibrated only on the 1.7B Base.
-        assert set(small) == set(large) - {"tts_generation"}
+        # WER and cross-talk are calibrated only on the 1.7B Base.
+        assert set(small) == set(large) - {
+            "tts_generation",
+            "tts_concurrency_isolation",
+        }
         for name, task in small.items():
             targets = tts_eval_tests._task_targets(task)
             assert "description" not in targets
@@ -532,3 +537,112 @@ class TestQwen3EvalConfig:
                 else {field[0]["name"] for field in request["data"]._fields}
             )
             assert "description" not in fields
+
+
+class _MarkedClient:
+    """Audio carries the request's index; ``swap`` exchanges two batched outputs."""
+
+    can_clone = True
+    has_default_voice = False
+
+    def __init__(self, texts, swap=None):
+        self.texts = texts
+        self.swap = swap
+        self.batched = 0
+
+    def describe(self):
+        return "marked"
+
+    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
+        index = self.texts.index(text)
+        if self.swap and len(self.texts) <= self.batched:
+            index = {self.swap[0]: self.swap[1], self.swap[1]: self.swap[0]}.get(
+                index, index
+            )
+        self.batched += 1
+        return SynthesizedAudio(samples=np.full(2400, index), sample_rate=24000)
+
+
+class TestCrossTalk:
+    # Each request reads the next speaker's text in its own voice.
+    CLIPS = [(s, s.encode(), f"text of {s}") for s in ("a", "b", "c", "d")]
+
+    def _run(self, monkeypatch, swap=None):
+        texts = [self.CLIPS[(i + 1) % 4][2] for i in range(4)]
+        client = _MarkedClient(texts, swap)
+        monkeypatch.setattr(iso_mod, "iter_speaker_clips", lambda *a, **k: self.CLIPS)
+        monkeypatch.setattr(iso_mod, "make_tts_client", lambda t: client)
+        voice_of = {clip[1]: i for i, clip in enumerate(self.CLIPS)}
+        monkeypatch.setattr(
+            iso_mod,
+            "decode_wav_file",
+            lambda wav: SynthesizedAudio(np.full(10, voice_of[wav]), 16000),
+        )
+        test = iso_mod.TTSIsolationTest(_config(), {"tts_api": "vllm_omni"})
+        test.base_url = "http://fake"
+        for name in ("_load_whisper_model", "_load_encoder", "_unload_encoder"):
+            monkeypatch.setattr(test, name, lambda: None)
+        monkeypatch.setattr(
+            test, "_transcribe_samples", lambda audio, sr: texts[int(audio[0])]
+        )
+        monkeypatch.setattr(test, "_embed", lambda audio: int(audio.samples[0]))
+        monkeypatch.setattr(test, "_cosine", lambda a, b: 0.95 if a == b else 0.5)
+        return asyncio.run(test._run_specific_test_async())
+
+    def test_separate_requests_pass(self, monkeypatch):
+        result = self._run(monkeypatch)
+        assert result["success"] and result["mismatches"] == 0
+        assert result["wer_gap"] == 0.0
+        assert [r["own_best"] for r in result["per_request"]] == [True] * 4
+
+    def test_swapped_outputs_fail(self, monkeypatch):
+        result = self._run(monkeypatch, swap=(0, 2))
+        assert not result["success"] and result["mismatches"] == 2
+        assert [r["own_best"] for r in result["per_request"]] == [
+            False,
+            True,
+            False,
+            True,
+        ]
+
+    def test_a_wer_gap_beyond_the_limit_fails(self):
+        rows = [
+            iso_mod.isolation_row(i, "s", 0.0, wers, [0.9, 0.5], 0.9)
+            if i == 0
+            else iso_mod.isolation_row(i, "s", 0.0, wers[::-1], [0.5, 0.9], 0.9)
+            for i, wers in enumerate([[0.3, 1.0], [0.3, 1.0]])
+        ]
+        assert all(r["own_best"] for r in rows)
+        assert not iso_mod.summarize_isolation(rows, 0.10)["success"]
+        assert iso_mod.summarize_isolation(rows, 0.35)["success"]
+
+    def test_the_runner_gates_one_row_and_adds_the_table(self, monkeypatch):
+        accepted = []
+        result = {
+            "success": True,
+            "wer_alone": 0.05,
+            "wer_together": 0.07,
+            "wer_gap": 0.02,
+            "mismatches": 0,
+            "max_wer_gap": 0.1,
+            "concurrency": 4,
+            "per_request": [{"request": 0}],
+        }
+        monkeypatch.setattr(tts_eval_tests, "_missing_deps", lambda deps: [])
+        monkeypatch.setattr(tts_eval_tests, "_run_eval_test", lambda c, t, k: result)
+        monkeypatch.setattr(
+            tts_eval_tests, "accept_blocks", lambda b, envelope: accepted.extend(b)
+        )
+        monkeypatch.setattr(tts_eval_tests, "block_id", lambda ctx: "id")
+        monkeypatch.setattr(tts_eval_tests, "sweep_envelope", lambda ctx: {})
+        task = SimpleNamespace(
+            task_name="tts_concurrency_isolation",
+            score=SimpleNamespace(
+                tolerance=0.05, published_score=None, published_score_ref=""
+            ),
+        )
+        block = tts_eval_tests._run_isolation_task(SimpleNamespace(), task)
+        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+        assert block.data["score"] == 93.0
+        assert [b.kind for b in accepted] == ["tts_cross_talk"]
+        assert accepted[0].data["records"] == [{"request": 0}]

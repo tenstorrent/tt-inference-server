@@ -288,3 +288,80 @@ def test_voice_clip_is_a_normalized_pcm16_wav():
     samples = struct.unpack(f"<{(len(wav) - 44) // 2}h", wav[44:])
     assert len(samples) == 16000 * 5.28
     assert 0.85 * 32767 < max(abs(s) for s in samples) <= 0.9 * 32767 + 1
+
+
+def test_playback_waits_only_when_audio_runs_out():
+    # 0.5 s of audio at 0.2 s plays until 0.7 s; the next chunk lands at 0.9 s.
+    arrivals = [(0.2, 0.5), (0.9, 1.0), (1.2, 2.0)]
+    total, longest = bench._playback_wait(arrivals)
+    assert total == pytest.approx(0.2) and longest == pytest.approx(0.2)
+
+
+class _SweepClient:
+    has_default_voice = False
+
+    def __init__(self, fail_at=None):
+        self.batches = []
+        self.fail_at = fail_at
+
+    def describe(self):
+        return "sweep"
+
+    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
+        self.batches.append(text)
+        if self.fail_at is not None and len(self.batches) == self.fail_at:
+            return tts_client.TimedSynthesis(False)
+        return tts_client.TimedSynthesis(
+            True, 2.0, 250.0, 3.0, [(0.25, 1.0), (1.0, 3.0)]
+        )
+
+
+class TestConcurrencySweep:
+    def _run(self, monkeypatch, client, levels):
+        checks = {}
+
+        def fake_checks(ctx, ttfa_ms, rtr):
+            checks.update(ttfa_ms=ttfa_ms, rtr=rtr)
+            return {}, None
+
+        monkeypatch.setattr(bench, "make_tts_client", lambda targets: client)
+        monkeypatch.setattr(bench, "_tts_target_checks", fake_checks)
+        monkeypatch.setattr(bench, "block_id", lambda ctx: "id")
+        block = bench._run_tts_concurrency_sweep(_ctx(BASE), levels)
+        return block.data["records"], checks
+
+    def test_one_row_per_prompt_and_concurrency(self, monkeypatch):
+        client = _SweepClient()
+        records, checks = self._run(monkeypatch, client, [1, 2])
+        assert [(r["prompt"], r["concurrency"]) for r in records] == [
+            (p, c) for p in bench.SWEEP_PROMPTS for c in (1, 2)
+        ]
+        # One warm-up, then C requests per row.
+        assert len(client.batches) == 1 + 3 * (1 + 2)
+        row = records[0]
+        assert row["rtr_min"] == pytest.approx(1.5)
+        assert row["stream_rate_min"] == pytest.approx(3.0 / 1.75)
+        assert row["audio_s_per_s"] == pytest.approx(1.5)
+        assert checks == {"ttfa_ms": pytest.approx(250.0), "rtr": pytest.approx(1.5)}
+
+    def test_a_failed_request_fails_the_gate(self, monkeypatch):
+        # Call 6 (after the warm-up) is in the short prompt's C=3 row, not at C=1.
+        records, checks = self._run(monkeypatch, _SweepClient(fail_at=6), [1, 2, 3])
+        assert sum(r["failed_requests"] for r in records) == 1
+        assert checks["rtr"] == 0.0
+
+    def test_the_sweep_runs_when_the_task_asks_for_it(self, monkeypatch):
+        targets = dict(BASE, benchmark_concurrency=[1, 4])
+        called = {}
+        monkeypatch.setattr(bench, "require_health", lambda ctx: None)
+        monkeypatch.setattr(bench, "_tts_client_targets", lambda ctx: targets)
+        monkeypatch.setattr(
+            bench,
+            "_run_tts_concurrency_sweep",
+            lambda ctx, levels: called.setdefault("levels", levels),
+        )
+        ctx = _ctx(targets)
+        ctx.model_spec = SimpleNamespace(model_name="m")
+        ctx.device = SimpleNamespace(name="GALAXY")
+        bench.run_tts_benchmark(ctx)
+        assert called["levels"] == [1, 4]

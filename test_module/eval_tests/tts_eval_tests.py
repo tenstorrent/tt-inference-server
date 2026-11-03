@@ -40,6 +40,7 @@ TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
+TASK_ISOLATION = "tts_concurrency_isolation"
 
 
 def _tts_sample_count(ctx: MediaContext) -> int:
@@ -247,11 +248,17 @@ def _run_wer_task(ctx: MediaContext, task) -> Block:
 
 def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
     """Run ``TTSSpeakerSimilarityTest`` against the live server (lazy imports)."""
-    from .._test_common import TestConfig
     from .tts_speaker_similarity_test import TTSSpeakerSimilarityTest
 
+    return _run_eval_test(ctx, task, TTSSpeakerSimilarityTest)
+
+
+def _run_eval_test(ctx: MediaContext, task, test_class) -> dict:
+    """Run one eval ``test_class`` with the task's targets; return its result data."""
+    from .._test_common import TestConfig
+
     targets = _task_targets(task)
-    test = TTSSpeakerSimilarityTest(
+    test = test_class(
         TestConfig(
             {
                 "timeout": 3600,
@@ -264,11 +271,77 @@ def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
         ctx=ctx,
     )
     logger.info(
-        "Running TTSSpeakerSimilarityTest: base_url=%s targets=%s",
+        "Running %s: base_url=%s targets=%s",
+        test_class.__name__,
         ctx.base_url,
         targets,
     )
     return dict(test.run_tests().data)
+
+
+def _cross_talk_block(ctx: MediaContext, result: dict) -> Block:
+    """The per-request table of the cross-talk eval; its eval row carries the gate."""
+    return Block(
+        kind="tts_cross_talk",
+        task_type="text_to_speech",
+        title=f"Cross-talk at C={result.get('concurrency')}",
+        id=block_id(ctx) or None,
+        targets={"max_wer_gap": result.get("max_wer_gap")},
+        data={"records": result.get("per_request") or []},
+    )
+
+
+def _run_isolation_task(ctx: MediaContext, task) -> Block:
+    """Cross-talk eval (task_name=tts_concurrency_isolation) -> one eval Block, plus
+    its per-request table accepted as a block of its own."""
+    from .tts_isolation_test import TTSIsolationTest
+
+    missing = _missing_deps(TTS_SECS_DEPS)
+    if missing:
+        reason = f"TTS cross-talk deps unavailable: {', '.join(missing)}"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx, task, score=None, accuracy_check=ReportCheckTypes.NA, error=reason
+        )
+    try:
+        result = _run_eval_test(ctx, task, TTSIsolationTest)
+    except Exception as e:
+        reason = f"TTS cross-talk eval failed to run: {type(e).__name__}: {e}"
+        logger.exception(reason)
+        return _tts_eval_block(
+            ctx, task, score=None, accuracy_check=ReportCheckTypes.NA, error=reason
+        )
+
+    if "wer_together" not in result:
+        # Requests ran but some failed: a failed eval, not a missing one.
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.FAIL,
+            error=result.get("error"),
+        )
+    accept_blocks([_cross_talk_block(ctx, result)], envelope=sweep_envelope(ctx))
+    accuracy_check = (
+        ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
+    )
+    logger.info(
+        "TTS cross-talk eval: %s -> check=%s",
+        {k: result.get(k) for k in ("wer_alone", "wer_together", "mismatches")},
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=_intelligibility_score(result["wer_together"]),
+        accuracy_check=accuracy_check,
+        metrics={
+            "wer": result["wer_together"],
+            "wer_alone": result["wer_alone"],
+            "wer_gap": result["wer_gap"],
+            "mismatches": result["mismatches"],
+        },
+    )
 
 
 def _sample_counts(result: dict) -> dict:
@@ -427,6 +500,7 @@ _TASK_RUNNERS = {
     TASK_WER: _run_wer_task,
     TASK_SECS: _run_secs_task,
     TASK_NATURALNESS: _run_naturalness_task,
+    TASK_ISOLATION: _run_isolation_task,
 }
 
 
