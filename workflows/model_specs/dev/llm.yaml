@@ -3289,7 +3289,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 3
-      max_context: 65536  # 64 * 1024; the ring's per-user cache depth
+      max_context: 122880  # 120 * 1024: the deepest cache the ring has walked with retrieval intact (needle 169220); 131071 is the hard ceiling
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
