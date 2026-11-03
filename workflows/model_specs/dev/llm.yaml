@@ -988,6 +988,8 @@ templates:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         VLLM_RPC_TIMEOUT: "300000"
+        # CI-only probe: the prebuilt image (tt-metal ef7377f3) with the w8_lmh4_lofi precision from the bind-mounted reference_config
+        GEMMA4_PRECISION_CONFIG: /home/container_app_user/app/reference_config/gemma4_12b_qb2_w8_precision.json
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 0
