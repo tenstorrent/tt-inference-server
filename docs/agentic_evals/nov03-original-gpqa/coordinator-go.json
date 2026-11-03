@@ -1,0 +1,18 @@
+{
+  "model": "Qwen/Qwen3.8-27B",
+  "source_manifest_sha256": "fb01e42fbed84a24ad4f7c57b6355afa2abbd27e7cc3a27418e20b861fd6b5d7",
+  "evals": {
+    "gpqa_diamond_cot_zeroshot": {
+      "decision": "stop",
+      "evidence": null,
+      "doc_ids": [
+        12,
+        15
+      ],
+      "first_wave_box_hours": 5.5,
+      "point_prediction_hours": 3.00538,
+      "prediction_basis": "guess; different prompts/C1-to-C2 transfer unvalidated",
+      "higher_retry_funded": false
+    }
+  }
+}

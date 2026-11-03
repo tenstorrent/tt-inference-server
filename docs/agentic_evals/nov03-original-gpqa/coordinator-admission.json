@@ -1,0 +1,12 @@
+{
+  "decision": "stop",
+  "budget_seconds": 19800,
+  "doc_ids": [
+    12,
+    15
+  ],
+  "actual_combine_closed": false,
+  "budget_evidence": null,
+  "reason": "Await actual combine closure/free >=5.5h and coordinator admission before07:08:55UTC",
+  "higher_retry_funded": false
+}

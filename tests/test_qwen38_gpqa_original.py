@@ -66,7 +66,7 @@ def test_allocation_anchor_and_clock_never_reset(tmp_path):
 
 def test_actual_entrypoint_refuses_missing_admission_before_any_fetch(monkeypatch):
     from workflows.qwen38_original_admission import prepare
-    with pytest.raises(ValueError,match='coordinator'):
+    with pytest.raises(ValueError,match='admission'):
         prepare(NS(model='Qwen3.8-27B'),{'GITHUB_ACTIONS':'true'},fetch=lambda _:pytest.fail('No remote call before admission'))
 
 def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,monkeypatch):
@@ -87,6 +87,7 @@ def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,m
         result=observed['host_tis_sha'] if cmd[0]=='git' else observed['metal_sha' if '/actual/metal' in cmd else 'plugin_sha']
         return NS(stdout=result)
     checkpoint={'container_id':'a'*64,'image_id':'sha256:actual','ok':True,'manifest_sha256':'checkpoint-hash',
+        'host_jobs_disk':{'free_bytes':1000000000},'disk':{'free_bytes':2000000000},
         'serving_processes':[{'pid':123}], 'precision':{'ok':True,'layer_count':64,'policy_sha256':'policy-hash','engine_pid':123,'marker_epoch':1}}
     receipt=a.runtime_identity(checkpoint,tmp_path,run)
     assert receipt['observed']==observed

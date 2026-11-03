@@ -100,6 +100,9 @@ def runtime_identity(checkpoint,output_path,runner=subprocess.run):
             or not precision.get('engine_pid') or not precision.get('marker_epoch')
             or not checkpoint.get('manifest_sha256') or not checkpoint.get('serving_processes')):
         raise ValueError('Owned full64 generator/policy/checkpoint identity incomplete')
+    disk={'host_jobs':checkpoint.get('host_jobs_disk',{}), 'weights':checkpoint.get('disk',{})}
+    if any(row.get('free_bytes',0)<=0 for row in disk.values()):
+        raise ValueError('Fresh owned CI checkpoint disk measurements unavailable or exhausted')
     identity_evidence={'kind':'owned_image_full64_policy_checkpoint',
         'container_id':cid,'image_id':checkpoint['image_id'],
         'checkpoint_manifest_sha256':checkpoint['manifest_sha256'],
@@ -127,7 +130,9 @@ def runtime_identity(checkpoint,output_path,runner=subprocess.run):
     # The approval binds a code-file manifest, avoiding a self-referential commit.
     derived={**pre,'runtime_sources':{**expected,**observed},
              'runtime_identity_receipt':'original-runtime-identity.json',
-             'observed_runtime_identity':identity_evidence}
+             'observed_runtime_identity':identity_evidence,
+             'disk':{'ok':True,'fresh_checkpoint_observation':disk,
+                     'scope':'Current owned CI checkpoint-time host jobs/weights free bytes; no continuous growth claim'}}
     derived_path=Path(output_path)/'original-observed-preflight.json'
     derived_path.write_text(json.dumps(derived,indent=2)+'\n')
     os.environ['TT_QWEN38_PREFLIGHT_JSON']=str(derived_path)

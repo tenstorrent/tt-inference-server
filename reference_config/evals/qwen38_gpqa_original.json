@@ -23,8 +23,8 @@
   "seed": 1234,
   "reference_note": "Exact original stage11 selected cutoff repair; no r1 prompt substitution.",
   "intent": "full_suite",
-  "preflight_json": null,
-  "go_json": null,
+  "preflight_json": "docs/agentic_evals/nov03-original-gpqa/coordinator-preflight.json",
+  "go_json": "docs/agentic_evals/nov03-original-gpqa/coordinator-go.json",
   "max_attempts": 1,
   "payload_sha256": {
     "12": "fdf8e081e1e69bd52e1854103e09376db6868b11b9012ee888a2d43fda44e5ae",
@@ -50,6 +50,6 @@
     "tasks/_yaml_loader.py": "3ea637c454937df677ea662325a9f7cb08869fde29edfc26b44ff41be6127034"
   },
   "selected_protocol": "original-stage11-cutoff-repair",
-  "admission_json": null,
+  "admission_json": "docs/agentic_evals/nov03-original-gpqa/coordinator-admission.json",
   "runtime_repo_paths": {}
 }
