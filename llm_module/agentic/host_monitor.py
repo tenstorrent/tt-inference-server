@@ -7,6 +7,10 @@ told apart from a starved host. It also caps terminal recordings: an agent stuck
 once wrote a 185 GB ``agent/recording.cast``, which filled the runner disk and pushed most task
 records out of the uploaded artifact. Recordings over ``max_bytes`` keep their last ``keep_bytes``
 in ``recording.cast.tail`` and are truncated in place (the writer keeps appending).
+
+With ``profile_every_s`` > 0 it also records a short py-spy profile of the inference engine at that
+interval into ``<job_dir>/engine_profiles/<epoch>.txt`` (raw folded stacks, per thread), to see which
+part of the engine's host work slows when task containers are busy.
 """
 from __future__ import annotations
 
@@ -14,8 +18,12 @@ import json
 import logging
 import os
 import subprocess
+import hashlib
+import io
 import threading
 import time
+import urllib.request
+import zipfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -95,7 +103,56 @@ def cap_recordings(job_dir: Path, max_bytes: int, keep_bytes: int) -> list:
     return capped
 
 
-def start(job_dir: Path, interval_s: float = 60.0, max_bytes: int = 1 << 30, keep_bytes: int = 256 << 20):
+PYSPY_VERSION = "0.4.3"
+
+
+def _pyspy_binary(dest: Path) -> Path:
+    """py-spy from its PyPI wheel (pinned, sha256-checked); no pip needed."""
+    path = dest / "py-spy"
+    if path.exists():
+        return path
+    meta = json.load(urllib.request.urlopen(f"https://pypi.org/pypi/py-spy/{PYSPY_VERSION}/json", timeout=60))
+    wheel = next(u for u in meta["urls"] if u["filename"].endswith("manylinux_2_5_x86_64.whl"))
+    data = urllib.request.urlopen(wheel["url"], timeout=120).read()
+    if hashlib.sha256(data).hexdigest() != wheel["digests"]["sha256"]:
+        raise RuntimeError("py-spy wheel checksum mismatch")
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        name = next(n for n in z.namelist() if n.endswith("/scripts/py-spy"))
+        dest.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(z.read(name))
+    path.chmod(0o755)
+    return path
+
+
+def _engine_target():
+    """(server container, its image, engine pid inside the container)."""
+    names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=30).stdout.split()
+    name = next(n for n in names if n.startswith("tt-inference-server"))
+    image = subprocess.run(["docker", "inspect", "-f", "{{.Config.Image}}", name], capture_output=True, text=True, timeout=30).stdout.strip()
+    top = subprocess.run(["docker", "top", name, "-eo", "pid,args"], capture_output=True, text=True, timeout=30).stdout
+    host_pid = next(line.split()[0] for line in top.splitlines()[1:] if "EngineCor" in line)
+    with open(f"/proc/{host_pid}/status") as f:
+        ns_pid = next(line.split()[-1] for line in f if line.startswith("NSpid"))
+    return name, image, ns_pid
+
+
+def profile_engine(job_dir: Path, seconds: int = 20, rate: int = 50) -> Path:
+    """One non-blocking py-spy recording of the engine process, from a root helper container in its pid namespace."""
+    out = job_dir / "engine_profiles"
+    out.mkdir(parents=True, exist_ok=True)
+    binary = _pyspy_binary(job_dir.parent / ".pyspy")
+    name, image, pid = _engine_target()
+    stamp = f"{time.time():.0f}"
+    r = subprocess.run(["docker", "run", "--rm", "--pid", f"container:{name}", "--cap-add", "SYS_PTRACE", "--network", "none",
+                        "-v", f"{binary.parent}:/ps:ro", "-v", f"{out}:/out", "--entrypoint", "/ps/py-spy", image,
+                        "record", "-p", pid, "-d", str(seconds), "-r", str(rate), "--nonblocking", "-t", "-f", "raw", "-o", f"/out/{stamp}.txt"],
+                       capture_output=True, text=True, timeout=seconds + 120)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip()[-300:])
+    return out / f"{stamp}.txt"
+
+
+def start(job_dir: Path, interval_s: float = 60.0, max_bytes: int = 1 << 30, keep_bytes: int = 256 << 20, profile_every_s: float = 0.0):
     """Start the monitor thread; returns a ``stop()`` callable that also does a final recording pass."""
     job_dir = Path(job_dir)
     stop_event = threading.Event()
@@ -118,8 +175,20 @@ def start(job_dir: Path, interval_s: float = 60.0, max_bytes: int = 1 << 30, kee
             except Exception as e:  # noqa: BLE001 - never break the eval for diagnostics
                 logger.warning("HOST_MONITOR sample failed: %s", e)
 
+    def profile_loop():
+        failures = 0
+        while not stop_event.wait(profile_every_s) and failures < 5:
+            try:
+                path = profile_engine(job_dir)
+                logger.info("HOST_MONITOR engine profile %s", path.name)
+            except Exception as e:  # noqa: BLE001 - diagnostics only
+                failures += 1
+                logger.warning("HOST_MONITOR engine profile failed (%d/5): %s", failures, e)
+
     thread = threading.Thread(target=loop, name="host-monitor", daemon=True)
     thread.start()
+    if profile_every_s > 0:
+        threading.Thread(target=profile_loop, name="host-monitor-profile", daemon=True).start()
 
     def stop():
         stop_event.set()
