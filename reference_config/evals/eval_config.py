@@ -5200,9 +5200,17 @@ _eval_config_list = [
                     n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
-                    # 2 h (the GPU reference's 3600 s timed out 17 of 97 trials
-                    # on hardware ~5x faster per user).
-                    agent_timeout_sec=2 * 60 * 60,
+                    # The DSv4.1 ring prefills through 512-token chunks at
+                    # ~300 tok/s with no prefix cache, and a banking
+                    # conversation passes 40-60K tokens by its 30th step, so
+                    # one LLM call can wait 10-20 min behind the other two
+                    # trials' prefills and a trial runs 1-2 h (job 170250:
+                    # httpx.ReadTimeout at the 600 s default). The budgets
+                    # below follow that cost; the whole 15-task subset takes
+                    # about 7 h at 3 concurrent.
+                    agent_timeout_sec=4 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    harbor_timeout_sec=12 * 60 * 60,
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
@@ -5219,10 +5227,12 @@ _eval_config_list = [
                         # line, which fails with TypeError on a dict.
                         "llm_args_json": '{"top_p": 1.0}',
                         "max_steps": 200,
-                        # Default is 120s; a single reasoning user-sim turn under
-                        # load can exceed that and trip an MCP request timeout.
-                        "tool_timeout_sec": 900,
-                        "read_timeout_sec": 120,
+                        # The simulated user's turn is an LLM call on the same
+                        # ring, queued behind the trials' prefills: 1 h for the
+                        # MCP tool calls and the session reads (120 s / 900 s
+                        # tripped on the DSv4.1 ring).
+                        "tool_timeout_sec": 3600,
+                        "read_timeout_sec": 3600,
                     },
                     # Literal values only: "${VAR:-default}" templates are not
                     # resolved on this path (see the Kimi-K3 tau3 entry).
