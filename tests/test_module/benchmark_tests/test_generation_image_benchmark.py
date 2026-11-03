@@ -143,3 +143,26 @@ def test_klein_runs_its_release_shapes_with_no_input_and_one():
         ((2048, 2048), 1, "2K"),
     ]
     assert all(c.match == {"num_images": c.num_images} for c in configs)
+
+
+@pytest.mark.parametrize(
+    ("repo", "side", "num_images", "uncached", "cached"),
+    [
+        (QWEN, 1024, 2, 13.40, 18.88),
+        ("black-forest-labs/flux-3-image-klein", 2048, 0, 1.81, 5.47),
+        ("black-forest-labs/flux-3-image-klein", 4096, 10, 23.30, 84.03),
+    ],
+)
+def test_a_cached_deployment_gets_the_cache_dit_target(
+    repo, side, num_images, uncached, cached
+):
+    match = {"num_images": num_images}
+    shape = (side, side)
+    # A spec that says nothing about the cache, or turns it off, gets the uncached target.
+    for dbcache in (None, False):
+        targets = get_performance_targets(
+            repo, "blackhole_galaxy", shape, dbcache, match
+        )
+        assert targets.ttft_ms == round(uncached * 1000)
+    targets = get_performance_targets(repo, "blackhole_galaxy", shape, True, match)
+    assert targets.ttft_ms == round(cached * 1000)
