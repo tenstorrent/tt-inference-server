@@ -61,7 +61,7 @@ def verify_dataset(data, manifest):
             'scope':f"{len(ids)} frozen source rows verified; native task {manifest['task']} prompt/scorer retained"}
 
 
-def install_guard(datasets_module, adapter_class, manifest, audit_path, responses_path):
+def install_guard(datasets_module, adapter_class, manifest, audit_path, responses_path, *, instance_parser=False):
     state = {'verified':False}
     original_load = datasets_module.load_dataset
     original_payload = adapter_class._create_payload
@@ -90,7 +90,7 @@ def install_guard(datasets_module, adapter_class, manifest, audit_path, response
             raise RuntimeError('Frozen GPQA source identity not verified before API request')
         return original_payload(self, *args, **kwargs)
 
-    def parse(outputs, **kwargs):
+    def record(outputs):
         # Raw model outputs stay in local run evidence, never telemetry. Preserve
         # finish_reason and usage: empty final alone cannot distinguish caps/loops.
         rows = outputs if isinstance(outputs, list) else [outputs]
@@ -99,11 +99,18 @@ def install_guard(datasets_module, adapter_class, manifest, audit_path, response
             for row in rows:
                 log.write(json.dumps({'id':row.get('id'), 'usage':row.get('usage'),
                     'choices':row.get('choices'), 'model':row.get('model')}, ensure_ascii=False)+'\n')
+
+    def parse_static(outputs, **kwargs):
+        record(outputs)
         return original_parse(outputs, **kwargs)
+
+    def parse_instance(self, outputs, **kwargs):
+        record(outputs)
+        return original_parse(self, outputs, **kwargs)
 
     datasets_module.load_dataset = load
     adapter_class._create_payload = payload
-    adapter_class.parse_generations = staticmethod(parse)
+    adapter_class.parse_generations = parse_instance if instance_parser else staticmethod(parse_static)
     return state
 
 

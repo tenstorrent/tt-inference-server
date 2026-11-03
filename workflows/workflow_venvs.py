@@ -300,9 +300,12 @@ class VenvConfig:
                 logger.info(f"creating sub-dir for {self.name}: {target}")
                 target.mkdir(parents=True, exist_ok=True)
 
-        if self.requirements_file is not None:
+        requirements_file = self.requirements_file
+        if self.venv_type == WorkflowVenvType.EVALS_COMMON and original_gpqa_environment(model_spec):
+            requirements_file = "evals-qwen38-original.txt"
+        if requirements_file is not None:
             if not install_requirements(
-                self, self.requirements_file, self.overrides_file
+                self, requirements_file, self.overrides_file
             ):
                 raise RuntimeError(
                     f"Failed to install requirements for venv {self.venv_type.name} "
@@ -794,6 +797,12 @@ def setup_evals_meta(
     return setup_succeeded
 
 
+def original_gpqa_environment(model_spec):
+    from reference_config.evals.qwen38_gpqa_arm import applies
+    from reference_config.evals.qwen38_gpqa_original import enabled
+    return applies(model_spec) and enabled()
+
+
 def verify_evals_common_lm_eval(
     venv_config: VenvConfig,
     model_spec: ModelSpec,
@@ -805,7 +814,11 @@ def verify_evals_common_lm_eval(
     every setup log; comparing it here prevents a stale persistent venv or an
     installer regression from silently running a different harness.
     """
-    del model_spec
+    if original_gpqa_environment(model_spec):
+        # Verify imports and every pinned original adapter/scorer/task source in
+        # the actual native eval interpreter during setup, before serving starts.
+        probe = "from llm_module.qwen38_gpqa_original_guard import verify_sources; from reference_config.evals.qwen38_gpqa_original import MANIFEST; import json; verify_sources(json.loads(MANIFEST.read_text())); from llm_module.qwen38_gpqa_original_dataset import load_frozen; load_frozen(allow_download=True); print('Original GPQA lm-eval0.4.13 source/import/frozen-dataset proof PASS')"
+        return run_command([str(venv_config.venv_python), "-c", probe],logger=logger)==0
     probe = f"""
 import importlib.metadata
 import json
@@ -840,6 +853,8 @@ def setup_evals_common(
     """
     if not verify_evals_common_lm_eval(venv_config, model_spec):
         return False
+    if original_gpqa_environment(model_spec):
+        return True  # Original GPQA has no IFEval/NLTK dependency.
     return (
         run_command(
             [

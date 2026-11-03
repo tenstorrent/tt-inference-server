@@ -50,5 +50,17 @@
   },
   "selected_protocol": "original-stage11-cutoff-repair",
   "admission_json": "docs/agentic_evals/nov03-original-gpqa/coordinator-admission.json",
-  "runtime_repo_paths": {}
+  "runtime_repo_paths": {},
+  "environment_sources_sha256": {
+    "requirements/evals-qwen38-original.txt": "ae41be41f0952ab6d24d24a7cc14c8935b11b831004214c05bcd283eaf861588",
+    "requirements/constraints.txt": "1ca1d6e34aaf87e0babb0769b2a1f7b6dc2ab5ede771e71374052f3eb24cb472"
+  },
+  "dataset_transport": {
+    "source": "Wanfq/gpqa",
+    "revision": "03ff68d77f7a4103ae2bf72fb099d358f6308b65",
+    "filename": "gpqa_diamond.csv",
+    "sha256": "41d1213cd7a4998605a26c2798500652572007161b3a92817ba46b35befcd305",
+    "basis": "Exact approved original stage11 mirror bytes; native task alias Idavidrein/gpqa preserved, no claim of live gated-source download",
+    "runtime_download": false
+  }
 }

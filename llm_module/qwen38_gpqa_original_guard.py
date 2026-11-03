@@ -32,6 +32,9 @@ def verify_payload(payload,manifest,deadline,cleanup=300,now=None):
     return int(ids[0])
 
 def verify_sources(manifest):
+    for relative, expected in manifest['environment_sources_sha256'].items():
+        if hashlib.sha256((Path(__file__).resolve().parents[1]/relative).read_bytes()).hexdigest()!=expected:
+            raise ValueError('Original environment requirements/constraints changed')
     from lm_eval.models import openai_completions
     from lm_eval.filters import extraction,selection
     from lm_eval.api import metrics
@@ -59,6 +62,8 @@ def main(argv=None):
     verify_sources(manifest)
     import datasets
     from lm_eval.models.openai_completions import LocalChatCompletion
+    from llm_module.qwen38_gpqa_original_dataset import install_cached_loader
+    install_cached_loader(datasets,Path(opts.audit).with_name("original-dataset-stage.json"))
     from lm_eval.tasks import _yaml_loader
     import lm_eval.tasks
     from llm_module.qwen38_gpqa_original_processing import process_docs
@@ -66,7 +71,7 @@ def main(argv=None):
     utils.process_docs=process_docs
     audit=Path(opts.audit);audit.parent.mkdir(parents=True,exist_ok=True)
     audit.with_name('original-authorization.json').write_text(json.dumps(authorization,indent=2)+'\n')
-    install_guard(datasets,LocalChatCompletion,manifest,audit,audit.with_name('original-responses.jsonl'))
+    install_guard(datasets,LocalChatCompletion,manifest,audit,audit.with_name('original-responses.jsonl'),instance_parser=True)
     from llm_module import lm_eval_request_overrides as runner
     original_patch=runner.patch_api_adapters
     def patch(body,drop_server_seed=False):

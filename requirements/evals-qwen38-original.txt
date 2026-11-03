@@ -1,0 +1,8 @@
+# Original stage11 GPQA protocol only; other EVALS_COMMON tasks retain the fork.
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+lm-eval[api,hf]==0.4.13
+protobuf
+pyjwt
+pillow
+datasets==3.1.0

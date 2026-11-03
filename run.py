@@ -1393,6 +1393,11 @@ def main():
             json_fpath=json_fpath,
         )
 
+    # Original corrective arm proves its exact native environment/dataset before
+    # executing the first ServerCommand; the default CI wrapper stays unchanged.
+    if str(runtime_config.workflow).lower() == 'evals':
+        from workflows.qwen38_original_admission import prepare_environment_before_server
+        prepare_environment_before_server(model_spec)
     commands = []
     if server_launch is not None:
         commands.append(ServerCommand(server_launch))

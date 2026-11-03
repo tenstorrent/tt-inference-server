@@ -832,6 +832,11 @@ def _score_task(
     elapsed_seconds: Optional[float],
 ) -> List[Block]:
     """Score one finished task using only its current attempt's result files."""
+    original_repair = getattr(task, 'evaluation_metadata', {}).get('intent') == 'original_cutoff_repair'
+    if original_repair and rc != 0:
+        failure=_fail_block(ctx,task,f'original GPQA execution failed (rc={rc}); no measured score')
+        failure.data.update(incomplete=True,subprocess_rc=rc)
+        return [failure]
     result_files = discover_eval_results(output_path, ctx.model_spec)
     results, sample_counts = load_eval_results(result_files)
     sample_counts = _apply_samples_subset_count(task, ctx.runtime_config, sample_counts)
@@ -843,6 +848,20 @@ def _score_task(
         elapsed_seconds=elapsed_seconds,
     )
     if task_blocks:
+        if original_repair:
+            observed_docs=set()
+            malformed_samples=False
+            try:
+                for result_file in result_files:
+                    for sample_file in Path(result_file).parent.glob('samples_*.jsonl'):
+                        for line in sample_file.read_text().splitlines():
+                            if line.strip():observed_docs.add(json.loads(line).get('doc_id'))
+            except (OSError,ValueError,TypeError,AttributeError):
+                malformed_samples=True
+            if malformed_samples or observed_docs != set(task.doc_ids):
+                failure=_fail_block(ctx,task,'original GPQA selected samples incomplete; no measured aggregate')
+                failure.data.update(incomplete=True,subprocess_rc=rc)
+                return [failure]
         errored, logged = count_inference_errors(result_files)
         if errored:
             logger.error(
@@ -856,7 +875,10 @@ def _score_task(
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —
     # v1's report path silently drops these; we surface a FAIL block.
-    return [_fail_block(ctx, task, f"no eval results parsed (rc={rc})")]
+    failure=_fail_block(ctx, task, f"no eval results parsed (rc={rc})")
+    if original_repair:
+        failure.data.update(incomplete=True,subprocess_rc=rc)
+    return [failure]
 
 
 def _envelope(ctx: MediaContext) -> dict:

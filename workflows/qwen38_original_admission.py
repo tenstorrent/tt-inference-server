@@ -150,3 +150,12 @@ def read_bound_deadline(environ=None):
     runtime=json.loads(Path(env['TT_QWEN38_ORIGINAL_RUNTIME_JSON']).read_text())
     if runtime.get('checkpoint_ok') is not True:raise ValueError('Actual runtime/checkpoint evidence missing')
     return clock['deadline_epoch']
+
+
+def prepare_environment_before_server(model_spec):
+    from workflows.workflow_venvs import original_gpqa_environment
+    if not original_gpqa_environment(model_spec):return
+    from workflow_module.venv_provisioner import get_venv_provisioner
+    from workflows.workflow_types import WorkflowVenvType
+    if not get_venv_provisioner().provision(WorkflowVenvType.EVALS_COMMON,model_spec=model_spec):
+        raise RuntimeError('Original GPQA native environment pre-server setup failed')
