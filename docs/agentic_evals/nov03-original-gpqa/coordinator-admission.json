@@ -7,20 +7,21 @@
   ],
   "actual_combine_closed": true,
   "budget_evidence": {
-    "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-gpqa-original-rerun-proposal/attempt01-completion-accounting.json",
-    "evidence_sha256": "1276641484ea8d15bfe091aaf55ca6a60bc253b91a8df582f6231ee4616c2c2d",
+    "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-gpqa-original-retry02/completion-accounting.json",
+    "evidence_sha256": "c3e980528c0660b4fe7d0427f167506a3696e705f0194f3c6db6f5ad43e7c662",
     "combine_evidence": "runs/nov03-password-combine/completion-accounting.json",
-    "closed_effort_hours": 23.729899487098063,
-    "available_effort_hours": 6.270100512901937,
+    "closed_effort_hours": 23.97267726487584,
+    "available_effort_hours": 6.027322735124159,
     "firstwave_reservation_hours": 5.5,
-    "remaining_unallocated_hours": 0.7701005129019372,
+    "remaining_unallocated_hours": 0.5273227351241587,
     "actual_combine_closed": true,
-    "prior_execution_failure_hours": 0.215,
+    "prior_execution_failures_hours": 0.4577777777777778,
+    "cumulative_parent_effort_box_hours": 5.957777777777777,
     "prior_scored_samples": 0,
     "higher_retry_funded": false,
-    "scope": "Fresh execution retry after preflight parser repair, not clock reset of a scored task. CI allocation clock bound to new actual job; default cleanup/no-cancel policy unchanged."
+    "scope": "Thirdexecutionattempt after actualnative0.4.13 setup/CLI fixturevalidated; no prior scoredtask clockreset. Defaultworkflow/setup/cleanup preserved; only original-arm hostprovisioning hook."
   },
-  "reason": "Exact Python3.10 timestamp preflight AutoFix independently passed; priorCI0samples and.215hcharged,6.2701hremaining admits5.5hretry.",
+  "reason": "Verified nativePython3.10 exactoriginalharness+data+payload/scorerfixture andindependentreview; .457778hpriorfailurescharged,6.027323hremaining admits5.5hretry.",
   "higher_retry_funded": false,
-  "admitted_utc": "2026-11-03T05:27:28.248945+00:00"
+  "admitted_utc": "2026-11-03T06:02:31.860360+00:00"
 }

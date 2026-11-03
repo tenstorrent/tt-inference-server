@@ -5,18 +5,19 @@
     "gpqa_diamond_cot_zeroshot": {
       "decision": "go",
       "evidence": {
-        "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-gpqa-original-rerun-proposal/attempt01-completion-accounting.json",
-        "evidence_sha256": "1276641484ea8d15bfe091aaf55ca6a60bc253b91a8df582f6231ee4616c2c2d",
+        "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-gpqa-original-retry02/completion-accounting.json",
+        "evidence_sha256": "c3e980528c0660b4fe7d0427f167506a3696e705f0194f3c6db6f5ad43e7c662",
         "combine_evidence": "runs/nov03-password-combine/completion-accounting.json",
-        "closed_effort_hours": 23.729899487098063,
-        "available_effort_hours": 6.270100512901937,
+        "closed_effort_hours": 23.97267726487584,
+        "available_effort_hours": 6.027322735124159,
         "firstwave_reservation_hours": 5.5,
-        "remaining_unallocated_hours": 0.7701005129019372,
+        "remaining_unallocated_hours": 0.5273227351241587,
         "actual_combine_closed": true,
-        "prior_execution_failure_hours": 0.215,
+        "prior_execution_failures_hours": 0.4577777777777778,
+        "cumulative_parent_effort_box_hours": 5.957777777777777,
         "prior_scored_samples": 0,
         "higher_retry_funded": false,
-        "scope": "Fresh execution retry after preflight parser repair, not clock reset of a scored task. CI allocation clock bound to new actual job; default cleanup/no-cancel policy unchanged."
+        "scope": "Thirdexecutionattempt after actualnative0.4.13 setup/CLI fixturevalidated; no prior scoredtask clockreset. Defaultworkflow/setup/cleanup preserved; only original-arm hostprovisioning hook."
       },
       "doc_ids": [
         12,
@@ -26,7 +27,7 @@
       "point_prediction_hours": 3.00538,
       "prediction_basis": "guess; different prompts/C1-to-C2 transfer unvalidated",
       "higher_retry_funded": false,
-      "reason": "Originaldocs12/15 execution retry after preflight-only failure; no generation/score inpriorattempt. Full198STOPunchanged."
+      "reason": "Originaldocs12/15executionretry after0samples inpriorattempts; no score/qualitygate; full198STOP."
     }
   }
 }
