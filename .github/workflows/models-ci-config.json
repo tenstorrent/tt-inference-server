@@ -276,6 +276,11 @@
                         "T3K",
                         "GALAXY"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "GALAXY"
+                    ]
                 }
             }
         },
@@ -581,11 +586,6 @@
                     "devices": [
                         "P300X2"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ]
                 }
             }
         },
@@ -593,11 +593,6 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ]
-                },
-                "release": {
                     "devices": [
                         "P300X2"
                     ]
