@@ -220,6 +220,9 @@ templates:
       default_impl: true
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+          # Prefills past ~40k run single ops longer than the 5 s default
+          # device operation timeout.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: 120
       vllm_args:
         data_parallel_size: 4
           # The json_object grammar is compiled with any_whitespace=True by
