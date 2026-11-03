@@ -87,6 +87,10 @@ async def generate_all(
     import aiohttp
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    # A previous run's images and results, which the scorers would take as this run's.
+    for old in out_dir.iterdir():
+        if old.is_file():
+            old.unlink()
     index, failures = [], []
     async with aiohttp.ClientSession() as session:
         for case in cases:

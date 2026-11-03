@@ -397,7 +397,12 @@ def test_the_eval_leaves_out_what_the_deployment_does_not_serve(tmp_path, monkey
 
 def test_a_case_the_deployment_could_not_make_fails_the_eval(tmp_path, monkeypatch):
     pytest.importorskip("skimage")
+    # A previous run's image of the case, which must not stand in for this run's.
+    stale = tmp_path / "out" / "images" / "evals" / "case1.png"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"previous run")
     evals, [section], _ = run_eval(tmp_path, monkeypatch, fail={"case1"})
+    assert not stale.exists()
     assert [f["case_id"] for f in section.data["generation_failed"]] == ["case1"]
     assert evals.data["accuracy_check"].name == "FAIL"
     rendered = render_image_compare(section, {})
