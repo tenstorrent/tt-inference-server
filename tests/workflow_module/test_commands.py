@@ -365,9 +365,8 @@ class TestSummaryCommand:
 class TestServerCommandBootRetry:
     """TT_SERVER_BOOT_ATTEMPTS opt-in retry for intermittent bring-up failures.
 
-    Galaxy bring-up can hit an intermittent device stall during the model's prefill
-    warmup sweep; a single stall otherwise fails a whole release run. Retry is opt-in
-    so the default path keeps launching exactly once and never polls.
+    The default permits two attempts. A healthy first launch never retries, and
+    an explicit single attempt still validates observable server readiness.
     """
 
     def test_healthy_launch_is_not_retried(self, monkeypatch):
@@ -795,3 +794,57 @@ class TestNoRetryAfterTimeoutOnNonResumableDownload:
             ready_error="device hang detected during startup ('Timeout detected')",
         )
         assert len(attempts) == 2
+
+
+@pytest.mark.parametrize('attempts', [1, 2])
+@pytest.mark.parametrize('healthy', [True, False])
+def test_observable_readiness_is_required_with_one_or_two_attempts(monkeypatch, tmp_path, attempts, healthy):
+    import urllib.error
+    import urllib.request
+    from unittest.mock import MagicMock
+    import workflow_module.commands as commands
+
+    monkeypatch.setenv('TT_SERVER_BOOT_ATTEMPTS', '2')
+    monkeypatch.delenv('TT_SERVER_READY_TIMEOUT_SECONDS', raising=False)
+    events = []
+    log = tmp_path / 'server.log'
+    log.write_text('starting\n')
+    model_spec = SimpleNamespace(env_vars={'TT_SERVER_BOOT_ATTEMPTS': str(attempts)},
+                                 device_model_spec=SimpleNamespace(tensor_cache_timeout=3600))
+    spec = ServerLaunchSpec(mode=ServerMode.LOCAL, model_spec=model_spec,
+                           runtime_config=SimpleNamespace(service_port=8000), setup_config=None)
+    payload = {'process': SimpleNamespace(poll=lambda: None), 'service_port': 8000,
+               'local_log_file_path': str(log)}
+    monkeypatch.setattr(ServerCommand, '_launch_once', lambda self, spec: events.append('launch') or payload)
+    monkeypatch.setattr(commands, '_teardown_server', lambda spec, handle: events.append('teardown'))
+    response = MagicMock(); response.__enter__.return_value.status = 200
+    def health(*args, **kwargs):
+        events.append('health')
+        if healthy:
+            return response
+        raise urllib.error.URLError('not ready')
+    monkeypatch.setattr(urllib.request, 'urlopen', health)
+    now = [0.0]
+    monkeypatch.setattr('time.time', lambda: now[0])
+    def sleep(seconds):
+        events.append('wait')
+        now[0] += 5401
+    monkeypatch.setattr('time.sleep', sleep)
+    assert commands._readiness_timeout(model_spec) == 5400
+    result = ServerCommand(spec).execute()
+    if healthy:
+        assert result.return_code == 0 and events == ['launch', 'health']
+    else:
+        assert result.return_code == 1
+        assert events == ['launch', 'health', 'wait', 'teardown'] * attempts
+        assert f'after {attempts} attempt(s)' in result.error
+        assert 'after 5400s' in result.error
+
+
+def test_model_boot_attempt_policy_falls_back_to_host_default(monkeypatch):
+    import workflow_module.commands as commands
+    monkeypatch.delenv('TT_SERVER_BOOT_ATTEMPTS', raising=False)
+    assert commands._server_boot_attempts(SimpleNamespace(env_vars={})) == 2
+    monkeypatch.setenv('TT_SERVER_BOOT_ATTEMPTS', '3')
+    assert commands._server_boot_attempts(SimpleNamespace(env_vars={})) == 3
+    assert commands._server_boot_attempts(SimpleNamespace(env_vars={'TT_SERVER_BOOT_ATTEMPTS': '1'})) == 1
