@@ -138,6 +138,7 @@ def test_the_eval_requests_the_runs_subset(
             hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers", env_vars={}
         ),
         runtime_config=SimpleNamespace(limit_samples_mode=limit_samples_mode),
+        device=SimpleNamespace(name="BLACKHOLE_GALAXY"),
         base_url="http://x",
     )
     mod._run_video_generation_eval(ctx)

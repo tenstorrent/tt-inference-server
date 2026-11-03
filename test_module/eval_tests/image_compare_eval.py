@@ -14,20 +14,14 @@ section; the eval is graded by the compare gate
 Text-to-image cases are also scored on their benchmarks (``text_image_scores``)
 and compared with the GPU run's scores.
 
-Until tt-media-server serves the generation API, Qwen-Image-Edit is asked
-through today's ``/v1/images/edits``, which takes one input on a 1024 square:
-its cases with one input are sent already padded to that square, and compared
-with the GPU run made the same way (``refs/r1_square``). Set
-``IMAGE_EVAL_API=generation`` to use the generation API instead.
+Every model is asked through the generation API (``/v1/generations/{model}``).
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
-import os
 import statistics
 import subprocess
 import sys
@@ -45,9 +39,8 @@ from .._test_common import ReportCheckTypes, block_id
 from .._test_common.image_clients import (
     GenerationAPIClient,
     GenerationError,
-    LegacyEditsClient,
 )
-from .._test_common.image_eval_data import EVAL_DATA, eval_subset, letterbox, load_cases
+from .._test_common.image_eval_data import EVAL_DATA, eval_subset, load_cases
 from .._test_common.image_generation_api import ImageModel, model_for
 from ..context import MediaContext
 from .text_image_scores import score_text_images
@@ -63,9 +56,6 @@ GATE_CONFIG = (
     / "image_compare_gate.json"
 )
 COMPARE_TIMEOUT_SECONDS = 2 * 60 * 60
-API_ENV = "IMAGE_EVAL_API"
-# Models whose deployments still serve only today's API, and the client for it.
-LEGACY_CLIENTS = {"qwen/qwen-image-edit-2511": LegacyEditsClient}
 
 
 def eval_model(hf_model_repo: str) -> ImageModel | None:
@@ -77,11 +67,7 @@ def eval_model(hf_model_repo: str) -> ImageModel | None:
     return model if model.model_id in EVAL_DATA else None
 
 
-def make_client(model: ImageModel, base_url: str):
-    """Today's API for a model that only has that, unless ``IMAGE_EVAL_API=generation``."""
-    legacy = LEGACY_CLIENTS.get(model.model_id)
-    if legacy and os.environ.get(API_ENV, "").lower() != "generation":
-        return legacy(base_url, model)
+def make_client(model: ImageModel, base_url: str) -> GenerationAPIClient:
     return GenerationAPIClient(base_url, model)
 
 
@@ -90,7 +76,6 @@ async def generate_all(
 ) -> tuple[list[dict], list[dict]]:
     """Each case's image from the deployment, saved in ``out_dir``; the index and the failures."""
     import aiohttp
-    from PIL import Image
 
     out_dir.mkdir(parents=True, exist_ok=True)
     index, failures = [], []
@@ -103,16 +88,6 @@ async def generate_all(
                 "case_id": case["case_id"],
                 "file": f"{case['case_id']}.png",
             }
-            if isinstance(client, LegacyEditsClient):
-                # Sent already on the square, so TT and the GPU run get the same pixels.
-                with Image.open(io.BytesIO(inputs[0])) as image:
-                    square = letterbox(image)
-                buf = io.BytesIO()
-                square.save(buf, format="PNG")
-                inputs = [buf.getvalue()]
-                entry["source"] = f"inputs/{case['case_id']}.png"
-                (out_dir / "inputs").mkdir(exist_ok=True)
-                (out_dir / entry["source"]).write_bytes(inputs[0])
             started = time.monotonic()
             try:
                 image, sent = await client.generate(session, case, inputs)

@@ -296,6 +296,47 @@ templates:
       default_impl: true
   status: FUNCTIONAL
 
+# Qwen-Image-Edit-2511 through the generations API (TTQwenImageEdit2511Runner):
+# 1 to 3 input images, seven ratios at about 1 MP, 40 steps with true CFG 4.0.
+# Needs tt-metal's qwenimage pipeline with Edit-Plus support (branch
+# friedrich/console-bringup until it merges). Disk and RAM are estimates.
+- weights:
+    - Qwen/Qwen-Image-Edit-2511
+  impl: tt_transformers
+  min_disk_gb: 120
+  min_ram_gb: 96
+  model_type: IMAGE
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
+# Ideogram 4 through the generations API (TTIdeogram4Runner), from the fp8
+# checkpoint, dequantized to bf16 on the host. Needs tt-metal's ideogram4
+# pipeline (branch friedrich/console-bringup until it merges). Disk and RAM are
+# estimates: the fp8 checkpoint plus the bf16 cache the pipeline writes next to it.
+- weights:
+    - ideogram-ai/ideogram-4
+  impl: tt_transformers
+  min_disk_gb: 120
+  min_ram_gb: 96
+  model_type: IMAGE
+  inference_engine: MEDIA
+  hf_weights_repo: ideogram-ai/ideogram-4-fp8
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
   impl: tt_transformers

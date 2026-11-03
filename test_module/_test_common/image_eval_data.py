@@ -27,15 +27,12 @@ EVAL_DATA = {
     ),
     "qwen/qwen-image-edit-2511": (
         "Tenstorrent/qwen-image-edit-2511-refs",
-        "39d9c000c0e84200bd9da744ba5c1cb0695a44a2",
+        "fd051f2d8247aba386971e75509fac3e5deedc24",
     ),
 }
 SUBSETS = ("dev", "ci", "all")
 # A reference run's text-to-image scores (longtext_score.py, dpg_score.py).
 REFERENCE_SCORES = ("longtext.json", "dpg.json")
-# TT's Qwen-Image-Edit runner today (tt-metal tvardhineni/qwen-image-edit-2511-rc,
-# QwenImageEditPipeline.__call__): one input, padded to a square canvas.
-SQUARE_SIDE = 1024
 
 
 def eval_subset(limit_samples_mode: str | None) -> str:
@@ -95,14 +92,3 @@ def load_cases(
     # The reference run's text-to-image scores, where it has them.
     files |= {f"{reference}/{name}" for name in REFERENCE_SCORES}
     return snapshot(model_id, ["cases/*", *sorted(files)]), cases
-
-
-def letterbox(image, side: int = SQUARE_SIDE):
-    """The input as TT's Qwen-Image-Edit runner pads it: onto a ``side`` square,
-    aspect kept, filled with the color at (2, 2) (PIL ``ImageOps.pad``)."""
-    from PIL import ImageOps
-
-    pad_color = (
-        image.getpixel((2, 2)) if image.size[0] > 2 and image.size[1] > 2 else (0, 0, 0)
-    )
-    return ImageOps.pad(image.convert("RGB"), (side, side), color=pad_color)

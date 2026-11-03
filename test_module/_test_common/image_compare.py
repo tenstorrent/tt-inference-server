@@ -232,10 +232,8 @@ def compare_case(
     gpu_path: Path,
     data_dir: Path,
     scorers: dict,
-    source: Path | None = None,
 ) -> dict:
-    """TT's image against the GPU's. ``source`` is the input the model was given,
-    when it is not the case's own (e.g. letterboxed to a square)."""
+    """TT's image against the GPU's."""
     tt, gpu = load_rgb(tt_path), load_rgb(gpu_path)
     if tt.shape != gpu.shape:
         return {
@@ -255,7 +253,7 @@ def compare_case(
             "gpu": round(to_references(gpu, references), 4),
         }
     if len(images) == 1 and kind != "multi_ref":
-        given = load_rgb(source or data_dir / images[0])
+        given = load_rgb(data_dir / images[0])
         size = (tt.shape[1], tt.shape[0])
         if same_ratio((given.shape[1], given.shape[0]), size):
             result.update(edit_metrics(tt, gpu, resize(given, size)))
@@ -342,9 +340,8 @@ def compare(
             }
         else:
             try:
-                source = outputs_dir / entry["source"] if entry.get("source") else None
                 results[case_id] = compare_case(
-                    case, outputs_dir / entry["file"], gpu, data_dir, scorers, source
+                    case, outputs_dir / entry["file"], gpu, data_dir, scorers
                 )
                 results[case_id]["group"] = group_of(case)
             except Exception as e:  # noqa: BLE001 - one bad case does not stop the rest

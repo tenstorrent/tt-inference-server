@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import json
 from pathlib import Path
@@ -25,7 +24,6 @@ from test_module._test_common import image_compare as scorer  # noqa: E402
 from test_module._test_common import image_eval_data as data  # noqa: E402
 from test_module._test_common.image_clients import (  # noqa: E402
     GenerationAPIClient,
-    LegacyEditsClient,
 )
 from test_module._test_common.image_generation_api import MODELS  # noqa: E402
 from test_module.eval_tests import image_compare_eval as eval_  # noqa: E402
@@ -77,14 +75,6 @@ def test_select_cases_by_subset_and_input_count():
     ]
     with pytest.raises(ValueError):
         data.select_cases(manifest, "nightly")
-
-
-def test_letterbox_pads_onto_the_square_like_tt():
-    image = Image.fromarray(scene(200, 100))
-    square = data.letterbox(image)
-    assert square.size == (1024, 1024)
-    # Filled with the color at (2, 2), above and below the scaled image.
-    assert square.getpixel((512, 5)) == image.getpixel((2, 2))
 
 
 def test_identical_images_compare_as_identical():
@@ -164,44 +154,45 @@ def make_dataset(root: Path) -> list[dict]:
     return cases
 
 
-def gpu_square(root: Path, case: dict):
-    """The square GPU image for a case: its letterboxed input, edited."""
+def gpu_image(root: Path, case: dict):
+    """The GPU image for a case: its first input at the output size, edited."""
     with Image.open(root / case["images"][0]) as image:
-        square = np.asarray(data.letterbox(image))
-    return edited(square, box=(400, 600, 400, 600))
+        scaled = np.asarray(image.resize((case["width"], case["height"])))
+    return edited(scaled, box=(300, 500, 400, 700))
 
 
-def legacy_server(root: Path, cases: list[dict], fail: set[str] = frozenset()):
-    """Today's /v1/images/edits: answers with the GPU's own square image."""
-    by_prompt = {c["prompt"]: c for c in cases}
-    seen = []
+class DeploymentServer(FakeImageServer):
+    """The generation API, answering each case with the GPU's own image."""
 
-    async def edits(request):
-        body = await request.json()
-        seen.append(body)
-        case = by_prompt[body["prompt"]]
-        if case["case_id"] in fail:
-            return web.json_response({"detail": "worker died"}, status=500)
-        buf = io.BytesIO()
-        Image.fromarray(gpu_square(root, case)).save(buf, format="PNG")
-        return web.json_response(
-            {"images": [base64.b64encode(buf.getvalue()).decode()]}
-        )
+    def __init__(self, root: Path, cases: list[dict], fail: set[str] = frozenset()):
+        super().__init__(QWEN)
+        self.by_seed = {c["seed"]: c for c in cases}
+        self.root, self.fail = root, fail
 
-    return [web.post("/v1/images/edits", edits)], seen
+    def _finish(self, job: dict, status: str) -> None:
+        case = self.by_seed[job["_request"]["seed"]]
+        if status == "completed" and case["case_id"] in self.fail:
+            job["error"] = {"code": "internal", "message": "worker died"}
+            status = "failed"
+        super()._finish(job, status)
+        if status == "completed":
+            buf = io.BytesIO()
+            Image.fromarray(gpu_image(self.root, case)).save(buf, format="PNG")
+            job["_image"] = buf.getvalue()
 
 
 def run_eval(tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True):
     root = tmp_path / "data"
     cases = make_dataset(root)
     for case in cases:
-        if len(case["images"]) == 1:
-            save(
-                root / "refs" / "r1_square" / f"{case['case_id']}.png",
-                gpu_square(root, case),
-            )
+        save(root / "refs" / "r1" / f"{case['case_id']}.png", gpu_image(root, case))
     monkeypatch.setattr(
         eval_, "load_cases", lambda model_id, subset, reference: (root, cases)
+    )
+    monkeypatch.setattr(
+        eval_,
+        "make_client",
+        lambda model, base_url: GenerationAPIClient(base_url, model, poll_interval=0),
     )
     if compare_in_process:
 
@@ -215,15 +206,16 @@ def run_eval(tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True):
         "workflow_module.accept_blocks",
         lambda blocks, envelope=None: accepted.extend(blocks),
     )
-    routes, seen = legacy_server(root, cases, fail)
+    monkeypatch.delenv("API_KEY", raising=False)
+    server = DeploymentServer(root, cases, fail)
 
     async def body():
         app = web.Application(client_max_size=64 * 1024 * 1024)
-        app.add_routes(routes)
-        async with test_utils.TestServer(app) as server:
+        app.add_routes(server.routes())
+        async with test_utils.TestServer(app) as test_server:
             ctx = SimpleNamespace(
-                base_url=str(server.make_url("")).rstrip("/"),
-                device=SimpleNamespace(name="GALAXY"),
+                base_url=str(test_server.make_url("")).rstrip("/"),
+                device=SimpleNamespace(name="BLACKHOLE_GALAXY"),
                 output_path=str(tmp_path / "out"),
                 runtime_config=SimpleNamespace(limit_samples_mode="ci-nightly"),
                 model_spec=SimpleNamespace(hf_model_repo="Qwen/Qwen-Image-Edit-2511"),
@@ -235,31 +227,27 @@ def run_eval(tmp_path, monkeypatch, fail=frozenset(), compare_in_process=True):
     monkeypatch.setattr(eval_, "block_id", lambda ctx: "id")
     monkeypatch.setattr("test_module._test_common.sweep_envelope", lambda ctx: None)
     evals = asyncio.run(body())
-    return evals, accepted, seen
+    return evals, accepted, server.requests
 
 
-def test_the_eval_sends_todays_api_the_square_and_compares_with_the_square_gpu_run(
-    tmp_path, monkeypatch
-):
+def test_the_eval_sends_each_cases_inputs_and_compares_with_r1(tmp_path, monkeypatch):
     pytest.importorskip("skimage")
     evals, [section], seen = run_eval(tmp_path, monkeypatch)
-    # One request per single-input case: PNG, the reference's sampling, the square input.
-    assert len(seen) == 2
-    assert {
-        (b["image_return_format"], b["num_inference_steps"], b["guidance_scale"])
-        for b in seen
-    } == {("PNG", 40, 4.0)}
-    with Image.open(io.BytesIO(base64.b64decode(seen[0]["image"]))) as sent:
-        assert sent.size == (1024, 1024)
+    # One job per case, the multi-reference case included, as the API takes it.
+    assert len(seen) == 3
+    assert [len(b["images"]) for b in seen] == [1, 1, 2]
+    assert all(b["images"][0].startswith("data:image/png;base64,") for b in seen)
+    assert {(b["aspect_ratio"], b["format"]) for b in seen} == {("16:9", "png")}
+    assert [b["seed"] for b in seen] == [10, 11, 12]
     d = section.data
     assert (d["api"], d["reference"], d["subset"]) == (
-        "legacy_edits",
-        "refs/r1_square",
+        "generation_api",
+        "refs/r1",
         "ci",
     )
-    assert d["num_generated"] == 2 and d["not_served"] == ["case2"]
+    assert d["num_generated"] == 3 and d["not_served"] == []
     assert d["groups"]["edit"]["psnr"] == 100.0
-    # TT changed its (square) input exactly where the GPU did.
+    # TT changed its input exactly where the GPU did.
     assert d["groups"]["edit"]["change_iou"] == 1.0
     # Nothing calibrated: reported, not gated.
     assert d["gate"]["verdict"] == "NA"
@@ -357,17 +345,9 @@ def test_the_generation_api_client_gets_the_cases_png(monkeypatch):
     assert not server.jobs
 
 
-def test_only_a_model_with_eval_data_is_compared(monkeypatch):
+def test_only_a_model_with_eval_data_is_compared():
     assert eval_.eval_model("Qwen/Qwen-Image-Edit-2511") is QWEN
     assert eval_.eval_model("stabilityai/stable-diffusion-xl-base-1.0") is None
-    monkeypatch.delenv(eval_.API_ENV, raising=False)
-    assert isinstance(eval_.make_client(QWEN, "http://x"), LegacyEditsClient)
-    monkeypatch.setenv(eval_.API_ENV, "generation")
-    assert isinstance(eval_.make_client(QWEN, "http://x"), GenerationAPIClient)
-    assert isinstance(
-        eval_.make_client(MODELS["black-forest-labs/flux.2-klein-4b"], "http://x"),
-        GenerationAPIClient,
-    )
 
 
 def test_the_section_renders_groups_and_notes():
@@ -375,9 +355,9 @@ def test_the_section_renders_groups_and_notes():
         kind="image_compare",
         title="t",
         data={
-            "heading": "qwen/qwen-image-edit-2511 on GALAXY",
-            "api": "legacy_edits",
-            "reference": "refs/r1_square",
+            "heading": "qwen/qwen-image-edit-2511 on BLACKHOLE_GALAXY",
+            "api": "generation_api",
+            "reference": "refs/r1",
             "subset": "ci",
             "num_cases": 3,
             "num_generated": 2,
@@ -400,7 +380,7 @@ def test_the_section_renders_groups_and_notes():
     )
     rendered = render_image_compare(block, {})
     assert (
-        "2 of 3 ci cases made through legacy_edits, against the GPU run refs/r1_square"
+        "2 of 3 ci cases made through generation_api, against the GPU run refs/r1"
         in rendered
     )
     assert "nothing calibrated yet" in rendered

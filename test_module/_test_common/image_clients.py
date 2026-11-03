@@ -6,19 +6,13 @@
 
 - ``GenerationAPIClient``: the generation API's design (``image_generation_api``):
   submit to ``/v1/generations/{model}``, poll ``/v1/jobs``, download the PNG.
-- ``LegacyEditsClient``: what Qwen-Image-Edit serves today, ``POST
-  /v1/images/edits``, which answers with the image. It takes one input, pads it
-  onto a 1024 square and renders that square, so its cases compare against the
-  GPU run made the same way (``refs/r1_square``); it is asked for the
-  reference's steps and CFG so only the padding differs from R1's request.
 
-Both return the image's bytes and what they sent, minus the image data.
+It returns the image's bytes and what it sent, minus the image data.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import time
 from typing import Any
@@ -34,8 +28,6 @@ from .generation_api import (
     data_uri,
 )
 from .image_generation_api import ImageModel
-
-LEGACY_EDITS_PATH = "/v1/images/edits"
 
 
 class GenerationError(RuntimeError):
@@ -137,56 +129,5 @@ class GenerationAPIClient:
         return image, {
             "api": self.name,
             "job_id": job_id,
-            "request": _strip_images(request),
-        }
-
-
-class LegacyEditsClient:
-    """Qwen-Image-Edit's ``/v1/images/edits`` today: one input on a 1024 square, PNG."""
-
-    name = "legacy_edits"
-    max_images = 1
-    reference = "refs/r1_square"
-    # The GPU reference's sampling (the model card's).
-    steps = 40
-    true_cfg_scale = 4.0
-    negative_prompt = " "
-
-    def __init__(self, base_url: str, model: ImageModel, request_timeout: float = 900):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.request_timeout = request_timeout
-
-    def request(self, case: dict, inputs: list[bytes]) -> dict:
-        return {
-            "prompt": case["prompt"],
-            "image": base64.b64encode(inputs[0]).decode("ascii"),
-            "negative_prompt": self.negative_prompt,
-            "num_inference_steps": self.steps,
-            "guidance_scale": self.true_cfg_scale,
-            "seed": case["seed"],
-            "image_return_format": "PNG",
-        }
-
-    async def generate(
-        self, session: aiohttp.ClientSession, case: dict, inputs: list[bytes]
-    ) -> tuple[bytes, dict]:
-        request = self.request(case, inputs)
-        timeout = aiohttp.ClientTimeout(total=self.request_timeout)
-        async with session.post(
-            f"{self.base_url}{LEGACY_EDITS_PATH}",
-            json=request,
-            headers=auth_headers(),
-            timeout=timeout,
-        ) as response:
-            body = await response.text()
-            if response.status != 200:
-                raise GenerationError(f"edit returned {response.status}: {body[:300]}")
-        images = json.loads(body).get("images") or []
-        if not images:
-            raise GenerationError("edit returned no image")
-        encoded = images[0].split(",", 1)[-1]
-        return base64.b64decode(encoded + "=" * (-len(encoded) % 4)), {
-            "api": self.name,
             "request": _strip_images(request),
         }

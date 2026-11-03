@@ -105,6 +105,8 @@ def _load_fixture_image_base64() -> str:
 def fixture_image_data_uri(image_b64: str | None = None) -> str:
     """The (JPEG) fixture image as a data URI, the generations API's media form."""
     return "data:image/jpeg;base64," + (image_b64 or _load_fixture_image_base64())
+
+
 def i2v_eval_subset(limit_samples_mode: str | None) -> str:
     """The I2V eval's subset for the run's ``--limit-samples-mode``.
 
