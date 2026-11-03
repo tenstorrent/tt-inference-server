@@ -8196,8 +8196,11 @@
                     "not measured numbers: TTFT <= ISL / 600 s (prefill >= 600 tok/s), >= 40 tok/s per",
                     "user, so aggregate >= 40 x concurrency. 100K / 140K need a 147,456-position cache",
                     "depth (validated at 65,536); they move to the quad if the galaxy ring cannot hold it.",
-                    "Run with ONLY_BENCHMARK_TARGETS=1 to skip the default ISL/OSL sweep and run only these."
+                    "Run with ONLY_BENCHMARK_TARGETS=1 to skip the default ISL/OSL sweep and run only these.",
+                    "Scoped to impl blaze: an entry without an impl key applies to every impl of the",
+                    "checkpoint (get_perf_reference_map), and the tt_lab_dsv41 row has its own entries below."
                 ],
+                "impl": "blaze",
                 "isl": 10000,
                 "osl": 1024,
                 "max_concurrency": 1,
@@ -8216,6 +8219,7 @@
                 }
             },
             {
+                "impl": "blaze",
                 "isl": 10000,
                 "osl": 1024,
                 "max_concurrency": 3,
@@ -8234,6 +8238,7 @@
                 }
             },
             {
+                "impl": "blaze",
                 "isl": 100000,
                 "osl": 1024,
                 "max_concurrency": 1,
@@ -8252,6 +8257,7 @@
                 }
             },
             {
+                "impl": "blaze",
                 "isl": 100000,
                 "osl": 1024,
                 "max_concurrency": 3,
@@ -8270,6 +8276,7 @@
                 }
             },
             {
+                "impl": "blaze",
                 "isl": 140000,
                 "osl": 1024,
                 "max_concurrency": 1,
@@ -8288,6 +8295,7 @@
                 }
             },
             {
+                "impl": "blaze",
                 "isl": 140000,
                 "osl": 1024,
                 "max_concurrency": 3,
@@ -8302,6 +8310,138 @@
                         "ttft_ms": 233333.3,
                         "tput_user": 40.0,
                         "tput": 120.0
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "SUPER_CLUSTER (remote tt-lab endpoint, impl tt_lab_dsv41): disaggregated prefill v3 (SC16 .14)",
+                    "+ dsv41-serve decode (SC16 .16) on two Blackhole Galaxies in iad, 4 users, 262,144 context.",
+                    "MEASURED (AgentX agentic traces, ISL mean ~91K, 4 users): 175 output tok/s total, ~125 tok/s",
+                    "per user while generating, TTFT p50 1.1 s. That TTFT is incremental: a resent conversation",
+                    "prefills only its new turn, so it does not transfer to the cold random prompts below.",
+                    "Nothing at these ISL/OSL points has been measured; every number below is a TARGET under",
+                    "'theoretical' (the key the loader turns into functional 10% / complete 50% / target 100%),",
+                    "not a measurement, so no 'measured' block is set. Derivation (conservative):",
+                    "tput_user 60 = about half the measured ~125 tok/s per user, for deeper KV (up to 140K) and",
+                    "no prefix reuse. TTFT assumes a cold prefill of at least 600 tok/s (the blaze row's floor;",
+                    "our cold prefill rate at these ISLs is not measured) and one prefill Galaxy serving the",
+                    "c prompts of a wave in turn: mean TTFT = ISL/600 x (c+1)/2. tput (vLLM output_throughput,",
+                    "which counts prefill time) = c x 1024 / (c x ISL/600 + 1024/60). The measured 175 tok/s",
+                    "total on AgentX bounds the c=4 tput from above. Same ISL/OSL points as the blaze entries;",
+                    "num_prompts 4 at concurrency 1, 2 waves of 4 at concurrency 4. Replace with a measured",
+                    "block once a run on this endpoint exists. ONLY_BENCHMARK_TARGETS=1 runs only these."
+                ],
+                "impl": "tt_lab_dsv41",
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16666.7,
+                        "tput_user": 60.0,
+                        "tput": 30.4
+                    }
+                }
+            },
+            {
+                "impl": "tt_lab_dsv41",
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 4,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 41666.7,
+                        "tput_user": 60.0,
+                        "tput": 48.9
+                    }
+                }
+            },
+            {
+                "impl": "tt_lab_dsv41",
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166666.7,
+                        "tput_user": 60.0,
+                        "tput": 5.6
+                    }
+                }
+            },
+            {
+                "impl": "tt_lab_dsv41",
+                "isl": 100000,
+                "osl": 1024,
+                "max_concurrency": 4,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 416666.7,
+                        "tput_user": 60.0,
+                        "tput": 6.0
+                    }
+                }
+            },
+            {
+                "impl": "tt_lab_dsv41",
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 233333.3,
+                        "tput_user": 60.0,
+                        "tput": 4.1
+                    }
+                }
+            },
+            {
+                "impl": "tt_lab_dsv41",
+                "isl": 140000,
+                "osl": 1024,
+                "max_concurrency": 4,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 583333.3,
+                        "tput_user": 60.0,
+                        "tput": 4.3
                     }
                 }
             }

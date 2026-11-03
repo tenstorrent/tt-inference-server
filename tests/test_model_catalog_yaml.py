@@ -453,10 +453,51 @@ def test_super_cluster_dev_llm_templates_use_blaze_impl():
     ]
     assert super_cluster, "expected SUPER_CLUSTER templates in dev/llm.yaml"
     for template in super_cluster:
+        if template.impl.impl_id in _SUPER_CLUSTER_SECOND_IMPLS:
+            # A second remote endpoint of a checkpoint whose blaze row stays the
+            # default: it must never be picked without an explicit --impl.
+            assert not any(d.default_impl for d in template.device_model_specs), (
+                f"{template.weights} {template.impl.impl_id} must not be the default impl"
+            )
+            continue
         assert template.impl is blaze_impl, (
             f"{template.weights} on SUPER_CLUSTER must use impl blaze, "
             f"got {template.impl.impl_id}"
         )
+
+
+# Non-blaze impls allowed on SUPER_CLUSTER next to a default blaze row of the
+# same weights: tt-lab dsv41-serve (two Blackhole Galaxies) for
+# DeepSeek-V4.1-Flash-1017, a qualification row reusing the blaze EvalConfig.
+_SUPER_CLUSTER_SECOND_IMPLS = frozenset({"tt_lab_dsv41"})
+
+
+def test_tt_lab_dsv41_super_cluster_row_sits_beside_a_default_blaze_row():
+    specs = get_model_spec_map(
+        load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    )
+    rows = {
+        s.impl.impl_id: s
+        for s in specs.values()
+        if s.hf_model_repo == "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+        and s.device_type == DeviceTypes.SUPER_CLUSTER
+    }
+    assert set(rows) == {"blaze", "tt_lab_dsv41"}
+    assert rows["blaze"].device_model_spec.default_impl
+    ours = rows["tt_lab_dsv41"]
+    assert not ours.device_model_spec.default_impl
+    assert ours.inference_engine == InferenceEngine.MEDIA.value
+    assert ours.device_model_spec.max_concurrency == 4
+    assert ours.device_model_spec.max_context == 262144
+    assert ours.metadata == rows["blaze"].metadata
+    # Perf entries are impl-scoped: each row sees only its own six.
+    for impl_id, row in rows.items():
+        ref = row.device_model_spec.perf_reference
+        assert len(ref) == 6, impl_id
+    assert {
+        p.max_concurrency for p in rows["blaze"].device_model_spec.perf_reference
+    } == {1, 3}
+    assert {p.max_concurrency for p in ours.device_model_spec.perf_reference} == {1, 4}
 
 
 def test_llama_qb2_catalog_preserves_default_and_shared_pool():

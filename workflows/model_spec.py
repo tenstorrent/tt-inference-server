@@ -470,6 +470,14 @@ blaze_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/cpp_server",
 )
+# tt-lab's standalone DeepSeek-V4.1-Flash engine (not TT-NN): `tt-lab dsv41-serve`, its own OpenAI
+# server. Only remote SUPER_CLUSTER rows use it today (evaluated via --server-url), so no launcher.
+tt_lab_dsv41_impl = ImplSpec(
+    impl_id="tt_lab_dsv41",
+    impl_name="tt-lab-dsv41",
+    repo_url="https://github.com/tenstorrent/tt-lab",
+    code_path="src/dsv41_serve.cpp",
+)
 
 # IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
 # models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
@@ -508,6 +516,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
+    "tt_lab_dsv41": tt_lab_dsv41_impl,
 }
 
 

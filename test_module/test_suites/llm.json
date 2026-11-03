@@ -326,6 +326,10 @@
       "devices": [
         "super_cluster"
       ],
+      "_impls_note": "Scoped to the blaze row: without impls a matrix applies to every impl of the weights, and the tt_lab_dsv41 row has its own matrix below.",
+      "impls": [
+        "blaze"
+      ],
       "test_cases": [
         {
           "template": "ToolCallSchemaConformanceTest",
@@ -349,6 +353,49 @@
             "tool_choice": "required",
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "deepseek_v41_flash_1017"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "impls": [
+        "tt_lab_dsv41"
+      ],
+      "_comment": "tt-lab dsv41-serve (disaggregated prefill v3 + decode, two Blackhole Galaxies, 4 users). Both runs are non-blocking until a baseline exists on this endpoint. Thinking is off on every request (think_mode opensource sends chat_template_kwargs.thinking=false, the switch dsv41-serve reads): it forces a tool call for tool_choice required only with thinking off and answers HTTP 400 otherwise. workers 4 = the server's users. non_strict as for the blaze row (dsv41-serve does no guided decoding and ignores strict).",
+      "_comment_unsupported": "Not enrolled in VLLMParamConformanceTest: dsv41-serve samples on device over the whole vocabulary and refuses (HTTP 400) logprobs / top_logprobs / prompt_logprobs, n > 1, top_p < 1, top_k, response_format, logit_bias, and on /v1/completions echo, best_of > 1 and suffix, so those checks would fail by design; TIS has no per-parameter not-supported switch for that suite. It accepts but silently ignores frequency_penalty / presence_penalty (and repetition_penalty), so a penalty check would pass or fail by chance.",
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto, thinking off, non-blocking",
+          "_comment_threshold": "No pass_rate_threshold yet: non-blocking until a baseline run on this endpoint exists; then set a threshold and drop non_blocking.",
+          "test_config": {
+            "workers": 4,
+            "non_strict": true,
+            "think_mode": "opensource",
+            "tool_choice": "auto",
+            "non_blocking": true,
+            "non_blocking_reason": "no baseline yet for tt-lab dsv41-serve: reported, never blocking"
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, thinking off, non-blocking",
+          "_comment": "dsv41-serve forces the tool-call start for tool_choice required only with thinking off; the arguments themselves are not guided.",
+          "test_config": {
+            "workers": 4,
+            "non_strict": true,
+            "think_mode": "opensource",
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "no baseline yet for tt-lab dsv41-serve: reported, never blocking"
           }
         }
       ]

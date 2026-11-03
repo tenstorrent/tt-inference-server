@@ -3304,6 +3304,42 @@ templates:
       # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
+# Remote-served model, a second impl of the same checkpoint for qualification:
+# evaluated against an external OpenAI-compatible endpoint via `--server-url`;
+# the device entry is a placeholder, no local TT serving is implied. It reuses
+# the blaze row's EvalConfig (one EvalConfig per hf_model_repo) and stays
+# non-default, so `--impl tt_lab_dsv41` must be passed to select it.
+# The endpoint is tt-lab's disaggregated DeepSeek-V4.1-Flash on two Blackhole
+# Galaxies in iad: prefill v3 (SC16 .14, tt-lab-private origin/dsv41-prefill-v3)
+# hands off to dsv41-serve decode (SC16 .16, origin/dsv41-galaxy), 4 users,
+# 262,144-position context. Exposed for Shield at
+# https://dsv41-flash-iad-eval.n.cloud.tenstorrent.com (tt-flux branch
+# dsv41-flash-iad-ngrok); the server requires a bearer key on every request.
+# dsv41-serve samples on device over the whole vocabulary and answers HTTP 400
+# to: logprobs / top_logprobs / prompt_logprobs, n > 1, top_p < 1, top_k,
+# response_format, logit_bias, and on /v1/completions echo, best_of > 1 and
+# suffix. It silently ignores frequency_penalty / presence_penalty. tool_choice
+# required (or a named function) needs thinking off.
+- weights:
+    - deepseek-ai/DeepSeek-V4.1-Flash-1017
+  impl: tt_lab_dsv41
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 4
+      max_context: 262144  # 256 * 1024
+      default_impl: false
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    deepseek-ai/DeepSeek-V4.1-Flash-1017:
+      remote_api_model: deepseek-ai/DeepSeek-V4.1-Flash-1017
+      # Same client-side keys as the blaze row so the remote client behaves the same.
+      reasoning_parser_name: deepseek_v41
+      tool_call_parser_name: deepseek_v41
+      tokenizer_trust_remote_code: true
+
 - weights:
     - MiniMaxAI/MiniMax-M3
   impl: blaze
