@@ -83,13 +83,34 @@ def runtime_identity(checkpoint,output_path,runner=subprocess.run):
         return runner(cmd,capture_output=True,text=True,check=True,timeout=30).stdout.strip()
     observed={'host_tis_sha':call(['git','-C',str(ROOT),'rev-parse','HEAD']),
               'image_digest':checkpoint['image_id']}
+    unknown={}
     for name in ('metal','plugin'):
         path=c.get('runtime_repo_paths',{}).get(name)
-        if not path or not path.startswith('/') or '..' in Path(path).parts:raise ValueError('Missing actual runtime checkout path')
-        observed[name+'_sha']=call(['docker','exec',cid,'git','-C',path,'rev-parse','HEAD'])
-        if len(observed[name+'_sha'])!=40:raise ValueError('Runtime commit unavailable; explicit source-equivalence proof needed')
+        observed[name+'_sha']=None
+        if path and path.startswith('/') and '..' not in Path(path).parts:
+            try:
+                value=call(['docker','exec',cid,'git','-C',path,'rev-parse','HEAD'])
+                if len(value)==40 and all(x in '0123456789abcdef' for x in value):observed[name+'_sha']=value
+            except (subprocess.CalledProcessError,subprocess.TimeoutExpired):pass
+        if observed[name+'_sha'] is None:
+            unknown[name+'_sha']='Installed runtime checkout Git identity unavailable; immutable image and owned full64 generator/policy/checkpoint receipt are the identity basis, not dispatch refs.'
+    precision=checkpoint.get('precision',{})
+    if (checkpoint.get('ok') is not True or precision.get('ok') is not True
+            or precision.get('layer_count')!=64 or not precision.get('policy_sha256')
+            or not precision.get('engine_pid') or not precision.get('marker_epoch')
+            or not checkpoint.get('manifest_sha256') or not checkpoint.get('serving_processes')):
+        raise ValueError('Owned full64 generator/policy/checkpoint identity incomplete')
+    identity_evidence={'kind':'owned_image_full64_policy_checkpoint',
+        'container_id':cid,'image_id':checkpoint['image_id'],
+        'checkpoint_manifest_sha256':checkpoint['manifest_sha256'],
+        'generator_full64_marker':precision,'serving_processes':checkpoint['serving_processes'],
+        'checkpoint_receipt_sha256':hashlib.sha256(json.dumps(checkpoint,sort_keys=True).encode()).hexdigest(),
+        'observed_checkout_paths':c.get('runtime_repo_paths',{}),'missing_reasons':unknown,
+        'scope':'Actual owned server current generator marker/checkpoint/image. Git HEADs when available are observations, not claims of imported package equality.'}
     pre=json.loads(Path(os.environ['TT_QWEN38_PREFLIGHT_JSON']).read_text())
     expected=pre['runtime_sources']
+    if not expected.get('image_digest'):
+        raise ValueError('Coordinator must approve exact immutable image identity')
     approved=pre.get('host_source_files')
     if not approved or source_files()!=approved:
         raise ValueError('Actual host code tree differs from independently approved source files')
@@ -97,14 +118,16 @@ def runtime_identity(checkpoint,output_path,runner=subprocess.run):
     if pre.get('selected_controls_sha256')!=hashlib.sha256(control_path.read_bytes()).hexdigest():
         raise ValueError('Selected controls differ from coordinator approval')
     for key,value in observed.items():
-        if key!='host_tis_sha' and expected.get(key)!=value:
+        if key!='host_tis_sha' and expected.get(key) is not None and expected.get(key)!=value:
             raise ValueError('Actual runtime identity differs from coordinator receipt: '+key)
     receipt={'observed':observed,'container_id':cid,'checkpoint_ok':checkpoint['ok'],
-             'basis':'Host checkout git HEAD; immutable owned server Docker image ID and actual container checkout git HEADs. No dispatch-ref substitution.'}
+             'basis':'Observed host HEAD/code map and immutable owned full64 generator/policy/checkpoint/image; optional actual checkout HEADs. No dispatch-ref substitution.',
+             'identity_evidence':identity_evidence}
     # Preserve coordinator checks; only fill identities from actual observations.
     # The approval binds a code-file manifest, avoiding a self-referential commit.
     derived={**pre,'runtime_sources':{**expected,**observed},
-             'runtime_identity_receipt':'original-runtime-identity.json'}
+             'runtime_identity_receipt':'original-runtime-identity.json',
+             'observed_runtime_identity':identity_evidence}
     derived_path=Path(output_path)/'original-observed-preflight.json'
     derived_path.write_text(json.dumps(derived,indent=2)+'\n')
     os.environ['TT_QWEN38_PREFLIGHT_JSON']=str(derived_path)

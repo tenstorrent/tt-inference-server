@@ -38,7 +38,21 @@ def verify_receipts(intent, eval_name, source_manifest_sha256, controls, environ
         if preflight.get(check, {}).get('ok') is not True:
             raise ValueError('Preflight not passed: ' + check)
     identity = preflight.get('runtime_sources', {})
-    if not all(identity.get(k) for k in ('host_tis_sha', 'metal_sha', 'plugin_sha', 'image_digest')):
+    original = controls.get('selected_protocol') == 'original-stage11-cutoff-repair'
+    if original:
+        observed=preflight.get('observed_runtime_identity',{})
+        marker=observed.get('generator_full64_marker',{})
+        if (not identity.get('host_tis_sha') or not identity.get('image_digest')
+                or observed.get('kind')!='owned_image_full64_policy_checkpoint'
+                or observed.get('image_id')!=identity['image_digest']
+                or marker.get('ok') is not True or marker.get('layer_count')!=64
+                or not marker.get('policy_sha256') or not observed.get('checkpoint_receipt_sha256')
+                or not observed.get('checkpoint_manifest_sha256') or not observed.get('serving_processes')):
+            raise ValueError('Original repair needs observed image/full64/policy/checkpoint identity')
+        for key in ('metal_sha','plugin_sha'):
+            if identity.get(key) is None and not observed.get('missing_reasons',{}).get(key):
+                raise ValueError('Unknown runtime SHA needs concrete missing reason')
+    elif not all(identity.get(k) for k in ('host_tis_sha', 'metal_sha', 'plugin_sha', 'image_digest')):
         raise ValueError('Preflight must record host TIS, metal, plugin and image identity')
     if identity.get('reused_image') and not identity.get('equivalence_evidence'):
         raise ValueError('Reused image requires source equivalence evidence')

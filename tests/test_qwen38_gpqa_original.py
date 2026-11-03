@@ -86,13 +86,15 @@ def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,m
         seen.append(cmd)
         result=observed['host_tis_sha'] if cmd[0]=='git' else observed['metal_sha' if '/actual/metal' in cmd else 'plugin_sha']
         return NS(stdout=result)
-    receipt=a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
+    checkpoint={'container_id':'a'*64,'image_id':'sha256:actual','ok':True,'manifest_sha256':'checkpoint-hash',
+        'serving_processes':[{'pid':123}], 'precision':{'ok':True,'layer_count':64,'policy_sha256':'policy-hash','engine_pid':123,'marker_epoch':1}}
+    receipt=a.runtime_identity(checkpoint,tmp_path,run)
     assert receipt['observed']==observed
     assert all(cmd[2]=='a'*64 for cmd in seen if cmd[0]=='docker')
     assert json.loads((tmp_path/'original-observed-preflight.json').read_text())['runtime_sources']['host_tis_sha']==observed['host_tis_sha']
     monkeypatch.setenv('TT_QWEN38_PREFLIGHT_JSON',str(p))
     p.write_text(json.dumps({**pre,'runtime_sources':dict(observed,metal_sha='dispatch-wish-ref')}))
-    with pytest.raises(ValueError,match='Actual runtime'):a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
+    with pytest.raises(ValueError,match='Actual runtime'):a.runtime_identity(checkpoint,tmp_path,run)
 
 def test_approved_source_manifest_detects_edits_and_added_tracked_code(tmp_path):
     from workflows.qwen38_original_admission import source_files
@@ -103,3 +105,20 @@ def test_approved_source_manifest_detects_edits_and_added_tracked_code(tmp_path)
     assert source_files(tmp_path,ls)!=first
     (tmp_path/'two.py').write_text('new\n')
     assert source_files(tmp_path,lambda *a,**kw:NS(stdout=b'one.py\0two.py\0')).keys()!=first.keys()
+
+
+def test_original_identity_accepts_explicit_unknown_git_with_actual_image_evidence(tmp_path):
+    from llm_module.qwen38_eval_receipts import verify_receipts
+    c={'selected_protocol':'original-stage11-cutoff-repair','preflight_json':str(tmp_path/'pre.json')}
+    pre={'model':'Qwen/Qwen3.8-27B','source_manifest_sha256':'manifest',
+         **{k:{'ok':True} for k in ('release_values','registry','disk','release_route','isolation_smoke')},
+         'runtime_sources':{'host_tis_sha':'actual-host','metal_sha':None,'plugin_sha':None,'image_digest':'actual-image'},
+         'observed_runtime_identity':{'kind':'owned_image_full64_policy_checkpoint','image_id':'actual-image',
+         'generator_full64_marker':{'ok':True,'layer_count':64,'policy_sha256':'policy'},
+         'checkpoint_receipt_sha256':'receipt','checkpoint_manifest_sha256':'manifest',
+         'serving_processes':[{'pid':123}], 'missing_reasons':{'metal_sha':'image has no Git metadata','plugin_sha':'image has no Git metadata'}}}
+    Path(c['preflight_json']).write_text(json.dumps(pre))
+    assert verify_receipts('paired_confirmation','gpqa_diamond_cot_zeroshot','manifest',c,{})['runtime_sources']['metal_sha'] is None
+    del pre['observed_runtime_identity']['missing_reasons']['metal_sha']
+    Path(c['preflight_json']).write_text(json.dumps(pre))
+    with pytest.raises(ValueError,match='missing reason'):verify_receipts('paired_confirmation','gpqa_diamond_cot_zeroshot','manifest',c,{})
