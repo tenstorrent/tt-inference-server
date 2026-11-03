@@ -650,10 +650,21 @@ DSV41_FLASH_1017_REASONING_EFFORT = "max"
 DSV41_FLASH_1017_REQUEST_TIMEOUT_S = 2 * 60 * 60
 
 
+def _dsv41_ring_env_override(name: str, default: Any) -> Any:
+    """``DSV41_RING_<NAME>`` from the environment, or *default*: an eval sweep
+    (reasoning effort, reply cap, context) without a config edit per point.
+    Digits become an int, anything else stays a string."""
+    value = os.environ.get(f"DSV41_RING_{name}")
+    if value is None or value == "":
+        return default
+    return int(value) if value.isdigit() else value
+
+
 def _dsv41_flash_1017_ring_gen_kwargs() -> Dict[str, Any]:
     """Sampling of the 1017 model card (temperature 1.0, top_p 1.0) at max
     reasoning effort, inside the ring's generation budget. Returns a fresh dict
-    so no two tasks share one."""
+    so no two tasks share one. DSV41_RING_MAX_GEN_TOKS and
+    DSV41_RING_REASONING_EFFORT override the budget and the effort."""
     return {
         # Chat API streaming as the Kimi-K3 tasks use it: long generations
         # stay alive through proxies instead of idling for 20+ min.
@@ -661,18 +672,18 @@ def _dsv41_flash_1017_ring_gen_kwargs() -> Dict[str, Any]:
         "do_sample": "true",
         "temperature": 1.0,
         "top_p": 1.0,
-        "max_gen_toks": DSV41_FLASH_1017_RING_MAX_GEN_TOKS,
+        "max_gen_toks": _dsv41_ring_env_override("MAX_GEN_TOKS", DSV41_FLASH_1017_RING_MAX_GEN_TOKS),
         # The server stops at its own EOS; no client-side stop strings.
         # Dynamo 1.6 rejects an empty stop list ("Stop sequences array cannot be empty", HTTP 400 on every
         # request: AIME and IFEval on 2026-11-02); the checkpoint's EOS string is a harmless stop, as K3's "[EOS]".
         "until": ["<｜end▁of▁sentence｜>"],
-        "reasoning_effort": DSV41_FLASH_1017_REASONING_EFFORT,
+        "reasoning_effort": _dsv41_ring_env_override("REASONING_EFFORT", DSV41_FLASH_1017_REASONING_EFFORT),
     }
 
 
 def _dsv41_flash_1017_ring_model_kwargs() -> Dict[str, Any]:
     return {
-        "max_length": DSV41_FLASH_1017_RING_MAX_CONTEXT,
+        "max_length": _dsv41_ring_env_override("MAX_CONTEXT", DSV41_FLASH_1017_RING_MAX_CONTEXT),
         "timeout": DSV41_FLASH_1017_REQUEST_TIMEOUT_S,
     }
 
