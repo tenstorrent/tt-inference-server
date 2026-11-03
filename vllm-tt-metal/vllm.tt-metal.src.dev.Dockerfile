@@ -264,10 +264,15 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Fix venv symlinks after copy and install additional app requirements
+# Fix venv symlinks after copy and install additional app requirements.
+# The venv loads its stdlib from pyvenv.cfg's home, so python3 must be that
+# interpreter: on 24.04 it is uv's Python, whose stdlib lacks the C modules
+# that /usr/bin/python3 expects to find there.
 RUN cd ${PYTHON_ENV_DIR}/bin \
+    && python_home=$(sed -n 's/^home = //p' ${PYTHON_ENV_DIR}/pyvenv.cfg) \
+    && test -x "${python_home}/python3" \
     && rm -f python python3 \
-    && ln -s /usr/bin/python3 python3 \
+    && ln -s "${python_home}/python3" python3 \
     && ln -s python3 python \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
