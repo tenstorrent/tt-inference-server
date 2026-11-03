@@ -2007,5 +2007,7 @@ class TTMiniMaxH3FL2VAHyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3FL2VA
     """MiniMax-H3 ``fl2va`` with the HyperFlow 8-step adapter."""
 
 
-class TTMiniMaxH3Ref2VAHyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3Ref2VARunner):
+class TTMiniMaxH3Ref2VAHyperFlowRunner(
+    _MiniMaxH3HyperFlowMixin, TTMiniMaxH3Ref2VARunner
+):
     """MiniMax-H3 ``ref2va`` with the HyperFlow 8-step adapter."""
