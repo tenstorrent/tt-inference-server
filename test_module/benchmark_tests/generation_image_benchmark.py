@@ -200,12 +200,18 @@ def _run_config(
     return {"record": record, "checks": checks}
 
 
+def _benchmark_runner(runner: str) -> str:
+    """The TT runner whose benchmarks ``runner`` takes: a GPU stand-in
+    (``gpu-<model>``, tt_model_runners/gpu_generation_runners.py) takes its TT runner's."""
+    return "tt-" + runner.removeprefix("gpu-") if runner.startswith("gpu-") else runner
+
+
 def run_generation_image_benchmark(ctx: MediaContext, runner: str) -> Block:
     """Every configuration of ``runner``'s model, each against its own targets, in one block."""
     model = model_for(ctx.model_spec.hf_model_repo)
     num_calls = get_num_calls(ctx)
     records, target_checks = [], {}
-    for config in BENCHMARKS[runner]:
+    for config in BENCHMARKS[_benchmark_runner(runner)]:
         result = _run_config(ctx, config, num_calls, model.submit_path)
         records.append(result["record"])
         for tier, fields in result["checks"].items():
@@ -235,7 +241,7 @@ def run_generation_image_benchmark(ctx: MediaContext, runner: str) -> Block:
 
 
 def serves_generation_benchmark(runner: str) -> bool:
-    return runner in BENCHMARKS
+    return _benchmark_runner(runner) in BENCHMARKS
 
 
 __all__ = [
