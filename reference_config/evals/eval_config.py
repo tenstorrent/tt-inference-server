@@ -5208,11 +5208,11 @@ _eval_config_list = [
                     # one LLM call can wait 10-20 min behind the other two
                     # trials' prefills and a trial runs 1-2 h (job 170250:
                     # httpx.ReadTimeout at the 600 s default). The budgets
-                    # below follow that cost; the whole 15-task subset takes
-                    # about 7 h at 3 concurrent.
-                    agent_timeout_sec=4 * 60 * 60,
-                    llm_timeout_sec=60 * 60,
-                    harbor_timeout_sec=12 * 60 * 60,
+                    # below are twice that cost, so a slow tail cannot cut the
+                    # run: the 15-task subset takes about 7.5 h sequentially.
+                    agent_timeout_sec=8 * 60 * 60,
+                    llm_timeout_sec=2 * 60 * 60,
+                    harbor_timeout_sec=24 * 60 * 60,
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
@@ -5230,14 +5230,14 @@ _eval_config_list = [
                         # timeout: the per-call HTTP budget litellm gets (the
                         # adapter spreads these into the completion call; the
                         # SDK default of 600 s timed out at 79K tokens).
-                        "llm_args_json": '{"top_p": 1.0, "timeout": 3600}',
+                        "llm_args_json": '{"top_p": 1.0, "timeout": 7200}',
                         "max_steps": 200,
                         # The simulated user's turn is an LLM call on the same
                         # ring, queued behind the trials' prefills: 1 h for the
                         # MCP tool calls and the session reads (120 s / 900 s
                         # tripped on the DSv4.1 ring).
-                        "tool_timeout_sec": 3600,
-                        "read_timeout_sec": 3600,
+                        "tool_timeout_sec": 7200,
+                        "read_timeout_sec": 7200,
                     },
                     # Literal values only: "${VAR:-default}" templates are not
                     # resolved on this path (see the Kimi-K3 tau3 entry).
