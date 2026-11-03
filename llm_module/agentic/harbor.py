@@ -274,6 +274,17 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if config.verifier_env:
         verifier_config["env"] = config.verifier_env
 
+    datasets = [dataset_config]
+    order_path = Path(__file__).with_name("terminal89_task_order.json")
+    if config.dataset == "terminal-bench/terminal-bench-2" and config.task_names and order_path.exists():
+        # Harbor starts trials first-in, first-out in dataset order (its registry order), ignoring the order
+        # of task_names; one dataset entry per task makes the list order the start order. Longest tasks
+        # first put the ones that run to the agent limit in the first wave instead of starting them late.
+        rank = {t["name"]: i for i, t in enumerate(json.loads(order_path.read_text())["tasks"])}
+        ordered = sorted(config.task_names, key=lambda n: (rank.get(n, len(rank)), config.task_names.index(n)))
+        datasets = [dict(dataset_config, task_names=[n]) for n in ordered]
+        logger.info("HARBOR_TASK_ORDER longest first: %s", ordered[:10])
+
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
         "jobs_dir": str(config.jobs_dir),
@@ -282,7 +293,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         "quiet": config.quiet,
         "environment": environment_config,
         "agents": [agent_config],
-        "datasets": [dataset_config],
+        "datasets": datasets,
     }
     if verifier_config:
         harbor_config["verifier"] = verifier_config
