@@ -579,6 +579,11 @@ TERMINAL_BENCH_2_DATASET_REF = (
 _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
+# LiveCodeBench scored by the official lcb_runner rules (last code block, stdin mock with .buffer); the
+# fork's `livecodebench` task scores the same replies 30-40 points low and drops their samples.
+_LCB_OFFICIAL_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "livecodebench_official"
+)
 
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
@@ -4998,8 +5003,12 @@ _eval_config_list = [
             EvalTask(
                 # LiveCodeBench on the chat endpoint, scored on the "v6" window
                 # (contest_date >= 2025-02-01, 131 problems) via doc_ids; the
-                # task runs the generated code on the eval host.
-                task_name="livecodebench",
+                # task runs the generated code on the eval host. The official
+                # lcb_runner scoring (last code block, stdin mock with .buffer):
+                # the fork's `livecodebench` task scored the same model 48.9 %
+                # and kept no samples (job 169551).
+                task_name="livecodebench_official",
+                include_path=_LCB_OFFICIAL_LM_EVAL_TASKS,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=3,
                 use_chat_api=True,

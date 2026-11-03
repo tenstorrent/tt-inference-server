@@ -1,0 +1,39 @@
+# LiveCodeBench code generation scored the way the official lcb_runner scores it
+# (github.com/LiveCodeBench/LiveCodeBench, lcb_runner/evaluation): the LAST fenced code block
+# of the reply is the program, and the tests run under lcb_runner's testing_util, whose stdin
+# mock carries a .buffer (fast-IO solutions read sys.stdin.buffer). The lm-eval fork's
+# `livecodebench` task takes the FIRST block and its stdin mock has no buffer: on the same
+# outputs the fork scored Kimi K3 at 74/131 where the official runner gave 116/131. The
+# dataset, prompt and doc order are the fork's, so LIVECODEBENCH_V6_DOC_IDS apply unchanged,
+# and the task name sidesteps the fork's EvaluationTracker sample filter, which drops every
+# sample of a task named `livecodebench`.
+task: livecodebench_official
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test:
+      - "hf://datasets/livecodebench/code_generation_lite/test.jsonl"
+      - "hf://datasets/livecodebench/code_generation_lite/test2.jsonl"
+      - "hf://datasets/livecodebench/code_generation_lite/test3.jsonl"
+      - "hf://datasets/livecodebench/code_generation_lite/test4.jsonl"
+      - "hf://datasets/livecodebench/code_generation_lite/test5.jsonl"
+      - "hf://datasets/livecodebench/code_generation_lite/test6.jsonl"
+output_type: generate_until
+validation_split: test
+doc_to_text: !function utils.doc_to_text_with_format
+doc_to_target: !function utils.doc_to_target
+process_results: !function utils.process_results
+num_fewshot: 0
+generation_kwargs:
+  until:
+  - "<|end_of_text|>"
+  - "<|endoftext|>"
+  - "<|im_end|>"
+  do_sample: false
+  max_gen_toks: 2048
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0
