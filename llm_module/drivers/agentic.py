@@ -255,9 +255,7 @@ def build_harbor_config(
         agent_env=cfg.agent_env,
         environment_env=_runtime_environment_env(cfg.environment_env),
         verifier_env=cfg.verifier_env,
-        environment_kwargs=(
-            cfg.environment_kwargs if cfg.environment_type == "kubernetes" else {}
-        ),
+        environment_kwargs=_environment_kwargs(cfg),
         harbor_timeout_sec=cfg.harbor_timeout_sec,
         llm_timeout_sec=cfg.llm_timeout_sec,
         per_task_overhead_sec=cfg.per_task_overhead_sec,
@@ -267,6 +265,23 @@ def build_harbor_config(
         enforce_agent_deadline=cfg.enforce_agent_deadline,
         venv_python=venv_python,
     )
+
+
+def _environment_kwargs(cfg: Any) -> dict[str, Any]:
+    """The harbor environment kwargs for the configured provider.
+
+    kubernetes: the eval config's kwargs (namespace, image_mode, ...). docker: harbor's docker environment
+    rejects those, but it needs ``auto_mounting`` on: since harbor made it opt-in (default False) nothing binds
+    the trial's agent/verifier/artifacts dirs into the container, and the legacy compose variables
+    ``HOST_AGENT_LOGS_PATH`` / ``ENV_AGENT_LOGS_PATH`` that task-authored compose files still reference (the
+    tau3-bench runtime service mounts ``${HOST_AGENT_LOGS_PATH}:${ENV_AGENT_LOGS_PATH}``) stay empty, so every
+    trial dies in ``docker compose up`` with "invalid mount path ':'".
+    """
+    if cfg.environment_type == "kubernetes":
+        return dict(cfg.environment_kwargs)
+    if cfg.environment_type == "docker":
+        return {"auto_mounting": True}
+    return {}
 
 
 def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
