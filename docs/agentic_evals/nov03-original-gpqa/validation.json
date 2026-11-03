@@ -1,11 +1,11 @@
 {
-  "status": "host_pass_only",
-  "tests": 27,
+  "status": "integrated_host_pass_only",
+  "tests": 63,
   "actual_native_source_hash_check": "pass lm_eval0.4.13 adapter/filters/metric",
   "actual_native_payload_checks": {
     "doc12": "pass",
     "doc15": "pass",
-    "only_change": "max_tokens16384 to98304; request timeout transport-only"
+    "requests_sent": 0
   },
   "native_yaml_private_processor": "pass after using actual YAML cached-loader module; initial ordinary import was reloaded and failed host assertion, repaired before commit",
   "processed_rows": "198 each, two fresh no-cache processing passes; selected doc12/doc15 equal historical full processed documents",
@@ -13,11 +13,19 @@
   "device_hours": 0,
   "admission": "STOP pending actual combine completion, current grant/budget, coordinator release/registry/disk/isolated-smoke/source/checkpoint/template proof, absolute deadline, explicit scoped GO",
   "remaining_review": [
-    "Independent rereview def1e6e1",
-    "Actual combine closure and released budget",
-    "Coordinator admission/preflight/GO/runtime_repo_paths populated from genuine evidence; candidate leaves absent",
-    "Actual runner GitHub job API visibility and installed native source hashes must pass; no inference if missing",
-    "No progressing higher-limit retry funded in first-wave envelope"
+    "Independent exact integrated-source review",
+    "Actual combine closure/budget >=5.5h",
+    "Coordinator admission/approval files; no GO yet"
   ],
-  "default_ci_handoff": "def1e6e1: explicit original controls; run.py before bootstrap requires coordinator admission and actual job-start clock; checkpoint hook requires observed container/checkout identity; missing any evidence STOP"
+  "default_ci_handoff": "def1e6e1: explicit original controls; run.py before bootstrap requires coordinator admission and actual job-start clock; checkpoint hook requires observed container/checkout identity; missing any evidence STOP",
+  "canonical_base": "3acc37ed0569b9c2cc7d7a98a1bc8a2ab75e808d",
+  "reviewed_candidate": "965ed54e",
+  "integration": "Six candidate commits cherry-picked without conflicts onto freshly fetched canonical publication tip; no push",
+  "native_route": "Actual default ModelSpec -> build_engine_commands evals -> get_llm_eval_tasks -> guarded original doc12/15; legacy r1 branch also tested",
+  "accepted_ci_regression": "HTML controls/serialization and raw diagnostic paired traces pass with existing reviewed Harbor4a3bdf01 source on PYTHONPATH",
+  "test_harness_adjustments": [
+    "Historical route test assumed SWE despite accepted HTML arm; now tests both original and legacy under current actual agentic selection",
+    "Shared receipt helper has original-only identity extension; its previous byte-equality assertion replaced by existing non-original behavior tests, other accepted serving/isolation/config files still byte-equal",
+    "Initial raw observer tests used unpatched host Harbor; correct reviewed Harbor source restored63 passing"
+  ]
 }

@@ -53,7 +53,9 @@ def test_native_serialization_and_original_route(tmp_path):
  assert raw['agents'][0]['override_timeout_sec']==27000
  assert raw['environment']['override_memory_mb']==49152
  root=Path(__file__).parents[1]
- for name in ['workflows/model_specs/dev/llm.yaml','workflows/run_docker_server.py','workflows/qwen38_serving_events.py','llm_module/agentic/qwen38_isolation.py','llm_module/qwen38_eval_receipts.py','reference_config/evals/eval_config.py']:
+ # Shared receipt helper adds an original-GPQA-only identity branch; its existing
+ # non-original rejection paths remain covered by test_qwen38_gpqa_samples.py.
+ for name in ['workflows/model_specs/dev/llm.yaml','workflows/run_docker_server.py','workflows/qwen38_serving_events.py','llm_module/agentic/qwen38_isolation.py','reference_config/evals/eval_config.py']:
   assert (root/name).read_bytes()==subprocess.check_output(['git','show','44b4aa1dcb25b83a4ff7e6b8b1e209aaf41f8d2c:'+name],cwd=root)
 
 def test_agent_timeout_rejected_outside_exact_retry(monkeypatch):
