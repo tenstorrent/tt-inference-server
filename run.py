@@ -1242,6 +1242,9 @@ def main():
     runtime_config, model_spec = resolve_runtime(args)
     model_id = model_spec.model_id
 
+    from workflows.agentic_disk_preflight import early_agentic_disk_check
+    early_agentic_disk_check(model_spec, runtime_config)
+
     # step 2: handle secrets
     handle_secrets(runtime_config)
     tt_inference_server_sha = get_current_commit_sha()
