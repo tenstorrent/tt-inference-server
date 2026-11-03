@@ -35,6 +35,18 @@ from .image_generation_param_test import (
     ImageGenerationParamTest,
     run_image_generation_param,
 )
+from .image_generation_api_contract_test import (
+    ImageGenerationAPIContractTest,
+    run_image_generation_api_contract,
+)
+from .image_generation_api_param_test import (
+    ImageGenerationAPIParamTest,
+    run_image_generation_api_param,
+)
+from .image_generation_api_test import (
+    ImageGenerationAPITest,
+    run_image_generation_api,
+)
 from .img2img_generation_param_test import (
     Img2ImgGenerationParamTest,
     run_img2img_generation_param,
@@ -77,6 +89,9 @@ __all__ = [
     "CnnParamTest",
     "EmbeddingLoadTest",
     "EmbeddingParamTest",
+    "ImageGenerationAPIContractTest",
+    "ImageGenerationAPIParamTest",
+    "ImageGenerationAPITest",
     "ImageGenerationLoadTest",
     "ImageGenerationLoraLoadTest",
     "ImageGenerationParamTest",
@@ -101,6 +116,9 @@ __all__ = [
     "run_cnn_param",
     "run_embedding_load",
     "run_embedding_param",
+    "run_image_generation_api",
+    "run_image_generation_api_contract",
+    "run_image_generation_api_param",
     "run_image_generation_load",
     "run_image_generation_lora_load",
     "run_image_generation_param",

@@ -1637,6 +1637,52 @@
         "pass_rate_threshold": 1.0,
         "non_blocking": false
       }
+    },
+    "ImageGenerationAPIContractTest": {
+      "module": "test_module.load_param_tests.image_generation_api_contract_test",
+      "markers": [
+        "param",
+        "e2e",
+        "fast"
+      ],
+      "test_config": {
+        "test_timeout": 300,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationAPITest": {
+      "module": "test_module.load_param_tests.image_generation_api_test",
+      "markers": [
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 1800,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationAPIParamTest": {
+      "module": "test_module.load_param_tests.image_generation_api_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 7200,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
     }
   },
   "_comment": "test_suites are loaded from test_suites/*.json files",
