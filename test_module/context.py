@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+import requests
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -88,6 +90,10 @@ def get_health(
       evals, param tests, and other correctness checks where the server can
       still produce a valid result on a degraded board.
     """
+    engine = getattr(ctx.model_spec, "inference_engine", None)
+    if getattr(engine, "value", engine) == "vLLM":
+        return (_vllm_health(ctx), None)
+
     device_name = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     full_board = ctx.model_spec.device_model_spec.max_concurrency
     min_required = full_board if requirement is HardwareRequirement.FULL_BOARD else 1
@@ -121,6 +127,21 @@ def get_health(
         f"(requirement={requirement.value}, need≥{min_required})"
     )
     return (False, None)
+
+
+def _vllm_health(ctx: MediaContext) -> bool:
+    """A vLLM server has no ``/tt-liveness`` or per-chip readiness; ``/health`` is all it reports."""
+    url = f"{ctx.base_url}/health"
+    try:
+        status = requests.get(url, timeout=30).status_code
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Health check at {url} failed: {e}")
+        return False
+    if status != 200:
+        logger.error(f"Health check at {url} returned HTTP {status}")
+        return False
+    logger.info(f"✅ Health check passed at {url}")
+    return True
 
 
 @lru_cache(maxsize=None)

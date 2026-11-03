@@ -32,6 +32,7 @@ def _ctx(
     device="N300",
     max_concurrency=4,
     all_params=None,
+    inference_engine="media",
 ) -> MediaContext:
     return MediaContext(
         all_params=all_params if all_params is not None else [],
@@ -39,6 +40,7 @@ def _ctx(
             model_name=model,
             hf_model_repo=hf_model_repo if hf_model_repo is not None else model,
             device_model_spec=SimpleNamespace(max_concurrency=max_concurrency),
+            inference_engine=inference_engine,
         ),
         device=SimpleNamespace(name=device),
         output_path="/tmp/out",
@@ -175,6 +177,22 @@ class TestHealth:
             lambda ctx, n: self._liveness_block(success=True, runner_in_use="tt-metal"),
         )
         assert require_health(_ctx()) == "tt-metal"
+
+    @pytest.mark.parametrize("status, ok", [(200, True), (503, False)])
+    def test_vllm_server_is_checked_at_health(self, monkeypatch, status, ok):
+        urls = []
+
+        def fake_get(url, timeout):
+            urls.append(url)
+            return SimpleNamespace(status_code=status)
+
+        def no_liveness(ctx, n):
+            raise AssertionError("vLLM serves no /tt-liveness")
+
+        monkeypatch.setattr(ctx_mod.requests, "get", fake_get)
+        monkeypatch.setattr(ctx_mod, "run_device_liveness", no_liveness)
+        assert get_health(_ctx(inference_engine="vLLM")) == (ok, None)
+        assert urls == ["http://127.0.0.1:8000/health"]
 
     def test_require_health_raises_on_failure(self, monkeypatch):
         monkeypatch.setattr(
