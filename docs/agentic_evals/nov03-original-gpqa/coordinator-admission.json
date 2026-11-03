@@ -7,17 +7,20 @@
   ],
   "actual_combine_closed": true,
   "budget_evidence": {
-    "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-password-combine/completion-accounting.json",
-    "evidence_sha256": "561bf860a777cbc327358ac3f73d031e533ec01afb0d73d8e810b81e66df11d5",
-    "closed_effort_hours": 23.514899487098063,
-    "available_effort_hours": 6.485100512901937,
+    "evidence": "/home/mvasiljev/tt-metal/models/autoports/qwen_qwen3_8_27b/doc/agentic_evals/runs/nov03-gpqa-original-rerun-proposal/attempt01-completion-accounting.json",
+    "evidence_sha256": "1276641484ea8d15bfe091aaf55ca6a60bc253b91a8df582f6231ee4616c2c2d",
+    "combine_evidence": "runs/nov03-password-combine/completion-accounting.json",
+    "closed_effort_hours": 23.729899487098063,
+    "available_effort_hours": 6.270100512901937,
     "firstwave_reservation_hours": 5.5,
-    "remaining_unallocated_hours": 0.985100512901937,
+    "remaining_unallocated_hours": 0.7701005129019372,
     "actual_combine_closed": true,
+    "prior_execution_failure_hours": 0.215,
+    "prior_scored_samples": 0,
     "higher_retry_funded": false,
-    "no_cancel_policy": "Dispatched CI continues under operator grant; actual allocation including default cleanup charged, no automatic termination at coordinator stop."
+    "scope": "Fresh execution retry after preflight parser repair, not clock reset of a scored task. CI allocation clock bound to new actual job; default cleanup/no-cancel policy unchanged."
   },
-  "reason": "Actual owned combine closed; original two progressing cutoff cases require original-protocol repair; first-wave5.5h fits actual6.4851h remaining.",
+  "reason": "Exact Python3.10 timestamp preflight AutoFix independently passed; priorCI0samples and.215hcharged,6.2701hremaining admits5.5hretry.",
   "higher_retry_funded": false,
-  "admitted_utc": "2026-11-03T05:08:34.399147+00:00"
+  "admitted_utc": "2026-11-03T05:27:28.248945+00:00"
 }
