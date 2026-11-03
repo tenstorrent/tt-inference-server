@@ -106,12 +106,6 @@ py::object SDXLImageToImageRunner::stackImageBatch(
   return torch_module().attr("cat")(rows, py::arg("dim") = 0);
 }
 
-bool SDXLImageToImageRunner::areBatchCompatible(
-    const domain::ImageGenerateRequest& a,
-    const domain::ImageGenerateRequest& b) const {
-  return SDXLBaseRunner::areBatchCompatible(a, b) && a.strength == b.strength;
-}
-
 py::object SDXLImageToImageRunner::generateInputTensors(
     const std::vector<domain::ImageGenerateRequest>& requests,
     py::object promptEmbeds, py::object addTextEmbeds) {

@@ -311,13 +311,17 @@
     },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        "_comment": "I2V is graded by VBench against the GPU references (wan22_i2v_vbench_gate.json), not by CLIP: the eval reads only num_inference_steps here.",
         "num_inference_steps": 40,
         "accuracy": {
             "5": {
-                "clip_valid_range": [
-                    28.25276,
-                    30.54
-                ]
+                "clip_valid_range": null
+            },
+            "20": {
+                "clip_valid_range": null
+            },
+            "65": {
+                "clip_valid_range": null
             }
         },
         "extra_args": {

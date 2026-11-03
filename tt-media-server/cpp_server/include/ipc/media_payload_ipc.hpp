@@ -59,12 +59,24 @@ struct MediaPayloadResult {
   std::string error;
 
   static constexpr uint32_t FLAG_DONE = 1;
+  static constexpr uint32_t FLAG_CLAIMED = 2;
+
+  uint32_t getTaskId() const { return task_id; }
 
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
+
+  bool isClaimed() const { return (flags & FLAG_CLAIMED) != 0; }
 
   static MediaPayloadResult done() {
     MediaPayloadResult result;
     result.flags = FLAG_DONE;
+    return result;
+  }
+
+  static MediaPayloadResult claimed(uint32_t taskId) {
+    MediaPayloadResult result;
+    result.task_id = taskId;
+    result.flags = FLAG_CLAIMED;
     return result;
   }
 
@@ -100,10 +112,15 @@ class MediaPayloadTaskQueue {
       : queue(Queue::openExisting(name)) {}
 
   void push(const MediaPayloadTask& task) { queue->push(task); }
+  bool tryPush(const MediaPayloadTask& task) { return queue->tryPush(task); }
 
   bool tryPop(MediaPayloadTask& out) { return queue->tryPop(out); }
 
   void receive(MediaPayloadTask& out) { queue->receive(out); }
+
+  bool timedReceive(MediaPayloadTask& out, unsigned timeoutMs) {
+    return queue->timedReceive(out, timeoutMs);
+  }
 
   bool empty() const { return queue->empty(); }
 
@@ -123,7 +140,12 @@ class MediaPayloadResultQueue {
   explicit MediaPayloadResultQueue(const std::string& name)
       : queue(Queue::openExisting(name)) {}
 
-  bool push(const MediaPayloadResult& result) { return queue->tryPush(result); }
+  bool push(const MediaPayloadResult& result) {
+    queue->push(result);
+    return true;
+  }
+
+  bool tryPop(MediaPayloadResult& out) { return queue->tryPop(out); }
 
   bool blockingPop(MediaPayloadResult& out) {
     queue->receive(out);
@@ -140,6 +162,9 @@ class MediaPayloadResultQueue {
 
 class MediaPayloadQueueSet {
  public:
+  using TaskType = MediaPayloadTask;
+  using ResultType = MediaPayloadResult;
+
   std::shared_ptr<MediaPayloadTaskQueue> taskQueue;
   std::vector<std::shared_ptr<MediaPayloadResultQueue>> resultQueues;
 

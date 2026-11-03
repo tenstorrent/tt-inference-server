@@ -148,6 +148,15 @@ class TestWrapper:
         with pytest.raises(SystemExit):
             wrapper.parse_argv(["--request-body", "[1]", "--"])
 
+    def test_lmms_eval_harness_refuses_the_lm_eval_only_flags(self):
+        opts, rest = wrapper.parse_argv(
+            ["--harness", "lmms-eval", "--", "--tasks", "x"]
+        )
+        assert opts.harness == "lmms-eval" and rest == ["--tasks", "x"]
+        for flag in ("--drop-server-seed", "--preserve-reasoning"):
+            with pytest.raises(SystemExit, match="lm-eval adapters only"):
+                wrapper.parse_argv(["--harness", "lmms-eval", flag, "--"])
+
     def test_patch_merges_body_and_optionally_drops_seed(self, monkeypatch):
         class _Completions:
             def _create_payload(self, *args, **kwargs):
@@ -283,6 +292,86 @@ class TestWrapperCoversOverridingAdapters:
             _check_request_overrides_supported(
                 task, {"chat_template_kwargs": {"enable_thinking": False}}, None
             )
+
+
+class TestLmmsEvalWrapper:
+    """--harness lmms-eval: lmms-eval's openai_compatible models build their
+    payload from the prompt alone and send it through the openai SDK, so the
+    body rides in every chat.completions.create call's extra_body."""
+
+    @staticmethod
+    def _install_fake_sdk(monkeypatch):
+        import sys
+        import types
+
+        calls = []
+
+        class Completions:
+            def create(self, *args, extra_body=None, **kwargs):
+                calls.append({"extra_body": extra_body, **kwargs})
+                return "reply"
+
+        parents = ("openai", "openai.resources", "openai.resources.chat")
+        for name in parents:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+        mod = types.ModuleType("openai.resources.chat.completions")
+        mod.Completions = Completions
+        monkeypatch.setitem(sys.modules, mod.__name__, mod)
+        return Completions, calls
+
+    def test_body_rides_in_extra_body(self, monkeypatch):
+        Completions, calls = self._install_fake_sdk(monkeypatch)
+        body = {"chat_template_kwargs": {"enable_thinking": False}}
+        wrapper.patch_openai_chat_client(body)
+        # lmms-eval's payload: messages/model/max_tokens/temperature, no extra_body
+        Completions().create(model="m", messages=[], max_tokens=4, temperature=0)
+        assert calls[-1] == {
+            "extra_body": body,
+            "model": "m",
+            "messages": [],
+            "max_tokens": 4,
+            "temperature": 0,
+        }
+        # an extra_body the caller already carries is merged one level deep
+        Completions().create(
+            model="m",
+            messages=[],
+            extra_body={"top_k": 20, "chat_template_kwargs": {"x": 1}},
+        )
+        assert calls[-1]["extra_body"] == {
+            "top_k": 20,
+            "chat_template_kwargs": {"x": 1, "enable_thinking": False},
+        }
+        # re-patching replaces the wrap instead of stacking
+        wrapper.patch_openai_chat_client({"top_k": 1})
+        Completions().create(model="m", messages=[])
+        assert calls[-1]["extra_body"] == {"top_k": 1}
+
+    def test_only_the_openai_sdk_models_are_supported(self):
+        for name in wrapper.SUPPORTED_LMMS_EVAL_CLASSES:
+            wrapper.require_supported_lmms_model(name)
+        with pytest.raises(SystemExit, match="not supported"):
+            wrapper.require_supported_lmms_model("llava")
+
+    def test_config_time_check_accepts_openai_compatible_on_lmms_venvs(self):
+        from llm_module.eval_command import _check_request_overrides_supported
+        from workflows.workflow_types import WorkflowVenvType
+
+        body = {"chat_template_kwargs": {"enable_thinking": False}}
+
+        def task(eval_class):
+            return SimpleNamespace(
+                task_name="mmmu_pro_standard_cot",
+                eval_class=eval_class,
+                use_chat_api=True,
+                thinking=False,
+                thinking_kwarg="enable_thinking",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            )
+
+        _check_request_overrides_supported(task("openai_compatible"), body, None)
+        with pytest.raises(ValueError, match="openai-SDK"):
+            _check_request_overrides_supported(task("llava"), body, None)
 
 
 try:

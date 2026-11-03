@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,8 +16,15 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
+from workflow_module import accept_blocks
 
-from .._test_common import ReportCheckTypes, block_id
+from .._test_common import (
+    ReportCheckTypes,
+    block_id,
+    is_i2v_video_model,
+    sweep_envelope,
+)
+from .._test_common.video_output_check import save_clip
 from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -25,7 +34,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
     from .._test_common import TestConfig
 
-    from .._test_common import is_i2v_video_model
+    from .._test_common import i2v_eval_num_pairs, i2v_eval_subset
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
@@ -41,7 +50,13 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         generation_mode,
     )
 
-    num_prompts = 5
+    # CI runs the ci subset; a run-full-evals dispatch (no --ci-mode) all of it.
+    runtime_config = getattr(ctx, "runtime_config", None)
+    limit_samples_mode = getattr(runtime_config, "limit_samples_mode", None)
+    i2v_subset = (
+        i2v_eval_subset(limit_samples_mode) if generation_mode == "I2V" else None
+    )
+    num_prompts = i2v_eval_num_pairs(i2v_subset) if i2v_subset else 5
     num_inference_steps = 40
     start_from = 0
     frame_sample_rate = 8
@@ -54,6 +69,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         server_url=ctx.base_url,
         frame_sample_rate=frame_sample_rate,
         device=ctx.device,
+        i2v_subset=i2v_subset,
     )
     logger.info(f"Running VideoGenerationEvalsTest with request: {request}")
 
@@ -141,6 +157,201 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     return combined_results
 
 
+# What an I2V clip's index entry carries beyond the prompt and image, so the
+# VBench scorer can find its first frame and GPU reference.
+I2V_CLIP_FIELDS = ("video_id", "width", "height", "seed")
+
+
+def _save_eval_clips(
+    ctx: MediaContext, videos: list[dict], rejected: list[dict] = ()
+) -> None:
+    """Keep every eval clip, with its prompt, in the uploaded run output.
+
+    These are the clips the quality score is about, so they are worth looking at
+    (and comparing with the GPU reference) on every run. Clips rejected for their
+    shape go with the failed clips, out of the index the scorers read. Each
+    clip's step caching, when the server reports it, goes in cache_summary.json
+    beside them; it is kept for comparison, not reported or graded.
+    """
+    for video in rejected:
+        save_clip(
+            video.get("video_path"),
+            ctx.output_path,
+            "failed/evals",
+            f"{video.get('video_id') or video.get('job_id') or 'clip'}.mp4",
+        )
+    index, cache_summaries = [], []
+    for i, video in enumerate(videos):
+        name = f"{i:02d}_{video.get('video_id') or video.get('job_id') or 'clip'}.mp4"
+        if save_clip(video.get("video_path"), ctx.output_path, "evals", name):
+            entry = {"file": name, "prompt": video.get("prompt")}
+            if video.get("image"):
+                entry["conditioning_image"] = video["image"]
+            if video.get("camera_motion"):
+                entry["camera_motion"] = video["camera_motion"]
+            entry.update({k: video[k] for k in I2V_CLIP_FIELDS if k in video})
+            index.append(entry)
+            if "cache_summary" in video:
+                cache_summaries.append(
+                    {
+                        "file": name,
+                        "video_id": video.get("video_id"),
+                        "job_id": video.get("job_id"),
+                        "cache_summary": video["cache_summary"],
+                    }
+                )
+    evals_dir = Path(ctx.output_path) / "videos" / "evals"
+    if index:
+        (evals_dir / "index.json").write_text(json.dumps(index, indent=2))
+    if cache_summaries:
+        (evals_dir / "cache_summary.json").write_text(
+            json.dumps(cache_summaries, indent=2)
+        )
+
+
+# VBench runs on the host CPU after the clips are made: about 1.3 min per clip on
+# a BH Galaxy host, setup included (40 clips in 52 min), so the full set (all 65
+# videos, of which a deployment serves up to 40) fits with room to spare.
+VBENCH_TIMEOUT_SECONDS = 4 * 60 * 60
+VBENCH_TASK = "vbench_i2v"
+
+
+def _run_vbench(ctx: MediaContext) -> tuple[Block | None, dict | None]:
+    """Score the saved I2V eval clips with VBench: a report section, and the gate.
+
+    ``(None, None)`` for a T2V model or when the eval saved no clips. The scorer
+    sets up its own pinned venv, so it runs in a subprocess; a failure or
+    timeout is reported in the section. A model the gate config names is
+    compared with the GPU run made the same way, and a cached run also with the
+    uncached one (vbench_gate.reference_runs), and graded; the gate is None for
+    any other, whose schedule the references were not made with.
+    """
+    from .._test_common import vbench_gate, vbench_i2v
+    from .._test_common.target_check import deployment_dbcache
+
+    videos_dir = Path(ctx.output_path) / "videos" / "evals"
+    model = ctx.model_spec.hf_model_repo
+    if not is_i2v_video_model(model) or not (videos_dir / "index.json").is_file():
+        return None, None
+    config = vbench_gate.load_config()
+    runs = []
+    if model in config["models"]:
+        runs = vbench_gate.reference_runs(deployment_dbcache(ctx.model_spec))
+    command = [
+        sys.executable,
+        "-m",
+        "test_module._test_common.vbench_i2v",
+        "--videos-dir",
+        str(videos_dir),
+    ]
+    for run, _role in runs:
+        command += ["--gpu-reference-run", run]
+    if not runs:
+        command += ["--gpu-reference", "none"]
+    logger.info("Scoring the eval clips with VBench: %s", " ".join(command))
+    problem = None
+    try:
+        code = subprocess.run(
+            command, cwd=_PROJECT_ROOT, timeout=VBENCH_TIMEOUT_SECONDS
+        ).returncode
+        if code:
+            problem = f"VBench exited with code {code}"
+    except subprocess.TimeoutExpired:
+        problem = f"VBench stopped at its {VBENCH_TIMEOUT_SECONDS // 3600} h limit"
+    except Exception as e:
+        problem = f"VBench did not run: {type(e).__name__}: {e}"
+    if problem:
+        logger.error(problem)
+
+    # Written after each dimension, so a run cut short keeps what finished.
+    out = videos_dir / "vbench.json"
+    result = json.loads(out.read_text()) if out.is_file() else None
+    data: dict = {"heading": f"{model} on {ctx.device.name}"}
+    if problem:
+        data["error"] = problem
+    if result:
+        data.update(vbench_i2v.report_summary(result))
+        for reference in data["references"]:
+            for run, role in runs:
+                if reference["reference"].endswith(f"/{run}"):
+                    reference.update(
+                        run=run, role=role, tolerance_pct=config["tolerance_pct"][role]
+                    )
+    gate = None
+    if runs:
+        gate = vbench_gate.grade(result or {}, runs, config)
+        gate["references"] = runs
+        data["gate"] = {
+            "verdict": ReportCheckTypes(gate["accuracy_check"]).name,
+            "checks": gate["checks"],
+        }
+    section = Block(
+        kind="vbench",
+        task_type="video",
+        title="VBench",
+        id=block_id(ctx) or None,
+        targets={},
+        data=data,
+    )
+    return section, gate
+
+
+def _generation_data(eval_result: dict) -> dict:
+    """What the eval asked for and got back."""
+    data = {
+        "num_prompts": eval_result.get("num_prompts", 0),
+        "num_generated": eval_result.get("num_generated", 0),
+    }
+    rejected = eval_result.get("rejected_videos") or []
+    if rejected:
+        data["num_rejected"] = len(rejected)
+        data["rejected"] = "; ".join(
+            f"{v.get('video_id')}: {v.get('problem')}" for v in rejected
+        )[:2000]
+    data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
+    return data
+
+
+def _i2v_eval_block(ctx: MediaContext, eval_result: dict, gate: dict | None) -> Block:
+    """The I2V eval: its videos, graded by the VBench gate.
+
+    The checks are in the VBench section. A run that did not make every video
+    fails whatever the gate says; with no gate the eval is NA.
+    """
+    from .._test_common import vbench_gate
+
+    data: dict = {"task_name": VBENCH_TASK}
+    if eval_result:
+        data.update(_generation_data(eval_result))
+    targets: dict = {"task_name": VBENCH_TASK}
+    accuracy_check = ReportCheckTypes.NA
+    if gate is not None:
+        failed = [c for c in gate["checks"] if c["status"] == vbench_gate.FAIL]
+        references = ", ".join(f"{run} ({role})" for run, role in gate["references"])
+        targets["references"] = references
+        data.update(
+            references=references,
+            num_checks=len(gate["checks"]),
+            num_failed=len(failed),
+        )
+        if failed:
+            data["failed"] = "; ".join(
+                f"{c['reference']} {c['check']}: {c.get('value')}" for c in failed
+            )[:2000]
+        accuracy_check = gate["accuracy_check"]
+    if (eval_result or {}).get("accuracy_check") == ReportCheckTypes.FAIL:
+        accuracy_check = ReportCheckTypes.FAIL
+    data["accuracy_check"] = accuracy_check
+    return Block(
+        kind="evals",
+        task_type="video",
+        title="Video Eval",
+        id=block_id(ctx) or None,
+        targets=targets,
+        data=data,
+    )
+
+
 def run_video_eval(ctx: MediaContext) -> Block:
     """Run evaluations for a video model (Mochi, WAN, etc.)."""
     logger.info(
@@ -154,6 +365,20 @@ def run_video_eval(ctx: MediaContext) -> Block:
         logger.error(f"Eval execution encountered an error: {e}")
         raise
 
+    _save_eval_clips(
+        ctx,
+        (eval_result or {}).get("videos", []),
+        (eval_result or {}).get("rejected_videos", []),
+    )
+    # Its own report section, next to the eval's (the runner returns one block).
+    vbench, gate = _run_vbench(ctx)
+    if vbench:
+        accept_blocks([vbench], envelope=sweep_envelope(ctx))
+    if is_i2v_video_model(ctx.model_spec.hf_model_repo):
+        # VBench against the GPU references is the I2V eval; CLIP and FVD
+        # (against unrelated clips) add nothing to it.
+        return _i2v_eval_block(ctx, eval_result, gate)
+
     logger.info("Generating eval report...")
     task = ctx.all_params.tasks[0]
     data: dict = {
@@ -165,9 +390,7 @@ def run_video_eval(ctx: MediaContext) -> Block:
 
     if eval_result:
         logger.info("Adding eval results from video generation test to benchmark data")
-        data["num_prompts"] = eval_result.get("num_prompts", 0)
-        data["num_generated"] = eval_result.get("num_generated", 0)
-        data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
+        data.update(_generation_data(eval_result))
 
         clip_results = eval_result.get("clip_results", {})
         data["average_clip"] = clip_results.get("average_clip", 0.0)

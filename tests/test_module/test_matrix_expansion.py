@@ -193,11 +193,7 @@ class TestVideoMatrixExpansion:
         "wan-p150x4",
         "wan-p150x8",
         "wan-p300x2",
-        "wan-i2v-t3k",
-        "wan-i2v-galaxy",
-        "wan-i2v-p150x4",
-        "wan-i2v-p150x8",
-        "wan-i2v-p300x2",
+        "wan-i2v-blackhole_galaxy",
         "mochi-t3k",
         "mochi-galaxy",
         "mochi-p150x4",
@@ -241,32 +237,11 @@ class TestVideoMatrixExpansion:
             "poll_timeout": 1000,
         },
     }
-    # Expected VideoGenerationI2VTest targets per expanded suite. p150x4 keeps
-    # the base poll_timeout (no per-device override).
+    # Expected VideoGenerationI2VTest targets per expanded suite. Wan2.2 I2V's
+    # spec tests run on BH Galaxy only for now.
     WAN_I2V_TARGETS = {
-        "wan-i2v-t3k": {
-            "num_inference_steps": 40,
-            "poll_timeout": 1500,
-            "poll_interval": 5,
-        },
-        "wan-i2v-galaxy": {
-            "num_inference_steps": 40,
-            "poll_timeout": 550,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p150x4": {
-            "num_inference_steps": 40,
+        "wan-i2v-blackhole_galaxy": {
             "poll_timeout": 1200,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p150x8": {
-            "num_inference_steps": 40,
-            "poll_timeout": 900,
-            "poll_interval": 5,
-        },
-        "wan-i2v-p300x2": {
-            "num_inference_steps": 40,
-            "poll_timeout": 800,
             "poll_interval": 5,
         },
     }
@@ -299,11 +274,13 @@ class TestVideoMatrixExpansion:
 
     def test_i2v_suites_include_i2v_param_test(self):
         # The I2V param sweep is a live test case; guard that every I2V suite
-        # still carries both the happy-path and the param sweep after expansion.
+        # still carries the create contract, the lifecycle and the param sweep
+        # after expansion.
         suite_map = self._suite_map()
         for suite_id in self.WAN_I2V_TARGETS:
             templates = [tc["template"] for tc in suite_map[suite_id]["test_cases"]]
             assert templates == [
+                "WanI2VCreateContractTest",
                 "VideoGenerationI2VTest",
                 "VideoGenerationI2VParamTest",
             ], f"{suite_id}: unexpected templates {templates}"

@@ -9,20 +9,21 @@
 #include "config/runner_config.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
+#include "runtime/runners/runner_base.hpp"
 
 namespace tt::runners {
 
 /**
- * What an embedding worker needs from a runner, and nothing more.
- * EmbeddingService owns the loop and drives the runner directly with these
- * three calls.
+ * What an embedding worker needs from a runner.
+ * Derives from IRunnerBase so it can be registered and instantiated via
+ * RunnerRegistry::createMedia<IEmbeddingRunner>.
  */
-class IEmbeddingRunner {
+class IEmbeddingRunner : public IRunnerBase {
  public:
-  virtual ~IEmbeddingRunner() = default;
+  ~IEmbeddingRunner() override = default;
 
   /** Bring up the model. False means the worker must exit. */
-  virtual bool warmup() = 0;
+  bool warmup() override = 0;
 
   /** One forward pass. responses[i] answers requests[i], positionally. */
   virtual std::vector<domain::EmbeddingResponse> run(
@@ -30,10 +31,8 @@ class IEmbeddingRunner {
 
   /** Release model/device resources. Safe to call more than once. */
   virtual void close() = 0;
-};
 
-/** Build the runner named by cfg.runner_type. */
-std::unique_ptr<IEmbeddingRunner> makeEmbeddingRunner(
-    const config::EmbeddingConfig& cfg);
+  void stop() override { close(); }
+};
 
 }  // namespace tt::runners

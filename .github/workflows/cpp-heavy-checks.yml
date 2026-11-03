@@ -252,12 +252,13 @@ jobs:
 
   cpp-server-embedding-mock-bench:
     name: C++ Server Embedding Mock Benchmark
-    # Exercises the full HTTP -> EmbeddingService -> fork/pipe -> mock runner
-    # -> binary codec -> JSON response path under realistic load (8192-token
-    # text inputs, 32-way concurrency against a single worker). The mock
-    # runner is pure CPU math with no core pinning, so unlike the
-    # mock_pipeline bench this job runs fine on ubuntu-latest and reuses the
-    # cpp-build artifact instead of building in-job.
+    # Exercises the full HTTP -> EmbeddingService -> Boost shm task queue ->
+    # worker-side batching -> mock runner -> Boost shm result queue -> JSON
+    # response path under realistic load (8192-token text inputs, 32-way
+    # concurrency against a single worker). The mock runner is pure CPU math
+    # with no core pinning, so unlike the mock_pipeline bench this job runs
+    # fine on ubuntu-latest and reuses the cpp-build artifact instead of
+    # building in-job.
     needs: cpp-build
     runs-on: ubuntu-latest
     timeout-minutes: 30

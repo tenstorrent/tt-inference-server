@@ -34,7 +34,9 @@ from .._test_common import (
     get_video_generation_submit_endpoint,
     get_video_job_endpoint,
     is_i2v_video_model,
+    load_i2v_eval_pairs,
 )
+from .._test_common.video_output_check import check_video_output
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
 DATASET_DIR = "test_fixtures/datasets/videos"
 # accuracy_check codes returned by _check_accuracy.
+ACCURACY_CHECK_NA = 1
 ACCURACY_CHECK_FAIL = 3
 MIN_GENERATION_SUCCESS_RATIO = 1.0
 
@@ -61,6 +64,7 @@ class VideoGenerationEvalsTestRequest:
     frame_sample_rate: int = 8  # Sample every Nth frame for CLIP scoring
     # The DeviceTypes member served on; picks the size where the model takes one.
     device: Any = None
+    i2v_subset: str | None = None  # dev, ci or all; default ci
 
 
 class VideoGenerationEvalsTest(BaseTest):
@@ -70,6 +74,7 @@ class VideoGenerationEvalsTest(BaseTest):
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
+        self.rejected_videos: list[dict] = []
 
     async def _run_specific_test_async(self):
         request = self.targets.get("request")
@@ -98,9 +103,18 @@ class VideoGenerationEvalsTest(BaseTest):
             )
             request.num_inference_steps = num_inference_steps
 
-        # Step 1: Get prompts from COCO dataset
-        logger.info(f"Step 1: Loading {request.num_prompts} prompts from COCO captions")
-        prompts = sdxl_get_prompts(request.start_from, request.num_prompts)
+        # Step 1: Get prompts. T2V takes COCO captions; I2V takes the validation
+        # set's videos, each conditioned on the image its prompt describes.
+        conditioning = None
+        if is_i2v_video_model(request.model_name):
+            logger.info(f"Step 1: Loading {request.num_prompts} I2V validation videos")
+            conditioning = load_i2v_eval_pairs(request.num_prompts, request.i2v_subset)
+            prompts = [pair["prompt"] for pair in conditioning]
+        else:
+            logger.info(
+                f"Step 1: Loading {request.num_prompts} prompts from COCO captions"
+            )
+            prompts = sdxl_get_prompts(request.start_from, request.num_prompts)
 
         # Step 2: Generate videos
         logger.info("Step 2: Generating videos")
@@ -110,27 +124,35 @@ class VideoGenerationEvalsTest(BaseTest):
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
             device=request.device,
+            conditioning=conditioning,
         )
         num_generated = len(videos_info)
 
-        # Step 3: Calculate CLIP scores
-        logger.info("Step 3: Calculating CLIP scores for video frames")
-        clip_results = self._calculate_video_clip_scores(
-            videos_info=videos_info,
-            prompts=prompts,
-            frame_sample_rate=request.frame_sample_rate,
-        )
+        if conditioning is not None:
+            # I2V is scored with VBench against the GPU references, by the caller
+            # from the saved clips; CLIP would only repeat the prompt check.
+            logger.info("Step 3: I2V clips are scored with VBench, not CLIP")
+            clip_results = {}
+            accuracy_check = ACCURACY_CHECK_NA
+        else:
+            # Step 3: Calculate CLIP scores
+            logger.info("Step 3: Calculating CLIP scores for video frames")
+            clip_results = self._calculate_video_clip_scores(
+                videos_info=videos_info,
+                prompts=prompts,
+                frame_sample_rate=request.frame_sample_rate,
+            )
 
-        # Step 4: Calculate accuracy check
-        logger.info("Step 4: Checking accuracy against reference")
-        accuracy_check = self._check_accuracy(
-            clip_results=clip_results,
-            model_name=request.model_name,
-            num_prompts=request.num_prompts,
-        )
+            # Step 4: Calculate accuracy check
+            logger.info("Step 4: Checking accuracy against reference")
+            accuracy_check = self._check_accuracy(
+                clip_results=clip_results,
+                model_name=request.model_name,
+                num_prompts=request.num_prompts,
+            )
 
         # A run that failed to generate the requested videos is not a valid
-        # PASS, regardless of the CLIP score computed over the surviving subset.
+        # PASS, whatever the surviving subset scores.
         min_required = max(
             1, math.ceil(request.num_prompts * MIN_GENERATION_SUCCESS_RATIO)
         )
@@ -148,6 +170,11 @@ class VideoGenerationEvalsTest(BaseTest):
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
+            # {prompt, video_path, job_id, ...} per clip, so the caller can keep them.
+            "videos": videos_info,
+            # Clips that came back the wrong shape (or unusable): not scored, kept
+            # by the caller with the failed clips.
+            "rejected_videos": self.rejected_videos,
         }
 
         self.eval_results = results
@@ -164,6 +191,7 @@ class VideoGenerationEvalsTest(BaseTest):
         server_url: str | None,
         num_inference_steps: int,
         device: Any = None,
+        conditioning: list[dict] | None = None,
     ) -> list[dict]:
         """Generate videos for all prompts.
 
@@ -173,6 +201,8 @@ class VideoGenerationEvalsTest(BaseTest):
             server_url: Base server URL (e.g., http://localhost:8000)
             num_inference_steps: Number of inference steps for generation
             device: DeviceTypes member served on, for models that take a size
+            conditioning: For I2V, one ``{image, image_b64}`` per prompt; without
+                it every I2V prompt gets the fixed fixture image
 
         Returns:
             List of dicts with video information: {'prompt': str, 'video_path': str, 'job_id': str}
@@ -183,7 +213,9 @@ class VideoGenerationEvalsTest(BaseTest):
             f"Generating {len(prompts)} videos using "
             f"{'I2V' if is_i2v else 'T2V'} endpoint: {submit_endpoint}"
         )
-        image_b64 = _load_fixture_image_base64() if is_i2v else None
+        fixture_image_b64 = (
+            _load_fixture_image_base64() if is_i2v and not conditioning else None
+        )
 
         # Remove any stale videos from previous runs so FVD/FVMD only sees
         # outputs produced in the current eval.
@@ -198,6 +230,9 @@ class VideoGenerationEvalsTest(BaseTest):
 
         base_url = server_url or SERVER_BASE_URL
         videos_info = []
+        self.rejected_videos = []
+        # Step caching per job, from servers that report it (Wan2.2 I2V).
+        self.cache_summaries = {}
 
         headers = {
             "accept": "application/json",
@@ -207,13 +242,17 @@ class VideoGenerationEvalsTest(BaseTest):
 
         for idx, prompt in enumerate(prompts):
             logger.info(f"Generating video {idx + 1}/{len(prompts)}: {prompt[:50]}...")
+            pair = conditioning[idx] if conditioning else None
 
             payload = build_video_generation_payload(
                 prompt=prompt,
                 num_inference_steps=num_inference_steps,
                 model_name=model_name,
-                image_b64=image_b64,
+                image_b64=pair["image_b64"] if pair else fixture_image_b64,
                 device=device,
+                shape=pair.get("shape") if pair else None,
+                seed=pair.get("seed") if pair else None,
+                negative_prompt=pair.get("negative_prompt") if pair else None,
             )
 
             generation_start = time.time()
@@ -244,13 +283,36 @@ class VideoGenerationEvalsTest(BaseTest):
 
                 generation_duration = time.time() - generation_start
                 if video_path:
-                    videos_info.append(
-                        {
-                            "prompt": prompt,
-                            "video_path": video_path,
-                            "job_id": job_id,
-                        }
-                    )
+                    video = {
+                        "prompt": prompt,
+                        "video_path": video_path,
+                        "job_id": job_id,
+                        "image": pair["image"] if pair else None,
+                        "camera_motion": pair.get("camera_motion") if pair else None,
+                    }
+                    if job_id in self.cache_summaries:
+                        video["cache_summary"] = self.cache_summaries[job_id]
+                    if pair and pair.get("shape"):
+                        width, height = pair["shape"]
+                        video.update(
+                            video_id=pair["video_id"],
+                            width=width,
+                            height=height,
+                            seed=pair["seed"],
+                        )
+                        # The clip must have the shape this video asked for; one
+                        # the deployment cannot serve yet comes back another size.
+                        problem = check_video_output(
+                            video_path,
+                            hf_model_repo=model_name,
+                            device_name="",
+                            shape=pair["shape"],
+                        )
+                        if problem:
+                            logger.error(f"❌ {pair['video_id']} rejected: {problem}")
+                            self.rejected_videos.append({**video, "problem": problem})
+                            continue
+                    videos_info.append(video)
                     logger.info(f"✅ Video generated successfully: {video_path}")
                 else:
                     logger.error(f"❌ Video generation failed for job: {job_id}")
@@ -300,6 +362,9 @@ class VideoGenerationEvalsTest(BaseTest):
                 logger.info(f"Job {job_id} status: {status}")
 
                 if status == VIDEO_JOB_STATUS_COMPLETED:
+                    summaries = getattr(self, "cache_summaries", None)
+                    if summaries is not None and "cache_summary" in job_data:
+                        summaries[job_id] = job_data["cache_summary"]
                     return self._download_video(base_url, model_name, job_id, headers)
                 elif status in [VIDEO_JOB_STATUS_FAILED, VIDEO_JOB_STATUS_CANCELLED]:
                     logger.error(f"Video generation {status}: {job_id}")

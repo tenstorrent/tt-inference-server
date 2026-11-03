@@ -42,10 +42,16 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
+
+# VBench (I2V and quality dimensions) for scoring saved video-eval clips.
+VBENCH_REPO = "https://github.com/Vchitect/VBench.git"
+VBENCH_COMMIT = "fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490"
+# 4.12 needs numpy 2; VBench's pins hold numpy below it. Same spec as vbench-i2v.txt.
+VBENCH_OPENCV_HEADLESS = "opencv-python-headless<4.12"
 
 # MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
 # its verify.py and m3_format_check pytest suites run unchanged from these
@@ -952,6 +958,30 @@ def fetch_structured_output_scripts_forge(
     return _fetch_structured_output_scripts(venv_config, FORGE_VLLM_PIN_VERSION)
 
 
+def setup_vbench_i2v(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for VBENCH_I2V: headless OpenCV, and VBench checked out at VBENCH_COMMIT.
+
+    pyiqa and facexlib depend on opencv-python, whose cv2 needs libGL, which CI
+    hosts lack. Both packages install the same cv2 module, so drop opencv-python
+    and reinstall the headless build over the files it removed.
+    """
+    python = venv_config.venv_python
+    steps = (
+        f"{UV_EXEC} pip uninstall --python {python} opencv-python",
+        f"{UV_EXEC} pip install --managed-python --python {python} --no-deps "
+        f"--reinstall-package opencv-python-headless '{VBENCH_OPENCV_HEADLESS}'",
+    )
+    for step in steps:
+        if run_command(step, logger=logger) != 0:
+            return False
+    return checkout_pinned_repo(
+        venv_config.venv_path / "VBench", VBENCH_REPO, VBENCH_COMMIT
+    )
+
+
 _venv_config_list = [
     # Pure pip install
     VenvConfig(
@@ -982,6 +1012,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
         requirements_file="evals-vision.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.VBENCH_I2V,
+        requirements_file="vbench-i2v.txt",
+        setup_function=setup_vbench_i2v,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_AUDIO,

@@ -147,6 +147,12 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      # Declares the step caching the deployment runs, so the eval compares with
+      # the cached GPU references (refs/r2/tt) and benchmarks pick the cached
+      # targets. The generation runner keeps tt-metal's default for I2V, which
+      # is DBCache on; the server does not read this variable.
+      env_vars:
+        WAN22_DBCACHE: "on"
     - device: P150X4
       max_concurrency: 1
       max_context: 65536  # 64 * 1024

@@ -50,6 +50,10 @@ templates:
       max_concurrency: 32
       max_context: 65536
       default_impl: true
+      # Wormhole Galaxy CI hosts prune the host /dev/shm every ~70 s under running
+      # jobs, which deletes Boost IPC queues (tt_warmup_signals, tt_embedding_tasks)
+      # while workers are still warming up. Run in a private IPC namespace.
+      docker_shm_size: 8g
       env_vars:
         VLLM__MAX_NUM_BATCHED_TOKENS: "3072"
         VLLM__MAX_MODEL_LENGTH: "384"
@@ -111,6 +115,7 @@ templates:
       max_concurrency: 32
       max_context: 65536
       default_impl: true
+      docker_shm_size: 8g
       env_vars:
         VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
         VLLM__MAX_MODEL_LENGTH: "8192"
@@ -160,6 +165,7 @@ templates:
       max_concurrency: 32
       max_context: 65536
       default_impl: true
+      docker_shm_size: 8g
       env_vars:
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
@@ -212,6 +218,7 @@ templates:
       max_concurrency: 32
       max_context: 65536
       default_impl: true
+      docker_shm_size: 8g
       env_vars:
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
