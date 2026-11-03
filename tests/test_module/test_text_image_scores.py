@@ -66,17 +66,27 @@ def test_only_benchmarks_the_run_made_images_for_are_scored(tmp_path, monkeypatc
     index = [{"case_id": c} for c in ("dpg_a", "longtext_0", "gedit_0")]
     ran = []
 
-    def scorer(benchmark, out_dir, data_dir, images):
-        ran.append((benchmark.name, images))
+    def scorer(benchmark, out_dir, data_dir, images, device):
+        ran.append((benchmark.name, images, device))
         return {"cases": {"dpg_a": {"score": 0.9}}}, None
 
     monkeypatch.setattr(t2i, "run_scorer", scorer)
     scores = t2i.score_text_images(tmp_path / "out", tmp_path, "refs/r1", index, cases)
-    # dpg_b wasn't made; there's no GPU longtext.json to compare with.
-    assert ran == [("dpg", 1)]
+    # dpg_b wasn't made. LongText isn't scored on the CPU, only reported.
+    assert ran == [("dpg", 1, "cpu")]
     assert scores["dpg"]["tt"] == scores["dpg"]["gpu"] == 90.0
-    assert scores["longtext"]["error"] == "refs/r1 has no longtext.json"
+    assert (
+        scores["longtext"]["images"] == 1
+        and "too slow" in scores["longtext"]["skipped"]
+    )
     assert t2i.score_text_images(tmp_path, tmp_path, "refs/r1", [], cases) == {}
+    # On a GPU it is scored, against the GPU run's longtext.json.
+    ran.clear()
+    scores = t2i.score_text_images(
+        tmp_path / "out", tmp_path, "refs/r1", index, cases, device="cuda"
+    )
+    assert ran == [("dpg", 1, "cuda")]
+    assert scores["longtext"]["error"] == "refs/r1 has no longtext.json"
 
 
 def fake_run(writes: dict | None, code: int = 0):
@@ -108,6 +118,14 @@ def test_a_scorer_runs_on_the_cpu_with_cpu_torch_and_a_checked_mplug(
     assert command[5:].count("--index-strategy") == 1
     # 100 images at a minute each, over the half hour floor.
     assert timeout == 6000
+
+    # On a GPU: the device passed on, no CPU torch index.
+    run, calls = fake_run({"cases": {}})
+    monkeypatch.setattr(t2i.subprocess, "run", run)
+    t2i.run_scorer(t2i.BENCHMARKS["longtext"], tmp_path, tmp_path, 2, device="cuda")
+    [(command, _)] = calls
+    assert command[command.index("--device") + 1] == "cuda"
+    assert "--index" not in command
 
     monkeypatch.setattr(t2i.subprocess, "run", fake_run(None, code=1)[0])
     assert t2i.run_scorer(t2i.BENCHMARKS["longtext"], tmp_path, tmp_path, 2) == (
@@ -154,6 +172,11 @@ def test_the_gate_checks_a_benchmark_against_the_gpu_score_less_its_drop():
     assert [(c["check"], c["status"]) for c in gate["checks"]] == [("min_dpg", "FAIL")]
     unset = {"models": {model: {ref: {"text_image_max_drop": {"dpg": None}}}}}
     assert eval_.grade({}, model, ref, unset, text_image)["verdict"] == "NA"
+    # A benchmark the eval didn't score on its CPU is not checked, even with a limit.
+    skipped = {
+        "longtext": {"title": "LongText-Bench", "images": 7, "skipped": "too slow"}
+    }
+    assert eval_.grade({}, model, ref, config, skipped)["verdict"] == "NA"
 
 
 def test_the_section_renders_the_text_to_image_scores():
@@ -177,12 +200,14 @@ def test_the_section_renders_the_text_to_image_scores():
                 },
                 "longtext": {
                     "title": "LongText-Bench",
-                    "error": "the scorer exited with code 1",
+                    "images": 7,
+                    "skipped": "too slow on a CPU",
                 },
             },
         },
     )
     rendered = render_image_compare(block, {})
     assert "#### Text to image" in rendered and "| DPG-Bench" in rendered
-    assert "88.48" in rendered and "LongText-Bench: not scored" in rendered
+    assert "88.48" in rendered
+    assert "LongText-Bench: 7 images not scored, too slow on a CPU" in rendered
     assert "left out by its scorer, dpg_partiprompts97_1024x1024" in rendered

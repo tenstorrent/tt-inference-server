@@ -11,8 +11,9 @@ with its prompt, inputs, shape and seed; the image is saved with the run
 and noise (``image_compare``, in its own venv). The comparison is a report
 section; the eval is graded by the compare gate
 (``image_compare_gate.json``), NA until a calibration run sets its thresholds.
-Text-to-image cases are also scored on their benchmarks (``text_image_scores``)
-and compared with the GPU run's scores.
+Text-to-image cases are also scored on DPG-Bench (``text_image_scores``) and
+compared with the GPU run's score; LongText-Bench needs a GPU, so it is
+reported as not scored.
 
 Every model is asked through the generation API (``/v1/generations/{model}``).
 A case the deployment does not serve, by the request schema it publishes (an
@@ -216,7 +217,7 @@ def grade(
             )
     for name, drop in (limits.get("text_image_max_drop") or {}).items():
         score = (text_image or {}).get(name)
-        if drop is None or score is None:
+        if drop is None or score is None or "skipped" in score:
             continue
         check = {"group": "t2i", "check": f"min_{name}"}
         if "error" in score:

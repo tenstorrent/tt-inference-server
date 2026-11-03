@@ -6,9 +6,15 @@
 
 LongText-Bench and DPG-Bench (``longtext_score.py``, ``dpg_score.py``) score
 the run's images of their cases. Each scorer is a uv script that pins its own
-environment; here it runs on the CPU, with torch's CPU build. TT's score is
-compared with the GPU run's (``<reference>/<benchmark>.json`` in the eval
-data), over the cases both have.
+environment; on the CPU it runs with torch's CPU build. TT's score is compared
+with the GPU run's (``<reference>/<benchmark>.json`` in the eval data), over
+the cases both have.
+
+The eval host has no GPU, and LongText-Bench's Qwen2.5-VL-7B is too slow on a
+CPU (minutes an image), so the eval scores DPG-Bench only and reports LongText
+as not scored. Its images are saved with the run (``images/evals``), so
+``longtext_score.py`` can score them on a GPU host as it scored the GPU run's,
+or ``score_text_images`` with ``device="cuda"``.
 
 The scorers' models are the ones the GPU run was scored with: Qwen2.5-VL at
 the revision ``longtext_score.py`` pins, and mPLUG-large, checked by sha256.
@@ -47,12 +53,21 @@ class Benchmark:
     python: str
     # The scorer's time limit, per image, on a CPU.
     seconds_per_image: int
+    # Too slow on a CPU to score there.
+    gpu_only: bool = False
 
 
 BENCHMARKS = {
     b.name: b
     for b in (
-        Benchmark("longtext", "LongText-Bench", "longtext_score.py", "3.12", 300),
+        Benchmark(
+            "longtext",
+            "LongText-Bench",
+            "longtext_score.py",
+            "3.12",
+            300,
+            gpu_only=True,
+        ),
         Benchmark("dpg", "DPG-Bench", "dpg_score.py", "3.10", 60),
     )
 }
@@ -110,9 +125,13 @@ def fetch_mplug(dest: Path = MPLUG_DIR) -> tuple[Path | None, str | None]:
 
 
 def run_scorer(
-    benchmark: Benchmark, out_dir: Path, data_dir: Path, images: int
+    benchmark: Benchmark,
+    out_dir: Path,
+    data_dir: Path,
+    images: int,
+    device: str = "cpu",
 ) -> tuple[dict | None, str | None]:
-    """The scorer's result for the images in ``out_dir``, or why it has none."""
+    """The scorer's result for the images in ``out_dir`` on ``device``, or why it has none."""
     extra = []
     if benchmark.name == "dpg":
         mplug, problem = fetch_mplug()
@@ -120,17 +139,19 @@ def run_scorer(
             return None, problem
         extra = ["--vqa-model", str(mplug)]
     result_path = out_dir / f"{benchmark.name}.json"
+    # On the CPU, torch from its CPU index; what that index lacks at the pinned version, from PyPI.
+    cpu_torch = (
+        ["--index", CPU_TORCH_INDEX, "--index-strategy", "unsafe-first-match"]
+        if device == "cpu"
+        else []
+    )
     command = [
         str(_uv()),
         "run",
         "--managed-python",
         "--python",
         benchmark.python,
-        # torch from its CPU index; what that index lacks at the pinned version, from PyPI.
-        "--index",
-        CPU_TORCH_INDEX,
-        "--index-strategy",
-        "unsafe-first-match",
+        *cpu_torch,
         str(SCORERS_DIR / benchmark.script),
         "--images-dir",
         str(out_dir),
@@ -139,7 +160,7 @@ def run_scorer(
         "--out",
         str(result_path),
         "--device",
-        "cpu",
+        device,
         *extra,
     ]
     timeout = max(MIN_TIMEOUT_SECONDS, benchmark.seconds_per_image * images)
@@ -187,9 +208,15 @@ def compare_scores(name: str, tt: dict, gpu: dict) -> dict:
 
 
 def score_text_images(
-    out_dir: Path, data_dir: Path, reference: str, index: list[dict], cases: list[dict]
+    out_dir: Path,
+    data_dir: Path,
+    reference: str,
+    index: list[dict],
+    cases: list[dict],
+    device: str = "cpu",
 ) -> dict[str, dict]:
-    """Per benchmark with images in the run: TT's score against the GPU run's."""
+    """Per benchmark with images in the run: TT's score against the GPU run's, or
+    why there is none (``skipped`` for a benchmark ``device`` can't score)."""
     made = {entry["case_id"] for entry in index}
     counts: dict[str, int] = {}
     for case in cases:
@@ -198,6 +225,13 @@ def score_text_images(
     scores = {}
     for name, images in counts.items():
         benchmark = BENCHMARKS[name]
+        if benchmark.gpu_only and device == "cpu":
+            scores[name] = {
+                "title": benchmark.title,
+                "images": images,
+                "skipped": "too slow on a CPU; the run's images can be scored on a GPU",
+            }
+            continue
         gpu_path = data_dir / reference / f"{name}.json"
         if not gpu_path.is_file():
             scores[name] = {
@@ -205,7 +239,7 @@ def score_text_images(
                 "error": f"{reference} has no {name}.json",
             }
             continue
-        tt, problem = run_scorer(benchmark, out_dir, data_dir, images)
+        tt, problem = run_scorer(benchmark, out_dir, data_dir, images, device)
         if problem:
             scores[name] = {"title": benchmark.title, "error": problem}
             continue

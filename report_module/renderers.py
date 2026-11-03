@@ -717,6 +717,10 @@ def render_image_compare(block: Block, metadata: Mapping[str, Any]) -> str:
     for name, t in (data.get("text_image") or {}).items():
         if t.get("error"):
             notes.append(f"- {t.get('title', name)}: not scored, {t['error']}")
+        elif t.get("skipped"):
+            notes.append(
+                f"- {t.get('title', name)}: {t.get('images')} images not scored, {t['skipped']}"
+            )
         elif t.get("not_scored"):
             notes.append(
                 f"- {t.get('title', name)}: left out by its scorer, {', '.join(t['not_scored'])}"
