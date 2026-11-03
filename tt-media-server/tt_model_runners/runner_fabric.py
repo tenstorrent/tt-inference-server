@@ -61,6 +61,16 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_IDEOGRAM_4: lambda wid: __import__(
         "tt_model_runners.generation_runners", fromlist=["TTIdeogram4Runner"]
     ).TTIdeogram4Runner(wid),
+    ModelRunners.GPU_QWEN_IMAGE_EDIT_2511: lambda wid: __import__(
+        "tt_model_runners.gpu_generation_runners",
+        fromlist=["GPUQwenImageEdit2511Runner"],
+    ).GPUQwenImageEdit2511Runner(wid),
+    ModelRunners.GPU_FLUX_2_KLEIN_4B: lambda wid: __import__(
+        "tt_model_runners.gpu_generation_runners", fromlist=["GPUFlux2Klein4BRunner"]
+    ).GPUFlux2Klein4BRunner(wid),
+    ModelRunners.GPU_IDEOGRAM_4: lambda wid: __import__(
+        "tt_model_runners.gpu_generation_runners", fromlist=["GPUIdeogram4Runner"]
+    ).GPUIdeogram4Runner(wid),
     ModelRunners.TT_WAN_2_2_I2V_PRODIA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VProdiaRunner"]
     ).TTWan22I2VProdiaRunner(wid),

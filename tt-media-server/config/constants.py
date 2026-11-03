@@ -141,6 +141,11 @@ class ModelRunners(Enum):
     TT_QWEN_IMAGE_EDIT_2511 = "tt-qwen-image-edit-2511"
     TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
     TT_IDEOGRAM_4 = "tt-ideogram-4"
+    # GPU stand-ins for the three above, for testing the API and evals on a
+    # CUDA host (tt_model_runners/gpu_generation_runners.py).
+    GPU_QWEN_IMAGE_EDIT_2511 = "gpu-qwen-image-edit-2511"
+    GPU_FLUX_2_KLEIN_4B = "gpu-flux.2-klein-4b"
+    GPU_IDEOGRAM_4 = "gpu-ideogram-4"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
@@ -206,6 +211,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE_EDIT_2511,
         ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_IDEOGRAM_4,
+        ModelRunners.GPU_QWEN_IMAGE_EDIT_2511,
+        ModelRunners.GPU_FLUX_2_KLEIN_4B,
+        ModelRunners.GPU_IDEOGRAM_4,
         ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
@@ -346,6 +354,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
     ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
     ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
+    ModelRunners.GPU_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
+    ModelRunners.GPU_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
+    ModelRunners.GPU_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
