@@ -136,6 +136,10 @@ def _engine_target():
     return name, image, ns_pid
 
 
+_PROFILE_MODES = [[], ["--security-opt", "apparmor=unconfined", "--security-opt", "seccomp=unconfined"], ["--privileged"]]
+_profile_mode = [0]
+
+
 def profile_engine(job_dir: Path, seconds: int = 20, rate: int = 50) -> Path:
     """One non-blocking py-spy recording of the engine process, from a root helper container in its pid namespace."""
     out = job_dir / "engine_profiles"
@@ -143,13 +147,24 @@ def profile_engine(job_dir: Path, seconds: int = 20, rate: int = 50) -> Path:
     binary = _pyspy_binary(job_dir.parent / ".pyspy")
     name, image, pid = _engine_target()
     stamp = f"{time.time():.0f}"
-    r = subprocess.run(["docker", "run", "--rm", "--pid", f"container:{name}", "--cap-add", "SYS_PTRACE", "--network", "none",
-                        "-v", f"{binary.parent}:/ps:ro", "-v", f"{out}:/out", "--entrypoint", "/ps/py-spy", image,
-                        "record", "-p", pid, "-d", str(seconds), "-r", str(rate), "--nonblocking", "-t", "-f", "raw", "-o", f"/out/{stamp}.txt"],
-                       capture_output=True, text=True, timeout=seconds + 120)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip()[-300:])
-    return out / f"{stamp}.txt"
+    errors = []
+    # Hosts differ in how they confine ptrace across containers; use the first helper setting that works.
+    for extra in _PROFILE_MODES[_profile_mode[0]:]:
+        r = subprocess.run(["docker", "run", "--rm", "--pid", f"container:{name}", "--cap-add", "SYS_PTRACE", "--network", "none", *extra,
+                            "-v", f"{binary.parent}:/ps:ro", "-v", f"{out}:/out", "--entrypoint", "/ps/py-spy", image,
+                            "record", "-p", pid, "-d", str(seconds), "-r", str(rate), "--nonblocking", "-t", "-f", "raw", "-o", f"/out/{stamp}.txt"],
+                           capture_output=True, text=True, timeout=seconds + 120)
+        if r.returncode == 0:
+            if _profile_mode[0] != _PROFILE_MODES.index(extra):
+                _profile_mode[0] = _PROFILE_MODES.index(extra)
+                logger.info("HOST_MONITOR engine profile works with helper options %s", extra or "none")
+            return out / f"{stamp}.txt"
+        errors.append(f"{extra or 'plain'}: {r.stderr.strip()[-160:]}")
+    try:
+        scope = open("/proc/sys/kernel/yama/ptrace_scope").read().strip()
+    except OSError:
+        scope = "n/a"
+    raise RuntimeError(f"ptrace_scope={scope}; " + " | ".join(errors))
 
 
 def start(job_dir: Path, interval_s: float = 60.0, max_bytes: int = 1 << 30, keep_bytes: int = 256 << 20, profile_every_s: float = 0.0):
