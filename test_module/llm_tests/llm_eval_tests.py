@@ -581,9 +581,11 @@ def _run_eval_task(
         tokenizer_path=tokenizer,
     )
     env = dict(os.environ)
-    if auth_token:
-        # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
-        env["OPENAI_API_KEY"] = auth_token
+    # lm-eval local-completions reads the bearer token from OPENAI_API_KEY. The
+    # OpenAI SDK client lmms-eval's openai_compatible model builds refuses to
+    # construct without a key, so a --no-auth server (no token) gets a
+    # placeholder the server never checks.
+    env["OPENAI_API_KEY"] = auth_token or "no-auth"
     if getattr(task, "allow_code_execution", False):
         # HF evaluate's code_eval metric refuses to run without this. Scoped to
         # this subprocess only -- never os.environ, the image, or the workflow
