@@ -1549,9 +1549,10 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     vllm_args = spec.device_model_spec.vllm_args
     assert spec.device_model_spec.default_impl
     assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
-    # c=16: each engine verifies its 4 requests as 4 groups of 2 slots.
+    # Adaptive draft length: K = 3 (2 groups of 4 slots) for up to two requests per engine,
+    # K = 1 (4 groups of 2 slots) for three or four.
     assert spec.device_model_spec.env_vars["MIMO_SPEC_SLOTS"] == 8
-    assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == 4
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == "2,4"
     assert spec.device_model_spec.submesh_engines is True
     # The model declares supports_async_spec_decode, so async scheduling stays on.
     assert "no-async-scheduling" not in vllm_args
@@ -1560,11 +1561,12 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     assert vllm_args["prefix-cache-retention-interval"] == 1024
     # MTP keeps the default KV budget: a larger one is unverified with its extra memory.
     assert "MIMO_KV_GB_PER_CHIP" not in spec.device_model_spec.env_vars
+    # 3, the K = 3 layout's draft length: at 1 that layout is clamped and adaptive acts as groups=4.
     speculative = json.loads(vllm_args["speculative_config"])
     assert speculative == {
         "method": "custom_class",
         "model": "vllm_tt_plugin.model_owned_drafter",
-        "num_speculative_tokens": 1,
+        "num_speculative_tokens": 3,
     }
 
 

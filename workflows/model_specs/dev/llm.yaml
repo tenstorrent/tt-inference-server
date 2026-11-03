@@ -3572,8 +3572,9 @@ templates:
       tt_cache_env: MIMO_TT_CACHE
 
 # MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
-# mimo-v2.6-flash serves without it). One MTP layer drafts 1 token for each of an engine's 4
-# requests (MIMO_SPEC_SLOTS=8: a verify runs the 4 requests as 4 groups of 2 slots, the grouped
+# mimo-v2.6-flash serves without it). Adaptive draft length (MIMO_SPEC_SLOTS=8,
+# MIMO_SPEC_GROUPS=2,4): the MTP layers draft 3 tokens per request while an engine holds up to two
+# requests (2 groups of 4 slots) and 1 token for three or four (4 groups of 2 slots, the grouped
 # verify attention scanning each request's KV once), through the plugin's model-owned drafter
 # contract. One engine per mesh row, as the entry above. Needs an image built from tt-metal
 # mimo-v2.6/dev (51d0cd357d7 or later: c=16 groups, packed grouped verify) and vllm-tt-plugin
@@ -3603,8 +3604,11 @@ templates:
         MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_SPEC_DECODE: mtp
-        MIMO_SPEC_SLOTS: 8  # a verify holds 4 requests x 2 slots
-        MIMO_SPEC_GROUPS: 4
+        MIMO_SPEC_SLOTS: 8
+        # Adaptive draft length: K = 3 (2 groups of 4 slots) for up to two requests per engine, K = 1
+        # (4 groups of 2 slots) for three or four. Needs num_speculative_tokens 3 below; at 1 the K = 3
+        # layout is clamped and this behaves exactly like MIMO_SPEC_GROUPS=4.
+        MIMO_SPEC_GROUPS: "2,4"
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
       override_tt_config:
         trace_mode: decode_only
@@ -3630,7 +3634,8 @@ templates:
         tool-call-parser: mimo
         # Async scheduling: plain lane steps overlap, and fused verifies chain on device (the model
         # declares supports_async_spec_decode).
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 1}'
+        # 3: the adaptive K = 3 layout's draft length (the model clamps it to 1 under load).
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # As the default entry: the repo name has no "<N>B" to infer these from.
