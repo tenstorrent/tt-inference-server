@@ -329,7 +329,10 @@ templates:
         sample_on_device_mode: all
         # vLLM's chunk boundaries must keep the model's 32-row chunk contract;
         # 256 = 32 x 8 rows keeps every intermediate chunk tile-aligned per row.
-        prefill_chunk_alignment: 256
+        # the model resumes a partial prefill only on its 16 K chunk grid: a chunk cut short by the
+        # step budget (an 8204-token prompt split at 7936) hits attention programs the sealed cache
+        # never captured and kills the engine; shorter prompts wait for a step that fits them whole
+        prefill_chunk_alignment: 16384
         # Decode steps run between a prompt's chunks: a slot mid-prefill is parked
         # (GLM53_DECODE_SLOT_MASK=1 gates its KDA state writes; its DSA row is
         # rewritten by the next chunk), so a long prompt's prefill no longer stalls
@@ -426,7 +429,10 @@ templates:
         trace_region_size: 536870912
         l1_small_size: 32768
         sample_on_device_mode: all
-        prefill_chunk_alignment: 256
+        # the model resumes a partial prefill only on its 16 K chunk grid: a chunk cut short by the
+        # step budget (an 8204-token prompt split at 7936) hits attention programs the sealed cache
+        # never captured and kills the engine; shorter prompts wait for a step that fits them whole
+        prefill_chunk_alignment: 16384
         decode_interleave_enabled: false
       vllm_args:
         max_num_seqs: 192  # = the slot count under per-row prefill ownership (a multiple of the 8 rows)
