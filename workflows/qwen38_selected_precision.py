@@ -30,6 +30,17 @@ def policy_mount(model_spec):
     return ['--mount', f'type=bind,src={POLICY.resolve()},dst={CONTAINER_POLICY},readonly'], {ENV_KEY:CONTAINER_POLICY}
 
 
+def docker_timestamp_epoch(value):
+    # Docker RFC3339Nano exceeds Python3.10 fromisoformat's fractional grammar.
+    # datetime stores microseconds; truncate only sub-microsecond digits, as3.12 does.
+    match=re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})',value)
+    if not match:
+        raise ValueError('Invalid timezone-aware Docker timestamp')
+    fraction='.'+match[2][:6].ljust(6,'0') if match[2] else ''
+    zone='+00:00' if match[3]=='Z' else match[3]
+    return datetime.fromisoformat(match[1]+fraction+zone).timestamp()
+
+
 def verify_adapter_marker(log_text):
     expected = selected_policy()
     clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', log_text)
@@ -42,7 +53,7 @@ def verify_adapter_marker(log_text):
         stamp = re.match(r'(\S+) .*?EngineCore[^\n]*?pid=(\d+)', line)
         if not stamp:
             raise RuntimeError('Adapter marker lacks timestamp/current engine PID')
-        marker_epoch = datetime.fromisoformat(stamp[1].replace('Z', '+00:00')).timestamp()
+        marker_epoch = docker_timestamp_epoch(stamp[1])
         engine_pid = int(stamp[2])
         match = re.search(r'AUTOPORT_ADAPTER (\S+) layers=(\[.*?\]) precision=(\{.*\})\s*$', line)
         if not match or not match[1].endswith('models/autoports/qwen_qwen3_8_27b/tt/generator_vllm.py:Qwen38ForCausalLM'):

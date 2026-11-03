@@ -64,8 +64,12 @@ def test_allocation_anchor_and_clock_never_reset(tmp_path):
     with pytest.raises(ValueError):bind_clock(dict(clock,deadline_epoch=clock['deadline_epoch']+1),path)
     with pytest.raises(ValueError):allocation_from_jobs(jobs*2,env)
 
-def test_actual_entrypoint_refuses_missing_admission_before_any_fetch(monkeypatch):
+def test_actual_entrypoint_refuses_missing_admission_before_any_fetch(monkeypatch,tmp_path):
+    import workflows.qwen38_original_admission as admission_module
     from workflows.qwen38_original_admission import prepare
+    selected=admission_module.controls()
+    blocked=tmp_path/'blocked-admission.json';blocked.write_text(json.dumps({'decision':'stop'}))
+    monkeypatch.setattr(admission_module,'controls',lambda:{**selected,'admission_json':str(blocked)})
     with pytest.raises(ValueError,match='admission'):
         prepare(NS(model='Qwen3.8-27B'),{'GITHUB_ACTIONS':'true'},fetch=lambda _:pytest.fail('No remote call before admission'))
 

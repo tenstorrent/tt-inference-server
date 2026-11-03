@@ -1,0 +1,13 @@
+{
+  "status": "pass",
+  "python": "3.10.22",
+  "source": "docker_server/vllm_2026-11-03_05-11-44_Qwen__Qwen3.8-27B_p300x2_evals.log",
+  "marker_body_sha256": "1db3736ed42cd94c08e9066612545d3c6e0b6571cad7d5bc4b69fbe399733321",
+  "scope": "Host reconstruction combines retained actual marker body with exact Docker timestamp from failure traceback; not fresh runtime measurement",
+  "layer_count": 64,
+  "engine_pid": 142,
+  "marker_epoch": 1793682913.679142,
+  "tests_actual_python310": 3,
+  "host_precision_checkpoint_route_tests": 35,
+  "requests_sent": 0
+}
