@@ -5,7 +5,10 @@ from dataclasses import replace
 from pathlib import Path
 MANIFEST=Path(__file__).with_suffix('.json')
 TASK='gpqa_diamond_cot_zeroshot'
-def enabled(): return os.environ.get('TT_QWEN38_GPQA_ORIGINAL')=='1'
+def enabled():
+    selected=json.loads(MANIFEST.read_text()).get('selected_protocol')
+    if selected not in (None,'original-stage11-cutoff-repair'):raise ValueError('Unknown selected GPQA protocol')
+    return selected=='original-stage11-cutoff-repair'
 def configure(tasks,runtime_config=None):
     from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
     from workflow_module.engine_types import EvalLimitMode

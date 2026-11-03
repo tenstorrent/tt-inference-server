@@ -576,7 +576,10 @@ def _run_eval_task(
         from workflows.qwen38_checkpoint_preflight import ensure_checkpoint_preflight
         # run_llm_eval supplies a fresh eval-attempt UUID directory. Reverify
         # the current owned server on every invocation, never a cached receipt.
-        ensure_checkpoint_preflight(ctx.model_spec.hf_model_repo, output_path)
+        checkpoint = ensure_checkpoint_preflight(ctx.model_spec.hf_model_repo, output_path)
+        if task.task_name == "gpqa_diamond_cot_zeroshot":
+            from workflows.qwen38_original_admission import runtime_identity
+            runtime_identity(checkpoint, output_path)
     tokenizer = _prepare_eval_tokenizer(ctx, task, output_path)
     cmd = build_eval_command(
         task,

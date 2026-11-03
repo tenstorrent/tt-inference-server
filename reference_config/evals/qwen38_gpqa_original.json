@@ -48,5 +48,8 @@
     "tasks/gpqa/cot_zeroshot/_gpqa_cot_zeroshot_yaml": "809e56db15e55c08aebe73ddd712194e507649fa7c432112ccaf0bad61383ff9",
     "tasks/gpqa/cot_zeroshot/gpqa_diamond_cot_zeroshot.yaml": "a4d853e52587c906fb18a6ed8ef75596b986a28c8696cb9d6d78ffcd4480d18f",
     "tasks/_yaml_loader.py": "3ea637c454937df677ea662325a9f7cb08869fde29edfc26b44ff41be6127034"
-  }
+  },
+  "selected_protocol": "original-stage11-cutoff-repair",
+  "admission_json": null,
+  "runtime_repo_paths": {}
 }

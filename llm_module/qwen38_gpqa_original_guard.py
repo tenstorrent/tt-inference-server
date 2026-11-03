@@ -53,7 +53,8 @@ def main(argv=None):
     manifest=json.loads(Path(opts.manifest).read_text());validate_command(target)
     authorization=authorize(manifest,'full_suite',target)
     # Coordinator supplies absolute first-wave deadline only after actual free-budget admission.
-    deadline=float(os.environ['TT_QWEN38_ORIGINAL_DEADLINE_EPOCH'])
+    from workflows.qwen38_original_admission import read_bound_deadline
+    deadline=read_bound_deadline()
     if deadline-time.time()>19800:raise ValueError('First-wave deadline exceeds5.5h')
     verify_sources(manifest)
     import datasets

@@ -58,7 +58,7 @@ def verify_dataset(data, manifest):
             'task':manifest['task'],
             'selected_doc_ids':manifest.get('selected_doc_ids', ids),
             'intent':manifest.get('intent', 'full_suite'),
-            'scope':f'{len(ids)} frozen source rows verified; official r1 prompt/scorer retained'}
+            'scope':f"{len(ids)} frozen source rows verified; native task {manifest['task']} prompt/scorer retained"}
 
 
 def install_guard(datasets_module, adapter_class, manifest, audit_path, responses_path):

@@ -41,3 +41,48 @@ def test_manifest_and_no_selection_override():
     assert m['doc_ids']==[12,15] and len(m['payload_sha256'])==2
     for rc in (NS(eval_samples='2'),NS(eval_shard='0/2'),NS(limit_samples_mode='smoke-test')):
         with pytest.raises(ValueError):configure([release_task()],rc)
+
+def test_candidate_default_catalog_selects_original_without_environment(monkeypatch):
+    from reference_config.evals.qwen38_gpqa_original import enabled
+    monkeypatch.delenv('TT_QWEN38_GPQA_ORIGINAL',raising=False)
+    assert enabled()
+    assert configure([release_task()])[0].task_name=='gpqa_diamond_cot_zeroshot'
+    # Actual default run.py invokes admission before host bootstrap/server startup.
+    source=Path('run.py').read_text()
+    main=source[source.index('def main():'):]
+    assert main.index('prepare_original_gpqa(args)')<main.index('bootstrap_uv()')
+    source=Path('llm_module/eval_configs.py').read_text()
+    assert 'original_configure(standard, runtime_config) if enabled()' in source
+
+def test_allocation_anchor_and_clock_never_reset(tmp_path):
+    from workflows.qwen38_original_admission import allocation_from_jobs,bind_clock
+    env={'RUNNER_NAME':'owned','GITHUB_RUN_ID':'12','GITHUB_RUN_ATTEMPT':'1','GITHUB_REPOSITORY':'tenstorrent/tt-shield'}
+    jobs=[{'id':42,'runner_name':'owned','status':'in_progress','started_at':'2026-11-03T04:00:00Z'}]
+    clock=allocation_from_jobs(jobs,env)
+    assert clock['deadline_epoch']-clock['allocation_started_epoch']==19800
+    path=tmp_path/'clock.json';bind_clock(clock,path);bind_clock(clock,path)
+    with pytest.raises(ValueError):bind_clock(dict(clock,deadline_epoch=clock['deadline_epoch']+1),path)
+    with pytest.raises(ValueError):allocation_from_jobs(jobs*2,env)
+
+def test_actual_entrypoint_refuses_missing_admission_before_any_fetch(monkeypatch):
+    from workflows.qwen38_original_admission import prepare
+    with pytest.raises(ValueError,match='coordinator'):
+        prepare(NS(model='Qwen3.8-27B'),{'GITHUB_ACTIONS':'true'},fetch=lambda _:pytest.fail('No remote call before admission'))
+
+def test_runtime_identity_observes_actual_container_not_dispatch_refs(tmp_path,monkeypatch):
+    import workflows.qwen38_original_admission as a
+    c={'runtime_repo_paths':{'metal':'/actual/metal','plugin':'/actual/plugin'}}
+    monkeypatch.setattr(a,'controls',lambda:c)
+    observed={'host_tis_sha':'1'*40,'metal_sha':'2'*40,'plugin_sha':'3'*40,'image_digest':'sha256:actual'}
+    p=tmp_path/'pre.json';p.write_text(json.dumps({'runtime_sources':observed}))
+    monkeypatch.setenv('TT_QWEN38_PREFLIGHT_JSON',str(p))
+    seen=[]
+    def run(cmd,**kwargs):
+        seen.append(cmd)
+        result=observed['host_tis_sha'] if cmd[0]=='git' else observed['metal_sha' if '/actual/metal' in cmd else 'plugin_sha']
+        return NS(stdout=result)
+    receipt=a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
+    assert receipt['observed']==observed
+    assert all(cmd[2]=='a'*64 for cmd in seen if cmd[0]=='docker')
+    p.write_text(json.dumps({'runtime_sources':dict(observed,metal_sha='dispatch-wish-ref')}))
+    with pytest.raises(ValueError,match='Actual runtime'):a.runtime_identity({'container_id':'a'*64,'image_id':'sha256:actual','ok':True},tmp_path,run)
