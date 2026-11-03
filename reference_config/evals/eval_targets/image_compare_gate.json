@@ -10,6 +10,12 @@
     "qwen/qwen-image-edit-2511": {
       "refs/r1": {"max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {}}
     },
+    "ideogram-ai/ideogram-4": {
+      "refs/r1": {
+        "max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {},
+        "text_image_max_drop": {"longtext": null, "dpg": null}
+      }
+    },
     "black-forest-labs/flux.2-klein-4b": {
       "refs/r1": {
         "max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {},

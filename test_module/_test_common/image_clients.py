@@ -78,6 +78,9 @@ class GenerationAPIClient:
             request["prompt"] = case["prompt"]
         if self.model.size_tiers and case.get("size"):
             request["size"] = case["size"]
+        # The sampler tier, for a model that takes one (Ideogram's rendering_speed).
+        if "rendering_speed" in self.model.enums and case.get("tier"):
+            request["rendering_speed"] = case["tier"]
         if inputs:
             request["images"] = [data_uri(data) for data in inputs]
         return request

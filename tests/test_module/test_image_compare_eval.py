@@ -124,6 +124,35 @@ def test_groups_follow_kind_references_and_size():
         scorer.group_of({"task": "multi_ref", "images": ["a", "b"], "size": "1K"})
         == "multi_ref_2"
     )
+    # Sampler tiers past the default are their own groups (Ideogram's 12 and 48 steps).
+    t2i = {"task": "t2i", "benchmark": "dpg", "size": "1K"}
+    assert scorer.group_of({**t2i, "tier": "default"}) == "dpg"
+    assert scorer.group_of({**t2i, "tier": "quality"}) == "dpg_quality"
+    assert scorer.group_of({**t2i, "size": "2K", "tier": "turbo"}) == "dpg_2K_turbo"
+
+
+def test_ideogram_is_asked_for_the_cases_structured_prompt_shape_and_tier():
+    client = GenerationAPIClient("http://x", MODELS["ideogram-ai/ideogram-4"])
+    caption = {"high_level_description": "a sign"}
+    case = {
+        "structured_prompt": caption,
+        "prompt": "a sign",
+        "aspect_ratio": "16:9",
+        "size": "1K",
+        "tier": "turbo",
+        "seed": 3,
+    }
+    request = client.request(case, [])
+    assert request["structured_prompt"] == caption and "prompt" not in request
+    assert (request["aspect_ratio"], request["size"], request["rendering_speed"]) == (
+        "16:9",
+        "1K",
+        "turbo",
+    )
+    # Qwen takes no tier.
+    assert "rendering_speed" not in GenerationAPIClient("http://x", QWEN).request(
+        {"prompt": "p", "aspect_ratio": "1:1", "seed": 1, "tier": "turbo"}, [b"x"]
+    )
 
 
 def make_dataset(root: Path) -> list[dict]:

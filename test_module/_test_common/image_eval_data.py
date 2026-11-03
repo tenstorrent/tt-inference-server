@@ -29,6 +29,10 @@ EVAL_DATA = {
         "Tenstorrent/qwen-image-edit-2511-refs",
         "fd051f2d8247aba386971e75509fac3e5deedc24",
     ),
+    "ideogram-ai/ideogram-4": (
+        "Tenstorrent/ideogram-4-refs",
+        "fe8afa1a39d986808bc22cecaad24a567cc79391",
+    ),
 }
 SUBSETS = ("dev", "ci", "all")
 # A reference run's text-to-image scores (longtext_score.py, dpg_score.py).

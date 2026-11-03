@@ -215,7 +215,8 @@ def edit_metrics(tt, gpu, source) -> dict:
 
 
 def group_of(case: dict) -> str:
-    """The case's group: its kind, reference count for multi-reference, and size past 1K."""
+    """The case's group: its kind, reference count for multi-reference, size past 1K,
+    and sampler tier past the default."""
     kind = case.get("kind") or case.get("task") or "case"
     if case.get("benchmark") and case.get("task") == "t2i":
         kind = case["benchmark"]
@@ -223,6 +224,8 @@ def group_of(case: dict) -> str:
         kind += f"_{len(case.get('images') or [])}"
     if case.get("size") not in (None, "1K"):
         kind += f"_{case['size']}"
+    if case.get("tier") not in (None, "default"):
+        kind += f"_{case['tier']}"
     return kind
 
 
