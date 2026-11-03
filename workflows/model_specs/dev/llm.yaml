@@ -706,8 +706,13 @@ templates:
         # captures a round per user index and draft count (16 vd: variants
         # of ~40 MB) and the plain one-slot step per user index beside the
         # 32-slot step, after which the per-length prefill captures overran
-        # the 2 GiB region of the plain configuration.
-        trace_region_size: 3221225472  # 3 * 1024 * 1024 * 1024
+        # the 2 GiB region of the plain configuration. 3.25 GiB with prompt
+        # packing: the declared
+        # warm-up leaves ~150 MB of the 3 GiB and the four layouts' packed
+        # captures and their 160 segment joins take ~185; the
+        # extra 256 MiB a chip comes out of the ~1.1 GiB the 1M bucket's
+        # capture leaves free since the index bound.
+        trace_region_size: 3489660928  # 3.25 * 1024 * 1024 * 1024
         # The decode step samples on device (ttnn.sampling over each row's
         # top-128 candidates) and returns token ids: the host sampler over
         # 32 x 129,280 logits took ~100 ms of every step.
