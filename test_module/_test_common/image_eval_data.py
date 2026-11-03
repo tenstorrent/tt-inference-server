@@ -31,7 +31,7 @@ EVAL_DATA = {
     ),
     "ideogram-ai/ideogram-4": (
         "Tenstorrent/ideogram-4-refs",
-        "fe8afa1a39d986808bc22cecaad24a567cc79391",
+        "93c5a835d4a3c4a6a12610554bfc8694c8827527",
     ),
 }
 SUBSETS = ("dev", "ci", "all")
