@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import copy
 import json
 import logging
 import math
@@ -322,6 +323,12 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    collect_preflight_evidence: bool = False
+    offline_task_prerequisites: bool = False
+    offline_apt_fixtures: bool = False
+    offline_apt_fixture_inputs: str | None = None
+    offline_apt_fixture_deadline: str | None = None
+    preflight_min_free_bytes: Optional[int] = None
     # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
     # environment is docker and the image is not already local, e.g. the base
     # image every trial's environment build starts FROM: concurrent trials
@@ -13530,6 +13537,31 @@ _eval_config_list = [
 ]
 
 
+# Dedicated fresh-autoport branch: unscored route/isolation preflight only.
+# Keep release time limits; the observed length cutoff requires a higher output cap.
+# This cohort tests infrastructure, not accuracy.
+for _index, _config in enumerate(_eval_config_list):
+    if _config.hf_model_repo == "google/gemma-4-31B-it":
+        _terminal = next(t for t in _config.tasks if t.task_name == "terminal_bench_2")
+        _smoke_kwargs = copy.deepcopy(_terminal.agentic_eval_config.agent_kwargs)
+        _smoke_kwargs["model_info"]["max_output_tokens"] = 65536
+        _smoke_kwargs["llm_kwargs"]["max_tokens"] = 65536
+        _eval_config_list[_index] = replace(_config, tasks=[*_config.tasks, replace(
+            _terminal,
+            task_name="gemma4_preflight_unscored",
+            score=EvalTaskScore(published_score=None, published_score_ref=None,
+                gpu_reference_score=None, gpu_reference_score_ref=None,
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"}),
+            limit_samples_map={},
+            agentic_eval_config=replace(_terminal.agentic_eval_config,
+                dataset="gemma4-preflight", dataset_ref=None, agent_kwargs=_smoke_kwargs,
+                n_tasks=2, n_concurrent_trials=2, task_names_map={},
+                allow_agent_endpoint=True, collect_preflight_evidence=True,
+                offline_task_prerequisites=True, preflight_min_free_bytes=512 * 1024**3,
+                override_cpus=1, override_memory_mb=1024),
+        )])
+
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
@@ -13546,3 +13578,21 @@ EVAL_CONFIGS = {
 # RequirementsTargetPack._find_task_template) read this instead, so dropping a
 # task from one model's run set cannot make it unreachable catalog-wide.
 ALL_EVAL_CONFIGS = _eval_config_map
+
+# Future one-task confirmation: prerequisite fixtures precede every scored invocation.
+# Publication/dispatch additionally requires the coordinator's original two-task CI smoke gate.
+_fresh_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
+_probe_task = next(task for task in _fresh_config.tasks if task.task_name == "terminal_bench_2")
+_probe_kwargs = copy.deepcopy(_probe_task.agentic_eval_config.agent_kwargs)
+_probe_kwargs["model_info"]["max_output_tokens"] = 65536
+_probe_kwargs["llm_kwargs"]["max_tokens"] = 65536
+_probe_task = replace(_probe_task, limit_samples_map={},
+    agentic_eval_config=replace(_probe_task.agentic_eval_config,
+        dataset="gemma4-isolated-terminal", dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
+        n_tasks=1, n_concurrent_trials=32, task_names_map={},
+        agent_kwargs=_probe_kwargs, llm_timeout_sec=3600,
+        allow_agent_endpoint=True, collect_preflight_evidence=True,
+        offline_task_prerequisites=True, offline_apt_fixtures=True,
+        offline_apt_fixture_deadline="2026-11-03T06:00:00Z",
+        preflight_min_free_bytes=512 * 1024**3))
+EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(_fresh_config, tasks=[_probe_task])
