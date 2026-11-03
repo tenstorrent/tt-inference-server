@@ -624,7 +624,9 @@ def _dsv41_flash_1017_ring_gen_kwargs() -> Dict[str, Any]:
         "top_p": 1.0,
         "max_gen_toks": DSV41_FLASH_1017_RING_MAX_GEN_TOKS,
         # The server stops at its own EOS; no client-side stop strings.
-        "until": [],
+        # Dynamo 1.6 rejects an empty stop list ("Stop sequences array cannot be empty", HTTP 400 on every
+        # request: AIME and IFEval on 2026-11-02); the checkpoint's EOS string is a harmless stop, as K3's "[EOS]".
+        "until": ["<｜end▁of▁sentence｜>"],
         "reasoning_effort": DSV41_FLASH_1017_REASONING_EFFORT,
     }
 
