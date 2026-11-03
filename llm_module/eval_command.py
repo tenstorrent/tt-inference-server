@@ -798,6 +798,16 @@ def build_eval_command(
                '--audit', str(output_dir_path / 'qwen38-gpqa-identity.json'),
                '--', *cmd[1:]]
 
+    from reference_config.evals.qwen38_gpqa_original import enabled, TASK, MANIFEST as ORIGINAL_MANIFEST
+    if applies(model_spec) and enabled() and task.task_name == TASK:
+        if Path(cmd[1]).name != 'lm_eval_request_overrides.py' or list(task.doc_ids or []) != [12,15]:
+            raise ValueError('Original repair requires guarded native wrapper and exact selection')
+        # Original stage11 harness seeds: random0/numpy1234/torch1234/fewshot1234.
+        cmd[cmd.index('--seed')+1] = '0,1234,1234,1234'
+        cmd = [cmd[0],str(Path(__file__).with_name('qwen38_gpqa_original_guard.py')),
+               '--manifest',str(ORIGINAL_MANIFEST),'--audit',str(output_dir_path/'original-protocol.json'),
+               '--',*cmd[1:]]
+
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd

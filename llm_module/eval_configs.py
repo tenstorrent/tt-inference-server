@@ -286,7 +286,8 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
 
     from reference_config.evals.qwen38_gpqa_arm import applies, configure
     if applies(model_spec):
-        standard = configure(standard, runtime_config)
+        from reference_config.evals.qwen38_gpqa_original import enabled, configure as original_configure
+        standard = original_configure(standard, runtime_config) if enabled() else configure(standard, runtime_config)
 
     return _select_tasks(standard, runtime_config)
 

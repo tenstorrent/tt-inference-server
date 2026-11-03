@@ -572,7 +572,7 @@ def _run_eval_task(
     ctx: MediaContext, task, auth_token: str, *, output_path: Path
 ) -> int:
     from reference_config.evals.qwen38_gpqa_arm import applies
-    if applies(ctx.model_spec) and task.task_name == 'r1_gpqa_diamond':
+    if applies(ctx.model_spec) and task.task_name in ('r1_gpqa_diamond','gpqa_diamond_cot_zeroshot'):
         from workflows.qwen38_checkpoint_preflight import ensure_checkpoint_preflight
         # run_llm_eval supplies a fresh eval-attempt UUID directory. Reverify
         # the current owned server on every invocation, never a cached receipt.

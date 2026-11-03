@@ -1,0 +1,21 @@
+{
+  "status": "host_pass_only",
+  "tests": 23,
+  "actual_native_source_hash_check": "pass lm_eval0.4.13 adapter/filters/metric",
+  "actual_native_payload_checks": {
+    "doc12": "pass",
+    "doc15": "pass",
+    "only_change": "max_tokens16384 to98304; request timeout transport-only"
+  },
+  "native_yaml_private_processor": "pass after using actual YAML cached-loader module; initial ordinary import was reloaded and failed host assertion, repaired before commit",
+  "processed_rows": "198 each, two fresh no-cache processing passes; selected doc12/doc15 equal historical full processed documents",
+  "requests_sent": 0,
+  "device_hours": 0,
+  "admission": "STOP pending actual combine completion, current grant/budget, coordinator release/registry/disk/isolated-smoke/source/checkpoint/template proof, absolute deadline, explicit scoped GO",
+  "remaining_review": [
+    "Independent source review",
+    "CI native environment source hashes must match; drift rejects before request",
+    "Coordinator CI global lifecycle/no-cancel and pre-request reserve must be bound; guard alone is not allocation supervisor",
+    "First-wave cutoff can leave required higher-limit retry unfunded; never score progressing cutoff as failure"
+  ]
+}

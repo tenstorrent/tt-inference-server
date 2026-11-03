@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task": "gpqa_diamond_cot_zeroshot",
+  "source_task": "gpqa_diamond_cot_zeroshot",
+  "source_manifest_sha256": "fb01e42fbed84a24ad4f7c57b6355afa2abbd27e7cc3a27418e20b861fd6b5d7",
+  "dataset_path": "Idavidrein/gpqa",
+  "dataset_name": "gpqa_diamond",
+  "split": "train",
+  "population": 198,
+  "doc_ids": [
+    12,
+    15
+  ],
+  "raw_document_sha256": [
+    "afe8770a2e181369b481d49cfa7e72bfd9e92affe3a1300a75e5ba220d08de7d",
+    "079077370477f11823940a29b8a933f698aaa558ac94a019ada72b6460cf31e1"
+  ],
+  "hash_encoding": "sha256(json.dumps(row,sort_keys=True,ensure_ascii=False,default=str).encode())",
+  "source": "Qwen3.8 stage11 frozen_questions.json; raw rows exclude only derived choice1..choice4,choices,answer",
+  "request_timeout_seconds": 18000,
+  "output_cap": 98304,
+  "max_concurrent": 32,
+  "seed": 1234,
+  "reference_note": "Exact original stage11 selected cutoff repair; no r1 prompt substitution.",
+  "intent": "full_suite",
+  "preflight_json": null,
+  "go_json": null,
+  "max_attempts": 1,
+  "payload_sha256": {
+    "12": "fdf8e081e1e69bd52e1854103e09376db6868b11b9012ee888a2d43fda44e5ae",
+    "15": "cb0c06aa5e8d9a50bdac70383562a3ce2fbe3fd78d06be1f9761d4cede4307ca"
+  },
+  "messages_sha256": {
+    "12": "4fe282903cc6b69a0fd64c2ec26fbe2633b12ef101010ad887ba3cddd3a075c6",
+    "15": "b98c845a7a8c26de34edd1bf3611a54f903e2b4f462c838104b809a48b4c50e2"
+  },
+  "harness_version": "0.4.13",
+  "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "native_source_sha256": {
+    "openai_completions.py": "0afb2771209f9261a2ec0146cbd01928f22747e994a25225c24fd046c5c138ff",
+    "extraction.py": "eb976bb36d5d3e93faafe6d065678e24b4474e78cd4fce1e730e2b8f49b9fda0",
+    "selection.py": "5f8264dce91dd1282b84487d703e7e2bb11bef5fd6c93f91b4e51342a4fb76ab",
+    "metrics.py": "f4794761c3f53fc036336e79c65dca355ea26a8d4cb00b27155ea2ab4846dbb2"
+  },
+  "admitted": false,
+  "task_source_sha256": {
+    "tasks/gpqa/cot_zeroshot/utils.py": "b603828710f1fb3e1b8fe42726b188544ef8dbd12d25f4ca676e42ca4d1a251b",
+    "tasks/gpqa/cot_zeroshot/_gpqa_cot_zeroshot_yaml": "809e56db15e55c08aebe73ddd712194e507649fa7c432112ccaf0bad61383ff9",
+    "tasks/gpqa/cot_zeroshot/gpqa_diamond_cot_zeroshot.yaml": "a4d853e52587c906fb18a6ed8ef75596b986a28c8696cb9d6d78ffcd4480d18f",
+    "tasks/_yaml_loader.py": "3ea637c454937df677ea662325a9f7cb08869fde29edfc26b44ff41be6127034"
+  }
+}
