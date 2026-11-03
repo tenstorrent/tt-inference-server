@@ -1,4 +1,4 @@
-name: C++ Heavy Checks (scheduled)
+name: C++ Heavy Checks (nightly)
 
 # Heavy cpp_server jobs (the self-hosted mock_pipeline perf bench, Dynamo
 # integration, and the ThreadSanitizers) are too slow / queue-bound to gate
@@ -7,11 +7,9 @@ name: C++ Heavy Checks (scheduled)
 # benchmark) stay in test-gate.yml.
 on:
   schedule:
-    # GitHub cron is UTC and does NOT observe DST. CET=UTC+1 (winter),
-    # CEST=UTC+2 (summer), so these fire around noon and midnight in Central
-    # Europe year-round (give or take the one-hour DST shift).
-    - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
-    - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
+    # Once per day, nightly. GitHub cron is UTC and does NOT observe DST:
+    # 23:00 UTC is ~00:00 CET / 01:00 CEST in Central Europe.
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       run_dynamo_routing_tests:
