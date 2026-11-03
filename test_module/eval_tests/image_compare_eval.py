@@ -13,7 +13,8 @@ section; the eval is graded by the compare gate
 (``image_compare_gate.json``), NA until a calibration run sets its thresholds.
 Text-to-image cases are also scored on DPG-Bench (``text_image_scores``) and
 compared with the GPU run's score; LongText-Bench needs a GPU, so it is
-reported as not scored.
+reported as not scored unless ``IMAGE_EVAL_SCORER_DEVICE=cuda`` gives the
+scorers one.
 
 Every model is asked through the generation API (``/v1/generations/{model}``).
 A case the deployment does not serve, by the request schema it publishes (an
@@ -26,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import statistics
 import subprocess
 import sys
@@ -60,6 +62,9 @@ GATE_CONFIG = (
     / "image_compare_gate.json"
 )
 COMPARE_TIMEOUT_SECONDS = 2 * 60 * 60
+# Where the text-to-image scorers run: the CPU, or a GPU on a host that has
+# one (``cuda``), which also scores LongText-Bench.
+SCORER_DEVICE_ENV = "IMAGE_EVAL_SCORER_DEVICE"
 
 
 def eval_model(hf_model_repo: str) -> ImageModel | None:
@@ -273,7 +278,14 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         if not index
         else run_compare(out_dir, data_dir, client.reference)
     )
-    text_image = score_text_images(out_dir, data_dir, client.reference, index, usable)
+    text_image = score_text_images(
+        out_dir,
+        data_dir,
+        client.reference,
+        index,
+        usable,
+        device=os.environ.get(SCORER_DEVICE_ENV, "cpu"),
+    )
     gate = (
         grade(result or {}, model.model_id, client.reference, text_image=text_image)
         if result or text_image

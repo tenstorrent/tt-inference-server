@@ -14,7 +14,7 @@ The eval host has no GPU, and LongText-Bench's Qwen2.5-VL-7B is too slow on a
 CPU (minutes an image), so the eval scores DPG-Bench only and reports LongText
 as not scored. Its images are saved with the run (``images/evals``), so
 ``longtext_score.py`` can score them on a GPU host as it scored the GPU run's,
-or ``score_text_images`` with ``device="cuda"``.
+or the eval can score them there itself (``IMAGE_EVAL_SCORER_DEVICE=cuda``).
 
 The scorers' models are the ones the GPU run was scored with: Qwen2.5-VL at
 the revision ``longtext_score.py`` pins, and mPLUG-large, checked by sha256.
