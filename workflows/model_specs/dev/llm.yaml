@@ -1712,14 +1712,49 @@ templates:
         QWEN36_SPEC_CHAIN_AUDIT_EVERY: "8"  # host check of every 8th chain step
         # Chunked prefill on the MTP class (tt-metal atupe/qwen38-glx-mtp-chunk): exact resume at each chunk end
         QWEN36_SPEC_CHUNKED_PREFILL: "1"
-        # GDN prefix-state snapshots per rank (22.8 MB/device each); pure stride snapshots are evicted first
-        QWEN36_PREFIX_CACHE_SLOTS: "64"
+        # GDN prefix-state snapshots per rank (22.8 MB/device each; 256 slots = 18.5 GB/device DRAM in use at start);
+        # pure stride snapshots are evicted first
+        QWEN36_PREFIX_CACHE_SLOTS: "256"
+        QWEN36_PREFIX_END_AT_CAP: "1"  # end checkpoint at the follow-up resume cap
+        QWEN36_PREFIX_CACHE_FAST_ALLOC: "1"  # on-device snapshot slot allocation
         # Long prefill: an 8192-row chunk trace runs the full 8192-token blocks of each chunk (all SDPA cores busy at
         # depth); the prefill SDPA uses the approximate exponential by default (QWEN36_SDPA_PREFILL_EXP_APPROX=1)
         QWEN36_PREFILL_BIG_CHUNK: "8192"
         QWEN36_PREFILL_RS_LINKS: "2"  # long prefill: MLP-down and attention-wo reduce-scatters use 2 Ethernet links (default: auto)
-        QWEN36_PREFILL_AGMM_TUNED: "1"  # swept per-shape AGMM configs for prefill chunks of 8192 rows or more (needs tt-metal 3247d93 or later)
+        QWEN36_PREFILL_RS_WORKERS: "8"  # 8 workers per prefill reduce-scatter
+        QWEN36_PREFILL_AGMM_TUNED: "1"  # swept per-shape AGMM configs for prefill chunks (needs tt-metal bb41841dfe4 or later)
         QWEN36_PREFILL_MASKED_BIG: "1"  # masked 4096/8192-row traces serve the remainder after full 8192-row blocks (needs BIG_CHUNK 8192)
+        QWEN36_PREFILL_INTRACE_SNAP: "1"  # GDN prefix snapshots taken inside the prefill trace replay
+        QWEN36_SDPA_PREFIX_REUSE: "auto"  # prefill SDPA reuses K/V prefix chains (bit-identical)
+        QWEN36_SDPA_PREFILL_QSPLIT: "32"  # split Q chunks in the prefill SDPA
+        QWEN36_PREFILL_MTP_LEAN: "1"  # lean drafter prompt warm-up
+        QWEN36_PREFILL_GDN_GLUE: "1"  # GDN prefill glue cuts
+        QWEN36_PREFILL_HOST_TOLIST: "1"
+        QWEN36_JOIN_LOGITS_ONE_COPY: "1"
+        # Decode step (tt-metal atupe/qwen38-glx-mtp-x8merge, measured on one column: b1/b8 step 28.6/31.0 -> 19.6/22.5 ms;
+        # greedy streams unchanged except at exact bf16 ties; work/x8merge_1104/40_rounds12.md)
+        QWEN36_SPEC_STEP_VALUE_BLOCKS: "4"  # gdn_spec_step: GDN state columns split over 4 cores
+        QWEN36_SPEC_STEP_OPT: "250"  # gdn_spec_step kernel_opts (bit-identical restructurings)
+        QWEN36_SPEC_STEP_NARROW_GR: "1"
+        QWEN36_DECODE_AR_ONESHOT: "1"  # one-shot (RS + AG) decode all-reduce
+        QWEN36_DECODE_AR_FUSE_RESIDUAL: "1"  # residual add fused into the decode all-reduce
+        QWEN36_SPEC_ACCEPT_KERNEL: "1"
+        QWEN36_SPEC_ACCEPT_KERNEL_SAMPLED: "1"
+        QWEN36_SPEC_CHAIN_KERNEL: "1"
+        QWEN36_SPEC_ARGMAX_FUSED: "1"  # exact fp32 argmax for verify and drafter
+        QWEN36_DRAFT_LMHEAD_BFP4: "1"  # BFP4 LM-head copy for the drafter only (verify output unchanged)
+        QWEN36_DRAFT_HEAD_DSHARD: "1"
+        QWEN36_LMHEAD_DSHARD: "mc"
+        QWEN36_LMHEAD_DSHARD_OUT_PCN: "10"
+        QWEN36_LMHEAD_DSHARD_SCOPE: "draft"
+        QWEN36_MTP_KV_ONLY: "1"  # drafter maintenance forwards stop after the KV write
+        QWEN36_MTP_EMBED_ROW: "1"
+        QWEN36_SPEC_DR_OUTS_PREALLOC: "1"
+        QWEN36_SPEC_VFY_OUTS_PREALLOC: "1"
+        QWEN36_VERIFY_OUT_RES40: "1"
+        QWEN36_KV_WRITE_MULTIROW: "1"  # one paged KV write per distinct tile (replaces the masked write)
+        QWEN36_SPEC_SDPA_PACKED: "1"
+        QWEN36_ATTN_GLUE_CUTS: "1"
       vllm_args:
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 32 -> max_num_seqs 8 per rank
         enable_auto_tool_choice: true
