@@ -11,8 +11,13 @@ to the common report schema, and grades the six FC/SC/TC percentile SLOs.
 By default every request replays the captured client traffic of 2026-10-27
 (datasets/tts_staged_2026-10-27.json): a text and a voice prompt length drawn
 independently, weighted by how often each appeared, so the ISL mix matches it
-(p50 ~740 tokens, 200-1600). The capture kept only voice prompt lengths, so
-voice prompts are seeded random speech IDs: right ISL, but no real voice.
+(p50 ~740 tokens, 200-1600). The capture kept only voice prompt lengths, not the
+voices, so ``--workflow-args voice_ids=<file>`` supplies real speech IDs: a JSON
+list (or ``{"speech_ids": [...]}``) of codec IDs encoded from at least 1264 IDs
+(~25 s) of real speech, and a request drawing length N sends its first N IDs.
+Without that file requests carry no voice prompt (text-only ISL). Random IDs are
+not used: the model cannot clone them, and most such outputs are silence or
+garbage that runs to the output cap.
 ``--workflow-args isl=N`` instead sends one fixed text of ~N tokens, no voice.
 """
 
@@ -74,7 +79,7 @@ TTS_CI_SEED = 42
 TTS_CODEBOOK_SIZE = 65536  # speech token IDs are <|s_0|>..<|s_65535|>
 TTS_CI_TIMEOUT_SECONDS = 300.0
 TTS_RAW_RESULTS_FILENAME = "tts_load_results.json"
-_TTS_WORKFLOW_ARG_KEYS = ("concurrency", "isl")
+_TTS_WORKFLOW_ARG_KEYS = ("concurrency", "isl", "voice_ids", "warmup", "duration")
 
 
 _LATENCY_SPECS = (
@@ -154,13 +159,8 @@ def _positive_int(key: str, value: str) -> int:
     return parsed
 
 
-def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int | None]:
-    """Concurrency ladder and fixed ISL (tokens) from ``--workflow-args``.
-
-    ``concurrency=480`` or ``concurrency=64,160,320`` replaces the ladder and
-    ``isl=128`` sends a fixed text of that length; without ``isl`` the ISL is
-    None and requests replay the captured traffic mix.
-    """
+def _workflow_args(ctx: MediaContext) -> dict[str, str]:
+    """``--workflow-args`` as key -> value, warning about keys this test ignores."""
     rc = getattr(ctx, "runtime_config", None)
     params = {}
     for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
@@ -177,7 +177,17 @@ def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int | None]:
             f"TTS benchmark ignores workflow args {unknown}; "
             f"supported: {list(_TTS_WORKFLOW_ARG_KEYS)}"
         )
+    return params
 
+
+def _workflow_params(ctx: MediaContext) -> tuple[tuple[int, ...], int | None]:
+    """Concurrency ladder and fixed ISL (tokens) from ``--workflow-args``.
+
+    ``concurrency=480`` or ``concurrency=64,160,320`` replaces the ladder and
+    ``isl=128`` sends a fixed text of that length; without ``isl`` the ISL is
+    None and requests replay the captured traffic mix.
+    """
+    params = _workflow_args(ctx)
     concurrency = TTS_CI_CONCURRENCY
     if "concurrency" in params:
         values = [v for v in params["concurrency"].split(",") if v.strip()]
@@ -242,6 +252,8 @@ def _sweep_args(
     prewarm: bool = False,
     concurrency: tuple[int, ...] = TTS_CI_CONCURRENCY,
     ramp: float = 0.0,
+    warmup: float = TTS_CI_WARMUP_SECONDS,
+    duration: float = TTS_CI_DURATION_SECONDS,
 ) -> argparse.Namespace:
     """Arguments consumed by :func:`tts_load_harness.sweep`.
 
@@ -252,8 +264,8 @@ def _sweep_args(
     """
     return argparse.Namespace(
         concurrency=",".join(str(value) for value in concurrency),
-        duration=TTS_CI_DURATION_SECONDS,
-        warmup=TTS_CI_WARMUP_SECONDS,
+        duration=duration,
+        warmup=warmup,
         warmup_concurrency=TTS_CI_WARMUP_CONCURRENCY,
         prewarm=TTS_CI_PREWARM_SECONDS if prewarm else 0.0,
         settle=TTS_CI_SETTLE_SECONDS,
@@ -286,8 +298,47 @@ def _target(ctx: MediaContext) -> tts_load_harness.Target:
     )
 
 
+def _level_timing(ctx: MediaContext) -> tuple[float, float]:
+    """Per-level (warmup, duration) seconds; ``warmup=``/``duration=`` override.
+
+    A longer window lets each level settle (long responses finish and their
+    slots recycle), so its throughput is closer to the steady state.
+    """
+    params = _workflow_args(ctx)
+    warmup = (
+        _positive_int("warmup", params["warmup"])
+        if "warmup" in params
+        else TTS_CI_WARMUP_SECONDS
+    )
+    duration = (
+        _positive_int("duration", params["duration"])
+        if "duration" in params
+        else TTS_CI_DURATION_SECONDS
+    )
+    return float(warmup), float(duration)
+
+
+def _voice_ids(ctx: MediaContext) -> list[int] | None:
+    """Real voice speech IDs from the ``voice_ids=<file>`` workflow arg, if given."""
+    path = _workflow_args(ctx).get("voice_ids")
+    if not path:
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    ids = data["speech_ids"] if isinstance(data, dict) else data
+    if not ids or not all(
+        isinstance(i, int) and 0 <= i < TTS_CODEBOOK_SIZE for i in ids
+    ):
+        raise ValueError(
+            f"TTS voice_ids file {path} must hold speech IDs in "
+            f"[0, {TTS_CODEBOOK_SIZE})"
+        )
+    return ids
+
+
 def _traffic_draw(
     base: tts_load_harness.Target,
+    voice_ids: list[int] | None = None,
     dataset: Path = TTS_CI_TRAFFIC_DATASET,
     seed: int = TTS_CI_SEED,
 ):
@@ -298,11 +349,20 @@ def _traffic_draw(
     text_weights = [t["count"] for t in ladder["texts"]]
     sizes = [v["voice_speech_ids"] for v in ladder["voices"]]
     size_weights = [v["count"] for v in ladder["voices"]]
-    id_rng = random.Random(seed)
-    voices = {
-        n: [id_rng.randrange(TTS_CODEBOOK_SIZE) for _ in range(n)]
-        for n in sorted(set(sizes))
-    }
+    if voice_ids is None:
+        logger.warning(
+            "TTS replay without voice_ids: requests carry no voice prompt, so the "
+            "ISL is text only, not the captured mix"
+        )
+        voices = {n: [] for n in sizes}
+    elif len(voice_ids) < max(sizes):
+        raise ValueError(
+            f"TTS voice_ids has {len(voice_ids)} IDs; the captured traffic needs "
+            f"up to {max(sizes)} ({max(sizes) / 50:.1f} s of speech)"
+        )
+    else:
+        # A voice prompt of N IDs is the first N/50 s of the same real speech.
+        voices = {n: voice_ids[:n] for n in sizes}
     rng, lock = random.Random(seed), threading.Lock()
 
     def draw() -> tts_load_harness.Target:
@@ -336,7 +396,7 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
             target,
             TTS_CI_WARMUP_CONCURRENCY,
             TTS_CI_PREWARM_SECONDS,
-            _traffic_draw(target) if replay else None,
+            _traffic_draw(target, _voice_ids(ctx)) if replay else None,
         )
         return Block(
             kind="benchmarks",
@@ -361,19 +421,30 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
         )
 
     concurrency, text_tokens = _workflow_params(ctx)
-    workload = f"isl={text_tokens}" if text_tokens else TTS_CI_TRAFFIC_DATASET.name
-    logger.info(f"TTS benchmark sweep: concurrency={concurrency} {workload}")
-    target = _target(ctx)
     replay = text_tokens is None
+    voice_ids = _voice_ids(ctx) if replay else None
+    if not replay:
+        workload = f"isl={text_tokens}"
+    else:
+        voice = f"{len(voice_ids)} real voice IDs" if voice_ids else "no voice"
+        workload = f"{TTS_CI_TRAFFIC_DATASET.name}, {voice}"
+    warmup, duration = _level_timing(ctx)
+    logger.info(
+        f"TTS benchmark sweep: concurrency={concurrency} {workload} "
+        f"warmup={warmup:.0f}s duration={duration:.0f}s"
+    )
+    target = _target(ctx)
     document = tts_load_harness.sweep(
         _sweep_args(
             output_path,
             prewarm,
             concurrency,
-            ramp=TTS_CI_WARMUP_SECONDS if replay else 0.0,
+            ramp=warmup if replay else 0.0,
+            warmup=warmup,
+            duration=duration,
         ),
         target,
-        _traffic_draw(target) if replay else None,
+        _traffic_draw(target, voice_ids) if replay else None,
     )
     rows, chars_per_request = tts_load_harness.aggregate(document)
     report_rows = _report_rows(rows)

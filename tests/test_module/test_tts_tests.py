@@ -312,27 +312,84 @@ def test_target_text_follows_isl_workflow_arg():
     assert len(target.text) == round(256 * benchmark.TTS_CI_CHARS_PER_TOKEN)
 
 
-def test_traffic_draw_replays_the_captured_mix():
+def _ladder_sizes():
     with open(benchmark.TTS_CI_TRAFFIC_DATASET) as f:
         ladder = json.load(f)["ladder"]
-    texts = {t["text"] for t in ladder["texts"]}
-    sizes = {v["voice_speech_ids"] for v in ladder["voices"]}
+    return {t["text"] for t in ladder["texts"]}, {
+        v["voice_speech_ids"] for v in ladder["voices"]
+    }
+
+
+def test_traffic_draw_sends_prefixes_of_the_real_voice():
+    texts, sizes = _ladder_sizes()
+    real = list(range(100, 100 + max(sizes)))  # stands in for encoded real speech
     base = benchmark.tts_load_harness.Target(host="quad-driver.example", port=8123)
 
-    draw = benchmark._traffic_draw(base)
+    draw = benchmark._traffic_draw(base, real)
     draws = [draw() for _ in range(200)]
 
     assert all(t.host == "quad-driver.example" and t.port == 8123 for t in draws)
     assert all(t.text in texts and len(t.speech_ids) in sizes for t in draws)
     assert len({t.text for t in draws}) > 1
     assert len({len(t.speech_ids) for t in draws}) > 1
-    ids = [i for t in draws for i in t.speech_ids]
-    assert 0 <= min(ids) and max(ids) < benchmark.TTS_CODEBOOK_SIZE
+    # A length-N voice prompt is the first N IDs of the same real speech.
+    assert all(t.speech_ids == real[: len(t.speech_ids)] for t in draws)
     body = json.loads(draws[0].request.split(b"\r\n\r\n", 1)[1])
     assert body == {"text": draws[0].text, "speech_ids": draws[0].speech_ids}
     # Seeded: the same draws every run.
-    again = benchmark._traffic_draw(base)
+    again = benchmark._traffic_draw(base, real)
     assert [again().text for _ in range(5)] == [t.text for t in draws[:5]]
+
+
+def test_level_timing_defaults_and_overrides():
+    defaults = (benchmark.TTS_CI_WARMUP_SECONDS, benchmark.TTS_CI_DURATION_SECONDS)
+    assert benchmark._level_timing(_workflow_ctx("concurrency=8")) == defaults
+    assert benchmark._level_timing(_workflow_ctx("warmup=60 duration=180")) == (
+        60.0,
+        180.0,
+    )
+    with pytest.raises(ValueError):
+        benchmark._level_timing(_workflow_ctx("duration=0"))
+
+
+def test_traffic_draw_without_voice_ids_sends_text_only(caplog):
+    base = benchmark.tts_load_harness.Target(host="quad-driver.example")
+
+    with caplog.at_level("WARNING"):
+        draw = benchmark._traffic_draw(base)
+
+    assert all(draw().speech_ids == [] for _ in range(20))
+    assert "no voice prompt" in caplog.text
+
+
+def test_traffic_draw_rejects_voice_ids_shorter_than_the_captured_prompts():
+    _, sizes = _ladder_sizes()
+    base = benchmark.tts_load_harness.Target(host="quad-driver.example")
+
+    with pytest.raises(ValueError, match=f"needs up to {max(sizes)}"):
+        benchmark._traffic_draw(base, list(range(max(sizes) - 1)))
+
+
+@pytest.mark.parametrize(
+    "content", [[5, 6, 7], {"source": "speech.wav", "speech_ids": [5, 6, 7]}]
+)
+def test_voice_ids_file_is_read_from_workflow_args(tmp_path, content):
+    path = tmp_path / "voice.json"
+    path.write_text(json.dumps(content))
+
+    ctx = _workflow_ctx(f"concurrency=8 voice_ids={path}")
+
+    assert benchmark._voice_ids(ctx) == [5, 6, 7]
+    assert benchmark._voice_ids(_workflow_ctx("concurrency=8")) is None
+
+
+@pytest.mark.parametrize("content", [[], [-1], [65536], ["7"]])
+def test_voice_ids_file_must_hold_codec_ids(tmp_path, content):
+    path = tmp_path / "voice.json"
+    path.write_text(json.dumps(content))
+
+    with pytest.raises(ValueError, match="must hold speech IDs"):
+        benchmark._voice_ids(_workflow_ctx(f"voice_ids={path}"))
 
 
 def test_run_closed_sends_drawn_prompts_after_ramped_starts(monkeypatch):
@@ -512,7 +569,7 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     assert callable(observed["draw"])
     assert observed["args"].ramp == benchmark.TTS_CI_WARMUP_SECONDS
     assert block.targets["text_tokens"] is None
-    assert block.targets["workload"] == "tts_staged_2026-10-27.json"
+    assert block.targets["workload"] == "tts_staged_2026-10-27.json, no voice"
     assert block.kind == "benchmarks"
     assert block.id == "tts-quad"
     assert block.data["Benchmarks"]["num_requests"] == 42
