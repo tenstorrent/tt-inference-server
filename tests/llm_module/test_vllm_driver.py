@@ -355,3 +355,74 @@ class TestBenchmarkPromptSeed:
 
     def test_token_timing_has_a_single_seed_flag(self):
         assert _argv(_config(token_timing=True)).count("--seed") == 1
+
+
+def _local_server():
+    return ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="openai/gpt-oss-20b",
+        is_remote=False,
+    )
+
+
+def test_default_endpoint_is_chat():
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=_local_server(),
+        result_filename=_result_path(),
+    )
+
+    assert cmd[cmd.index("--backend") + 1] == "openai-chat"
+    assert cmd[cmd.index("--endpoint") + 1] == "/v1/chat/completions"
+
+
+def test_completions_endpoint_switches_backend_and_path():
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(endpoint="completions"),
+        server=_local_server(),
+        result_filename=_result_path(),
+    )
+
+    assert cmd[cmd.index("--backend") + 1] == "openai"
+    assert cmd[cmd.index("--endpoint") + 1] == "/v1/completions"
+    assert cmd[cmd.index("--dataset-name") + 1] == "random"
+
+
+def test_completions_endpoint_rejects_chat_only_workloads():
+    import pytest
+
+    for overrides in (
+        {"custom_dataset_path": Path("/tmp/speed_bench.jsonl")},
+        {"token_timing": True},
+    ):
+        with pytest.raises(ValueError, match="completions"):
+            build_vllm_bench_serve_argv(
+                vllm_binary="vllm",
+                config=_config(endpoint="completions", **overrides),
+                server=_local_server(),
+                result_filename=_result_path(),
+            )
+
+
+def test_unknown_endpoint_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown benchmark endpoint"):
+        build_vllm_bench_serve_argv(
+            vllm_binary="vllm",
+            config=_config(endpoint="responses"),
+            server=_local_server(),
+            result_filename=_result_path(),
+        )
+
+
+def test_parser_names_a_non_default_endpoint():
+    from llm_module.parsers.vllm import VLLMBenchParser
+
+    raw = {"model_id": "openai/gpt-oss-20b", "completed": 8, "max_concurrency": 1}
+    assert "endpoint" not in VLLMBenchParser().parse(raw).data
+    raw["tt_endpoint"] = "/v1/completions"
+    assert VLLMBenchParser().parse(raw).data["endpoint"] == "/v1/completions"

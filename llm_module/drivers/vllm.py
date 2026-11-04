@@ -46,6 +46,14 @@ def benchmark_cache_salt(config: LLMRunConfig) -> str:
     return f"bench-isl{config.isl}-osl{config.osl}-c{config.max_concurrency}-{uuid.uuid4().hex[:12]}"
 
 
+# vllm bench serve (--backend, --endpoint) per LLMRunConfig.endpoint (mirrors
+# workflows.model_spec.BENCHMARK_ENDPOINTS; llm_module does not import workflows).
+VLLM_BENCH_ENDPOINTS = {
+    "chat": ("openai-chat", "/v1/chat/completions"),
+    "completions": ("openai", "/v1/completions"),
+}
+
+
 def build_vllm_bench_serve_argv(
     *,
     vllm_binary: str,
@@ -67,15 +75,30 @@ def build_vllm_bench_serve_argv(
     """
     auth_token = _resolve_auth_token(server)
     headers = ["Accept-Encoding=identity"]
+    if config.endpoint not in VLLM_BENCH_ENDPOINTS:
+        raise ValueError(
+            f"Unknown benchmark endpoint {config.endpoint!r}; "
+            f"expected one of {sorted(VLLM_BENCH_ENDPOINTS)}"
+        )
+    if config.endpoint != "chat" and (
+        config.custom_dataset_path is not None or config.token_timing
+    ):
+        # The custom dataset holds chat content sized for one chat-template
+        # application, and the token-timing client times chat content deltas.
+        raise ValueError(
+            "benchmark endpoint 'completions' supports only the random dataset "
+            "without token timing"
+        )
+    backend, endpoint = VLLM_BENCH_ENDPOINTS[config.endpoint]
 
     cmd: List[str] = [
         vllm_binary,
         "bench",
         "serve",
         "--backend",
-        "openai-chat",
+        backend,
         "--endpoint",
-        "/v1/chat/completions",
+        endpoint,
         "--model",
         server.model,
         "--max-concurrency",
@@ -239,6 +262,8 @@ class VLLMBenchDriver(LLMDriver):
                 rc = 1
         if raw is not None and config.output_block_size > 1:
             raw["tt_output_block_size"] = config.output_block_size
+        if raw is not None and config.endpoint != "chat":
+            raw["tt_endpoint"] = VLLM_BENCH_ENDPOINTS[config.endpoint][1]
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
 
 

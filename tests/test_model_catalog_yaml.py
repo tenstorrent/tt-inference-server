@@ -577,3 +577,33 @@ def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
     assert {"FL2VA/*", "Ref2VA/*", f"{skipped}/*"} <= set(excludes)
     assert f"{served}/*" not in excludes
     assert f"{served}/config.json" in spec.metadata["hf_required_globs"]
+
+
+def _endpoint_template(endpoint):
+    return _build_template(
+        {
+            "weights": ["openai/gpt-oss-20b"],
+            "impl": "gpt_oss",
+            "inference_engine": "VLLM",
+            "device_model_specs": [
+                {
+                    "device": "P300X2",
+                    "max_concurrency": 1,
+                    "max_context": 131072,
+                    "default_impl": True,
+                    "benchmark_endpoint": endpoint,
+                },
+            ],
+        },
+        "dev",
+    )
+
+
+def test_benchmark_endpoint_reaches_the_runtime_spec():
+    runtime_spec = _endpoint_template("completions").expand_to_specs()[0]
+    assert runtime_spec.device_model_spec.benchmark_endpoint == "completions"
+
+
+def test_benchmark_endpoint_rejects_unknown_values():
+    with pytest.raises(ValueError, match="benchmark_endpoint"):
+        _endpoint_template("responses")

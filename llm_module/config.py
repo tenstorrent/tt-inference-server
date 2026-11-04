@@ -67,6 +67,10 @@ class LLMRunConfig:
     # driver invocation, so no benchmark request can hit blocks from another
     # point, an earlier run, or the evals. None = generate; set to pin.
     cache_salt: Optional[str] = None
+    # OpenAI endpoint the vLLM benchmark drives: "chat" (/v1/chat/completions)
+    # or "completions" (/v1/completions), from
+    # DeviceModelSpec.benchmark_endpoint.
+    endpoint: str = "chat"
 
 
 @dataclass(frozen=True)

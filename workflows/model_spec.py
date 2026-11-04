@@ -556,6 +556,13 @@ class KnownIssue:
         return task_name is not None and self.task_name == task_name
 
 
+# vllm bench serve (backend, endpoint) per DeviceModelSpec.benchmark_endpoint.
+BENCHMARK_ENDPOINTS = {
+    "chat": ("openai-chat", "/v1/chat/completions"),
+    "completions": ("openai", "/v1/completions"),
+}
+
+
 @dataclass(frozen=True)
 class DeviceModelSpec:
     """
@@ -590,6 +597,12 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+    # OpenAI endpoint the LLM benchmark (vllm bench serve) drives: "chat"
+    # (/v1/chat/completions, the default) or "completions" (/v1/completions,
+    # no chat template or chat-output parsing). gpt-oss uses "completions": the
+    # benchmark's ignore_eos generates past the Harmony stop token, which the
+    # chat parser rejects (vllm-project/vllm#59254, fixed in vLLM 0.32).
+    benchmark_endpoint: str = "chat"
 
     def __post_init__(self):
         self.validate_data()
@@ -597,7 +610,11 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        pass
+        if self.benchmark_endpoint not in BENCHMARK_ENDPOINTS:
+            raise ValueError(
+                f"benchmark_endpoint must be one of {sorted(BENCHMARK_ENDPOINTS)}, "
+                f"got {self.benchmark_endpoint!r}"
+            )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""

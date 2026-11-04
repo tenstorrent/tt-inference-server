@@ -35,6 +35,10 @@ templates:
       max_concurrency: 1  # max_num_seqs 1 builds the fused batch-1 decode (tt/fused_decode)
       max_context: 131072  # 128 * 1024
       default_impl: true
+      # vllm bench serve sets ignore_eos, which generates past the Harmony stop token; the chat endpoint's
+      # Harmony parser then rejects the continuation and the stream loses its usage (TPOT reads ~2x). The
+      # completions endpoint has no chat parsing (vllm-project/vllm#59254 fixes the parser in vLLM 0.32).
+      benchmark_endpoint: completions
       env_vars:
         # Accuracy (tt-metal models/demos/gpt_oss): the MXFP4 experts on the device's bfloat4_b grid lose GPQA
         # (129/198 against the GPU reference's 72.8%). Offline GPTQ-rounded weights (Hub, pinned revisions) at the same
