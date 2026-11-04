@@ -304,6 +304,8 @@ class GenerationService(BaseJobService):
             image.save(path, format=pil_format)
             return {
                 **output,
+                # A runner whose model rewrites the prompt reports what it used.
+                "prompt": result.info.get("prompt", request._prompt),
                 "file": path.name,
                 "content_type": content_type,
                 "width": image.width,

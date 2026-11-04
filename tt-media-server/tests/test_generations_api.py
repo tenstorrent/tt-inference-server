@@ -253,6 +253,17 @@ def test_flux3_serves_one_square_shape_per_size(fields):
         Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
+def test_output_reports_the_runners_prompt(tmp_path):
+    from model_services.generation_service import GenerationService
+
+    request = Flux3ImageKleinRequest(prompt="a cat")
+    request._prompt, request._seed = "a cat", 5
+    image = Image.new("RGB", (8, 8))
+    image.info["prompt"] = "a tabby cat on a windowsill"
+    output = GenerationService._write_output(tmp_path, 0, request, image)
+    assert output["prompt"] == "a tabby cat on a windowsill"
+
+
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
