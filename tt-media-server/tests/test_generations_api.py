@@ -198,8 +198,9 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 
 
 class _FakeDevice:
-    """Stands in for the scheduler and device: each request yields a video
-    after ``delay`` seconds. ``video``, if set, makes its result instead."""
+    """Stands in for the scheduler and device: each request yields an image,
+    or a video for a video model, after ``delay`` seconds. ``video``, if set,
+    makes a video's result instead."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
@@ -217,9 +218,13 @@ class _FakeDevice:
         await asyncio.sleep(self.delay)
         if self.error is not None:
             raise self.error
-        if self.video is not None:
+        if request.OUTPUT_TYPE == "video" and self.video is not None:
             return self.video(request)
-        return np.zeros((request.frames, request._height, request._width, 3), np.uint8)
+        if request.OUTPUT_TYPE == "video":
+            return np.zeros(
+                (request.frames, request._height, request._width, 3), np.uint8
+            )
+        return Image.new("RGB", (request._width, request._height), "blue")
 
 
 @pytest.fixture

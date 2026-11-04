@@ -46,6 +46,7 @@ from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
 )
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
 from PIL import Image
+from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
     TTDiTRunner,
@@ -88,6 +89,16 @@ def _warmup_request(
 class _GenerationRunner(TTDiTRunner):
     def _steps(self, steps: int) -> int:
         return _WARMUP_STEPS if self._warming_up else steps
+
+    def _image_stage_recorder(self) -> ImageStageRecorder | None:
+        if self._warming_up:
+            return None
+        return ImageStageRecorder(
+            model_type=self.settings.model_runner,
+            device_id=self.device_id,
+            sampler=sampler_name(self.pipeline),
+            batch=1,
+        )
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
