@@ -334,10 +334,14 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.flux2.pipeline_flux2 import Flux2Pipeline
 
+        # trace_warmup: the pipeline compiles and traces every size, with and
+        # without a reference image, when it is created, so the server sends no
+        # warmup requests.
         try:
             return Flux2Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=self.settings.model_weights_path,
+                trace_warmup=True,
             )
         except Exception as e:
             log_exception_chain(
