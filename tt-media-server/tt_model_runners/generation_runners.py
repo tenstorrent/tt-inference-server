@@ -286,8 +286,10 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
 
     def get_pipeline_device_params(self):
         # From tt-metal's models/tt_dit/tests/models/flux2/device_params.py: the
-        # VAE's conv2d needs L1_SMALL, the denoising loop is traced.
-        return {"l1_small_size": 65536, "trace_region_size": 31_000_000}
+        # VAE's conv2d needs L1_SMALL. The pipeline captures a denoising trace
+        # per size and reference image, plus the VAE traces, when it is created;
+        # they take 42.2 MB on BH 2x2 (KLEIN_TRACE_REGION_SIZE).
+        return {"l1_small_size": 65536, "trace_region_size": 50_000_000}
 
     def warmup_requests(self) -> list[GenerationRequest]:
         # The pipeline compiles and traces every size, with and without a
