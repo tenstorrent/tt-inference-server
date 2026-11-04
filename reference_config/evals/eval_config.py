@@ -13555,7 +13555,7 @@ for _index, _config in enumerate(_eval_config_list):
         _swe_cfg = HarborEvalConfig(
             dataset="gemma4-isolated-swe", agent="mini-swe-agent",
             collect_preflight_evidence=True, preflight_min_free_bytes=512 * 1024**3,
-            n_tasks=32, n_concurrent_trials=32, n_attempts=1,
+            n_tasks=32, n_concurrent_trials=29, n_attempts=1,
             agent_timeout_sec=18000, llm_timeout_sec=3600,
             allow_agent_endpoint=True, override_cpus=1, override_memory_mb=8192,
             agent_kwargs={"version": MINI_SWE_AGENT_VERSION, "max_tokens": 65536,
@@ -13600,12 +13600,21 @@ EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(
     _fresh_config, tasks=[task for task in _fresh_config.tasks if task.task_name == "swe_bench_verified"]
 )
 
-# Deterministic first-32 SWE cohort at full serving concurrency. The cohort is
-# sorted(all 500 names)[:32], so the selection is reproducible from the dataset
-# alone; no task is excluded and none is resampled.
+# Repo-stratified 32-task SWE cohort, built the way main builds its five-task
+# CI_NIGHTLY subset: distinct repositories rather than a prefix of one. The
+# cohort is main's gemma/qwen subset plus a round-robin fill over the twelve
+# repos of the pinned 500 (see gemma4_cohorts.json "selection"), so all twelve
+# are represented and main's nightly numbers are directly comparable.
+#
+# Trials are capped at 29 rather than 32. Each Harbor trial creates its own
+# <task>__env_default Docker bridge network and the runner's predefined address
+# pools were exhausted at 31 on run 41649832352, which lost two tasks to
+# "all predefined address pools have been fully subnetted". Serving batch stays
+# 32; 29 concurrent agents still fill it and the three remaining tasks start as
+# soon as a slot frees.
 _probe_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
 _probe_task = _probe_config.tasks[0]
 assert _probe_task.task_name == "swe_bench_verified", _probe_task.task_name
 _probe_task = replace(_probe_task, agentic_eval_config=replace(_probe_task.agentic_eval_config,
-    n_tasks=32, n_concurrent_trials=32, exclude_task_names=[]))
+    n_tasks=32, n_concurrent_trials=29, exclude_task_names=[]))
 EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(_probe_config, tasks=[_probe_task])
