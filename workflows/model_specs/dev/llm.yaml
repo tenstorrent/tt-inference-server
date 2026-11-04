@@ -35,6 +35,27 @@ templates:
       max_concurrency: 1  # max_num_seqs 1 builds the fused batch-1 decode (tt/fused_decode)
       max_context: 131072  # 128 * 1024
       default_impl: true
+      env_vars:
+        # Accuracy (tt-metal models/demos/gpt_oss): the MXFP4 experts on the device's bfloat4_b grid lose GPQA
+        # (129/198 against the GPU reference's 72.8%). Offline GPTQ-rounded weights (Hub, pinned revisions) at the same
+        # bytes, exact MXFP4 (4-bit + 2-bit split) for each token's top-1 routed expert in 6 layers, RMSNorm / RoPE /
+        # prefill precision fixes; with the two decode speedups below, decode runs at or above the plain build's speed.
+        GPT_OSS_FORCE_MODEL_LOAD: 1  # the weight-cache marker does not record these settings: load and pack every start
+        GPT_OSS_DECODE_BF4_ROUNDED: "hf://jerrywangTT/gpt-oss-20b-p150-gptq-experts@de25c21b074ca7bf7f55b1ec887579a350704fcf"
+        GPT_OSS_PREFILL_BF4_ROUNDED: 1
+        GPT_OSS_DENSE_ROUNDED_DECODE: "hf://jerrywangTT/gpt-oss-20b-qb2-kgptq@9ffa8b71f419f461dc9ac02b5f0ac548d196231a/dense/dense_gptq_device.pt"
+        GPT_OSS_BOUNDARY_FIDELITY: HiFi3
+        GPT_OSS_PREFILL_NORM_FP32: 1
+        GPT_OSS_PREFILL_RESIDUAL_BF16: 1
+        GPT_OSS_QKV_ROPE_EXACT: 2
+        GPT_OSS_DECODE_EXPERTS_SPLIT: 1
+        GPT_OSS_DECODE_SPLIT_RANKS: "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,1,0,1,1"  # top-1 exact in layers 15, 17, 19, 20, 22, 23
+        GPT_OSS_DECODE_SPLIT_ROUND_DIR: "hf://jerrywangTT/gpt-oss-20b-qb2-kgptq@9ffa8b71f419f461dc9ac02b5f0ac548d196231a/kgptq_experts"
+        GPT_OSS_DECODE_SPLIT_ROUND_ONLY: 1
+        GPT_OSS_DECODE_SPLIT_NATIVE: 1
+        GPT_OSS_DECODE_SPLIT_NATIVE_FOLD: 1
+        GPT_OSS_DECODE_BOUNDARY_EARLY_SUM: 1
+        GPT_OSS_DECODE_ROUTER_FAST_TOPK: 1
       override_tt_config:
         # the device settings of models/demos/gpt_oss/demo/text_demo.py on QuietBox 2 (tests/test_factory.py)
         fabric_config: FABRIC_1D_RING
