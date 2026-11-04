@@ -15,9 +15,10 @@ independently, weighted by how often each appeared, so the ISL mix matches it
 voices, so ``--workflow-args voice_ids=<file>`` supplies real speech IDs: a JSON
 list (or ``{"speech_ids": [...]}``) of codec IDs encoded from at least 1264 IDs
 (~25 s) of real speech, and a request drawing length N sends its first N IDs.
-Without that file requests carry no voice prompt (text-only ISL). Random IDs are
-not used: the model cannot clone them, and most such outputs are silence or
-garbage that runs to the output cap.
+Without that file each voice length gets seeded random codec IDs instead: the
+ISL matches the capture, but the model cannot clone a random "voice", so many
+outputs are silence or garbage that runs to the output cap -- pass voice_ids for
+throughput and runaway numbers that reflect real voices.
 ``--workflow-args isl=N`` instead sends one fixed text of ~N tokens, no voice.
 """
 
@@ -351,10 +352,14 @@ def _traffic_draw(
     size_weights = [v["count"] for v in ladder["voices"]]
     if voice_ids is None:
         logger.warning(
-            "TTS replay without voice_ids: requests carry no voice prompt, so the "
-            "ISL is text only, not the captured mix"
+            "TTS replay without voice_ids: voice prompts are seeded random speech "
+            "IDs (right ISL, no real voice; expect more runaway outputs)"
         )
-        voices = {n: [] for n in sizes}
+        id_rng = random.Random(seed)
+        voices = {
+            n: [id_rng.randrange(TTS_CODEBOOK_SIZE) for _ in range(n)]
+            for n in sorted(set(sizes))
+        }
     elif len(voice_ids) < max(sizes):
         raise ValueError(
             f"TTS voice_ids has {len(voice_ids)} IDs; the captured traffic needs "
@@ -426,7 +431,7 @@ def run_tts_load_benchmark(ctx: MediaContext) -> Block:
     if not replay:
         workload = f"isl={text_tokens}"
     else:
-        voice = f"{len(voice_ids)} real voice IDs" if voice_ids else "no voice"
+        voice = f"{len(voice_ids)} real voice IDs" if voice_ids else "random voice IDs"
         workload = f"{TTS_CI_TRAFFIC_DATASET.name}, {voice}"
     warmup, duration = _level_timing(ctx)
     logger.info(

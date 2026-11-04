@@ -352,14 +352,21 @@ def test_level_timing_defaults_and_overrides():
         benchmark._level_timing(_workflow_ctx("duration=0"))
 
 
-def test_traffic_draw_without_voice_ids_sends_text_only(caplog):
+def test_traffic_draw_without_voice_ids_sends_seeded_random_ids(caplog):
+    _, sizes = _ladder_sizes()
     base = benchmark.tts_load_harness.Target(host="quad-driver.example")
 
     with caplog.at_level("WARNING"):
         draw = benchmark._traffic_draw(base)
+    draws = [draw() for _ in range(50)]
 
-    assert all(draw().speech_ids == [] for _ in range(20))
-    assert "no voice prompt" in caplog.text
+    assert all(len(t.speech_ids) in sizes for t in draws)
+    ids = [i for t in draws for i in t.speech_ids]
+    assert 0 <= min(ids) and max(ids) < benchmark.TTS_CODEBOOK_SIZE
+    # Seeded: the same voice prompts every run.
+    again = benchmark._traffic_draw(base)
+    assert [again().speech_ids for _ in range(5)] == [t.speech_ids for t in draws[:5]]
+    assert "random speech IDs" in caplog.text
 
 
 def test_traffic_draw_rejects_voice_ids_shorter_than_the_captured_prompts():
@@ -569,7 +576,7 @@ def test_run_tts_benchmark_adapts_harness_document(monkeypatch, tmp_path):
     assert callable(observed["draw"])
     assert observed["args"].ramp == benchmark.TTS_CI_WARMUP_SECONDS
     assert block.targets["text_tokens"] is None
-    assert block.targets["workload"] == "tts_staged_2026-10-27.json, no voice"
+    assert block.targets["workload"] == "tts_staged_2026-10-27.json, random voice IDs"
     assert block.kind == "benchmarks"
     assert block.id == "tts-quad"
     assert block.data["Benchmarks"]["num_requests"] == 42
