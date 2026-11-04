@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Unit tests for the generations API: the models' request schemas, checked
-against docs/api/generation, and submit → job → content → delete
+"""Unit tests for the generations API: each deployment's OpenAPI document,
+checked against docs/api/openapi, and submit → job → content → delete
 through the router with a fake device. Runners and tt_dit run on hardware, not
 here."""
 
@@ -36,8 +36,6 @@ from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
 from utils.video_manager import VideoManager
 
-_SPEC_DIR = pathlib.Path(__file__).resolve().parents[1] / "docs" / "api" / "generation"
-
 _CAPTION = {
     "compositional_deconstruction": {
         "background": "a brick wall",
@@ -62,63 +60,44 @@ def _with_images(request, **images):
     return request
 
 
-# --- Request schemas against the spec ----------------------------------------------
+# --- The spec ----------------------------------------------------------------------
 
 
-def _resolved(schema: dict, defs: dict) -> dict:
-    """A property's own schema: Optional's non-null branch, $refs followed."""
-    if "anyOf" in schema:
-        (schema,) = [branch for branch in schema["anyOf"] if branch != {"type": "null"}]
-    if "$ref" in schema and schema["$ref"].startswith("#/$defs/"):
-        schema = defs[schema["$ref"].removeprefix("#/$defs/")]
-    return schema
+def _load_dump_script():
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+    spec = importlib.util.spec_from_file_location(
+        "dump_generations_openapi", path / "dump_generations_openapi.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
+_dump_script = _load_dump_script()
+
+
+@pytest.fixture(scope="module")
+def served_generations_api():
+    """Each deployment's generations API, built in parallel."""
+    return _dump_script.served_generations_api_by_runner(list(GENERATION_MODELS))
+
+
+# After an intended API change: python scripts/dump_generations_openapi.py
 @pytest.mark.parametrize(
-    "model", GENERATION_MODELS.values(), ids=lambda model: model.id
+    ("runner", "model"),
+    GENERATION_MODELS.items(),
+    ids=[model.id for model in GENERATION_MODELS.values()],
 )
-def test_request_schema_matches_the_spec(model):
-    request_model = model.request
-    path = _SPEC_DIR / "models" / f"{model.id}.yaml"
-    spec = yaml.safe_load(path.read_text())
-    submit = spec["paths"][f"/v1/generations/{model.id}"]["post"]
-    # A variant's file takes its base model's schema by reference.
-    file, _, pointer = submit["requestBody"]["content"]["application/json"]["schema"][
-        "$ref"
-    ].partition("#/components/schemas/")
-    if file:
-        spec = yaml.safe_load((path.parent / file).read_text())
-    expected = spec["components"]["schemas"][pointer]
-    actual = request_model.model_json_schema()
-    defs = actual.get("$defs", {})
-
-    assert actual["additionalProperties"] is False
-    assert set(actual["properties"]) == set(expected["properties"])
-    assert set(actual.get("required", [])) == set(expected["required"])
-    for name, want in expected["properties"].items():
-        got = _resolved(actual["properties"][name], defs)
-        default = actual["properties"][name].get("default")
-        if "enum" in want:
-            assert got.get("enum") == want["enum"], name
-        if "default" in want:
-            assert default == want["default"], name
-        for bound in ("minimum", "maximum", "minItems", "maxItems", "minLength"):
-            if bound in want:
-                assert got.get(bound) == want[bound], (name, bound)
+def test_openapi_is_the_spec(served_generations_api, runner, model):
+    expected = yaml.safe_load(_dump_script.spec_path(model.id).read_text())
+    assert served_generations_api[runner] == expected
 
 
-def test_ideogram_caption_matches_the_spec():
-    spec = yaml.safe_load(
-        (_SPEC_DIR / "models" / "ideogram-ai" / "ideogram-4.yaml").read_text()
-    )["components"]["schemas"]
-    defs = Ideogram4Request.model_json_schema()["$defs"]
-    for name in (
-        "Ideogram4Caption",
-        "Ideogram4ObjectElement",
-        "Ideogram4TextElement",
-    ):
-        assert list(defs[name]["properties"]) == list(spec[name]["properties"]), name
-        assert set(defs[name].get("required", [])) == set(spec[name]["required"])
+def test_every_spec_is_served():
+    expected = {
+        _dump_script.spec_path(model.id) for model in GENERATION_MODELS.values()
+    }
+    assert _dump_script.spec_files() == expected
 
 
 def test_unknown_field_rejected():

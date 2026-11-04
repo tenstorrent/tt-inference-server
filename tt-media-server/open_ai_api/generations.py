@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """The generations API: one submit endpoint for the model this deployment
-serves, and the jobs it creates under /v1/jobs. Design:
-docs/api/generation/."""
+serves, and the jobs it creates under /v1/jobs. Spec:
+docs/api/openapi/."""
 
 from typing import Annotated, Any, Optional, Union
 
