@@ -16,6 +16,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
@@ -213,6 +214,29 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
         (call,) = runner.pipeline.calls
         frame_positions.add(tuple(pos for _, pos in call["image_prompt"]))
     assert frame_positions == {(0,), (0, 80)}
+
+
+@pytest.mark.parametrize("with_images", [False, True])
+def test_klein_edits_only_with_images(with_images):
+    runner = _runner("TTFlux2Klein4BRunner")
+    images = {"images": [Image.new("RGB", (8, 8))]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, images)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["images"] == (images["images"] if with_images else None)
+    assert call["num_inference_steps"] == 4
+
+
+def test_klein_warmup_covers_every_size():
+    runner = _runner("TTFlux2Klein4BRunner", warming_up=True)
+    requests = runner.warmup_requests()
+    assert len(requests) == 2
+    for request in requests:
+        runner.pipeline.calls.clear()
+        runner.run([request])
+        (call,) = runner.pipeline.calls
+        assert (call["width"], call["height"]) == (request._width, request._height)
+        assert call["num_inference_steps"] == 2
 
 
 @pytest.mark.parametrize("warming_up", [False, True])

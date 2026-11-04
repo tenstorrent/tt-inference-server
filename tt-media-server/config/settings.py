@@ -348,6 +348,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_FLUX_2_KLEIN_4B.value,
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value,
             ModelRunners.TT_MOCHI_1.value,

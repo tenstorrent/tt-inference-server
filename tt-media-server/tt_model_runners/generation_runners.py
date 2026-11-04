@@ -37,6 +37,7 @@ from config.constants import (
     generation_job_dir,
 )
 from config.settings import get_settings
+from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
@@ -326,6 +327,57 @@ MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
 MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
+
+
+class TTFlux2Klein4BRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.flux2.pipeline_flux2 import Flux2Pipeline
+
+        try:
+            return Flux2Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "FLUX.2 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # From tt-metal's models/tt_dit/tests/models/flux2/device_params.py: the
+        # VAE's conv2d needs L1_SMALL, the denoising loop is traced.
+        return {"l1_small_size": 65536, "trace_region_size": 31_000_000}
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # Text to image only: which input-image sequence lengths compile anew
+        # depends on the pipeline, which doesn't take images yet.
+        return [
+            _warmup_request(
+                Flux2klein4bRequest.model_construct(prompt=_WARMUP_PROMPT),
+                width,
+                height,
+            )
+            for width, height in Flux2klein4bRequest.warmup_sizes()
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Flux2klein4bRequest]):
+        request = requests[0]
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            images=request._images.get("images") or None,
+            num_inference_steps=self._steps(KLEIN_STEPS),
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            traced=True,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
 
 
 def _minimax_h3_env_bool(name: str) -> bool | None:

@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 import yaml
 from config.constants import JobTypes
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
@@ -158,6 +159,42 @@ def test_ltx_serves_one_shape(fields):
 def test_ltx_rejects(fields, message):
     with pytest.raises(ValidationError, match=message):
         Ltx23DistilledRequest(prompt="a violinist", **fields)
+
+
+@pytest.mark.parametrize(
+    ("fields", "images", "expected"),
+    [
+        ({}, [], (1024, 1024)),
+        ({"size": "2K"}, [], (2048, 2048)),
+        ({}, [(1600, 900)], (1024, 1024)),
+        ({"size": "2K"}, [(900, 1250)], (2048, 2048)),
+    ],
+)
+def test_klein_output_size(fields, images, expected):
+    if images:
+        fields["images"] = ["https://x/a.png"] * len(images)
+        request = _with_images(
+            Flux2klein4bRequest(prompt="a cat", **fields), images=images
+        )
+    else:
+        request = Flux2klein4bRequest(prompt="a cat", **fields)
+    assert request.output_size() == expected
+
+
+def test_klein_has_2_sizes():
+    assert set(Flux2klein4bRequest.warmup_sizes()) == {(1024, 1024), (2048, 2048)}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"aspect_ratio": "16:9"},
+        {"images": ["https://x/a.png", "https://x/b.png"]},
+    ],
+)
+def test_klein_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Flux2klein4bRequest(prompt="a cat", **fields)
 
 
 # --- Router and jobs -------------------------------------------------------------
