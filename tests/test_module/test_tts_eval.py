@@ -735,6 +735,10 @@ class TestEvalNotes:
             block.data["published_score_ref"],
         ) == shown
 
+    def test_the_table_has_no_tolerance_since_nothing_is_within_it(self):
+        block = self._block("tts_generation", {})
+        assert "tolerance" not in block.data
+
     def test_a_task_that_did_not_run_has_no_counts_or_gate(self):
         _, line = self._block("tts_naturalness", {}).targets["notes"]
         assert "samples" not in line and "Pass" not in line

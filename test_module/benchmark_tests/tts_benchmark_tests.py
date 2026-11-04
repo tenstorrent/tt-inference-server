@@ -87,7 +87,9 @@ SWEEP_LEGEND = (
     "one.\n"
     "- **failed_requests**: requests that returned no audio.\n"
     "- **Target checks**: C=1 only. RTR is the slowest request's rtr across "
-    "prompts, TTFT the slowest ttfa. A failed request anywhere fails RTR."
+    "prompts; a failed request anywhere fails it. TTFT, the slowest ttfa in ms, "
+    "is checked only when the model sets a TTFT target, and is NA otherwise. "
+    "Ratio is the measured value / the tier's target."
 )
 
 

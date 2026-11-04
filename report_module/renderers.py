@@ -68,12 +68,15 @@ EVALS_METHODOLOGY_NOTE = (
     "score."
 )
 
-BENCHMARK_TIER_NOTE = (
-    "Note: The Target Check column reflects only the strictest `target` tier. "
+_TARGET_CHECK_COLUMN_NOTE = (
+    "The Target Check column reflects only the strictest `target` tier. "
+)
+_TIERS_NOTE = (
     "The Target Checks table grades three tiers — functional, complete, and "
     "target — from most to least lenient. Acceptance criteria pass a benchmark "
     "when any single tier meets all of its checks."
 )
+BENCHMARK_TIER_NOTE = f"Note: {_TARGET_CHECK_COLUMN_NOTE}{_TIERS_NOTE}"
 
 UNGRADED_SWEEP_NOTE = (
     "Note: No perf targets are configured for these sweep points, so these "
@@ -340,6 +343,20 @@ def _footnote_for(block: Block) -> str | None:
     return FOOTNOTES.get(block.kind)
 
 
+def _sub_table(key: str, value: Any) -> str:
+    """``value`` as an H4 table titled after ``key``; empty when it has no rows."""
+    if not _is_subtable_value(value):
+        return ""
+    sub_records = _extract_records(Block(kind=key, data=value))
+    if not sub_records:
+        return ""
+    header_fn = target_checks_header if key == _TARGET_CHECKS_KEY else display_name
+    sub_table = _build_table(sub_records, header_fn=header_fn)
+    if not sub_table:
+        return ""
+    return f"#### {_humanize_key(key)}\n\n{sub_table}"
+
+
 def render_generic_table(
     block: Block, metadata: Mapping[str, Any], extra_hidden: frozenset = frozenset()
 ) -> str:
@@ -370,7 +387,13 @@ def render_generic_table(
         table = _build_table(records, hidden=hidden)
         if not table:
             return ""
-        parts = [heading, table, *notes]
+        parts = [heading, table]
+        # A multi-row block's grading sits beside its rows, not in any of them.
+        data = block.data if isinstance(block.data, Mapping) else {}
+        checks = _sub_table(_TARGET_CHECKS_KEY, data.get(_TARGET_CHECKS_KEY))
+        if checks:
+            parts.append(checks)
+        parts.extend(notes)
         if footnote:
             parts.append(footnote)
         return "\n\n".join(parts)
@@ -393,14 +416,9 @@ def render_generic_table(
             parts.append(scalar_table)
 
     for key, value in nested_fields:
-        sub_records = _extract_records(Block(kind=key, data=value))
-        if not sub_records:
-            continue
-        header_fn = target_checks_header if key == _TARGET_CHECKS_KEY else display_name
-        sub_table = _build_table(sub_records, header_fn=header_fn)
-        if not sub_table:
-            continue
-        parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
+        sub_table = _sub_table(key, value)
+        if sub_table:
+            parts.append(sub_table)
 
     if len(parts) <= 1:
         return ""
@@ -463,7 +481,11 @@ def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
         return ""
     notes = []
     if _has_target_checks(block):
-        notes.append(BENCHMARK_TIER_NOTE)
+        # Checks beside a "records" list grade the whole sweep; no row has a
+        # Target Check column.
+        data = block.data if isinstance(block.data, Mapping) else {}
+        column_note = "" if "records" in data else _TARGET_CHECK_COLUMN_NOTE
+        notes.append(f"Note: {column_note}{_TIERS_NOTE}")
     if ungraded:
         notes.append(UNGRADED_SWEEP_NOTE)
     return "\n\n".join([table, *notes])

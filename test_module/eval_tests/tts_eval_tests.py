@@ -50,7 +50,7 @@ EVAL_LEGEND = (
     "tts_speaker_similarity: 100 × mean_secs; "
     "tts_naturalness: 100 × (mean_utmos − 1) / 4.\n"
     "- **Accuracy Check**: PASS when the task's gate, listed under Tasks, holds. "
-    "Published Score and Tolerance are shown for reference and do not gate.\n"
+    "Published Score is shown for reference and does not gate.\n"
     "- **WER**: word error rate, (substitutions + deletions + insertions) / words "
     "in the input text, of the openai/whisper-base transcript; mean over samples; "
     "0 is a perfect read.\n"
@@ -203,7 +203,6 @@ def _tts_eval_block(
     published_score, published_score_ref = _published(task.score)
     data = {
         "task_name": task.task_name,
-        "tolerance": task.score.tolerance,
         "published_score": published_score,
         "score": score,
         "published_score_ref": published_score_ref,

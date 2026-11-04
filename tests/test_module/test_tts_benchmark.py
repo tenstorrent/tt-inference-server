@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import aiohttp
 import pytest
 
+from test_module._test_common import ReportCheckTypes
 from test_module.benchmark_tests import tts_benchmark_tests as bench
 from test_module.eval_tests import tts_client
 from test_module.eval_tests.tts_client import (
@@ -356,6 +357,23 @@ class TestConcurrencySweep:
         assert text.index("| short") < legend < text.index("**Prompts**")
         assert "- **short**: 7 words. “Good morning. Today is a beautiful day.”" in text
         assert "- **long**: 119 words. “It was the best of times" in text
+
+    def test_the_report_shows_what_the_sweep_is_graded_on(self, monkeypatch):
+        from report_module.renderers import render_benchmarks
+
+        tier = {"rtr": 1.0, "rtr_ratio": 1.5, "rtr_check": ReportCheckTypes.PASS}
+        monkeypatch.setattr(bench, "make_tts_client", lambda targets: _SweepClient())
+        monkeypatch.setattr(
+            bench, "_tts_target_checks", lambda *a: ({"target": tier}, None)
+        )
+        monkeypatch.setattr(bench, "block_id", lambda ctx: "id")
+        block = bench._run_tts_concurrency_sweep(_ctx(BASE), [1])
+        text = render_benchmarks(block, {})
+        checks = text.index("#### Target Checks")
+        assert text.index("| short") < checks < text.index("**Legend**")
+        assert "| target" in text[checks:] and "✅ PASS" in text[checks:]
+        # No row carries a Target Check column for the note to describe.
+        assert "Target Check column" not in text
 
     def test_a_failed_request_fails_the_gate(self, monkeypatch):
         # Call 6 (after the warm-up) is in the short prompt's C=3 row, not at C=1.
