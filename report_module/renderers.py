@@ -287,6 +287,7 @@ def _build_table(
 
 
 _TARGET_CHECKS_KEY = "target_checks"
+NOTES_KEY = "notes"
 
 _SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
 
@@ -314,6 +315,19 @@ def _is_subtable_value(value: Any) -> bool:
     if isinstance(value, (list, tuple)) and value:
         return any(isinstance(item, Mapping) for item in value)
     return False
+
+
+def block_notes(block: Block) -> List[str]:
+    """Markdown paragraphs a block's producer asks to print below its table, from
+    ``targets["notes"]``: a legend or method that only the producer knows."""
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    return [str(note) for note in targets.get(NOTES_KEY) or []]
+
+
+def merge_notes(blocks: Sequence[Block]) -> List[str]:
+    """The notes of ``blocks`` in order, each once: merged blocks often share a
+    legend."""
+    return list(dict.fromkeys(n for block in blocks for n in block_notes(block)))
 
 
 def _footnote_for(block: Block) -> str | None:
@@ -349,13 +363,14 @@ def render_generic_table(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
     footnote = _footnote_for(block)
+    notes = block_notes(block)
     hidden = _hidden_columns(block.kind) | extra_hidden
 
     if len(records) > 1:
         table = _build_table(records, hidden=hidden)
         if not table:
             return ""
-        parts = [heading, table]
+        parts = [heading, table, *notes]
         if footnote:
             parts.append(footnote)
         return "\n\n".join(parts)
@@ -389,6 +404,7 @@ def render_generic_table(
 
     if len(parts) <= 1:
         return ""
+    parts.extend(notes)
     if footnote:
         parts.append(footnote)
     return "\n\n".join(parts)
@@ -396,7 +412,9 @@ def render_generic_table(
 
 @register(EVALS_KIND)
 def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
-    """Render eval results as one table followed by the methodology note."""
+    """Render eval results as one table followed by the blocks' own notes, or by
+    the methodology note when they carry none: a note says how its evals gate,
+    which the methodology note would contradict."""
     records = _extract_records(block)
     if not records:
         return ""
@@ -407,7 +425,8 @@ def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
     table = _build_table(records)
     if not table:
         return ""
-    return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
+    notes = block_notes(block) or [EVALS_METHODOLOGY_NOTE]
+    return "\n\n".join([heading, table, *notes])
 
 
 def _has_target_checks(block: Block) -> bool:

@@ -344,6 +344,19 @@ class TestConcurrencySweep:
         assert row["audio_s_per_s"] == pytest.approx(1.5)
         assert checks == {"ttfa_ms": pytest.approx(250.0), "rtr": pytest.approx(1.5)}
 
+    def test_the_report_prints_the_legend_and_prompts_below_the_rows(self, monkeypatch):
+        from report_module.renderers import render_benchmarks
+
+        monkeypatch.setattr(bench, "make_tts_client", lambda targets: _SweepClient())
+        monkeypatch.setattr(bench, "_tts_target_checks", lambda *a: ({}, None))
+        monkeypatch.setattr(bench, "block_id", lambda ctx: "id")
+        block = bench._run_tts_concurrency_sweep(_ctx(BASE), [1, 2])
+        text = render_benchmarks(block, {})
+        legend = text.index("**Legend**")
+        assert text.index("| short") < legend < text.index("**Prompts**")
+        assert "- **short**: 7 words. “Good morning. Today is a beautiful day.”" in text
+        assert "- **long**: 119 words. “It was the best of times" in text
+
     def test_a_failed_request_fails_the_gate(self, monkeypatch):
         # Call 6 (after the warm-up) is in the short prompt's C=3 row, not at C=1.
         records, checks = self._run(monkeypatch, _SweepClient(fail_at=6), [1, 2, 3])

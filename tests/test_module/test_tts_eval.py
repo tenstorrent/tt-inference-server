@@ -20,8 +20,10 @@ from test_module.eval_tests import tts_quality_test as wer_mod
 from test_module.eval_tests import tts_speaker_similarity_test as secs_mod
 from test_module.eval_tests.tts_client import (
     SynthesizedAudio,
+    TTSClient,
     VoiceClip,
     make_tts_client,
+    synthesize_all,
 )
 from test_module.eval_tests.tts_eval_tests import (
     DEFAULT_WER_THRESHOLD,
@@ -270,9 +272,11 @@ class TestSecsBaselines:
         result = asyncio.run(test._run_specific_test_async())
 
         assert result["baseline"] == "default_voice"
-        # Alternating clone / default-voice requests, same text per pair.
+        # The clones, then default-voice requests for the same texts.
+        texts = [text for text, _ in client.calls]
         voices = [voice for _, voice in client.calls]
-        assert voices[1::2] == [None] * 4 and all(v is not None for v in voices[::2])
+        assert voices[4:] == [None] * 4 and all(v is not None for v in voices[:4])
+        assert texts[4:] == texts[:4]
 
     def test_default_voice_baseline_is_refused_without_a_default_voice(
         self, monkeypatch
@@ -471,7 +475,7 @@ class TestQwen3EvalConfig:
 
     @pytest.mark.parametrize(
         "size, wer",
-        [("1.7B", {"tts_generation", "tts_concurrency_isolation"}), ("0.6B", set())],
+        [("1.7B", {"tts_generation"}), ("0.6B", set())],
     )
     def test_base_registers_secs_and_naturalness_on_clones(self, size, wer):
         tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-Base")
@@ -519,11 +523,8 @@ class TestQwen3EvalConfig:
     def test_0b6_has_its_own_thresholds_and_never_sends_a_description(self, release):
         small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
         large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
-        # WER and cross-talk are calibrated only on the 1.7B Base.
-        assert set(small) == set(large) - {
-            "tts_generation",
-            "tts_concurrency_isolation",
-        }
+        # WER is calibrated only on the 1.7B Base.
+        assert set(small) == set(large) - {"tts_generation"}
         for name, task in small.items():
             targets = tts_eval_tests._task_targets(task)
             assert "description" not in targets
@@ -616,33 +617,116 @@ class TestCrossTalk:
         assert not iso_mod.summarize_isolation(rows, 0.10)["success"]
         assert iso_mod.summarize_isolation(rows, 0.35)["success"]
 
-    def test_the_runner_gates_one_row_and_adds_the_table(self, monkeypatch):
-        accepted = []
-        result = {
-            "success": True,
-            "wer_alone": 0.05,
-            "wer_together": 0.07,
-            "wer_gap": 0.02,
-            "mismatches": 0,
-            "max_wer_gap": 0.1,
-            "concurrency": 4,
-            "per_request": [{"request": 0}],
-        }
-        monkeypatch.setattr(tts_eval_tests, "_missing_deps", lambda deps: [])
-        monkeypatch.setattr(tts_eval_tests, "_run_eval_test", lambda c, t, k: result)
-        monkeypatch.setattr(
-            tts_eval_tests, "accept_blocks", lambda b, envelope: accepted.extend(b)
-        )
+    def test_the_galaxy_spec_suite_runs_it(self):
+        from test_module.dispatch import _instantiate_spec_test
+        from test_module.test_categorization_system import TestFilter
+
+        def cases(device):
+            suites = (
+                TestFilter()
+                .filter_by_model("Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+                .filter_by_device(device)
+                .get_tests()
+            )
+            return [c for s in suites for c in s["test_cases"]]
+
+        assert cases("n150") == []
+        (case,) = [c for c in cases("galaxy") if c["name"] == "TTSIsolationTest"]
+        test = _instantiate_spec_test(case, None)
+        assert isinstance(test, iso_mod.TTSIsolationTest)
+        assert test.targets["concurrency"] == 4
+        assert make_tts_client(test.targets).describe().startswith("vllm_omni")
+        block = test._block({"success": True})
+        assert block.kind == "spec_tests"
+        assert block.targets["notes"] == [iso_mod.CROSS_TALK_LEGEND]
+
+
+class _CountingClient(TTSClient):
+    """Records how many requests are in flight at once; audio carries the seed."""
+
+    has_default_voice = False
+
+    def __init__(self):
+        self.in_flight = self.peak = 0
+
+    async def synthesize(self, url, text, *, seed, voice=None, timeout_s=300):
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+        await asyncio.sleep(0.01 * (5 - seed % 5))
+        self.in_flight -= 1
+        return SynthesizedAudio(samples=np.full(2400, seed), sample_rate=24000)
+
+    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
+        raise NotImplementedError
+
+    def describe(self):
+        return "counting"
+
+
+class TestEvalConcurrency:
+    @pytest.mark.parametrize("concurrency", [1, 4])
+    def test_synthesize_all_caps_requests_in_flight_and_keeps_order(self, concurrency):
+        client = _CountingClient()
+        requests = [(f"t{i}", i, None) for i in range(8)]
+        audios = asyncio.run(synthesize_all(client, "u", requests, concurrency))
+        assert client.peak == concurrency
+        assert [int(a.samples[0]) for a in audios] == list(range(8))
+
+    def test_naturalness_sends_its_requests_at_the_task_concurrency(self, monkeypatch):
+        client = _CountingClient()
+        clips = [(s, s.encode(), f"text of {s}") for s in "abcdefgh"]
+        mod = tts_naturalness_test
+        monkeypatch.setattr(mod, "iter_speaker_clips", lambda *a, **k: clips)
+        monkeypatch.setattr(mod, "make_tts_client", lambda targets: client)
+        test = mod.TTSNaturalnessTest(_config(), {"concurrency": 4})
+        test.base_url = "http://fake"
+        monkeypatch.setattr(test, "_load_predictor", lambda: None)
+        monkeypatch.setattr(test, "_score", lambda audio: 4.5)
+        result = asyncio.run(test._run_specific_test_async())
+        assert client.peak == 4
+        assert result["concurrency"] == 4 and result["valid_samples"] == 8
+
+
+class TestEvalNotes:
+    @pytest.fixture(autouse=True)
+    def _no_block_id(self, monkeypatch):
         monkeypatch.setattr(tts_eval_tests, "block_id", lambda ctx: "id")
-        monkeypatch.setattr(tts_eval_tests, "sweep_envelope", lambda ctx: {})
-        task = SimpleNamespace(
-            task_name="tts_concurrency_isolation",
-            score=SimpleNamespace(
-                tolerance=0.05, published_score=None, published_score_ref=""
-            ),
+
+    def _block(self, name, result):
+        task = SimpleNamespace(task_name=name, score=_task().score)
+        return _tts_eval_block(
+            SimpleNamespace(),
+            task,
+            score=90.0,
+            accuracy_check=ReportCheckTypes.PASS,
+            result=result,
         )
-        block = tts_eval_tests._run_isolation_task(SimpleNamespace(), task)
-        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
-        assert block.data["score"] == 93.0
-        assert [b.kind for b in accepted] == ["tts_cross_talk"]
-        assert accepted[0].data["records"] == [{"request": 0}]
+
+    def test_a_task_line_states_its_sample_count_concurrency_and_gate(self):
+        block = self._block(
+            "tts_generation",
+            {"total_samples": 10, "concurrency": 4, "wer_threshold": 0.2},
+        )
+        legend, line = block.targets["notes"]
+        assert legend == tts_eval_tests.EVAL_LEGEND
+        assert tts_eval_tests.LIBRITTS_R_URL in legend
+        assert "10 samples, 4 requests at a time" in line
+        assert line.endswith("Pass: WER ≤ 0.2.")
+
+    def test_a_task_that_did_not_run_has_no_counts_or_gate(self):
+        _, line = self._block("tts_naturalness", {}).targets["notes"]
+        assert "samples" not in line and "Pass" not in line
+
+    def test_the_report_prints_the_legend_once_then_every_task(self):
+        from report_module import renderers
+        from report_module.generator import _collapse_same_heading_blocks
+
+        blocks = [
+            self._block("tts_generation", {"wer_threshold": 0.2}),
+            self._block("tts_naturalness", {"utmos_threshold": 4.2}),
+        ]
+        (merged,) = _collapse_same_heading_blocks(blocks)
+        text = renderers.render_evals(merged, {})
+        assert text.count("**Legend**") == 1
+        assert "WER ≤ 0.2" in text and "mean_utmos ≥ 4.2" in text
+        assert renderers.EVALS_METHODOLOGY_NOTE not in text

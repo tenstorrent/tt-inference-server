@@ -1,5 +1,5 @@
 {
-    "_description": "Test suites for TTS model category (SpeechT5)",
+    "_description": "Test suites for TTS model category (SpeechT5, Qwen3-TTS)",
     "_category": "TTS",
     "test_matrices": [
         {
@@ -35,6 +35,31 @@
                     "template": "TTSIntegrationTest",
                     "enabled": true,
                     "description": "TTS error handling and validation test"
+                }
+            ]
+        },
+        {
+            "_comment": "GALAXY serves Qwen3-TTS on vLLM-Omni, which batches up to 4 requests; the Qwen3-TTS evals run at that concurrency and take its isolation for granted, so this checks it.",
+            "models": [
+                "qwen3_tts_base"
+            ],
+            "devices": [
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "TTSIsolationTest",
+                    "enabled": true,
+                    "description": "Requests sent 4 at once each speak their own text in their own voice",
+                    "targets": {
+                        "tts_api": "vllm_omni",
+                        "clone_mode": "voice_only",
+                        "language": "English",
+                        "min_reference_seconds": 3,
+                        "max_reference_seconds": 12,
+                        "concurrency": 4,
+                        "max_wer_gap": 0.10
+                    }
                 }
             ]
         }

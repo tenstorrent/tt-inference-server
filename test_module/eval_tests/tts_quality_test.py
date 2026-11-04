@@ -27,7 +27,7 @@ import numpy as np
 
 from .._libritts import disable_audio_decode, iter_speaker_clips, resolve_split
 from .._test_common import BaseTest
-from .tts_client import make_tts_client
+from .tts_client import make_tts_client, synthesize_all
 from .tts_naturalness_test import naturalness_battery
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,7 @@ class TTSQualityTest(BaseTest):
                 "accuracy": round(valid_count / total_count, 4)
                 if total_count > 0
                 else 0,
+                "concurrency": self.targets.get("concurrency", 1),
                 "duration": round(total_duration, 2),
             }
         finally:
@@ -176,10 +177,16 @@ class TTSQualityTest(BaseTest):
         return naturalness_battery(clips, cloned)
 
     async def _run_client_test(self, battery: list) -> list[dict]:
-        """Synthesize each text through ``self.client`` and score its WER."""
+        """Synthesize each text through ``self.client``, ``concurrency`` at a time,
+        and score its WER."""
+        audios = await synthesize_all(
+            self.client,
+            self.url,
+            [(text, i, voice) for i, (text, voice) in enumerate(battery)],
+            self.targets.get("concurrency", 1),
+        )
         results = []
-        for i, (text, voice) in enumerate(battery):
-            audio = await self.client.synthesize(self.url, text, seed=i, voice=voice)
+        for i, ((text, _voice), audio) in enumerate(zip(battery, audios)):
             if audio is None:
                 logger.error(f"Synthesis failed for sample {i}")
                 results.append({"wer": None, "error": "synthesis failed"})

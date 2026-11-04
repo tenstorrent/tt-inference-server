@@ -16,6 +16,7 @@ from .tts_client import (
     VoiceClip,
     enough_valid,
     make_tts_client,
+    synthesize_all,
 )
 
 # Pinned MOS predictor: torch.hub repo tag + entrypoint.
@@ -75,11 +76,17 @@ class TTSNaturalnessTest(BaseTest):
             return {"success": False, "error": "could not load eval texts"}
         battery = naturalness_battery(clips, cloned)
 
+        concurrency = self.targets.get("concurrency", 1)
+        audios = await synthesize_all(
+            client,
+            self.url,
+            [(text, i, voice) for i, (text, voice) in enumerate(battery)],
+            concurrency,
+        )
         self._load_predictor()
         try:
             results = []
-            for i, (text, voice) in enumerate(battery):
-                audio = await client.synthesize(self.url, text, seed=i, voice=voice)
+            for i, audio in enumerate(audios):
                 if audio is None:
                     logger.error(f"Synthesis failed for sample {i}")
                     mos = None
@@ -119,6 +126,7 @@ class TTSNaturalnessTest(BaseTest):
             "utmos_threshold": threshold,
             "client": client.describe(),
             "cloned": cloned,
+            "concurrency": concurrency,
             "valid_samples": len(valid),
             "failed_samples": failed,
             "sample_count": len(results),

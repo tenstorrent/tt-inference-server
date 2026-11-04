@@ -323,7 +323,7 @@ def _consolidate_eval_blocks(sections: List[Block]) -> List[Block]:
         title=_CONSOLIDATED_EVALS_TITLE,
         task_type=None,
         id=eval_blocks[0].id,
-        targets={},
+        targets=_notes_targets(eval_blocks),
         data={"records": records},
     )
 
@@ -365,9 +365,14 @@ def _merge_blocks(a: Block, b: Block) -> Block:
         title=a.title,
         task_type=a.task_type,
         id=a.id,
-        targets=dict(a.targets),
+        targets={**a.targets, **_notes_targets([a, b])},
         data={"records": records},
     )
+
+
+def _notes_targets(blocks: Sequence[Block]) -> Dict[str, Any]:
+    notes = renderers.merge_notes(blocks)
+    return {renderers.NOTES_KEY: notes} if notes else {}
 
 
 def _records_for_merge(block: Block) -> List[Dict[str, Any]]:

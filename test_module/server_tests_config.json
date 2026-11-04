@@ -33,7 +33,8 @@
     ],
     "TTS": [
       "microsoft/speecht5_tts",
-      "coqui/XTTS-v2"
+      "coqui/XTTS-v2",
+      "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     ],
     "VIDEO": [
       "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
@@ -151,6 +152,7 @@
       "bge": "BGE embedding model tests",
       "qwen3_emb": "Qwen3 embedding model tests",
       "speecht5": "SpeechT5 TTS model tests",
+      "qwen3_tts_base": "Qwen3-TTS Base model tests",
       "wan": "Wan video generation model tests",
       "wan_i2v": "Wan image-to-video generation model tests",
       "mochi": "Mochi video generation model tests",
@@ -492,6 +494,16 @@
       "compatible_devices": [
         "n150",
         "p150"
+      ]
+    },
+    "qwen3_tts_base": {
+      "id_name": "qwen3-tts-12hz-1.7b-base",
+      "weights": [
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+      ],
+      "category": "TTS",
+      "compatible_devices": [
+        "galaxy"
       ]
     },
     "diffusiongemma_26b": {
@@ -1408,6 +1420,20 @@
       "test_config": {
         "test_timeout": 3600,
         "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "TTSIsolationTest": {
+      "module": "test_module.eval_tests.tts_isolation_test",
+      "markers": [
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 1800,
+        "retry_attempts": 0,
         "retry_delay": 60,
         "break_on_failure": false,
         "mock_mode": false

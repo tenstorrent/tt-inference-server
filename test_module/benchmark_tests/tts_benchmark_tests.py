@@ -23,6 +23,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from workflow_module.context_helpers import get_num_calls
 
+from report_module.renderers import NOTES_KEY
 from report_module.schema import Block
 
 from .._test_common import (
@@ -67,6 +68,38 @@ SWEEP_PROMPTS = {
         "comparison only."
     ),
 }
+
+
+SWEEP_LEGEND = (
+    "**Legend**: each row sends one prompt C times at once (Concurrency), each "
+    "request cloning the same 5.3 s LibriSpeech clip. Times are in seconds; min, "
+    "mean and max are over the C requests.\n\n"
+    "- **ttfa**: time to first audio, from sending the request to its first audio "
+    "chunk.\n"
+    "- **rtr**: real-time ratio, audio length / request time; above 1 is faster "
+    "than real time.\n"
+    "- **stream_rate_min**: audio length / time after the first chunk, slowest "
+    "request: how fast audio arrives once it has started.\n"
+    "- **playback_wait_total / playback_wait_longest**: a player starts at the "
+    "first chunk and plays in real time; the total and the longest time it waits "
+    "for audio, worst request. 0 means playback never stalls.\n"
+    "- **audio_s_per_s**: audio produced by all C requests / time of the slowest "
+    "one.\n"
+    "- **failed_requests**: requests that returned no audio.\n"
+    "- **Target checks**: C=1 only. RTR is the slowest request's rtr across "
+    "prompts, TTFT the slowest ttfa. A failed request anywhere fails RTR."
+)
+
+
+def _prompt_note(prompts: dict) -> str:
+    """The sweep prompts with their length, quoted up to a line."""
+    lines = []
+    for name, text in prompts.items():
+        quote = (
+            text if len(text) <= 80 else text[:80].rsplit(" ", 1)[0].rstrip(",") + " …"
+        )
+        lines.append(f"- **{name}**: {len(text.split())} words. “{quote}”")
+    return "**Prompts**\n\n" + "\n".join(lines)
 
 
 def _tts_num_calls(ctx: MediaContext, is_eval: bool = False) -> int:
@@ -315,7 +348,11 @@ def _run_tts_concurrency_sweep(ctx: MediaContext, levels: list[int]) -> Block:
         task_type="text_to_speech",
         title="Text-to-Speech Benchmark",
         id=block_id(ctx) or None,
-        targets={"concurrency": list(levels), "prompts": list(SWEEP_PROMPTS)},
+        targets={
+            "concurrency": list(levels),
+            "prompts": list(SWEEP_PROMPTS),
+            NOTES_KEY: [SWEEP_LEGEND, _prompt_note(SWEEP_PROMPTS)],
+        },
         data={"records": records, "target_checks": target_checks},
     )
 

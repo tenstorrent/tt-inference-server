@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -420,6 +421,25 @@ class VllmOmniTTSClient(StreamedWavTTSClient):
         )
 
 
+async def synthesize_all(
+    client: TTSClient,
+    url: str,
+    requests: List[Tuple[str, int, Optional[VoiceClip]]],
+    concurrency: int = 1,
+) -> List[Optional[SynthesizedAudio]]:
+    """``client.synthesize`` each ``(text, seed, voice)``, at most ``concurrency``
+    at a time; results keep the order of ``requests``."""
+    if concurrency < 1:
+        raise ValueError(f"concurrency must be >= 1, got {concurrency}")
+    slots = asyncio.Semaphore(concurrency)
+
+    async def one(text, seed, voice):
+        async with slots:
+            return await client.synthesize(url, text, seed=seed, voice=voice)
+
+    return list(await asyncio.gather(*(one(*r) for r in requests)))
+
+
 def make_tts_client(targets: Mapping[str, Any]) -> TTSClient:
     """Build the adapter an eval's targets ask for (``media_server`` by default)."""
     api = targets.get("tts_api", TTS_API_MEDIA_SERVER)
@@ -519,4 +539,5 @@ __all__ = [
     "decode_wav_file",
     "make_tts_client",
     "parse_pcm16_wav_header",
+    "synthesize_all",
 ]

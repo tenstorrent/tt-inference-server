@@ -15,6 +15,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from report_module.renderers import NOTES_KEY
 from report_module.schema import Block
 
 from workflow_module import accept_blocks
@@ -40,7 +41,69 @@ TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
-TASK_ISOLATION = "tts_concurrency_isolation"
+
+
+LIBRITTS_R_URL = "https://huggingface.co/datasets/blabble-io/libritts_r"
+EVAL_LEGEND = (
+    "**Legend**\n\n"
+    "- **Score**: 0-100, higher is better. tts_generation: 100 × (1 − WER); "
+    "tts_speaker_similarity: 100 × mean_secs; "
+    "tts_naturalness: 100 × (mean_utmos − 1) / 4.\n"
+    "- **Accuracy Check**: PASS when the task's gate, listed under Tasks, holds. "
+    "Published Score and Tolerance are shown for reference and do not gate.\n"
+    "- **WER**: word error rate, (substitutions + deletions + insertions) / words "
+    "in the input text, of the openai/whisper-base transcript; mean over samples; "
+    "0 is a perfect read.\n"
+    "- **mean_secs**: speaker-embedding cosine similarity "
+    "(microsoft/unispeech-sat-base-plus-sv) of each clone to its reference clip; "
+    "1 is the same voice.\n"
+    "- **mean_margin**: mean_secs minus the same score for a baseline, the same "
+    "sentence cloned from another speaker's clip; how far a clone stands from a "
+    "wrong voice.\n"
+    "- **mean_utmos**: listener score (mean opinion score, 1-5) predicted by "
+    "UTMOS22 strong.\n"
+    "- **valid_samples / failed_samples / sample_count**: samples scored / "
+    "requests that returned no audio / samples sent.\n\n"
+    f"**Dataset**: [LibriTTS-R]({LIBRITTS_R_URL}), test.clean split, one utterance "
+    "per speaker. For a cloning model, each sample clones one speaker's utterance "
+    "and reads the next speaker's sentence.\n\n"
+    "**Tasks**"
+)
+
+
+def _task_note(task_name: str, result: dict) -> Optional[str]:
+    """One line on what ``task_name`` measured and how it gates; counts and gate
+    values come from ``result``, so a task that did not run reads without them."""
+    get = result.get
+    count = get("sample_count", get("total_samples"))
+    how = []
+    if count:
+        how.append(f"{count} samples")
+    if get("concurrency"):
+        how.append(f"{get('concurrency')} requests at a time")
+    how = f" ({', '.join(how)})" if how else ""
+    if task_name == TASK_WER:
+        gate = get("wer_threshold") is not None and f"WER ≤ {get('wer_threshold')}"
+        what = "intelligibility. Whisper transcribes each clone; WER against its text"
+    elif task_name == TASK_SECS:
+        gate = get("secs_floor") is not None and (
+            f"mean_secs ≥ {get('secs_floor')} and "
+            f"mean_margin ≥ {get('margin_threshold')}"
+        )
+        what = (
+            "voice cloning. SECS of each clone to its reference clip, and of a "
+            "baseline, the same sentence cloned from the previous speaker's clip, "
+            "to that clip"
+        )
+    elif task_name == TASK_NATURALNESS:
+        gate = get("utmos_threshold") is not None and (
+            f"mean_utmos ≥ {get('utmos_threshold')}"
+        )
+        what = "naturalness. UTMOS scores each clone"
+    else:
+        return None
+    gate = f" Pass: {gate}." if gate else ""
+    return f"- **{task_name}**: {what}{how}.{gate}"
 
 
 def _tts_sample_count(ctx: MediaContext) -> int:
@@ -126,8 +189,10 @@ def _tts_eval_block(
     accuracy_check: ReportCheckTypes,
     error: Optional[str] = None,
     metrics: Optional[dict] = None,
+    result: Optional[dict] = None,
 ) -> Block:
-    """Build a canonical TTS eval Block (accuracy/quality fields only)."""
+    """Build a canonical TTS eval Block (accuracy/quality fields only); ``result``,
+    the eval test's data, fills in the task's line under the legend."""
     data = {
         "task_name": task.task_name,
         "tolerance": task.score.tolerance,
@@ -149,6 +214,11 @@ def _tts_eval_block(
             "tolerance": task.score.tolerance,
             "published_score": task.score.published_score,
             "published_score_ref": task.score.published_score_ref,
+            NOTES_KEY: [
+                note
+                for note in (EVAL_LEGEND, _task_note(task.task_name, result or {}))
+                if note
+            ],
         },
         data=data,
     )
@@ -243,6 +313,7 @@ def _run_wer_task(ctx: MediaContext, task) -> Block:
         score=score,
         accuracy_check=accuracy_check,
         metrics={"wer": avg_wer},
+        result=result,
     )
 
 
@@ -277,71 +348,6 @@ def _run_eval_test(ctx: MediaContext, task, test_class) -> dict:
         targets,
     )
     return dict(test.run_tests().data)
-
-
-def _cross_talk_block(ctx: MediaContext, result: dict) -> Block:
-    """The per-request table of the cross-talk eval; its eval row carries the gate."""
-    return Block(
-        kind="tts_cross_talk",
-        task_type="text_to_speech",
-        title=f"Cross-talk at C={result.get('concurrency')}",
-        id=block_id(ctx) or None,
-        targets={"max_wer_gap": result.get("max_wer_gap")},
-        data={"records": result.get("per_request") or []},
-    )
-
-
-def _run_isolation_task(ctx: MediaContext, task) -> Block:
-    """Cross-talk eval (task_name=tts_concurrency_isolation) -> one eval Block, plus
-    its per-request table accepted as a block of its own."""
-    from .tts_isolation_test import TTSIsolationTest
-
-    missing = _missing_deps(TTS_SECS_DEPS)
-    if missing:
-        reason = f"TTS cross-talk deps unavailable: {', '.join(missing)}"
-        logger.error(reason)
-        return _tts_eval_block(
-            ctx, task, score=None, accuracy_check=ReportCheckTypes.NA, error=reason
-        )
-    try:
-        result = _run_eval_test(ctx, task, TTSIsolationTest)
-    except Exception as e:
-        reason = f"TTS cross-talk eval failed to run: {type(e).__name__}: {e}"
-        logger.exception(reason)
-        return _tts_eval_block(
-            ctx, task, score=None, accuracy_check=ReportCheckTypes.NA, error=reason
-        )
-
-    if "wer_together" not in result:
-        # Requests ran but some failed: a failed eval, not a missing one.
-        return _tts_eval_block(
-            ctx,
-            task,
-            score=None,
-            accuracy_check=ReportCheckTypes.FAIL,
-            error=result.get("error"),
-        )
-    accept_blocks([_cross_talk_block(ctx, result)], envelope=sweep_envelope(ctx))
-    accuracy_check = (
-        ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
-    )
-    logger.info(
-        "TTS cross-talk eval: %s -> check=%s",
-        {k: result.get(k) for k in ("wer_alone", "wer_together", "mismatches")},
-        accuracy_check.name,
-    )
-    return _tts_eval_block(
-        ctx,
-        task,
-        score=_intelligibility_score(result["wer_together"]),
-        accuracy_check=accuracy_check,
-        metrics={
-            "wer": result["wer_together"],
-            "wer_alone": result["wer_alone"],
-            "wer_gap": result["wer_gap"],
-            "mismatches": result["mismatches"],
-        },
-    )
 
 
 def _sample_counts(result: dict) -> dict:
@@ -412,6 +418,7 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
             "mean_margin": mean_margin,
             **_sample_counts(result),
         },
+        result=result,
     )
 
 
@@ -493,6 +500,7 @@ def _run_naturalness_task(ctx: MediaContext, task) -> Block:
         score=score,
         accuracy_check=accuracy_check,
         metrics={"mean_utmos": mean_utmos, **_sample_counts(result)},
+        result=result,
     )
 
 
@@ -500,7 +508,6 @@ _TASK_RUNNERS = {
     TASK_WER: _run_wer_task,
     TASK_SECS: _run_secs_task,
     TASK_NATURALNESS: _run_naturalness_task,
-    TASK_ISOLATION: _run_isolation_task,
 }
 
 

@@ -20,6 +20,7 @@ from report_module.generator import (
     _consolidate_eval_blocks,
     generate_report,
 )
+from report_module import renderers
 from report_module.schema import Block, ReportSchema
 
 
@@ -141,6 +142,36 @@ class TestConsolidateEvalBlocks:
         )
         assert [b.kind for b in merged] == ["benchmarks", "evals", "spec_tests"]
         assert merged[1].title == "Accuracy Evaluations"
+
+    def test_notes_merge_in_order_without_repeats(self):
+        a = _eval_block("a")
+        a.targets["notes"] = ["legend", "about a"]
+        b = _eval_block("b")
+        b.targets["notes"] = ["legend", "about b"]
+        (merged,) = _consolidate_eval_blocks([a, b])
+        assert merged.targets["notes"] == ["legend", "about a", "about b"]
+
+
+class TestBlockNotes:
+    def test_eval_notes_replace_the_methodology_note(self):
+        plain = renderers.render_evals(_eval_block("a", score=1.0), {})
+        assert renderers.EVALS_METHODOLOGY_NOTE in plain
+        block = _eval_block("a", score=1.0)
+        block.targets["notes"] = ["**Legend** for a"]
+        text = renderers.render_evals(block, {})
+        assert text.endswith("**Legend** for a")
+        assert renderers.EVALS_METHODOLOGY_NOTE not in text
+
+    @pytest.mark.parametrize("records", [[{"x": 1}], [{"x": 1}, {"x": 2}]])
+    def test_a_generic_table_prints_its_notes_below_it(self, records):
+        block = Block(
+            kind="spec_tests",
+            title="S",
+            data={"records": records},
+            targets={"notes": ["first", "second"]},
+        )
+        text = renderers.render_generic_table(block, {})
+        assert text.index("| x") < text.index("first") < text.index("second")
 
 
 class TestGenerate:

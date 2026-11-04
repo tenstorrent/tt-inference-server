@@ -17,6 +17,7 @@ from .tts_client import (
     decode_wav_file,
     enough_valid,
     make_tts_client,
+    synthesize_all,
 )
 
 # Pinned speaker-verification encoder; transformers + torch are already eval deps.
@@ -137,26 +138,32 @@ class TTSSpeakerSimilarityTest(BaseTest):
         if len(clips) < 2:
             return {"success": False, "error": "could not load speaker clips"}
         voices = [VoiceClip(wav, transcript) for _, wav, transcript in clips]
+        # The next speaker's sentence, never the reference clip's own text.
+        texts = [clips[(i + 1) % len(clips)][2] for i in range(len(clips))]
+        if baseline_mode == BASELINE_CROSS_SPEAKER:
+            partners = [cross_speaker_partner(i, len(clips)) for i in range(len(clips))]
+        else:
+            partners = [None] * len(clips)
+        requests = [(text, i, voices[i]) for i, text in enumerate(texts)] + [
+            (text, i, None if partner is None else voices[partner])
+            for i, (text, partner) in enumerate(zip(texts, partners))
+        ]
+        concurrency = self.targets.get("concurrency", 1)
+        audios = await synthesize_all(client, self.url, requests, concurrency)
 
         self._load_encoder()
         try:
             results = []
             for i, (speaker, _wav, _own_text) in enumerate(clips):
-                # The next speaker's sentence, never the reference clip's own text.
-                text = clips[(i + 1) % len(clips)][2]
                 ref_embedding = await asyncio.to_thread(
                     self._embed, decode_wav_file(voices[i].wav_bytes)
                 )
-                cloned = await self._sample_secs(i, ref_embedding, text, voices[i])
-                if baseline_mode == BASELINE_CROSS_SPEAKER:
-                    partner = cross_speaker_partner(i, len(clips))
-                    baseline_voice = voices[partner]
-                    baseline_speaker = clips[partner][0]
-                else:
-                    baseline_voice = None
-                    baseline_speaker = None
-                baseline = await self._sample_secs(
-                    i, ref_embedding, text, baseline_voice
+                cloned = await self._score_secs(i, ref_embedding, audios[i])
+                baseline = await self._score_secs(
+                    i, ref_embedding, audios[len(clips) + i]
+                )
+                baseline_speaker = (
+                    None if partners[i] is None else clips[partners[i]][0]
                 )
                 margin = (
                     cloned - baseline
@@ -200,18 +207,16 @@ class TTSSpeakerSimilarityTest(BaseTest):
             **summary,
             "baseline": baseline_mode,
             "client": client.describe(),
+            "concurrency": concurrency,
             "secs_floor": secs_floor,
             "margin_threshold": margin_threshold,
             "per_sample": results,
         }
 
-    async def _sample_secs(self, index, ref_embedding, text, voice):
-        """Synthesize ``text`` in ``voice`` (default voice when None) and score it."""
-        audio = await self._client.synthesize(self.url, text, seed=index, voice=voice)
+    async def _score_secs(self, index, ref_embedding, audio):
+        """SECS of ``audio`` against the reference, or None when synthesis failed."""
         if audio is None:
-            logger.error(
-                f"Synthesis failed for sample {index} (clone={voice is not None})"
-            )
+            logger.error(f"Synthesis failed for sample {index}")
             return None
         # Embedding is CPU-bound; keep the event loop responsive.
         return await asyncio.to_thread(self._secs, ref_embedding, audio)

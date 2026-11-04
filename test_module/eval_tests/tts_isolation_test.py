@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Cross-talk eval: requests sent together must each speak their own text in their
-own voice, as well as when they run alone."""
+"""Cross-talk spec test: requests sent together must each speak their own text in
+their own voice, as well as when they run alone."""
 
 import asyncio
 import logging
 import time
+
+from report_module.renderers import NOTES_KEY
 
 from .._libritts import iter_speaker_clips
 from .tts_client import decode_wav_file, make_tts_client
@@ -20,6 +22,23 @@ DEFAULT_CONCURRENCY = 4
 # means the batch hurts every request.
 DEFAULT_MAX_WER_GAP = 0.10
 DEFAULT_DATASET_SPLIT = "test.clean"
+
+CROSS_TALK_LEGEND = (
+    "**Legend**: C LibriTTS-R speakers, each cloned to read another speaker's "
+    "sentence; every request runs alone, then all C at once.\n\n"
+    "- **wer_alone / wer_together**: WER of the request run alone / run with the "
+    "others.\n"
+    "- **wer_other_min**: lowest WER of the batched output against any other "
+    "request's text; near 1 means no other text leaked in.\n"
+    "- **secs_to_alone**: speaker similarity of the batched output to the same "
+    "request run alone.\n"
+    "- **secs_to_other_max**: highest similarity to any other request run "
+    "alone.\n"
+    "- **secs_clip**: similarity to its own reference clip; shown only.\n"
+    "- **own_best**: own text has the lowest WER and own voice the highest "
+    "similarity. Pass: every request own_best, and wer_gap (mean wer_together − "
+    "mean wer_alone) ≤ max_wer_gap."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +96,13 @@ def summarize_isolation(rows: list, max_wer_gap: float) -> dict:
 class TTSIsolationTest(TTSQualityTest, TTSSpeakerSimilarityTest):
     """Whisper WER and speaker similarity of each request, alone and batched."""
 
-    KIND = "tts_isolation_evals"
+    KIND = "tts_cross_talk"
     TASK_TYPE = "audio"
+
+    def _block(self, data):
+        block = super()._block(data)
+        block.targets[NOTES_KEY] = [CROSS_TALK_LEGEND]
+        return block
 
     async def _run_specific_test_async(self):
         start = time.time()
