@@ -23,6 +23,7 @@ import pytest
 import yaml
 from config.constants import JobTypes
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -229,6 +230,27 @@ def test_klein_has_14_sizes():
     sizes = set(Flux2klein4bRequest.warmup_sizes())
     assert len(sizes) == 14
     assert all(width % 16 == 0 and height % 16 == 0 for width, height in sizes)
+
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"size": "4K"}, (4096, 4096)),
+    ],
+)
+def test_flux3_output_size(fields, expected):
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+@pytest.mark.parametrize(
+    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+)
+def test_flux3_serves_one_square_shape_per_size(fields):
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
 @pytest.mark.parametrize(

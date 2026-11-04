@@ -36,6 +36,10 @@ from config.constants import (
 )
 from config.settings import get_settings
 from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
+from domain.flux3_image_klein_request import (
+    FLUX3_KLEIN_STEPS,
+    Flux3ImageKleinRequest,
+)
 from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -266,6 +270,88 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
         if recorder is not None:
             recorder.flush(images)
         return images
+
+
+class TTFlux3ImageKleinRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinPipeline,
+        )
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            Flux3KleinUpsampler,
+        )
+        from models.tt_dit.pipelines.flux3_klein.weights_flux3_klein import (
+            resolve_weights_dir,
+        )
+
+        weights = self.settings.model_weights_path
+        snapshot = (
+            Path(weights)
+            if os.path.isdir(weights)
+            else resolve_weights_dir("distilled")
+        )
+        try:
+            upsampler = Flux3KleinUpsampler(
+                self.ttnn_device.create_submesh(ttnn.MeshShape(1, 1))
+            )
+            return Flux3KleinPipeline(
+                self.ttnn_device, snapshots={"distilled": snapshot}, upsampler=upsampler
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "FLUX.3 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            DEVICE_PARAMS,
+        )
+
+        # From tt-metal's models/tt_dit/tests/models/flux3_klein: a ring with 8 KB
+        # packets, L1_SMALL for the VAE conv2d, and what the upsampler needs.
+        router = ttnn.FabricRouterConfig()
+        router.max_packet_payload_size_bytes = 8192
+        return {
+            **DEVICE_PARAMS,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+            "fabric_router_config": router,
+            "l1_small_size": 65536,
+        }
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        reference = Image.new("RGB", (1024, 1024))
+        return [
+            _warmup_request(
+                Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
+                width,
+                height,
+                images,
+            )
+            for width, height in Flux3ImageKleinRequest.warmup_sizes()
+            for images in ({}, {"images": [reference]})
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Flux3ImageKleinRequest]):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinRequest,
+        )
+
+        request = requests[0]
+        result = self.pipeline.generate(
+            Flux3KleinRequest(
+                prompt=request._prompt,
+                width=request._width,
+                height=request._height,
+                seed=request._seed,
+                steps=self._steps(FLUX3_KLEIN_STEPS),
+                images=tuple(request._images.get("images", [])),
+                prompt_upsampling=not self._warming_up,
+            )
+        )
+        result.image.info["prompt"] = result.caption
+        return [result.image]
 
 
 class TTIdeogram4Runner(_GenerationRunner):

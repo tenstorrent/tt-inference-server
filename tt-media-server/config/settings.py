@@ -351,6 +351,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value,
             ModelRunners.TT_FLUX_2_KLEIN_4B.value,
+            ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value,
             ModelRunners.TT_IDEOGRAM_4.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,

@@ -4,6 +4,7 @@
 
 from config.constants import ModelRunners
 from domain.flux2_klein_4b_request import FLUX2_KLEIN_4B
+from domain.flux3_image_klein_request import FLUX3_IMAGE_KLEIN
 from domain.generation_request import GenerationModel
 from domain.ideogram4_request import IDEOGRAM_4
 from domain.ltx23_distilled_request import LTX_2_3_22B_DISTILLED
@@ -21,6 +22,7 @@ GENERATION_MODELS: dict[str, GenerationModel] = {
     ModelRunners.TT_WAN_2_2_I2V.value: WAN22_I2V_A14B,
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: QWEN_IMAGE_EDIT_2511,
     ModelRunners.TT_FLUX_2_KLEIN_4B.value: FLUX2_KLEIN_4B,
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: FLUX3_IMAGE_KLEIN,
     ModelRunners.TT_IDEOGRAM_4.value: IDEOGRAM_4,
     ModelRunners.TT_LTX_2_3_DISTILLED.value: LTX_2_3_22B_DISTILLED,
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: MINIMAX_H3_FL2VA,

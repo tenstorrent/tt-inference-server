@@ -100,6 +100,7 @@ dit_runner_log_map = {
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
     ModelRunners.TT_FLUX_2_KLEIN_4B.value: "FLUX.2-klein-4B",
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: "FLUX.3-image-klein",
     ModelRunners.TT_IDEOGRAM_4.value: "Ideogram-4",
 }
 
