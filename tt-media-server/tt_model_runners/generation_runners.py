@@ -596,8 +596,16 @@ class TTIdeogram4Runner(_GenerationRunner):
             raise
 
     def get_pipeline_device_params(self):
-        # From tt-metal's models/tt_dit/tests/models/ideogram4/test_pipeline_class_ideogram4.py.
-        return {"l1_small_size": 32768, "trace_region_size": 60_000_000}
+        # From tt-metal's models/tt_dit/tests/models/ideogram4/test_pipeline_class_ideogram4.py:
+        # the pipeline's 4x8 preset runs ring CCLs, its 2x4 preset linear ones.
+        fabric = ttnn.FabricConfig.FABRIC_1D
+        if tuple(self.settings.device_mesh_shape) == (4, 8):
+            fabric = ttnn.FabricConfig.FABRIC_1D_RING
+        return {
+            "fabric_config": fabric,
+            "l1_small_size": 32768,
+            "trace_region_size": 60_000_000,
+        }
 
     def warmup_requests(self) -> list[GenerationRequest]:
         # The presets differ only in step count and the per-step guidance

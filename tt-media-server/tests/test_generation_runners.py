@@ -555,8 +555,18 @@ def test_ideogram_warmup_covers_every_size():
         assert (call["width"], call["height"]) == (request._width, request._height)
 
 
+@pytest.mark.parametrize(
+    ("mesh_shape", "fabric"), [((4, 8), "FABRIC_1D_RING"), ((2, 4), "FABRIC_1D")]
+)
+def test_ideogram_fabric_follows_the_pipeline_preset(mesh_shape, fabric):
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.device_mesh_shape = mesh_shape
+    params = runner.get_pipeline_device_params()
+    assert params["fabric_config"] is getattr(runners.ttnn.FabricConfig, fabric)
+
+
 def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
-    # The pipeline resolves a repo id itself.
+    # The pipeline resolves a repo id itself, from tenstorrent/tt-metal#63894 on.
     pipeline = ModuleType("pipeline_ideogram4")
     pipeline.Ideogram4Pipeline = Mock()
     monkeypatch.setitem(
