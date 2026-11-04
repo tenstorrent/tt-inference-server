@@ -340,6 +340,13 @@ class Gemma4Model:
         if len(kv_cache) != len(self.layers):
             raise ValueError("Expected one cache pair per loaded layer")
         x = self.embed(tokens, batch=batch)
+        # RoPE cos/sin rows depend only on the positions and the layer kind: look them up once per step.
+        rope = {}
+        for layer in self.layers:
+            if layer.kind not in rope:
+                rope[layer.kind] = layer.decode_rope_tables(
+                    positions if rope_positions is None else rope_positions, batch
+                )
         for i, (layer, cache) in enumerate(zip(self.layers, kv_cache)):
             x = layer.decode_forward(
                 x,
@@ -349,6 +356,7 @@ class Gemma4Model:
                 rope_positions=rope_positions,
                 cyclic_cache=i not in page_tables,
                 update_positions=update_positions,
+                rope=rope[layer.kind],
             )
         logits = self.terminal(x)
         # Common samplers own a 32-row tile; inactive padding stays internal.
