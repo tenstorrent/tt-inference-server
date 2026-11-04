@@ -988,6 +988,8 @@ templates:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         VLLM_RPC_TIMEOUT: "300000"
+        # CI-only probe: a1 (BFP8 weights) + gelu_pytorch_tanh from the bind-mounted reference_config (tt-metal fafb81ba)
+        GEMMA4_PRECISION_CONFIG: /home/container_app_user/app/reference_config/gemma4_12b_qb2_g1_precision.json
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 0
