@@ -131,6 +131,7 @@ def _runner(class_name: str, warming_up: bool = False):
     runner = cls.__new__(cls)
     runner.device_id = "0"
     runner._warming_up = warming_up
+    runner._image_stage_recorder = lambda: None
     runner._video_stage_recorder = lambda resolution: None
     runner.logger = Mock()
     runner.settings = SimpleNamespace(model_runner="tt-wan2.2-i2v")

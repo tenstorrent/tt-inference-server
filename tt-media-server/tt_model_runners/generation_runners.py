@@ -50,6 +50,7 @@ from models.tt_dit.pipelines.minimax_h3.policy import MINIMAX_H3_SHORT_EDGE
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
 from models.tt_dit.pipelines.wan.policy import served_resolutions
 from PIL import Image
+from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
     TTDiTRunner,
@@ -125,6 +126,16 @@ class _GenerationRunner(TTDiTRunner):
     def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
         """The images of the media field ``name``, decoded from their files."""
         return [decode_image(data) for data in request._files.get(name, [])]
+
+    def _image_stage_recorder(self) -> ImageStageRecorder | None:
+        if self._warming_up:
+            return None
+        return ImageStageRecorder(
+            model_type=self.settings.model_runner,
+            device_id=self.device_id,
+            sampler=sampler_name(self.pipeline),
+            batch=1,
+        )
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):

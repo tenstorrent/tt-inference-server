@@ -4,6 +4,7 @@
 
 import re
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Annotated, ClassVar, Literal, Optional
 
 from domain.base_request import BaseRequest
@@ -103,6 +104,34 @@ Seed = Annotated[
         "Seed", "Omitted = random. Each output reports the seed it was made with."
     ),
 ]
+ImageFormat = Annotated[
+    Literal["png", "jpeg", "webp"],
+    SchemaComponent("ImageFormat", "Output image format."),
+]
+Count = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=1,
+        description=(
+            "Number of images. Only 1 for now; kept so more can be allowed later "
+            "without a schema change."
+        ),
+    ),
+]
+
+
+def closest_ratio(width: int, height: int, ratios) -> str:
+    """The ratio in ``ratios`` ("W:H" strings) closest to ``width`` x
+    ``height`` by factor. The distances are exact, so a tie, such as 4:3
+    between 16:9 and 1:1, goes to the earlier ratio in ``ratios``."""
+    target = Fraction(width, height)
+
+    def distance(ratio: str) -> Fraction:
+        value = Fraction(*map(int, ratio.split(":")))
+        return max(value / target, target / value)
+
+    return min(ratios, key=distance)
 
 
 # The request of one model's submit endpoint. The service fills in the private
@@ -110,7 +139,7 @@ Seed = Annotated[
 class GenerationRequest(BaseRequest):
     model_config = ConfigDict(extra="forbid")
 
-    OUTPUT_TYPE: ClassVar[Literal["video"]]
+    OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
     # Fields holding media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
     # The kind of each media field that does not hold images.
