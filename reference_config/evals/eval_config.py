@@ -8909,8 +8909,8 @@ _eval_config_list = [
                     n_concurrent_trials=40,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
+                    override_cpus=None,  # task-defined (1-4 CPUs) instead of 16 for every task
+                    override_memory_mb=None,  # task-defined (2-8 GB)
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
