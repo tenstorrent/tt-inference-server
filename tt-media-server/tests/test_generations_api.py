@@ -26,6 +26,7 @@ from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
 from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
 from PIL import Image
@@ -703,6 +704,62 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
     assert not (tmp_path / job["id"]).exists()
+
+
+# --- Qwen-Image-Edit-2511 --------------------------------------------------------
+
+
+def test_qwen_size_follows_last_image():
+    request = QwenImageEdit2511Request(
+        prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
+    )
+    assert request.negative_prompt == " "
+    _with_images(request, images=[(1000, 1000), (1600, 900)])
+    assert request.output_size() == (1376, 768)
+    request.aspect_ratio = "3:4"
+    assert request.output_size() == (896, 1184)
+
+
+@pytest.mark.parametrize(
+    "fields", [{"images": ["https://x/a.png"] * 4}, {"count": 2}, {"size": "1K"}]
+)
+def test_qwen_rejects(fields):
+    with pytest.raises(ValidationError):
+        QwenImageEdit2511Request(
+            prompt="x", **{"images": ["https://x/a.png"], **fields}
+        )
+
+
+async def test_image_job(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={
+            "prompt": "add a hat",
+            "images": [_data_uri(1600, 900)],
+            "seed": 7,
+            "format": "jpeg",
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    (request,) = device.requests
+    assert request.negative_prompt == " "
+
+    (output,) = job["outputs"]
+    assert output == {
+        "type": "image",
+        "url": f"/v1/jobs/{job['id']}/content/0",
+        "content_type": "image/jpeg",
+        "seed": 7,
+        "prompt": "add a hat",
+        "width": 1376,
+        "height": 768,
+    }
+    content = await client.get(output["url"])
+    assert content.headers["content-type"] == "image/jpeg"
+    assert Image.open(BytesIO(content.content)).size == (1376, 768)
 
 
 # --- MiniMax-H3 ------------------------------------------------------------------

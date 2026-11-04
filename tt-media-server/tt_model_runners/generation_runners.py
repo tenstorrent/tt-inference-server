@@ -38,6 +38,7 @@ from config.settings import get_settings
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
@@ -50,6 +51,7 @@ from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
     TTDiTRunner,
+    TTQwenImageRunner,
     TTWan22I2VRunner,
     _wan22_dit_device_params,
     dit_runner_log_map,
@@ -66,6 +68,8 @@ _WARMUP_STEPS = 2
 WAN_STEPS = 40
 WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
+QWEN_STEPS = 40
+QWEN_GUIDANCE_SCALE = 4.0
 
 _inference_timer = log_execution_time(
     f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -178,6 +182,37 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
             if recorder is not None:
                 recorder.flush(frames)
         return frames
+
+
+class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
+    def get_pipeline_device_params(self):
+        # Per-chip trace region for every resolution of the mesh's preset, from
+        # tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py.
+        return {"l1_small_size": 32768, "trace_region_size": 790_000_000}
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The pipeline compiles and traces every resolution of its preset when
+        # it is created.
+        return []
+
+    @_inference_timer
+    def run(self, requests: list[QwenImageEdit2511Request]):
+        request = requests[0]
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            negative_prompts=[request.negative_prompt],
+            image=request._images["images"],
+            num_inference_steps=QWEN_STEPS,
+            cfg_scale=QWEN_GUIDANCE_SCALE,
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
 
 
 class TTLtx23DistilledRunner(_GenerationRunner):
