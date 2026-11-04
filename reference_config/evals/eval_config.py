@@ -12424,7 +12424,7 @@ _eval_config_list = [
         ],
     ),
     # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4 autoport, P300X2), branch-only: GPQA Diamond
-    # alone, so a CI dispatch runs just it. Model-card settings: reasoning_effort=high (the
+    # (evals workflow) and a 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings: reasoning_effort=high (the
     # chat template default), temperature 1.0, top_p 0.95; 32768 output tokens as in the
     # bring-up's stage-11 run and the card's HF example.
     EvalConfig(
@@ -12466,6 +12466,68 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2 (JSON-in-text actions, no server tool
+                # parser), set up as the K2-Horizon-7B row: dispatch the agentic workflow
+                # with --ci-mode for its 5-task subset only.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The 5-task CI subset is not comparable to a full-set score.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 5 tasks at 5 concurrent: one wave, the slowest task sets the wall time.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95), host-sampled; 128K
+                    # input plus 32K output; prefix caching serves the repeated history.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    # The K2-Horizon-7B CI subset (tasks it usually finishes in about an hour).
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),
