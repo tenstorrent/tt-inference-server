@@ -226,8 +226,19 @@ def test_klein_edits_only_with_images(with_images):
     assert call["num_inference_steps"] == 4
 
 
-def test_klein_pipeline_warms_itself_up():
-    assert _runner("TTFlux2Klein4BRunner").warmup_requests() == []
+def test_klein_pipeline_warms_itself_up(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux2.pipeline_flux2", module
+    )
+    runner = _runner("TTFlux2Klein4BRunner")
+    runner.ttnn_device = Mock()
+    runner.settings = SimpleNamespace(
+        model_weights_path="black-forest-labs/FLUX.2-klein-4B"
+    )
+    runner.create_pipeline()
+    assert module.Flux2Pipeline.create_pipeline.call_args.kwargs["trace_warmup"] is True
+    assert runner.warmup_requests() == []
 
 
 @pytest.mark.parametrize("warming_up", [False, True])
