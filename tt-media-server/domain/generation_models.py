@@ -5,6 +5,7 @@
 from config.constants import ModelRunners
 from domain.flux2_klein_4b_request import FLUX2_KLEIN_4B
 from domain.generation_request import GenerationModel
+from domain.ideogram4_request import IDEOGRAM_4
 from domain.ltx23_distilled_request import LTX_2_3_22B_DISTILLED
 from domain.minimax_h3_request import (
     MINIMAX_H3_FL2VA,
@@ -25,4 +26,5 @@ GENERATION_MODELS: dict[str, GenerationModel] = {
     ModelRunners.TT_FLUX_2_KLEIN_4B.value: FLUX2_KLEIN_4B,
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: MINIMAX_H3_REF2VA,
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: MINIMAX_H3_REF2VA_LIGHTX2V,
+    ModelRunners.TT_IDEOGRAM_4.value: IDEOGRAM_4,
 }

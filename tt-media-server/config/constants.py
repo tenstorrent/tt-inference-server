@@ -19,6 +19,7 @@ class SupportedModels(Enum):
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
     FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
+    IDEOGRAM_4 = "ideogram-ai/ideogram-4-fp8"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     QWEN_IMAGE_EDIT_2511 = "Qwen/Qwen-Image-Edit-2511"
@@ -76,6 +77,7 @@ class ModelNames(Enum):
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
     FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
+    IDEOGRAM_4 = "ideogram-4"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
     QWEN_IMAGE_EDIT_2511 = "Qwen-Image-Edit-2511"
@@ -135,6 +137,7 @@ class ModelRunners(Enum):
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
     TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
+    TT_IDEOGRAM_4 = "tt-ideogram-4"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_QWEN_IMAGE_EDIT_2511 = "tt-qwen-image-edit-2511"
@@ -207,6 +210,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
+        ModelRunners.TT_IDEOGRAM_4,
     },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
@@ -354,6 +358,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
     ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
+    ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
@@ -1020,6 +1025,19 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
+    },
+    # The meshes Ideogram4Pipeline has parallelism presets for.
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
