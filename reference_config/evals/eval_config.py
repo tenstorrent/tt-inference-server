@@ -5117,6 +5117,78 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Mistral-Small-4 - GPQA-Diamond for the Blaze d-gen P/D deployment on
+    # exabox (tt-orchestration charts/ttop-pmix-disaggregated-dgen/values/
+    # values.mistral-small-4.yaml), resolved through the SUPER_CLUSTER spec in
+    # workflows/model_specs/dev/llm.yaml and run against the dynamo frontend
+    # with --server-url.
+    #
+    # The task below is copied verbatim from the GPU reference eval config of
+    # #4909 (d8b35d72 on tt-rfp-m0, never merged into main); its aime25 and
+    # terminal_bench_2_1 tasks are left out. The GPU reference (77.27) was
+    # measured with reasoning_effort=high, temperature=0.7, top_p=0.95.
+    #   - Reasoning is opt-in PER REQUEST via reasoning_effort; ONLY "none" and
+    #     "high" are accepted (any other value raises in the chat template).
+    #   - The task allows 64K output tokens and max_length 262144, so it needs
+    #     the 256K decode context; the P/D values serve 8192 tokens per request
+    #     today. For a shorter-context run, add a SUPER_CLUSTER entry in
+    #     device_overrides (gen_kwargs / model_kwargs / score) rather than
+    #     editing the task, so the GPU reference stays attached to its settings.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-4-119B-2603",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (same task DeepSeek
+                # used): the model reasons then emits a final answer; the task's
+                # extractor scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=71.2,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-4-119B-2603",
+                    # Full 198-sample r1_gpqa_diamond, single run, GPU
+                    # bring-your-own vLLM (Mistral-Small-4-119B-2603,
+                    # --max-model-len 262144) with reasoning_effort=high,
+                    # temperature=0.7, top_p=0.95. 153/198 = 77.27% (exceeds
+                    # the published 71.2).
+                    gpu_reference_score=77.27,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (153/198), GPU Mistral-Small-4-119B-2603 bring-your-own vLLM w/ reasoning_effort=high, 2026-08-10",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so reasoning_effort reaches the server (which
+                # applies the mistral chat template + reasoning parser).
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                # reasoning_effort=high enables Mistral's reasoning mode.
+                # Magistral-style sampling: temperature=0.7, top_p=0.95.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "reasoning_effort": "high",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/QwQ-32B",
         tasks=[
