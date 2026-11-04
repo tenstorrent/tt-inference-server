@@ -12673,6 +12673,7 @@ _eval_config_list = [
                 # note above). Thinking-mode GPQA; scores exact_match,none.
                 # Published ref is the official Gemma 4 model-card score.
                 task_name="r1_gpqa_diamond",
+                seed=44,  # CI-only probe: request seed 44 (default 42)
                 score=EvalTaskScore(
                     # Official Gemma 4 model card / HF README (12B Unified).
                     published_score=78.8,
