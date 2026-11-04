@@ -21,6 +21,7 @@ from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -131,6 +132,7 @@ def _runner(class_name: str, warming_up: bool = False):
     runner = cls.__new__(cls)
     runner.device_id = "0"
     runner._warming_up = warming_up
+    runner._image_stage_recorder = lambda: None
     runner._video_stage_recorder = lambda resolution: None
     runner.logger = Mock()
     runner.settings = SimpleNamespace(model_runner="tt-wan2.2-i2v")
@@ -239,6 +241,50 @@ def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
     assert pathlib.Path(path).parent == tmp_path / request._task_id
     assert pathlib.Path(path).exists() is not warming_up
     assert pathlib.Path(path).parent.exists() is not warming_up
+
+
+def test_qwen_passes_the_input_images():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    images = [Image.new("RGB", (8, 8)), Image.new("RGB", (8, 8))]
+    request = _resolved(
+        QwenImageEdit2511Request(
+            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
+        ),
+        1376,
+        768,
+        {"images": images},
+    )
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["image"] is images
+    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
+    assert call["negative_prompts"] == ["blurry"]
+    assert call["num_inference_steps"] == 40
+
+
+def test_qwen_pipeline_warms_itself_up():
+    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
+
+
+def test_qwen_pipeline_runs_with_dbcache(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.qwenimage.pipeline_qwenimage", module
+    )
+    runner = _runner("TTQwenImageEdit2511Runner")
+    runner.ttnn_device = SimpleNamespace(shape=(4, 8))
+    runner.settings = SimpleNamespace(model_weights_path="Qwen/Qwen-Image-Edit-2511")
+    assert runner.create_pipeline() is module.QwenImagePipeline.return_value
+    kwargs = module.QwenImagePipelineConfig.default.call_args.kwargs
+    assert kwargs == {
+        "mesh_shape": (4, 8),
+        "checkpoint_name": "Qwen/Qwen-Image-Edit-2511",
+        "dbcache": module.DEFAULT_DBCACHE,
+    }
+    module.QwenImagePipeline.assert_called_once_with(
+        device=runner.ttnn_device,
+        config=module.QwenImagePipelineConfig.default.return_value,
+    )
 
 
 class _H3Pipeline:

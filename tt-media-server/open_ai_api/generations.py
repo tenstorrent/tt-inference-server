@@ -15,7 +15,11 @@ from domain.generation_models import GENERATION_MODELS
 from domain.generation_request import GenerationModel
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Security
 from fastapi.responses import FileResponse
-from model_services.generation_service import GenerationService, read_manifest
+from model_services.generation_service import (
+    IMAGE_FORMATS,
+    GenerationService,
+    read_manifest,
+)
 from pydantic import BaseModel, Field
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -81,7 +85,9 @@ _SUBMIT_RESPONSES: Responses = {
         retry_after="",
     ),
 }
-_FILE_TYPES = ["video/mp4"]
+_FILE_TYPES = [content_type for _, content_type in IMAGE_FORMATS.values()] + [
+    "video/mp4"
+]
 
 
 def _job_or_404(service: GenerationService, job_id: str) -> dict:
