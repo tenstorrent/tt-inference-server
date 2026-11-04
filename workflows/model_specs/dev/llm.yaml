@@ -3339,6 +3339,21 @@ templates:
       reasoning_parser_name: deepseek_v41
       tool_call_parser_name: deepseek_v41
       tokenizer_trust_remote_code: true
+      # This row's own GPQA budget over the shared (blaze ring, 61,440-token)
+      # EvalConfig: the server holds 262,144 positions and caps max_tokens at
+      # 131,072. At 61,440, 7 of 21 misses in a 177/198 full run were cut off
+      # mid-reasoning (58-67K thinking tokens, no answer); the 1017 card asks
+      # for >= 256K at max effort. Timeout 3 h: 131,072 tokens at the 60 tok/s
+      # per-user target is ~36 min, x~5 for slower decode at deep context and
+      # sharing the 4 users with other clients, so a long reply is never cut
+      # and retried from scratch.
+      eval_task_overrides:
+        r1_gpqa_diamond:
+          gen_kwargs:
+            max_gen_toks: 131072
+          model_kwargs:
+            max_length: 262144
+            timeout: 10800
 
 - weights:
     - MiniMaxAI/MiniMax-M3

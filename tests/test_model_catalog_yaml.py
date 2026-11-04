@@ -489,7 +489,10 @@ def test_tt_lab_dsv41_super_cluster_row_sits_beside_a_default_blaze_row():
     assert ours.inference_engine == InferenceEngine.MEDIA.value
     assert ours.device_model_spec.max_concurrency == 4
     assert ours.device_model_spec.max_context == 262144
-    assert ours.metadata == rows["blaze"].metadata
+    # Same client keys as the blaze row; only ours carries its own eval budget.
+    ours_client = {k: v for k, v in ours.metadata.items() if k != "eval_task_overrides"}
+    assert ours_client == rows["blaze"].metadata
+    assert "eval_task_overrides" not in rows["blaze"].metadata
     # Perf entries are impl-scoped: each row sees only its own six.
     for impl_id, row in rows.items():
         ref = row.device_model_spec.perf_reference
@@ -498,6 +501,62 @@ def test_tt_lab_dsv41_super_cluster_row_sits_beside_a_default_blaze_row():
         p.max_concurrency for p in rows["blaze"].device_model_spec.perf_reference
     } == {1, 3}
     assert {p.max_concurrency for p in ours.device_model_spec.perf_reference} == {1, 4}
+
+
+def test_tt_lab_dsv41_gpqa_budget_is_its_own_and_blaze_keeps_the_ring_budget(
+    monkeypatch,
+):
+    """The shared DSV4.1-Flash-1017 EvalConfig keeps the blaze ring's 61,440-token
+    GPQA budget; the tt_lab_dsv41 row resolves its own 131,072 / 262,144 / 3 h
+    through metadata.eval_task_overrides, and the lm-eval command builder's
+    device-context clamps leave it intact."""
+    from llm_module.eval_command import _clamp_max_gen_toks, _effective_model_kwargs
+    import workflow_module.target_pack as target_pack
+    from llm_module.eval_configs import get_llm_eval_tasks
+    from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
+    from workflows.target_pack_provider import TenstorrentTargetPack
+
+    # EVAL_CONFIGS is gated by the prod catalog unless MODEL_SPECS_ENV=dev
+    # (as --dev-mode runs set it); these rows live in the dev catalog.
+    pack = TenstorrentTargetPack()
+    monkeypatch.setattr(pack, "eval_config", ALL_EVAL_CONFIGS.get)
+    monkeypatch.setattr(target_pack, "get_target_pack", lambda: pack)
+
+    specs = get_model_spec_map(
+        load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    )
+    rows = {
+        s.impl.impl_id: s
+        for s in specs.values()
+        if s.hf_model_repo == "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+        and s.device_type == DeviceTypes.SUPER_CLUSTER
+    }
+    resolved = {}
+    for impl_id, row in rows.items():
+        gpqa = next(
+            t
+            for t in get_llm_eval_tasks(row, device=DeviceTypes.SUPER_CLUSTER)
+            if t.task_name == "r1_gpqa_diamond"
+        )
+        model_kwargs = _effective_model_kwargs(gpqa, row.device_model_spec.max_context)
+        gen_kwargs = _clamp_max_gen_toks(
+            gpqa.gen_kwargs, model_kwargs["max_length"], gpqa.task_name
+        )
+        resolved[impl_id] = (gpqa, gen_kwargs, model_kwargs)
+
+    blaze, blaze_gen, blaze_model = resolved["blaze"]
+    assert blaze_gen["max_gen_toks"] == 61440
+    assert blaze_model == {"max_length": 65536, "timeout": 7200}
+
+    ours, ours_gen, ours_model = resolved["tt_lab_dsv41"]
+    assert ours_gen["max_gen_toks"] == 131072
+    # 262,144 bound to the served context less the harness's 64-token reserve.
+    assert ours_model == {"max_length": 262144 - 64, "timeout": 10800}
+    # Everything but the budget is the shared config's.
+    assert {k: v for k, v in ours_gen.items() if k != "max_gen_toks"} == {
+        k: v for k, v in blaze_gen.items() if k != "max_gen_toks"
+    }
+    assert ours.max_concurrent == blaze.max_concurrent == 3
 
 
 def test_llama_qb2_catalog_preserves_default_and_shared_pool():

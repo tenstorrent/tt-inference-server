@@ -39,6 +39,67 @@ def _apply_profile_request_body_overrides(tasks: list, model_spec) -> list:
     ]
 
 
+# Tier-1 (semantic identity) EvalTask fields a profile may never override; see
+# workflow_module.target_pack for the tier model.
+_PROFILE_TASK_OVERRIDE_TIER1 = frozenset(
+    {
+        "task_name",
+        "workflow_venv_type",
+        "eval_class",
+        "num_fewshot",
+        "seed",
+        "include_path",
+        "device_overrides",
+    }
+)
+# Dict fields merged key-by-key over the task's own value instead of replaced.
+_PROFILE_TASK_OVERRIDE_MERGED = frozenset({"gen_kwargs", "model_kwargs"})
+
+
+def _apply_profile_task_overrides(tasks: list, model_spec) -> list:
+    """Apply per-task tier-2/3 overrides owned by the resolved model profile.
+
+    ``metadata.eval_task_overrides`` maps task name -> {EvalTask field: value}.
+    ``gen_kwargs`` / ``model_kwargs`` merge over the task's own dicts; any other
+    field replaces. Two impls of one checkpoint share one EvalConfig (keyed by
+    hf_model_repo) and often one device, so device_overrides cannot tell them
+    apart; this lets one impl's row run with its own budget (e.g. a longer
+    max_gen_toks on a server with a deeper context) without touching the
+    other's.
+    """
+    overrides = model_spec.metadata.get("eval_task_overrides", {})
+    if not overrides:
+        return tasks
+    out = []
+    for task in tasks:
+        fields = overrides.get(task.task_name)
+        if not fields:
+            out.append(task)
+            continue
+        unknown = set(fields) - set(task.__dataclass_fields__)
+        tier1 = set(fields) & _PROFILE_TASK_OVERRIDE_TIER1
+        if unknown or tier1:
+            raise ValueError(
+                f"eval_task_overrides[{task.task_name!r}] of {model_spec.model_name}: "
+                f"unknown fields {sorted(unknown)}, tier-1 fields {sorted(tier1)}"
+            )
+        resolved = {
+            name: (
+                {**(getattr(task, name) or {}), **value}
+                if name in _PROFILE_TASK_OVERRIDE_MERGED
+                else value
+            )
+            for name, value in fields.items()
+        }
+        logger.info(
+            "Applied profile eval_task_overrides for task=%s: %s",
+            task.task_name,
+            resolved,
+        )
+        out.append(replace(task, **resolved))
+    return out
+
+
 def eval_task_names(runtime_config):
     """Task names selected by --eval-tasks, or None (all tasks)."""
     raw = getattr(runtime_config, "eval_tasks", None)
@@ -141,6 +202,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
     standard = _apply_profile_request_body_overrides(standard, model_spec)
+    standard = _apply_profile_task_overrides(standard, model_spec)
 
     return _select_tasks(standard, runtime_config)
 

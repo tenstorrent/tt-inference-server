@@ -124,3 +124,39 @@ def test_evals_meta_override_preserves_batch_size():
     resolved_unrelated = resolve_task_for_device(task, "SUPER_CLUSTER")
     assert resolved_unrelated.batch_size == 32
     assert resolved_unrelated.max_concurrent is None
+
+
+def test_profile_task_overrides_merge_kwargs_and_reject_tier1():
+    from types import SimpleNamespace
+
+    from llm_module.eval_configs import _apply_profile_task_overrides
+
+    task = EvalTask(
+        task_name="t",
+        gen_kwargs={"stream": "true", "max_gen_toks": 100},
+        model_kwargs={"max_length": 200, "timeout": 10},
+    )
+    other = EvalTask(task_name="u")
+    spec = SimpleNamespace(
+        model_name="m",
+        metadata={
+            "eval_task_overrides": {
+                "t": {
+                    "gen_kwargs": {"max_gen_toks": 500},
+                    "model_kwargs": {"timeout": 20},
+                }
+            }
+        },
+    )
+    out, untouched = _apply_profile_task_overrides([task, other], spec)
+    assert out.gen_kwargs == {"stream": "true", "max_gen_toks": 500}
+    assert out.model_kwargs == {"max_length": 200, "timeout": 20}
+    assert task.gen_kwargs["max_gen_toks"] == 100  # the shared task is not mutated
+    assert untouched is other
+    assert _apply_profile_task_overrides([task], SimpleNamespace(metadata={})) == [task]
+
+    bad = SimpleNamespace(
+        model_name="m", metadata={"eval_task_overrides": {"t": {"num_fewshot": 5}}}
+    )
+    with pytest.raises(ValueError, match="tier-1"):
+        _apply_profile_task_overrides([task], bad)
