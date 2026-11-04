@@ -199,10 +199,12 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 
 class _FakeDevice:
     """Stands in for the scheduler and device: each request yields a video
-    after ``delay`` seconds. ``video``, if set, makes its result instead."""
+    after ``delay`` seconds. ``video``, if set, makes its result instead. A
+    job stays queued for ``queued`` seconds."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
+        self.queued = 0.0
         self.requests = []
         self.error = None
         self.video = None
@@ -212,6 +214,7 @@ class _FakeDevice:
 
     async def process(self, request):
         self.requests.append(request)
+        await asyncio.sleep(self.queued)
         if request._start_event is not None:
             request._start_event.set()
         await asyncio.sleep(self.delay)
@@ -567,6 +570,153 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert job["expires_at"] > job["completed_at"]
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.fixture
+def video_stats(monkeypatch):
+    """The VideoGenerationStats the jobs report."""
+    from model_services import generation_service
+
+    stats = []
+    client = SimpleNamespace(record_video_generation_async=stats.append)
+    monkeypatch.setattr(generation_service, "get_telemetry_client", lambda: client)
+    return stats
+
+
+def _sample(name: str, **labels) -> float:
+    from prometheus_client import REGISTRY
+
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
+_RATIO = "tt_media_server_video_requested_aspect_ratio_total"
+_DURATION = "tt_media_server_video_requested_duration_seconds_sum"
+_IN_FLIGHT = "tt_media_server_video_generations_in_progress"
+
+
+@pytest.fixture
+def runner_label(monkeypatch):
+    """Sets the runner the metrics are labelled with. Earlier tests can leave
+    generation_service with another settings object."""
+    from model_services import generation_service
+
+    def set_runner(runner: str) -> None:
+        monkeypatch.setattr(generation_service.settings, "model_runner", runner)
+
+    return set_runner
+
+
+async def test_a_completed_job_reports_its_video(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    before = {
+        ratio: _sample(_RATIO, **labels, aspect_ratio=ratio)
+        for ratio in ("unset", "16:9")
+    }
+    durations = _sample(_DURATION, **labels)
+    client, device = _ltx_app(generations_app, delay=0.2)
+    response = await client.post(_LTX[1], json={"prompt": "a violinist"})
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    assert _sample(_IN_FLIGHT, **labels) == 1
+    assert (await _wait_final(client, response.json()["id"]))["status"] == "completed"
+
+    (stats,) = video_stats
+    assert (stats.status, stats.request_type) == ("success", "t2v")
+    # The fake device's clip: 9 frames of 64x64 at 25 fps.
+    assert (stats.width, stats.height, stats.num_frames) == (64, 64, 9)
+    assert stats.content_seconds == 9 / 25 and stats.output_bytes > 0
+    assert _sample(_IN_FLIGHT, **labels) == 0
+    # Omitted fields count as unset, not as the defaults the model fills in.
+    assert _sample(_RATIO, **labels, aspect_ratio="unset") == before["unset"] + 1
+    assert _sample(_DURATION, **labels) == durations
+
+    body = {"prompt": "a violinist", "aspect_ratio": "16:9", "duration": 6}
+    response = await client.post(_LTX[1], json=body)
+    await _wait_final(client, response.json()["id"])
+    assert _sample(_RATIO, **labels, aspect_ratio="16:9") == before["16:9"] + 1
+    assert _sample(_DURATION, **labels) == durations + 6
+
+
+async def test_failed_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label("tt-wan2.2-i2v")
+    client, device = generations_app("tt-wan2.2-i2v")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
+    await _wait_final(client, response.json()["id"])
+    # H3 carries its keyframes as files, not pixels.
+    runner_label("tt-minimax-h3-fl2va")
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={
+            "prompt": "x",
+            "first_frame": _data_uri(600, 800),
+            "last_frame": _data_uri(600, 800),
+        },
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    assert [(s.status, s.request_type) for s in video_stats] == [("failure", "i2v")] * 2
+    assert [s.conditioning_images for s in video_stats] == [1, 2]
+    assert all(s.width is None for s in video_stats)
+    for runner in ("tt-wan2.2-i2v", "tt-minimax-h3-fl2va"):
+        assert _sample(_IN_FLIGHT, model_type=runner, request_type="i2v") == 0
+
+
+async def _wait_for_stats(video_stats, count: int) -> None:
+    for _ in range(100):
+        if len(video_stats) == count:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_cancelled_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    # Cancelled while running: the runner returns, the job ends cancelled.
+    client, device = _ltx_app(generations_app, delay=0.5)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 1)
+    # Cancelled while queued: the job's task is cancelled.
+    client, device = _ltx_app(generations_app)
+    device.queued = 5.0
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 2)
+    assert [s.status for s in video_stats] == ["cancelled"] * 2
+    assert _sample(_IN_FLIGHT, **labels) == 0
+
+
+@pytest.mark.parametrize(
+    ("runner", "forwards"),
+    [
+        ("tt-wan2.2-i2v", 40),
+        ("tt-ltx-2.3-distilled", 11),
+        ("tt-minimax-h3-fl2va", 49),
+        ("tt-minimax-h3-ref2va", 49),
+        ("tt-minimax-h3-fl2va-lightx2v", 4),
+        ("tt-minimax-h3-ref2va-lightx2v", 4),
+    ],
+)
+def test_video_metrics_count_the_forwards_each_runner_runs(runner, forwards):
+    from config.constants import video_executed_inference_steps
+
+    assert video_executed_inference_steps(None, runner) == forwards
 
 
 async def test_a_generations_dir_in_any_spelling_works(

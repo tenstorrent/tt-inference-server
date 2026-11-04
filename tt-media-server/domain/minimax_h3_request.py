@@ -221,6 +221,8 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
         has_frame = self.first_frame is not None or self.last_frame is not None
         if self.aspect_ratio is None:
             self.aspect_ratio = "adaptive" if has_frame else "16:9"
+            # A default, not the caller's choice (model_fields_set).
+            self.__pydantic_fields_set__.discard("aspect_ratio")
         elif has_frame and self.aspect_ratio != "adaptive":
             raise ValueError(
                 "with a first_frame or last_frame, aspect_ratio must be adaptive: "

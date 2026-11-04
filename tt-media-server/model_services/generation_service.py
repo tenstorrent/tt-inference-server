@@ -12,7 +12,7 @@ import secrets
 import shutil
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
@@ -25,6 +25,17 @@ from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
 from PIL import UnidentifiedImageError
+from telemetry.telemetry_client import (
+    VIDEO_REQUEST_TYPE_I2V,
+    VIDEO_REQUEST_TYPE_T2V,
+    VIDEO_STATUS_CANCELLED,
+    VIDEO_STATUS_FAILURE,
+    VIDEO_STATUS_SUCCESS,
+    VideoGenerationStats,
+    get_telemetry_client,
+    video_generations_in_progress,
+)
+from telemetry.video_request_metrics import observe_video_request
 from utils.media_downloader import (
     MediaDownloadFetchError,
     MediaDownloadPolicyError,
@@ -76,6 +87,34 @@ def _digest_data_uri(value: str) -> str:
     if value[:5].lower() != "data:":
         return value
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+
+
+def _video_request_type(request: GenerationRequest) -> str:
+    """``i2v`` for a request conditioned on media, ``t2v`` for text alone."""
+    if any(getattr(request, name) for name in request.MEDIA_FIELDS):
+        return VIDEO_REQUEST_TYPE_I2V
+    return VIDEO_REQUEST_TYPE_T2V
+
+
+def _cancel_requested(request: GenerationRequest) -> bool:
+    """Whether the job was cancelled; False when that can't be told, so a
+    metrics check never fails a job."""
+    try:
+        event = request._cancel_event
+        return event is not None and event.is_set()
+    except Exception:
+        return False
+
+
+def _first_output(result_path: str) -> Optional[dict]:
+    """A completed job's output with its file size in ``bytes``; None when it
+    can't be read."""
+    try:
+        output = read_manifest(result_path)[0]
+        size = (Path(result_path) / output["file"]).stat().st_size
+    except Exception:
+        return None
+    return {**output, "bytes": size}
 
 
 def _write_video(result: Any, fps: int, path: Path) -> None:
@@ -242,6 +281,103 @@ class GenerationService(BaseJobService):
                 error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
+
+    async def process_request(self, input_request: GenerationRequest) -> str:
+        """Run one job; a video job is reported to the video metric family, as
+        VideoService does on /v1/videos.
+
+        Timing uses ``monotonic``: the wall clock can step during a generation
+        that runs for minutes.
+        """
+        if input_request.OUTPUT_TYPE != "video":
+            return await super().process_request(input_request)
+        model_type = settings.model_runner
+        request_type = _video_request_type(input_request)
+        observe_video_request(input_request, model_type, request_type)
+        in_flight = video_generations_in_progress.labels(
+            model_type=model_type, request_type=request_type
+        )
+        in_flight.inc()
+        started = time.monotonic()
+        try:
+            result_path = await super().process_request(input_request)
+        except asyncio.CancelledError:
+            # Cancelling a job cancels this task. CancelledError is no
+            # Exception, so it is named.
+            self._record_generation(
+                input_request,
+                request_type,
+                time.monotonic() - started,
+                VIDEO_STATUS_CANCELLED,
+            )
+            raise
+        except Exception:
+            self._record_generation(
+                input_request,
+                request_type,
+                time.monotonic() - started,
+                VIDEO_STATUS_FAILURE,
+            )
+            raise
+        finally:
+            in_flight.dec()
+
+        elapsed = time.monotonic() - started
+        try:
+            output = await asyncio.to_thread(_first_output, result_path)
+        except asyncio.CancelledError:
+            self._record_generation(
+                input_request, request_type, elapsed, VIDEO_STATUS_CANCELLED
+            )
+            raise
+        # Checked after the last await, so a cancel can't land between the
+        # check and the job manager reading the job's status.
+        if _cancel_requested(input_request):
+            # Cancelled while running: the job manager ends the job cancelled,
+            # whatever the runner returned.
+            self._record_generation(
+                input_request, request_type, elapsed, VIDEO_STATUS_CANCELLED
+            )
+        else:
+            self._record_generation(
+                input_request, request_type, elapsed, VIDEO_STATUS_SUCCESS, output
+            )
+        return result_path
+
+    def _record_generation(
+        self,
+        request: GenerationRequest,
+        request_type: str,
+        elapsed: float,
+        status: str,
+        output: Optional[dict] = None,
+    ) -> None:
+        """Hand one VideoGenerationStats to the telemetry queue. The executed
+        steps follow from the runner (VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER).
+
+        Best effort: a metrics failure must not fail a job.
+        """
+        try:
+            stats = VideoGenerationStats(
+                request_type=request_type,
+                duration_seconds=elapsed,
+                status=status,
+                # From the fields: a request whose runner decodes its images
+                # carries no pixels (RUNNER_DECODES_IMAGES).
+                conditioning_images=sum(
+                    len(values)
+                    for name, values in request.media().items()
+                    if request.media_kind(name) == "image"
+                ),
+                width=output["width"] if output else None,
+                height=output["height"] if output else None,
+                num_frames=output["num_frames"] if output else None,
+                content_seconds=output["duration"] if output else None,
+                output_bytes=output["bytes"] if output else None,
+            )
+            get_telemetry_client().record_video_generation_async(stats)
+        except Exception as e:
+            self.logger.warning(f"Failed to record video generation telemetry: {e}")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
         request._prompt = request.model_prompt()
