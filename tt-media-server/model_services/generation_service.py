@@ -41,12 +41,6 @@ from utils.video_manager import VideoManager, probe_video
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
 
-IMAGE_FORMATS = {
-    "png": ("PNG", "image/png"),
-    "jpeg": ("JPEG", "image/jpeg"),
-    "webp": ("WEBP", "image/webp"),
-}
-
 
 def _too_large(kind: str) -> HTTPException:
     return HTTPException(
@@ -105,8 +99,8 @@ def read_manifest(result_path: str) -> list[dict]:
     return json.loads((Path(result_path) / MANIFEST).read_text())
 
 
-# Serves the generations API: one job per submitted request, producing an image
-# or a video, written to the job's own directory.
+# Serves the generations API: one job per submitted request, producing a video,
+# written to the job's own directory.
 class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
@@ -256,8 +250,7 @@ class GenerationService(BaseJobService):
     async def post_process(self, result, input_request: GenerationRequest) -> str:
         """Write the output to the job's directory; returns the directory.
 
-        ``count`` is 1, so a job has one output. More will come from one
-        batched pipeline call, not from one request per output.
+        A job has one output.
         """
         writing = asyncio.ensure_future(
             asyncio.to_thread(self._write_outputs, input_request, [result])
@@ -297,19 +290,6 @@ class GenerationService(BaseJobService):
             "seed": request._seed,
             "prompt": request._prompt,
         }
-        if request.OUTPUT_TYPE == "image":
-            pil_format, content_type = IMAGE_FORMATS[request.format]
-            path = directory / f"{index}.{request.format}"
-            image = result.convert("RGB") if pil_format == "JPEG" else result
-            image.save(path, format=pil_format)
-            return {
-                **output,
-                "file": path.name,
-                "content_type": content_type,
-                "width": image.width,
-                "height": image.height,
-            }
-
         path = directory / f"{index}.mp4"
         _write_video(result, request.fps, path)
         probe = probe_video(str(path))

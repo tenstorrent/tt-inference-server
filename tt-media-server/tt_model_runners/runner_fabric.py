@@ -52,15 +52,6 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2_I2V: lambda wid: __import__(
         "tt_model_runners.generation_runners", fromlist=["TTWan22I2VA14BRunner"]
     ).TTWan22I2VA14BRunner(wid),
-    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: lambda wid: __import__(
-        "tt_model_runners.generation_runners", fromlist=["TTQwenImageEdit2511Runner"]
-    ).TTQwenImageEdit2511Runner(wid),
-    ModelRunners.TT_FLUX_2_KLEIN_4B: lambda wid: __import__(
-        "tt_model_runners.generation_runners", fromlist=["TTFlux2Klein4BRunner"]
-    ).TTFlux2Klein4BRunner(wid),
-    ModelRunners.TT_IDEOGRAM_4: lambda wid: __import__(
-        "tt_model_runners.generation_runners", fromlist=["TTIdeogram4Runner"]
-    ).TTIdeogram4Runner(wid),
     ModelRunners.TT_WAN_2_2_I2V_PRODIA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VProdiaRunner"]
     ).TTWan22I2VProdiaRunner(wid),

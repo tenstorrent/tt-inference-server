@@ -16,14 +16,11 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from domain.flux2_klein_4b_request import Flux2klein4bRequest
-from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
-from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -60,7 +57,7 @@ _TT_METAL_MODULES = (
 
 def _load_generation_runners():
     settings = SimpleNamespace(
-        model_runner="tt-ideogram-4",
+        model_runner="tt-wan2.2-i2v",
         model_service="generation",
         device_mesh_shape=(2, 4),
         enable_telemetry=False,
@@ -134,10 +131,9 @@ def _runner(class_name: str, warming_up: bool = False):
     runner = cls.__new__(cls)
     runner.device_id = "0"
     runner._warming_up = warming_up
-    runner._image_stage_recorder = lambda: None
     runner._video_stage_recorder = lambda resolution: None
     runner.logger = Mock()
-    runner.settings = SimpleNamespace(model_runner="tt-ideogram-4")
+    runner.settings = SimpleNamespace(model_runner="tt-wan2.2-i2v")
     runner.pipeline = _Pipeline()
     return runner
 
@@ -187,74 +183,17 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
     }
 
 
-def test_qwen_passes_the_input_images():
-    runner = _runner("TTQwenImageEdit2511Runner")
-    images = [Image.new("RGB", (8, 8)), Image.new("RGB", (8, 8))]
-    request = _resolved(
-        QwenImageEdit2511Request(
-            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
-        ),
-        1376,
-        768,
-        {"images": images},
-    )
-    runner.run([request])
-    (call,) = runner.pipeline.calls
-    assert call["image"] is images
-    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
-    assert call["negative_prompts"] == ["blurry"]
-    assert call["num_inference_steps"] == 40
-
-
-@pytest.mark.parametrize("with_images", [False, True])
-def test_klein_edits_only_with_images(with_images):
-    runner = _runner("TTFlux2Klein4BRunner")
-    images = {"images": [Image.new("RGB", (8, 8))]} if with_images else {}
-    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, images)
-    runner.run([request])
-    (call,) = runner.pipeline.calls
-    assert call["images"] == (images["images"] if with_images else None)
-    assert call["num_inference_steps"] == 4
-
-
-def test_ideogram_gets_the_caption_and_preset():
-    runner = _runner("TTIdeogram4Runner")
-    request = Ideogram4Request(
-        structured_prompt={
-            "compositional_deconstruction": {"background": "b", "elements": []}
-        },
-        rendering_speed="quality",
-    )
-    request = _resolved(request, 1024, 1024, prompt=request.model_prompt())
-    runner.run([request])
-    (call,) = runner.pipeline.calls
-    assert call["prompts"] == [
-        '{"compositional_deconstruction":{"background":"b","elements":[]}}'
-    ]
-    assert call["preset"] == "V4_QUALITY_48"
-
-
-@pytest.mark.parametrize(
-    ("class_name", "combinations"),
-    [
-        # 4 sizes, with and without the last frame.
-        ("TTWan22I2VA14BRunner", 8),
-        ("TTFlux2Klein4BRunner", 14),
-        # 14 sizes; one preset compiles all three.
-        ("TTIdeogram4Runner", 14),
-    ],
-)
-def test_warmup_covers_every_combination(class_name, combinations):
-    runner = _runner(class_name, warming_up=True)
+def test_wan_warmup_covers_every_combination():
+    runner = _runner("TTWan22I2VA14BRunner", warming_up=True)
     requests = runner.warmup_requests()
-    assert len(requests) == combinations
+    # 4 sizes, with and without the last frame.
+    assert len(requests) == 8
     for request in requests:
         runner.pipeline.calls.clear()
         runner.run([request])
         (call,) = runner.pipeline.calls
         assert (call["width"], call["height"]) == (request._width, request._height)
-        if class_name != "TTIdeogram4Runner":
-            assert call["num_inference_steps"] == 2
+        assert call["num_inference_steps"] == 2
 
 
 def test_wan_warmup_conditions_the_last_frame(monkeypatch):
@@ -300,25 +239,6 @@ def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
     assert pathlib.Path(path).parent == tmp_path / request._task_id
     assert pathlib.Path(path).exists() is not warming_up
     assert pathlib.Path(path).parent.exists() is not warming_up
-
-
-def test_qwen_pipeline_warms_itself_up():
-    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
-
-
-def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
-    # The pipeline resolves a repo id itself.
-    pipeline = ModuleType("pipeline_ideogram4")
-    pipeline.Ideogram4Pipeline = Mock()
-    monkeypatch.setitem(
-        sys.modules, "models.tt_dit.pipelines.ideogram4.pipeline_ideogram4", pipeline
-    )
-    runner = _runner("TTIdeogram4Runner")
-    runner.settings.model_weights_path = "ideogram-ai/ideogram-4-fp8"
-    runner.ttnn_device = Mock()
-    runner.create_pipeline()
-    kwargs = pipeline.Ideogram4Pipeline.create_pipeline.call_args.kwargs
-    assert kwargs["weights_dir"] == "ideogram-ai/ideogram-4-fp8"
 
 
 class _H3Pipeline:
