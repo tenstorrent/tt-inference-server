@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from config.constants import ModelRunners
+from domain.flux3_image_klein_request import FLUX3_IMAGE_KLEIN
 from domain.generation_request import GenerationModel
 from domain.ltx23_distilled_request import LTX_2_3_22B_DISTILLED
 from domain.minimax_h3_request import (
@@ -19,6 +20,7 @@ GENERATION_MODELS: dict[str, GenerationModel] = {
     ModelRunners.TT_LTX_2_3_DISTILLED.value: LTX_2_3_22B_DISTILLED,
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: MINIMAX_H3_FL2VA,
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: MINIMAX_H3_FL2VA_LIGHTX2V,
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: FLUX3_IMAGE_KLEIN,
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: MINIMAX_H3_REF2VA,
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: MINIMAX_H3_REF2VA_LIGHTX2V,
 }

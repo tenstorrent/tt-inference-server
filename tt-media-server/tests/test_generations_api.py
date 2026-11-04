@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 import yaml
 from config.constants import JobTypes
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
@@ -1024,3 +1025,46 @@ def test_the_service_downloads_no_weights(monkeypatch):
     )
     base_service.BaseService.__init__(object.__new__(GenerationService))
     assert downloads == []
+
+
+# --- FLUX.3 Image klein ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"size": "4K"}, (4096, 4096)),
+    ],
+)
+def test_flux3_output_size(fields, expected):
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+@pytest.mark.parametrize(
+    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+)
+def test_flux3_serves_one_square_shape_per_size(fields):
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
+
+
+async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
+    process = _FakeDevice.process
+
+    async def upsampled(self, request):
+        image = await process(self, request)
+        image.info["prompt"] = "a detailed caption"
+        return image
+
+    monkeypatch.setattr(_FakeDevice, "process", upsampled)
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "a cat", "size": "1K"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert device.requests[0]._prompt == "a cat"
+    (output,) = job["outputs"]
+    assert output["prompt"] == "a detailed caption"

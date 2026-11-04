@@ -16,6 +16,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
@@ -212,6 +213,56 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
         (call,) = runner.pipeline.calls
         frame_positions.add(tuple(pos for _, pos in call["image_prompt"]))
     assert frame_positions == {(0,), (0, 80)}
+
+
+class _Flux3Pipeline:
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, request):
+        self.calls.append(request)
+        return SimpleNamespace(
+            image=Image.new("RGB", (request.width, request.height)),
+            prompt=f"a detailed caption of {request.prompt}",
+        )
+
+
+@pytest.fixture
+def flux3_runner(monkeypatch):
+    pipeline_module = ModuleType("pipeline_flux3_klein")
+    pipeline_module.Flux3KleinRequest = SimpleNamespace
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
+        pipeline_module,
+    )
+    runner = _runner("TTFlux3ImageKleinRunner")
+    runner.pipeline = _Flux3Pipeline()
+    return runner
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
+    images = {"images": [Image.new("RGB", (3000, 1000))]} if with_image else {}
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048, images)
+    (image,) = flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
+    assert call.steps == 16
+    assert call.images == tuple(images.get("images", []))
+    assert image.size == (2048, 2048)
+    assert image.info["prompt"] == "a detailed caption of a cat"
+
+
+def test_flux3_warmup_covers_every_size_with_and_without_a_reference(flux3_runner):
+    flux3_runner._warming_up = True
+    for request in flux3_runner.warmup_requests():
+        flux3_runner.run([request])
+    calls = flux3_runner.pipeline.calls
+    assert {(call.width, call.height, len(call.images)) for call in calls} == {
+        (side, side, refs) for side in (1024, 2048, 4096) for refs in (0, 1)
+    }
+    assert {call.steps for call in calls} == {2}
 
 
 @pytest.mark.parametrize("warming_up", [False, True])
