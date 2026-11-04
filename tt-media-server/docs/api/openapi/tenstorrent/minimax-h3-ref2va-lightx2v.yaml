@@ -242,18 +242,6 @@ paths:
         '200':
           description: The file.
           content:
-            image/png:
-              schema:
-                type: string
-                contentMediaType: image/png
-            image/jpeg:
-              schema:
-                type: string
-                contentMediaType: image/jpeg
-            image/webp:
-              schema:
-                type: string
-                contentMediaType: image/webp
             video/mp4:
               schema:
                 type: string

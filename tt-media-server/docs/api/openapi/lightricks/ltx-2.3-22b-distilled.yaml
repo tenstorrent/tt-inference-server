@@ -235,18 +235,6 @@ paths:
         '200':
           description: The file.
           content:
-            image/png:
-              schema:
-                type: string
-                contentMediaType: image/png
-            image/jpeg:
-              schema:
-                type: string
-                contentMediaType: image/jpeg
-            image/webp:
-              schema:
-                type: string
-                contentMediaType: image/webp
             video/mp4:
               schema:
                 type: string
@@ -569,7 +557,8 @@ components:
           - 1080p
           const: 1080p
           title: Size
-          description: 'Size tier: `1080p` is 1920×1080 at `16:9`.'
+          description: 'Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 because
+            both sides must be multiples of 64.'
           default: 1080p
         duration:
           type: integer
@@ -598,7 +587,7 @@ components:
       required:
       - prompt
       title: Ltx23DistilledRequest
-      description: 'One output shape for now: 1920×1080, 6 s at 25 fps. The shape fields are
+      description: 'One output shape for now: 1920×1088, 6 s at 25 fps. The shape fields are
 
         kept so more can be allowed later without a schema change.'
     Seed:
