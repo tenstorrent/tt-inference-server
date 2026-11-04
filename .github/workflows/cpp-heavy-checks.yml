@@ -1,4 +1,4 @@
-name: C++ Heavy Checks (scheduled)
+name: C++ Heavy Checks (nightly)
 
 # Heavy cpp_server jobs (the self-hosted mock_pipeline perf bench, Dynamo
 # integration, and the ThreadSanitizers) are too slow / queue-bound to gate
@@ -7,11 +7,9 @@ name: C++ Heavy Checks (scheduled)
 # benchmark) stay in test-gate.yml.
 on:
   schedule:
-    # GitHub cron is UTC and does NOT observe DST. CET=UTC+1 (winter),
-    # CEST=UTC+2 (summer), so these fire around noon and midnight in Central
-    # Europe year-round (give or take the one-hour DST shift).
-    - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
-    - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
+    # Once per day, nightly. GitHub cron is UTC and does NOT observe DST:
+    # 23:00 UTC is ~00:00 CET / 01:00 CEST in Central Europe.
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       run_dynamo_routing_tests:
@@ -33,10 +31,10 @@ env:
 jobs:
   cpp-build:
     name: C++ Build (artifact for benches)
-    # Built on ubuntu-latest and consumed only by dynamo-frontend-integration
+    # Built on ubuntu-24.04 (pinned: ubuntu-latest moved to a newer image whose libjsoncpp needs a newer libstdc++ than g++-12 links) and consumed only by dynamo-frontend-integration
     # (also ubuntu-latest). The self-hosted/jammy jobs build their own binary
     # in-job.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -260,7 +258,7 @@ jobs:
     # fine on ubuntu-latest and reuses the cpp-build artifact instead of
     # building in-job.
     needs: cpp-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -1037,7 +1035,7 @@ jobs:
     # This job uses the mock_pipeline backend but asserts only request success
     # (no latency thresholds), so the 3-core decode_scheduler pinning that
     # forces cpp-server-mock-pipeline-bench onto self-hosted is tolerable here.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1382,7 +1380,7 @@ jobs:
   dynamo-prefix-cache-e2e:
     needs: cpp-build
     name: Dynamo Frontend Prefix Cache E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1567,7 +1565,7 @@ jobs:
     # ubuntu-latest matches cpp-build's runner image so the downloaded artifact
     # links against the same glibc / libstdc++ / libpython at runtime. Mirrors
     # dynamo-frontend-integration and dynamo-prefix-cache-e2e.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1811,7 +1809,7 @@ jobs:
 
   cpp-tsan:
     name: C++ ThreadSanitizer
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1976,7 +1974,7 @@ jobs:
 
   prefill-gateway-tsan:
     name: Prefill Gateway ThreadSanitizer
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
