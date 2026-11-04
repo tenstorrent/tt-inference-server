@@ -185,6 +185,30 @@ def test_registry_boolean_flags_reject_invalid_values(monkeypatch):
         _config()
 
 
+def test_memory_limit_multiplier_reaches_kubernetes_kwargs(monkeypatch):
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER", "3")
+
+    assert _config().environment_kwargs["memory_limit_multiplier"] == 3.0
+
+
+def test_memory_limit_multiplier_stays_off_the_docker_path(monkeypatch):
+    monkeypatch.delenv("HARBOR_ENV_TYPE", raising=False)
+    monkeypatch.setenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER", "3")
+
+    assert _config().environment_kwargs == {}
+
+
+@pytest.mark.parametrize("value", ["three", "0", "-1", "0.5"])
+def test_memory_limit_multiplier_rejects_values_below_one(monkeypatch, value):
+    # Below 1 the limit would sit under the request, which Kubernetes rejects.
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER", value)
+
+    with pytest.raises(ValueError, match="HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER"):
+        _config()
+
+
 def test_prebuilt_image_mirrors_must_be_a_json_string_map(monkeypatch):
     monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
     monkeypatch.setenv(

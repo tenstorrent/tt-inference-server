@@ -39,6 +39,18 @@ def _apply_profile_request_body_overrides(tasks: list, model_spec) -> list:
     ]
 
 
+# The media an lmms-eval task sends when it declares no ``modalities`` of its
+# own: EVALS_VISION tasks send images.
+_VENV_MODALITIES = {WorkflowVenvType.EVALS_VISION: ("image",)}
+
+
+def _task_modalities(task) -> set:
+    declared = getattr(task, "modalities", None)
+    if declared is None:
+        declared = _VENV_MODALITIES.get(task.workflow_venv_type, ())
+    return {str(m).lower() for m in declared}
+
+
 _SCORE_OVERRIDE_KEYS = frozenset(
     {"gpu_reference_score", "gpu_reference_score_ref", "mode_reference_scores"}
 )
@@ -237,30 +249,27 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     standard = [
         t for t in eval_config.tasks if t.workflow_venv_type in _STANDARD_EVAL_VENVS
     ]
-    # lmms-eval (EVALS_VISION) tasks send images. A serving profile that does not
-    # declare the image modality (a text-only device block of a multimodal entry)
-    # skips them, as the benchmarks workflow skips its image sweep.
-    modalities = [
+    # lmms-eval tasks send media (images unless the task declares its own
+    # ``modalities``, e.g. audio). A serving profile that does not declare that
+    # modality (a text-only device block of a multimodal entry) skips them, as
+    # the benchmarks workflow skips its image sweep.
+    served = {
         str(m).lower()
         for m in (getattr(model_spec, "supported_modalities", None) or [])
-    ]
-    if "image" not in modalities:
-        skipped = [
-            t.task_name
-            for t in standard
-            if t.workflow_venv_type == WorkflowVenvType.EVALS_VISION
-        ]
-        if skipped:
+    }
+    kept = []
+    for t in standard:
+        missing = sorted(_task_modalities(t) - served)
+        if missing:
             logger.info(
-                "Skipping image eval task(s) %s: %s serves no image modality",
-                skipped,
+                "Skipping eval task %s: %s serves no %s modality",
+                t.task_name,
                 model_spec.model_name,
+                "/".join(missing),
             )
-            standard = [
-                t
-                for t in standard
-                if t.workflow_venv_type != WorkflowVenvType.EVALS_VISION
-            ]
+        else:
+            kept.append(t)
+    standard = kept
     if not standard:
         logger.info(
             "Model %s has eval tasks but none use a standard (lm-eval/lmms-eval) "

@@ -15,8 +15,7 @@ paths:
       tags: [FLUX.3 Image klein]
       summary: Submit a FLUX.3 Image klein job
       description: |
-        Text to image, or editing and combining up to 10 references when
-        `images` is given. Every prompt is rewritten by the model's prompt
+        Text to image, or editing a reference when `images` is given. Every prompt is rewritten by the model's prompt
         upsampler first.
       requestBody:
         required: true
@@ -31,7 +30,7 @@ paths:
                 "desc": "A red and yellow striped hot-air balloon."}, {"id":
                 "balloon_2", "bbox": [200, 620, 420, 800], "desc": "A small blue
                 hot-air balloon."}]
-              aspect_ratio: "16:9"
+              aspect_ratio: "1:1"
               size: 2K
       responses:
         "202":
@@ -94,12 +93,13 @@ components:
               adds a new element.
         images:
           type: array
-          maxItems: 10
+          maxItems: 1
           items:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
-            References to edit or combine. Omitted = text to image. The first
-            image is the one edited and sets the default shape.
+            Reference to edit: 0 or 1 for now; a list so more can be allowed
+            later without a schema change. Omitted = text to image. Resized and
+            center-cropped to the output size.
         count:
           type: integer
           minimum: 1
@@ -110,30 +110,22 @@ components:
             without a schema change.
         aspect_ratio:
           type: string
-          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          enum: ["1:1"]
+          default: "1:1"
           description: |
-            Output shape. Omitted = the ratio here closest to the first image's,
-            or `1:1` without images. Each output reports its exact size. Boxes
-            are placed on the output's grid, so set the shape they were drawn
-            for.
+            Output shape. Only `1:1` for now; more can be allowed later without
+            a schema change. Each output reports its exact size. Boxes are
+            placed on the output's grid.
         size:
           type: string
           enum: [1K, 2K, 4K]
           default: 2K
           description: |
-            Size tier. With `aspect_ratio`, it fixes the output size. `1K` and
-            `2K` match FLUX.2 klein; `4K` has a long side of 4096, the open
-            model's maximum:
+            Size tier. With `aspect_ratio`, it fixes the output size:
 
             | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
             | -------------- | --------- | --------- | --------- |
             | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
-            | `16:9`         | 1376×768  | 2752×1536 | 4096×2304 |
-            | `9:16`         | 768×1376  | 1536×2752 | 2304×4096 |
-            | `4:3`          | 1184×896  | 2368×1792 | 4096×3072 |
-            | `3:4`          | 896×1184  | 1792×2368 | 3072×4096 |
-            | `3:2`          | 1248×832  | 2496×1664 | 4096×2720 |
-            | `2:3`          | 832×1248  | 1664×2496 | 2720×4096 |
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

@@ -19,15 +19,20 @@
   models send through the openai SDK's chat client and build their payload
   from the prompt alone, so the body is merged into every
   ``chat.completions.create`` call's ``extra_body`` (the SDK puts it in the
-  JSON body beside the messages). The two lm-eval-only flags are refused.
+  JSON body beside the messages). The same patch sends an audio task's clips
+  as OpenAI ``input_audio`` parts (see ``encode_audio_parts``). The two
+  lm-eval-only flags are refused.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import io
 import json
 import os
 import sys
+import wave
 from typing import Any, Dict, List, Tuple
 
 # lm-eval ``--model`` names whose payload builder this wrapper patches. The
@@ -134,16 +139,81 @@ def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str
     return patched
 
 
+def _wav_bytes(array, sampling_rate: int) -> bytes:
+    """16-bit PCM mono WAV from a float waveform in [-1, 1] (stereo averaged)."""
+    import numpy as np
+
+    samples = np.asarray(array, dtype=np.float32)
+    if samples.ndim == 2:
+        samples = samples.mean(axis=0 if samples.shape[0] < samples.shape[1] else 1)
+    pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(sampling_rate))
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+def encode_audio_parts(messages: List[Any]) -> List[Any]:
+    """Send lmms-eval's audio content as OpenAI ``input_audio`` parts.
+
+    lmms-eval v0.4.1's chat ``openai_compatible`` model forwards an audio
+    task's clip as ``{"type": "audio_url", "audio_url": {"url": <HF Audio
+    dict>}}`` (its protocol marks audio as unimplemented), which the SDK cannot
+    serialize. The decoded ``datasets`` Audio dict (``array`` +
+    ``sampling_rate``) becomes a base64 16-bit PCM WAV ``input_audio`` part, a
+    local ``.wav`` path its bytes; a string URL is left to the server."""
+    out = []
+    for message in messages or []:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            out.append(message)
+            continue
+        parts = []
+        for part in content:
+            url = (
+                (part.get("audio_url") or {}).get("url")
+                if isinstance(part, dict)
+                else None
+            )
+            if isinstance(url, dict) and "array" in url:
+                data = _wav_bytes(url["array"], url["sampling_rate"])
+            elif (
+                isinstance(url, str)
+                and url.lower().endswith(".wav")
+                and os.path.isfile(url)
+            ):
+                with open(url, "rb") as f:
+                    data = f.read()
+            else:
+                parts.append(part)
+                continue
+            encoded = base64.b64encode(data).decode("ascii")
+            parts.append(
+                {
+                    "type": "input_audio",
+                    "input_audio": {"data": encoded, "format": "wav"},
+                }
+            )
+        out.append({**message, "content": parts})
+    return out
+
+
 def patch_openai_chat_client(body: Dict[str, Any]) -> None:
     """Merge ``body`` into the ``extra_body`` of every synchronous
     ``chat.completions.create`` call of the openai SDK, the client lmms-eval's
-    openai_compatible models send through. Re-patching replaces the wrap."""
+    openai_compatible models send through, and encode the audio parts of its
+    messages (``encode_audio_parts``). Re-patching replaces the wrap."""
     from openai.resources.chat.completions import Completions
 
     original = getattr(Completions.create, _PATCH_MARKER, None) or Completions.create
 
     def create(self, *args, extra_body=None, **kwargs):
         merged = merge_request_body(dict(extra_body or {}), body)
+        if "messages" in kwargs:
+            kwargs["messages"] = encode_audio_parts(kwargs["messages"])
         return original(self, *args, extra_body=merged, **kwargs)
 
     setattr(create, _PATCH_MARKER, original)
@@ -195,7 +265,7 @@ def main() -> None:
     if opts.harness == "lmms-eval":
         require_supported_lmms_model(model_name)
         patch_openai_chat_client(opts.body)
-        patched = ["openai chat.completions.create extra_body"]
+        patched = ["openai chat.completions.create extra_body + input_audio parts"]
         from lmms_eval.__main__ import cli_evaluate
     else:
         if opts.preserve_reasoning:

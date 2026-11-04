@@ -24,12 +24,10 @@ paths:
             schema:
               $ref: "#/components/schemas/QwenImageEdit2511Request"
             example:
-              prompt: >-
-                put the person from the second image on the bench in the first
+              prompt: replace the bench with a wooden swing
               negative_prompt: blurry
               images:
                 - https://storage.internal/inputs/bench.jpg
-                - data:image/jpeg;base64,/9j/4AAQ…
               format: png
       responses:
         "202":
@@ -84,9 +82,9 @@ components:
           items:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
-            The image(s) to edit or combine. Each is resized to the supported
-            size closest to its aspect ratio. At most 3, as in tt_dit's
-            Qwen-Image-Edit-2511 pipeline.
+            The image(s) to edit or combine, referred to in the prompt by order
+            ("the first image"). Each is resized to the supported size (see
+            `aspect_ratio`) closest to its own aspect ratio, without cropping.
 
             **tt-media-server today:** `image` (one).
         count:
@@ -103,9 +101,8 @@ components:
           description: |
             Output shape, at about 1 MP: `1:1` 1024×1024, `16:9` 1376×768,
             `9:16` 768×1376, `4:3` 1184×896, `3:4` 896×1184, `3:2` 1248×832,
-            `2:3` 832×1248 (diffusers' edit sizes, as in tt_dit's pipeline).
-            Omitted = the ratio closest to the last image's, as in diffusers'
-            reference pipeline. Each output reports its exact size.
+            `2:3` 832×1248. Omitted = the ratio here closest to the last input
+            image's. Each output reports its exact size.
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:

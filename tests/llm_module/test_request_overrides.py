@@ -347,6 +347,48 @@ class TestLmmsEvalWrapper:
         Completions().create(model="m", messages=[])
         assert calls[-1]["extra_body"] == {"top_k": 1}
 
+    def test_audio_parts_go_out_as_input_audio_wav(self, monkeypatch):
+        """lmms-eval v0.4.1 forwards an audio task's HF Audio dict unencoded under
+        audio_url; the patched client sends it as a base64 16-bit PCM WAV
+        input_audio part and leaves string URLs and other parts alone."""
+        import base64
+        import wave
+        from io import BytesIO
+
+        Completions, calls = self._install_fake_sdk(monkeypatch)
+        wrapper.patch_openai_chat_client({})
+        clip = {"array": [0.0, 0.5, -0.5, 1.0, -2.0], "sampling_rate": 16000}
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "audio_url", "audio_url": {"url": clip}},
+                    {"type": "audio_url", "audio_url": {"url": "https://x/a.mp3"}},
+                    {"type": "text", "text": "transcribe"},
+                ],
+            },
+            {"role": "assistant", "content": "ok"},
+        ]
+        Completions().create(model="m", messages=messages)
+        sent = calls[-1]["messages"]
+        assert sent[1] == {"role": "assistant", "content": "ok"}
+        assert sent[0]["content"][1:] == messages[0]["content"][1:]
+        part = sent[0]["content"][0]
+        assert part["type"] == "input_audio" and part["input_audio"]["format"] == "wav"
+        with wave.open(BytesIO(base64.b64decode(part["input_audio"]["data"]))) as w:
+            assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (
+                1,
+                2,
+                16000,
+            )
+            pcm = w.readframes(w.getnframes())
+        assert len(pcm) == 2 * len(clip["array"])
+        assert (
+            pcm[:2] == b"\x00\x00" and pcm[-2:] == b"\x01\x80"
+        )  # -2.0 clipped to -32767
+        # the original messages are not mutated
+        assert messages[0]["content"][0]["audio_url"]["url"] is clip
+
     def test_only_the_openai_sdk_models_are_supported(self):
         for name in wrapper.SUPPORTED_LMMS_EVAL_CLASSES:
             wrapper.require_supported_lmms_model(name)

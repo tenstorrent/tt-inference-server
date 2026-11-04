@@ -13,11 +13,13 @@
 # without changing this repository, making CI evidence impossible to reproduce.
 # This pin also includes the tested LongBench code prompt correction: keep the
 # dataset instruction once and preserve the final next-line cue newline.
+# It also keeps request headers (the API key) out of the error text a failed
+# request writes into samples and logs (tstescoTT/lm-evaluation-harness#31).
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-git+https://github.com/tstescoTT/lm-evaluation-harness.git@be23028b161addd616ecabff740dee62d1d9fbd8#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
+git+https://github.com/tstescoTT/lm-evaluation-harness.git@af401ef3dd3d2d90e55680990ed1f0c9f7892448#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
 protobuf
 pyjwt
 pillow

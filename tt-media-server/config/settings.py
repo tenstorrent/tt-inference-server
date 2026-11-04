@@ -348,10 +348,10 @@ class Settings(BaseSettings):
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_FLUX_2_KLEIN_4B.value,
+            ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value,
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value,
-            ModelRunners.TT_FLUX_2_KLEIN_4B.value,
-            ModelRunners.TT_IDEOGRAM_4.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
             ModelRunners.TT_WAN_2_2_T2V_PRODIA.value,
@@ -365,6 +365,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_REF2VA.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value,
+            ModelRunners.TT_IDEOGRAM_4.value,
         ]:
             self.default_throttle_level = None
 

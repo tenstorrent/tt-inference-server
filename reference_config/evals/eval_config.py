@@ -88,6 +88,18 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         if normalized not in {"true", "false"}:
             raise ValueError(f"{env_var} must be 'true' or 'false'")
         kwargs[kwarg] = normalized == "true"
+    memory_limit_multiplier = os.getenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER")
+    if memory_limit_multiplier:
+        # Memory limit = task memory_mb x this; the request stays at memory_mb,
+        # so pods pack the same and a short spike above the budget is not
+        # OOM-killed. Harbor applies it only under the ``auto`` memory policy.
+        try:
+            multiplier = float(memory_limit_multiplier)
+        except ValueError:
+            multiplier = 0.0
+        if multiplier < 1:
+            raise ValueError("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER must be a number >= 1")
+        kwargs["memory_limit_multiplier"] = multiplier
     prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
     if prebuilt_image_mirrors:
         parsed_mirrors = json.loads(prebuilt_image_mirrors)
@@ -286,8 +298,17 @@ class HarborEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
+    # Replace every task's task.toml budget. Leave unset unless the published
+    # score states its own setting: leaderboards reject resource overrides.
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
+    # Harbor's ``auto`` is a hard limit on Docker but only a request on
+    # Kubernetes, where a trial can burst to the whole node. CPU uses ``limit``
+    # on both (Kubernetes then sets the request to the limit); going over only
+    # throttles. Memory stays on ``auto`` (None): a hard limit on Docker, and on
+    # Kubernetes a request whose ceiling is HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER.
+    cpu_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = None
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
     agent_setup_timeout_multiplier: Optional[float] = None
@@ -450,6 +471,10 @@ class EvalTask:
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
     priority: str = "must"
+    # Media the task sends beyond text, e.g. ["audio"]; None keeps the venv's
+    # default (lmms-eval EVALS_VISION tasks send images). The eval runner skips
+    # a task on a serving profile whose ``supported_modalities`` lack one.
+    modalities: Optional[List[str]] = None
     # Per-device overrides, keyed by device name (e.g. "GALAXY",
     # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
     # three-tier device-variance model:
@@ -517,6 +542,7 @@ class EvalTask:
             "task_name",
             "workflow_venv_type",
             "eval_class",
+            "modalities",
             "num_fewshot",
             "seed",
             "include_path",
@@ -1428,8 +1454,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1689,8 +1713,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1849,8 +1871,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2006,8 +2026,6 @@ _eval_config_list = [
                     n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2235,8 +2253,6 @@ _eval_config_list = [
                     n_concurrent_trials=93,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2456,8 +2472,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2704,8 +2718,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=8,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -2970,8 +2982,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=8,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -3150,6 +3160,8 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -3266,6 +3278,8 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -9004,8 +9018,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
                     # left to the server default (device sampler). 96K input plus
@@ -11700,8 +11712,6 @@ _eval_config_list = [
                     n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -11883,8 +11893,6 @@ _eval_config_list = [
                     n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -12090,9 +12098,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -12373,8 +12378,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     # 2 h per task keeps the release job inside the 12 h
                     # nightly cap: the 5 CI tasks run as one wave.
                     agent_timeout_sec=2 * 60 * 60,
@@ -12578,9 +12581,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     # 5 h per task: the 3 h budget left 5 of the 24-task wave unfinished on the QB2
                     # release run (shield 40142241727), which writes no score for an errored wave.
                     agent_timeout_sec=5 * 60 * 60,
@@ -12814,10 +12814,6 @@ _eval_config_list = [
                     n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
-                    # limit above the host count ("range of CPUs is from 0.01 to 16.00").
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -12953,6 +12949,65 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # FLEURS en_us speech recognition (WER), the model card's audio benchmark
+                # for the 12B: the 647 test utterances on the stock lmms-eval
+                # openai_compatible client, thinking off per request like MMMU-Pro. The
+                # request-overrides wrapper sends each utterance as an OpenAI input_audio
+                # part (16-bit PCM WAV; lmms-eval v0.4.1 forwards the HF Audio dict
+                # unencoded). The task ships in the EVALS_VISION pin; the EVALS_AUDIO venv
+                # is tt-media-server's /audio client, not a chat-completions client.
+                eval_class="openai_compatible",
+                task_name="fleurs_en",
+                # Only profiles that serve audio run it (the 12B Blackhole QB2 / Galaxy /
+                # GPU blocks); the text-only blocks skip it like MMMU-Pro.
+                modalities=["audio"],
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    # Model card: WER 0.069 for the 12B, an average over the FLEURS
+                    # languages except Chinese (the English split should score at least
+                    # as well). Graded as 100 - WER so the higher-is-better accuracy
+                    # check applies.
+                    published_score=100 - 6.9,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Same-protocol GPU reference: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 on an
+                    # A100 80 GB via stock vLLM 0.30.0, thinking off, greedy, WAV input_audio (2026-10-19):
+                    #   vllm serve google/gemma-4-12B-it --dtype bfloat16 --max-model-len 32768 --max-num-seqs 32 \
+                    #     --reasoning-parser gemma4 --default-chat-template-kwargs '{"enable_thinking": true}' --port 8000
+                    #   python run.py --model google/gemma-4-12B-it --workflow evals --tt-device gpu --dev-mode \
+                    #     --server-url http://127.0.0.1 --service-port 8000 --eval-tasks fleurs_en
+                    gpu_reference_score=100 - 6.63,
+                    gpu_reference_score_ref="same-protocol GPU run: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 A100 80 GB, stock vLLM, thinking off, greedy, WAV input_audio (2026-10-19, WER 6.63)",
+                    # lmms-eval reports WER in percent; the gate itself scores a
+                    # "WER"-unit task as 100 - WER (llm_eval_tests), so the raw key is
+                    # returned here like the other WER tasks.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # Transcripts are short: the task's own budget (thinking off).
+                    "max_new_tokens": "256",
+                },
+                # Both presets run the full 647 utterances (minutes at 32 in flight).
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -13024,8 +13079,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -13179,8 +13232,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -13338,8 +13389,6 @@ _eval_config_list = [
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     # The selected tasks are estimated at 5-20 expert minutes.
                     # DiffusionGemma is slower than the reference agents, but a
                     # bounded 45-minute budget keeps a stuck trial from

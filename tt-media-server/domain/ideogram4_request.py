@@ -15,28 +15,16 @@ from domain.generation_request import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-IdeogramRatio = Literal["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
-IdeogramSize = Literal["1K", "2K"]
+IdeogramRatio = Literal["1:1", "16:9", "9:16", "2:3"]
+IdeogramSize = Literal["2K"]
 
-# (width, height) per size tier and ratio: Ideogram's sizes of about 1 MP at
-# 1K, a long side of 2048 (the open model's maximum) at 2K.
+# (width, height) per size tier and ratio: a long side of 2048, the open
+# model's maximum. The initial release serves these four.
 IDEOGRAM_SIZES: dict[str, dict[str, tuple[int, int]]] = {
-    "1K": {
-        "1:1": (1024, 1024),
-        "16:9": (1280, 720),
-        "9:16": (720, 1280),
-        "4:3": (1152, 864),
-        "3:4": (864, 1152),
-        "3:2": (1248, 832),
-        "2:3": (832, 1248),
-    },
     "2K": {
         "1:1": (2048, 2048),
         "16:9": (2048, 1152),
         "9:16": (1152, 2048),
-        "4:3": (2048, 1536),
-        "3:4": (1536, 2048),
-        "3:2": (2048, 1360),
         "2:3": (1360, 2048),
     },
 }
@@ -174,23 +162,23 @@ class Ideogram4Request(GenerationRequest):
     structured_prompt: Ideogram4Caption
     count: Count = 1
     aspect_ratio: IdeogramRatio = Field(
-        default="1:1", description="Output shape. Each output reports its exact size."
+        default="1:1",
+        description=(
+            "Output shape. Only these for now; more can be allowed later without "
+            "a schema change. Each output reports its exact size."
+        ),
     )
     size: IdeogramSize = Field(
         default="2K",
         description=(
-            "Size tier. With `aspect_ratio`, it fixes the output size. `1K` uses "
-            "the model's native sizes of about 1 MP; `2K` has a long side of 2048, "
-            "the open model's maximum (256–2048 per side, multiples of 16):\n\n"
-            "| `aspect_ratio` | `1K`      | `2K`      |\n"
-            "| -------------- | --------- | --------- |\n"
-            "| `1:1`          | 1024×1024 | 2048×2048 |\n"
-            "| `16:9`         | 1280×720  | 2048×1152 |\n"
-            "| `9:16`         | 720×1280  | 1152×2048 |\n"
-            "| `4:3`          | 1152×864  | 2048×1536 |\n"
-            "| `3:4`          | 864×1152  | 1536×2048 |\n"
-            "| `3:2`          | 1248×832  | 2048×1360 |\n"
-            "| `2:3`          | 832×1248  | 1360×2048 |"
+            "Size tier: a long side of 2048, the open model's maximum. Only `2K` "
+            "for now; `1K` can be allowed later without a schema change.\n\n"
+            "| `aspect_ratio` | `2K`      |\n"
+            "| -------------- | --------- |\n"
+            "| `1:1`          | 2048×2048 |\n"
+            "| `16:9`         | 2048×1152 |\n"
+            "| `9:16`         | 1152×2048 |\n"
+            "| `2:3`          | 1360×2048 |"
         ),
     )
     format: ImageFormat = "png"

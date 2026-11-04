@@ -200,24 +200,6 @@ int main(int argc, char* argv[]) {
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
 
-  std::thread shutdownThread([&]() {
-    while (gShutdownRequested == 0) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
-      auto svc = tt::services::ServiceContainer::instance().configuredService();
-      if (svc && svc->hasFatalError()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        TT_LOG_CRITICAL(
-            "[Main] Configured service reported fatal worker error; "
-            "initiating server shutdown");
-        gFatalServiceError = 1;
-        gShutdownRequested = 1;
-      }
-    }
-    drogon::app().quit();
-  });
-  shutdownThread.detach();
-
   auto modelSvc = tt::config::modelService();
   std::string serviceName = tt::config::toString(modelSvc);
 
@@ -267,6 +249,27 @@ int main(int argc, char* argv[]) {
     TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
     return 1;
   }
+
+  // Started only once the service is registered, so its ServiceContainer reads
+  // never race initializeServices(). Joined after drogon::app().run() so its
+  // service reference is released before ServiceContainer's static destructor.
+  std::atomic<bool> shutdownThreadStop{false};
+  std::thread shutdownThread([&]() {
+    while (gShutdownRequested == 0 && !shutdownThreadStop.load()) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+      auto svc = tt::services::ServiceContainer::instance().configuredService();
+      if (svc && svc->hasFatalError()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        TT_LOG_CRITICAL(
+            "[Main] Configured service reported fatal worker error; "
+            "initiating server shutdown");
+        gFatalServiceError = 1;
+        gShutdownRequested = 1;
+      }
+    }
+    if (!shutdownThreadStop.load()) drogon::app().quit();
+  });
 
   // Sentry distributed tracing (no-op without SENTRY_DSN). Initialized after
   // the service fork+execv'd its workers so the SDK runs only in this node
@@ -509,6 +512,8 @@ int main(int argc, char* argv[]) {
   }
 
   drogon::app().run();
+  shutdownThreadStop.store(true);
+  shutdownThread.join();
 
   if (dynamoWorkerServer) {
     dynamoWorkerServer->stop();

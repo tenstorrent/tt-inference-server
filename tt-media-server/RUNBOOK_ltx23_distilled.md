@@ -35,7 +35,7 @@ Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, **153 frames @
 (`LTX_NUM_FRAMES`/`LTX_HEIGHT`/`LTX_WIDTH`/`LTX_FPS` in `config/constants.py`) and
 into the captured traces, so a request cannot change it: the shape fields of
 `POST /v1/generations/lightricks/ltx-2.3-22b-distilled` each allow only the served value
-(`docs/api/generation/models/lightricks/ltx-2.3-22b-distilled.yaml`).
+(`docs/api/openapi/lightricks/ltx-2.3-22b-distilled.yaml`).
 
 | | value | why |
 |---|---|---|

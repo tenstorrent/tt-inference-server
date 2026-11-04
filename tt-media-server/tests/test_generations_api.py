@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Unit tests for the generations API: the models' request schemas, checked
-against docs/api/generation, and submit → job → content → delete
+"""Unit tests for the generations API: each deployment's OpenAPI document,
+checked against docs/api/openapi, and submit → job → content → delete
 through the router with a fake device. Runners and tt_dit run on hardware, not
 here."""
 
@@ -23,6 +23,7 @@ import pytest
 import yaml
 from config.constants import JobTypes
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -35,8 +36,6 @@ from PIL import Image
 from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
 from utils.video_manager import VideoManager
-
-_SPEC_DIR = pathlib.Path(__file__).resolve().parents[1] / "docs" / "api" / "generation"
 
 _CAPTION = {
     "compositional_deconstruction": {
@@ -62,68 +61,49 @@ def _with_images(request, **images):
     return request
 
 
-# --- Request schemas against the spec ----------------------------------------------
+# --- The spec ----------------------------------------------------------------------
 
 
-def _resolved(schema: dict, defs: dict) -> dict:
-    """A property's own schema: Optional's non-null branch, $refs followed."""
-    if "anyOf" in schema:
-        (schema,) = [branch for branch in schema["anyOf"] if branch != {"type": "null"}]
-    if "$ref" in schema and schema["$ref"].startswith("#/$defs/"):
-        schema = defs[schema["$ref"].removeprefix("#/$defs/")]
-    return schema
+def _load_dump_script():
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+    spec = importlib.util.spec_from_file_location(
+        "dump_generations_openapi", path / "dump_generations_openapi.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
+_dump_script = _load_dump_script()
+
+
+@pytest.fixture(scope="module")
+def served_generations_api():
+    """Each deployment's generations API, built in parallel."""
+    return _dump_script.served_generations_api_by_runner(list(GENERATION_MODELS))
+
+
+# After an intended API change: python scripts/dump_generations_openapi.py
 @pytest.mark.parametrize(
-    "model", GENERATION_MODELS.values(), ids=lambda model: model.id
+    ("runner", "model"),
+    GENERATION_MODELS.items(),
+    ids=[model.id for model in GENERATION_MODELS.values()],
 )
-def test_request_schema_matches_the_spec(model):
-    request_model = model.request
-    path = _SPEC_DIR / "models" / f"{model.id}.yaml"
-    spec = yaml.safe_load(path.read_text())
-    submit = spec["paths"][f"/v1/generations/{model.id}"]["post"]
-    # A variant's file takes its base model's schema by reference.
-    file, _, pointer = submit["requestBody"]["content"]["application/json"]["schema"][
-        "$ref"
-    ].partition("#/components/schemas/")
-    if file:
-        spec = yaml.safe_load((path.parent / file).read_text())
-    expected = spec["components"]["schemas"][pointer]
-    actual = request_model.model_json_schema()
-    defs = actual.get("$defs", {})
-
-    assert actual["additionalProperties"] is False
-    assert set(actual["properties"]) == set(expected["properties"])
-    assert set(actual.get("required", [])) == set(expected["required"])
-    for name, want in expected["properties"].items():
-        got = _resolved(actual["properties"][name], defs)
-        default = actual["properties"][name].get("default")
-        if "enum" in want:
-            assert got.get("enum") == want["enum"], name
-        if "default" in want:
-            assert default == want["default"], name
-        for bound in ("minimum", "maximum", "minItems", "maxItems", "minLength"):
-            if bound in want:
-                assert got.get(bound) == want[bound], (name, bound)
+def test_openapi_is_the_spec(served_generations_api, runner, model):
+    expected = yaml.safe_load(_dump_script.spec_path(model.id).read_text())
+    assert served_generations_api[runner] == expected
 
 
-def test_ideogram_caption_matches_the_spec():
-    spec = yaml.safe_load(
-        (_SPEC_DIR / "models" / "ideogram-ai" / "ideogram-4.yaml").read_text()
-    )["components"]["schemas"]
-    defs = Ideogram4Request.model_json_schema()["$defs"]
-    for name in (
-        "Ideogram4Caption",
-        "Ideogram4ObjectElement",
-        "Ideogram4TextElement",
-    ):
-        assert list(defs[name]["properties"]) == list(spec[name]["properties"]), name
-        assert set(defs[name].get("required", [])) == set(spec[name]["required"])
+def test_every_spec_is_served():
+    expected = {
+        _dump_script.spec_path(model.id) for model in GENERATION_MODELS.values()
+    }
+    assert _dump_script.spec_files() == expected
 
 
 def test_unknown_field_rejected():
     with pytest.raises(ValidationError, match="extra"):
-        Flux2klein4bRequest(prompt="a cat", steps=4)
+        Ltx23DistilledRequest(prompt="a cat", steps=4)
 
 
 @pytest.mark.parametrize(
@@ -183,35 +163,13 @@ def test_ltx_rejects(fields, message):
         Ltx23DistilledRequest(prompt="a violinist", **fields)
 
 
-def test_qwen_size_follows_last_image():
-    request = QwenImageEdit2511Request(
-        prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
-    )
-    assert request.negative_prompt == " "
-    _with_images(request, images=[(1000, 1000), (1600, 900)])
-    assert request.output_size() == (1376, 768)
-    request.aspect_ratio = "3:4"
-    assert request.output_size() == (896, 1184)
-
-
-@pytest.mark.parametrize(
-    "fields", [{"images": ["https://x/a.png"] * 4}, {"count": 2}, {"size": "1K"}]
-)
-def test_qwen_rejects(fields):
-    with pytest.raises(ValidationError):
-        QwenImageEdit2511Request(
-            prompt="x", **{"images": ["https://x/a.png"], **fields}
-        )
-
-
 @pytest.mark.parametrize(
     ("fields", "images", "expected"),
     [
         ({}, [], (1024, 1024)),
         ({"size": "2K"}, [], (2048, 2048)),
-        ({"aspect_ratio": "16:9", "size": "2K"}, [], (2752, 1536)),
-        ({}, [(1600, 900), (100, 100)], (1376, 768)),
-        ({"size": "2K"}, [(900, 1250)], (1792, 2368)),
+        ({}, [(1600, 900)], (1024, 1024)),
+        ({"size": "2K"}, [(900, 1250)], (2048, 2048)),
     ],
 )
 def test_klein_output_size(fields, images, expected):
@@ -225,90 +183,20 @@ def test_klein_output_size(fields, images, expected):
     assert request.output_size() == expected
 
 
-def test_klein_has_14_sizes():
-    sizes = set(Flux2klein4bRequest.warmup_sizes())
-    assert len(sizes) == 14
-    assert all(width % 16 == 0 and height % 16 == 0 for width, height in sizes)
+def test_klein_has_2_sizes():
+    assert set(Flux2klein4bRequest.warmup_sizes()) == {(1024, 1024), (2048, 2048)}
 
 
 @pytest.mark.parametrize(
-    ("fields", "expected"),
+    "fields",
     [
-        ({}, (2048, 2048)),
-        ({"size": "1K"}, (1024, 1024)),
-        ({"aspect_ratio": "16:9", "size": "1K"}, (1280, 720)),
-        ({"aspect_ratio": "3:2"}, (2048, 1360)),
+        {"aspect_ratio": "16:9"},
+        {"images": ["https://x/a.png", "https://x/b.png"]},
     ],
 )
-def test_ideogram_output_size(fields, expected):
-    request = Ideogram4Request(structured_prompt=_CAPTION, **fields)
-    assert request.output_size() == expected
-    assert len(set(Ideogram4Request.warmup_sizes())) == 14
-
-
-def test_ideogram_caption_is_written_in_the_model_key_order():
-    request = Ideogram4Request(
-        structured_prompt={
-            "compositional_deconstruction": {
-                "elements": [{"desc": "d", "bbox": [0, 0, 1, 1], "type": "obj"}],
-                "background": "b",
-            },
-            "style_description": {
-                "medium": "m",
-                "photo": "p",
-                "lighting": "l",
-                "aesthetics": "a",
-            },
-            "high_level_description": "Ein Café",
-        }
-    )
-    assert request.model_prompt() == (
-        '{"high_level_description":"Ein Café",'
-        '"style_description":{"aesthetics":"a","lighting":"l","photo":"p","medium":"m"},'
-        '"compositional_deconstruction":{"background":"b",'
-        '"elements":[{"type":"obj","bbox":[0,0,1,1],"desc":"d"}]}}'
-    )
-
-
-@pytest.mark.parametrize(
-    ("caption", "message"),
-    [
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}
-            ]}},
-            "ymin <= ymax",
-        ),
-        (
-            {
-                "style_description": {
-                    "aesthetics": "a",
-                    "lighting": "l",
-                    "medium": "m",
-                    "photo": "p",
-                    "art_style": "s",
-                },
-                **_CAPTION,
-            },
-            "exactly one of photo and art_style",
-        ),
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "color_palette": ["#ff0000"]}
-            ]}},
-            "pattern",
-        ),
-        ({"caption": "plain"}, "extra"),
-    ],
-)  # fmt: skip
-def test_ideogram_rejects_invalid_captions(caption, message):
-    with pytest.raises(ValidationError, match=message):
-        Ideogram4Request(structured_prompt=caption)
-
-
-def test_ideogram_has_no_plain_prompt():
-    with pytest.raises(ValidationError, match="extra"):
-        Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
+def test_klein_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Flux2klein4bRequest(prompt="a cat", **fields)
 
 
 # --- Router and jobs -------------------------------------------------------------
@@ -331,12 +219,12 @@ def _router_module(monkeypatch, runner: str):
 
 
 def test_only_the_served_model_is_mounted(monkeypatch):
-    module = _router_module(monkeypatch, "tt-ideogram-4")
+    module = _router_module(monkeypatch, "tt-wan2.2-i2v")
     app = FastAPI()
     app.include_router(module.router)
     paths = set(app.openapi()["paths"])
     assert paths == {
-        "/v1/generations/ideogram-ai/ideogram-4",
+        "/v1/generations/wan-ai/wan2.2-i2v-a14b",
         "/v1/jobs",
         "/v1/jobs/{job_id}",
         "/v1/jobs/{job_id}/content/{index}",
@@ -347,7 +235,7 @@ def test_only_the_served_model_is_mounted(monkeypatch):
 @pytest.mark.parametrize("job_type", ["training", "video"])
 def test_other_services_jobs_are_404(monkeypatch, job_type):
     # E.g. restored from a job database shared with a training deployment.
-    module = _router_module(monkeypatch, "tt-ideogram-4")
+    module = _router_module(monkeypatch, "tt-wan2.2-i2v")
     service = SimpleNamespace(
         get_job_metadata=lambda job_id: {"id": job_id, "job_type": job_type}
     )
@@ -358,11 +246,12 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 
 class _FakeDevice:
     """Stands in for the scheduler and device: each request yields an image,
-    or a video for Wan, after ``delay`` seconds. ``video``, if set, makes a
-    video's result instead."""
+    or a video for a video model, after ``delay`` seconds. ``video``, if set,
+    makes a video's result instead. A job stays queued for ``queued`` seconds."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
+        self.queued = 0.0
         self.requests = []
         self.error = None
         self.video = None
@@ -372,6 +261,7 @@ class _FakeDevice:
 
     async def process(self, request):
         self.requests.append(request)
+        await asyncio.sleep(self.queued)
         if request._start_event is not None:
             request._start_event.set()
         await asyncio.sleep(self.delay)
@@ -449,42 +339,71 @@ async def _wait_final(client, job_id: str) -> dict:
     raise AssertionError(f"job {job_id} did not finish: {job}")
 
 
-async def test_image_job_lifecycle(generations_app, tmp_path):
-    client, device = generations_app("tt-qwen-image-edit-2511")
-    response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={
-            "prompt": "add a hat",
-            "images": [_data_uri(1600, 900)],
-            "seed": 7,
-            "format": "jpeg",
-        },
+def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
+    """An MP4 with sound, not faststart, as the LTX and H3 runners write."""
+    return VideoManager().export_to_mp4_with_audio(
+        np.zeros((frames, 64, 64, 3), np.uint8),
+        np.zeros((2, sampling_rate * frames // fps), np.float32),
+        sampling_rate,
+        fps=fps,
     )
+
+
+# A video model's endpoint and a request it takes without media.
+_LTX = ("tt-ltx-2.3-distilled", "/v1/generations/lightricks/ltx-2.3-22b-distilled")
+
+
+def _ltx_app(generations_app, delay: float = 0.0):
+    """LTX, whose fake device returns a short clip instead of the full shape."""
+    client, device = generations_app(_LTX[0], delay=delay)
+    device.video = lambda request: _sound_video(9, 16000, 25)
+    return client, device
+
+
+def _wan_body(**fields) -> dict:
+    return {"prompt": "x", "aspect_ratio": "16:9", "size": "480p", **fields}
+
+
+def _wan_app(generations_app):
+    client, device = generations_app("tt-wan2.2-i2v")
+    device.video = lambda request: _sound_video(9, 16000, 25)
+    return client, device
+
+
+_WAN = "/v1/generations/wan-ai/wan2.2-i2v-a14b"
+
+
+async def test_job_lifecycle(generations_app, tmp_path):
+    client, device = _ltx_app(generations_app)
+    response = await client.post(_LTX[1], json={"prompt": "a violinist", "seed": 7})
     assert response.status_code == 202, response.text
     job = response.json()
     assert set(job) == {"id", "model", "status", "created_at"}
-    assert job["model"] == "qwen/qwen-image-edit-2511"
+    assert job["model"] == "lightricks/ltx-2.3-22b-distilled"
 
     job = await _wait_final(client, job["id"])
     assert job["status"] == "completed"
     assert job["expires_at"] == job["completed_at"] + _RETENTION_SECONDS
     (request,) = device.requests
-    assert (request._seed, request._prompt) == (7, "add a hat")
-    assert request.negative_prompt == " "
+    assert (request._seed, request._prompt) == (7, "a violinist")
 
     (output,) = job["outputs"]
+    # The fake device's clip: 9 frames of 64x64 at 25 fps, stereo at 16 kHz.
     assert output == {
-        "type": "image",
+        "type": "video",
         "url": f"/v1/jobs/{job['id']}/content/0",
-        "content_type": "image/jpeg",
+        "content_type": "video/mp4",
         "seed": 7,
-        "prompt": "add a hat",
-        "width": 1376,
-        "height": 768,
+        "prompt": "a violinist",
+        "width": 64,
+        "height": 64,
+        "fps": 25,
+        "num_frames": 9,
+        "duration": 9 / 25,
+        "audio": {"codec": "aac", "sample_rate": 16000, "channels": 2},
     }
     content = await client.get(output["url"])
-    assert content.headers["content-type"] == "image/jpeg"
-    assert Image.open(BytesIO(content.content)).size == (1376, 768)
+    assert content.headers["content-type"] == "video/mp4" and content.content
     assert (await client.get(f"/v1/jobs/{job['id']}/content/1")).status_code == 404
 
     assert (await client.get("/v1/jobs")).json() == [job]
@@ -520,16 +439,6 @@ async def test_video_job(generations_app):
     assert content.headers["content-type"] == "video/mp4" and content.content
 
 
-def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
-    """An MP4 with sound, not faststart, as the LTX and H3 runners write."""
-    return VideoManager().export_to_mp4_with_audio(
-        np.zeros((frames, 64, 64, 3), np.uint8),
-        np.zeros((2, sampling_rate * frames // fps), np.float32),
-        sampling_rate,
-        fps=fps,
-    )
-
-
 async def test_video_with_sound_job(generations_app):
     import av
 
@@ -553,15 +462,14 @@ async def test_video_with_sound_job(generations_app):
 
 
 async def test_invalid_media_is_422_before_queueing(generations_app):
-    client, device = generations_app("tt-qwen-image-edit-2511")
+    client, device = _wan_app(generations_app)
     not_an_image = "data:image/png;base64," + base64.b64encode(b"nope").decode()
     response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": [_data_uri(), not_an_image]},
+        _WAN, json=_wan_body(first_frame=_data_uri(), last_frame=not_an_image)
     )
     assert response.status_code == 422
     (error,) = response.json()["detail"]
-    assert error["loc"] == ["body", "images", 1]
+    assert error["loc"] == ["body", "last_frame"]
     assert device.requests == [] and (await client.get("/v1/jobs")).json() == []
 
 
@@ -572,19 +480,15 @@ async def test_disallowed_url_is_400_and_large_image_413(generations_app, monkey
         raise MediaDownloadPolicyError("host is not allowed")
 
     monkeypatch.setattr("model_services.generation_service.download_media_url", refuse)
-    client, _ = generations_app("tt-qwen-image-edit-2511")
+    client, _ = _wan_app(generations_app)
     disallowed = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": ["https://example.com/a.png"]},
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
     )
     assert disallowed.status_code == 400
     assert disallowed.json()["detail"] == "host is not allowed"
 
     monkeypatch.setitem(MEDIA_MAX_BYTES, "image", 10)
-    large = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": [_data_uri()]},
-    )
+    large = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
     assert large.status_code == 413
     assert (await client.get("/v1/jobs")).json() == []
 
@@ -599,10 +503,9 @@ async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkey
     settings = utils.job_manager.get_settings()
     settings.max_queue_size = 0
     monkeypatch.setattr("utils.job_manager.get_settings", lambda: settings)
-    client, _ = generations_app("tt-qwen-image-edit-2511")
+    client, _ = _wan_app(generations_app)
     response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": ["https://example.com/a.png"]},
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
     )
     assert response.status_code == 429
 
@@ -621,19 +524,20 @@ async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
         return png
 
     monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
-    client, device = generations_app("tt-qwen-image-edit-2511")
+    client, device = _wan_app(generations_app)
     response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={
-            "prompt": "x",
-            "images": ["https://example.com/a.png", "https://example.com/b.png"],
-        },
+        _WAN,
+        json=_wan_body(
+            first_frame="https://example.com/a.png",
+            last_frame="https://example.com/b.png",
+        ),
     )
     assert response.status_code == 202, response.text
     await _wait_final(client, response.json()["id"])
     (request,) = device.requests
     # The runner reads the decoded images, not the files.
-    assert len(request._images["images"]) == 2 and request._files == {}
+    assert set(request._images) == {"first_frame", "last_frame"}
+    assert request._files == {}
 
 
 async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypatch):
@@ -650,14 +554,14 @@ async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypa
             stopped.set()
 
     monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
-    client, _ = generations_app("tt-qwen-image-edit-2511")
+    client, _ = _wan_app(generations_app)
     response = await asyncio.wait_for(
         client.post(
-            "/v1/generations/qwen/qwen-image-edit-2511",
-            json={
-                "prompt": "x",
-                "images": ["https://example.com/a.png", "https://example.com/b.png"],
-            },
+            _WAN,
+            json=_wan_body(
+                first_frame="https://example.com/a.png",
+                last_frame="https://example.com/b.png",
+            ),
         ),
         timeout=5,
     )
@@ -666,26 +570,20 @@ async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypa
 
 
 async def test_schema_errors_are_422(generations_app):
-    client, _ = generations_app("tt-ideogram-4")
+    client, _ = _wan_app(generations_app)
     response = await client.post(
-        "/v1/generations/ideogram-ai/ideogram-4",
-        json={"structured_prompt": _CAPTION, "size": "8K", "colour": "red"},
+        _WAN, json=_wan_body(first_frame=_data_uri(), size="8K", colour="red")
     )
     assert response.status_code == 422
     locs = {tuple(error["loc"]) for error in response.json()["detail"]}
     assert {("body", "colour"), ("body", "size")} <= locs
-    other = await client.post("/v1/generations/qwen/qwen-image-edit-2511", json={})
+    other = await client.post(_LTX[1], json={})
     assert other.status_code == 404
 
 
 async def test_cancel_reaches_the_device_worker(generations_app):
-    client, device = generations_app("tt-flux.2-klein-4b", delay=0.5)
-    job = (
-        await client.post(
-            "/v1/generations/black-forest-labs/flux.2-klein-4b",
-            json={"prompt": "a cat"},
-        )
-    ).json()
+    client, device = _ltx_app(generations_app, delay=0.5)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
     while not device.requests:
         await asyncio.sleep(0.01)
     (request,) = device.requests
@@ -697,13 +595,8 @@ async def test_cancel_reaches_the_device_worker(generations_app):
 
 
 async def test_cancel_and_delete_rules(generations_app):
-    client, _ = generations_app("tt-flux.2-klein-4b", delay=0.5)
-    job = (
-        await client.post(
-            "/v1/generations/black-forest-labs/flux.2-klein-4b",
-            json={"prompt": "a cat"},
-        )
-    ).json()
+    client, _ = _ltx_app(generations_app, delay=0.5)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
 
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 409
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
@@ -718,29 +611,10 @@ async def test_cancel_and_delete_rules(generations_app):
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
 
 
-async def test_ideogram_gets_the_serialized_caption(generations_app):
-    client, device = generations_app("tt-ideogram-4")
-    response = await client.post(
-        "/v1/generations/ideogram-ai/ideogram-4",
-        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9", "size": "1K"},
-    )
-    job = await _wait_final(client, response.json()["id"])
-    caption = (
-        '{"compositional_deconstruction":{"background":"a brick wall",'
-        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN"}]}}'
-    )
-    assert device.requests[0]._prompt == caption
-    (output,) = job["outputs"]
-    assert output["prompt"] == caption
-    assert (output["width"], output["height"]) == (1280, 720)
-
-
 async def test_failed_job_reports_error(generations_app, tmp_path):
-    client, device = generations_app("tt-flux.2-klein-4b")
+    client, device = _ltx_app(generations_app)
     device.error = RuntimeError("device fell over")
-    response = await client.post(
-        "/v1/generations/black-forest-labs/flux.2-klein-4b", json={"prompt": "a cat"}
-    )
+    response = await client.post(_LTX[1], json={"prompt": "a cat"})
     job = await _wait_final(client, response.json()["id"])
     assert job["status"] == "failed" and "outputs" not in job
     assert job["error"] == {"code": "processing_error", "message": "device fell over"}
@@ -749,14 +623,193 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+_LTX = ("tt-ltx-2.3-distilled", "/v1/generations/lightricks/ltx-2.3-22b-distilled")
+_WAN = "/v1/generations/wan-ai/wan2.2-i2v-a14b"
+
+
+def _ltx_app(generations_app, delay: float = 0.0):
+    """LTX, whose fake device returns a short clip instead of the full shape."""
+    client, device = generations_app(_LTX[0], delay=delay)
+    device.video = lambda request: _sound_video(9, 16000, 25)
+    return client, device
+
+
+def _wan_body(**fields) -> dict:
+    return {"prompt": "x", "aspect_ratio": "16:9", "size": "480p", **fields}
+
+
+@pytest.fixture
+def video_stats(monkeypatch):
+    """The VideoGenerationStats the jobs report."""
+    from model_services import generation_service
+
+    stats = []
+    client = SimpleNamespace(record_video_generation_async=stats.append)
+    monkeypatch.setattr(generation_service, "get_telemetry_client", lambda: client)
+    return stats
+
+
+def _sample(name: str, **labels) -> float:
+    from prometheus_client import REGISTRY
+
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
+_RATIO = "tt_media_server_video_requested_aspect_ratio_total"
+_DURATION = "tt_media_server_video_requested_duration_seconds_sum"
+_IN_FLIGHT = "tt_media_server_video_generations_in_progress"
+
+
+@pytest.fixture
+def runner_label(monkeypatch):
+    """Sets the runner the metrics are labelled with. Earlier tests can leave
+    generation_service with another settings object."""
+    from model_services import generation_service
+
+    def set_runner(runner: str) -> None:
+        monkeypatch.setattr(generation_service.settings, "model_runner", runner)
+
+    return set_runner
+
+
+async def test_a_completed_job_reports_its_video(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    before = {
+        ratio: _sample(_RATIO, **labels, aspect_ratio=ratio)
+        for ratio in ("unset", "16:9")
+    }
+    durations = _sample(_DURATION, **labels)
+    client, device = _ltx_app(generations_app, delay=0.2)
+    response = await client.post(_LTX[1], json={"prompt": "a violinist"})
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    assert _sample(_IN_FLIGHT, **labels) == 1
+    assert (await _wait_final(client, response.json()["id"]))["status"] == "completed"
+
+    (stats,) = video_stats
+    assert (stats.status, stats.request_type) == ("success", "t2v")
+    # The fake device's clip: 9 frames of 64x64 at 25 fps.
+    assert (stats.width, stats.height, stats.num_frames) == (64, 64, 9)
+    assert stats.content_seconds == 9 / 25 and stats.output_bytes > 0
+    assert _sample(_IN_FLIGHT, **labels) == 0
+    # Omitted fields count as unset, not as the defaults the model fills in.
+    assert _sample(_RATIO, **labels, aspect_ratio="unset") == before["unset"] + 1
+    assert _sample(_DURATION, **labels) == durations
+
+    body = {"prompt": "a violinist", "aspect_ratio": "16:9", "duration": 6}
+    response = await client.post(_LTX[1], json=body)
+    await _wait_final(client, response.json()["id"])
+    assert _sample(_RATIO, **labels, aspect_ratio="16:9") == before["16:9"] + 1
+    assert _sample(_DURATION, **labels) == durations + 6
+
+
+async def test_failed_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label("tt-wan2.2-i2v")
+    client, device = generations_app("tt-wan2.2-i2v")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
+    await _wait_final(client, response.json()["id"])
+    # H3 carries its keyframes as files, not pixels.
+    runner_label("tt-minimax-h3-fl2va")
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={
+            "prompt": "x",
+            "first_frame": _data_uri(600, 800),
+            "last_frame": _data_uri(600, 800),
+        },
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    assert [(s.status, s.request_type) for s in video_stats] == [("failure", "i2v")] * 2
+    assert [s.conditioning_images for s in video_stats] == [1, 2]
+    assert all(s.width is None for s in video_stats)
+    for runner in ("tt-wan2.2-i2v", "tt-minimax-h3-fl2va"):
+        assert _sample(_IN_FLIGHT, model_type=runner, request_type="i2v") == 0
+
+
+async def _wait_for_stats(video_stats, count: int) -> None:
+    for _ in range(100):
+        if len(video_stats) == count:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_cancelled_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    # Cancelled while running: the runner returns, the job ends cancelled.
+    client, device = _ltx_app(generations_app, delay=0.5)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 1)
+    # Cancelled while queued: the job's task is cancelled.
+    client, device = _ltx_app(generations_app)
+    device.queued = 5.0
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 2)
+    assert [s.status for s in video_stats] == ["cancelled"] * 2
+    assert _sample(_IN_FLIGHT, **labels) == 0
+
+
+async def test_image_jobs_report_no_video_metrics(
+    generations_app, video_stats, runner_label
+):
+    runner = "tt-qwen-image-edit-2511"
+    runner_label(runner)
+    client, device = generations_app(runner)
+    body = {"prompt": "add a hat", "images": [_data_uri()]}
+    url = "/v1/generations/qwen/qwen-image-edit-2511"
+    job = (await client.post(url, json=body)).json()
+    assert (await _wait_final(client, job["id"]))["status"] == "completed"
+    device.error = RuntimeError("device fell over")
+    job = (await client.post(url, json=body)).json()
+    assert (await _wait_final(client, job["id"]))["status"] == "failed"
+    assert video_stats == []
+    labels = {"model_type": runner, "request_type": "i2v"}
+    assert _sample(_RATIO, **labels, aspect_ratio="unset") == 0
+    assert _sample(_IN_FLIGHT, **labels) == 0
+
+
+@pytest.mark.parametrize(
+    ("runner", "forwards"),
+    [
+        ("tt-wan2.2-i2v", 40),
+        ("tt-ltx-2.3-distilled", 11),
+        ("tt-minimax-h3-fl2va", 49),
+        ("tt-minimax-h3-ref2va", 49),
+        ("tt-minimax-h3-fl2va-lightx2v", 4),
+        ("tt-minimax-h3-ref2va-lightx2v", 4),
+    ],
+)
+def test_video_metrics_count_the_forwards_each_runner_runs(runner, forwards):
+    from config.constants import video_executed_inference_steps
+
+    assert video_executed_inference_steps(None, runner) == forwards
+
+
 async def test_a_generations_dir_in_any_spelling_works(
     generations_app, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("TT_GENERATIONS_DIR", f"{tmp_path}//./")
-    client, _ = generations_app("tt-flux.2-klein-4b")
-    response = await client.post(
-        "/v1/generations/black-forest-labs/flux.2-klein-4b", json={"prompt": "a cat"}
-    )
+    client, _ = _ltx_app(generations_app)
+    response = await client.post(_LTX[1], json={"prompt": "a cat"})
     job = await _wait_final(client, response.json()["id"])
     assert job["status"] == "completed", job
     assert (tmp_path / job["id"] / "outputs.json").exists()
@@ -789,10 +842,9 @@ async def test_what_a_runner_leaves_in_a_failed_jobs_directory_goes_with_it(
 async def test_oversized_images_are_422(generations_app, monkeypatch, size, status):
     # Over the limit (12x12) and over twice it, where PIL itself refuses (20x20).
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
-    client, _ = generations_app("tt-qwen-image-edit-2511")
+    client, _ = _wan_app(generations_app)
     response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": [_data_uri(size, size)]},
+        _WAN, json=_wan_body(first_frame=_data_uri(size, size))
     )
     assert response.status_code == status, response.text
     if status == 422:
@@ -808,28 +860,22 @@ def test_generation_job_type_and_manifest_roundtrip(tmp_path):
 
 
 async def test_an_earlier_output_is_not_an_input(generations_app):
-    client, _ = generations_app("tt-qwen-image-edit-2511")
+    client, _ = _wan_app(generations_app)
     first = (
-        await client.post(
-            "/v1/generations/qwen/qwen-image-edit-2511",
-            json={"prompt": "a hat", "images": [_data_uri(1600, 900)]},
-        )
+        await client.post(_WAN, json=_wan_body(first_frame=_data_uri(1600, 900)))
     ).json()
     (output,) = (await _wait_final(client, first["id"]))["outputs"]
 
-    response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "a scarf", "images": [output["url"]]},
-    )
+    response = await client.post(_WAN, json=_wan_body(first_frame=output["url"]))
     assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["body", "images", 0]
+    assert response.json()["detail"][0]["loc"] == ["body", "first_frame"]
 
 
 def test_stored_request_digests_data_uris():
     from model_services.generation_service import _request_parameters
 
     image = _data_uri()
-    request = QwenImageEdit2511Request(
+    request = MiniMaxH3Ref2VARequest(
         prompt="x", images=[image, "DATA" + image[4:], "https://x/a.png"]
     )
     digest, upper_digest, url = _request_parameters(request)["images"]
@@ -850,10 +896,8 @@ def test_images_are_turned_upright():
 
 
 async def test_lost_outputs_are_404(generations_app, tmp_path):
-    client, _ = generations_app("tt-flux.2-klein-4b")
-    response = await client.post(
-        "/v1/generations/black-forest-labs/flux.2-klein-4b", json={"prompt": "a cat"}
-    )
+    client, _ = _ltx_app(generations_app)
+    response = await client.post(_LTX[1], json={"prompt": "a cat"})
     job = await _wait_final(client, response.json()["id"])
     for path in (tmp_path / job["id"]).iterdir():
         path.unlink()
@@ -879,13 +923,8 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
         return write_outputs(self, request, results)
 
     monkeypatch.setattr(GenerationService, "_write_outputs", slow_write)
-    client, _ = generations_app("tt-flux.2-klein-4b")
-    job = (
-        await client.post(
-            "/v1/generations/black-forest-labs/flux.2-klein-4b",
-            json={"prompt": "a cat"},
-        )
-    ).json()
+    client, _ = _ltx_app(generations_app)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
     await asyncio.to_thread(writing.wait, 5)
     await client.post(f"/v1/jobs/{job['id']}/cancel")
     release.set()
@@ -894,6 +933,62 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
     assert not (tmp_path / job["id"]).exists()
+
+
+# --- Qwen-Image-Edit-2511 --------------------------------------------------------
+
+
+def test_qwen_size_follows_last_image():
+    request = QwenImageEdit2511Request(
+        prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
+    )
+    assert request.negative_prompt == " "
+    _with_images(request, images=[(1000, 1000), (1600, 900)])
+    assert request.output_size() == (1376, 768)
+    request.aspect_ratio = "3:4"
+    assert request.output_size() == (896, 1184)
+
+
+@pytest.mark.parametrize(
+    "fields", [{"images": ["https://x/a.png"] * 4}, {"count": 2}, {"size": "1K"}]
+)
+def test_qwen_rejects(fields):
+    with pytest.raises(ValidationError):
+        QwenImageEdit2511Request(
+            prompt="x", **{"images": ["https://x/a.png"], **fields}
+        )
+
+
+async def test_image_job(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={
+            "prompt": "add a hat",
+            "images": [_data_uri(1600, 900)],
+            "seed": 7,
+            "format": "jpeg",
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    (request,) = device.requests
+    assert request.negative_prompt == " "
+
+    (output,) = job["outputs"]
+    assert output == {
+        "type": "image",
+        "url": f"/v1/jobs/{job['id']}/content/0",
+        "content_type": "image/jpeg",
+        "seed": 7,
+        "prompt": "add a hat",
+        "width": 1376,
+        "height": 768,
+    }
+    content = await client.get(output["url"])
+    assert content.headers["content-type"] == "image/jpeg"
+    assert Image.open(BytesIO(content.content)).size == (1376, 768)
 
 
 # --- MiniMax-H3 ------------------------------------------------------------------
@@ -1215,3 +1310,158 @@ def test_the_service_downloads_no_weights(monkeypatch):
     )
     base_service.BaseService.__init__(object.__new__(GenerationService))
     assert downloads == []
+
+
+# --- Ideogram 4 ------------------------------------------------------------------
+
+_CAPTION = {
+    "compositional_deconstruction": {
+        "background": "a brick wall",
+        "elements": [{"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40]}],
+    }
+}
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"aspect_ratio": "16:9"}, (2048, 1152)),
+        ({"aspect_ratio": "2:3", "size": "2K"}, (1360, 2048)),
+    ],
+)
+def test_ideogram_output_size(fields, expected):
+    request = Ideogram4Request(structured_prompt=_CAPTION, **fields)
+    assert request.output_size() == expected
+    assert len(set(Ideogram4Request.warmup_sizes())) == 4
+
+
+@pytest.mark.parametrize("fields", [{"size": "1K"}, {"aspect_ratio": "3:2"}])
+def test_ideogram_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(structured_prompt=_CAPTION, **fields)
+
+
+def test_ideogram_caption_is_written_in_the_model_key_order():
+    request = Ideogram4Request(
+        structured_prompt={
+            "compositional_deconstruction": {
+                "elements": [{"desc": "d", "bbox": [0, 0, 1, 1], "type": "obj"}],
+                "background": "b",
+            },
+            "style_description": {
+                "medium": "m",
+                "photo": "p",
+                "lighting": "l",
+                "aesthetics": "a",
+            },
+            "high_level_description": "Ein Café",
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"Ein Café",'
+        '"style_description":{"aesthetics":"a","lighting":"l","photo":"p","medium":"m"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","bbox":[0,0,1,1],"desc":"d"}]}}'
+    )
+
+
+@pytest.mark.parametrize(
+    ("caption", "message"),
+    [
+        (
+            {"compositional_deconstruction": {"background": "b", "elements": [
+                {"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}
+            ]}},
+            "ymin <= ymax",
+        ),
+        (
+            {
+                "style_description": {
+                    "aesthetics": "a",
+                    "lighting": "l",
+                    "medium": "m",
+                    "photo": "p",
+                    "art_style": "s",
+                },
+                **_CAPTION,
+            },
+            "exactly one of photo and art_style",
+        ),
+        (
+            {"compositional_deconstruction": {"background": "b", "elements": [
+                {"type": "obj", "desc": "d", "color_palette": ["#ff0000"]}
+            ]}},
+            "pattern",
+        ),
+        ({"caption": "plain"}, "extra"),
+    ],
+)  # fmt: skip
+def test_ideogram_rejects_invalid_captions(caption, message):
+    with pytest.raises(ValidationError, match=message):
+        Ideogram4Request(structured_prompt=caption)
+
+
+def test_ideogram_has_no_plain_prompt():
+    with pytest.raises(ValidationError, match="extra"):
+        Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
+
+
+async def test_ideogram_gets_the_serialized_caption(generations_app):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    caption = (
+        '{"compositional_deconstruction":{"background":"a brick wall",'
+        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN"}]}}'
+    )
+    assert device.requests[0]._prompt == caption
+    (output,) = job["outputs"]
+    assert output["prompt"] == caption
+    assert (output["width"], output["height"]) == (2048, 1152)
+
+
+# --- FLUX.3 Image klein ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"size": "4K"}, (4096, 4096)),
+    ],
+)
+def test_flux3_output_size(fields, expected):
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+@pytest.mark.parametrize(
+    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+)
+def test_flux3_serves_one_square_shape_per_size(fields):
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
+
+
+async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
+    process = _FakeDevice.process
+
+    async def upsampled(self, request):
+        image = await process(self, request)
+        image.info["prompt"] = "a detailed caption"
+        return image
+
+    monkeypatch.setattr(_FakeDevice, "process", upsampled)
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "a cat", "size": "1K"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert device.requests[0]._prompt == "a cat"
+    (output,) = job["outputs"]
+    assert output["prompt"] == "a detailed caption"

@@ -206,8 +206,7 @@ def build_video_generation_payload(
             "seed": 0,
         }
         if "Ref2VA" in model_name:
-            # The Ref2VA adapter is 544p-trained; let the server pick the
-            # canvas for 16:9.
+            # Let the server pick the canvas for 16:9.
             payload.update(
                 aspect_ratio="16:9", images=[fixture_image_data_uri(image_b64)]
             )

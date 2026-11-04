@@ -18,11 +18,12 @@ class SupportedModels(Enum):
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
     FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
+    FLUX_3_IMAGE_KLEIN = "black-forest-labs/flux-3-image-klein"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
+    IDEOGRAM_4 = "ideogram-ai/ideogram-4-fp8"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     QWEN_IMAGE_EDIT_2511 = "Qwen/Qwen-Image-Edit-2511"
-    IDEOGRAM_4 = "ideogram-ai/ideogram-4-fp8"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
@@ -76,11 +77,12 @@ class ModelNames(Enum):
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
     FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
+    FLUX_3_IMAGE_KLEIN = "flux-3-image-klein"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
+    IDEOGRAM_4 = "ideogram-4"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
     QWEN_IMAGE_EDIT_2511 = "Qwen-Image-Edit-2511"
-    IDEOGRAM_4 = "ideogram-4"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
@@ -135,12 +137,13 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
+    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
+    TT_FLUX_3_IMAGE_KLEIN = "tt-flux-3-image-klein"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
+    TT_IDEOGRAM_4 = "tt-ideogram-4"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_QWEN_IMAGE_EDIT_2511 = "tt-qwen-image-edit-2511"
-    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
-    TT_IDEOGRAM_4 = "tt-ideogram-4"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
@@ -204,13 +207,14 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.GENERATION: {
         ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_QWEN_IMAGE_EDIT_2511,
-        ModelRunners.TT_FLUX_2_KLEIN_4B,
-        ModelRunners.TT_IDEOGRAM_4,
         ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
+        ModelRunners.TT_FLUX_2_KLEIN_4B,
+        ModelRunners.TT_FLUX_3_IMAGE_KLEIN,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
+        ModelRunners.TT_IDEOGRAM_4,
     },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
@@ -304,11 +308,27 @@ WAN22_ANISORA_NUM_STEPS = 8
 # The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
 # counts sigma grid points, which is one more than the forward count.
 MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
+# The generations API takes no step count: these models run their reference
+# defaults.
+WAN22_I2V_A14B_NUM_STEPS = 40
+MINIMAX_H3_NUM_INFERENCE_STEPS = 50
+# LTX-2.3 distilled fixes its own schedules: 8 forwards at half resolution,
+# then 3 at full (tt_dit's DISTILLED_SIGMA_VALUES, STAGE_2_DISTILLED_SIGMA_VALUES).
+LTX23_DISTILLED_NUM_FORWARDS = 8 + 3
+# H3's step counts are grid points, one more than the forwards it runs.
+_MINIMAX_H3_FORWARDS = MINIMAX_H3_NUM_INFERENCE_STEPS - 1
+_MINIMAX_H3_LIGHTX2V_FORWARDS = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS - 1
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V: WAN22_I2V_A14B_NUM_STEPS,
+    ModelRunners.TT_LTX_2_3_DISTILLED: LTX23_DISTILLED_NUM_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
 }
 
 
@@ -340,12 +360,13 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
+    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN: {ModelNames.FLUX_3_IMAGE_KLEIN},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
+    ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
-    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
-    ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
@@ -958,6 +979,36 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -985,6 +1036,19 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
+    },
+    # The meshes Ideogram4Pipeline has parallelism presets for.
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -1025,43 +1089,6 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 2),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
-    # The meshes Ideogram4Pipeline has parallelism presets for.
-    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
