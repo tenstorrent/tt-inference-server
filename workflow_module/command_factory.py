@@ -325,7 +325,6 @@ def _build_agentic_traces_options(
         mode=getattr(args, "agentic_traces_mode", None) or "full",
         trace_sources=getattr(args, "agentic_traces_sources", None),
         duration_override=getattr(args, "agentic_traces_duration", None),
-        git_ref_override=getattr(args, "agentic_traces_git_ref", None),
         metrics_urls=tuple(getattr(args, "agentic_traces_metrics_url", None) or ()),
         auth_token=_resolve_auth_token(args),
         venv_python=(

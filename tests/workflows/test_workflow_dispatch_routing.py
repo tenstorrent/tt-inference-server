@@ -48,7 +48,6 @@ def _rc(workflow="benchmarks", **kw):
         agentic_traces_mode="full",
         agentic_traces_sources=None,
         agentic_traces_duration=None,
-        agentic_traces_git_ref=None,
         agentic_traces_metrics_url=None,
         tools="aiperf",
         jwt_secret=None,
@@ -426,7 +425,6 @@ def test_agentic_traces_builds_its_own_launcher_command(monkeypatch, tmp_path):
         agentic_traces_mode="ci",
         agentic_traces_sources="inferencex_agentx",
         agentic_traces_duration=1200,
-        agentic_traces_git_ref="9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
         jwt_secret="sek",
     )
     monkeypatch.setattr(
@@ -437,18 +435,13 @@ def test_agentic_traces_builds_its_own_launcher_command(monkeypatch, tmp_path):
 
     assert len(commands) == 1
     argv = commands[0].argv
-    # venv_type is None: run_agentic_traces.py re-execs into AGENTIC_TRACES itself
-    # (it must resolve the ModelSpec first to know which ref to check out).
+    # venv_type is None: run_agentic_traces.py re-execs into AGENTIC_TRACES itself.
     assert commands[0].venv_type is None
     assert "run_agentic_traces.py" in argv[0]
     assert argv[argv.index("--workflow") + 1] == "agentic_traces"
     assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
     assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
     assert argv[argv.index("--agentic-traces-duration") + 1] == "1200"
-    assert (
-        argv[argv.index("--agentic-traces-git-ref") + 1]
-        == "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-    )
     assert argv[argv.index("--jwt-secret") + 1] == "sek"
 
 
@@ -464,7 +457,6 @@ def test_agentic_traces_omits_unset_overrides(monkeypatch, tmp_path):
     for flag in (
         "--agentic-traces-sources",
         "--agentic-traces-duration",
-        "--agentic-traces-git-ref",
         "--agentic-traces-metrics-url",
         "--jwt-secret",
     ):
@@ -662,7 +654,6 @@ def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
         agentic_traces_mode="ci",
         agentic_traces_sources="inferencex_agentx",
         agentic_traces_duration=900,
-        agentic_traces_git_ref="e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
     )
     _patch_engine_dispatch(monkeypatch, tmp_path)
 
@@ -673,10 +664,6 @@ def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
     assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
     assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
     assert argv[argv.index("--agentic-traces-duration") + 1] == "900"
-    assert (
-        argv[argv.index("--agentic-traces-git-ref") + 1]
-        == "e2dcfa91c86936cc011e3be0668eb3b1ca17288f"
-    )
 
 
 def test_agentic_forwards_benchmark_selection(monkeypatch, tmp_path):

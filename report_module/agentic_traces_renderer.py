@@ -168,8 +168,8 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("trajectory_start_min_ratio", "Trajectory Start Min"),
     ("trajectory_start_max_ratio", "Trajectory Start Max"),
     ("random_seed", "Random Seed"),
-    ("agentx_git_ref", "Client Ref"),
-    # Payloads from before the agentx-harness pin, which pinned InferenceX.
+    # Payloads from before agentx-harness came from PyPI, which pinned the
+    # InferenceX revision that vendored the client.
     ("inferencex_git_ref", "InferenceX Ref"),
     ("aiperf_version", "AIPerf Version"),
     ("swo_bench_version", "swo-bench Version"),
@@ -524,22 +524,20 @@ def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
     paragraphs: List[str] = []
 
     if INFERENCEX_SOURCE in sources:
-        agentx_ref = _resolve_field(rows, "agentx_git_ref")
-        if agentx_ref:
-            client = (
-                "SemiAnalysis's AIPerf fork "
-                "[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness)"
-                f" pinned at `{agentx_ref}`"
-            )
-        else:
-            # Payloads from before the agentx-harness pin carry only the
-            # InferenceX revision that vendored the fork.
-            legacy_ref = _resolve_field(rows, "inferencex_git_ref")
-            ref_note = f" pinned at `{legacy_ref}`" if legacy_ref else ""
+        legacy_ref = _resolve_field(rows, "inferencex_git_ref")
+        if legacy_ref:
             client = (
                 "the AIPerf fork vendored in "
                 "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
-                f"{ref_note}"
+                f" pinned at `{legacy_ref}`"
+            )
+        else:
+            version = _resolve_field(rows, "aiperf_version")
+            version_note = f" v{version}" if version else ""
+            client = (
+                "SemiAnalysis's AIPerf fork "
+                "[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness)"
+                f"{version_note}"
             )
         paragraphs.append(
             f"**`inferencex_agentx` rows:** {client}, driving the "

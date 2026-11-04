@@ -472,8 +472,8 @@ def parse_args() -> argparse.Namespace:
     # ad-hoc overrides, and are wired through CommandFactory ->
     # OrchestratorMetadata.agentic_traces. Standalone runs launch through
     # run_agentic_traces.py so the AGENTIC_TRACES venv (with agentx-harness
-    # checked out at the pinned ref) exists before the client is needed; release pins
-    # that venv explicitly for its in-process agentic-traces child.
+    # installed at the pinned version) exists before the client is needed;
+    # release pins that venv explicitly for its in-process agentic-traces child.
     parser.add_argument(
         "--agentic-traces",
         action="store_true",
@@ -516,17 +516,6 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Override the mode's profiling duration. The InferenceX scenario "
             "rejects anything below 900s."
-        ),
-    )
-    parser.add_argument(
-        "--agentic-traces-git-ref",
-        type=str,
-        default=None,
-        metavar="REF",
-        help=(
-            "Override the agentx-harness revision cloned into the AGENTIC_TRACES "
-            "venv. Defaults to the ref pinned for the ModelSpec; results are "
-            "only comparable across runs on the same ref."
         ),
     )
     parser.add_argument(
@@ -607,7 +596,6 @@ def parse_args() -> argparse.Namespace:
     agentic_traces_flags = (
         args.agentic_traces_sources,
         args.agentic_traces_duration,
-        args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,
     )
     if any(f is not None for f in agentic_traces_flags) and not (

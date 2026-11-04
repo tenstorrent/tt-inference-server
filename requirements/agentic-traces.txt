@@ -5,44 +5,37 @@
 # Dependencies for the AGENTIC_TRACES venv (Python 3.12): the agentic
 # trace-replay benchmark driven by SemiAnalysis's agentx-harness AIPerf fork.
 #
-# Deliberately does NOT list `aiperf` or `agentx-harness`, and deliberately
-# does NOT include llm-aiperf.txt the way prefix-cache.txt does. The client is
-# installed editable from a pinned agentx-harness git checkout by
-# `setup_agentic_traces` in workflows/workflow_venvs.py; a PyPI `aiperf` here
-# would shadow it, and llm-aiperf.txt's torch==2.4.0+cpu pin is a constraint of
-# the released aiperf, not of the fork (which needs no torch at all).
+# Does NOT include llm-aiperf.txt the way prefix-cache.txt does: the client
+# here is the agentx-harness fork below, which ships the same `aiperf` package
+# as the released aiperf and would collide with it. llm-aiperf.txt's
+# torch==2.4.0+cpu pin is a constraint of the released aiperf, not of the fork
+# (which needs no torch at all).
 #
-# agentx-harness is on PyPI, but we still clone it for now: we carry local
-# fixes that are not in a release yet (workflows/patches/agentx_harness and
-# _patch_agentic_warmup, tracked in #5253 / #5254), and those are applied to a
-# git checkout. Once they land upstream, replace the clone with an
-# `agentx-harness==<version>` pin here.
-#
-# The agentx-harness install runs as a second, unconstrained `uv pip install`
-# pass: the fork resolves its own pins (notably pillow ~=12.2, which conflicts
-# with the shared pillow==11.1 constraint below), so constraints.txt
-# intentionally applies only to the packages listed here. None of them pull
-# pillow.
-#
-# Everything below is what the orchestrator itself needs -- the fork's own
-# requirements (transformers, numpy, pandas, ...) come from its pyproject.
+# Does NOT apply constraints.txt either: its pillow==11.1 conflicts with the
+# fork's pillow~=12.3. The one other entry that matters here, pyjwt, is pinned
+# below to the same version.
 
--c constraints.txt
+# SemiAnalysis's AIPerf fork that owns the inferencex-agentx-mvp scenario and
+# the Weka trace dataset loaders, so this pin is part of the benchmark
+# definition: results are only comparable across runs on the same version.
+# 1.0.13 is the release InferenceX's own GPU reference runs install
+# (inferencex-e2e/infx/bench/agentic/requirements.txt), and it includes the
+# fixes we used to patch in locally (agentx-harness#49, #67).
+agentx-harness==1.0.13
 
 # Workflow-engine eager import: workflow_module -> test_module.context ->
 # health_tests uses aiohttp at module top.
 aiohttp
 
 # JWT minting for a JWT-protected inference server.
-pyjwt
+pyjwt==2.7.0
 
 # HTTP clients used by the readiness probes and dataset download.
 requests
 urllib3
 
 # Weka trace datasets are pulled from the Hugging Face Hub. The datasets floor
-# matches InferenceX's AgentX requirements (agentx-harness==1.0.9 alongside
-# datasets>=4.7.0).
+# matches InferenceX's AgentX requirements.
 datasets>=4.7.0
 huggingface_hub[cli]>=0.25.0
 
@@ -54,9 +47,7 @@ blobfile
 
 # SwarmOne swo-bench replay client (TraceSource.SWARMONE). It replays recorded
 # Claude-Code / Codex coding sessions against the endpoint; the replay plan is
-# built server-side by the SwarmOne backend. Unlike the InferenceX AIPerf fork
-# this is a normal PyPI package, so it installs here rather than via a git
-# checkout. A SwarmOne license (SWO_LICENSE_KEY / ~/.swarmone/license.key) is
+# built server-side by the SwarmOne backend. A SwarmOne license (SWO_LICENSE_KEY / ~/.swarmone/license.key) is
 # required at run time, checked up front in run.py.
 #
 # Deliberately unpinned: SwarmOne keeps only the latest release on PyPI and

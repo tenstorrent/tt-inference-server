@@ -93,8 +93,7 @@ def _record(**overrides):
         "branch_joins_suppressed": 0,
         "dataset_num_entries": 32,
         "dataset_hf_name": "semianalysisai/cc-traces-weka-062126-256k",
-        "agentx_git_ref": "e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
-        "aiperf_version": "0.8.0",
+        "aiperf_version": "1.0.13",
         "benchmark_id": "a70d73f2-53f3-431a-ab89-1f118bcd505f",
         "run_started_at": "2026-07-29T10:25:09.055955",
         "run_ended_at": "2026-07-29T10:40:39.061471",
@@ -254,7 +253,7 @@ class TestConfigTable:
     def test_client_run_identifiers_are_carried(self):
         """A number is only reproducible alongside the client that produced it."""
         config = _render(_record()).split("#### Run Configuration")[1]
-        assert "0.8.0" in config
+        assert "1.0.13" in config
         assert "a70d73f2-53f3-431a-ab89-1f118bcd505f" in config
 
 
@@ -270,28 +269,21 @@ class TestFormatting:
         assert "0.25" in out and "0.75" in out
         assert "0.10" in out
 
-    def test_client_ref_is_full_in_both_the_preamble_and_the_config_table(self):
-        """The transposed config table has the room the old one did not."""
+    def test_the_blurb_credits_agentx_harness_at_the_version_it_ran(self):
         out = _render(_record())
-        assert (
-            "| Client Ref           | e2dcfa91c86936cc011e3be0668eb3b1ca17288f" in out
-        )
-        assert "pinned at `e2dcfa91c86936cc011e3be0668eb3b1ca17288f`" in out
-
-    def test_the_blurb_credits_agentx_harness(self):
-        out = _render(_record())
-        assert "github.com/SemiAnalysisAI/agentx-harness" in out
+        assert "github.com/SemiAnalysisAI/agentx-harness) v1.0.13" in out
         assert "vendored in [InferenceX]" not in out
 
     def test_a_pre_agentx_harness_payload_keeps_its_inferencex_attribution(self):
         """Re-rendering an old report must not credit a client it never ran."""
-        record = _record(inferencex_git_ref="8f12037728d6fc118422318d5472f147dcc2a291")
-        del record["agentx_git_ref"]
+        record = _record(
+            inferencex_git_ref="8f12037728d6fc118422318d5472f147dcc2a291",
+            aiperf_version="0.8.0",
+        )
         out = _render(record)
         assert "vendored in [InferenceX]" in out
         assert "pinned at `8f12037728d6fc118422318d5472f147dcc2a291`" in out
         assert "| InferenceX Ref" in out
-        assert "| Client Ref" not in out
         assert "agentx-harness" not in out
 
     def test_counts_render_as_integers(self):

@@ -977,10 +977,9 @@ class RequirementsTargetPack(TargetPack):
         config: Any,
         *,
         trace_sources: Any = None,
-        git_ref_override: Optional[str] = None,
     ) -> Any:
         return self._delegate.resolve_agentic_run_specs(
-            config, trace_sources=trace_sources, git_ref_override=git_ref_override
+            config, trace_sources=trace_sources
         )
 
     def agentic_traces_min_profile_seconds(self) -> int:

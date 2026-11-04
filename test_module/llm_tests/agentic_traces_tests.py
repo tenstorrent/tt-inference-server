@@ -74,7 +74,6 @@ def run_agentic_traces(
     mode: str = "full",
     trace_sources: Optional[str] = None,
     duration_override: Optional[int] = None,
-    git_ref_override: Optional[str] = None,
     metrics_urls: Sequence[str] = (),
     auth_token: str = "",
     venv_python: Optional[Path] = None,
@@ -95,9 +94,8 @@ def run_agentic_traces(
     trace_sources:
         Comma-separated :class:`TraceSource` names narrowing which configured
         runs execute. ``None`` runs every configured run.
-    duration_override / git_ref_override:
-        Ad-hoc overrides for the mode's ``benchmark_duration`` and the config's
-        pinned agentx-harness revision.
+    duration_override:
+        Ad-hoc override for the mode's ``benchmark_duration``.
     metrics_urls:
         Extra Prometheus ``/metrics`` endpoints holding the prefix-cache
         counters, for a deployment whose load target does not expose them.
@@ -134,13 +132,11 @@ def run_agentic_traces(
     try:
         traces_mode = AgenticTracesMode.from_string(mode) or AgenticTracesMode.FULL
         selected_sources = _parse_trace_sources(trace_sources)
-        effective_config, run_specs = get_target_pack().resolve_agentic_run_specs(
-            config,
-            trace_sources=selected_sources,
-            git_ref_override=git_ref_override,
+        run_specs = get_target_pack().resolve_agentic_run_specs(
+            config, trace_sources=selected_sources
         )
         runs = build_runs(
-            effective_config,
+            config,
             spec,
             mode=traces_mode,
             run_specs=run_specs,
@@ -161,13 +157,6 @@ def run_agentic_traces(
         return result
 
     logger.info(summarize_runs(runs))
-    # The pinned agentx-harness ref only matters when an InferenceX AgentX run
-    # is planned; a swarmone-only sweep never clones it.
-    if any(run.trace_source is TraceSource.INFERENCEX_AGENTX for run in runs):
-        logger.info(
-            "[agentic-traces] agentx-harness client pinned at %s",
-            effective_config.agentx_git_ref,
-        )
 
     output_root = Path(ctx.output_path) / output_subdir
     output_root.mkdir(parents=True, exist_ok=True)

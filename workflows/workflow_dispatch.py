@@ -563,11 +563,6 @@ def _forward_agentic_traces(cmd, runtime_config) -> None:
         "--agentic-traces-duration",
         getattr(runtime_config, "agentic_traces_duration", None),
     )
-    _extend_if_set(
-        cmd,
-        "--agentic-traces-git-ref",
-        getattr(runtime_config, "agentic_traces_git_ref", None),
-    )
     _forward_agentic_traces_metrics_urls(cmd, runtime_config)
 
 
@@ -679,11 +674,6 @@ def _build_agentic_traces_cmd(
         cmd,
         "--agentic-traces-duration",
         getattr(runtime_config, "agentic_traces_duration", None),
-    )
-    _extend_if_set(
-        cmd,
-        "--agentic-traces-git-ref",
-        getattr(runtime_config, "agentic_traces_git_ref", None),
     )
     _forward_agentic_traces_metrics_urls(cmd, runtime_config)
     _forward_jwt(cmd, runtime_config)
@@ -856,8 +846,8 @@ def _engine_dependency_venv_types(
         if getattr(runtime_config, "spec_decode", False):
             venv_types.append(WorkflowVenvType.SPEC_DECODE)
         # Same for the agentic-traces release child: its client is the AIPerf
-        # fork in the agentx-harness checkout, and that clone + install is what
-        # the AGENTIC_TRACES venv setup performs.
+        # fork from agentx-harness, and that install is what the
+        # AGENTIC_TRACES venv setup performs.
         if getattr(runtime_config, "agentic_traces", False):
             venv_types.append(WorkflowVenvType.AGENTIC_TRACES)
         # The agentic release child resolves the harbor CLI from the

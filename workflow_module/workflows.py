@@ -232,7 +232,7 @@ class AgenticTracesWorkflow(WorkflowExecution):
     A benchmark, not an eval: it replays recorded multi-turn coding traces
     against the server and reports serving latency/throughput under that shape.
     Bypasses the media-task dispatcher because the client is the AIPerf fork
-    from the pinned agentx-harness checkout rather than a media runner, and its
+    from the pinned agentx-harness release rather than a media runner, and its
     parameters come from the per-ModelSpec config in
     ``reference_config/agentic_traces`` rather than an ISL/OSL sweep table.
     Emits one Block(kind="agentic_traces") per run.
@@ -261,7 +261,6 @@ class AgenticTracesWorkflow(WorkflowExecution):
                     mode=opts.mode,
                     trace_sources=opts.trace_sources,
                     duration_override=opts.duration_override,
-                    git_ref_override=opts.git_ref_override,
                     metrics_urls=opts.metrics_urls,
                     auth_token=opts.auth_token,
                     venv_python=venv_python,

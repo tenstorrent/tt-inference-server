@@ -207,7 +207,6 @@ def build_runs(
                 env=dict(spec.env),
                 metadata={
                     "model_id": getattr(model_spec, "model_id", ""),
-                    "agentx_git_ref": config.agentx_git_ref,
                     "mode": mode.to_string(),
                 },
             )

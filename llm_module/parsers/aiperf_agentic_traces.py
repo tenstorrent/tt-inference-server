@@ -70,9 +70,7 @@ class AIPerfAgenticTracesParser(LLMResultParser):
 
         metadata = raw.get("metadata") or {}
         if isinstance(metadata, Mapping):
-            # Surface the pinned client revision as a first-class field: an
-            # agentic-trace number is only reproducible alongside it.
-            for key in ("agentx_git_ref", "model_id", "mode"):
+            for key in ("model_id", "mode"):
                 if key in metadata and key not in record:
                     record[key] = metadata[key]
 

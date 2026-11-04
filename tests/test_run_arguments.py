@@ -445,7 +445,6 @@ class TestModelSpecCliArgsCompatibility:
         assert args.agentic_traces_mode == "full"
         assert args.agentic_traces_sources is None
         assert args.agentic_traces_duration is None
-        assert args.agentic_traces_git_ref is None
         # Unset means AIPerf scrapes only the load target's own /metrics.
         assert args.agentic_traces_metrics_url is None
 
@@ -509,7 +508,6 @@ class TestModelSpecCliArgsCompatibility:
         [
             ("--agentic-traces-sources", "inferencex_agentx"),
             ("--agentic-traces-duration", "1800"),
-            ("--agentic-traces-git-ref", "abc123"),
             ("--agentic-traces-metrics-url", "worker-a:9000"),
         ],
     )

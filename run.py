@@ -607,15 +607,6 @@ def parse_arguments():
         "anything below 900s.",
     )
     agentic_traces_group.add_argument(
-        "--agentic-traces-git-ref",
-        type=str,
-        default=None,
-        metavar="REF",
-        help="Override the agentx-harness revision cloned into the AGENTIC_TRACES venv. "
-        "Defaults to the ref pinned for the ModelSpec; results are only comparable "
-        "across runs on the same ref.",
-    )
-    agentic_traces_group.add_argument(
         "--agentic-traces-metrics-url",
         type=str,
         action="append",
@@ -922,7 +913,6 @@ def parse_arguments():
     agentic_traces_overrides = (
         args.agentic_traces_sources,
         args.agentic_traces_duration,
-        args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,
     )
     if any(f is not None for f in agentic_traces_overrides) and not runs_agentic_traces:

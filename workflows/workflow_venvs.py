@@ -3,11 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import shutil
-import subprocess
 import tarfile
 import urllib.error
 import urllib.request
@@ -396,266 +394,46 @@ def check_docker_available(
     return True
 
 
-AGENTX_HARNESS_REPO_URL = "https://github.com/SemiAnalysisAI/agentx-harness.git"
-# Why a git clone and not ``agentx-harness==<version>`` from PyPI: AgentX is
-# published on PyPI since agentx-v1.0.7, and InferenceX itself installs it that
-# way. But we still carry two local fixes (see _AGENTX_HARNESS_PATCH_DIR and
-# _patch_agentic_warmup) that are not in any release yet, and they are applied
-# with ``git apply`` against a checkout. Patching a wheel's site-packages would
-# be fragile and invisible. Once both are upstream, replace this hook with an
-# ``agentx-harness==<version>`` line in requirements/agentic-traces.txt.
-#
-# Records the revision the checkout is currently on, so a repeat run with the
-# same pin skips the fetch + reinstall and a run with a different pin does not.
-_AGENTX_HARNESS_REF_STAMP = ".agentx_harness_ref"
-# Where pins before agentx-v1.0.9 cloned InferenceX (which vendored the harness
-# as utils/aiperf). Removed on the next setup so a stale tree is not mistaken
-# for the client in use.
-_LEGACY_INFERENCEX_DIR = "InferenceX"
-_LEGACY_INFERENCEX_REF_STAMP = ".inferencex_ref"
-# Patches carried here until they land upstream, applied at the root of the
-# agentx-harness checkout in sorted order.
-# TODO(#5254): remove patches/agentx_harness/0001-wait-for-all-service-replicas.patch
-# once agentx-harness rebases onto an aiperf revision that includes
-# https://github.com/ai-dynamo/aiperf/pull/1348 and the pin moves to it. If no
-# patches are left after that, also remove _AGENTX_HARNESS_PATCH_DIR,
-# _agentx_harness_patches, _agentx_harness_stamp, _patch_check,
-# _apply_agentx_harness_patches, their call sites in setup_agentic_traces and
-# tests/test_workflow_venvs_patches.py.
-# https://github.com/tenstorrent/tt-inference-server/issues/5254
-_AGENTX_HARNESS_PATCH_DIR = (
-    Path(__file__).resolve().parent / "patches" / "agentx_harness"
-)
+# Checkouts left by earlier setups that installed the agentic-traces client
+# editable from a clone: InferenceX (which vendored it as utils/aiperf), then
+# agentx-harness itself.
+_LEGACY_AGENTX_CHECKOUTS = ("InferenceX", "agentx-harness")
+_LEGACY_AGENTX_STAMPS = (".inferencex_ref", ".agentx_harness_ref")
 
 
-def _agentx_harness_patches() -> list[Path]:
-    """Every carried patch, in the order it is applied."""
-    if not _AGENTX_HARNESS_PATCH_DIR.is_dir():
-        return []
-    return sorted(_AGENTX_HARNESS_PATCH_DIR.glob("*.patch"))
-
-
-def _agentx_harness_stamp(git_ref: str) -> str:
-    """Ref plus a digest of the carried patches, so a patch change re-runs setup."""
-    patches = _agentx_harness_patches()
-    if not patches:
-        return git_ref
-    digest = hashlib.sha256()
-    for patch in patches:
-        digest.update(patch.name.encode())
-        digest.update(patch.read_bytes())
-    return f"{git_ref}+patches:{digest.hexdigest()[:16]}"
-
-
-def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
-    """Quiet `git apply --check`: these probes are expected to fail on one side."""
-    result = subprocess.run(
-        ["git", "-C", str(target_dir), "apply", "--check", *flags, str(patch)],
-        capture_output=True,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def _apply_agentx_harness_patches(repo_dir: Path, logger: logging.Logger) -> bool:
-    """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
-    for patch in _agentx_harness_patches():
-        # `git apply` outside a work tree ignores every path in the patch and
-        # reports success, so require the checkout's own .git entry.
-        if not (repo_dir / ".git").exists():
-            logger.error("Patch target %s is not a git checkout", repo_dir)
-            return False
-        if _patch_check(repo_dir, patch, "--reverse"):
-            logger.info("Patch %s already applied", patch.name)
-            continue
-        if not _patch_check(repo_dir, patch):
-            logger.error(
-                "Patch %s does not apply to agentx-harness at this ref; drop or "
-                "refresh it against the pinned revision.",
-                patch.name,
-            )
-            return False
-        if (
-            run_command(
-                ["git", "-C", str(repo_dir), "apply", str(patch)], logger=logger
-            )
-            != 0
-        ):
-            return False
-        logger.info("Applied %s", patch.name)
-    return True
-
-
-# agentx-harness pins whose agentic auto-warmup phase is built without
-# ``phase_kind``. fbcfc892 is agentx-v1.0.9, which still is.
-_AGENTIC_WARMUP_PATCH_REFS = frozenset({"fbcfc8923e46d489621d177c50fe05fe792213eb"})
-
-
-def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
-    # Separate auto-warmup from profiling:
-    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
-    # Without ``phase_kind="warmup"`` AIPerf tags the auto-warmup's server
-    # metric baselines as profiling, so warmup counter growth (including the
-    # prompt-token sources the prefix-cache hit rate is computed from) leaks
-    # into the profiling totals.
-    # TODO(#5253): remove this function, _AGENTIC_WARMUP_PATCH_REFS, their call
-    # sites in setup_agentic_traces and tests/workflows/test_agentic_warmup_patch.py
-    # once https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
-    # agentx-harness pin moves to a revision that includes it.
-    # https://github.com/tenstorrent/tt-inference-server/issues/5253
-    if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
-        return True
-    config_path = repo_dir / "src/aiperf/timing/config.py"
-    source = config_path.read_text(encoding="utf-8")
-    old = (
-        "        phase=CreditPhase.WARMUP,\n"
-        "        timing_mode=TimingMode.AGENTIC_REPLAY,\n"
-    )
-    new = old + '        phase_kind="warmup",\n'
-    if source.count(old) != 1:
-        logger.error("Unexpected AIPerf warmup configuration: %s", config_path)
-        return False
-    if new not in source:
-        config_path.write_text(source.replace(old, new, 1), encoding="utf-8")
-    return True
-
-
-def setup_agentic_traces(
+def remove_legacy_agentx_checkout(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for AGENTIC_TRACES: clone agentx-harness at the ModelSpec's pinned ref.
+    """Hook for AGENTIC_TRACES: drop a clone-based client install, once.
 
-    The agentic-trace client is SemiAnalysis's AgentX harness, an AIPerf fork
-    that owns the ``inferencex-agentx-mvp`` scenario and the Weka dataset
-    loaders, so the pinned revision *is* part of the benchmark definition. The
-    ref comes from the per-ModelSpec config rather than a module constant, which
-    is why this runs as a setup hook -- ``VenvConfig.setup`` passes the resolved
-    spec in. See AGENTX_HARNESS_REPO_URL for why this clones instead of
-    installing the PyPI release.
-
-    Re-entrant: an existing checkout already on the configured ref is left
-    alone, and a different ref re-checkouts and re-installs so a run can never
-    silently benchmark a client it was not pinned to.
+    agentx-harness now comes from PyPI via requirements/agentic-traces.txt. A
+    venv set up before that still has the editable ``aiperf`` from a clone,
+    which ships the same package and would shadow the release. Uninstall both
+    and reinstall the requirements, since the editable dist and the release
+    share files such as bin/aiperf.
     """
-    from reference_config.agentic_traces.agentic_traces_config import (
-        TraceSource,
-        get_agentic_traces_config_or_template,
-    )
-
-    # The _or_template variant borrows the Kimi K2.7-Code config for
-    # requirements-driven runs, so the agentx-harness pin is available for them
-    # too.
-    config = get_agentic_traces_config_or_template(model_spec)
-    if config is None:
-        logger.error(
-            "No agentic-traces config registered for model_id=%s. Add an entry "
-            "to reference_config/agentic_traces/agentic_traces_config.py before "
-            "running --workflow agentic_traces for this model.",
-            getattr(model_spec, "model_id", "<unknown>"),
-        )
-        return False
-
-    # The AgentX harness is only needed for inferencex_agentx runs. A config
-    # whose runs are all SwarmOne relies solely on the swo-bench package
-    # installed from agentic-traces.txt, so skip the multi-minute clone/install.
-    if not any(
-        run.trace_source is TraceSource.INFERENCEX_AGENTX for run in config.runs
-    ):
-        logger.info(
-            "No InferenceX AgentX runs configured for model_id=%s; skipping the "
-            "agentx-harness checkout (SwarmOne swo-bench is installed from "
-            "agentic-traces.txt).",
-            getattr(model_spec, "model_id", "<unknown>"),
-        )
+    legacy_dirs = [
+        venv_config.venv_path / name
+        for name in _LEGACY_AGENTX_CHECKOUTS
+        if (venv_config.venv_path / name).is_dir()
+    ]
+    if not legacy_dirs:
         return True
-
-    git_ref = config.agentx_git_ref
-    repo_dir = get_agentx_harness_repo_path(venv_config)
-    stamp_file = venv_config.venv_path / _AGENTX_HARNESS_REF_STAMP
-    stamp = _agentx_harness_stamp(git_ref)
-
-    if repo_dir.is_dir() and stamp_file.is_file():
-        if stamp_file.read_text().strip() == stamp:
-            # The stamp only says the patches were applied at setup time. Check
-            # the tree on every run and re-apply if something reset it, so a
-            # run never silently proceeds without them.
-            if not _apply_agentx_harness_patches(repo_dir, logger):
-                return False
-            logger.info(
-                "agentx-harness already checked out at %s in %s; skipping setup.",
-                git_ref,
-                repo_dir,
-            )
-            return _patch_agentic_warmup(repo_dir, git_ref)
-        logger.info(
-            "agentx-harness checkout is on a different ref than the configured "
-            "%s; re-checking out and reinstalling.",
-            git_ref,
-        )
-
-    legacy_dir = venv_config.venv_path / _LEGACY_INFERENCEX_DIR
-    if legacy_dir.is_dir():
-        logger.info(
-            "Removing the pre-agentx-harness InferenceX checkout %s", legacy_dir
-        )
-        shutil.rmtree(legacy_dir)
-    (venv_config.venv_path / _LEGACY_INFERENCEX_REF_STAMP).unlink(missing_ok=True)
-
-    if not repo_dir.is_dir():
-        if (
-            run_command(
-                f"git clone {AGENTX_HARNESS_REPO_URL} {repo_dir}", logger=logger
-            )
-            != 0
-        ):
-            return False
-
-    # Fetch everything before checkout: a bare `git checkout <sha>` fails on a
-    # shallow/stale clone, and the pin may be newer than the initial clone.
-    if run_command(f"git -C {repo_dir} fetch --tags origin", logger=logger) != 0:
-        return False
-    if run_command(f"git -C {repo_dir} checkout --force {git_ref}", logger=logger) != 0:
-        logger.error(
-            "Could not check out agentx-harness ref %s. Verify the ref exists in %s.",
-            git_ref,
-            AGENTX_HARNESS_REPO_URL,
-        )
-        return False
-    if not _apply_agentx_harness_patches(repo_dir, logger):
-        return False
-
     logger.info(
-        "Installing agentx-harness from a git checkout to carry local patches "
-        "not yet in a PyPI release (see AGENTX_HARNESS_REPO_URL in %s).",
-        Path(__file__).name,
+        "Replacing the clone-based agentx-harness install in %s", venv_config.venv_path
     )
-    logger.warning(
-        "Installing the agentx-harness AIPerf fork; this may take 5 to 15+ "
-        "minutes on first run ..."
+    uninstall_cmd = (
+        f"{UV_EXEC} pip uninstall --python {venv_config.venv_python} "
+        "aiperf agentx-harness"
     )
-    # A separate, unconstrained pass: the fork resolves its own pins (notably
-    # pillow ~=12.2), which conflict with the shared constraints.txt.
-    install_cmd = (
-        f"{UV_EXEC} pip install --managed-python "
-        f"--python {venv_config.venv_python} "
-        f"--index-strategy unsafe-best-match "
-        f"-e {repo_dir}"
-    )
-    if run_command(install_cmd, logger=logger) != 0:
+    if run_command(uninstall_cmd, logger=logger) != 0:
         return False
-
-    if not _patch_agentic_warmup(repo_dir, git_ref):
-        return False
-
-    stamp_file.write_text(f"{stamp}\n")
-    logger.info("agentx-harness ready at %s (ref %s)", repo_dir, git_ref)
-    return True
-
-
-def get_agentx_harness_repo_path(venv_config: VenvConfig) -> Path:
-    """Location of the agentx-harness checkout inside the AGENTIC_TRACES venv."""
-    return venv_config.venv_path / "agentx-harness"
+    for legacy_dir in legacy_dirs:
+        shutil.rmtree(legacy_dir)
+    for name in _LEGACY_AGENTX_STAMPS:
+        (venv_config.venv_path / name).unlink(missing_ok=True)
+    return install_requirements(venv_config, venv_config.requirements_file)
 
 
 def setup_evals_meta(
@@ -1030,7 +808,7 @@ _venv_config_list = [
         requirements_file="agentic-traces.txt",
         extra_dirs=("artifacts",),
         python_version="3.12",
-        setup_function=setup_agentic_traces,
+        setup_function=remove_legacy_agentx_checkout,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.LLM_VLLM,
