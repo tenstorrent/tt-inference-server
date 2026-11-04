@@ -410,7 +410,7 @@ templates:
         # elsewhere would reserve the whole context per request under hybrid groups.
         enable_chunked_prefill: true
         max_num_batched_tokens: 16384
-        long_prefill_token_threshold: 4096
+        long_prefill_token_threshold: 16384  # = max_num_batched_tokens: vLLM 0.30 caps every request's prefill tokens per scheduler step at this value (the vLLM of the v0.25 release only classified long requests by it), so the 4096 the entry shipped split each longer prompt into 4096-token chunks. Measured 2026-11-04 on a Galaxy (release batched points, greedy client, median TTFT / per-user decode, vs this entry at 4096): 8K c126 21.2 s / 2.6 tok/s (24.4 / 2.8), 8K/1K c113 22.6 s / 12.3 (24.3 / 12.4), 16K c63 29.7 s / 2.9 (37.5 / 3.6); 128/1K and 4K rows unchanged (4096-token prompts never exceed the cap); single-user 32K / 64K / 131K / 248K TTFT 9.5 / 23.0 / 61.4 / 175.9 s (10.3 / 24.6 / 64.9 / 182.5) with the needle recalled at every length. Aggregate throughput is flat (the scheduler moves time between TTFT and TPOT); per-user decode stays above the v0.25 rows at every point.
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
@@ -1314,7 +1314,7 @@ templates:
         # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
-        long_prefill_token_threshold: 4096
+        long_prefill_token_threshold: 16384  # = max_num_batched_tokens. vLLM 0.30 caps every request's prefill tokens per scheduler step at this value (the vLLM of the v0.25 release only classified long requests by it), so the 4096 the entry shipped split each longer prompt into 4096-token chunks and the batched long-prompt TTFT rows carried the chunked-prefill continuations. Measured 2026-11-04 on a Galaxy (release batched points, greedy client, median TTFT): 8K c126 16.8 -> 12.6 s, 8K/1K c113 14.2 -> 11.9 s, 16K c63 19.8 -> 17.5 s; 128/1K and 4K rows unchanged (4096-token prompts never exceeded the cap). Aggregate throughput is flat (the scheduler moves time between TTFT and TPOT) and per-user decode stays above the v0.25 rows at every point (8K c126 5.2 vs 4.7, 16K c63 6.1 vs 4.4 tok/s). The P300X2 entry keeps 4096: with the cap off its 16K c15 decode fell below the v0.25 row (4.6 vs 5.0 tok/s) while TTFT gained.
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
