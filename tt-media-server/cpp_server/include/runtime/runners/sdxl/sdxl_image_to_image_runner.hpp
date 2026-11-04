@@ -22,8 +22,6 @@ class SDXLImageToImageRunner : public SDXLBaseRunner {
   domain::ImageGenerateRequest warmupRequest() const override;
   void applyModeSpecificSettings(
       const domain::ImageGenerateRequest& request) override;
-  bool areBatchCompatible(const domain::ImageGenerateRequest& a,
-                          const domain::ImageGenerateRequest& b) const override;
 
   /** base64 -> PIL -> torch tensor (1, C, H, W). */
   py::object preprocessImage(const std::string& base64Image) const;

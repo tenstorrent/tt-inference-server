@@ -25,7 +25,10 @@ def _gemma4_26b_specs():
     ]
 
 
-def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
+def test_the_mtp_entry_is_the_qb2_default_and_the_dedicated_profile_uses_the_demo_bundle():
+    """The release scope resolves the QB2 default without an impl pin: the tt-transformers entry
+    (32 users, the MTP speculative contract class). The single-user dedicated profile stays
+    selectable with ``--impl gemma4-26b-a4b-qb2`` and keeps its demo bundle."""
     specs = _gemma4_26b_specs()
     default = resolve_model_spec(
         specs,
@@ -37,12 +40,20 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
         specs,
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
 
     assert default.impl.impl_name == "tt-transformers"
-    assert dedicated.impl.impl_name == "tt-vllm-plugin"
+    assert default.device_model_spec.default_impl is True
+    assert default.device_model_spec.max_concurrency == 32
+    assert (
+        "Gemma4MTPContract"
+        in default.device_model_spec.env_vars["TT_MODEL_CLASS_OVERRIDES"]
+    )
+    assert dedicated.impl.impl_name == "gemma4-26b-a4b-qb2"
+    assert dedicated != default
+    assert dedicated.impl.code_path == "models/demos/gemma4_26b_a4b_qb2"
     assert dedicated.status == ModelStatusTypes.FUNCTIONAL
     assert dedicated.device_model_spec.default_impl is False
     assert dedicated.device_model_spec.max_concurrency == 1
@@ -67,7 +78,7 @@ def test_gemma4_profile_leaves_cache_paths_to_the_launch_environment():
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     # Runtime spec env vars overwrite existing settings, including local-server
@@ -77,56 +88,58 @@ def test_gemma4_profile_leaves_cache_paths_to_the_launch_environment():
     assert cache_vars.isdisjoint(dedicated.device_model_spec.env_vars)
 
 
-def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
+def test_gemma4_26b_release_eval_cohort():
+    """The shared EvalConfig carries the model-card evals (full GPQA Diamond, the
+    24-task Terminal-Bench wave, LiveCodeBench v6, MMMU-Pro), which both presets
+    run on every 26B profile."""
     tasks = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks
 
     assert [task.task_name for task in tasks] == [
         "r1_gpqa_diamond",
         "terminal_bench_2",
-        "swe_bench_verified",
+        "livecodebench",
+        "mmmu_pro_standard_cot",
     ]
     assert [task.workflow_venv_type for task in tasks] == [
         WorkflowVenvType.EVALS_COMMON,
         WorkflowVenvType.EVALS_AGENTIC,
-        WorkflowVenvType.EVALS_AGENTIC,
+        WorkflowVenvType.EVALS_COMMON,
+        WorkflowVenvType.EVALS_VISION,
     ]
 
-    gpqa, terminal_task, swe_task = tasks
-    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    gpqa, terminal_task, _lcb, mmmu = tasks
+    assert all((task.priority or "must") == "must" for task in tasks)
+    # GPQA runs in full in both presets and is graded against the full-set GPU
+    # reference, not a subset reference.
+    assert EvalLimitMode.CI_NIGHTLY not in gpqa.limit_samples_map
     assert gpqa.seed == 42
+    assert gpqa.score.gpu_reference_score == 80.81
+    reference = resolve_eval_reference(gpqa.score, EvalLimitMode.CI_NIGHTLY)
+    assert reference["is_subset_reference"] is False
 
     terminal = terminal_task.agentic_eval_config
-    swe = swe_task.agentic_eval_config
-    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == 5
-    assert swe.n_concurrent_trials == 1
-    assert terminal.n_attempts == swe.n_attempts == 1
-    assert terminal.override_cpus == 16
-    assert swe.llm_timeout_sec == 30 * 60
-    assert (
-        swe.agent_kwargs["config"]["environment"]["env"]["CONDA_DEFAULT_ENV"]
-        == "testbed"
-    )
-    assert terminal_task.request_body["seed"] == swe_task.request_body["seed"] == 9472
+    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 24
+    assert terminal.n_concurrent_trials == 24
+    assert terminal.n_attempts == 1
+    assert terminal.override_cpus is None
+    assert terminal.override_memory_mb is None
+    assert terminal_task.request_body["seed"] == 9472
 
-    for task, total, passing_score, failing_score in [
-        (gpqa, 10, 80.0, 70.0),
-        (terminal_task, 5, 20.0, 0.0),
-        (swe_task, 5, 20.0, 0.0),
-    ]:
-        reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
-        assert reference["tolerance"] == 0.0
-        assert accept_eval_score(reference, passing_score, n_total=total) is True
-        assert accept_eval_score(reference, failing_score, n_total=total) is False
+    # MMMU-Pro: the preset subset is graded against its same-protocol GPU
+    # measurement (the 865-doc subset), with a 5% band.
+    reference = resolve_eval_reference(mmmu.score, EvalLimitMode.CI_NIGHTLY)
+    assert reference["is_subset_reference"] is True
+    assert reference["tolerance"] == 0.05
+    assert accept_eval_score(reference, 67.51, n_total=865) is True
+    assert accept_eval_score(reference, 60.0, n_total=865) is False
 
 
-def test_gemma4_26b_tt_vllm_plugin_uses_validated_gpqa_transport():
+def test_gemma4_26b_qb2_uses_validated_gpqa_transport():
     dedicated = resolve_model_spec(
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     gpqa = _apply_profile_request_body_overrides(
@@ -141,7 +154,7 @@ def test_gemma4_26b_release_grades_only_128_128_at_concurrency_one():
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="tt-vllm-plugin",
+        impl="gemma4-26b-a4b-qb2",
         catalog_name="Shield",
     )
     run_configs = get_llm_configs(dedicated, dedicated.device_type)

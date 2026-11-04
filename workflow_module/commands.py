@@ -89,6 +89,12 @@ _HANG_MARKERS = (
     "Timeout detected",
 )
 
+_FATAL_STARTUP_MARKERS = (
+    "Worker warmup failed; stopping all spawned workers",
+    "Leader worker 0 failed warmup; aborting remaining worker startup",
+    "Configured service reported fatal worker error",
+)
+
 
 def _server_boot_attempts() -> int:
     """How many times to try bringing the server up.
@@ -219,8 +225,8 @@ def _server_log_path(payload: Any) -> Optional[Path]:
     return path if path.exists() else None
 
 
-def _scan_log_for_hang(payload: Any) -> Optional[str]:
-    """Return the hang marker found in the server log, if any."""
+def _scan_log_for_markers(payload: Any, markers: Sequence[str]) -> Optional[str]:
+    """Return the first marker from ``markers`` found in the server log, if any."""
     log_path = _server_log_path(payload)
     if not log_path:
         return None
@@ -228,9 +234,41 @@ def _scan_log_for_hang(payload: Any) -> Optional[str]:
         text = log_path.read_text(errors="ignore")
     except OSError:
         return None
-    for marker in _HANG_MARKERS:
+    for marker in markers:
         if marker in text:
             return marker
+    return None
+
+
+def _scan_log_for_hang(payload: Any) -> Optional[str]:
+    """Return the hang marker found in the server log, if any."""
+    return _scan_log_for_markers(payload, _HANG_MARKERS)
+
+
+def _scan_log_for_fatal_startup_error(payload: Any) -> Optional[str]:
+    """Return a fatal worker/warmup failure marker found in the server log, if any."""
+    return _scan_log_for_markers(payload, _FATAL_STARTUP_MARKERS)
+
+
+def _fatal_health_error(exc: Any) -> Optional[str]:
+    """Extract a terminal worker failure from an HTTP error response body, if present."""
+    import json
+
+    read = getattr(exc, "read", None)
+    if not callable(read):
+        return None
+    try:
+        raw = read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(data, Mapping):
+        return None
+    error = str(data.get("error") or "")
+    if "is dead" in error or error == "no workers are alive":
+        return error
     return None
 
 
@@ -308,6 +346,10 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
                 if 200 <= resp.status < 300:
                     logger.info("Inference server is ready at %s", url)
                     return None
+        except urllib.error.HTTPError as exc:
+            fatal = _fatal_health_error(exc)
+            if fatal:
+                return f"server reported fatal health error ({fatal})"
         except (urllib.error.URLError, OSError, ValueError):
             pass
 
@@ -315,6 +357,9 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
             marker = _scan_log_for_hang(payload)
             if marker:
                 return f"server process exited during startup (device hang: {marker!r})"
+            fatal_marker = _scan_log_for_fatal_startup_error(payload)
+            if fatal_marker:
+                return f"server process exited during startup ({fatal_marker!r})"
             return "server process exited during startup"
 
         # A hung device keeps the process alive but never serves traffic, so the
@@ -322,6 +367,10 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
         marker = _scan_log_for_hang(payload)
         if marker:
             return f"device hang detected during startup ({marker!r})"
+
+        fatal_marker = _scan_log_for_fatal_startup_error(payload)
+        if fatal_marker:
+            return f"worker warmup failed during startup ({fatal_marker!r})"
 
         time.sleep(5)
 

@@ -397,7 +397,13 @@ components:
         code:
           anyOf:
             - type: string
-              enum: [processing_error, stale_job, server_restart]
+              enum:
+                [
+                  processing_error,
+                  stale_job,
+                  server_restart,
+                  prompt_enhancement_error,
+                ]
             - type: string
           description: |
             Why the job failed. More codes may be added; treat an unknown one
@@ -410,6 +416,9 @@ components:
               preferably to another runner.
             - `server_restart`: the server restarted while the job was queued
               or running. Safe to resubmit.
+            - `prompt_enhancement_error`: the prompt enhancer failed or returned
+              an unusable caption (models with an enhancer, e.g. Ideogram 4 with
+              `prompt`). Usually safe to resubmit.
         message:
           type: string
           description: Human-readable.

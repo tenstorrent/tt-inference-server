@@ -36,6 +36,15 @@ class WarmupSignalQueue : public tt::ipc::IWarmupSignalQueue {
     return static_cast<int>(payload);
   }
 
+  bool tryReceive(int& workerId) override {
+    int64_t payload = 0;
+    if (!queue_->tryPop(payload)) {
+      return false;
+    }
+    workerId = static_cast<int>(payload);
+    return true;
+  }
+
   void remove() override { queue_->remove(); }
 
  private:
