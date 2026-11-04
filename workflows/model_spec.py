@@ -502,7 +502,15 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b_qb2",
 )
 
+qwen38_autoport_impl = ImplSpec(
+    impl_id="qwen38_autoport",
+    impl_name="qwen38-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "qwen38_autoport": qwen38_autoport_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,

@@ -691,6 +691,14 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    # Qwen3.8 autoport reads its selected precision from a file the image lacks.
+    qwen38_precision = model_spec.env_vars.get("QWEN38_PRECISION_CONFIG")
+    if model_spec.impl.impl_id == "qwen38_autoport" and qwen38_precision:
+        precision_src = Path(__file__).parent / "qwen38_selected_precision.json"
+        docker_command += [
+            "--mount",
+            f"type=bind,src={precision_src.resolve()},dst={qwen38_precision},readonly",
+        ]
     if quetzal_package_mount:
         docker_env_vars.update(
             quetzal_package_env(quetzal_package_mount, local_server=False)
