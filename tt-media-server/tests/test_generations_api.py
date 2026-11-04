@@ -158,9 +158,8 @@ def test_ltx_rejects(fields, message):
     [
         ({}, [], (1024, 1024)),
         ({"size": "2K"}, [], (2048, 2048)),
-        ({"aspect_ratio": "16:9", "size": "2K"}, [], (2752, 1536)),
-        ({}, [(1600, 900), (100, 100)], (1376, 768)),
-        ({"size": "2K"}, [(900, 1250)], (1792, 2368)),
+        ({}, [(1600, 900)], (1024, 1024)),
+        ({"size": "2K"}, [(900, 1250)], (2048, 2048)),
     ],
 )
 def test_klein_output_size(fields, images, expected):
@@ -174,10 +173,20 @@ def test_klein_output_size(fields, images, expected):
     assert request.output_size() == expected
 
 
-def test_klein_has_14_sizes():
-    sizes = set(Flux2klein4bRequest.warmup_sizes())
-    assert len(sizes) == 14
-    assert all(width % 16 == 0 and height % 16 == 0 for width, height in sizes)
+def test_klein_has_2_sizes():
+    assert set(Flux2klein4bRequest.warmup_sizes()) == {(1024, 1024), (2048, 2048)}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"aspect_ratio": "16:9"},
+        {"images": ["https://x/a.png", "https://x/b.png"]},
+    ],
+)
+def test_klein_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Flux2klein4bRequest(prompt="a cat", **fields)
 
 
 # --- Router and jobs -------------------------------------------------------------

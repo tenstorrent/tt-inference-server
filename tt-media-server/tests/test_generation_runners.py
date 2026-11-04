@@ -229,7 +229,7 @@ def test_klein_edits_only_with_images(with_images):
 def test_klein_warmup_covers_every_size():
     runner = _runner("TTFlux2Klein4BRunner", warming_up=True)
     requests = runner.warmup_requests()
-    assert len(requests) == 14
+    assert len(requests) == 2
     for request in requests:
         runner.pipeline.calls.clear()
         runner.run([request])
