@@ -1381,5 +1381,72 @@ class TestKnownIssue:
             ModelSpec.from_json(spec_json)
 
 
+def _also_gates_reference(also_gates):
+    return {
+        "org/model": {
+            "galaxy": [
+                {
+                    "isl": 128,
+                    "osl": 128,
+                    "max_concurrency": 1,
+                    "num_prompts": 8,
+                    "targets": {
+                        "theoretical": {
+                            "ttft_ms": 30.0,
+                            "tput_user": 156.0,
+                            "tput": 156.0,
+                        },
+                        "measured": {
+                            "ttft_ms": 203.2,
+                            "tput_user": 55.1,
+                            "tput": 51.2,
+                            "tolerance": 0.05,
+                            **(
+                                {"also_gates": also_gates}
+                                if also_gates is not None
+                                else {}
+                            ),
+                        },
+                    },
+                }
+            ]
+        }
+    }
+
+
+@pytest.mark.parametrize("also_gates", [None, ["complete"]])
+def test_measured_also_gates_grades_listed_tiers_against_measured(
+    monkeypatch, also_gates
+):
+    import workflows.model_spec as model_spec
+
+    monkeypatch.setattr(
+        model_spec, "model_performance_reference", _also_gates_reference(also_gates)
+    )
+    tiers = {"functional": 0.10, "complete": 0.50, "target": 1.0}
+    (task,) = model_spec.get_perf_reference_map("org/model", tiers)[DeviceTypes.GALAXY]
+    targets = task.targets
+
+    assert targets["target"].ttft_ms == 203.2
+    assert targets["functional"].ttft_ms == pytest.approx(300.0)
+    if also_gates:
+        assert targets["complete"] == targets["target"]
+    else:
+        assert targets["complete"].ttft_ms == pytest.approx(60.0)
+        assert targets["complete"].tput_user == pytest.approx(78.0)
+
+
+@pytest.mark.parametrize("bad_tier", ["target", "sellable"])
+def test_measured_also_gates_rejects_unknown_or_target_tier(monkeypatch, bad_tier):
+    import workflows.model_spec as model_spec
+
+    monkeypatch.setattr(
+        model_spec, "model_performance_reference", _also_gates_reference([bad_tier])
+    )
+    tiers = {"functional": 0.10, "complete": 0.50, "target": 1.0}
+    with pytest.raises(ValueError, match="also_gates"):
+        model_spec.get_perf_reference_map("org/model", tiers)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

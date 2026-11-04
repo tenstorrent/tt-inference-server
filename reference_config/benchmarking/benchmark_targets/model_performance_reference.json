@@ -305,7 +305,11 @@
                     "varied under 2%, so the default 5% tolerance is generous. Values are",
                     "the worst of the stable cluster.",
                     "At conc=1 tput ~= tput_user, as it must be with a single user; the",
-                    "previous target was 5328 (t3k 1332 x 4), about 100x unreachable."
+                    "previous target was 5328 (t3k 1332 x 4), about 100x unreachable.",
+                    "'complete' is also graded against 'measured' (also_gates): at 50% of",
+                    "theoretical it asked for 60 ms TTFT and 78 t/s/u, stricter than",
+                    "'target' (203.2 ms, 55.1 t/s/u), and no single fraction fits both,",
+                    "since measured TTFT is ~15% of theoretical but tput ~35%."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -326,7 +330,8 @@
                         "ttft_ms": 203.2,
                         "tput_user": 55.1,
                         "tput": 51.2,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
+                        "also_gates": ["complete"]
                     }
                 }
             },

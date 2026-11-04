@@ -142,12 +142,27 @@ def get_perf_reference_map(
             # ceiling stays visible. Mirrors how evals use gpu_reference_score.
             measured = targets.get("measured")
             if measured:
-                target_dict["target"] = PerformanceTarget(
+                measured_target = PerformanceTarget(
                     ttft_ms=measured.get("ttft_ms"),
                     tput_user=measured.get("tput_user"),
                     tput=measured.get("tput"),
                     tolerance=measured.get("tolerance", 0.05),
                 )
+                target_dict["target"] = measured_target
+                # "also_gates" lists further tiers graded against the measured
+                # values instead of their fraction of theoretical. Used where one
+                # fraction cannot fit both metrics: on Galaxy Qwen3-32B the
+                # measured TTFT is ~15% of theoretical but tput ~35%, so any
+                # single "complete" fraction is stricter than "target" on one.
+                for tier in measured.get("also_gates", []):
+                    if tier not in perf_targets_map or tier == "target":
+                        raise ValueError(
+                            f"{hf_model_repo} {device_str} isl={bench.get('isl')} "
+                            f"conc={bench.get('max_concurrency')}: measured.also_gates "
+                            f"tier {tier!r} must be one of "
+                            f"{sorted(t for t in perf_targets_map if t != 'target')}"
+                        )
+                    target_dict[tier] = measured_target
 
             # Create the BenchmarkTaskParams instance.
             benchmark_task = BenchmarkTaskParams(
