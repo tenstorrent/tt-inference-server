@@ -178,8 +178,8 @@ def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
 
 
 def test_release_provisions_agentic_traces_venv_only_when_opted_in(monkeypatch):
-    """That venv is an InferenceX clone + install, so it is not provisioned
-    speculatively — but the release child cannot create it either."""
+    """That venv installs agentx-harness, which takes minutes, so it is not
+    provisioned speculatively — but the release child cannot create it either."""
     from workflows.workflow_types import WorkflowVenvType
 
     spec = _spec(ModelType.LLM)

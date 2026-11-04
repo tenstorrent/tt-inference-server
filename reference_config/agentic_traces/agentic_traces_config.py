@@ -85,8 +85,7 @@ class AgenticTracesRunSpec:
     # 300 is InferenceX's own default (``AIPERF_TRACE_IDLE_GAP_CAP_SECONDS`` in
     # benchmarks/benchmark_lib.sh). Without it a lane whose trace recorded an
     # overnight pause sits idle for the whole profiling window. ``None`` omits
-    # the flag, which is required on InferenceX pins before agentx-v1.0.0: their
-    # scenario rejects it.
+    # the flag.
     trace_idle_gap_cap_seconds: Optional[float] = 300.0
     # AIPerf ``--goodput`` SLO string: space-separated TAG:VALUE bars deciding
     # whether a request counts as good. Empty means the run measures no

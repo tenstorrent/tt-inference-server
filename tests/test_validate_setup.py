@@ -614,7 +614,7 @@ class TestLocalServerValidation:
 class TestAgenticTracesRegistration:
     """A model with no AGENTIC_TRACES_CONFIGS entry must be refused up front.
 
-    The agentic-traces venv setup clones and installs agentx-harness, which takes
+    The agentic-traces venv setup installs agentx-harness, which takes
     minutes, and a release child runs after the evals and benchmarks. Both would
     be wasted before the missing config surfaced, so validation has to fail here
     instead.
@@ -671,8 +671,6 @@ class TestAgenticTracesRegistration:
         assert "Llama-3.1-8B-Instruct" in message
         assert self.UNREGISTERED_ID in message
         assert "reference_config/agentic_traces/agentic_traces_config.py" in message
-        # Registering without pinning a ref makes results incomparable.
-        assert "git ref" in message
 
     def test_registered_model_passes(self):
         """Guards against the assertion firing on an onboarded model.

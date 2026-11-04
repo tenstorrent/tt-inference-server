@@ -173,8 +173,7 @@ def validate_runtime_args(model_spec, runtime_config):
         assert agentic_traces_config is not None, (
             f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
             "no AGENTIC_TRACES_CONFIGS entry. Add one to "
-            "reference_config/agentic_traces/agentic_traces_config.py, including "
-            "the agentx-harness git ref to pin."
+            "reference_config/agentic_traces/agentic_traces_config.py."
         )
 
         # A SwarmOne run needs a swo-bench license; require it up front (like

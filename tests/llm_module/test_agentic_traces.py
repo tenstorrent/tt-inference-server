@@ -7,7 +7,7 @@
 The load-bearing invariants here are the ones a broken run would only reveal an
 hour in (or worse, as a plausible-looking row of numbers):
 
-* every configured model pins an InferenceX ref and covers every mode,
+* every configured model has runs and covers every mode,
 * no mode can drop below the scenario's 900s profiling floor,
 * the derived knobs (max context, trust-remote-code) track the ModelSpec,
 * a trace source with no driver still fails loudly instead of producing an
@@ -63,7 +63,6 @@ from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
 KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
-# agentx-harness agentx-v1.0.9, the release InferenceX's GPU reference runs use.
 
 
 class _FakeDeviceModelSpec:
@@ -455,7 +454,6 @@ class TestAiperfCommand:
         assert cmd[cmd.index("--trace-idle-gap-cap-seconds") + 1] == "300"
 
     def test_idle_gap_cap_is_omitted_when_disabled(self):
-        """Pins before agentx-v1.0.0 reject the flag outright."""
         config = AgenticTracesConfig(
             model_id="id_test",
             runs=(AgenticTracesRunSpec(trace_idle_gap_cap_seconds=None),),

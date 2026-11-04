@@ -567,8 +567,8 @@ def parse_aiperf_output(
     if isinstance(errors, list) and errors:
         metrics["error_summary"] = _summarize_errors(errors)
 
-    # Client provenance alongside the pinned git ref: the ref identifies the
-    # source, these identify the actual run.
+    # Client provenance: the installed agentx-harness version (AIPerf reports
+    # it as aiperf_version), plus what identifies this particular run.
     for key, tag in (
         ("aiperf_version", "aiperf_version"),
         ("aiperf_schema_version", "schema_version"),

@@ -171,7 +171,8 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     # Payloads from before agentx-harness came from PyPI, which pinned the
     # InferenceX revision that vendored the client.
     ("inferencex_git_ref", "InferenceX Ref"),
-    ("aiperf_version", "AIPerf Version"),
+    # agentx-harness reports its own release here (e.g. 1.0.13).
+    ("aiperf_version", "Client Version"),
     ("swo_bench_version", "swo-bench Version"),
     ("swo_session_id", "swo-bench Session"),
     ("benchmark_id", "Benchmark ID"),
@@ -562,7 +563,7 @@ def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
 
     paragraphs.append(
         "Numbers are only comparable across runs from the same source on the "
-        "same client revision and trace set."
+        "same client version and trace set."
     )
     return paragraphs
 
