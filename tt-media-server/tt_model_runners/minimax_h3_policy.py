@@ -2,69 +2,171 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-"""MiniMax-H3 t2va serving policy for this deployment.
+"""MiniMax-H3 serving policy for this deployment.
 
-Which aspect ratios, durations, and step counts the media-server will accept.
-Canvas size and the video VAE's ``17n + 5`` frame rule live in the model's
-packing module; copying either here is how they drift. FPS is the same: read
-``MINIMAX_H3_FPS`` from packing at the point of use.
+The served envelope -- aspect ratios, durations, reference counts -- and the admission check over
+it are owned by the model's own policy module (``models.tt_dit.pipelines.minimax_h3.policy``) and
+re-exported here, so what the media-server accepts cannot drift from what the pipeline is warmed
+for. Only the request-transport concerns that pull in ``av`` -- media probing and reference-clip
+windows -- live here.
+
+Per-clip and combined duration windows are the product contract and are enforced here; the
+pipeline truncates instead of refusing.
 """
 
-# 4x8 Blackhole Galaxy only. Every published 768P working point is servable: six
-# aspect ratios x twelve durations. The model accepts 1:4..4:1, but only these
-# are calibrated, and each is a distinct canvas the pipeline must be warmed at.
-MINIMAX_H3_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
-MINIMAX_H3_DEFAULT_ASPECT_RATIO = (16, 9)
+import io
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-# Durations in seconds: every integer the MiniMax API accepts. The frame count
-# is not free -- the video VAE encodes in 17-frame chunks, so only ``17n + 5``
-# counts exist and ``align_num_frames`` rounds a request UP to the next one.
-# The served clip is therefore >= the requested duration, by up to 0.67 s
-# (13 s -> 13.667 s); 8 s is the only exact fit (192 frames). Rounding up
-# rather than down is deliberate: a caller asking for 10 s should never be
-# handed 9.4 s.
-MINIMAX_H3_DURATIONS_S = tuple(range(4, 16))
-MINIMAX_H3_DEFAULT_DURATION_S = 5
+if TYPE_CHECKING:
+    from models.tt_dit.pipelines.minimax_h3.policy import (
+        MINIMAX_H3_ASPECT_RATIOS,
+        MINIMAX_H3_DEFAULT_ASPECT_RATIO,
+        MINIMAX_H3_DEFAULT_DURATION_S,
+        MINIMAX_H3_DURATIONS_S,
+        MINIMAX_H3_KEYFRAME_MAX_SIDE,
+        MINIMAX_H3_KEYFRAME_MIN_SIDE,
+        MiniMaxH3ReferenceInfo,
+        admit_request,
+        minimax_h3_frames_are_aligned,
+        minimax_h3_parse_aspect_ratio,
+    )
+    from models.tt_dit.pipelines.minimax_h3.packing_ref2va import check_reference_kinds
 
-# Not a request lever: the AdaLN modulation table is precomputed per step count
-# and every shape is warmed at 50.
+# The serving envelope and its validators are owned by the model's policy module and re-exported
+# lazily: pulling them at import time would drag ``ttnn`` into every consumer, and the server's unit
+# tests mock the whole ``models.tt_dit`` tree. ``__getattr__`` defers the metal import to first
+# access, so this module stays importable (and testable) without metal present.
+_METAL_REEXPORTS = frozenset(
+    {
+        "MINIMAX_H3_ASPECT_RATIOS",
+        "MINIMAX_H3_DEFAULT_ASPECT_RATIO",
+        "MINIMAX_H3_DEFAULT_DURATION_S",
+        "MINIMAX_H3_DURATIONS_S",
+        "MINIMAX_H3_KEYFRAME_MAX_SIDE",
+        "MINIMAX_H3_KEYFRAME_MIN_SIDE",
+        "MiniMaxH3ReferenceInfo",
+        "admit_request",
+        "minimax_h3_parse_aspect_ratio",
+        "minimax_h3_frames_are_aligned",
+    }
+)
+
+
+def __getattr__(name: str):
+    if name in _METAL_REEXPORTS:
+        from models.tt_dit.pipelines.minimax_h3 import policy as _metal_policy
+
+        return getattr(_metal_policy, name)
+    if name == "check_reference_kinds":
+        from models.tt_dit.pipelines.minimax_h3.packing_ref2va import (
+            check_reference_kinds,
+        )
+
+        return check_reference_kinds
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = [
+    "MINIMAX_H3_ASPECT_RATIOS",
+    "MINIMAX_H3_DEFAULT_ASPECT_RATIO",
+    "MINIMAX_H3_DEFAULT_DURATION_S",
+    "MINIMAX_H3_DURATIONS_S",
+    "MINIMAX_H3_KEYFRAME_MAX_SIDE",
+    "MINIMAX_H3_KEYFRAME_MIN_SIDE",
+    "MINIMAX_H3_NUM_INFERENCE_STEPS",
+    "MINIMAX_H3_REF_CLIP_MIN_S",
+    "MINIMAX_H3_REF_CLIP_MAX_S",
+    "MINIMAX_H3_REF_COMBINED_MAX_S",
+    "MINIMAX_H3_FL2VA_FRAME_POS",
+    "MiniMaxH3ReferenceInfo",
+    "ReferenceMediaProbe",
+    "admit_request",
+    "minimax_h3_parse_aspect_ratio",
+    "minimax_h3_frames_are_aligned",
+    "probe_reference_media",
+    "check_reference_clip_durations",
+    "check_reference_kinds",
+]
+
+# t2va / fl2va / ref2va AdaLN table is warmed at this count; not a request lever.
+# Copied here so admission-time echo does not import metal/ttnn.
 MINIMAX_H3_NUM_INFERENCE_STEPS = 50
 
+# Ref2VA reference clip windows: the product card (the pipeline does not enforce them).
+MINIMAX_H3_REF_CLIP_MIN_S = 2.0
+MINIMAX_H3_REF_CLIP_MAX_S = 15.0
+MINIMAX_H3_REF_COMBINED_MAX_S = 15.0
 
-def minimax_h3_parse_aspect_ratio(value: str) -> tuple[int, int]:
-    """``"16:9"`` -> ``(16, 9)``, restricted to the published set.
+# FL2VA keyframe sentinels on ``image_prompts[].frame_pos``.
+MINIMAX_H3_FL2VA_FRAME_POS = frozenset({0, -1})
 
-    Rejects rather than rounds: a caller asking for 2:1 wants 2:1, and quietly
-    serving 16:9 would be a wrong answer dressed as a right one.
+
+@dataclass(frozen=True)
+class ReferenceMediaProbe:
+    """Container metadata of one reference clip.
+
+    ``size`` (width, height) and ``fps`` are those of the first video stream, ``audio_channels``
+    that of the first audio stream; each is None when the stream is absent.
     """
-    text = str(value).strip().replace("x", ":").replace("/", ":")
-    parts = text.split(":")
-    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
-        raise ValueError(
-            f"aspect_ratio must look like 'W:H' (got {value!r}); supported: "
-            + ", ".join(f"{w}:{h}" for w, h in MINIMAX_H3_ASPECT_RATIOS)
-        )
-    pair = (int(parts[0]), int(parts[1]))
-    if pair not in MINIMAX_H3_ASPECT_RATIOS:
-        raise ValueError(
-            f"aspect_ratio {pair[0]}:{pair[1]} is not served; supported: "
-            + ", ".join(f"{w}:{h}" for w, h in MINIMAX_H3_ASPECT_RATIOS)
-        )
-    return pair
+
+    duration_s: float
+    size: tuple[int, int] | None
+    fps: float | None
+    audio_channels: int | None
 
 
-def minimax_h3_frames_are_aligned(num_frames: int) -> bool:
-    """``num_frames`` must be ``17n + 5``: 124, 243, 362, ...
+def probe_reference_media(raw: bytes) -> ReferenceMediaProbe:
+    """Probe encoded audio/video bytes without decoding them.
 
-    The modulus lives in packing (``FRAMES_PER_CHUNK`` / ``LATENTS_PER_CHUNK``).
-    Imported here so this check cannot drift from the VAE's chunking.
+    Uses PyAV's container duration (microseconds) and the frame rate the pipeline's decoder reads
+    (average, else guessed). Raises ``ValueError`` when the bytes are not a readable audio/video
+    container or have no duration.
     """
-    from models.tt_dit.pipelines.minimax_h3.packing import (
-        MINIMAX_H3_FRAMES_PER_CHUNK,
-        MINIMAX_H3_LATENTS_PER_CHUNK,
-    )
+    import av
 
-    return (
-        num_frames >= MINIMAX_H3_LATENTS_PER_CHUNK
-        and num_frames % MINIMAX_H3_FRAMES_PER_CHUNK == MINIMAX_H3_LATENTS_PER_CHUNK
-    )
+    try:
+        with av.open(io.BytesIO(raw)) as container:
+            if container.duration is None or container.duration <= 0:
+                raise ValueError("media container reports no duration")
+            size = fps = audio_channels = None
+            if container.streams.video:
+                stream = container.streams.video[0]
+                size = (stream.codec_context.width, stream.codec_context.height)
+                rate = stream.average_rate or stream.guessed_rate
+                fps = float(rate) if rate else None
+            if container.streams.audio:
+                audio_channels = len(container.streams.audio[0].layout.channels)
+            return ReferenceMediaProbe(
+                duration_s=container.duration / 1_000_000,
+                size=size,
+                fps=fps,
+                audio_channels=audio_channels,
+            )
+    except av.FFmpegError as exc:  # av.AVError was removed in PyAV 14
+        raise ValueError("media could not be probed") from exc
+
+
+def check_reference_clip_durations(
+    *,
+    video_durations: list[float],
+    audio_durations: list[float],
+) -> None:
+    """Refuse reference clips outside the 2–15 s / combined ≤ 15 s window."""
+
+    def _check(kind: str, durations: list[float]) -> None:
+        for index, seconds in enumerate(durations):
+            if not MINIMAX_H3_REF_CLIP_MIN_S <= seconds <= MINIMAX_H3_REF_CLIP_MAX_S:
+                raise ValueError(
+                    f"{kind}[{index}] is {seconds:g} s; each {kind} clip must be "
+                    f"{MINIMAX_H3_REF_CLIP_MIN_S:g}–{MINIMAX_H3_REF_CLIP_MAX_S:g} s"
+                )
+        combined = sum(durations)
+        if combined > MINIMAX_H3_REF_COMBINED_MAX_S:
+            raise ValueError(
+                f"combined {kind} duration is {combined:g} s; must be "
+                f"≤ {MINIMAX_H3_REF_COMBINED_MAX_S:g} s"
+            )
+
+    _check("videos", video_durations)
+    _check("audios", audio_durations)

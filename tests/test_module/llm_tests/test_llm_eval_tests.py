@@ -197,6 +197,46 @@ def test_mistral_7b_mmlu_pro_runs_single_turn():
     assert others == []
 
 
+@pytest.mark.parametrize("task_name", ["r1_aime24", "r1_math500", "r1_gpqa_diamond"])
+def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
+    """Every QwQ-32B r1 task sends the same per-request timeout, and it covers
+    a max_gen_toks=32768 generation at the measured P300X2 rate.
+
+    r1_gpqa_diamond used to carry no timeout, so it fell back to lm-eval's
+    1800 s default while its siblings sent 3600 s; Shield run 38323771398 lost
+    22/198 gpqa requests to client timeouts. A timeout below a full-length
+    generation cuts the response, which a like-for-like run must never do.
+    """
+    from reference_config.evals import eval_config
+
+    task = next(
+        t for t in _eval_config_map["Qwen/QwQ-32B"].tasks if t.task_name == task_name
+    )
+    command = _build_eval_test_command(
+        task, hf_model_repo="Qwen/QwQ-32B", model_id="QwQ-32B", max_context=40960
+    )
+    model_kwargs = _command_model_kwargs(command)
+    assert "timeout" in model_kwargs, f"{task_name} falls back to lm-eval's 1800 s"
+    timeout = int(model_kwargs["timeout"])
+    assert timeout == getattr(eval_config, "QWQ_R1_REQUEST_TIMEOUT_S", None)
+    # 32768 tokens at the p10 per-request rate (6.2 tok/s) is 5285 s; the
+    # constant doubles that for scheduler queueing under KV oversubscription.
+    assert timeout >= 2 * 32768 / 6.2
+
+
+def test_mimo_gpqa_request_timeout_covers_a_full_length_generation():
+    """MiMo-V2.6-Flash r1_gpqa_diamond streams up to max_gen_toks (400K) per
+    request. At 7200 s, Shield run 39472309296 cut three Blackhole Galaxy streams
+    short and lm_eval failed the task; the timeout must cover max_gen_toks at
+    30 ms/token, the Galaxy's host-sampled decode (13.5 ms/token on device)."""
+    task = next(
+        t
+        for t in _eval_config_map["XiaomiMiMo/MiMo-V2.6-Flash-MOPD"].tasks
+        if t.task_name == "r1_gpqa_diamond"
+    )
+    assert int(task.model_kwargs["timeout"]) >= task.gen_kwargs["max_gen_toks"] * 0.030
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
@@ -957,6 +997,59 @@ class TestDeadlineReachesRunCommand:
         assert rc == 0
         assert seen.get("timeout_seconds") == 3600
 
+    def _ctx_in_mode(self, mode):
+        ctx = _ctx()
+        ctx.runtime_config = SimpleNamespace(limit_samples_mode=mode)
+        return ctx
+
+    def _invoke_in(self, ctx, task):
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
+            mod._run_eval_task(ctx, task, "", output_path=tmp_output_path())
+        return seen
+
+    def test_per_mode_deadline_bounds_only_its_mode(self):
+        task = EvalTask(
+            task_name="aime25",
+            wall_clock_timeout_seconds_map={EvalLimitMode.CI_NIGHTLY: 3600},
+        )
+        nightly = self._invoke_in(self._ctx_in_mode("ci-nightly"), task)
+        assert nightly.get("timeout_seconds") == 3600
+        # A full run (no limit mode) and an unlisted mode stay unbounded.
+        assert "timeout_seconds" not in self._invoke_in(_ctx(), task)
+        assert "timeout_seconds" not in self._invoke_in(
+            self._ctx_in_mode("ci-long"), task
+        )
+
+    def test_unlisted_mode_falls_back_to_the_task_deadline(self):
+        task = EvalTask(
+            task_name="aime25",
+            wall_clock_timeout_seconds=7200,
+            wall_clock_timeout_seconds_map={EvalLimitMode.CI_NIGHTLY: 3600},
+        )
+        assert self._invoke_in(_ctx(), task).get("timeout_seconds") == 7200
+        nightly = self._invoke_in(self._ctx_in_mode("ci-nightly"), task)
+        assert nightly.get("timeout_seconds") == 3600
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {EvalLimitMode.CI_NIGHTLY: 0},
+            {EvalLimitMode.CI_NIGHTLY: 1.5},
+            {"ci-nightly": 60},
+        ],
+    )
+    def test_per_mode_deadline_is_validated(self, bad):
+        with pytest.raises(ValueError):
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds_map=bad)
+
     def test_absent_deadline_leaves_execution_unbounded(self):
         rc, seen = self._invoke(EvalTask(task_name="aime25"))
         assert rc == 0
@@ -1263,15 +1356,37 @@ class TestEvalRequestOverrides:
                 EvalTask(task_name="r1_gpqa_diamond", thinking=False)
             )
 
-    def test_lmms_eval_tasks_are_rejected(self, monkeypatch):
+    def test_lmms_eval_tasks_need_the_openai_sdk_client(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
         task = EvalTask(
             task_name="vision_task",
             workflow_venv_type=WorkflowVenvType.EVALS_VISION,
             request_body={"top_k": 20},
         )
-        with pytest.raises(ValueError, match="request-overrides"):
+        with pytest.raises(ValueError, match="openai-SDK"):
             _build_eval_test_command(task)
+
+    def test_lmms_eval_openai_compatible_launches_the_wrapper(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+        task = EvalTask(
+            task_name="vision_task",
+            eval_class="openai_compatible",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            apply_chat_template=False,
+            use_chat_api=True,
+            thinking=False,
+        )
+        ours, theirs = self._wrapper_args(_build_eval_test_command(task))
+        assert ours == [
+            "--request-body",
+            '{"chat_template_kwargs": {"enable_thinking": false}}',
+            "--harness",
+            "lmms-eval",
+        ]
+        assert theirs[:4] == ["--tasks", "vision_task", "--model", "openai_compatible"]
+        # the override is not smuggled through lmms-eval's own argument strings
+        for flag in ("--model_args", "--gen_kwargs"):
+            assert "chat_template_kwargs" not in theirs[theirs.index(flag) + 1]
 
     def test_mismatched_serving_switch_warns(self, caplog):
         task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)

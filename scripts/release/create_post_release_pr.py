@@ -51,6 +51,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -144,32 +145,95 @@ def resolve_token(explicit: str | None) -> str | None:
     )
 
 
+def _api_get(url: str, token: str) -> dict:
+    """One GitHub REST response as JSON; raises on any HTTP or network error."""
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "create-post-release-pr",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.loads(response.read())
+
+
+def _timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def jobs_that_ran(attempts: list[dict]) -> list[dict]:
+    """Per job name, the execution whose results the run kept.
+
+    ``attempts`` are the run's attempts in order, each ``{"run_started_at", "jobs"}``.
+    A re-run ("re-run failed jobs") is a new attempt that COPIES every job which
+    already passed under a new job id: the copy keeps the original's start time but
+    has no artifacts, so nothing was collected under its id. A job that started
+    before its own attempt did is such a copy and is dropped. Of the executions
+    left, a later attempt replaces an earlier one unless the earlier passed and the
+    later did not. A name listed twice in any attempt (copies included) is ambiguous:
+    which of its jobs a re-run replaced is unknowable, so every execution of it is
+    kept, and a caller that needs one job per name still sees the ambiguity.
+    """
+    chosen: dict[str, list[dict]] = {}
+    every: dict[str, list[dict]] = {}
+    duplicated: set[str] = set()
+    for attempt in attempts:
+        started = attempt.get("run_started_at")
+        ran: dict[str, list[dict]] = {}
+        names = [job["name"] for job in attempt.get("jobs") or []]
+        duplicated |= {name for name in names if names.count(name) > 1}
+        for job in attempt.get("jobs") or []:
+            if (
+                started
+                and job.get("started_at")
+                and _timestamp(job["started_at"]) < _timestamp(started)
+            ):
+                continue
+            ran.setdefault(job["name"], []).append(job)
+            every.setdefault(job["name"], []).append(job)
+        for name, executions in ran.items():
+            earlier = chosen.get(name)
+            passed = any(j.get("conclusion") == "success" for j in executions)
+            passed_earlier = earlier is not None and any(
+                j.get("conclusion") == "success" for j in earlier
+            )
+            if passed or not passed_earlier:
+                chosen[name] = executions
+    return [
+        job
+        for name, executions in chosen.items()
+        for job in (every[name] if name in duplicated else executions)
+    ]
+
+
 def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
-    """All jobs of a workflow run, or None if unreachable (no access/expired)."""
-    jobs: list[dict] = []
-    for page in range(1, 16):
-        url = (
-            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
-            f"/jobs?per_page=100&page={page}"
-        )
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "create-post-release-pr",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                batch = json.loads(response.read()).get("jobs", [])
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-            return None
-        jobs.extend(batch)
-        if len(batch) < 100:
-            break
-    return jobs
+    """The jobs that ran in a workflow run, over all its attempts (jobs_that_ran),
+    or None if unreachable (no access/expired).
+
+    ``/runs/{id}/jobs`` alone lists only the latest attempt, where a re-run's
+    copied jobs stand in for the ones that produced the results.
+    """
+    base = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
+    attempts = []
+    try:
+        count = _api_get(base, token).get("run_attempt") or 1
+        for number in range(1, count + 1):
+            started = _api_get(f"{base}/attempts/{number}", token).get("run_started_at")
+            jobs: list[dict] = []
+            for page in range(1, 16):
+                batch = _api_get(
+                    f"{base}/attempts/{number}/jobs?per_page=100&page={page}", token
+                ).get("jobs", [])
+                jobs.extend(batch)
+                if len(batch) < 100:
+                    break
+            attempts.append({"run_started_at": started, "jobs": jobs})
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        return None
+    return jobs_that_ran(attempts)
 
 
 def fetch_job_log(repo: str, job_id, token: str) -> str | None:

@@ -7,6 +7,7 @@ import os
 from contextlib import nullcontext
 from typing import Any, Optional
 
+from multihost.lockstep_runner import wrap_if_multihost
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
@@ -85,6 +86,9 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
         device_runner.set_device()
+        # On a mesh spanning several hosts (tt-run), keep the other ranks in
+        # step with this runner. Must follow set_device(): see wrap_if_multihost.
+        device_runner = wrap_if_multihost(device_runner)
         # Use the same loop for model loading
         try:
             warmup_ok = loop.run_until_complete(device_runner.warmup())

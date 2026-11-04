@@ -11,6 +11,7 @@ Prometheus collectors are process-global and cumulative, so each test uses its
 own ``model_type`` label value.
 """
 
+import pytest
 from prometheus_client import REGISTRY
 from telemetry.video_request_metrics import (
     ASPECT_RATIO_OTHER,
@@ -33,9 +34,15 @@ class FakeRequest:
     rather than trusting an upstream gate that only some runners apply.
     """
 
-    def __init__(self, aspect_ratio=None, duration_seconds=None):
+    def __init__(self, aspect_ratio=None, duration=None):
         self.aspect_ratio = aspect_ratio
-        self.duration_seconds = duration_seconds
+        self.duration = duration
+
+
+@pytest.fixture(autouse=True)
+def _h3_deployment(monkeypatch):
+    """Duration is recorded for MiniMax-H3 only; these tests model an H3 server."""
+    monkeypatch.setattr("domain.video_generate_request._is_minimax_h3", lambda: True)
 
 
 def test_bucket_known_aspect_ratios_pass_through():
@@ -120,6 +127,19 @@ def test_observe_records_shape():
     )
     assert (
         sample("tt_media_server_video_requested_duration_seconds_sum", **labels) == 10
+    )
+
+
+def test_observe_skips_duration_off_h3(monkeypatch):
+    """LTX writes its served duration onto every request; that is not a request."""
+    monkeypatch.setattr("domain.video_generate_request._is_minimax_h3", lambda: False)
+    model = "test-video-shape-ltx"
+    observe_video_request(FakeRequest("16:9", 6.12), model, "t2v")
+
+    labels = {"model_type": model, "request_type": "t2v"}
+    assert (
+        sample("tt_media_server_video_requested_duration_seconds_count", **labels)
+        is None
     )
 
 

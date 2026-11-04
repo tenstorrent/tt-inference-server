@@ -215,11 +215,12 @@ main process's `/metrics` by `TtsWorkerMetricsRenderer`.
 
 #### Label caveats
 
-There is deliberately **no `voice` or `language` label**: the TTS API accepts
-only `text`, a free-form `description` and an optional voice WAV, so neither
-dimension exists to label by. `voice_source`
-(`default` / `description` / `voice_sample`) is the bounded stand-in until
-those fields are added to the request.
+There is deliberately **no `voice` or `language` label**. A TTS-2 request
+carries only `text`, a free-form `description` and an optional voice WAV; a
+Qwen3-TTS request can also name a `speaker` and a `language`
+([`QWEN3_TTS.md`](../cpp_server/docs/QWEN3_TTS.md)), but the worker metrics do
+not label by them. `voice_source` (`default` / `description` / `voice_sample`)
+is the bounded stand-in.
 
 `batch` (`1`, `2`, `3-4`, `5-8`, `9-16`, `17+`) is **derived, not reported**.
 The engine does not expose the batch its vocoder formed, so the runner counts

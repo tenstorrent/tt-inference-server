@@ -126,3 +126,39 @@ def test_duplicate_cli_doc_ids_are_dropped_and_counted_once():
 def test_duplicate_configured_doc_ids_are_rejected():
     with pytest.raises(ValueError):
         EvalTask(task_name="x", doc_ids=[1, 2, 2]).validate_data()
+
+
+# --- doc_ids and subset (PARTIAL) grading ------------------------------------
+# A task whose EvalConfig defines its doc set runs exactly that set on every
+# run; that is the whole task, not a subset. Only an --eval-samples selection
+# narrower than it is a partial measurement.
+
+
+def _ctx(**kw):
+    base = {"eval_samples": None, "limit_samples_mode": None, "eval_shard": None}
+    base.update(kw)
+    return SimpleNamespace(runtime_config=SimpleNamespace(**base))
+
+
+def test_a_doc_ids_task_on_its_configured_set_is_a_full_run():
+    from test_module.llm_tests.llm_eval_tests import subset_run_reason
+
+    assert subset_run_reason(_ctx(), _task()) is None
+    # --eval-samples for another task leaves this one on its configured set.
+    other = _ctx(eval_samples=json.dumps({"mmlu_pro": [1]}))
+    assert subset_run_reason(other, _task()) is None
+    # Naming exactly the configured set is still the full task.
+    same = _ctx(eval_samples=json.dumps({"livecodebench": [8, 7, 6, 5]}))
+    assert subset_run_reason(same, _task()) is None
+
+
+def test_an_eval_samples_selection_narrower_than_doc_ids_is_partial():
+    from test_module.llm_tests.llm_eval_tests import subset_run_reason
+
+    narrow = _ctx(eval_samples=json.dumps({"livecodebench": [5, 6]}))
+    assert subset_run_reason(narrow, _task()) == "explicit --eval-samples subset"
+    # A task without doc_ids keeps the existing rule.
+    plain = _ctx(eval_samples=json.dumps({"mmlu_pro": [1, 2]}))
+    assert subset_run_reason(plain, EvalTask(task_name="mmlu_pro")) == (
+        "explicit --eval-samples subset"
+    )

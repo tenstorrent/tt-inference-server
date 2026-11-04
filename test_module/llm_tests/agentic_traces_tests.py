@@ -185,6 +185,8 @@ def run_agentic_traces(
         model_repo=model_repo,
         model_id=model_id,
         output_dir=output_root,
+        # Chart links are relative to where the markdown report lands.
+        report_dir=Path(ctx.output_path).parent,
     )
     swo_bench_driver = SwoBenchAgenticTracesDriver(
         venv_python=resolved_venv_python,

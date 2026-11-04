@@ -133,3 +133,26 @@ def test_model_categories_agree_with_weights():
         "enrolled models absent from model_categories, so their suites get no "
         f"category marker: {missing}"
     )
+
+
+def test_minimax_provider_verifier_runs_only_for_minimax_models():
+    """The verifier's suites are MiniMax-specific: M3 runs verify.py plus the
+    format checks (non-blocking), M2.7 runs verify.py, nothing else runs any."""
+
+    def verifier_suites(model):
+        return sorted(
+            (case["test_config"]["suite"], bool(case["test_config"]["non_blocking"]))
+            for suite in SuiteTestFilter().filter_by_model(model).get_tests()
+            for case in suite.get("test_cases", [])
+            if case.get("name") == "MiniMaxProviderVerifierTest"
+        )
+
+    assert verifier_suites("MiniMaxAI/MiniMax-M3") == [
+        ("image", True),
+        ("stream", True),
+        ("text", True),
+        ("verify", False),
+        ("video", True),
+    ]
+    assert verifier_suites("MiniMaxAI/MiniMax-M2.7") == [("verify", False)]
+    assert verifier_suites("moonshotai/Kimi-K2.7-Code") == []

@@ -26,16 +26,6 @@ namespace {
 using tt::domain::tts::TtsEvent;
 using tt::domain::tts::TtsRequest;
 
-template <typename ParamMap>
-std::optional<std::string> findParam(const ParamMap& params,
-                                     const std::string& name) {
-  auto it = params.find(name);
-  if (it == params.end()) {
-    return std::nullopt;
-  }
-  return it->second;
-}
-
 TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
   if (auto json = req->getJsonObject()) {
     return TtsRequest::fromJson(*json, taskId);
@@ -46,15 +36,8 @@ TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
     throw std::invalid_argument("Request must be JSON or multipart/form-data");
   }
 
-  const auto& params = parser.getParameters();
-  auto text = findParam(params, "text");
-  if (!text.has_value()) {
-    throw std::invalid_argument("Missing required field: text");
-  }
-
-  TtsRequest request(taskId);
-  request.text = *text;
-  request.description = findParam(params, "description");
+  TtsRequest request =
+      TtsRequest::fromFormFields(parser.getParameters(), taskId);
 
   const auto& files = parser.getFiles();
   if (!files.empty()) {

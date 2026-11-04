@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 from abc import ABC
 from dataclasses import dataclass, field
@@ -38,7 +39,29 @@ if TYPE_CHECKING:
 
 from .blocks_sink import BlockAccumulator, get_default_accumulator
 
+
 logger = logging.getLogger(__name__)
+
+
+def _checkout_commit() -> Optional[str]:
+    """HEAD of this tt-inference-server checkout, or None when unavailable."""
+    try:
+        out = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(Path(__file__).resolve().parent.parent),
+                "rev-parse",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out if len(out) == 40 else None
 
 
 # Vendor-invariant identity fields every report carries. Vendor provenance
@@ -465,6 +488,9 @@ class WorkflowExecution(ABC):
             meta["run_command"] = m.run_command
         if m.runtime_model_spec_json is not None:
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
+        # The checkout that produced the report, so a consumer can bind it to
+        # the commit it dispatched (None outside a git checkout).
+        meta["tt_inference_server_commit"] = _checkout_commit()
         self._inject_model_spec_metadata(meta)
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:

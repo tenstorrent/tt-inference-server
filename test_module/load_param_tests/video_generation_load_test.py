@@ -110,6 +110,34 @@ class VideoGenerationLoadTest(BaseTest):
                 else:
                     raise Exception(f"Unknown status '{status}' for job {job_id}")
 
+    async def delete_video_job(self, session, job_id):
+        """Delete a finished job and check it is gone.
+
+        Servers that predate ``DELETE /v1/videos/generations/{job_id}`` answer
+        405; that is logged and skipped so older images still benchmark.
+        """
+        job_url = f"{self.url}/{job_id}"
+        async with session.delete(job_url, headers=headers) as response:
+            if response.status == 405:
+                logger.warning(
+                    f"Job {job_id}: server has no DELETE endpoint; skipping delete check"
+                )
+                return
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to delete job {job_id}: {response.status} {response.reason}"
+                )
+            data = await response.json()
+            if data.get("deleted") is not True:
+                raise Exception(f"Unexpected delete response for job {job_id}: {data}")
+
+        async with session.get(job_url, headers=headers) as response:
+            if response.status != 404:
+                raise Exception(
+                    f"Job {job_id} still present after delete: {response.status}"
+                )
+        logger.info(f"Job {job_id}: deleted")
+
     async def test_concurrent_video_generation(self, batch_size):
         async def timed_request(session, index):
             logger.info(f"Starting request {index}")
@@ -140,6 +168,9 @@ class VideoGenerationLoadTest(BaseTest):
 
                 duration = time.perf_counter() - start
                 logger.info(f"[{index}] Completed in {duration:.2f}s")
+
+                # Step 3: Delete the finished job (outside the timed window)
+                await self.delete_video_job(session, job_id)
                 return duration
 
             except Exception as e:

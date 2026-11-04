@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from test_module.test_categorization_system.suite_loader import (
     load_server_tests_config,
     load_suite_files_by_category,
@@ -30,18 +32,37 @@ def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
     assert {"param", "e2e", "slow", "heavy"} <= set(template["markers"])
 
 
-def test_llama_3_2_1b_p300x2_uses_vllm_param_conformance_suite():
-    suites = load_suite_files_by_category("llm")
-    matching = [
-        suite
-        for suite in suites
-        if suite["weights"] == ["meta-llama/Llama-3.2-1B-Instruct"]
-    ]
+@pytest.mark.parametrize(
+    "impl, suite_id",
+    [
+        # Upstream impls run the generic matrix (llama_3_2_1b model config) ...
+        ("tt_transformers", "llama-3.2-1b-p300x2"),
+        # ... which excludes quetzal; the quetzal row runs its own generated,
+        # quetzal-scoped matrix instead (exactly one per impl either way).
+        ("quetzal", "meta-llama--Llama-3.2-1B-Instruct-p300x2"),
+    ],
+)
+def test_llama_3_2_1b_p300x2_uses_vllm_param_conformance_suite(impl, suite_id):
+    from test_module.test_categorization_system.test_filter import (
+        TestFilter as SuiteTestFilter,  # aliased so pytest does not collect it
+    )
 
-    assert [(suite["id"], suite["device"]) for suite in matching] == [
-        ("llama-3.2-1b-p300x2", "p300x2")
+    suites = load_suite_files_by_category("llm")
+    llama = [s for s in suites if s["weights"] == ["meta-llama/Llama-3.2-1B-Instruct"]]
+    # The impl filter decides which suite this impl runs ...
+    selected = (
+        SuiteTestFilter(llama)
+        .filter_by_device("p300x2")
+        .filter_by_impl(impl)
+        .get_tests()
+    )
+    assert [(suite["id"], suite["device"]) for suite in selected] == [
+        (suite_id, "p300x2")
     ]
-    assert [case["template"] for case in matching[0]["test_cases"]] == [
+    # ... and that suite's own matrix carries exactly the conformance case (the
+    # filter adds suite-wide common tests on top, so read the raw suite).
+    raw = next(s for s in llama if s["id"] == suite_id)
+    assert [case["template"] for case in raw["test_cases"]] == [
         "VLLMParamConformanceTest"
     ]
 

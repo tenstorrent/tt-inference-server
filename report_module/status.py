@@ -21,6 +21,9 @@ class TestStatus(str, Enum):
     - ``ERROR`` raised unexpectedly (crash / setup failure) -> blocking.
     - ``SKIP``  intentionally not run (needs a ``reason``)  -> non-blocking.
     - ``NA``    ran but produced no gradable result         -> non-blocking.
+    - ``PARTIAL`` ran on a subset of the samples (one shard, or an explicit
+      sample list): a measurement, never a verdict. Not a process failure, but
+      acceptance can never pass on it; only a merged full-set result can.
     """
 
     PASS = "pass"
@@ -28,6 +31,7 @@ class TestStatus(str, Enum):
     ERROR = "error"
     SKIP = "skip"
     NA = "na"
+    PARTIAL = "partial"
 
     @property
     def is_blocking(self) -> bool:
@@ -71,6 +75,7 @@ STATUS_GLYPHS: dict[TestStatus, str] = {
     TestStatus.ERROR: "❌",
     TestStatus.SKIP: "⏭️",
     TestStatus.NA: "🟨",
+    TestStatus.PARTIAL: "🧩",
 }
 
 

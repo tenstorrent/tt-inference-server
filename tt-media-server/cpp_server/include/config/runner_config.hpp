@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -127,6 +128,21 @@ struct ImageConfig : MediaRunnerConfigBase {
   size_t imageHeight = 1024;
 };
 
+/** Qwen3-TTS deployment settings; one release per deployment. */
+struct Qwen3TtsConfig {
+  Qwen3TtsRelease release = Qwen3TtsRelease::BASE;
+  Qwen3TtsModelSize modelSize = Qwen3TtsModelSize::SIZE_1B7;
+  std::string checkpointDir;
+  std::string hfModel;
+  // From the checkpoint's config.json; empty = unknown, left to the worker.
+  std::vector<std::string> speakers;
+  std::vector<std::string> languages;
+  uint32_t maxFrames = defaults::TTS_QWEN3_MAX_FRAMES;
+  // Sampling seed applied before every request; unset = unseeded sampling.
+  std::optional<uint64_t> seed;
+  uint32_t maxReferenceSeconds = defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS;
+};
+
 struct TtsConfig : RunnerConfigBase {
   TtsConfig() { runner_type = ModelRunnerType::TT_TTS; }
 
@@ -166,6 +182,14 @@ struct TtsConfig : RunnerConfigBase {
       defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX;
   std::string decoderSocketDescriptorPrefix =
       defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX;
+
+  // Set by workerRunnerConfig(); the Qwen3-TTS runner opens its device by it.
+  size_t workerId = 0;
+  // Chip ids this worker may use, e.g. "0" or "1" (its DEVICE_IDS group).
+  std::string visibleDevices;
+
+  // Set only when runner_type == TT_QWEN3_TTS.
+  std::optional<Qwen3TtsConfig> qwen3;
 };
 
 using RunnerConfig =

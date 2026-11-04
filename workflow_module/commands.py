@@ -89,6 +89,12 @@ _HANG_MARKERS = (
     "Timeout detected",
 )
 
+_FATAL_STARTUP_MARKERS = (
+    "Worker warmup failed; stopping all spawned workers",
+    "Leader worker 0 failed warmup; aborting remaining worker startup",
+    "Configured service reported fatal worker error",
+)
+
 
 def _server_boot_attempts() -> int:
     """How many times to try bringing the server up.
@@ -110,24 +116,96 @@ def _server_boot_attempts() -> int:
         return 2
 
 
-def _readiness_timeout() -> float:
+# Time a first boot spends outside tensor-cache generation: weight download, load
+# and server start. Matches the Helm chart's progressDeadlineSeconds
+# (tensor_cache_timeout + 1800, workflows/helm_generator/base_mapper.py).
+_BOOT_OVERHEAD_SECONDS = 1800.0
+_DEFAULT_READY_TIMEOUT_SECONDS = 3600.0
+
+
+def _spec_ready_timeout(model_spec: Any) -> Optional[float]:
+    """The model's own first-boot budget: tensor_cache_timeout plus boot overhead."""
+    device_model_spec = getattr(model_spec, "device_model_spec", None)
+    raw = getattr(device_model_spec, "tensor_cache_timeout", None)
+    try:
+        tensor_cache_timeout = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if tensor_cache_timeout <= 0:
+        return None
+    return tensor_cache_timeout + _BOOT_OVERHEAD_SECONDS
+
+
+def _readiness_timeout(model_spec: Any = None) -> float:
     """How long bring-up waits for /health before calling the attempt failed.
 
-    Generous on purpose (1h). A cold Qwen3-32B Galaxy boot measured ~23.5 min --
-    most of it one-time kernel compilation -- so a tight bound here would spend a
-    retry on a server that was merely still compiling, which costs another full boot
-    and can turn a slow-but-fine run into a failed one. Genuine stalls are caught by
-    the log hang markers long before this deadline, so this is a backstop, not the
-    primary detector.
+    TT_SERVER_READY_TIMEOUT_SECONDS wins when set. Otherwise the model's own budget
+    is used: its tensor_cache_timeout plus time for the weight download and server
+    start, the same deadline the Helm chart gives the deployment. A cold 70B start on
+    QB2 measured ~59 min (#5363), so a flat 1h cut it off, and the retry then lost
+    the first attempt's progress. Genuine stalls are caught by the log hang markers
+    long before this deadline, so this is a backstop, not the primary detector.
     """
     import os
 
-    raw = os.getenv("TT_SERVER_READY_TIMEOUT_SECONDS", "3600")
-    try:
-        return max(1.0, float(raw))
-    except ValueError:
-        logger.warning("Invalid TT_SERVER_READY_TIMEOUT_SECONDS=%r; using 3600", raw)
-        return 3600.0
+    raw = os.getenv("TT_SERVER_READY_TIMEOUT_SECONDS")
+    if raw is not None:
+        try:
+            return max(1.0, float(raw))
+        except ValueError:
+            logger.warning(
+                "Invalid TT_SERVER_READY_TIMEOUT_SECONDS=%r; using the model's budget",
+                raw,
+            )
+    return _spec_ready_timeout(model_spec) or _DEFAULT_READY_TIMEOUT_SECONDS
+
+
+# Leading words of the readiness-wait reason when the deadline passes.
+_TIMED_OUT = "timed out"
+
+# vLLM images built before v0.19.0 (#4397) skip the weight download when the
+# weights directory is non-empty, so a download cut off by a timeout is never
+# resumed and the model fails on every later start until the volume is deleted.
+_RESUMABLE_DOWNLOAD_MIN_VERSION = (0, 19, 0)
+
+
+def _parse_version(version: Any) -> Optional[tuple]:
+    import re
+
+    match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", str(version or ""))
+    if not match:
+        return None
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def _container_cannot_resume_download(spec: ServerLaunchSpec) -> bool:
+    """True when a timed-out boot may have left a half-downloaded weights dir behind.
+
+    That happens only when the weights are downloaded inside the container by a
+    vLLM image whose launcher predates resumable downloads. Retrying such a boot
+    cannot succeed. The container does not download when run.py fetched the weights
+    on the host (--host-volume, --host-hf-cache), or when it mounts existing weights
+    (host_model_weights_mount_dir: --host-weights-dir, or MODEL_SOURCE=local with
+    MODEL_WEIGHTS_DIR), because the container then gets MODEL_WEIGHTS_DIR.
+    """
+    if spec.mode is not ServerMode.DOCKER:
+        return False
+    model_spec = spec.model_spec
+    if getattr(model_spec, "inference_engine", None) != "vLLM":
+        return False
+    version = _parse_version(getattr(model_spec, "version", None))
+    if version is None or version >= _RESUMABLE_DOWNLOAD_MIN_VERSION:
+        return False
+    setup_config = spec.setup_config
+    return not any(
+        getattr(setup_config, name, None)
+        for name in (
+            "host_model_volume_root",
+            "host_hf_cache",
+            "host_weights_dir",
+            "host_model_weights_mount_dir",
+        )
+    )
 
 
 def _payload_get(payload: Any, key: str) -> Any:
@@ -147,8 +225,8 @@ def _server_log_path(payload: Any) -> Optional[Path]:
     return path if path.exists() else None
 
 
-def _scan_log_for_hang(payload: Any) -> Optional[str]:
-    """Return the hang marker found in the server log, if any."""
+def _scan_log_for_markers(payload: Any, markers: Sequence[str]) -> Optional[str]:
+    """Return the first marker from ``markers`` found in the server log, if any."""
     log_path = _server_log_path(payload)
     if not log_path:
         return None
@@ -156,9 +234,41 @@ def _scan_log_for_hang(payload: Any) -> Optional[str]:
         text = log_path.read_text(errors="ignore")
     except OSError:
         return None
-    for marker in _HANG_MARKERS:
+    for marker in markers:
         if marker in text:
             return marker
+    return None
+
+
+def _scan_log_for_hang(payload: Any) -> Optional[str]:
+    """Return the hang marker found in the server log, if any."""
+    return _scan_log_for_markers(payload, _HANG_MARKERS)
+
+
+def _scan_log_for_fatal_startup_error(payload: Any) -> Optional[str]:
+    """Return a fatal worker/warmup failure marker found in the server log, if any."""
+    return _scan_log_for_markers(payload, _FATAL_STARTUP_MARKERS)
+
+
+def _fatal_health_error(exc: Any) -> Optional[str]:
+    """Extract a terminal worker failure from an HTTP error response body, if present."""
+    import json
+
+    read = getattr(exc, "read", None)
+    if not callable(read):
+        return None
+    try:
+        raw = read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(data, Mapping):
+        return None
+    error = str(data.get("error") or "")
+    if "is dead" in error or error == "no workers are alive":
+        return error
     return None
 
 
@@ -224,8 +334,11 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
         )
         return None
 
-    deadline = time.time() + _readiness_timeout()
-    logger.info("Waiting for inference server readiness at %s ...", url)
+    timeout = _readiness_timeout(spec.model_spec)
+    deadline = time.time() + timeout
+    logger.info(
+        "Waiting up to %.0fs for inference server readiness at %s ...", timeout, url
+    )
 
     while time.time() < deadline:
         try:
@@ -233,6 +346,10 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
                 if 200 <= resp.status < 300:
                     logger.info("Inference server is ready at %s", url)
                     return None
+        except urllib.error.HTTPError as exc:
+            fatal = _fatal_health_error(exc)
+            if fatal:
+                return f"server reported fatal health error ({fatal})"
         except (urllib.error.URLError, OSError, ValueError):
             pass
 
@@ -240,6 +357,9 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
             marker = _scan_log_for_hang(payload)
             if marker:
                 return f"server process exited during startup (device hang: {marker!r})"
+            fatal_marker = _scan_log_for_fatal_startup_error(payload)
+            if fatal_marker:
+                return f"server process exited during startup ({fatal_marker!r})"
             return "server process exited during startup"
 
         # A hung device keeps the process alive but never serves traffic, so the
@@ -248,9 +368,13 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
         if marker:
             return f"device hang detected during startup ({marker!r})"
 
+        fatal_marker = _scan_log_for_fatal_startup_error(payload)
+        if fatal_marker:
+            return f"worker warmup failed during startup ({fatal_marker!r})"
+
         time.sleep(5)
 
-    return f"timed out after {_readiness_timeout():.0f}s waiting for {url}"
+    return f"{_TIMED_OUT} after {timeout:.0f}s waiting for {url}"
 
 
 def _teardown_server(spec: ServerLaunchSpec, payload: Any) -> None:
@@ -302,8 +426,10 @@ class ServerCommand(Command):
         spec = self.launch
         attempts = _server_boot_attempts()
         last_error = None
+        attempts_made = 0
 
         for attempt in range(1, attempts + 1):
+            attempts_made = attempt
             if attempt > 1:
                 logger.warning(
                     "Retrying server bring-up (attempt %d/%d) after: %s",
@@ -340,10 +466,25 @@ class ServerCommand(Command):
             logger.error("Server did not become ready: %s", ready_error)
             _teardown_server(spec, payload)
 
+            if ready_error.startswith(_TIMED_OUT) and _container_cannot_resume_download(
+                spec
+            ):
+                logger.error(
+                    "Not retrying: image v%s cannot resume a weight download that the "
+                    "timeout may have cut off, so a retry would fail on incomplete "
+                    "weights. Re-run with --host-volume (weights are downloaded on the "
+                    "host and resumed), or delete this model's Docker volume first. "
+                    "Raise TT_SERVER_READY_TIMEOUT_SECONDS if the boot is just slow.",
+                    getattr(spec.model_spec, "version", "?"),
+                )
+                break
+
         return CommandResult(
             command_name=self.name,
             return_code=1,
-            error=f"server bring-up failed after {attempts} attempt(s): {last_error}",
+            error=(
+                f"server bring-up failed after {attempts_made} attempt(s): {last_error}"
+            ),
         )
 
     def _launch_once(self, spec: ServerLaunchSpec) -> Any:

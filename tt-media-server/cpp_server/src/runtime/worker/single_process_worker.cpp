@@ -99,6 +99,23 @@ void SingleProcessWorker::start() {
     setenv(key.c_str(), value.c_str(), 1);
   }
 
+  if (tt::config::isEmbeddingService()) {
+    if (const char* metalHome = std::getenv("TT_METAL_HOME");
+        metalHome && *metalHome) {
+      if (chdir(metalHome) == 0) {
+        TT_LOG_INFO(
+            "[SingleProcessWorker] Worker {} chdir to TT_METAL_HOME: {}",
+            worker_id, metalHome);
+      } else {
+        TT_LOG_ERROR(
+            "[SingleProcessWorker] Worker {} chdir to TT_METAL_HOME '{}' "
+            "failed; kernels with tt-metal-relative include paths will not "
+            "compile",
+            worker_id, metalHome);
+      }
+    }
+  }
+
   {
     ZoneScopedN("Worker::init");
     if (tt::config::isTtsService()) {
@@ -116,9 +133,10 @@ void SingleProcessWorker::start() {
       runner_ = tt::utils::ipc_runner_factory::createTtsIpcRunner(
           cfg.runner_config, taskQueue->get(), audioQueue->get(),
           cfg.cancel_queue.get());
-    } else if (tt::config::isImageService()) {
+    } else if (tt::config::isImageService() ||
+               tt::config::isEmbeddingService()) {
       runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
-          tt::config::ModelService::IMAGE, cfg.runner_config, nullptr, nullptr,
+          tt::config::modelService(), cfg.runner_config, nullptr, nullptr,
           nullptr);
     } else {
       auto* taskQueue =
@@ -151,12 +169,18 @@ void SingleProcessWorker::start() {
         TT_LOG_ERROR(
             "[SingleProcessWorker] Worker {} failed to signal warmup: {}",
             worker_id, e.what());
+        throw;
       }
     });
-    TT_LOG_CRITICAL(
-        "[SingleProcessWorker] Worker {} runner loop returned unexpectedly "
-        "(runner type: {})",
-        worker_id, runner_ ? runner_->runnerType() : "unknown");
+    if (tt::config::isImageService() || tt::config::isEmbeddingService()) {
+      TT_LOG_INFO("[SingleProcessWorker] Worker {} runner loop exited ({})",
+                  worker_id, runner_ ? runner_->runnerType() : "unknown");
+    } else {
+      TT_LOG_CRITICAL(
+          "[SingleProcessWorker] Worker {} runner loop returned unexpectedly "
+          "(runner type: {})",
+          worker_id, runner_ ? runner_->runnerType() : "unknown");
+    }
   } catch (const std::exception& e) {
     TT_LOG_CRITICAL(
         "[SingleProcessWorker] Worker {} CRASHED with exception: {} "

@@ -480,8 +480,35 @@ class BaseTest(ABC):
         for attempt in range(1, max_attempts + 1):
             try:
                 response = requests.get(health_url, timeout=HEALTH_CHECK_CONFIG.TIMEOUT)
-                if response.status_code == 200:
+                try:
                     data = response.json()
+                except ValueError:
+                    data = None
+                if isinstance(data, dict):
+                    status = data.get("status")
+                    if status is not None and status != "alive":
+                        logger.error(
+                            "Server reported fatal liveness status '%s': %s",
+                            status,
+                            data.get("error") or data,
+                        )
+                        return False
+                    worker_info = data.get("worker_info")
+                    if isinstance(worker_info, dict):
+                        dead_workers = [
+                            wid
+                            for wid, w in worker_info.items()
+                            if isinstance(w, dict)
+                            and (w.get("pid") or 0) > 0
+                            and w.get("is_alive") is False
+                        ]
+                        if dead_workers:
+                            logger.error(
+                                "Worker process(es) died during startup/warmup: %s",
+                                dead_workers,
+                            )
+                            return False
+                if response.status_code == 200 and isinstance(data, dict):
                     if data.get("status") == "alive" and data.get("model_ready"):
                         logger.info(
                             "Server is ready after %s attempt(s)",

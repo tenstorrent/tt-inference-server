@@ -455,3 +455,69 @@ def test_merged_report_grades_each_stage_across_tests(tmp_path):
         ("performance", "FAIL"),
     ]
     assert stats["accepted"] is False
+
+
+# --------------------------------------------------------------------------- #
+# telemetry charts travel with the merged report
+# --------------------------------------------------------------------------- #
+def _report_with_chart(link):
+    report = _report(workflow="agentic_traces")
+    report["sections"] = [
+        {
+            "kind": "agentic_traces",
+            "data": {"records": [{"concurrency": 8, "telemetry_chart_latency": link}]},
+        }
+    ]
+    return report
+
+
+def test_charts_are_copied_beside_the_merged_markdown_and_relinked(tmp_path):
+    link = "model_agentic_traces/agentic_traces/charts/c8/latency.svg"
+    artifact = tmp_path / "in" / "report_x_1"
+    chart = artifact / "workflow_logs" / "reports_output" / "agentic_traces" / link
+    chart.parent.mkdir(parents=True)
+    chart.write_text("<svg/>")
+    chart.with_suffix(".mmd").write_text("```mermaid\nxychart-beta\n```\n")
+    _write(
+        tmp_path / "in",
+        "report_x_1",
+        "report_agentic_traces_0_100.json",
+        _report_with_chart(link),
+    )
+
+    out = tmp_path / "out"
+    result, _ = merge_reports(tmp_path / "in", out, job_id="55")
+
+    relinked = f"telemetry_charts/100/{link}"
+    assert (out / relinked).read_text() == "<svg/>"
+    # Its Mermaid twin travels with it, for the CI job summary.
+    assert (out / relinked).with_suffix(".mmd").read_text().startswith("```mermaid")
+    assert f"({relinked})" in result.markdown
+
+
+def test_a_chart_that_cannot_be_found_is_dropped_not_left_dangling(tmp_path):
+    _write(
+        tmp_path / "in",
+        "report_x_1",
+        "report_agentic_traces_0_100.json",
+        _report_with_chart("missing/charts/c8/latency.svg"),
+    )
+    result, _ = merge_reports(tmp_path / "in", tmp_path / "out", job_id="55")
+
+    assert "missing/charts" not in result.markdown
+    assert "telemetry_chart_latency" not in result.json_path.read_text()
+
+
+def test_chart_links_cannot_escape_the_report_directory(tmp_path):
+    outside = tmp_path / "secret.svg"
+    outside.write_text("<svg/>")
+    _write(
+        tmp_path / "in",
+        "report_x_1",
+        "report_agentic_traces_0_100.json",
+        _report_with_chart("../../secret.svg"),
+    )
+    result, _ = merge_reports(tmp_path / "in", tmp_path / "out", job_id="55")
+
+    assert not (tmp_path / "out" / "telemetry_charts").exists()
+    assert "secret.svg" not in result.markdown

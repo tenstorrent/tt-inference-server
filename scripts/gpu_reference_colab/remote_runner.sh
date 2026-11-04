@@ -12,7 +12,10 @@
 #
 # State in WORK_DIR (polled by the driver):
 #   phase                 one line, the current step
-#   DONE | FAILED         terminal markers (FAILED: setup failed or a model failed)
+#   DONE | FAILED         terminal markers (FAILED: setup failed or a model failed;
+#                         a reason a new VM would hit again ends in
+#                         "persistent setup failure: <note>", so the --serve
+#                         driver stops instead of rolling over)
 #   runner.log            this script's log (the launcher redirects into it)
 #   results/              what the driver downloads:
 #     status.json         per-model status
@@ -22,6 +25,13 @@
 # The HF token is expected at ~/.cache/huggingface/token (mode 0600, uploaded
 # by the driver); huggingface_hub, vLLM and lm-eval all read it from there.
 # This script never reads, prints or exports it.
+#
+# --serve (agentic tasks, one model): no evals here. Serve the model with
+# vLLM's API key (VLLM_API_KEY, from ${WORK_DIR}/secrets/endpoint_api_key),
+# publish it through an ngrok tunnel (NGROK_AUTHTOKEN from secrets/), write the
+# public URL to ${WORK_DIR}/endpoint and the SERVING marker, and keep both up
+# until the driver writes STOP (Shield's endpoint tests run the evals). Neither
+# secret is ever on a command line or in a log.
 
 set -uo pipefail
 
@@ -39,11 +49,13 @@ TTIS_SHA=""
 SERVER_TIMEOUT=2700   # seconds to wait for /v1/models (download + load + graphs)
 PORT=8000
 MODELS=()
+SERVE=0 TUNNEL_DOMAIN=""   # --serve [--tunnel-domain D]: see above
+NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
 declare -A TASKS=()   # model -> comma-separated tasks (--task); unset = all its tasks
 
 usage() {
     cat <<EOF
-Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] [--task MODEL=T[,T]]... MODEL...
+Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] [--task MODEL=T[,T]]... [--serve [--tunnel-domain D]] MODEL...
 EOF
 }
 
@@ -55,6 +67,8 @@ while [[ $# -gt 0 ]]; do
         --transformers-version) TRANSFORMERS_OVERRIDE="$2"; shift 2 ;;
         --server-timeout) SERVER_TIMEOUT="$2"; shift 2 ;;
         --task) TASKS["${2%%=*}"]="${2#*=}"; shift 2 ;;
+        --serve) SERVE=1; shift ;;
+        --tunnel-domain) TUNNEL_DOMAIN="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
         *) MODELS+=("$1"); shift ;;
@@ -62,6 +76,8 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${TTIS_SHA}" && ${#MODELS[@]} -gt 0 ]] || { usage >&2; exit 2; }
 [[ "${TTIS_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "--ttis-sha must be a full 40-hex sha" >&2; exit 2; }
+[[ "${SERVE}" -eq 0 || ${#MODELS[@]} -eq 1 ]] || { echo "--serve serves exactly one model" >&2; exit 2; }
+[[ -z "${TUNNEL_DOMAIN}" || "${TUNNEL_DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "bad --tunnel-domain" >&2; exit 2; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GPUREF="${SCRIPT_DIR}/gpuref.py"
@@ -70,6 +86,13 @@ VENV=""            # this model's stack venv (ensure_stack)
 SERVER_ENV=()      # this model's stack env, KEY=VALUE
 RESULTS="${WORK_DIR}/results"
 SERVER_PID=""
+SECRETS="${WORK_DIR}/secrets"   # --serve: endpoint_api_key, auth_header, ngrok_authtoken (0600)
+TUNNEL_PID=""
+# The note of a failure a new VM would hit again (same pinned commit, plan,
+# stack and credentials): no GPU spec, a stack that does not install, a vLLM
+# that never becomes ready, an ngrok error at tunnel start. Empty otherwise.
+PERSISTENT_FAILURE=""
+TUNNEL_SETUP_ERROR=""
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 phase() { printf '%s\n' "$*" > "${WORK_DIR}/phase"; log "PHASE: $*"; }
@@ -77,6 +100,7 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 finish() {
     local marker="$1" reason="$2"
+    stop_tunnel
     stop_server
     if [[ -d "${TTIS_DIR}/workflow_logs" ]]; then
         rm -rf "${RESULTS}/workflow_logs"
@@ -117,15 +141,109 @@ start_server() {
     local logfile="$1"; shift
     log "${VENV}/bin/vllm $*"
     # The stack's server env, and its venv's bin (tools vLLM may shell out to) on PATH.
-    PATH="${VENV}/bin:${PATH}" setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
-        "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    # --serve: vLLM reads the API key from VLLM_API_KEY, so it is in no argv.
+    if [[ "${SERVE}" -eq 1 ]]; then
+        VLLM_API_KEY="$(< "${SECRETS}/endpoint_api_key")" PATH="${VENV}/bin:${PATH}" \
+            setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
+            "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    else
+        PATH="${VENV}/bin:${PATH}" setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
+            "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    fi
     SERVER_PID=$!
+}
+
+# Authorization header for --serve requests, read by curl from a 0600 file.
+auth() { [[ "${SERVE}" -eq 1 ]] && printf '%s\n' -H "@${SECRETS}/auth_header"; }
+
+stop_tunnel() {
+    [[ -n "${TUNNEL_PID}" ]] || return 0
+    kill -TERM -- "-${TUNNEL_PID}" 2>/dev/null || true
+    wait "${TUNNEL_PID}" 2>/dev/null || true
+    TUNNEL_PID=""
+}
+
+# start_tunnel: ngrok in its own process group -> ${WORK_DIR}/endpoint (0600).
+start_tunnel() {
+    local url="" i
+    if [[ ! -x "${WORK_DIR}/bin/ngrok" ]]; then
+        mkdir -p "${WORK_DIR}/bin"
+        curl -sfL "${NGROK_URL}" | tar -xz -C "${WORK_DIR}/bin" ngrok || return 1
+    fi
+    NGROK_AUTHTOKEN="$(< "${SECRETS}/ngrok_authtoken")" setsid "${WORK_DIR}/bin/ngrok" http "${PORT}" \
+        --log stdout --log-format json ${TUNNEL_DOMAIN:+--url "https://${TUNNEL_DOMAIN}"} \
+        >> "${RESULTS}/tunnel.log" 2>&1 < /dev/null &
+    TUNNEL_PID=$!
+    for i in $(seq 1 30); do
+        url="$(curl -sf http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+            | python3 -c 'import json,sys; print(next((t["public_url"] for t in json.load(sys.stdin)["tunnels"] if t["public_url"].startswith("https://")), ""))' 2>/dev/null)"
+        [[ -n "${url}" ]] && break
+        kill -0 "${TUNNEL_PID}" 2>/dev/null || return 1
+        sleep 2
+    done
+    [[ -n "${url}" ]] || return 1
+    ( umask 077; printf '%s\n' "${url}" > "${WORK_DIR}/endpoint" )
+    "${WORK_DIR}/bin/ngrok" version >> "${RESULTS}/tunnel.log" 2>&1 || true
+}
+
+# The tunnel answers like the local server: /v1/models through it, with the key.
+tunnel_ready() {
+    local model="$1" url body; local -a hdr=()
+    url="$(cat "${WORK_DIR}/endpoint" 2>/dev/null)" || return 1
+    mapfile -t hdr < <(auth)
+    body="$(curl -sf --max-time 30 "${hdr[@]}" "${url%/}/v1/models" 2>/dev/null)" || return 1
+    printf '%s' "${body}" | python3 "${GPUREF}" served "${model}"
+}
+
+# serve_until_stop MODEL: keep vLLM and the tunnel up until the driver writes
+# STOP. A dead tunnel is restarted (a reserved --tunnel-domain keeps its URL);
+# a dead vLLM ends the run (the driver rolls over to a new session).
+serve_until_stop() {
+    local model="$1" restarts=0
+    local up=0 i
+    if start_tunnel; then
+        for i in $(seq 1 10); do tunnel_ready "${model}" && { up=1; break; }; sleep 6; done
+    fi
+    if [[ "${up}" -ne 1 ]]; then
+        # ngrok's own error (ERR_NGROK_<n>: a rejected authtoken, an unreserved
+        # --tunnel-domain, the account's session limit) recurs on any VM.
+        TUNNEL_SETUP_ERROR="$(grep -oE 'ERR_NGROK_[0-9]+' "${RESULTS}/tunnel.log" 2>/dev/null | head -1)" || TUNNEL_SETUP_ERROR=""
+        log "tunnel did not come up after ${i:-0} checks${TUNNEL_SETUP_ERROR:+ (ngrok ${TUNNEL_SETUP_ERROR})} (tunnel.log)"
+        return 1
+    fi
+    # This VM's serving snapshot (GPU, stack, serve command, cap), before it
+    # serves: provenance.json is only written after STOP, and a VM lost before
+    # then takes it along. The driver binds each Shield score to the snapshot
+    # of the VM that served it. (mdir, started, cap: the caller's locals.)
+    local -a agentic=()
+    [[ -n "${TASKS[${model}]:-}" ]] && agentic=(--agentic-tasks "${TASKS[${model}]}")
+    python3 "${GPUREF}" provenance --out "${mdir}/serving_provenance.json" --model "${model}" \
+        --ttis-dir "${TTIS_DIR}" --plan "${mdir}/serve_plan.json" \
+        --vllm-python "${VENV}/bin/python" --vllm-bin "${VENV}/bin/vllm" \
+        --status serving --started-at "${started}" --finished-at "$(now)" \
+        ${cap:+--max-model-len-cap "${cap}"} ${agentic[@]+"${agentic[@]}"} \
+        --endpoint "$(python3 "${GPUREF}" redact-url --url-file "${WORK_DIR}/endpoint")" \
+        || { log "serving_provenance.json not written; not serving without it"; return 1; }
+    touch "${WORK_DIR}/SERVING"
+    log "serving ${model} through the tunnel"
+    while [[ ! -e "${WORK_DIR}/STOP" ]]; do
+        sleep 30
+        kill -0 "${SERVER_PID}" 2>/dev/null || { log "vLLM exited while serving"; rm -f "${WORK_DIR}/SERVING"; return 1; }
+        if ! kill -0 "${TUNNEL_PID}" 2>/dev/null; then
+            restarts=$((restarts + 1)); log "tunnel exited; restart ${restarts}"
+            stop_tunnel; start_tunnel || { rm -f "${WORK_DIR}/SERVING"; return 1; }
+            printf '%s\n' "${restarts}" > "${WORK_DIR}/tunnel_restarts"
+        fi
+    done
+    rm -f "${WORK_DIR}/SERVING"
+    log "STOP requested; ${restarts} tunnel restart(s)"
 }
 
 # Succeeds once /v1/models lists the served HF repo id.
 server_ready() {
-    local model="$1" body
-    body="$(curl -sf "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
+    local model="$1" body; local -a hdr=()
+    mapfile -t hdr < <(auth)
+    body="$(curl -sf ${hdr[@]+"${hdr[@]}"} "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
     printf '%s' "${body}" | python3 "${GPUREF}" served "${model}"
 }
 
@@ -168,10 +286,32 @@ setup() {
     if ! python3 -m venv "${probe}/v" >/dev/null 2>&1; then
         pyver="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
         log "python3 -m venv unavailable; installing python${pyver}-venv"
-        apt-get update -qq && apt-get install -y -qq "python${pyver}-venv" python3-venv || return 1
+        if ! { apt-get update -qq && apt-get install -y -qq "python${pyver}-venv" python3-venv; }; then
+            # The apt route depends on third-party PPAs (deadsnakes for Colab's
+            # python), which can be down (503). Fall back to a uv-managed
+            # CPython, which ships venv/ensurepip, as the host python3 for
+            # run.py and gpuref.py.
+            log "apt could not install python${pyver}-venv; using a uv-managed Python 3.12 as host python3"
+            # Colab's deadsnakes python3 may lack pip too: get uv from its
+            # standalone installer then.
+            if ! command -v uv >/dev/null 2>&1 && ! python3 -m pip install -q uv 2>/dev/null; then
+                mkdir -p "${WORK_DIR}/bin"
+                curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${WORK_DIR}/bin" INSTALLER_NO_MODIFY_PATH=1 sh || return 1
+                export PATH="${WORK_DIR}/bin:${PATH}"
+            fi
+            # A uv-managed (standalone) CPython: the system python3.12 lacks
+            # ensurepip as well, so a venv over it cannot make venvs either.
+            uv venv --seed --python-preference only-managed --python 3.12 "${WORK_DIR}/hostpy" || return 1
+            export PATH="${WORK_DIR}/hostpy/bin:${PATH}"
+            python3 -m venv "${probe}/v2" >/dev/null 2>&1 || return 1
+        fi
     fi
     rm -rf "${probe}"
+    # run.py imports these on the host before it builds any venv (PyYAML for
+    # the catalog, requests via llm_module). Colab's own python3 has both; a
+    # fresh uv-managed host python does not.
     python3 -c 'import yaml' 2>/dev/null || python3 -m pip install -q pyyaml || return 1
+    python3 -c 'import requests' 2>/dev/null || python3 -m pip install -q requests || return 1
     command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv || return 1
 
 }
@@ -197,7 +337,7 @@ run_model() {
     local model="$1" idx="$2" total="$3"
     local slug="${model//\//__}"
     local mdir="${RESULTS}/${slug}"
-    local started finished evals_rc="" status="" note="" cap="" eval_samples=""
+    local started finished evals_rc="" status="" note="" cap="" eval_samples="" persistent=0
     mkdir -p "${mdir}"
     started="$(now)"
 
@@ -210,15 +350,15 @@ run_model() {
     # clone (recorded as derived_gpu_spec.json and in provenance).
     if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" ensure-gpu-spec --ttis-dir "${TTIS_DIR}" --model "${model}" --out "${mdir}/derived_gpu_spec.json") \
             2> "${mdir}/serve_plan.err"; then
-        status="failed"; note="no GPU spec and none derivable from a TT row (serve_plan.err)"
+        status="failed"; note="no GPU spec and none derivable from a TT row (serve_plan.err)"; persistent=1
     elif ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}" ${overrides[@]+"${overrides[@]}"}) \
             > "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
-        status="failed"; note="GPU spec did not resolve (serve_plan.err)"
+        status="failed"; note="GPU spec did not resolve (serve_plan.err)"; persistent=1
     elif ! python3 "${GPUREF}" materialize-hf-config "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
-        status="failed"; note="could not write the edited config.json (serve_plan.err)"
+        status="failed"; note="could not write the edited config.json (serve_plan.err)"; persistent=1
     elif ! read -r stack_vllm stack_tf < <(python3 "${GPUREF}" plan-stack "${mdir}/serve_plan.json") \
             || ! ensure_stack "${stack_vllm}" "${stack_tf}"; then
-        status="failed"; note="serving stack vllm==${stack_vllm} ${stack_tf:+transformers==${stack_tf} }did not install (runner.log)"
+        status="failed"; note="serving stack vllm==${stack_vllm} ${stack_tf:+transformers==${stack_tf} }did not install (runner.log)"; persistent=1
     else
         mapfile -t SERVER_ENV < <(python3 "${GPUREF}" plan-stack --env "${mdir}/serve_plan.json")
         local -a serve_args=()
@@ -247,7 +387,14 @@ run_model() {
             fi
         fi
         if [[ "${ready}" -eq 0 ]]; then
-            status="failed"; note="vLLM did not become ready (vllm_server.log)"
+            status="failed"; note="vLLM did not become ready (vllm_server.log)"; persistent=1
+        elif [[ "${SERVE}" -eq 1 ]]; then
+            phase "model ${idx}/${total} ${model}: serving"
+            if serve_until_stop "${model}"; then status="ok"; note="served for Shield's endpoint tests"
+            elif [[ -n "${TUNNEL_SETUP_ERROR}" ]]; then
+                status="failed"; note="ngrok tunnel did not start: ${TUNNEL_SETUP_ERROR} (tunnel.log)"; persistent=1
+            else status="failed"; note="serving ended before STOP (runner.log, tunnel.log, vllm_server.log)"; fi
+            if [[ -n "${cap}" ]]; then note="${note}; max_model_len capped to ${cap} on this GPU"; fi
         else
             phase "model ${idx}/${total} ${model}: evals"
             # The eval client sends as many concurrent requests as vLLM was
@@ -285,7 +432,7 @@ run_model() {
     # any rejected/truncated-request log lines. A capped run that came close is
     # not usable as a reference.
     local evidence="${mdir}/request_evidence.json"
-    if [[ -n "${evals_rc}" ]]; then
+    if [[ -n "${evals_rc}" && "${SERVE}" -eq 0 ]]; then
         local -a logs=(--log "${mdir}/run_py.log" --log "${mdir}/vllm_server.log")
         local f; for f in "${TTIS_DIR}"/workflow_logs/run_logs/*"${model##*/}"*; do [[ -e "$f" ]] && logs+=(--log "$f"); done
         "${VENV}/bin/python" "${GPUREF}" request-evidence --model "${model}" \
@@ -298,6 +445,13 @@ run_model() {
     fi
     finished="$(now)"
     log "${model}: ${status}${note:+ -- ${note}}"
+    # --serve: the agentic tasks Shield runs against this server, and its URL
+    # (redacted: the full URL stays in the 0600 endpoint file).
+    local -a served=()
+    if [[ "${SERVE}" -eq 1 ]]; then
+        [[ -n "${TASKS[${model}]:-}" ]] && served+=(--agentic-tasks "${TASKS[${model}]}")
+        [[ -s "${WORK_DIR}/endpoint" ]] && served+=(--endpoint "$(python3 "${GPUREF}" redact-url --url-file "${WORK_DIR}/endpoint")")
+    fi
 
     python3 "${GPUREF}" provenance --out "${mdir}/provenance.json" --model "${model}" \
         --ttis-dir "${TTIS_DIR}" --plan "${mdir}/serve_plan.json" \
@@ -306,9 +460,13 @@ run_model() {
         --started-at "${started}" --finished-at "${finished}" ${note:+--note "${note}"} \
         ${cap:+--max-model-len-cap "${cap}"} --evidence "${evidence}" \
         ${eval_samples:+--eval-samples "${eval_samples}"} \
+        ${served[@]+"${served[@]}"} \
         || log "WARNING: provenance.json not written for ${model}"
 
     python3 "${GPUREF}" record-status "${RESULTS}/status.json" "${model}" "${status}" "${note}"
+    if [[ "${status}" != "ok" && "${persistent}" -eq 1 && -z "${PERSISTENT_FAILURE}" ]]; then
+        PERSISTENT_FAILURE="${model}: ${note}"
+    fi
     [[ "${status}" == "ok" ]]
 }
 
@@ -326,7 +484,7 @@ main() {
         run_model "${model}" "${i}" "${#MODELS[@]}" || failed=$((failed + 1))
     done
     if (( failed > 0 )); then
-        finish FAILED "${failed}/${#MODELS[@]} model(s) failed; see results/status.json"
+        finish FAILED "${failed}/${#MODELS[@]} model(s) failed; see results/status.json${PERSISTENT_FAILURE:+; persistent setup failure: ${PERSISTENT_FAILURE}}"
         exit 1
     fi
     finish DONE "${#MODELS[@]} model(s) ok"

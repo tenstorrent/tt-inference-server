@@ -72,6 +72,8 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         limit-mm-per-prompt: '{"image": 10}'
         mm-processor-cache-gb: 0
       override_tt_config:
@@ -86,6 +88,8 @@ templates:
         TT_MM_THROTTLE_PERF: 5
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         limit-mm-per-prompt: '{"image": 10}'
         mm-processor-cache-gb: 0
       override_tt_config:
@@ -99,6 +103,8 @@ templates:
       env_vars:
         TT_MM_THROTTLE_PERF: 5
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         limit-mm-per-prompt: '{"image": 10}'
         data_parallel_size: 4
         mm-processor-cache-gb: 0
@@ -111,6 +117,8 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       vllm_args:
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
         limit-mm-per-prompt: '{"image": 10}'
         mm-processor-cache-gb: 0
       override_tt_config:

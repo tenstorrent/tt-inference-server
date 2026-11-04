@@ -75,7 +75,10 @@ def run_spec_decode(
         every SPEED-Bench qualitative category plus the whole throughput
         ISL x concurrency grid; ``ci`` runs only the ``coding``
         qualitative category plus ``speed_bench_throughput_32k`` at
-        concurrency 1/16/64.
+        concurrency 1/16/64; ``throughput`` runs only the throughput grid.
+        The ``SPEC_DECODE_ISLS`` / ``SPEC_DECODE_CONCURRENCIES`` env vars
+        replace the preset's throughput ISLs / concurrencies (see
+        :func:`llm_module.spec_decode.build_runs`).
     warmup_requests:
         Short chat-completion requests sent before the sweep (matches v1
         behavior; 0 disables).
@@ -108,7 +111,12 @@ def run_spec_decode(
         :func:`workflow_module.accept_blocks` so the unified report
         generator picks them up.
     """
-    runs = build_spec_decode_runs(preset)
+    # Concurrency above the server's user slots measures rejected requests,
+    # not throughput, so the preset's sweep is capped at the spec's slots.
+    device_spec = getattr(ctx.model_spec, "device_model_spec", None)
+    runs = build_spec_decode_runs(
+        preset, max_concurrency=getattr(device_spec, "max_concurrency", None)
+    )
     if not runs:
         logger.error("Spec-decode sweep is empty (preset=%s); nothing to run.", preset)
         return []
@@ -161,13 +169,22 @@ def run_spec_decode(
 
     parser = AIPerfSpecDecodeParser()
     blocks: List[Block] = []
+    sweep_start = time.monotonic()
+    failed: List[str] = []
     for i, run in enumerate(runs, 1):
-        logger.info("[spec-decode] Running %d/%d: %s", i, len(runs), run.slug)
+        logger.info(
+            "[spec-decode] Running %d/%d: %s (sweep elapsed %.0f min)",
+            i,
+            len(runs),
+            run.slug,
+            (time.monotonic() - sweep_start) / 60,
+        )
         if i > 1 and inter_run_sleep_s:
             time.sleep(inter_run_sleep_s)
 
         outcome: SpecDecodeDriverResult = driver.run(run, server, context)
         if outcome.return_code != 0 or outcome.payload is None:
+            failed.append(run.slug)
             logger.error(
                 "[spec-decode] %s failed (rc=%d); continuing.",
                 run.slug,
@@ -176,6 +193,14 @@ def run_spec_decode(
             continue
 
         blocks.append(parser.parse(outcome.payload, device=device_label))
+
+    logger.info(
+        "[spec-decode] Sweep finished in %.0f min: %d ok, %d failed%s",
+        (time.monotonic() - sweep_start) / 60,
+        len(blocks),
+        len(failed),
+        f" ({', '.join(failed)})" if failed else "",
+    )
 
     if not blocks:
         logger.error("[spec-decode] No blocks produced -- sweep had zero successes.")
@@ -203,22 +228,82 @@ def _wait_for_url_healthy(
     auth_token: str = "",
     timeout: float = 600.0,
     interval: float = 5.0,
+    log_every: float = 30.0,
 ) -> bool:
-    """Poll ``{base_url}/health`` until it returns 200 or the deadline expires."""
+    """Poll until the endpoint is ready or the deadline expires.
+
+    Ready means ``/health`` returns 200 and ``/v1/models`` lists at least one
+    model. A Dynamo frontend answers ``/health`` with 200 before any worker
+    registers, and lists no models until one does. Gateways in front of the
+    server (e.g. tt-console) may not expose ``/health``, so an absent one
+    (404, 405 or 501) leaves the model listing to decide. Any other
+    ``/health`` status keeps waiting: vLLM answers 503 once its engine has
+    died but still lists the model. The last probe results are logged every
+    ``log_every`` seconds so a stuck wait is visible in CI logs.
+    """
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    root = base_url.rstrip("/")
+    health_url, models_url = root + "/health", root + "/v1/models"
+    last_seen = {}
+    logger.info("[spec-decode] waiting up to %.0fs for %s to be healthy", timeout, root)
+    start = last_log = time.time()
+    while time.time() < start + timeout:
+        if _probe_ready(health_url, models_url, headers, last_seen):
+            logger.info(
+                "[spec-decode] %s ready after %.0fs: %s",
+                root,
+                time.time() - start,
+                last_seen,
+            )
+            return True
+        if time.time() - last_log >= log_every:
+            last_log = time.time()
+            logger.info(
+                "[spec-decode] still waiting for %s (%.0fs): %s",
+                root,
+                last_log - start,
+                last_seen,
+            )
+        time.sleep(interval)
+    logger.error(
+        "[spec-decode] %s not healthy after %.0fs: %s", root, timeout, last_seen
+    )
+    return False
+
+
+_HEALTH_ABSENT_STATUSES = (404, 405, 501)
+
+
+def _probe_ready(
+    health_url: str, models_url: str, headers: dict, last_seen: dict
+) -> bool:
+    """One round of the health wait; records each probe's result in ``last_seen``."""
     import requests
 
-    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-    health_url = base_url.rstrip("/") + "/health"
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            response = requests.get(health_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                return True
-        except requests.exceptions.RequestException as exc:
-            logger.debug("health probe to %s failed: %s", health_url, exc)
-        time.sleep(interval)
-    return False
+    try:
+        response = requests.get(health_url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as exc:
+        last_seen[health_url] = f"{type(exc).__name__}: {exc}"
+        return False
+    last_seen[health_url] = f"HTTP {response.status_code}"
+    if response.status_code not in (200, *_HEALTH_ABSENT_STATUSES):
+        return False
+    try:
+        response = requests.get(models_url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as exc:
+        last_seen[models_url] = f"{type(exc).__name__}: {exc}"
+        return False
+    last_seen[models_url] = f"HTTP {response.status_code}"
+    if response.status_code != 200:
+        return False
+    try:
+        models = response.json().get("data")
+    except (ValueError, AttributeError):
+        models = None
+    if not models:
+        last_seen[models_url] = "HTTP 200, no models listed"
+        return False
+    return True
 
 
 def _warmup_endpoint(
