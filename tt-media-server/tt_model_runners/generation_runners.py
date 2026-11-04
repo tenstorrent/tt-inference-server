@@ -185,10 +185,36 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
 
 
 class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+            DEFAULT_DBCACHE,
+            QwenImagePipeline,
+            QwenImagePipelineConfig,
+        )
+
+        # With DBCache step skipping, cache-dit's Qwen-Image settings.
+        try:
+            config = QwenImagePipelineConfig.default(
+                mesh_shape=self.ttnn_device.shape,
+                checkpoint_name=self.settings.model_weights_path,
+                dbcache=DEFAULT_DBCACHE,
+            )
+            return QwenImagePipeline(device=self.ttnn_device, config=config)
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Qwen-Image-Edit pipeline creation failed",
+                e,
+            )
+            raise
+
     def get_pipeline_device_params(self):
-        # Per-chip trace region for every resolution of the mesh's preset, from
-        # tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py.
-        return {"l1_small_size": 32768, "trace_region_size": 790_000_000}
+        # Per-chip trace region for every resolution of the mesh's preset, with
+        # DBCache's separate leading-block and epilogue traces, from tt-metal's
+        # models/tt_dit/tests/models/qwenimage/device_params.py
+        # (DBCACHE_MESH_DEVICE_PARAMS).
+        return {"l1_small_size": 32768, "trace_region_size": 869_000_000}
 
     def warmup_requests(self) -> list[GenerationRequest]:
         # The pipeline compiles and traces every resolution of its preset when
