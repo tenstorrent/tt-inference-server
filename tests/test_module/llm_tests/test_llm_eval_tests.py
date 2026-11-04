@@ -1313,15 +1313,25 @@ class TestEvalRequestOverrides:
         ours, _ = self._wrapper_args(_build_eval_test_command(task))
         assert ours == ["--request-body", '{"top_k": 20}', "--drop-server-seed"]
 
-    def test_capture_reasoning_alone_keeps_the_old_launch_path(self):
-        # Existing entries with capture_reasoning=True must not change
-        # behaviour until they opt into request overrides.
+    def test_capture_reasoning_alone_uses_the_wrapper_for_the_resplit(self):
+        # The wrapper re-splits a reply the server left in reasoning_content,
+        # so every task that captures reasoning on an lm-eval chat adapter
+        # launches through it, with --preserve-reasoning and no body override.
+        task = EvalTask(
+            task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+        )
+        ours, _ = self._wrapper_args(_build_eval_test_command(task))
+        assert ours == ["--preserve-reasoning"]
+
+    def test_capture_reasoning_on_a_vision_task_keeps_lmms_eval(self):
         command = _build_eval_test_command(
             EvalTask(
-                task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+                task_name="vision_task",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                capture_reasoning=True,
             )
         )
-        assert command[0].endswith("/bin/lm_eval")
+        assert command[0].endswith("/bin/lmms-eval")
 
     def test_capture_reasoning_rides_along_with_an_override(self):
         task = EvalTask(

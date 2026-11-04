@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, List, Optional
 from utils.url_helpers import build_base_url
 from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
+from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
 from llm_module.request_overrides import resolve_request_body
 from workflow_module.venv_provisioner import get_venv_provisioner
 from workflows.eval_shard import (
@@ -426,8 +427,6 @@ def _check_request_overrides_supported(task, request_body: dict, model_spec) -> 
             "the lm-eval request-overrides wrapper, which lmms-eval tasks "
             "cannot use"
         )
-    from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
-
     if task.eval_class not in SUPPORTED_EVAL_CLASSES:
         raise ValueError(
             f"request_body/thinking on {task.task_name}: eval_class "
@@ -599,22 +598,29 @@ def build_eval_command(
 
     lm_eval_prefix = [str(lm_eval_exec)]
     request_body = resolve_request_body(task)
+    capture_reasoning = bool(getattr(task, "capture_reasoning", False))
     if request_body:
         _check_request_overrides_supported(task, request_body, model_spec)
-        # One wrapper covers every payload patch for a task that opts into
-        # request overrides (body, seed drop, reasoning capture). Tasks without
-        # an override keep their existing launch path untouched, including the
-        # capture_reasoning flag, which the plain lm_eval entry point does not
-        # act on.
+    # One wrapper covers every payload patch for a task that opts into request
+    # overrides (body, seed drop) or into reasoning capture: the wrapper also
+    # re-splits a reply the server left entirely in reasoning_content (see
+    # llm_module/lm_eval_request_overrides.py), which only the lm-eval chat
+    # adapters can carry. Other tasks keep their launch path untouched.
+    if request_body or (
+        capture_reasoning
+        and task.eval_class in SUPPORTED_EVAL_CLASSES
+        and task.workflow_venv_type
+        not in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]
+    ):
         lm_eval_prefix = [
             str(task_venv_path / "bin" / "python"),
             str(Path(__file__).with_name("lm_eval_request_overrides.py")),
-            "--request-body",
-            json.dumps(request_body, sort_keys=True),
         ]
+        if request_body:
+            lm_eval_prefix += ["--request-body", json.dumps(request_body, sort_keys=True)]
         if not getattr(task, "propagate_seed_to_gen_kwargs", True):
             lm_eval_prefix.append("--drop-server-seed")
-        if getattr(task, "capture_reasoning", False):
+        if capture_reasoning:
             lm_eval_prefix.append("--preserve-reasoning")
         lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg

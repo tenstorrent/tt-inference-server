@@ -192,6 +192,74 @@ class TestWrapper:
         assert "seed" not in _Chat()._create_payload()
 
 
+class TestReasoningResplit:
+    """A reply the server left entirely in reasoning_content (empty content, the
+    closer still inside the reasoning) is split by the wrapper, before scoring."""
+
+    class _Generation(str):
+        def __new__(cls, content, reasoning_content=""):
+            value = super().__new__(cls, content)
+            value.reasoning_content = reasoning_content
+            return value
+
+    def test_empty_answer_with_a_closer_in_the_reasoning_is_split(self):
+        g = self._Generation("", "think `x\n</think>```python\nprint(1)\n```")
+        fixed = wrapper.resplit_reasoning(g, "</think>")
+        assert isinstance(fixed, self._Generation)
+        assert str(fixed) == "```python\nprint(1)\n```"
+        assert fixed.reasoning_content == "think `x\n"
+
+    def test_splits_on_the_last_closer(self):
+        g = self._Generation("", "a</think>b</think>c")
+        fixed = wrapper.resplit_reasoning(g, "</think>")
+        assert (str(fixed), fixed.reasoning_content) == ("c", "a</think>b")
+
+    def test_answered_or_unclosed_or_plain_replies_are_left_alone(self):
+        answered = self._Generation("42", "x</think>y")
+        assert wrapper.resplit_reasoning(answered, "</think>") is answered
+        unclosed = self._Generation("", "never closed")
+        assert wrapper.resplit_reasoning(unclosed, "</think>") is unclosed
+        plain = "plain str without reasoning"
+        assert wrapper.resplit_reasoning(plain, "</think>") is plain
+        disabled = self._Generation("", "x</think>y")
+        assert wrapper.resplit_reasoning(disabled, "") is disabled
+
+    def test_patch_wraps_the_adapters_parse_generations(self, monkeypatch):
+        gen = self._Generation
+
+        class _Chat:
+            @staticmethod
+            def parse_generations(outputs, **kwargs):
+                return [gen("", "r</think>answer"), gen("kept", "r</think>x"), "plain"]
+
+        class _Completions:
+            @staticmethod
+            def parse_generations(outputs, **kwargs):
+                return ["text"]
+
+        fake = SimpleNamespace(LocalChatCompletion=_Chat, LocalCompletionsAPI=_Completions)
+        for name, module in (
+            ("lm_eval.models.openai_completions", fake),
+            ("lm_eval.models", SimpleNamespace(openai_completions=fake)),
+            ("lm_eval", SimpleNamespace(models=SimpleNamespace(openai_completions=fake))),
+        ):
+            monkeypatch.setitem(__import__("sys").modules, name, module)
+
+        assert sorted(wrapper.patch_reasoning_resplit("</think>")) == [
+            "LocalChatCompletion",
+            "LocalCompletionsAPI",
+        ]
+        out = _Chat.parse_generations({})
+        assert [str(x) for x in out] == ["answer", "kept", "plain"]
+        assert out[0].reasoning_content == "r"
+        assert out[1].reasoning_content == "r</think>x"
+        assert _Completions.parse_generations({}) == ["text"]
+        # re-patching replaces the wrap instead of stacking a second one
+        wrapper.patch_reasoning_resplit("</think>")
+        assert getattr(_Chat.parse_generations, wrapper._RESPLIT_MARKER).__name__ == "parse_generations"
+        assert [str(x) for x in _Chat.parse_generations({})] == ["answer", "kept", "plain"]
+
+
 class TestWrapperCoversOverridingAdapters:
     """Review (#5340): the pinned harness's OpenAIChatCompletion defines its own
     _create_payload, so patching only the two Local* classes let a task with

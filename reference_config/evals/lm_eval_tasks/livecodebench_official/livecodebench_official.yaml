@@ -1,7 +1,7 @@
 # LiveCodeBench code generation scored the way the official lcb_runner scores it
 # (github.com/LiveCodeBench/LiveCodeBench, lcb_runner/evaluation): the LAST fenced code block
-# of the reply is the program, and the tests run under lcb_runner's testing_util, whose stdin
-# mock carries a .buffer (fast-IO solutions read sys.stdin.buffer). The lm-eval fork's
+# of the reply is the program, and the tests run under lcb_runner's testing_util, vendored here
+# with its stdin/stdout mocks fixed (README.md: one shared stdin cursor, a stdout .buffer). The lm-eval fork's
 # `livecodebench` task takes the FIRST block and its stdin mock has no buffer: on the same
 # outputs the fork scored Kimi K3 at 74/131 where the official runner gave 116/131. The
 # dataset, prompt and doc order are the fork's, so LIVECODEBENCH_V6_DOC_IDS apply unchanged,

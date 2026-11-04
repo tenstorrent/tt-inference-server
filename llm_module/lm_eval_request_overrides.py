@@ -15,6 +15,15 @@
   ``lm_eval_no_server_seed.py`` does on its own.
 * ``--preserve-reasoning`` turns on the pinned fork's ``LM_EVAL_PRESERVE_REASONING``
   so a separate ``reasoning_content`` reaches the sample logs (never scoring).
+  It also re-splits a reply whose ``content`` came back empty while its
+  ``reasoning_content`` still holds the end-of-reasoning marker
+  (``--reasoning-closer``, default ``</think>``): the text after the last
+  marker becomes the answer, the text before it stays the reasoning. That is
+  the split the server's reasoning parser should have made; Dynamo 1.6's
+  ``deepseek_v41`` family skips a closer it believes sits inside a quoted span
+  (an unmatched quote or backtick in the reasoning closed by the first answer
+  token, typically a code fence), which stranded 11-17% of long DeepSeek V4.1
+  replies in ``reasoning_content``. ``--reasoning-closer ""`` disables it.
 """
 
 from __future__ import annotations
@@ -37,6 +46,8 @@ SUPPORTED_EVAL_CLASSES = (
     "openai-chat-completions",
 )
 _PATCH_MARKER = "_tt_request_overrides"
+_RESPLIT_MARKER = "_tt_reasoning_resplit"
+DEFAULT_REASONING_CLOSER = "</think>"
 
 
 # Self-contained on purpose: the eval runner launches this file by path from
@@ -74,6 +85,11 @@ def parse_argv(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument("--drop-server-seed", action="store_true")
     parser.add_argument("--preserve-reasoning", action="store_true")
+    parser.add_argument(
+        "--reasoning-closer",
+        default=DEFAULT_REASONING_CLOSER,
+        help="end-of-reasoning marker for the empty-content re-split; '' disables",
+    )
     opts = parser.parse_args(ours)
     body = json.loads(opts.request_body)
     if not isinstance(body, dict):
@@ -115,6 +131,61 @@ def patch_api_adapters(body: Dict[str, Any], drop_server_seed: bool) -> List[str
     return patched
 
 
+def resplit_reasoning(generation: Any, closer: str):
+    """Return ``generation`` with the answer moved out of its reasoning when the
+    server left it there: an empty answer whose ``reasoning_content`` holds
+    ``closer`` becomes (text after the last closer, reasoning before it). Any
+    other generation, or one without a reasoning attribute, is returned as is."""
+    reasoning = getattr(generation, "reasoning_content", None)
+    if not closer or not isinstance(reasoning, str) or closer not in reasoning:
+        return generation
+    if str(generation).strip():
+        return generation
+    head, _, tail = reasoning.rpartition(closer)
+    return type(generation)(tail, head)
+
+
+def patch_reasoning_resplit(closer: str) -> List[str]:
+    """Wrap ``parse_generations`` on every adapter class in
+    ``lm_eval.models.openai_completions`` that defines its own, so a reply the
+    server failed to split (empty ``content``, the marker still inside
+    ``reasoning_content``) is split here, before filters and metrics see it.
+    Returns the patched class names."""
+    import inspect
+
+    from lm_eval.models import openai_completions
+
+    patched: List[str] = []
+    for name, cls in list(vars(openai_completions).items()):
+        if not inspect.isclass(cls) or inspect.isabstract(cls):
+            continue
+        attr = cls.__dict__.get("parse_generations")
+        if attr is None:
+            continue
+        original = attr.__func__ if isinstance(attr, staticmethod) else attr
+        original = getattr(original, _RESPLIT_MARKER, None) or original
+
+        def parse_generations(outputs, *args, _original=original, **kwargs):
+            results = _original(outputs, *args, **kwargs)
+            out = []
+            for generation in results:
+                fixed = resplit_reasoning(generation, closer)
+                if fixed is not generation:
+                    print(
+                        "[lm_eval_request_overrides] re-split a reply the server left in "
+                        f"reasoning_content: {len(fixed)} answer chars after the last "
+                        f"{closer!r}, {len(fixed.reasoning_content)} reasoning chars before it",
+                        file=sys.stderr,
+                    )
+                out.append(fixed)
+            return out
+
+        setattr(parse_generations, _RESPLIT_MARKER, original)
+        cls.parse_generations = staticmethod(parse_generations)
+        patched.append(name)
+    return patched
+
+
 def lm_eval_model_name(lm_eval_argv: List[str]) -> str:
     """The ``--model`` / ``-m`` value lm-eval will use (default ``hf``)."""
     for i, arg in enumerate(lm_eval_argv):
@@ -146,13 +217,16 @@ def require_patched_adapter(model_name: str) -> None:
 
 def main() -> None:
     opts, lm_eval_argv = parse_argv(sys.argv[1:])
+    resplit: List[str] = []
     if opts.preserve_reasoning:
         os.environ["LM_EVAL_PRESERVE_REASONING"] = "1"
+        resplit = patch_reasoning_resplit(opts.reasoning_closer)
     patched = patch_api_adapters(opts.body, opts.drop_server_seed)
     require_patched_adapter(lm_eval_model_name(lm_eval_argv))
     print(
         f"[lm_eval_request_overrides] request body overrides: {json.dumps(opts.body)} "
-        f"(patched adapters: {', '.join(patched)})",
+        f"(patched adapters: {', '.join(patched)}); reasoning re-split on "
+        f"{opts.reasoning_closer!r}: {', '.join(resplit) or 'off'}",
         file=sys.stderr,
     )
     sys.argv = [sys.argv[0], *lm_eval_argv]

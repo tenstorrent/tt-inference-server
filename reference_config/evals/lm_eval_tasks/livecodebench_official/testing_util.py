@@ -12,7 +12,7 @@ import signal
 
 import numpy as np
 
-from io import StringIO
+from io import BytesIO, StringIO, TextIOWrapper
 
 # used for testing the code that reads from input
 from unittest.mock import patch, mock_open
@@ -53,6 +53,19 @@ def timeout_handler(signum, frame):
     raise TimeoutException
 
 
+class _BytesToText:
+    """`sys.stdout.buffer` over the captured StringIO: bytes in, text out."""
+
+    def __init__(self, sio):
+        self._sio = sio
+
+    def write(self, b):
+        return self._sio.write(b.decode("utf-8") if isinstance(b, (bytes, bytearray)) else b)
+
+    def flush(self):
+        pass
+
+
 # used to capture stdout as a list
 # from https://stackoverflow.com/a/16571630/6416660
 # alternative use redirect_stdout() from contextlib
@@ -62,6 +75,8 @@ class Capturing(list):
         sys.stdout = self._stringio = StringIO()
         # Make closing the StringIO a no-op
         self._stringio.close = lambda x: 1
+        # fast-IO solutions write bytes through sys.stdout.buffer; upstream's bare StringIO had none
+        self._stringio.buffer = _BytesToText(self._stringio)
         return self
 
     def __exit__(self, *args):
@@ -70,37 +85,32 @@ class Capturing(list):
         sys.stdout = self._stdout
 
 
-# Custom mock for sys.stdin that supports buffer attribute
+# A stand-in for sys.stdin over the test's input: the text view and the binary view (`.buffer`) share one
+# cursor, as a real pipe does, so `sys.stdin.buffer.readline` advances line by line, a `read()` after a
+# `readline()` returns the remainder, and `readline()` at the end returns "" (so `input()` raises EOFError).
+# Upstream lcb_runner mocked `buffer.readline` as "always the first line" and `read()` as "always everything",
+# which crashed correct fast-IO programs; see README.md.
 class MockStdinWithBuffer:
     def __init__(self, inputs: str):
         self.inputs = inputs
-        self._stringio = StringIO(inputs)
-        self.buffer = MockBuffer(inputs)
+        self.buffer = BytesIO(inputs.encode("utf-8"))
+        self._text = TextIOWrapper(self.buffer, encoding="utf-8")
 
     def read(self, *args):
-        return self.inputs
+        return self._text.read(*args)
 
     def readline(self, *args):
-        return self._stringio.readline(*args)
+        return self._text.readline(*args)
 
     def readlines(self, *args):
-        return self.inputs.split("\n")
+        return self._text.readlines(*args)
+
+    def __iter__(self):
+        return iter(self._text)
 
     def __getattr__(self, name):
-        # Delegate other attributes to StringIO
-        return getattr(self._stringio, name)
-
-
-class MockBuffer:
-    def __init__(self, inputs: str):
-        self.inputs = inputs.encode("utf-8")  # Convert to bytes
-
-    def read(self, *args):
-        # Return as byte strings that can be split
-        return self.inputs
-
-    def readline(self, *args):
-        return self.inputs.split(b"\n")[0] + b"\n"
+        # Delegate other attributes to the text wrapper
+        return getattr(self._text, name)
 
 
 def clean_if_name(code: str) -> str:
@@ -156,8 +166,6 @@ def call_method(method, inputs):
     if isinstance(inputs, list):
         inputs = "\n".join(inputs)
 
-    inputs_line_iterator = iter(inputs.split("\n"))
-
     # Create custom stdin mock with buffer support
     mock_stdin = MockStdinWithBuffer(inputs)
 
@@ -165,10 +173,7 @@ def call_method(method, inputs):
 
     # @patch('builtins.input', side_effect=inputs.split("\n"))
     @patch("builtins.open", mock_open(read_data=inputs))
-    @patch("sys.stdin", mock_stdin)  # Use our custom mock instead of StringIO
-    @patch("sys.stdin.readline", lambda *args: next(inputs_line_iterator))
-    @patch("sys.stdin.readlines", lambda *args: inputs.split("\n"))
-    @patch("sys.stdin.read", lambda *args: inputs)
+    @patch("sys.stdin", mock_stdin)  # one shared cursor for sys.stdin and sys.stdin.buffer (see the class)
     # @patch('sys.stdout.write', print)
     def _inner_call_method(_method):
         try:
