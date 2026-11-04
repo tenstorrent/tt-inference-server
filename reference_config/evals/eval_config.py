@@ -12506,6 +12506,9 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # The MoVA chat template rejects assistant history turns without a
+                        # thinking field, so feed reasoning_content back into the history.
+                        "interleaved_thinking": True,
                         "model_info": {
                             "max_input_tokens": 128 * 1024,
                             "max_output_tokens": 32 * 1024,
