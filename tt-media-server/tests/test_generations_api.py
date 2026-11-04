@@ -23,6 +23,7 @@ import pytest
 import yaml
 from config.constants import JobTypes
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -1421,3 +1422,46 @@ async def test_ideogram_gets_the_serialized_caption(generations_app):
     (output,) = job["outputs"]
     assert output["prompt"] == caption
     assert (output["width"], output["height"]) == (2048, 1152)
+
+
+# --- FLUX.3 Image klein ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"size": "4K"}, (4096, 4096)),
+    ],
+)
+def test_flux3_output_size(fields, expected):
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+@pytest.mark.parametrize(
+    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+)
+def test_flux3_serves_one_square_shape_per_size(fields):
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
+
+
+async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
+    process = _FakeDevice.process
+
+    async def upsampled(self, request):
+        image = await process(self, request)
+        image.info["prompt"] = "a detailed caption"
+        return image
+
+    monkeypatch.setattr(_FakeDevice, "process", upsampled)
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "a cat", "size": "1K"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert device.requests[0]._prompt == "a cat"
+    (output,) = job["outputs"]
+    assert output["prompt"] == "a detailed caption"
