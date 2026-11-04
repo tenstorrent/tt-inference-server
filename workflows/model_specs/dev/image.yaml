@@ -335,6 +335,37 @@ templates:
       default_impl: true
   status: EXPERIMENTAL
 
+# FLUX 3 Image klein through the generations API (TTFlux3ImageKleinRunner): the
+# distilled model, eager, every prompt rewritten by its upsampler
+# (black-forest-labs/flux-3-image-klein-pup, which the pipeline fetches itself);
+# 1:1 at 1K, 2K and 4K with no reference or one. Needs tt-metal's flux3_klein
+# pipeline with the upsampler (tenstorrent/tt-metal#64162, on #64101). Disk:
+# the repo without the diffusers transformer (21 GB) on the host and again in
+# the container's HF cache, the upsampler (19 GB) and the tt_dit caches.
+- weights:
+    - black-forest-labs/flux-3-image-klein
+  impl: tt_transformers
+  min_disk_gb: 150
+  min_ram_gb: 64
+  model_type: IMAGE
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-flux-3-image-klein
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  metadata:
+    black-forest-labs/flux-3-image-klein:
+      hf_download_excludes:
+        - "transformer/*"
+        - "variants/*"
+        - "assets/*"
+        - "*.jpg"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 # Ideogram 4 through the generations API (TTIdeogram4Runner), from the fp8
 # checkpoint, dequantized to bf16 on the host. Needs tt-metal's ideogram4
 # pipeline (branch friedrich/console-bringup until it merges). Disk and RAM are

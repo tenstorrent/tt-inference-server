@@ -13,6 +13,7 @@ and graded against its own entry in ``model_performance_reference.json``:
   (48 steps) presets; the entries are keyed by ``preset``.
 - FLUX.2 klein 4B: its release shapes, 1024x1024 and 2048x2048, with no input
   image and with one; the entries are keyed by ``num_images``.
+- FLUX 3 Image klein: the same at 1024x1024, 2048x2048 and 4096x4096.
 
 A request is one job: ``POST /v1/generations/{model}``, then ``GET
 /v1/jobs/{id}`` until it is final. Its time runs from the submit to the poll
@@ -101,6 +102,22 @@ BENCHMARKS: dict[str, list[BenchmarkConfig]] = {
             num_images=n,
         )
         for side, size in ((1024, "1K"), (2048, "2K"))
+        for n in (0, 1)
+    ],
+    # Its release shapes: 1:1 at 1K, 2K and 4K, with no reference or one.
+    "tt-flux-3-image-klein": [
+        BenchmarkConfig(
+            name=f"{side}_{n}_input{'s' if n != 1 else ''}",
+            match={"num_images": n},
+            shape=(side, side),
+            request={
+                "prompt": QWEN_PROMPT if n else T2I_PROMPT,
+                "aspect_ratio": "1:1",
+                "size": size,
+            },
+            num_images=n,
+        )
+        for side, size in ((1024, "1K"), (2048, "2K"), (4096, "4K"))
         for n in (0, 1)
     ],
     "tt-ideogram-4": [
