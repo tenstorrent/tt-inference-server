@@ -580,6 +580,12 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# aime25 graded as OpenAI's gpt_oss.evals grades it (last \boxed{}, else last integer), the harness of the
+# gpt-oss GPU reference scores; the pinned lm-eval's aime25 counts only a \boxed{} answer.
+_GPT_OSS_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "gpt_oss"
+)
+
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
 # The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
@@ -10701,7 +10707,10 @@ _eval_config_list = [
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[
             EvalTask(
-                task_name="aime25",
+                # lm-eval's aime25 prompt and settings, graded like the GPU reference (OpenAI's gpt_oss.evals):
+                # a correct integer written outside \boxed{} counts, as it did for the reference.
+                task_name="aime25_openai",
+                include_path=_GPT_OSS_LM_EVAL_TASKS,
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
                     EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
@@ -10777,6 +10786,20 @@ _eval_config_list = [
                     "do_sample": "true",
                     "temperature": 1.0,
                     "max_gen_toks": 64 * 1024,
+                },
+                # QuietBox 2 runs gpqa the way the GPU reference was measured (OpenAI's gpt_oss.evals harness:
+                # max_tokens 131072, no stop strings), as aime25 above. At 64K tokens 33 of 198 answers ran out of
+                # budget mid-reasoning (2026-10-29).
+                device_overrides={
+                    "P300X2": {
+                        "gen_kwargs": {
+                            "reasoning_effort": "high",
+                            "do_sample": "true",
+                            "temperature": 1.0,
+                            "max_gen_toks": 128 * 1024,
+                        },
+                        "request_body": {"stop": []},
+                    },
                 },
             ),
             EvalTask(
