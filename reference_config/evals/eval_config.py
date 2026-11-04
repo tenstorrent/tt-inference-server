@@ -12826,6 +12826,60 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # SWE-bench Pro (card 62.5, Claude Code harness; ours is mini-swe-agent, so
+                # informational). 5 public-v1 tasks that Qwen3.8-27B solved on QB2, one per repo.
+                # The stock Harbor images keep the full git history incl. the fix commit: every
+                # trajectory is audited for history lookups after the run, and a solve that used
+                # one does not count. 2 concurrent trials x 2.75 h agent bound.
+                task_name="swe_bench_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results (SWE-bench Pro 62.5, Claude Code harness)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebenchpro",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=int(2.75 * 60 * 60),
+                    llm_timeout_sec=60 * 60,
+                    # Pin the in-container agent toolchain (litellm 1.106.0 breaks mini-swe-agent).
+                    agent_env={"UV_EXCLUDE_NEWER": "2026-10-17T00:00:00Z"},
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "instance_internetarchive__openlibrary-2abe28b472ffed563a87cfe83685b161b35263b0-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+                            "instance_future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+                            "instance_qutebrowser__qutebrowser-8d05f0282a271bfd45e614238bd1b555c58b3fc1-v35616345bb8052ea303186706cec663146f0f184",
+                            "instance_element-hq__element-web-18c03daa865d3c5b10e52b669cd50be34c67b2e5-vnan",
+                            "instance_ansible__ansible-a6e671db25381ed111bbad0ab3e7d97366395d05-v0f01c69f1e2528b935359cfe578530722bca2c59",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
         ],
     ),
 ]
