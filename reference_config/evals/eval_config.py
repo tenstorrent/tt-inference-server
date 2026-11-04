@@ -12773,7 +12773,7 @@ _eval_config_list = [
     # Thinking model; both tasks are graded against the model card: IFBench 81.3 and
     # GPQA Diamond 91.7 (the card uses very long reasoning budgets, so the 32K one here
     # is expected to cost points on GPQA).
-    # Order matters: tasks run sequentially and GPQA (bounded, longest) goes last.
+    # GPQA-only branch (IFBench dropped) for an evals dispatch on the perf2 build.
     # Sized for an evals dispatch in the 18 h job: server start <= ~1.2 h,
     # IFBench <= 7.5 h (release run 39592564053 reached 179/300 prompts in 3.4 h at
     # 32-way concurrency with 32K thinking budgets, i.e. ~6 h projected incl. the
@@ -12786,49 +12786,6 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-Flash-Next",
         tasks=[
-            EvalTask(
-                # IFBench (AllenAI), the card's "Instruction following" row (81.3). Custom
-                # task (the pinned lm-eval fork has none): all 300 prompts, scored by
-                # AllenAI's verifier. Graded on prompt-level loose accuracy, IFBench's
-                # headline metric; strict and instruction-level are reported alongside.
-                task_name="ifbench",
-                include_path=_IFBENCH_LM_EVAL_TASKS,
-                score=EvalTaskScore(
-                    published_score=81.3,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#benchmark-results",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "prompt_level_loose_acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                use_chat_api=True,
-                wall_clock_timeout_seconds=int(7.5 * 60 * 60),
-                model_kwargs={
-                    "max_length": 262144,
-                    "timeout": int(7.5 * 60 * 60),
-                },
-                # Model-card thinking-mode sampling; the qwen3 reasoning parser keeps
-                # the thinking out of the scored content. 32K (IFEval at 16K truncated
-                # 2/541 answers in run 39398093834; IFBench constraints are harder).
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_p": 0.95,
-                    "top_k": 20,
-                },
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
