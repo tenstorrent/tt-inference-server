@@ -475,6 +475,21 @@ qwen38_flash_next_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen38_flash_next",
 )
+# Same tt-metal code as qwen38_flash_next; distinct impl ids only name the MTP speculative serving
+# forms, because a model spec is keyed by (impl_name, model_name, device): qwen38-flash-next-mtp is
+# MTP K=4 for one user (the default), qwen38-flash-next-mtp-b8 is K=3 for up to 8 users.
+qwen38_flash_next_mtp_impl = ImplSpec(
+    impl_id="qwen38_flash_next_mtp",
+    impl_name="qwen38-flash-next-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen38_flash_next",
+)
+qwen38_flash_next_mtp_b8_impl = ImplSpec(
+    impl_id="qwen38_flash_next_mtp_b8",
+    impl_name="qwen38-flash-next-mtp-b8",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen38_flash_next",
+)
 # Aleph-Alpha/Kolibri-1 TP4 autoport produced by the tt-model-bringup pipeline. Like
 # other autoports, the code_path lives under models/autoports/ and exists only on a
 # tt-metal branch (vkovacevic/kolibri-1-qb2-model), not on main.
@@ -522,6 +537,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "qwen38_flash_next": qwen38_flash_next_impl,
+    "qwen38_flash_next_mtp": qwen38_flash_next_mtp_impl,
+    "qwen38_flash_next_mtp_b8": qwen38_flash_next_mtp_b8_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,

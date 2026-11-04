@@ -1019,7 +1019,24 @@ def set_runtime_env_vars(model_spec_json):
         logger.info("No env_vars found in model spec")
         return
 
+    # TIS_KEEP_ENV="A,B": names the caller's shell value wins over the spec's env_vars
+    # (local server only; a Docker run does not pass the shell). Example: a Galaxy host
+    # selects the ring mesh descriptor with TT_MESH_GRAPH_DESC_PATH while the spec names the line one.
+    keep_env = {
+        name.strip()
+        for name in os.getenv("TIS_KEEP_ENV", "").split(",")
+        if name.strip()
+    }
+
     for key, value in env_vars.items():
+        if key in keep_env and os.getenv(key) is not None:
+            logger.info(
+                "TIS_KEEP_ENV: keeping the caller's %s=%s (spec has %s)",
+                key,
+                os.getenv(key),
+                value,
+            )
+            continue
         if preserve_package_env and key in QUETZAL_EXTERNAL_PACKAGE_ENV:
             selected = os.getenv(key)
             if selected is not None:

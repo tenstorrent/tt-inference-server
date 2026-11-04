@@ -1788,6 +1788,10 @@ templates:
 
 # Qwen/Qwen3.8-Flash-Next (qwen4_exp: MoE, Gated DeltaNet + QSA hybrid attention, n-gram
 # embedding) TP=8 on a BH LoudBox, 1x8 line (models/demos/blackhole/qwen38_flash_next).
+# Three entries share these weights and code (distinct impl ids only name the serving form, as for
+# qwen36 and gemma4): qwen38-flash-next-mtp (MTP K=4, 1 user), qwen38-flash-next-mtp-b8
+# (default: MTP K=3, up to 8 users) and qwen38-flash-next (plain decode, up to 32 users). The MTP entries sit
+# below this one.
 # Needs tt-metal branch atupe/qwen38-flash-next (the adapter tools/qwen38_vllm.py and its
 # bundle tools/vllm_bundle are not on main) and vllm-tt-plugin main >= 82322af (vLLM 0.30).
 # The plugin finds the bundle one folder deep, so EXTRA_MODELS_DIR names the bundle dir.
@@ -1812,7 +1816,9 @@ templates:
       max_context: 32704
       # KV pool the adapter reports at 32704 x 32 (max_tokens_all_users=656983), rounded down.
       max_tokens_all_users_override: 655360
-      default_impl: true
+      # Plain decode (no speculation), up to 32 users. Not the default: the MTP b8 entry below is.
+      # Select it with --impl qwen38-flash-next.
+      default_impl: false
       env_vars:
         MESH_DEVICE: "P150x8"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/p150_x8_1x8_line_mesh_graph_descriptor.textproto"
@@ -1842,6 +1848,138 @@ templates:
         tool-call-parser: qwen3_coder
         # The checkpoint the tt-metal model pins (checkpoint.py PINNED_CHECKPOINT_REVISION);
         # the hub's main moved to de4b8e4d on 2026-08-27.
+        revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+        tokenizer_revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3.8-Flash-Next:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# Qwen/Qwen3.8-Flash-Next with MTP speculative decoding (K=4, one user). Same weights,
+# code and checkpoint as the plain entry above; differences: the TT model class is
+# Qwen38MTPForCausalLM (tools/qwen38_vllm_mtp.py), selected by TT_MODEL_CLASS_OVERRIDES, and vLLM
+# runs speculative_config method custom_class over the model-owned MTP drafter (K drafts per step
+# from the chain itself, no draft model). K comes from QWEN38_VLLM_MTP_K and must equal
+# num_speculative_tokens.
+# - The MTP chain verifies greedily (accept mode argmax_ids). vllm-tt-plugin refuses a request with
+#   temperature > 0, a penalty, logprobs, structured output, bad_words, allowed_token_ids,
+#   min_tokens or logit_bias. The TIS benchmark drivers send no temperature, and vLLM would then
+#   take temperature 1.0 from the checkpoint's generation_config, so override_generation_config
+#   pins the server default to temperature 0.0.
+# - The MTP class has no device sampler: sample_on_device_mode is left out of override_tt_config
+#   (plain entry: decode_only).
+# - Async decode and the hybrid single-user chain env vars of the plain entry are kept; the MTP
+#   class declares no async decode, so the platform turns async scheduling off with a warning.
+# - Lanes rule: max_num_seqs B and K satisfy B x (K + 1) <= 32; B = 1 uses the chain's pass loop,
+#   B = 2..8 the lane chain. max_concurrency equals max_num_seqs, so the benchmarks workflow
+#   (concurrency 1 and the spec's max) never asks for more users than the server holds.
+# - Ring fabric on a Galaxy host: see the TIS_KEEP_ENV note in vllm-tt-metal/src/run_vllm_api_server.py.
+- weights:
+    - Qwen/Qwen3.8-Flash-Next
+  impl: qwen38_flash_next_mtp
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X8
+      # MTP K=4, one user.
+      max_concurrency: 1
+      # Resident context of the chain at 1 user is 2^k - 64 (8128 / 32704 / 65472 / 131008 / 262080);
+      # 32704 is the context the vLLM path was validated at.
+      max_context: 32704
+      # Not the default: the b8 entry below serves a lone request on the batch-1 path too (at K=3)
+      # and also serves up to 8 users. K=4 gives more tok/s to one user; select it with
+      # --impl qwen38-flash-next-mtp.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/p150_x8_1x8_line_mesh_graph_descriptor.textproto"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/vllm_bundle"
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen4ExpForConditionalGeneration=models.demos.blackhole.qwen38_flash_next.tools.qwen38_vllm_mtp:Qwen38MTPForCausalLM"
+        QWEN38_VLLM_MTP_K: "4"
+        QWEN38_VLLM_ALLOW_BF4_CONVERSION: "1"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+        TT_METAL_TRACE_ALLOC_TRACKING: "1"
+        OMP_NUM_THREADS: "4"
+        QWEN38_HYBRID_SINGLE: "1"
+        QWEN38_ASYNC_DECODE: "1"
+      override_tt_config:
+        l1_small_size: 24576
+        trace_region_size: 0
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "1"
+        hf-overrides: '{"architectures":["TTQwen4ExpForConditionalGeneration"]}'
+        no-enable-prefix-caching: true
+        enable_chunked_prefill: false
+        enable-auto-tool-choice: true
+        reasoning-parser: qwen3
+        tool-call-parser: qwen3_coder
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 4}'
+        override_generation_config: '{"temperature": 0.0}'
+        revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+        tokenizer_revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3.8-Flash-Next:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# Qwen/Qwen3.8-Flash-Next, MTP K=3, up to 8 users (lanes rule: 8 x (3 + 1) = 32). Same
+# differences from the plain entry as qwen38-flash-next-mtp above. Needs the batch-8 MTP lane path
+# of Qwen38MTPForCausalLM (tools/qwen38_vllm_mtp.py, max_num_seqs 2..8).
+- weights:
+    - Qwen/Qwen3.8-Flash-Next
+  impl: qwen38_flash_next_mtp_b8
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 8
+      max_context: 32704
+      # The adapter's pool is one context per user (get_max_tokens_all_users = max_model_len x
+      # max_num_seqs); without this the derived pool is one context and the benchmark sweep would
+      # cap concurrency at ISL >= 4096.
+      max_tokens_all_users_override: 261632
+      # Default: a lone request runs the fast batch-1 path inside the adapter (QWEN38_MTP_HYBRID_SINGLE,
+      # on by default, tt-metal b7c2b757850 or later), and up to 8 users share the lane chain.
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/p150_x8_1x8_line_mesh_graph_descriptor.textproto"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole/qwen38_flash_next/tools/vllm_bundle"
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen4ExpForConditionalGeneration=models.demos.blackhole.qwen38_flash_next.tools.qwen38_vllm_mtp:Qwen38MTPForCausalLM"
+        QWEN38_VLLM_MTP_K: "3"
+        QWEN38_VLLM_ALLOW_BF4_CONVERSION: "1"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+        TT_METAL_TRACE_ALLOC_TRACKING: "1"
+        OMP_NUM_THREADS: "4"
+        QWEN38_HYBRID_SINGLE: "1"
+        QWEN38_ASYNC_DECODE: "1"
+      override_tt_config:
+        l1_small_size: 24576
+        trace_region_size: 0
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "8"
+        hf-overrides: '{"architectures":["TTQwen4ExpForConditionalGeneration"]}'
+        no-enable-prefix-caching: true
+        enable_chunked_prefill: false
+        enable-auto-tool-choice: true
+        reasoning-parser: qwen3
+        tool-call-parser: qwen3_coder
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        override_generation_config: '{"temperature": 0.0}'
         revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
         tokenizer_revision: f5d08274bafd880402bd16f5e3e6c514136ec06c
   status: EXPERIMENTAL
