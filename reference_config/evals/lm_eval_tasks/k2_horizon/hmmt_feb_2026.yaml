@@ -9,7 +9,7 @@ output_type: generate_until
 # MathArena's instruction for answer-extracted math problems.
 doc_to_text: "{{problem}}\n\nPlease reason step by step, and put your final answer within \\boxed{}."
 doc_to_target: "{{answer}}"
-process_results: !function utils.process_results_math
+process_results: !function utils.process_results_math_preclean
 num_fewshot: 0
 generation_kwargs:
   until: []
