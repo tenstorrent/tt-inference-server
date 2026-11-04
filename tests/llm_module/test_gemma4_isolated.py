@@ -37,7 +37,7 @@ def test_original_cython_probe_cohort_limits():
     task = tasks[0]
     assert task.limit_samples_map == {}
     cfg = task.agentic_eval_config
-    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 32
+    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 29
     assert cfg.agent_timeout_sec == 18000 and cfg.allow_agent_endpoint
     assert task.score.score_func_kwargs['result_keys'] == ['accuracy']
 

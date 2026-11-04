@@ -13586,8 +13586,17 @@ _probe_task = next(task for task in _fresh_config.tasks if task.task_name == "te
 _probe_kwargs = copy.deepcopy(_probe_task.agentic_eval_config.agent_kwargs)
 _probe_kwargs["model_info"]["max_output_tokens"] = 65536
 _probe_kwargs["llm_kwargs"]["max_tokens"] = 65536
-# Thirty-two Terminal tasks on the stock dataset, which Harbor truncates in
-# sorted name order, so the cohort is a reproducible prefix of the pinned 89.
+# Thirty-two Terminal tasks on the stock dataset. The registry copy is pinned
+# by digest and Harbor truncates it in registry order, so the cohort is a
+# reproducible prefix of the pinned 89. Unlike SWE-bench, Terminal-Bench tasks
+# are not grouped by source repository, so a prefix is already a mixed cohort
+# and needs no stratification.
+#
+# Trials are capped at 29, not 32: each Harbor trial creates its own
+# <task>__env_default Docker bridge network and the runner's predefined address
+# pools were exhausted at 31 on the SWE run 41649832352, which lost two tasks to
+# "all predefined address pools have been fully subnetted". Serving batch stays
+# 32 and 29 agents still fill it.
 #
 # The goal-12 agent-egress denial is not applied. Its offline package machinery
 # covers only build-pmars and configure-git-webserver, so under no-network the
@@ -13600,7 +13609,7 @@ _probe_kwargs["llm_kwargs"]["max_tokens"] = 65536
 # agent/request/output limits are unchanged.
 _probe_task = replace(_probe_task, limit_samples_map={},
     agentic_eval_config=replace(_probe_task.agentic_eval_config,
-        n_tasks=32, n_concurrent_trials=32, task_names_map={},
+        n_tasks=32, n_concurrent_trials=29, task_names_map={},
         agent_kwargs=_probe_kwargs, llm_timeout_sec=3600,
         allow_agent_endpoint=True, collect_preflight_evidence=True,
         offline_task_prerequisites=False, offline_apt_fixtures=False,
