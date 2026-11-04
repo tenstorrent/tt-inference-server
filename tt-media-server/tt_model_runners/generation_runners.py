@@ -710,7 +710,7 @@ class TTMiniMaxH3Ref2VARunner(_MiniMaxH3ReferencesRunner):
 
 
 class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner):
-    """MiniMax-H3 Ref2VA with the lightx2v Ref2VA Turbo 4-step v0.1 adapter (544p-trained)."""
+    """MiniMax-H3 Ref2VA with the lightx2v Ref2VA Turbo 4-step v1.0 768p adapter."""
 
     video_shift = 12.0
     audio_shift = 3.0

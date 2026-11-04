@@ -415,26 +415,32 @@ def _resolve_eval_shard(
 
 
 def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
-    """request_body / thinking run through the lm-eval request-overrides
-    wrapper, which only the lm-eval adapters support."""
+    """request_body / thinking run through the request-overrides wrapper: the
+    lm-eval adapters it patches, or an lmms-eval model that sends through the
+    openai SDK's chat client (the body rides in the SDK's extra_body)."""
+    from llm_module.lm_eval_request_overrides import (
+        SUPPORTED_EVAL_CLASSES,
+        SUPPORTED_LMMS_EVAL_CLASSES,
+    )
+
     if task.workflow_venv_type in [
         WorkflowVenvType.EVALS_VISION,
         WorkflowVenvType.EVALS_AUDIO,
     ]:
-        raise ValueError(
-            f"request_body/thinking on {task.task_name} needs "
-            "the lm-eval request-overrides wrapper, which lmms-eval tasks "
-            "cannot use"
-        )
-    from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
-
-    if task.eval_class not in SUPPORTED_EVAL_CLASSES:
+        if task.eval_class not in SUPPORTED_LMMS_EVAL_CLASSES:
+            raise ValueError(
+                f"request_body/thinking on {task.task_name}: lmms-eval model "
+                f"{task.eval_class!r} is not one of the openai-SDK clients the "
+                "request-overrides wrapper patches "
+                f"({', '.join(SUPPORTED_LMMS_EVAL_CLASSES)})"
+            )
+    elif task.eval_class not in SUPPORTED_EVAL_CLASSES:
         raise ValueError(
             f"request_body/thinking on {task.task_name}: eval_class "
             f"{task.eval_class!r} is not one of the lm-eval adapters the "
             f"request-overrides wrapper patches ({', '.join(SUPPORTED_EVAL_CLASSES)})"
         )
-    if "chat_template_kwargs" in request_body and not task.use_chat_api:
+    elif "chat_template_kwargs" in request_body and not task.use_chat_api:
         raise ValueError(
             f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
             "only reach the server on the chat API; the completions API renders "
@@ -616,6 +622,11 @@ def build_eval_command(
             lm_eval_prefix.append("--drop-server-seed")
         if getattr(task, "capture_reasoning", False):
             lm_eval_prefix.append("--preserve-reasoning")
+        if task.workflow_venv_type in [
+            WorkflowVenvType.EVALS_VISION,
+            WorkflowVenvType.EVALS_AUDIO,
+        ]:
+            lm_eval_prefix += ["--harness", "lmms-eval"]
         lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993

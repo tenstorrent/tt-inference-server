@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
@@ -152,6 +153,28 @@ class MemoryQueue {
       queue_->receive(reinterpret_cast<char*>(&out), sizeof(MsgType), recv_size,
                       priority);
     }
+  }
+
+  /** Blocking receive with a timeout; false if nothing arrived in time. */
+  bool timedReceive(MsgType& out, unsigned timeoutMs) {
+    const auto deadline =
+        ::boost::posix_time::microsec_clock::universal_time() +
+        ::boost::posix_time::milliseconds(timeoutMs);
+    bi_ipc::message_queue::size_type recv_size = 0;
+    unsigned int priority = 0;
+    if constexpr (Serializable<MsgType>) {
+      auto& buf = recvBuffer();
+      if (!queue_->timed_receive(buf.data(), buf.size(), recv_size, priority,
+                                 deadline))
+        return false;
+      bi_ipc::ibufferstream stream(buf.data(), recv_size);
+      out = MsgType::deserialize(stream);
+    } else {
+      if (!queue_->timed_receive(reinterpret_cast<char*>(&out), sizeof(MsgType),
+                                 recv_size, priority, deadline))
+        return false;
+    }
+    return true;
   }
 
   // -- drain ----------------------------------------------------------------

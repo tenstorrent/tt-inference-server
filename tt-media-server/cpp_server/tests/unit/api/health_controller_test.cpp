@@ -188,6 +188,18 @@ TEST(HealthControllerTest,
   EXPECT_EQ(response->getStatusCode(), drogon::k500InternalServerError);
 }
 
+TEST(HealthControllerTest, LivenessReturnsInternalServerErrorWhenWorkerDead) {
+  const auto response = callLiveness(std::make_shared<FakeService>(
+      /*modelReady=*/false, /*workerReady=*/false, /*workerAlive=*/false));
+
+  ASSERT_NE(response, nullptr);
+  EXPECT_EQ(response->getStatusCode(), drogon::k500InternalServerError);
+  EXPECT_NE(std::string(response->getBody()).find("\"status\":\"error\""),
+            std::string::npos);
+  EXPECT_NE(std::string(response->getBody()).find("worker 0 is dead"),
+            std::string::npos);
+}
+
 TEST(HealthControllerTest, LivenessIncludesGatewayPrefillHealthReadyStatus) {
   const auto response =
       callLiveness(std::make_shared<FakeService>(/*modelReady=*/true),

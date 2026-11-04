@@ -20,26 +20,36 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/Ideogram4Request"
-            example:
-              structured_prompt:
-                high_level_description: A neon sign reading "OPEN LATE" on a 
-                  brick wall at night.
-                style_description:
-                  aesthetics: moody, urban, vibrant
-                  lighting: neon glow, deep shadows
-                  medium: graphic_design
-                  art_style: retro neon signage
-                  color_palette: ["#FF2E88", "#1B1B2F", "#F5F5F5"]
-                compositional_deconstruction:
-                  background: A dark red brick wall, wet from rain.
-                  elements:
-                    - type: text
-                      bbox: [350, 150, 650, 850]
-                      text: OPEN LATE
-                      desc: Glowing pink neon letters, slightly flickering.
-              aspect_ratio: "2:3"
-              size: 2K
-              rendering_speed: quality
+            examples:
+              plain:
+                summary: Plain prompt, expanded by the prompt enhancer
+                value:
+                  prompt: >-
+                    A neon sign reading "OPEN LATE" on a rainy brick wall at
+                    night
+                  aspect_ratio: "2:3"
+              structured:
+                summary: Structured caption, sent to the model as is
+                value:
+                  structured_prompt:
+                    high_level_description: A neon sign reading "OPEN LATE" on a 
+                      brick wall at night.
+                    style_description:
+                      aesthetics: moody, urban, vibrant
+                      lighting: neon glow, deep shadows
+                      medium: graphic_design
+                      art_style: retro neon signage
+                      color_palette: ["#FF2E88", "#1B1B2F", "#F5F5F5"]
+                    compositional_deconstruction:
+                      background: A dark red brick wall, wet from rain.
+                      elements:
+                        - type: text
+                          bbox: [350, 150, 650, 850]
+                          text: OPEN LATE
+                          desc: Glowing pink neon letters, slightly flickering.
+                  aspect_ratio: "2:3"
+                  size: 2K
+                  rendering_speed: quality
       responses:
         "202":
           $ref: "../../common.yaml#/components/responses/Submitted"
@@ -74,8 +84,22 @@ components:
     Ideogram4Request:
       type: object
       additionalProperties: false
-      required: [structured_prompt]
+      oneOf:
+        - required: [prompt]
+        - required: [structured_prompt]
+      description: |
+        Exactly one of `prompt` or `structured_prompt`.
       properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            What to generate, in plain words. Ideogram 4 only works from a
+            structured caption, so the server first rewrites the prompt into
+            one with a prompt enhancer (an LLM), adding detail on composition,
+            style, lighting and any text, for the requested `aspect_ratio`.
+            Each output reports the caption the model received as its
+            `prompt`. To skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
           $ref: "#/components/schemas/Ideogram4Caption"
         count:
@@ -88,28 +112,25 @@ components:
             without a schema change.
         aspect_ratio:
           type: string
-          enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+          enum: ["1:1", "16:9", "9:16", "2:3"]
           default: "1:1"
           description: |
-            Output shape. Each output reports its exact size.
+            Output shape. Only these for now; more can be allowed later without
+            a schema change. Each output reports its exact size.
         size:
           type: string
-          enum: [1K, 2K]
+          enum: [2K]
           default: 2K
           description: |
-            Size tier. With `aspect_ratio`, it fixes the output size. `1K` uses
-            the model's native sizes of about 1 MP; `2K` has a long side of 2048, the
-            open model's maximum (256–2048 per side, multiples of 16):
+            Size tier: a long side of 2048, the open model's maximum. Only `2K`
+            for now; `1K` can be allowed later without a schema change.
 
-            | `aspect_ratio` | `1K`      | `2K`      |
-            | -------------- | --------- | --------- |
-            | `1:1`          | 1024×1024 | 2048×2048 |
-            | `16:9`         | 1280×720  | 2048×1152 |
-            | `9:16`         | 720×1280  | 1152×2048 |
-            | `4:3`          | 1152×864  | 2048×1536 |
-            | `3:4`          | 864×1152  | 1536×2048 |
-            | `3:2`          | 1248×832  | 2048×1360 |
-            | `2:3`          | 832×1248  | 1360×2048 |
+            | `aspect_ratio` | `2K`      |
+            | -------------- | --------- |
+            | `1:1`          | 2048×2048 |
+            | `16:9`         | 2048×1152 |
+            | `9:16`         | 1152×2048 |
+            | `2:3`          | 1360×2048 |
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:
@@ -131,9 +152,8 @@ components:
         the model as is. Key order does not matter: the server writes it out in
         the model's order. Each output reports it as its `prompt`.
 
-        There is no plain-text prompt for now: Ideogram 4 needs a caption like
-        this, and turning plain text into one takes an LLM ("magic prompt"),
-        which this API doesn't run yet.
+        Use this to bypass the prompt enhancer, e.g. with a caption written by
+        your own LLM.
 
         Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.
       properties:

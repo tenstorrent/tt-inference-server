@@ -10,6 +10,9 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
 | Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) |
 | --- | --- | --- |
+| [olmOCR-2-7B-1025](olmOCR-2-7B-1025_t3k.md) | - | [🟢 Complete](olmOCR-2-7B-1025_t3k.md) |
+| [Qwen2.5-VL-7B-Instruct](Qwen2.5-VL-7B-Instruct_galaxy.md) | [🟢 Complete](Qwen2.5-VL-7B-Instruct_galaxy.md) | [🟢 Complete](Qwen2.5-VL-7B-Instruct_t3k.md) |
+| [Qwen2.5-VL-72B-Instruct](Qwen2.5-VL-72B-Instruct_t3k.md) | - | [🟡 Functional](Qwen2.5-VL-72B-Instruct_t3k.md) |
 | [Qwen3-VL-32B-Instruct](Qwen3-VL-32B-Instruct_t3k.md) | - | [🟡 Functional](Qwen3-VL-32B-Instruct_t3k.md) |
 
 ## Experimental Models
@@ -19,3 +22,4 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) |
 | --- | --- | --- |
 | [gemma-3-27b-it](gemma-3-27b-it_galaxy.md) | [🛠️ Experimental](gemma-3-27b-it_galaxy.md) | - |
+| [Qwen2.5-VL-32B-Instruct](Qwen2.5-VL-32B-Instruct_t3k.md) | - | [🛠️ Experimental](Qwen2.5-VL-32B-Instruct_t3k.md) |

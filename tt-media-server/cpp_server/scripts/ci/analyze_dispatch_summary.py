@@ -23,10 +23,10 @@ import sys
 from pathlib import Path
 
 PHASE_LABELS = {
-    "queue_wait": "Queue wait (request sat in queue)",
-    "batch_collect": "Batch collect (forming the batch)",
-    "batch_json_encode": "JSON encode (batch -> worker payload)",
-    "pipe_round_trip": "Pipe round trip (IPC + worker compute)",
+    "queue_wait": "Queue wait (request sat in shm queue)",
+    "batch_collect": "Batch collect (worker-side batch fill)",
+    "shm_enqueue": "SHM enqueue (serialize + push task)",
+    "shm_round_trip": "SHM round trip (worker compute + result IPC)",
     "completion": "Completion (decode + callbacks)",
 }
 
