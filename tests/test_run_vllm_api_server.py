@@ -1690,5 +1690,7 @@ print(json.dumps(runtime_spec['device_model_spec']['vllm_args']))
     assert sys.argv.count('--enable-auto-tool-choice') == 1
     assert sys.argv[sys.argv.index('--tool-call-parser') + 1] == 'gemma4'
     assert sys.argv[sys.argv.index('--reasoning-parser') + 1] == 'gemma4'
-    assert sys.argv[sys.argv.index('--max_num_seqs') + 1] == '32'
+    # The goal-12 agentic branch serves the dev catalogue at batch 8; the
+    # release catalogue keeps the validated batch-32 shape.
+    assert sys.argv[sys.argv.index('--max_num_seqs') + 1] == ('8' if catalog == 'dev' else '32')
     assert sys.argv[sys.argv.index('--max_num_batched_tokens') + 1] == '4096'

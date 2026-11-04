@@ -7702,7 +7702,7 @@ templates:
   - text
   device_model_specs:
   - device: P300X2
-    max_concurrency: 32
+    max_concurrency: 8
     max_context: 262144
     default_impl: false
     env_vars:
@@ -7719,7 +7719,7 @@ templates:
     vllm_args:
       revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
       tokenizer_revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
-      max_num_seqs: '32'
+      max_num_seqs: '8'
       block_size: '32'
       max_num_batched_tokens: '4096'
       enable-prefix-caching: true

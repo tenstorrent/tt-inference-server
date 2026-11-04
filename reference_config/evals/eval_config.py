@@ -13555,7 +13555,7 @@ for _index, _config in enumerate(_eval_config_list):
         _swe_cfg = HarborEvalConfig(
             dataset="gemma4-isolated-swe", agent="mini-swe-agent",
             collect_preflight_evidence=True, preflight_min_free_bytes=512 * 1024**3,
-            n_tasks=32, n_concurrent_trials=29, n_attempts=1,
+            n_tasks=32, n_concurrent_trials=10, n_attempts=1,
             agent_timeout_sec=18000, llm_timeout_sec=3600,
             allow_agent_endpoint=True, override_cpus=1, override_memory_mb=8192,
             agent_kwargs={"version": MINI_SWE_AGENT_VERSION, "max_tokens": 65536,
@@ -13612,9 +13612,18 @@ EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(
 # "all predefined address pools have been fully subnetted". Serving batch stays
 # 32; 29 concurrent agents still fill it and the three remaining tasks start as
 # soon as a slot frees.
+# Serving batch is 8, not 32. Decode runs a captured fixed-shape trace, so a
+# batch-32 server pays the batch-32 step cost on every step no matter how many
+# rows carry live sequences. The bringup benchmark (4096 in / 128 out) measured
+# 16.38 tok/s per user at batch 8 against 4.91 at batch 32 - 3.3x per agent -
+# for 23% less aggregate throughput. Agentic wall time is set by the longest
+# single task, which is one serial chain of calls, so per-user rate is what it
+# rides on. Trials are 10 rather than 8: the measured LLM duty cycle on healthy
+# tasks of run 41649832352 is roughly 70-100%, so a little over-subscription
+# keeps the eight rows full across shell commands without queueing.
 _probe_config = EVAL_CONFIGS["google/gemma-4-31B-it"]
 _probe_task = _probe_config.tasks[0]
 assert _probe_task.task_name == "swe_bench_verified", _probe_task.task_name
 _probe_task = replace(_probe_task, agentic_eval_config=replace(_probe_task.agentic_eval_config,
-    n_tasks=32, n_concurrent_trials=29, exclude_task_names=[]))
+    n_tasks=32, n_concurrent_trials=10, exclude_task_names=[]))
 EVAL_CONFIGS["google/gemma-4-31B-it"] = replace(_probe_config, tasks=[_probe_task])

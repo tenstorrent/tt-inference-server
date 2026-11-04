@@ -37,7 +37,7 @@ def test_release_cohort_limits():
     task = tasks[0]
     assert task.limit_samples_map == {}
     cfg = task.agentic_eval_config
-    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 29
+    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 10
     assert cfg.exclude_task_names == []
     assert cfg.llm_timeout_sec == 3600
     assert cfg.agent_kwargs["max_tokens"] == 65536
@@ -86,4 +86,4 @@ def test_remaining_partition_preserves_frozen_cohort():
     assert selected == sorted(cohort)
     assert len(selected) == len(set(selected)) == 32
     # Concurrency is below the cohort size on purpose; see eval_config.py.
-    assert cfg.n_concurrent_trials == 29 < cfg.n_tasks
+    assert cfg.n_concurrent_trials == 10 < cfg.n_tasks
