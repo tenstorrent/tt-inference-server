@@ -36,6 +36,7 @@ from config.constants import (
 )
 from config.settings import get_settings
 from domain.generation_request import GenerationRequest
+from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
@@ -575,3 +576,54 @@ class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+class TTIdeogram4Runner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.ideogram4.pipeline_ideogram4 import (
+            Ideogram4Pipeline,
+        )
+
+        try:
+            return Ideogram4Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Ideogram 4 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # From tt-metal's models/tt_dit/tests/models/ideogram4/test_pipeline_class_ideogram4.py.
+        return {"l1_small_size": 32768, "trace_region_size": 60_000_000}
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The presets differ only in step count and the per-step guidance
+        # weight, an input of the same step program, and the pipeline captures
+        # its trace anew on every call. So the fastest preset compiles every
+        # size for all three; it fixes its step count, so warmup can't shorten it.
+        return [
+            _warmup_request(
+                Ideogram4Request.model_construct(rendering_speed="turbo"), width, height
+            )
+            for width, height in Ideogram4Request.warmup_sizes()
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Ideogram4Request]):
+        request = requests[0]
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            preset=IDEOGRAM_PRESETS[request.rendering_speed],
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            traced=True,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images

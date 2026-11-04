@@ -34,6 +34,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid),
+    ModelRunners.TT_IDEOGRAM_4: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTIdeogram4Runner"]
+    ).TTIdeogram4Runner(wid),
     ModelRunners.TT_QWEN_IMAGE: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImageRunner"]
     ).TTQwenImageRunner(wid),

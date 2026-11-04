@@ -17,6 +17,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
+from domain.ideogram4_request import Ideogram4Request
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
@@ -523,3 +524,47 @@ def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):
     monkeypatch.setattr(runners, "_minimax_h3_device_params", fake_params)
     _h3_runner(class_name).get_pipeline_device_params()
     assert captured["l1_small_size"] == l1_small_size
+
+
+def test_ideogram_gets_the_caption_and_preset():
+    runner = _runner("TTIdeogram4Runner")
+    request = Ideogram4Request(
+        structured_prompt={
+            "compositional_deconstruction": {"background": "b", "elements": []}
+        },
+        rendering_speed="quality",
+    )
+    request = _resolved(request, 1024, 1024, prompt=request.model_prompt())
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["prompts"] == [
+        '{"compositional_deconstruction":{"background":"b","elements":[]}}'
+    ]
+    assert call["preset"] == "V4_QUALITY_48"
+
+
+def test_ideogram_warmup_covers_every_size():
+    # 14 sizes; one preset compiles all three.
+    runner = _runner("TTIdeogram4Runner", warming_up=True)
+    requests = runner.warmup_requests()
+    assert len(requests) == 14
+    for request in requests:
+        runner.pipeline.calls.clear()
+        runner.run([request])
+        (call,) = runner.pipeline.calls
+        assert (call["width"], call["height"]) == (request._width, request._height)
+
+
+def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
+    # The pipeline resolves a repo id itself.
+    pipeline = ModuleType("pipeline_ideogram4")
+    pipeline.Ideogram4Pipeline = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.ideogram4.pipeline_ideogram4", pipeline
+    )
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.model_weights_path = "ideogram-ai/ideogram-4-fp8"
+    runner.ttnn_device = Mock()
+    runner.create_pipeline()
+    kwargs = pipeline.Ideogram4Pipeline.create_pipeline.call_args.kwargs
+    assert kwargs["weights_dir"] == "ideogram-ai/ideogram-4-fp8"

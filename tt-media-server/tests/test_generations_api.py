@@ -23,6 +23,7 @@ import pytest
 import yaml
 from config.constants import JobTypes
 from domain.generation_request import MEDIA_MAX_BYTES
+from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
 from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
@@ -1024,3 +1025,110 @@ def test_the_service_downloads_no_weights(monkeypatch):
     )
     base_service.BaseService.__init__(object.__new__(GenerationService))
     assert downloads == []
+
+
+# --- Ideogram 4 ------------------------------------------------------------------
+
+_CAPTION = {
+    "compositional_deconstruction": {
+        "background": "a brick wall",
+        "elements": [{"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40]}],
+    }
+}
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"aspect_ratio": "16:9", "size": "1K"}, (1280, 720)),
+        ({"aspect_ratio": "3:2"}, (2048, 1360)),
+    ],
+)
+def test_ideogram_output_size(fields, expected):
+    request = Ideogram4Request(structured_prompt=_CAPTION, **fields)
+    assert request.output_size() == expected
+    assert len(set(Ideogram4Request.warmup_sizes())) == 14
+
+
+def test_ideogram_caption_is_written_in_the_model_key_order():
+    request = Ideogram4Request(
+        structured_prompt={
+            "compositional_deconstruction": {
+                "elements": [{"desc": "d", "bbox": [0, 0, 1, 1], "type": "obj"}],
+                "background": "b",
+            },
+            "style_description": {
+                "medium": "m",
+                "photo": "p",
+                "lighting": "l",
+                "aesthetics": "a",
+            },
+            "high_level_description": "Ein Café",
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"Ein Café",'
+        '"style_description":{"aesthetics":"a","lighting":"l","photo":"p","medium":"m"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","bbox":[0,0,1,1],"desc":"d"}]}}'
+    )
+
+
+@pytest.mark.parametrize(
+    ("caption", "message"),
+    [
+        (
+            {"compositional_deconstruction": {"background": "b", "elements": [
+                {"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}
+            ]}},
+            "ymin <= ymax",
+        ),
+        (
+            {
+                "style_description": {
+                    "aesthetics": "a",
+                    "lighting": "l",
+                    "medium": "m",
+                    "photo": "p",
+                    "art_style": "s",
+                },
+                **_CAPTION,
+            },
+            "exactly one of photo and art_style",
+        ),
+        (
+            {"compositional_deconstruction": {"background": "b", "elements": [
+                {"type": "obj", "desc": "d", "color_palette": ["#ff0000"]}
+            ]}},
+            "pattern",
+        ),
+        ({"caption": "plain"}, "extra"),
+    ],
+)  # fmt: skip
+def test_ideogram_rejects_invalid_captions(caption, message):
+    with pytest.raises(ValidationError, match=message):
+        Ideogram4Request(structured_prompt=caption)
+
+
+def test_ideogram_has_no_plain_prompt():
+    with pytest.raises(ValidationError, match="extra"):
+        Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
+
+
+async def test_ideogram_gets_the_serialized_caption(generations_app):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9", "size": "1K"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    caption = (
+        '{"compositional_deconstruction":{"background":"a brick wall",'
+        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN"}]}}'
+    )
+    assert device.requests[0]._prompt == caption
+    (output,) = job["outputs"]
+    assert output["prompt"] == caption
+    assert (output["width"], output["height"]) == (1280, 720)
