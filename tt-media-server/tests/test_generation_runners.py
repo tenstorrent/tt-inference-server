@@ -544,10 +544,10 @@ def test_ideogram_gets_the_caption_and_preset():
 
 
 def test_ideogram_warmup_covers_every_size():
-    # 14 sizes; one preset compiles all three.
+    # 4 sizes; one preset compiles all three.
     runner = _runner("TTIdeogram4Runner", warming_up=True)
     requests = runner.warmup_requests()
-    assert len(requests) == 14
+    assert len(requests) == 4
     for request in requests:
         runner.pipeline.calls.clear()
         runner.run([request])

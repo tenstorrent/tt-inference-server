@@ -1041,15 +1041,20 @@ _CAPTION = {
     ("fields", "expected"),
     [
         ({}, (2048, 2048)),
-        ({"size": "1K"}, (1024, 1024)),
-        ({"aspect_ratio": "16:9", "size": "1K"}, (1280, 720)),
-        ({"aspect_ratio": "3:2"}, (2048, 1360)),
+        ({"aspect_ratio": "16:9"}, (2048, 1152)),
+        ({"aspect_ratio": "2:3", "size": "2K"}, (1360, 2048)),
     ],
 )
 def test_ideogram_output_size(fields, expected):
     request = Ideogram4Request(structured_prompt=_CAPTION, **fields)
     assert request.output_size() == expected
-    assert len(set(Ideogram4Request.warmup_sizes())) == 14
+    assert len(set(Ideogram4Request.warmup_sizes())) == 4
+
+
+@pytest.mark.parametrize("fields", [{"size": "1K"}, {"aspect_ratio": "3:2"}])
+def test_ideogram_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(structured_prompt=_CAPTION, **fields)
 
 
 def test_ideogram_caption_is_written_in_the_model_key_order():
@@ -1121,7 +1126,7 @@ async def test_ideogram_gets_the_serialized_caption(generations_app):
     client, device = generations_app("tt-ideogram-4")
     response = await client.post(
         "/v1/generations/ideogram-ai/ideogram-4",
-        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9", "size": "1K"},
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9"},
     )
     job = await _wait_final(client, response.json()["id"])
     caption = (
@@ -1131,4 +1136,4 @@ async def test_ideogram_gets_the_serialized_caption(generations_app):
     assert device.requests[0]._prompt == caption
     (output,) = job["outputs"]
     assert output["prompt"] == caption
-    assert (output["width"], output["height"]) == (1280, 720)
+    assert (output["width"], output["height"]) == (2048, 1152)
