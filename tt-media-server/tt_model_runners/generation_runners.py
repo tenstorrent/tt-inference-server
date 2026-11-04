@@ -290,16 +290,9 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
         return {"l1_small_size": 65536, "trace_region_size": 31_000_000}
 
     def warmup_requests(self) -> list[GenerationRequest]:
-        # Text to image only: which input-image sequence lengths compile anew
-        # depends on the pipeline, which doesn't take images yet.
-        return [
-            _warmup_request(
-                Flux2klein4bRequest.model_construct(prompt=_WARMUP_PROMPT),
-                width,
-                height,
-            )
-            for width, height in Flux2klein4bRequest.warmup_sizes()
-        ]
+        # The pipeline compiles and traces every size, with and without a
+        # reference image, when it is created.
+        return []
 
     @_inference_timer
     def run(self, requests: list[Flux2klein4bRequest]):

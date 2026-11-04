@@ -226,16 +226,8 @@ def test_klein_edits_only_with_images(with_images):
     assert call["num_inference_steps"] == 4
 
 
-def test_klein_warmup_covers_every_size():
-    runner = _runner("TTFlux2Klein4BRunner", warming_up=True)
-    requests = runner.warmup_requests()
-    assert len(requests) == 2
-    for request in requests:
-        runner.pipeline.calls.clear()
-        runner.run([request])
-        (call,) = runner.pipeline.calls
-        assert (call["width"], call["height"]) == (request._width, request._height)
-        assert call["num_inference_steps"] == 2
+def test_klein_pipeline_warms_itself_up():
+    assert _runner("TTFlux2Klein4BRunner").warmup_requests() == []
 
 
 @pytest.mark.parametrize("warming_up", [False, True])
