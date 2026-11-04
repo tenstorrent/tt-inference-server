@@ -8,7 +8,7 @@ def test_only_original_frozen_cython_probe_selected():
     tasks = EVAL_CONFIGS['google/gemma-4-31B-it'].tasks
     assert [task.task_name for task in tasks] == ['terminal_bench_2']
     cfg = tasks[0].agentic_eval_config
-    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 29 and cfg.n_attempts == 1
+    assert cfg.n_tasks == 32 and cfg.n_concurrent_trials == 10 and cfg.n_attempts == 1
     assert cfg.agent_timeout_sec == 18000 and cfg.llm_timeout_sec == 3600
     assert cfg.agent_kwargs['model_info']['max_output_tokens'] == 65536
     assert cfg.agent_kwargs['llm_kwargs']['max_tokens'] == 65536

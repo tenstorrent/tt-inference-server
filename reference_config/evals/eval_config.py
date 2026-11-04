@@ -13592,11 +13592,19 @@ _probe_kwargs["llm_kwargs"]["max_tokens"] = 65536
 # are not grouped by source repository, so a prefix is already a mixed cohort
 # and needs no stratification.
 #
-# Trials are capped at 29, not 32: each Harbor trial creates its own
-# <task>__env_default Docker bridge network and the runner's predefined address
-# pools were exhausted at 31 on the SWE run 41649832352, which lost two tasks to
-# "all predefined address pools have been fully subnetted". Serving batch stays
-# 32 and 29 agents still fill it.
+# Serving batch is 8, not 32. Decode runs a captured fixed-shape trace, so a
+# batch-32 server pays the batch-32 step cost on every step no matter how many
+# rows carry live sequences. The bringup benchmark (4096 in / 128 out) measured
+# 16.38 tok/s per user at batch 8 against 4.91 at batch 32 - 3.3x per agent -
+# for 23% less aggregate throughput. Agentic wall time is set by the longest
+# single task, which is one serial chain of calls, so per-user rate is what it
+# rides on.
+#
+# Trials are 10 over those eight rows. The measured LLM duty cycle on healthy
+# tasks of the SWE run 41649832352 is roughly 70-100% of wall, so a little
+# over-subscription keeps the rows full across shell commands without queueing
+# a request behind a full generation. Ten also sits well under the Docker
+# address-pool ceiling that cost that run two tasks at 32 concurrent trials.
 #
 # The goal-12 agent-egress denial is not applied. Its offline package machinery
 # covers only build-pmars and configure-git-webserver, so under no-network the
@@ -13609,7 +13617,7 @@ _probe_kwargs["llm_kwargs"]["max_tokens"] = 65536
 # agent/request/output limits are unchanged.
 _probe_task = replace(_probe_task, limit_samples_map={},
     agentic_eval_config=replace(_probe_task.agentic_eval_config,
-        n_tasks=32, n_concurrent_trials=29, task_names_map={},
+        n_tasks=32, n_concurrent_trials=10, task_names_map={},
         agent_kwargs=_probe_kwargs, llm_timeout_sec=3600,
         allow_agent_endpoint=True, collect_preflight_evidence=True,
         offline_task_prerequisites=False, offline_apt_fixtures=False,
