@@ -181,6 +181,13 @@ def _wer_accuracy_check(
     return ReportCheckTypes.FAIL
 
 
+def _published(score) -> tuple:
+    """Published Score and its ref, both N/A unless the score cites a source."""
+    if score.published_score is None or not score.published_score_ref:
+        return "N/A", "N/A"
+    return score.published_score, score.published_score_ref
+
+
 def _tts_eval_block(
     ctx: MediaContext,
     task,
@@ -193,12 +200,13 @@ def _tts_eval_block(
 ) -> Block:
     """Build a canonical TTS eval Block (accuracy/quality fields only); ``result``,
     the eval test's data, fills in the task's line under the legend."""
+    published_score, published_score_ref = _published(task.score)
     data = {
         "task_name": task.task_name,
         "tolerance": task.score.tolerance,
-        "published_score": task.score.published_score,
+        "published_score": published_score,
         "score": score,
-        "published_score_ref": task.score.published_score_ref,
+        "published_score_ref": published_score_ref,
         "accuracy_check": accuracy_check,
     }
     data.update(metrics or {})

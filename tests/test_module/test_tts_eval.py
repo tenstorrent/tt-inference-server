@@ -520,7 +520,7 @@ class TestQwen3EvalConfig:
         assert battery == [("text a", None), ("text b", None)]
 
     @pytest.mark.parametrize("release", ["Base", "CustomVoice"])
-    def test_0b6_has_its_own_thresholds_and_never_sends_a_description(self, release):
+    def test_0b6_never_sends_a_description(self, release):
         small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
         large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
         # WER is calibrated only on the 1.7B Base.
@@ -528,7 +528,6 @@ class TestQwen3EvalConfig:
         for name, task in small.items():
             targets = tts_eval_tests._task_targets(task)
             assert "description" not in targets
-            assert task.score.published_score != large[name].score.published_score
             client = make_tts_client(targets)
             voice = VoiceClip(b"RIFF") if client.can_clone else None
             request = client.build_request("hi", voice)
@@ -712,6 +711,29 @@ class TestEvalNotes:
         assert tts_eval_tests.LIBRITTS_R_URL in legend
         assert "10 samples, 4 requests at a time" in line
         assert line.endswith("Pass: WER ≤ 0.2.")
+
+    @pytest.mark.parametrize(
+        "published, ref, shown",
+        [
+            (14.0, "ref-url", (14.0, "ref-url")),
+            (14.0, "", ("N/A", "N/A")),
+            (None, "", ("N/A", "N/A")),
+        ],
+    )
+    def test_a_published_score_shows_only_with_its_source(self, published, ref, shown):
+        score = SimpleNamespace(
+            tolerance=0.05, published_score=published, published_score_ref=ref
+        )
+        block = _tts_eval_block(
+            SimpleNamespace(),
+            SimpleNamespace(task_name="tts_generation", score=score),
+            score=90.0,
+            accuracy_check=ReportCheckTypes.PASS,
+        )
+        assert (
+            block.data["published_score"],
+            block.data["published_score_ref"],
+        ) == shown
 
     def test_a_task_that_did_not_run_has_no_counts_or_gate(self):
         _, line = self._block("tts_naturalness", {}).targets["notes"]

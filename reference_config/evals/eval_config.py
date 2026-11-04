@@ -11101,7 +11101,6 @@ _eval_config_list = [
     # GALAXY is the vLLM-Omni deployment (two chips, vllm_omni client); the others are
     # the C++ media server. Same gates on both.
     # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145 / 4.420 (Base / CustomVoice / VoiceDesign).
-    # WER 0.014 measured on GALAXY (vLLM-Omni) over 10 LibriTTS-R texts; not on N150.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         tasks=[
@@ -11112,7 +11111,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=98.6,  # 100 * (1 - mean WER)
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11150,7 +11149,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=96.2,  # 100 * mean SECS
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11188,7 +11187,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=87.6,  # (mean UTMOS - 1) / 4 * 100
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11227,7 +11226,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=78.6,  # (mean UTMOS - 1) / 4 * 100
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11254,7 +11253,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=85.5,  # (mean UTMOS - 1) / 4 * 100
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11282,7 +11281,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=95.4,  # 100 * mean SECS
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11305,7 +11304,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=87.8,  # (mean UTMOS - 1) / 4 * 100
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -11331,7 +11330,7 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=79.9,  # (mean UTMOS - 1) / 4 * 100
+                    published_score=None,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
