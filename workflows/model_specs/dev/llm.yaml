@@ -1791,9 +1791,11 @@ templates:
 # 4x p300c QB2. Requires tt-metal branch vkovacevic/k2-horizon-mova-ci and vllm-tt-plugin
 # branch vkovacevic/k2-horizon-mova (82322af + the authorized opt-in intermediate prefill row
 # mask + a host sampling speedup). The adapter loads through TT_MODEL_CLASS_OVERRIDES.
-# Server settings are the bring-up's validated stage-10/11 ones (precision
-# head4_ccl4_norm4_lofi, full 524288 context, 256-token scheduler budget). Stage-11 numbers
-# (4096/128): c1 TTFT 2.31 s, 60.5 t/s/u; c32 TTFT 45 s, 3.1 t/s/u, 45 tok/s.
+# Precision dense8_hifi2_bfp4experts (BFP8 attention/dense/value, HiFi2; experts BFP4):
+# 96.1% HF top-1 over a 3000-token reasoning trace vs 85.2% for the bring-up's
+# head4_ccl4_norm4_lofi, which scored 38.4 on GPQA-diamond. Prefix caching needs
+# 128-token blocks (64-token resumes perturb logits); 4096-token scheduler budget
+# matches the model's prefill chunk.
 # K2_VLLM_HOST_COMPAT=1 admits the plugin's host-sampling route, which every
 # temperature/top_p eval request takes (the device sampler is greedy/top-k only).
 - weights:
@@ -1819,11 +1821,11 @@ templates:
         trace_region_size: 0
         fabric_config: FABRIC_1D_RING
       vllm_args:
-        block_size: "64"
+        block_size: "128"
         max_num_seqs: "32"
-        max_num_batched_tokens: "256"
+        max_num_batched_tokens: "4096"
         max-logprobs: "-1"
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
         trust-remote-code: true
         chat-template-content-format: string
         revision: e9ce717642b2074082875be233c02c729ba47960
