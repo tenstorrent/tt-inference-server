@@ -1,0 +1,2013 @@
+{
+ "description": "SWE-bench Verified 500 tasks, longest first: 75th percentile of trial minutes over 6 Gemma 4 31B QB2 runs (16-40 agents).",
+ "runs": [
+  "39972694163",
+  "40122768352",
+  "40122964879",
+  "40608028433",
+  "40687415562",
+  "41198699029"
+ ],
+ "tasks": [
+  {
+   "name": "django__django-12209",
+   "p75_min": 181.3
+  },
+  {
+   "name": "sympy__sympy-21379",
+   "p75_min": 87.0
+  },
+  {
+   "name": "django__django-15525",
+   "p75_min": 75.7
+  },
+  {
+   "name": "django__django-16950",
+   "p75_min": 74.8
+  },
+  {
+   "name": "django__django-15957",
+   "p75_min": 74.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-7590",
+   "p75_min": 69.4
+  },
+  {
+   "name": "pydata__xarray-4695",
+   "p75_min": 63.5
+  },
+  {
+   "name": "django__django-16263",
+   "p75_min": 62.1
+  },
+  {
+   "name": "sphinx-doc__sphinx-9602",
+   "p75_min": 61.2
+  },
+  {
+   "name": "django__django-13964",
+   "p75_min": 60.4
+  },
+  {
+   "name": "django__django-10554",
+   "p75_min": 60.0
+  },
+  {
+   "name": "astropy__astropy-13579",
+   "p75_min": 59.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-9461",
+   "p75_min": 58.8
+  },
+  {
+   "name": "django__django-12663",
+   "p75_min": 58.1
+  },
+  {
+   "name": "sympy__sympy-13878",
+   "p75_min": 57.4
+  },
+  {
+   "name": "pytest-dev__pytest-10356",
+   "p75_min": 56.8
+  },
+  {
+   "name": "sympy__sympy-19040",
+   "p75_min": 55.9
+  },
+  {
+   "name": "django__django-13344",
+   "p75_min": 55.8
+  },
+  {
+   "name": "django__django-14351",
+   "p75_min": 55.2
+  },
+  {
+   "name": "sphinx-doc__sphinx-7748",
+   "p75_min": 54.7
+  },
+  {
+   "name": "django__django-15098",
+   "p75_min": 52.3
+  },
+  {
+   "name": "sphinx-doc__sphinx-8056",
+   "p75_min": 51.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-11445",
+   "p75_min": 51.7
+  },
+  {
+   "name": "matplotlib__matplotlib-26208",
+   "p75_min": 51.3
+  },
+  {
+   "name": "sphinx-doc__sphinx-7454",
+   "p75_min": 49.3
+  },
+  {
+   "name": "matplotlib__matplotlib-20826",
+   "p75_min": 48.9
+  },
+  {
+   "name": "django__django-13112",
+   "p75_min": 48.7
+  },
+  {
+   "name": "matplotlib__matplotlib-26291",
+   "p75_min": 48.4
+  },
+  {
+   "name": "django__django-11734",
+   "p75_min": 48.0
+  },
+  {
+   "name": "django__django-11555",
+   "p75_min": 47.0
+  },
+  {
+   "name": "django__django-16100",
+   "p75_min": 46.9
+  },
+  {
+   "name": "sphinx-doc__sphinx-9320",
+   "p75_min": 46.7
+  },
+  {
+   "name": "django__django-15563",
+   "p75_min": 46.3
+  },
+  {
+   "name": "pydata__xarray-4356",
+   "p75_min": 45.5
+  },
+  {
+   "name": "django__django-16032",
+   "p75_min": 44.3
+  },
+  {
+   "name": "sympy__sympy-14248",
+   "p75_min": 44.2
+  },
+  {
+   "name": "astropy__astropy-13977",
+   "p75_min": 44.0
+  },
+  {
+   "name": "matplotlib__matplotlib-25960",
+   "p75_min": 43.6
+  },
+  {
+   "name": "sympy__sympy-20428",
+   "p75_min": 43.0
+  },
+  {
+   "name": "pylint-dev__pylint-7080",
+   "p75_min": 42.5
+  },
+  {
+   "name": "django__django-12273",
+   "p75_min": 42.5
+  },
+  {
+   "name": "matplotlib__matplotlib-25775",
+   "p75_min": 42.5
+  },
+  {
+   "name": "django__django-13406",
+   "p75_min": 42.3
+  },
+  {
+   "name": "sympy__sympy-15976",
+   "p75_min": 41.5
+  },
+  {
+   "name": "sympy__sympy-21612",
+   "p75_min": 41.5
+  },
+  {
+   "name": "sphinx-doc__sphinx-9229",
+   "p75_min": 41.2
+  },
+  {
+   "name": "pylint-dev__pylint-6528",
+   "p75_min": 40.4
+  },
+  {
+   "name": "sphinx-doc__sphinx-8459",
+   "p75_min": 40.0
+  },
+  {
+   "name": "psf__requests-6028",
+   "p75_min": 39.9
+  },
+  {
+   "name": "django__django-15503",
+   "p75_min": 39.7
+  },
+  {
+   "name": "astropy__astropy-14182",
+   "p75_min": 39.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-10614",
+   "p75_min": 39.2
+  },
+  {
+   "name": "pylint-dev__pylint-8898",
+   "p75_min": 38.7
+  },
+  {
+   "name": "django__django-14855",
+   "p75_min": 38.6
+  },
+  {
+   "name": "matplotlib__matplotlib-22871",
+   "p75_min": 38.6
+  },
+  {
+   "name": "django__django-12125",
+   "p75_min": 38.1
+  },
+  {
+   "name": "sympy__sympy-17630",
+   "p75_min": 38.0
+  },
+  {
+   "name": "django__django-11138",
+   "p75_min": 37.9
+  },
+  {
+   "name": "django__django-15695",
+   "p75_min": 37.8
+  },
+  {
+   "name": "pylint-dev__pylint-4551",
+   "p75_min": 37.5
+  },
+  {
+   "name": "sympy__sympy-24443",
+   "p75_min": 37.4
+  },
+  {
+   "name": "sympy__sympy-13031",
+   "p75_min": 37.2
+  },
+  {
+   "name": "sphinx-doc__sphinx-11510",
+   "p75_min": 37.1
+  },
+  {
+   "name": "django__django-14500",
+   "p75_min": 37.1
+  },
+  {
+   "name": "sympy__sympy-21596",
+   "p75_min": 37.0
+  },
+  {
+   "name": "sympy__sympy-12419",
+   "p75_min": 36.9
+  },
+  {
+   "name": "django__django-13925",
+   "p75_min": 36.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-8638",
+   "p75_min": 36.7
+  },
+  {
+   "name": "django__django-11149",
+   "p75_min": 36.7
+  },
+  {
+   "name": "django__django-15280",
+   "p75_min": 36.7
+  },
+  {
+   "name": "django__django-12858",
+   "p75_min": 36.6
+  },
+  {
+   "name": "mwaskom__seaborn-3069",
+   "p75_min": 36.5
+  },
+  {
+   "name": "django__django-11728",
+   "p75_min": 36.4
+  },
+  {
+   "name": "matplotlib__matplotlib-24177",
+   "p75_min": 36.4
+  },
+  {
+   "name": "matplotlib__matplotlib-20488",
+   "p75_min": 36.1
+  },
+  {
+   "name": "pytest-dev__pytest-10081",
+   "p75_min": 35.9
+  },
+  {
+   "name": "django__django-12965",
+   "p75_min": 35.9
+  },
+  {
+   "name": "django__django-14017",
+   "p75_min": 35.7
+  },
+  {
+   "name": "django__django-16256",
+   "p75_min": 35.7
+  },
+  {
+   "name": "sympy__sympy-20916",
+   "p75_min": 35.7
+  },
+  {
+   "name": "matplotlib__matplotlib-25479",
+   "p75_min": 35.7
+  },
+  {
+   "name": "django__django-15382",
+   "p75_min": 35.6
+  },
+  {
+   "name": "sympy__sympy-15599",
+   "p75_min": 35.5
+  },
+  {
+   "name": "sympy__sympy-22080",
+   "p75_min": 35.4
+  },
+  {
+   "name": "sphinx-doc__sphinx-8721",
+   "p75_min": 35.3
+  },
+  {
+   "name": "django__django-14539",
+   "p75_min": 35.3
+  },
+  {
+   "name": "django__django-15629",
+   "p75_min": 35.0
+  },
+  {
+   "name": "sphinx-doc__sphinx-8548",
+   "p75_min": 34.6
+  },
+  {
+   "name": "django__django-13121",
+   "p75_min": 34.4
+  },
+  {
+   "name": "django__django-15973",
+   "p75_min": 34.3
+  },
+  {
+   "name": "django__django-11087",
+   "p75_min": 34.0
+  },
+  {
+   "name": "django__django-13513",
+   "p75_min": 33.9
+  },
+  {
+   "name": "django__django-16315",
+   "p75_min": 33.8
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14710",
+   "p75_min": 33.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-9591",
+   "p75_min": 33.7
+  },
+  {
+   "name": "mwaskom__seaborn-3187",
+   "p75_min": 33.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-10323",
+   "p75_min": 33.4
+  },
+  {
+   "name": "matplotlib__matplotlib-24627",
+   "p75_min": 33.2
+  },
+  {
+   "name": "django__django-11551",
+   "p75_min": 33.1
+  },
+  {
+   "name": "sympy__sympy-13372",
+   "p75_min": 33.0
+  },
+  {
+   "name": "django__django-11400",
+   "p75_min": 32.8
+  },
+  {
+   "name": "django__django-15554",
+   "p75_min": 32.7
+  },
+  {
+   "name": "django__django-13346",
+   "p75_min": 32.5
+  },
+  {
+   "name": "matplotlib__matplotlib-23476",
+   "p75_min": 32.5
+  },
+  {
+   "name": "sympy__sympy-24213",
+   "p75_min": 32.3
+  },
+  {
+   "name": "sympy__sympy-13551",
+   "p75_min": 32.3
+  },
+  {
+   "name": "sympy__sympy-13974",
+   "p75_min": 32.1
+  },
+  {
+   "name": "pydata__xarray-6599",
+   "p75_min": 32.1
+  },
+  {
+   "name": "astropy__astropy-14598",
+   "p75_min": 32.1
+  },
+  {
+   "name": "astropy__astropy-14539",
+   "p75_min": 32.0
+  },
+  {
+   "name": "django__django-16938",
+   "p75_min": 32.0
+  },
+  {
+   "name": "astropy__astropy-14369",
+   "p75_min": 31.8
+  },
+  {
+   "name": "django__django-16560",
+   "p75_min": 31.8
+  },
+  {
+   "name": "scikit-learn__scikit-learn-25931",
+   "p75_min": 31.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-9658",
+   "p75_min": 31.7
+  },
+  {
+   "name": "sympy__sympy-24066",
+   "p75_min": 31.1
+  },
+  {
+   "name": "sympy__sympy-13615",
+   "p75_min": 30.9
+  },
+  {
+   "name": "django__django-16631",
+   "p75_min": 30.8
+  },
+  {
+   "name": "django__django-11265",
+   "p75_min": 30.8
+  },
+  {
+   "name": "django__django-11211",
+   "p75_min": 30.7
+  },
+  {
+   "name": "django__django-13810",
+   "p75_min": 30.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-25232",
+   "p75_min": 30.3
+  },
+  {
+   "name": "django__django-15128",
+   "p75_min": 30.3
+  },
+  {
+   "name": "django__django-13158",
+   "p75_min": 30.3
+  },
+  {
+   "name": "pydata__xarray-4687",
+   "p75_min": 30.3
+  },
+  {
+   "name": "psf__requests-2317",
+   "p75_min": 30.2
+  },
+  {
+   "name": "django__django-14007",
+   "p75_min": 30.1
+  },
+  {
+   "name": "scikit-learn__scikit-learn-25102",
+   "p75_min": 30.1
+  },
+  {
+   "name": "django__django-11206",
+   "p75_min": 30.1
+  },
+  {
+   "name": "django__django-17084",
+   "p75_min": 30.1
+  },
+  {
+   "name": "django__django-13128",
+   "p75_min": 30.1
+  },
+  {
+   "name": "sympy__sympy-17318",
+   "p75_min": 30.0
+  },
+  {
+   "name": "sphinx-doc__sphinx-8035",
+   "p75_min": 29.9
+  },
+  {
+   "name": "pydata__xarray-6721",
+   "p75_min": 29.8
+  },
+  {
+   "name": "pydata__xarray-6461",
+   "p75_min": 29.8
+  },
+  {
+   "name": "matplotlib__matplotlib-23412",
+   "p75_min": 29.7
+  },
+  {
+   "name": "pydata__xarray-6744",
+   "p75_min": 29.7
+  },
+  {
+   "name": "matplotlib__matplotlib-14623",
+   "p75_min": 29.6
+  },
+  {
+   "name": "django__django-11477",
+   "p75_min": 29.5
+  },
+  {
+   "name": "django__django-11433",
+   "p75_min": 29.5
+  },
+  {
+   "name": "django__django-11885",
+   "p75_min": 29.5
+  },
+  {
+   "name": "pydata__xarray-3095",
+   "p75_min": 29.3
+  },
+  {
+   "name": "psf__requests-2931",
+   "p75_min": 29.3
+  },
+  {
+   "name": "sympy__sympy-19783",
+   "p75_min": 29.2
+  },
+  {
+   "name": "sympy__sympy-22456",
+   "p75_min": 29.2
+  },
+  {
+   "name": "sphinx-doc__sphinx-9230",
+   "p75_min": 29.1
+  },
+  {
+   "name": "django__django-14034",
+   "p75_min": 29.1
+  },
+  {
+   "name": "pylint-dev__pylint-4604",
+   "p75_min": 29.0
+  },
+  {
+   "name": "django__django-16661",
+   "p75_min": 28.9
+  },
+  {
+   "name": "sympy__sympy-14531",
+   "p75_min": 28.7
+  },
+  {
+   "name": "matplotlib__matplotlib-22719",
+   "p75_min": 28.4
+  },
+  {
+   "name": "sympy__sympy-20801",
+   "p75_min": 28.4
+  },
+  {
+   "name": "matplotlib__matplotlib-22865",
+   "p75_min": 28.2
+  },
+  {
+   "name": "django__django-13012",
+   "p75_min": 28.2
+  },
+  {
+   "name": "sphinx-doc__sphinx-8621",
+   "p75_min": 27.9
+  },
+  {
+   "name": "django__django-11490",
+   "p75_min": 27.8
+  },
+  {
+   "name": "django__django-13033",
+   "p75_min": 27.8
+  },
+  {
+   "name": "sphinx-doc__sphinx-10449",
+   "p75_min": 27.7
+  },
+  {
+   "name": "django__django-11740",
+   "p75_min": 27.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-7462",
+   "p75_min": 27.7
+  },
+  {
+   "name": "pytest-dev__pytest-7236",
+   "p75_min": 27.4
+  },
+  {
+   "name": "scikit-learn__scikit-learn-26194",
+   "p75_min": 27.3
+  },
+  {
+   "name": "django__django-13297",
+   "p75_min": 27.3
+  },
+  {
+   "name": "matplotlib__matplotlib-23299",
+   "p75_min": 27.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14629",
+   "p75_min": 27.1
+  },
+  {
+   "name": "sympy__sympy-20438",
+   "p75_min": 27.1
+  },
+  {
+   "name": "sphinx-doc__sphinx-8265",
+   "p75_min": 27.0
+  },
+  {
+   "name": "django__django-14311",
+   "p75_min": 27.0
+  },
+  {
+   "name": "astropy__astropy-13033",
+   "p75_min": 26.9
+  },
+  {
+   "name": "scikit-learn__scikit-learn-11310",
+   "p75_min": 26.9
+  },
+  {
+   "name": "pytest-dev__pytest-5787",
+   "p75_min": 26.9
+  },
+  {
+   "name": "astropy__astropy-13453",
+   "p75_min": 26.8
+  },
+  {
+   "name": "sympy__sympy-12489",
+   "p75_min": 26.8
+  },
+  {
+   "name": "django__django-15732",
+   "p75_min": 26.8
+  },
+  {
+   "name": "sphinx-doc__sphinx-10673",
+   "p75_min": 26.8
+  },
+  {
+   "name": "sphinx-doc__sphinx-8551",
+   "p75_min": 26.8
+  },
+  {
+   "name": "django__django-11066",
+   "p75_min": 26.7
+  },
+  {
+   "name": "django__django-15814",
+   "p75_min": 26.6
+  },
+  {
+   "name": "django__django-12754",
+   "p75_min": 26.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-8593",
+   "p75_min": 26.6
+  },
+  {
+   "name": "sympy__sympy-18698",
+   "p75_min": 26.5
+  },
+  {
+   "name": "django__django-11299",
+   "p75_min": 26.5
+  },
+  {
+   "name": "pylint-dev__pylint-4970",
+   "p75_min": 26.3
+  },
+  {
+   "name": "django__django-12406",
+   "p75_min": 26.3
+  },
+  {
+   "name": "sympy__sympy-18211",
+   "p75_min": 26.2
+  },
+  {
+   "name": "pylint-dev__pylint-6386",
+   "p75_min": 26.2
+  },
+  {
+   "name": "django__django-16454",
+   "p75_min": 26.0
+  },
+  {
+   "name": "matplotlib__matplotlib-25311",
+   "p75_min": 26.0
+  },
+  {
+   "name": "django__django-15268",
+   "p75_min": 25.9
+  },
+  {
+   "name": "django__django-14725",
+   "p75_min": 25.7
+  },
+  {
+   "name": "sympy__sympy-23413",
+   "p75_min": 25.7
+  },
+  {
+   "name": "pydata__xarray-7229",
+   "p75_min": 25.7
+  },
+  {
+   "name": "pydata__xarray-2905",
+   "p75_min": 25.7
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14894",
+   "p75_min": 25.6
+  },
+  {
+   "name": "django__django-11749",
+   "p75_min": 25.6
+  },
+  {
+   "name": "django__django-13741",
+   "p75_min": 25.6
+  },
+  {
+   "name": "sympy__sympy-15875",
+   "p75_min": 25.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-10466",
+   "p75_min": 25.5
+  },
+  {
+   "name": "scikit-learn__scikit-learn-25747",
+   "p75_min": 25.5
+  },
+  {
+   "name": "pydata__xarray-4094",
+   "p75_min": 25.4
+  },
+  {
+   "name": "django__django-12325",
+   "p75_min": 25.2
+  },
+  {
+   "name": "django__django-13569",
+   "p75_min": 25.1
+  },
+  {
+   "name": "django__django-14053",
+   "p75_min": 25.0
+  },
+  {
+   "name": "django__django-15572",
+   "p75_min": 25.0
+  },
+  {
+   "name": "django__django-15375",
+   "p75_min": 24.9
+  },
+  {
+   "name": "pydata__xarray-7393",
+   "p75_min": 24.8
+  },
+  {
+   "name": "django__django-13794",
+   "p75_min": 24.7
+  },
+  {
+   "name": "django__django-14631",
+   "p75_min": 24.7
+  },
+  {
+   "name": "django__django-14534",
+   "p75_min": 24.6
+  },
+  {
+   "name": "sympy__sympy-16792",
+   "p75_min": 24.4
+  },
+  {
+   "name": "sphinx-doc__sphinx-9673",
+   "p75_min": 24.3
+  },
+  {
+   "name": "sympy__sympy-13091",
+   "p75_min": 24.3
+  },
+  {
+   "name": "sympy__sympy-13757",
+   "p75_min": 24.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-12973",
+   "p75_min": 24.2
+  },
+  {
+   "name": "pytest-dev__pytest-5840",
+   "p75_min": 24.2
+  },
+  {
+   "name": "django__django-13449",
+   "p75_min": 24.2
+  },
+  {
+   "name": "matplotlib__matplotlib-25122",
+   "p75_min": 24.2
+  },
+  {
+   "name": "pytest-dev__pytest-7432",
+   "p75_min": 24.1
+  },
+  {
+   "name": "django__django-15930",
+   "p75_min": 24.1
+  },
+  {
+   "name": "scikit-learn__scikit-learn-25973",
+   "p75_min": 24.1
+  },
+  {
+   "name": "sphinx-doc__sphinx-7910",
+   "p75_min": 23.6
+  },
+  {
+   "name": "sympy__sympy-17139",
+   "p75_min": 23.6
+  },
+  {
+   "name": "matplotlib__matplotlib-20676",
+   "p75_min": 23.5
+  },
+  {
+   "name": "sympy__sympy-22714",
+   "p75_min": 23.5
+  },
+  {
+   "name": "django__django-13417",
+   "p75_min": 23.5
+  },
+  {
+   "name": "django__django-15916",
+   "p75_min": 23.3
+  },
+  {
+   "name": "django__django-14404",
+   "p75_min": 23.3
+  },
+  {
+   "name": "sympy__sympy-18199",
+   "p75_min": 23.3
+  },
+  {
+   "name": "django__django-13279",
+   "p75_min": 23.2
+  },
+  {
+   "name": "astropy__astropy-13398",
+   "p75_min": 23.1
+  },
+  {
+   "name": "sympy__sympy-14976",
+   "p75_min": 23.1
+  },
+  {
+   "name": "pydata__xarray-3305",
+   "p75_min": 23.1
+  },
+  {
+   "name": "sphinx-doc__sphinx-7757",
+   "p75_min": 23.0
+  },
+  {
+   "name": "django__django-12774",
+   "p75_min": 22.9
+  },
+  {
+   "name": "sphinx-doc__sphinx-9281",
+   "p75_min": 22.8
+  },
+  {
+   "name": "psf__requests-1766",
+   "p75_min": 22.8
+  },
+  {
+   "name": "django__django-14170",
+   "p75_min": 22.8
+  },
+  {
+   "name": "matplotlib__matplotlib-24870",
+   "p75_min": 22.8
+  },
+  {
+   "name": "sphinx-doc__sphinx-10435",
+   "p75_min": 22.7
+  },
+  {
+   "name": "pylint-dev__pylint-7277",
+   "p75_min": 22.7
+  },
+  {
+   "name": "matplotlib__matplotlib-24970",
+   "p75_min": 22.6
+  },
+  {
+   "name": "django__django-15569",
+   "p75_min": 22.6
+  },
+  {
+   "name": "matplotlib__matplotlib-24637",
+   "p75_min": 22.6
+  },
+  {
+   "name": "matplotlib__matplotlib-24026",
+   "p75_min": 22.5
+  },
+  {
+   "name": "django__django-16136",
+   "p75_min": 22.4
+  },
+  {
+   "name": "django__django-13212",
+   "p75_min": 22.4
+  },
+  {
+   "name": "pylint-dev__pylint-4661",
+   "p75_min": 22.3
+  },
+  {
+   "name": "django__django-11951",
+   "p75_min": 22.2
+  },
+  {
+   "name": "pytest-dev__pytest-6197",
+   "p75_min": 22.1
+  },
+  {
+   "name": "sphinx-doc__sphinx-9258",
+   "p75_min": 22.1
+  },
+  {
+   "name": "django__django-12039",
+   "p75_min": 22.0
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13124",
+   "p75_min": 21.9
+  },
+  {
+   "name": "django__django-14122",
+   "p75_min": 21.9
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14087",
+   "p75_min": 21.9
+  },
+  {
+   "name": "django__django-15161",
+   "p75_min": 21.9
+  },
+  {
+   "name": "psf__requests-1142",
+   "p75_min": 21.8
+  },
+  {
+   "name": "scikit-learn__scikit-learn-10908",
+   "p75_min": 21.8
+  },
+  {
+   "name": "django__django-17087",
+   "p75_min": 21.7
+  },
+  {
+   "name": "matplotlib__matplotlib-25332",
+   "p75_min": 21.6
+  },
+  {
+   "name": "django__django-12708",
+   "p75_min": 21.6
+  },
+  {
+   "name": "django__django-10097",
+   "p75_min": 21.5
+  },
+  {
+   "name": "astropy__astropy-8872",
+   "p75_min": 21.4
+  },
+  {
+   "name": "django__django-15561",
+   "p75_min": 21.4
+  },
+  {
+   "name": "django__django-11964",
+   "p75_min": 21.3
+  },
+  {
+   "name": "pytest-dev__pytest-7571",
+   "p75_min": 21.3
+  },
+  {
+   "name": "django__django-13343",
+   "p75_min": 21.3
+  },
+  {
+   "name": "django__django-13809",
+   "p75_min": 21.2
+  },
+  {
+   "name": "sympy__sympy-13877",
+   "p75_min": 21.1
+  },
+  {
+   "name": "astropy__astropy-7336",
+   "p75_min": 21.1
+  },
+  {
+   "name": "django__django-15278",
+   "p75_min": 21.1
+  },
+  {
+   "name": "astropy__astropy-8707",
+   "p75_min": 20.9
+  },
+  {
+   "name": "sympy__sympy-14711",
+   "p75_min": 20.9
+  },
+  {
+   "name": "sympy__sympy-24562",
+   "p75_min": 20.9
+  },
+  {
+   "name": "django__django-13195",
+   "p75_min": 20.6
+  },
+  {
+   "name": "django__django-15380",
+   "p75_min": 20.6
+  },
+  {
+   "name": "django__django-10914",
+   "p75_min": 20.5
+  },
+  {
+   "name": "django__django-11820",
+   "p75_min": 20.5
+  },
+  {
+   "name": "sphinx-doc__sphinx-8595",
+   "p75_min": 20.5
+  },
+  {
+   "name": "django__django-15252",
+   "p75_min": 20.4
+  },
+  {
+   "name": "django__django-14349",
+   "p75_min": 20.4
+  },
+  {
+   "name": "django__django-13837",
+   "p75_min": 20.4
+  },
+  {
+   "name": "pytest-dev__pytest-7490",
+   "p75_min": 20.4
+  },
+  {
+   "name": "django__django-16899",
+   "p75_min": 20.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-26323",
+   "p75_min": 20.3
+  },
+  {
+   "name": "pydata__xarray-6938",
+   "p75_min": 20.2
+  },
+  {
+   "name": "matplotlib__matplotlib-26113",
+   "p75_min": 20.1
+  },
+  {
+   "name": "sympy__sympy-15345",
+   "p75_min": 20.0
+  },
+  {
+   "name": "django__django-12262",
+   "p75_min": 20.0
+  },
+  {
+   "name": "sympy__sympy-16450",
+   "p75_min": 19.9
+  },
+  {
+   "name": "astropy__astropy-14995",
+   "p75_min": 19.8
+  },
+  {
+   "name": "astropy__astropy-14096",
+   "p75_min": 19.8
+  },
+  {
+   "name": "pydata__xarray-4075",
+   "p75_min": 19.8
+  },
+  {
+   "name": "astropy__astropy-7606",
+   "p75_min": 19.8
+  },
+  {
+   "name": "django__django-14999",
+   "p75_min": 19.7
+  },
+  {
+   "name": "django__django-13568",
+   "p75_min": 19.7
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13328",
+   "p75_min": 19.7
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14983",
+   "p75_min": 19.7
+  },
+  {
+   "name": "django__django-13089",
+   "p75_min": 19.7
+  },
+  {
+   "name": "django__django-14752",
+   "p75_min": 19.6
+  },
+  {
+   "name": "django__django-12713",
+   "p75_min": 19.5
+  },
+  {
+   "name": "django__django-16612",
+   "p75_min": 19.5
+  },
+  {
+   "name": "psf__requests-1921",
+   "p75_min": 19.5
+  },
+  {
+   "name": "django__django-11179",
+   "p75_min": 19.5
+  },
+  {
+   "name": "pydata__xarray-6992",
+   "p75_min": 19.4
+  },
+  {
+   "name": "sympy__sympy-17655",
+   "p75_min": 19.4
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14053",
+   "p75_min": 19.4
+  },
+  {
+   "name": "matplotlib__matplotlib-21568",
+   "p75_min": 19.3
+  },
+  {
+   "name": "django__django-13315",
+   "p75_min": 19.3
+  },
+  {
+   "name": "pytest-dev__pytest-7324",
+   "p75_min": 19.2
+  },
+  {
+   "name": "django__django-11848",
+   "p75_min": 19.2
+  },
+  {
+   "name": "pydata__xarray-7233",
+   "p75_min": 19.2
+  },
+  {
+   "name": "django__django-14787",
+   "p75_min": 19.1
+  },
+  {
+   "name": "matplotlib__matplotlib-26342",
+   "p75_min": 19.1
+  },
+  {
+   "name": "sympy__sympy-19495",
+   "p75_min": 19.1
+  },
+  {
+   "name": "sympy__sympy-23950",
+   "p75_min": 19.1
+  },
+  {
+   "name": "sympy__sympy-13798",
+   "p75_min": 19.0
+  },
+  {
+   "name": "django__django-15022",
+   "p75_min": 19.0
+  },
+  {
+   "name": "pydata__xarray-4966",
+   "p75_min": 18.9
+  },
+  {
+   "name": "django__django-13401",
+   "p75_min": 18.8
+  },
+  {
+   "name": "django__django-14315",
+   "p75_min": 18.7
+  },
+  {
+   "name": "django__django-15037",
+   "p75_min": 18.7
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13142",
+   "p75_min": 18.6
+  },
+  {
+   "name": "scikit-learn__scikit-learn-11578",
+   "p75_min": 18.6
+  },
+  {
+   "name": "scikit-learn__scikit-learn-9288",
+   "p75_min": 18.6
+  },
+  {
+   "name": "psf__requests-5414",
+   "p75_min": 18.6
+  },
+  {
+   "name": "django__django-11815",
+   "p75_min": 18.6
+  },
+  {
+   "name": "django__django-15467",
+   "p75_min": 18.6
+  },
+  {
+   "name": "sphinx-doc__sphinx-9367",
+   "p75_min": 18.5
+  },
+  {
+   "name": "pylint-dev__pylint-6903",
+   "p75_min": 18.4
+  },
+  {
+   "name": "sympy__sympy-24661",
+   "p75_min": 18.4
+  },
+  {
+   "name": "astropy__astropy-14508",
+   "p75_min": 18.4
+  },
+  {
+   "name": "django__django-11532",
+   "p75_min": 18.3
+  },
+  {
+   "name": "matplotlib__matplotlib-24149",
+   "p75_min": 18.3
+  },
+  {
+   "name": "django__django-16901",
+   "p75_min": 18.3
+  },
+  {
+   "name": "django__django-13590",
+   "p75_min": 18.3
+  },
+  {
+   "name": "sympy__sympy-12481",
+   "p75_min": 18.0
+  },
+  {
+   "name": "matplotlib__matplotlib-24570",
+   "p75_min": 18.0
+  },
+  {
+   "name": "sympy__sympy-18189",
+   "p75_min": 18.0
+  },
+  {
+   "name": "sympy__sympy-13852",
+   "p75_min": 18.0
+  },
+  {
+   "name": "matplotlib__matplotlib-26466",
+   "p75_min": 18.0
+  },
+  {
+   "name": "django__django-14011",
+   "p75_min": 17.9
+  },
+  {
+   "name": "django__django-16502",
+   "p75_min": 17.8
+  },
+  {
+   "name": "django__django-14434",
+   "p75_min": 17.8
+  },
+  {
+   "name": "django__django-12155",
+   "p75_min": 17.7
+  },
+  {
+   "name": "pydata__xarray-3677",
+   "p75_min": 17.7
+  },
+  {
+   "name": "sympy__sympy-19954",
+   "p75_min": 17.7
+  },
+  {
+   "name": "django__django-16116",
+   "p75_min": 17.7
+  },
+  {
+   "name": "sphinx-doc__sphinx-8120",
+   "p75_min": 17.6
+  },
+  {
+   "name": "django__django-7530",
+   "p75_min": 17.5
+  },
+  {
+   "name": "astropy__astropy-13236",
+   "p75_min": 17.5
+  },
+  {
+   "name": "django__django-11095",
+   "p75_min": 17.4
+  },
+  {
+   "name": "pytest-dev__pytest-7521",
+   "p75_min": 17.3
+  },
+  {
+   "name": "psf__requests-1724",
+   "p75_min": 17.3
+  },
+  {
+   "name": "django__django-15863",
+   "p75_min": 17.3
+  },
+  {
+   "name": "pydata__xarray-3151",
+   "p75_min": 17.3
+  },
+  {
+   "name": "django__django-11333",
+   "p75_min": 17.3
+  },
+  {
+   "name": "sympy__sympy-16597",
+   "p75_min": 17.3
+  },
+  {
+   "name": "django__django-14792",
+   "p75_min": 17.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-10844",
+   "p75_min": 17.2
+  },
+  {
+   "name": "django__django-16595",
+   "p75_min": 17.2
+  },
+  {
+   "name": "pytest-dev__pytest-7982",
+   "p75_min": 17.2
+  },
+  {
+   "name": "django__django-16819",
+   "p75_min": 17.1
+  },
+  {
+   "name": "django__django-12419",
+   "p75_min": 17.1
+  },
+  {
+   "name": "django__django-15103",
+   "p75_min": 17.0
+  },
+  {
+   "name": "django__django-16877",
+   "p75_min": 17.0
+  },
+  {
+   "name": "pytest-dev__pytest-10051",
+   "p75_min": 16.9
+  },
+  {
+   "name": "django__django-13820",
+   "p75_min": 16.9
+  },
+  {
+   "name": "scikit-learn__scikit-learn-12682",
+   "p75_min": 16.8
+  },
+  {
+   "name": "django__django-15741",
+   "p75_min": 16.8
+  },
+  {
+   "name": "django__django-12304",
+   "p75_min": 16.6
+  },
+  {
+   "name": "django__django-15987",
+   "p75_min": 16.5
+  },
+  {
+   "name": "sphinx-doc__sphinx-7985",
+   "p75_min": 16.4
+  },
+  {
+   "name": "django__django-13028",
+   "p75_min": 16.4
+  },
+  {
+   "name": "sympy__sympy-11618",
+   "p75_min": 16.4
+  },
+  {
+   "name": "django__django-11790",
+   "p75_min": 16.3
+  },
+  {
+   "name": "sympy__sympy-18763",
+   "p75_min": 16.3
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13496",
+   "p75_min": 16.3
+  },
+  {
+   "name": "sympy__sympy-13647",
+   "p75_min": 16.3
+  },
+  {
+   "name": "sphinx-doc__sphinx-7440",
+   "p75_min": 16.2
+  },
+  {
+   "name": "django__django-13933",
+   "p75_min": 16.2
+  },
+  {
+   "name": "sympy__sympy-12096",
+   "p75_min": 16.2
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14496",
+   "p75_min": 16.0
+  },
+  {
+   "name": "django__django-13551",
+   "p75_min": 15.9
+  },
+  {
+   "name": "sympy__sympy-20590",
+   "p75_min": 15.8
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13135",
+   "p75_min": 15.8
+  },
+  {
+   "name": "django__django-11999",
+   "p75_min": 15.6
+  },
+  {
+   "name": "scikit-learn__scikit-learn-10297",
+   "p75_min": 15.6
+  },
+  {
+   "name": "django__django-15315",
+   "p75_min": 15.6
+  },
+  {
+   "name": "sympy__sympy-23262",
+   "p75_min": 15.5
+  },
+  {
+   "name": "django__django-11141",
+   "p75_min": 15.4
+  },
+  {
+   "name": "sympy__sympy-13480",
+   "p75_min": 15.4
+  },
+  {
+   "name": "astropy__astropy-14309",
+   "p75_min": 15.3
+  },
+  {
+   "name": "astropy__astropy-12907",
+   "p75_min": 15.3
+  },
+  {
+   "name": "django__django-15368",
+   "p75_min": 15.3
+  },
+  {
+   "name": "django__django-10973",
+   "p75_min": 15.1
+  },
+  {
+   "name": "django__django-16333",
+   "p75_min": 15.1
+  },
+  {
+   "name": "django__django-14493",
+   "p75_min": 15.0
+  },
+  {
+   "name": "sphinx-doc__sphinx-7889",
+   "p75_min": 15.0
+  },
+  {
+   "name": "matplotlib__matplotlib-23314",
+   "p75_min": 15.0
+  },
+  {
+   "name": "django__django-14238",
+   "p75_min": 15.0
+  },
+  {
+   "name": "pydata__xarray-3993",
+   "p75_min": 14.9
+  },
+  {
+   "name": "django__django-13516",
+   "p75_min": 14.8
+  },
+  {
+   "name": "django__django-13658",
+   "p75_min": 14.8
+  },
+  {
+   "name": "pytest-dev__pytest-7205",
+   "p75_min": 14.7
+  },
+  {
+   "name": "pytest-dev__pytest-5809",
+   "p75_min": 14.7
+  },
+  {
+   "name": "django__django-14608",
+   "p75_min": 14.7
+  },
+  {
+   "name": "matplotlib__matplotlib-25287",
+   "p75_min": 14.7
+  },
+  {
+   "name": "django__django-14140",
+   "p75_min": 14.6
+  },
+  {
+   "name": "django__django-14155",
+   "p75_min": 14.5
+  },
+  {
+   "name": "django__django-12193",
+   "p75_min": 14.4
+  },
+  {
+   "name": "django__django-16485",
+   "p75_min": 14.4
+  },
+  {
+   "name": "django__django-16082",
+   "p75_min": 14.4
+  },
+  {
+   "name": "django__django-11451",
+   "p75_min": 14.3
+  },
+  {
+   "name": "django__django-16801",
+   "p75_min": 14.3
+  },
+  {
+   "name": "sympy__sympy-24539",
+   "p75_min": 14.3
+  },
+  {
+   "name": "sympy__sympy-19346",
+   "p75_min": 14.3
+  },
+  {
+   "name": "django__django-16642",
+   "p75_min": 14.3
+  },
+  {
+   "name": "sphinx-doc__sphinx-9698",
+   "p75_min": 14.2
+  },
+  {
+   "name": "django__django-12308",
+   "p75_min": 14.2
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13779",
+   "p75_min": 14.0
+  },
+  {
+   "name": "django__django-14771",
+   "p75_min": 14.0
+  },
+  {
+   "name": "pytest-dev__pytest-6202",
+   "p75_min": 14.0
+  },
+  {
+   "name": "sympy__sympy-15809",
+   "p75_min": 13.8
+  },
+  {
+   "name": "django__django-11133",
+   "p75_min": 13.7
+  },
+  {
+   "name": "sympy__sympy-15017",
+   "p75_min": 13.7
+  },
+  {
+   "name": "matplotlib__matplotlib-20859",
+   "p75_min": 13.6
+  },
+  {
+   "name": "django__django-16145",
+   "p75_min": 13.6
+  },
+  {
+   "name": "django__django-13023",
+   "p75_min": 13.6
+  },
+  {
+   "name": "astropy__astropy-7166",
+   "p75_min": 13.4
+  },
+  {
+   "name": "django__django-15127",
+   "p75_min": 13.3
+  },
+  {
+   "name": "django__django-13109",
+   "p75_min": 13.0
+  },
+  {
+   "name": "sympy__sympy-22914",
+   "p75_min": 12.9
+  },
+  {
+   "name": "django__django-10999",
+   "p75_min": 12.7
+  },
+  {
+   "name": "django__django-11239",
+   "p75_min": 12.7
+  },
+  {
+   "name": "astropy__astropy-14365",
+   "p75_min": 12.6
+  },
+  {
+   "name": "sympy__sympy-20154",
+   "p75_min": 12.5
+  },
+  {
+   "name": "django__django-15499",
+   "p75_min": 12.5
+  },
+  {
+   "name": "django__django-12050",
+   "p75_min": 12.5
+  },
+  {
+   "name": "django__django-16429",
+   "p75_min": 12.5
+  },
+  {
+   "name": "sympy__sympy-23534",
+   "p75_min": 12.3
+  },
+  {
+   "name": "django__django-14765",
+   "p75_min": 12.1
+  },
+  {
+   "name": "django__django-12276",
+   "p75_min": 12.0
+  },
+  {
+   "name": "django__django-11292",
+   "p75_min": 12.0
+  },
+  {
+   "name": "django__django-14376",
+   "p75_min": 12.0
+  },
+  {
+   "name": "sympy__sympy-19637",
+   "p75_min": 12.0
+  },
+  {
+   "name": "django__django-14580",
+   "p75_min": 12.0
+  },
+  {
+   "name": "scikit-learn__scikit-learn-12585",
+   "p75_min": 11.9
+  },
+  {
+   "name": "django__django-12143",
+   "p75_min": 11.9
+  },
+  {
+   "name": "django__django-13821",
+   "p75_min": 11.9
+  },
+  {
+   "name": "sympy__sympy-15349",
+   "p75_min": 11.9
+  },
+  {
+   "name": "pytest-dev__pytest-5631",
+   "p75_min": 11.9
+  },
+  {
+   "name": "django__django-13807",
+   "p75_min": 11.9
+  },
+  {
+   "name": "django__django-16662",
+   "p75_min": 11.8
+  },
+  {
+   "name": "matplotlib__matplotlib-13989",
+   "p75_min": 11.7
+  },
+  {
+   "name": "django__django-16493",
+   "p75_min": 11.6
+  },
+  {
+   "name": "pytest-dev__pytest-5262",
+   "p75_min": 11.6
+  },
+  {
+   "name": "django__django-14089",
+   "p75_min": 11.5
+  },
+  {
+   "name": "django__django-13786",
+   "p75_min": 11.4
+  },
+  {
+   "name": "django__django-16139",
+   "p75_min": 11.4
+  },
+  {
+   "name": "django__django-14559",
+   "p75_min": 11.3
+  },
+  {
+   "name": "pallets__flask-5014",
+   "p75_min": 11.3
+  },
+  {
+   "name": "sphinx-doc__sphinx-9711",
+   "p75_min": 11.1
+  },
+  {
+   "name": "sympy__sympy-21930",
+   "p75_min": 11.0
+  },
+  {
+   "name": "sphinx-doc__sphinx-8269",
+   "p75_min": 10.9
+  },
+  {
+   "name": "sympy__sympy-23824",
+   "p75_min": 10.9
+  },
+  {
+   "name": "django__django-16667",
+   "p75_min": 10.8
+  },
+  {
+   "name": "django__django-15731",
+   "p75_min": 10.8
+  },
+  {
+   "name": "sympy__sympy-21847",
+   "p75_min": 10.8
+  },
+  {
+   "name": "scikit-learn__scikit-learn-15100",
+   "p75_min": 10.6
+  },
+  {
+   "name": "scikit-learn__scikit-learn-13439",
+   "p75_min": 10.5
+  },
+  {
+   "name": "astropy__astropy-7671",
+   "p75_min": 10.3
+  },
+  {
+   "name": "django__django-13512",
+   "p75_min": 10.2
+  },
+  {
+   "name": "django__django-15277",
+   "p75_min": 10.2
+  },
+  {
+   "name": "sympy__sympy-16766",
+   "p75_min": 10.0
+  },
+  {
+   "name": "django__django-10880",
+   "p75_min": 10.0
+  },
+  {
+   "name": "django__django-12741",
+   "p75_min": 10.0
+  },
+  {
+   "name": "django__django-13363",
+   "p75_min": 9.8
+  },
+  {
+   "name": "django__django-11119",
+   "p75_min": 9.7
+  },
+  {
+   "name": "django__django-14915",
+   "p75_min": 9.7
+  },
+  {
+   "name": "django__django-15104",
+   "p75_min": 9.6
+  },
+  {
+   "name": "django__django-11099",
+   "p75_min": 9.6
+  },
+  {
+   "name": "django__django-15851",
+   "p75_min": 9.6
+  },
+  {
+   "name": "django__django-16527",
+   "p75_min": 9.5
+  },
+  {
+   "name": "sphinx-doc__sphinx-8475",
+   "p75_min": 9.4
+  },
+  {
+   "name": "pytest-dev__pytest-8399",
+   "p75_min": 9.3
+  },
+  {
+   "name": "django__django-11880",
+   "p75_min": 9.2
+  },
+  {
+   "name": "django__django-14373",
+   "p75_min": 9.0
+  },
+  {
+   "name": "scikit-learn__scikit-learn-14141",
+   "p75_min": 9.0
+  },
+  {
+   "name": "django__django-11603",
+   "p75_min": 8.8
+  },
+  {
+   "name": "django__django-11276",
+   "p75_min": 8.7
+  },
+  {
+   "name": "django__django-14672",
+   "p75_min": 8.7
+  },
+  {
+   "name": "django__django-16255",
+   "p75_min": 8.6
+  },
+  {
+   "name": "django__django-13670",
+   "p75_min": 8.4
+  },
+  {
+   "name": "pydata__xarray-4629",
+   "p75_min": 8.1
+  },
+  {
+   "name": "django__django-13410",
+   "p75_min": 8.0
+  },
+  {
+   "name": "django__django-17029",
+   "p75_min": 8.0
+  },
+  {
+   "name": "django__django-9296",
+   "p75_min": 7.7
+  },
+  {
+   "name": "django__django-16569",
+   "p75_min": 7.6
+  },
+  {
+   "name": "django__django-11163",
+   "p75_min": 7.4
+  },
+  {
+   "name": "sympy__sympy-16886",
+   "p75_min": 5.6
+  }
+ ]
+}

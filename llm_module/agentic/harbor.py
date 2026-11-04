@@ -211,6 +211,18 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         assert len(frozen) == 500 and 0 < len(config.task_names) <= 500
         assert len(set(config.task_names)) == len(config.task_names)
         assert set(config.task_names) <= {t["name"] for t in frozen}
+        order_path = Path(__file__).with_name("swe500_task_order.json")
+        if order_path.exists():
+            # Harbor starts trials first-in, first-out in registry order. A copy of the frozen
+            # registry with the same entries, historically longest tasks first, puts long tasks in
+            # the first wave instead of the tail.
+            rank = {t["name"]: i for i, t in enumerate(json.loads(order_path.read_text())["tasks"])}
+            registry = json.loads(registry_path.read_text())
+            registry[0]["tasks"] = sorted(registry[0]["tasks"], key=lambda t: rank.get(t["name"], len(rank)))
+            config.jobs_dir.mkdir(parents=True, exist_ok=True)
+            registry_path = config.jobs_dir / "swe500_registry_longest_first.json"
+            registry_path.write_text(json.dumps(registry, indent=1))
+            logger.info("HARBOR_TASK_ORDER swebench longest first: %s", [t["name"] for t in registry[0]["tasks"][:5]])
         dataset_config["registry_path"] = str(registry_path)
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
