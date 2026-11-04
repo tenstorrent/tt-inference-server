@@ -8911,7 +8911,7 @@ _eval_config_list = [
                     n_tasks=None,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=150 * 60,  # measurement run: 150-min agent limit (not the reference 3 h)
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
