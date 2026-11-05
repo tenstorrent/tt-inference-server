@@ -13,6 +13,7 @@ import importlib.util
 import json
 import pathlib
 import threading
+import time
 import wave
 from io import BytesIO
 from types import SimpleNamespace
@@ -98,9 +99,9 @@ def test_unknown_field_rejected():
 
 @pytest.mark.parametrize(
     "media",
-    ["http://example.com/a.png", "iVBORw0KGgo=", "data:text/plain;base64,aGk="],
+    ["ftp://example.com/a.png", "iVBORw0KGgo=", "data:text/plain;base64,aGk="],
 )
-def test_media_must_be_https_or_image_data_uri(media):
+def test_media_must_be_a_url_or_image_data_uri(media):
     with pytest.raises(ValidationError, match="https:// URL or a base64 data URI"):
         Wan22i2vA14bRequest(
             prompt="a boat", first_frame=media, aspect_ratio="16:9", size="480p"
@@ -201,10 +202,11 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 class _FakeDevice:
     """Stands in for the scheduler and device: each request yields an image,
     or a video for a video model, after ``delay`` seconds. ``video``, if set,
-    makes a video's result instead."""
+    makes a video's result instead. A job stays queued for ``queued`` seconds."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
+        self.queued = 0.0
         self.requests = []
         self.error = None
         self.video = None
@@ -214,6 +216,7 @@ class _FakeDevice:
 
     async def process(self, request):
         self.requests.append(request)
+        await asyncio.sleep(self.queued)
         if request._start_event is not None:
             request._start_event.set()
         await asyncio.sleep(self.delay)
@@ -229,8 +232,9 @@ class _FakeDevice:
 
 
 @pytest.fixture
-def generations_app(monkeypatch, tmp_path):
-    """(build(runner, delay) -> (client, device)), sharing one job manager."""
+async def generations_app(monkeypatch, tmp_path):
+    """(build(runner, delay, auth) -> (client, device)), sharing one job
+    manager. The API key is checked only with ``auth``."""
     from model_services.generation_service import GenerationService
     from resolver.service_resolver import service_resolver
     from security.api_key_checker import get_api_key
@@ -253,7 +257,7 @@ def generations_app(monkeypatch, tmp_path):
     )
     clients = []
 
-    def build(runner: str, delay: float = 0.0):
+    def build(runner: str, delay: float = 0.0, auth: bool = False):
         device = _FakeDevice(delay)
         service = object.__new__(GenerationService)
         service.scheduler = device
@@ -270,7 +274,8 @@ def generations_app(monkeypatch, tmp_path):
         app = FastAPI()
         app.include_router(_router_module(monkeypatch, runner).router)
         app.dependency_overrides[service_resolver] = lambda: service
-        app.dependency_overrides[get_api_key] = lambda: None
+        if not auth:
+            app.dependency_overrides[get_api_key] = lambda: None
         client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         )
@@ -278,17 +283,27 @@ def generations_app(monkeypatch, tmp_path):
         return client, device
 
     yield build
+    # On the test's event loop, which older pytest-asyncio closes before the
+    # teardown of a sync fixture.
     for client, service in clients:
-        service._job_manager._cleanup_task.cancel()
+        await service._job_manager.shutdown()
+        await client.aclose()
+
+
+async def _wait_status(client, job_id: str, *statuses: str) -> dict:
+    """The job, once its status is one of ``statuses``; fails after 10 s."""
+    deadline = time.monotonic() + 10
+    while True:
+        job = (await client.get(f"/v1/jobs/{job_id}")).json()
+        if job["status"] in statuses:
+            return job
+        if time.monotonic() > deadline:
+            raise AssertionError(f"job {job_id} never became {statuses}: {job}")
+        await asyncio.sleep(0.01)
 
 
 async def _wait_final(client, job_id: str) -> dict:
-    for _ in range(200):
-        job = (await client.get(f"/v1/jobs/{job_id}")).json()
-        if job["status"] in ("completed", "failed", "cancelled"):
-            return job
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"job {job_id} did not finish: {job}")
+    return await _wait_status(client, job_id, "completed", "failed", "cancelled")
 
 
 def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
@@ -389,6 +404,15 @@ async def test_video_job(generations_app):
     assert output["audio"] is None
     content = await client.get(output["url"])
     assert content.headers["content-type"] == "video/mp4" and content.content
+    import av
+
+    # H.264, yuv420p, faststart; the profile depends on the encoder preset.
+    with av.open(BytesIO(content.content)) as container:
+        assert not container.streams.audio
+        (stream,) = container.streams.video
+        assert stream.codec_context.name == "h264"
+        assert stream.codec_context.pix_fmt == "yuv420p"
+    assert content.content.index(b"moov") < content.content.index(b"mdat")
 
 
 async def test_video_with_sound_job(generations_app):
@@ -443,6 +467,105 @@ async def test_disallowed_url_is_400_and_large_image_413(generations_app, monkey
     large = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
     assert large.status_code == 413
     assert (await client.get("/v1/jobs")).json() == []
+
+
+async def test_an_http_url_is_400(generations_app, monkeypatch):
+    from config.settings import settings
+
+    # Even where any public host may be fetched: the spec counts a URL that
+    # isn't https as against the fetch policy.
+    monkeypatch.setattr(settings, "media_url_allow_public_hosts", True)
+    client, device = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="http://example.com/a.png")
+    )
+    assert response.status_code == 400
+    assert "must be https" in response.json()["detail"]
+    assert device.requests == []
+
+
+@pytest.mark.parametrize(
+    ("error", "message", "status"),
+    [
+        ("MediaDownloadFetchError", "Media URL returned HTTP 403", 422),
+        ("MediaDownloadTooLargeError", "Remote media exceeds the cap", 413),
+    ],
+)
+async def test_a_failed_or_oversized_fetch(
+    generations_app, monkeypatch, error, message, status
+):
+    import utils.media_downloader
+
+    async def fetch(url, **kwargs):
+        raise getattr(utils.media_downloader, error)(message)
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    client, device = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
+    )
+    assert response.status_code == status, response.text
+    if status == 422:
+        (detail,) = response.json()["detail"]
+        assert detail["loc"] == ["body", "first_frame"]
+        assert "HTTP 403" in detail["msg"]
+    assert device.requests == []
+
+
+def _encoded(image_format: str) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (64, 64), "red").save(buffer, format=image_format)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        _data_uri(image_format="GIF"),
+        _data_uri(image_format="BMP"),
+        # TIFF bytes labelled as PNG: the bytes decide.
+        "data:image/png;base64," + base64.b64encode(_encoded("TIFF")).decode(),
+    ],
+)
+async def test_images_must_be_png_jpeg_or_webp(generations_app, image):
+    client, device = _wan_app(generations_app)
+    response = await client.post(_WAN, json=_wan_body(first_frame=image))
+    assert response.status_code == 422, response.text
+    (detail,) = response.json()["detail"]
+    assert detail["loc"] == ["body", "first_frame"]
+    assert "must be PNG, JPEG or WebP" in detail["msg"]
+    assert device.requests == []
+
+
+def _mpo_data_uri() -> str:
+    """A JPEG holding two pictures, as phones write a photo with a depth map."""
+    buffer = BytesIO()
+    first, second = Image.new("RGB", (64, 64), "red"), Image.new("RGB", (64, 64))
+    first.save(buffer, format="MPO", save_all=True, append_images=[second])
+    return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+@pytest.mark.parametrize(
+    "image",
+    [_data_uri(image_format=f) for f in ("PNG", "JPEG", "WEBP")] + [_mpo_data_uri()],
+    ids=["png", "jpeg", "webp", "jpeg with two pictures"],
+)
+async def test_png_jpeg_and_webp_images_are_accepted(generations_app, image):
+    client, _ = _wan_app(generations_app)
+    response = await client.post(_WAN, json=_wan_body(first_frame=image))
+    assert response.status_code == 202, response.text
+
+
+@pytest.mark.parametrize("payload", ["!!!", ""], ids=["not base64", "empty"])
+async def test_a_bad_data_uri_payload_is_422(generations_app, payload):
+    client, device = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="data:image/png;base64," + payload)
+    )
+    assert response.status_code == 422, response.text
+    (detail,) = response.json()["detail"]
+    assert detail["loc"] == ["body", "first_frame"]
+    assert device.requests == []
 
 
 async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkeypatch):
@@ -563,6 +686,148 @@ async def test_cancel_and_delete_rules(generations_app):
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
 
 
+async def test_a_job_is_queued_then_in_progress(generations_app):
+    client, device = _ltx_app(generations_app, delay=0.5)
+    device.queued = 0.2
+    response = await client.post(_LTX[1], json={"prompt": "a cat"})
+    assert response.json()["status"] == "queued"
+    job = await _wait_status(client, response.json()["id"], "in_progress")
+    assert "completed_at" not in job and "expires_at" not in job
+    assert (await _wait_final(client, job["id"]))["status"] == "completed"
+
+
+async def test_cancelling_a_queued_job_cancels_it_at_once(generations_app):
+    client, device = _ltx_app(generations_app)
+    device.queued = 5.0
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    cancelled = (await client.post(f"/v1/jobs/{job['id']}/cancel")).json()
+    assert cancelled["status"] == "cancelled"
+    assert cancelled["expires_at"] == cancelled["completed_at"] + _RETENTION_SECONDS
+    assert await _wait_final(client, job["id"]) == cancelled
+
+
+# The job manager polls a job's start every 0.5 s, so a job that runs for 2 s
+# is seen in_progress well before it ends.
+
+
+async def test_cancelling_a_running_job(generations_app):
+    client, _ = _ltx_app(generations_app, delay=2.0)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    await _wait_status(client, job["id"], "in_progress")
+    cancelling = await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert cancelling.status_code == 200
+    assert cancelling.json()["status"] == "cancelling"
+    assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 409
+    job = await _wait_final(client, job["id"])
+    assert job["status"] == "cancelled"
+    assert job["expires_at"] == job["completed_at"] + _RETENTION_SECONDS
+
+
+async def test_the_list_holds_jobs_of_every_status(generations_app):
+    client, device = _ltx_app(generations_app, delay=2.0)
+    first = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    await _wait_status(client, first["id"], "in_progress")
+    # The fake device holds the second job queued, past the start poll.
+    device.queued = 5.0
+    second = (await client.post(_LTX[1], json={"prompt": "a dog"})).json()
+    statuses = {
+        job["id"]: job["status"] for job in (await client.get("/v1/jobs")).json()
+    }
+    assert statuses == {first["id"]: "in_progress", second["id"]: "queued"}
+    await client.post(f"/v1/jobs/{second['id']}/cancel")
+    await _wait_final(client, first["id"])
+    statuses = {
+        job["id"]: job["status"] for job in (await client.get("/v1/jobs")).json()
+    }
+    assert statuses == {first["id"]: "completed", second["id"]: "cancelled"}
+
+
+async def test_an_expired_job_is_gone(generations_app, monkeypatch):
+    from config.settings import settings
+
+    client, _ = _ltx_app(generations_app)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    job = await _wait_final(client, job["id"])
+    assert job["status"] == "completed"
+    # Past expires_at, before the retention sweep has run.
+    monkeypatch.setattr(settings, "job_retention_seconds", -1)
+    assert (await client.get(f"/v1/jobs/{job['id']}")).status_code == 404
+    assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 404
+    assert (await client.post(f"/v1/jobs/{job['id']}/cancel")).status_code == 404
+    assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 404
+    assert (await client.get("/v1/jobs")).json() == []
+
+
+async def test_an_omitted_seed_is_reported(generations_app):
+    client, device = _ltx_app(generations_app)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    (output,) = (await _wait_final(client, job["id"]))["outputs"]
+    (request,) = device.requests
+    assert isinstance(output["seed"], int) and 0 <= output["seed"] <= 2**31 - 1
+    assert output["seed"] == request._seed
+
+
+@pytest.mark.parametrize(
+    ("seed", "status"), [(0, 202), (2**31 - 1, 202), (-1, 422), (2**31, 422)]
+)
+async def test_seed_range(generations_app, seed, status):
+    client, _ = _ltx_app(generations_app)
+    response = await client.post(_LTX[1], json={"prompt": "a cat", "seed": seed})
+    assert response.status_code == status, response.text
+
+
+async def test_a_full_queue_is_429_and_too_many_jobs_503(generations_app, monkeypatch):
+    import utils.job_manager
+
+    settings = utils.job_manager.get_settings()
+    monkeypatch.setattr("utils.job_manager.get_settings", lambda: settings)
+    settings.max_queue_size = 0
+    client, _ = _ltx_app(generations_app)
+    full = await client.post(_LTX[1], json={"prompt": "a cat"})
+    assert full.status_code == 429 and full.headers["retry-after"] == "60"
+    settings.max_queue_size, settings.max_jobs = 10, 0
+    client, _ = _ltx_app(generations_app)
+    too_many = await client.post(_LTX[1], json={"prompt": "a cat"})
+    assert too_many.status_code == 503 and too_many.headers["retry-after"] == "60"
+
+
+async def test_a_model_that_is_not_ready_is_503(generations_app):
+    client, device = _ltx_app(generations_app)
+
+    def not_ready():
+        raise RuntimeError("warming up")
+
+    device.check_is_model_ready = not_ready
+    response = await client.post(_LTX[1], json={"prompt": "a cat"})
+    assert response.status_code == 503 and response.headers["retry-after"] == "30"
+    assert device.requests == []
+
+
+async def test_every_route_needs_the_api_key(generations_app):
+    from security import api_key_checker
+
+    if api_key_checker.NO_AUTH:
+        pytest.skip("the server runs with NO_AUTH")
+    client, _ = generations_app(_LTX[0], auth=True)
+    routes = [
+        ("POST", _LTX[1]),
+        ("GET", "/v1/jobs"),
+        ("GET", "/v1/jobs/j"),
+        ("DELETE", "/v1/jobs/j"),
+        ("GET", "/v1/jobs/j/content/0"),
+        ("POST", "/v1/jobs/j/cancel"),
+    ]
+    for headers in ({}, {"Authorization": "Bearer wrong"}):
+        for method, path in routes:
+            response = await client.request(
+                method, path, headers=headers, json={"prompt": "a cat"}
+            )
+            assert response.status_code == 401, (method, path, headers)
+            assert isinstance(response.json()["detail"], str)
+    key = {"Authorization": f"Bearer {api_key_checker.API_KEY}"}
+    assert (await client.get("/v1/jobs", headers=key)).status_code == 200
+
+
 async def test_failed_job_reports_error(generations_app, tmp_path):
     client, device = _ltx_app(generations_app)
     device.error = RuntimeError("device fell over")
@@ -573,6 +838,153 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert job["expires_at"] > job["completed_at"]
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.fixture
+def video_stats(monkeypatch):
+    """The VideoGenerationStats the jobs report."""
+    from model_services import generation_service
+
+    stats = []
+    client = SimpleNamespace(record_video_generation_async=stats.append)
+    monkeypatch.setattr(generation_service, "get_telemetry_client", lambda: client)
+    return stats
+
+
+def _sample(name: str, **labels) -> float:
+    from prometheus_client import REGISTRY
+
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
+_RATIO = "tt_media_server_video_requested_aspect_ratio_total"
+_DURATION = "tt_media_server_video_requested_duration_seconds_sum"
+_IN_FLIGHT = "tt_media_server_video_generations_in_progress"
+
+
+@pytest.fixture
+def runner_label(monkeypatch):
+    """Sets the runner the metrics are labelled with. Earlier tests can leave
+    generation_service with another settings object."""
+    from model_services import generation_service
+
+    def set_runner(runner: str) -> None:
+        monkeypatch.setattr(generation_service.settings, "model_runner", runner)
+
+    return set_runner
+
+
+async def test_a_completed_job_reports_its_video(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    before = {
+        ratio: _sample(_RATIO, **labels, aspect_ratio=ratio)
+        for ratio in ("unset", "16:9")
+    }
+    durations = _sample(_DURATION, **labels)
+    client, device = _ltx_app(generations_app, delay=0.2)
+    response = await client.post(_LTX[1], json={"prompt": "a violinist"})
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    assert _sample(_IN_FLIGHT, **labels) == 1
+    assert (await _wait_final(client, response.json()["id"]))["status"] == "completed"
+
+    (stats,) = video_stats
+    assert (stats.status, stats.request_type) == ("success", "t2v")
+    # The fake device's clip: 9 frames of 64x64 at 25 fps.
+    assert (stats.width, stats.height, stats.num_frames) == (64, 64, 9)
+    assert stats.content_seconds == 9 / 25 and stats.output_bytes > 0
+    assert _sample(_IN_FLIGHT, **labels) == 0
+    # Omitted fields count as unset, not as the defaults the model fills in.
+    assert _sample(_RATIO, **labels, aspect_ratio="unset") == before["unset"] + 1
+    assert _sample(_DURATION, **labels) == durations
+
+    body = {"prompt": "a violinist", "aspect_ratio": "16:9", "duration": 6}
+    response = await client.post(_LTX[1], json=body)
+    await _wait_final(client, response.json()["id"])
+    assert _sample(_RATIO, **labels, aspect_ratio="16:9") == before["16:9"] + 1
+    assert _sample(_DURATION, **labels) == durations + 6
+
+
+async def test_failed_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label("tt-wan2.2-i2v")
+    client, device = generations_app("tt-wan2.2-i2v")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
+    await _wait_final(client, response.json()["id"])
+    # H3 carries its keyframes as files, not pixels.
+    runner_label("tt-minimax-h3-fl2va")
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    device.error = RuntimeError("device fell over")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={
+            "prompt": "x",
+            "first_frame": _data_uri(600, 800),
+            "last_frame": _data_uri(600, 800),
+        },
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    assert [(s.status, s.request_type) for s in video_stats] == [("failure", "i2v")] * 2
+    assert [s.conditioning_images for s in video_stats] == [1, 2]
+    assert all(s.width is None for s in video_stats)
+    for runner in ("tt-wan2.2-i2v", "tt-minimax-h3-fl2va"):
+        assert _sample(_IN_FLIGHT, model_type=runner, request_type="i2v") == 0
+
+
+async def _wait_for_stats(video_stats, count: int) -> None:
+    for _ in range(100):
+        if len(video_stats) == count:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_cancelled_jobs_report_their_status(
+    generations_app, video_stats, runner_label
+):
+    runner_label(_LTX[0])
+    labels = {"model_type": _LTX[0], "request_type": "t2v"}
+    # Cancelled while running: the runner returns, the job ends cancelled.
+    client, device = _ltx_app(generations_app, delay=0.5)
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 1)
+    # Cancelled while queued: the job's task is cancelled.
+    client, device = _ltx_app(generations_app)
+    device.queued = 5.0
+    job = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
+    while not device.requests:
+        await asyncio.sleep(0.01)
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await _wait_for_stats(video_stats, 2)
+    assert [s.status for s in video_stats] == ["cancelled"] * 2
+    assert _sample(_IN_FLIGHT, **labels) == 0
+
+
+@pytest.mark.parametrize(
+    ("runner", "forwards"),
+    [
+        ("tt-wan2.2-i2v", 40),
+        ("tt-ltx-2.3-distilled", 11),
+        ("tt-minimax-h3-fl2va", 49),
+        ("tt-minimax-h3-ref2va", 49),
+        ("tt-minimax-h3-fl2va-lightx2v", 4),
+        ("tt-minimax-h3-ref2va-lightx2v", 4),
+    ],
+)
+def test_video_metrics_count_the_forwards_each_runner_runs(runner, forwards):
+    from config.constants import video_executed_inference_steps
+
+    assert video_executed_inference_steps(None, runner) == forwards
 
 
 async def test_a_generations_dir_in_any_spelling_works(
@@ -891,7 +1303,10 @@ def test_h3_keyframe_limits(images, errors):
             "at most 12",
         ),
         ({"images": ["https://x/a.png"] * 10}, "at most 9"),
-        ({"images": ["https://x/a.png"], "videos": ["data:image/png;base64,"]}, "video"),
+        (
+            {"images": ["https://x/a.png"], "videos": ["data:image/png;base64,"]},
+            "video",
+        ),
         ({"images": ["https://x/a.png"], "audios": ["/v1/jobs/j/content/0"]}, "audio"),
     ],
 )

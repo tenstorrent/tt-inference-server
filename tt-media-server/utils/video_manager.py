@@ -318,13 +318,16 @@ class VideoManager:
             error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
             raise RuntimeError(f"FFmpeg failed: {error_msg}")
 
-    @staticmethod
+    @classmethod
     def _stream_to_ffmpeg(
+        cls,
         cmd: list[str],
         frames: NDArray,
         timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
     ) -> None:
         """Stream frames one-by-one to ffmpeg, converting dtype per-frame."""
+        if cmd and cmd[0] == "ffmpeg":
+            cmd = [cls._ffmpeg_binary(), *cmd[1:]]
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,

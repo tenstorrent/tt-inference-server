@@ -332,8 +332,6 @@ components:
       properties:
         codec:
           type: string
-          enum:
-          - aac
           const: aac
           title: Codec
         sample_rate:
@@ -360,8 +358,6 @@ components:
           title: Id
         deleted:
           type: boolean
-          enum:
-          - true
           const: true
           title: Deleted
       type: object
@@ -441,8 +437,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - image
           const: image
           title: Type
       type: object
@@ -708,8 +702,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - video
           const: video
           title: Type
         fps:
