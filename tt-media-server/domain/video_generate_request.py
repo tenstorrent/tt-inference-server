@@ -46,4 +46,3 @@ class VideoGenerateRequest(BaseRequest):
         if self.num_inference_steps is None:
             self.num_inference_steps = DEFAULT_VIDEO_INFERENCE_STEPS
         return self
-

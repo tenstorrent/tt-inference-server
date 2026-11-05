@@ -223,4 +223,3 @@ class TestSubmitPathResolvesUrls:
         echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
         assert echoed["image_prompts"][0]["image"] == _URL.split("?")[0]
         assert request.image_prompts[0].image == _TINY_PNG_BASE64
-

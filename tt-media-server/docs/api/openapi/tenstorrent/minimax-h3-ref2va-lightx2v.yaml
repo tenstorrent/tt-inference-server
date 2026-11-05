@@ -345,8 +345,6 @@ components:
       properties:
         codec:
           type: string
-          enum:
-          - aac
           const: aac
           title: Codec
         sample_rate:
@@ -373,8 +371,6 @@ components:
           title: Id
         deleted:
           type: boolean
-          enum:
-          - true
           const: true
           title: Deleted
       type: object
@@ -447,8 +443,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - image
           const: image
           title: Type
       type: object
@@ -602,8 +596,6 @@ components:
           default: '16:9'
         size:
           type: string
-          enum:
-          - 768p
           const: 768p
           title: Size
           description: 'Size tier: a short edge of 768, the area capped at 768×1344, sides
@@ -775,8 +767,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - video
           const: video
           title: Type
         fps:

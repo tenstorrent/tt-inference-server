@@ -10,7 +10,7 @@ from pydantic import Field
 
 
 class Ltx23DistilledRequest(GenerationRequest):
-    """One output shape for now: 1920×1080, 6 s at 25 fps. The shape fields are
+    """One output shape for now: 1920×1088, 6 s at 25 fps. The shape fields are
     kept so more can be allowed later without a schema change."""
 
     OUTPUT_TYPE = "video"
@@ -20,7 +20,11 @@ class Ltx23DistilledRequest(GenerationRequest):
         default="16:9", description="Output shape. Only `16:9` for now."
     )
     size: Literal["1080p"] = Field(
-        default="1080p", description="Size tier: `1080p` is 1920×1080 at `16:9`."
+        default="1080p",
+        description=(
+            "Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 "
+            "because both sides must be multiples of 64."
+        ),
     )
     duration: Literal[6] = Field(
         default=6,

@@ -331,8 +331,6 @@ components:
       properties:
         codec:
           type: string
-          enum:
-          - aac
           const: aac
           title: Codec
         sample_rate:
@@ -359,8 +357,6 @@ components:
           title: Id
         deleted:
           type: boolean
-          enum:
-          - true
           const: true
           title: Deleted
       type: object
@@ -403,8 +399,6 @@ components:
           default: 1
         aspect_ratio:
           type: string
-          enum:
-          - '1:1'
           const: '1:1'
           title: Aspect Ratio
           description: Output shape. Only `1:1` for now; more can be allowed later without
@@ -498,8 +492,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - image
           const: image
           title: Type
       type: object
@@ -704,8 +696,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - video
           const: video
           title: Type
         fps:
