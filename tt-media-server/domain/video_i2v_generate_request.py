@@ -60,4 +60,3 @@ class VideoI2VGenerateRequest(VideoGenerateRequest):
                 )
             seen.add(entry.frame_pos)
         return v
-

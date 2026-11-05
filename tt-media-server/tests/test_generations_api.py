@@ -227,7 +227,7 @@ class _FakeDevice:
 
 
 @pytest.fixture
-def generations_app(monkeypatch, tmp_path):
+async def generations_app(monkeypatch, tmp_path):
     """(build(runner, delay, auth) -> (client, device)), sharing one job
     manager. The API key is checked only with ``auth``."""
     from model_services.generation_service import GenerationService
@@ -278,8 +278,11 @@ def generations_app(monkeypatch, tmp_path):
         return client, device
 
     yield build
+    # On the test's event loop, which older pytest-asyncio closes before the
+    # teardown of a sync fixture.
     for client, service in clients:
-        service._job_manager._cleanup_task.cancel()
+        await service._job_manager.shutdown()
+        await client.aclose()
 
 
 async def _wait_status(client, job_id: str, *statuses: str) -> dict:
@@ -1239,7 +1242,10 @@ def test_h3_keyframe_limits(images, errors):
             "at most 12",
         ),
         ({"images": ["https://x/a.png"] * 10}, "at most 9"),
-        ({"images": ["https://x/a.png"], "videos": ["data:image/png;base64,"]}, "video"),
+        (
+            {"images": ["https://x/a.png"], "videos": ["data:image/png;base64,"]},
+            "video",
+        ),
         ({"images": ["https://x/a.png"], "audios": ["/v1/jobs/j/content/0"]}, "audio"),
     ],
 )

@@ -241,9 +241,10 @@ class TestRequestData:
         request._worker_assignment = threading.Event()
         rebuilt = self._round_trip(request)
         _assert_same_request(request, rebuilt)
-        assert rebuilt._images["images"][0].tobytes() == request._images[
-            "images"
-        ][0].tobytes()
+        assert (
+            rebuilt._images["images"][0].tobytes()
+            == request._images["images"][0].tobytes()
+        )
         assert (rebuilt._files, rebuilt._probes) == (request._files, request._probes)
         assert (rebuilt._seed, rebuilt._prompt) == (7, "a song")
         assert rebuilt._cancel_event is None

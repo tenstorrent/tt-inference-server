@@ -42,8 +42,38 @@ _SETTINGS_ENV = (
 )
 
 # Imports the app as main.py builds it for the runner and writes its document.
+# The routes don't use the runners' libraries, which CI doesn't install, so
+# those that are missing are stubbed, with their submodules, as
+# tests/conftest.py does.
 _DUMP = """
-import json, sys
+import importlib.abc, importlib.machinery, importlib.util, json, sys
+from unittest.mock import MagicMock
+
+missing = {
+    name
+    for name in (
+        "torch", "torchvision", "torch_xla", "ttnn", "transformers", "diffusers",
+        "cv2", "pyarrow", "vllm", "datasets", "pytorchcv", "peft",
+    )
+    if importlib.util.find_spec(name) is None
+}
+
+
+class Stubs(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def find_spec(self, name, path, target=None):
+        if name.partition(".")[0] in missing:
+            return importlib.machinery.ModuleSpec(name, self, is_package=True)
+
+    def create_module(self, spec):
+        module = MagicMock()
+        module.__spec__, module.__path__ = spec, []
+        return module
+
+    def exec_module(self, module):
+        pass
+
+
+sys.meta_path.insert(0, Stubs())
 import main
 with open(sys.argv[1], "w") as f:
     json.dump(main.app.openapi(), f)
@@ -81,6 +111,21 @@ def _environment(runner: str, metrics_dir: str) -> dict[str, str]:
 
 def _referenced_schemas(value) -> set[str]:
     return set(re.findall(r'"#/components/schemas/([^"]+)"', json.dumps(value)))
+
+
+def _without_redundant_enums(value):
+    """``value`` without an ``enum`` that only repeats its ``const``: pydantic
+    before 2.10 writes a one-value Literal as both, later versions as the
+    ``const`` alone."""
+    if isinstance(value, list):
+        return [_without_redundant_enums(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: _without_redundant_enums(item)
+        for key, item in value.items()
+        if not (key == "enum" and "const" in value and item == [value["const"]])
+    }
 
 
 def generations_api(document: dict) -> dict:
@@ -127,7 +172,7 @@ def served_generations_api(runner: str) -> dict:
             raise RuntimeError(
                 f"building the app for {runner} failed:\n{process.stderr}"
             )
-        return generations_api(json.loads(path.read_text()))
+        return _without_redundant_enums(generations_api(json.loads(path.read_text())))
 
 
 def served_generations_api_by_runner(runners: list[str]) -> dict[str, dict]:

@@ -319,8 +319,6 @@ components:
       properties:
         codec:
           type: string
-          enum:
-          - aac
           const: aac
           title: Codec
         sample_rate:
@@ -347,8 +345,6 @@ components:
           title: Id
         deleted:
           type: boolean
-          enum:
-          - true
           const: true
           title: Deleted
       type: object
@@ -421,8 +417,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - image
           const: image
           title: Type
       type: object
@@ -545,16 +539,12 @@ components:
           title: Prompt
         aspect_ratio:
           type: string
-          enum:
-          - '16:9'
           const: '16:9'
           title: Aspect Ratio
           description: Output shape. Only `16:9` for now.
           default: '16:9'
         size:
           type: string
-          enum:
-          - 1080p
           const: 1080p
           title: Size
           description: 'Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 because
@@ -562,8 +552,6 @@ components:
           default: 1080p
         duration:
           type: integer
-          enum:
-          - 6
           const: 6
           title: Duration
           description: 'Seconds. 6 s at 25 fps is 153 frames (6.12 s): the frame count must
@@ -571,8 +559,6 @@ components:
           default: 6
         fps:
           type: integer
-          enum:
-          - 25
           const: 25
           title: Fps
           description: 'Frames per second. Only 25 for now: it sets the audio length and the
@@ -666,8 +652,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - video
           const: video
           title: Type
         fps:
