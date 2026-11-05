@@ -10,7 +10,11 @@
       "black-forest-labs/FLUX.1-dev",
       "black-forest-labs/FLUX.1-schnell",
       "Motif-Technologies/Motif-Image-6B-Preview",
-      "Tongyi-MAI/Z-Image-Turbo"
+      "Tongyi-MAI/Z-Image-Turbo",
+      "black-forest-labs/FLUX.2-klein-4B",
+      "black-forest-labs/flux-3-image-klein",
+      "Qwen/Qwen-Image-Edit-2511",
+      "ideogram-ai/ideogram-4"
     ],
     "AUDIO": [
       "distil-whisper/distil-large-v3",
@@ -155,7 +159,11 @@
       "wan_i2v": "Wan image-to-video generation model tests",
       "mochi": "Mochi video generation model tests",
       "mobilenetv2": "MobileNetV2 CNN model tests",
-      "bge_m3": "BGE-M3 embedding model tests"
+      "bge_m3": "BGE-M3 embedding model tests",
+      "flux2_klein": "FLUX.2 klein 4B generation API tests",
+      "flux3_klein": "FLUX 3 Image klein generation API tests",
+      "qwen_image_edit": "Qwen-Image-Edit-2511 generation API tests",
+      "ideogram4": "Ideogram 4 generation API tests"
     }
   },
   "model_configs": {
@@ -1095,6 +1103,46 @@
       "id_name": "IFM--K2-Horizon-7B",
       "weights": [
         "IFM/K2-Horizon-7B"
+      ]
+    },
+    "flux2_klein": {
+      "id_name": "flux2-klein",
+      "weights": [
+        "black-forest-labs/FLUX.2-klein-4B"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "flux3_klein": {
+      "id_name": "flux3-klein",
+      "weights": [
+        "black-forest-labs/flux-3-image-klein"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "qwen_image_edit": {
+      "id_name": "qwen-image-edit",
+      "weights": [
+        "Qwen/Qwen-Image-Edit-2511"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "ideogram4": {
+      "id_name": "ideogram4",
+      "weights": [
+        "ideogram-ai/ideogram-4"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
       ]
     }
   },

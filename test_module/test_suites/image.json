@@ -343,6 +343,35 @@
                     }
                 }
             ]
+        },
+        {
+            "models": [
+                "flux2_klein",
+                "flux3_klein",
+                "qwen_image_edit",
+                "ideogram4"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationAPIContractTest",
+                    "enabled": true,
+                    "description": "Generation API create contract: auth, request validation, image URL policy and size, the model's own fields, and unserved-model refusals"
+                },
+                {
+                    "template": "ImageGenerationAPITest",
+                    "enabled": true,
+                    "description": "Generation API lifecycle: submit, query, list, poll, output, download, cancel, delete"
+                },
+                {
+                    "template": "ImageGenerationAPIParamTest",
+                    "enabled": true,
+                    "description": "Generation API parameter sweep: every ratio and size, every format, seeds, defaults, edits with input images, the model's own fields"
+                }
+            ]
         }
     ],
     "test_suites": [
