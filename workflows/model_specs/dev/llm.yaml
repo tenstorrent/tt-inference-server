@@ -386,9 +386,10 @@ templates:
       # Per-system max concurrent requests (the sweep's loaded corner). The
       # graded targets in model_performance_reference.json are authored at this
       # concurrency: decode tput is 29.0 x 32 = 928.0.
-      # The generator decodes every request slot in one batched step, with caches pooled per mesh
-      # row. An earlier native-context configuration fit eight slots: each slot's pool used 3.8 GB
-      # per chip, and two 1M prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
+      # The generator decodes every request slot in one batched step, with
+      # caches pooled per mesh row. An earlier native-context configuration
+      # fit eight slots: each slot's pool used 3.8 GB per chip, and two 1M
+      # prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
       # c32 measurements up to isl 8192 used 32 slots at 15,360 of context.
       max_concurrency: 32
       # Inherited reference notes; runtime settings follow below.
@@ -627,7 +628,22 @@ templates:
         # replacements of the requests that finish first wait for the
         # cohort and prefill together; under "1" their bulks ran between
         # the stragglers' decode steps and filled their windows.
-        TT_SCHED_DEFER_FINAL: "hold"
+        # "hold-all": a one-chunk prompt is held
+        # for the cohort too, as a bulk is, instead of the stock admission
+        # between decode steps, so at the one-chunk points (up to the 10,240
+        # chunk) the replacements of a decoding cohort wait and form the next
+        # cohort, which drains as the packs below (TT_SCHED_PACK); a burst's
+        # stragglers reopen the young cohort of its first request.
+        #
+        # The served arm is chosen at launch: the four flags below
+        # written ${FLAG:-default} take the launch environment's value when
+        # it is set, else the default, the "hold-all" arm:
+        #   hold-all (default) nothing set
+        #   +release TT_SCHED_RELEASE_FIRST=cohort
+        #   pack TT_SCHED_DEFER_FINAL=hold
+        #   off TT_SCHED_DEFER_FINAL=hold TT_V41_PACK=0 TT_SCHED_PACK=0
+        # (measured them at the short c32 points.)
+        TT_SCHED_DEFER_FINAL: "${TT_SCHED_DEFER_FINAL:-hold-all}"
         # The cohort's first tokens from one decode step: a multi-chunk request's bulk runs to n - 1
         # tokens and is joined by the stock path (no park, no restore: the
         # generator's TT_V41_DEFER_FINAL and the restore captures are off),
@@ -667,19 +683,28 @@ templates:
         # on the composed tree): no ratio-1 mask build and no row-major
         # add on the chunks of the score buckets over 32K.
         TT_V41_PREFILL_INDEX_BOUND: "1"
-        # Prompt packing: the generator runs the whole short prompts of a listed layout (k x length)
-        # as one packed chunk on the 5,120 geometry (TT_V41_PACK_CHUNK: a pack of four 1,028s pays
-        # that chunk, not the 10,240 one), each prompt isolated by its own positions, window rows,
-        # index-mask bounds and carries and joining its decode slot from its own segment (one packed
-        # state at the first score bucket, ~60 MB a chip; one capture per layout and the segment
-        # joins per slot at warm-up), and the scheduler admits exactly those prompts in one step
-        # (TT_SCHED_PACK, the same list; sched_pack: under TT_SCHED_DEFER_FINAL the held one-chunk
-        # prompts of a draining cohort). The short c32 points (12, 13) are what it moves; at c1 and
-        # on longer prompts the flags are inert.
-        TT_V41_PACK: "1"
+        # Prompt packing: the
+        # generator runs the whole short prompts of a listed layout (k x
+        # length) as one packed chunk on the 5,120 geometry (TT_V41_PACK_CHUNK:
+        # a pack of four 1,028s pays that chunk, not the 10,240 one), each
+        # prompt isolated by its own positions, window rows, index-mask bounds
+        # and carries and joining its decode slot from its own segment (one
+        # packed state at the first score bucket, ~60 MB a chip; one capture
+        # per layout and the segment joins per slot at warm-up), and the
+        # scheduler admits exactly those prompts in one step (TT_SCHED_PACK,
+        # the same list; sched_pack: under TT_SCHED_DEFER_FINAL the held
+        # one-chunk prompts of a draining cohort). The short c32 points (12,
+        # 13) are what it moves; at c1 and on longer prompts the flags are
+        # inert.
+        # TT_V41_PACK and TT_SCHED_PACK are the arm's (above): both "0" turn
+        # packing off; set one, set both.
+        TT_V41_PACK: "${TT_V41_PACK:-1}"
         TT_V41_PACK_CHUNK: "5120"
         TT_V41_PACK_LAYOUTS: "4x1028,3x1028,2x1028,2x2052"
-        TT_SCHED_PACK: "4x1028,3x1028,2x1028,2x2052"
+        TT_SCHED_PACK: "${TT_SCHED_PACK:-4x1028,3x1028,2x1028,2x2052}"
+        # The cohort's first tokens withheld to its drain's end; "0" (the
+        # default) delivers each as it is produced.
+        TT_SCHED_RELEASE_FIRST: "${TT_SCHED_RELEASE_FIRST:-0}"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
         # See max_context: point 11's prompt plus the chat template plus the
