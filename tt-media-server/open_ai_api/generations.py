@@ -6,6 +6,7 @@
 serves, and the jobs it creates under /v1/jobs. Spec:
 docs/api/openapi/."""
 
+import time
 from typing import Annotated, Any, Optional, Union
 
 from config.constants import JobTypes
@@ -90,11 +91,24 @@ _FILE_TYPES = [content_type for _, content_type in IMAGE_FORMATS.values()] + [
 ]
 
 
+def _expired(metadata: dict) -> bool:
+    """Whether the job is past its `expires_at`. The retention sweep deletes
+    it only on its next run."""
+    completed_at = metadata.get("completed_at")
+    return bool(completed_at) and (
+        time.time() > completed_at + settings.job_retention_seconds
+    )
+
+
 def _job_or_404(service: GenerationService, job_id: str) -> dict:
     # The job database can hold other services' jobs, restored from a store
     # this deployment shares with them.
     metadata = service.get_job_metadata(job_id)
-    if metadata is None or metadata["job_type"] != JobTypes.GENERATION.value:
+    if (
+        metadata is None
+        or metadata["job_type"] != JobTypes.GENERATION.value
+        or _expired(metadata)
+    ):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return metadata
 
@@ -168,6 +182,7 @@ def list_jobs(service: GenerationService = Depends(service_resolver)) -> list[Jo
     jobs = (
         _job(service, metadata)
         for metadata in service.get_all_jobs_metadata(JobTypes.GENERATION)
+        if not _expired(metadata)
     )
     return [job for job in jobs if job is not None]
 

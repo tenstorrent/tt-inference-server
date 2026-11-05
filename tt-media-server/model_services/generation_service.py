@@ -214,9 +214,14 @@ class GenerationService(BaseJobService):
 
         async def load(kind: str, value: str) -> tuple[bytes, Any]:
             try:
-                if value.startswith("https://"):
+                if value.startswith(("https://", "http://")):
+                    # The spec counts an http URL, even after a redirect, as
+                    # against the fetch policy.
                     data = await download_media_url(
-                        value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]
+                        value,
+                        deadline=deadline,
+                        max_bytes=MEDIA_MAX_BYTES[kind],
+                        https_only=True,
                     )
                 else:
                     data = _decode_data_uri(value, kind)
@@ -264,7 +269,7 @@ class GenerationService(BaseJobService):
                 error(
                     name,
                     index,
-                    "not a decodable image (PNG, JPEG, WebP, ...)"
+                    "not a decodable PNG, JPEG or WebP image"
                     if kind == "image"
                     else "not a readable video or audio file",
                 )
