@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -492,12 +493,18 @@ class VideoGenerationI2VTest(BaseTest):
     async def _download_output(
         self, session: aiohttp.ClientSession, job: dict, index: int = 0
     ) -> str:
-        """Fetch ``outputs[index].url`` to /tmp/videos; return its path, or ""."""
+        """Fetch ``outputs[index].url`` to $TT_VIDEO_OUTPUT_DIR; return its path, or "".
+
+        The directory defaults to /tmp/videos.
+        """
         outputs = job.get("outputs") or []
         url = outputs[index].get("url") if len(outputs) > index else None
         if not isinstance(url, str):
             return ""
-        out_path = Path("/tmp/videos") / f"{job['id']}_i2v.mp4"
+        out_path = (
+            Path(os.environ.get("TT_VIDEO_OUTPUT_DIR", "/tmp/videos"))
+            / f"{job['id']}_i2v.mp4"
+        )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # A relative url resolves against the server's base URL (RFC 3986).
         async with session.get(urljoin(f"{self.base_url}/", url)) as response:

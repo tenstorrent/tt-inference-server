@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,7 +98,7 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
     generated_videos_path = str(Path("test_fixtures/datasets/videos").resolve())
     if not Path(generated_videos_path).exists():
-        generated_videos_path = "/tmp/videos"
+        generated_videos_path = os.environ.get("TT_VIDEO_OUTPUT_DIR", "/tmp/videos")
     logger.info(
         f"Reference path: {reference_videos_path}, generated path: {generated_videos_path}"
     )

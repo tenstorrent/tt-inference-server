@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -84,7 +85,7 @@ VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 def _download_video(ctx: MediaContext, job_id: str, headers: dict) -> str:
     logger.info(f"Downloading video for job: {job_id}")
     try:
-        output_dir = Path("/tmp/videos")
+        output_dir = Path(os.environ.get("TT_VIDEO_OUTPUT_DIR", "/tmp/videos"))
         output_dir.mkdir(parents=True, exist_ok=True)
         video_path = output_dir / f"{job_id}.mp4"
 
