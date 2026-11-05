@@ -87,8 +87,8 @@ def test_a_reference_that_covers_some_cases_leaves_the_others_out(
     ]
     (tmp_path / "cases").mkdir()
     (tmp_path / "cases" / "manifest.json").write_text(json.dumps(manifest))
-    (tmp_path / "refs" / "r2" / "tt_matched").mkdir(parents=True)
-    (tmp_path / "refs" / "r2" / "tt_matched" / "index.json").write_text(
+    (tmp_path / "refs" / "r2" / "tt").mkdir(parents=True)
+    (tmp_path / "refs" / "r2" / "tt" / "index.json").write_text(
         json.dumps([{"case_id": "a"}, {"case_id": "c"}])
     )
     fetched = []
@@ -98,14 +98,14 @@ def test_a_reference_that_covers_some_cases_leaves_the_others_out(
         lambda model_id, patterns: fetched.append(patterns) or tmp_path,
     )
     root, cases = data.load_cases(
-        "qwen/qwen-image-edit-2511", "ci", "refs/r2/tt_matched"
+        "qwen/qwen-image-edit-2511", "ci", "refs/r2/tt"
     )
     assert root == tmp_path and [c["case_id"] for c in cases] == ["a", "c"]
     # Only the kept cases' inputs and reference images are fetched.
     assert (
-        "inputs/b.png" not in fetched[-1] and "refs/r2/tt_matched/c.png" in fetched[-1]
+        "inputs/b.png" not in fetched[-1] and "refs/r2/tt/c.png" in fetched[-1]
     )
-    assert data.reference_for("qwen/qwen-image-edit-2511") == "refs/r2/tt_matched"
+    assert data.reference_for("qwen/qwen-image-edit-2511") == "refs/r2/tt"
     assert data.reference_for("ideogram-ai/ideogram-4") == "refs/r1"
 
 
@@ -324,7 +324,7 @@ def test_the_eval_sends_each_cases_inputs_and_compares_with_r1(tmp_path, monkeyp
     # Qwen's server runs DBCache, so it's compared with R2, on the cases it covers.
     assert (d["api"], d["reference"], d["subset"]) == (
         "generation_api",
-        "refs/r2/tt_matched",
+        "refs/r2/tt",
         "ci",
     )
     assert d["num_generated"] == 3 and d["not_served"] == {}

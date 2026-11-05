@@ -32,7 +32,7 @@ EVAL_DATA = {
     ),
     "qwen/qwen-image-edit-2511": (
         "Tenstorrent/qwen-image-edit-2511-refs",
-        "fdf84cacb2f8aafab996de20ac7be9fe06afec0c",
+        "8104d15d8e6edb0da8f43db00269ed8a24592aca",
     ),
     "ideogram-ai/ideogram-4": (
         "Tenstorrent/ideogram-4-refs",
@@ -40,9 +40,8 @@ EVAL_DATA = {
     ),
 }
 # model_id -> the GPU run TT is compared with, where it isn't refs/r1. Qwen's
-# server runs DBCache with cache-dit's `tt` recipe, so R2; and only on the cases
-# whose inputs tt-metal resizes as diffusers does (the folder's README).
-REFERENCES = {"qwen/qwen-image-edit-2511": "refs/r2/tt_matched"}
+# server runs DBCache with cache-dit's `tt` recipe, so R2.
+REFERENCES = {"qwen/qwen-image-edit-2511": "refs/r2/tt"}
 SUBSETS = ("dev", "ci", "all")
 # A reference run's text-to-image scores (longtext_score.py, dpg_score.py).
 REFERENCE_SCORES = ("longtext.json", "dpg.json")

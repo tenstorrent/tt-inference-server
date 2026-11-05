@@ -8,7 +8,7 @@
   ],
   "models": {
     "qwen/qwen-image-edit-2511": {
-      "refs/r2/tt_matched": {"max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {}}
+      "refs/r2/tt": {"max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {}}
     },
     "ideogram-ai/ideogram-4": {
       "refs/r1": {
