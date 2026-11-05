@@ -25,7 +25,10 @@ def _gemma4_26b_specs():
     ]
 
 
-def test_dedicated_gemma4_profile_is_default_and_uses_the_demo_bundle():
+def test_the_mtp_entry_is_the_qb2_default_and_the_dedicated_profile_uses_the_demo_bundle():
+    """The release scope resolves the QB2 default without an impl pin: the tt-transformers entry
+    (32 users, the MTP speculative contract class). The single-user dedicated profile stays
+    selectable with ``--impl gemma4-26b-a4b-qb2`` and keeps its demo bundle."""
     specs = _gemma4_26b_specs()
     default = resolve_model_spec(
         specs,
@@ -41,20 +44,18 @@ def test_dedicated_gemma4_profile_is_default_and_uses_the_demo_bundle():
         catalog_name="Shield",
     )
 
-    assert default.impl.impl_name == "gemma4-26b-a4b-qb2"
-    assert dedicated.impl.impl_name == "gemma4-26b-a4b-qb2"
-    assert default == dedicated
-    assert dedicated.impl.code_path == "models/demos/gemma4_26b_a4b_qb2"
-    alternate = resolve_model_spec(
-        specs,
-        model="google/gemma-4-26B-A4B-it",
-        device="p300x2",
-        impl="tt-transformers",
-        catalog_name="Shield",
+    assert default.impl.impl_name == "tt-transformers"
+    assert default.device_model_spec.default_impl is True
+    assert default.device_model_spec.max_concurrency == 32
+    assert (
+        "Gemma4MTPContract"
+        in default.device_model_spec.env_vars["TT_MODEL_CLASS_OVERRIDES"]
     )
-    assert alternate.device_model_spec.default_impl is False
+    assert dedicated.impl.impl_name == "gemma4-26b-a4b-qb2"
+    assert dedicated != default
+    assert dedicated.impl.code_path == "models/demos/gemma4_26b_a4b_qb2"
     assert dedicated.status == ModelStatusTypes.FUNCTIONAL
-    assert dedicated.device_model_spec.default_impl is True
+    assert dedicated.device_model_spec.default_impl is False
     assert dedicated.device_model_spec.max_concurrency == 1
     assert (
         dedicated.device_model_spec.env_vars["EXTRA_MODELS_DIR"]
@@ -120,7 +121,8 @@ def test_gemma4_26b_release_eval_cohort():
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 24
     assert terminal.n_concurrent_trials == 24
     assert terminal.n_attempts == 1
-    assert terminal.override_cpus == 16
+    assert terminal.override_cpus is None
+    assert terminal.override_memory_mb is None
     assert terminal_task.request_body["seed"] == 9472
 
     # MMMU-Pro: the preset subset is graded against its same-protocol GPU

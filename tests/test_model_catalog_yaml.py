@@ -531,7 +531,7 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
         (
             "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V",
             "tt-minimax-h3-ref2va-lightx2v",
-            "minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors",
+            "minimax_h3_ref2v_turbo_4step_v1.0_768p_bf16.safetensors",
             "transformer_ref",
             "transformer",
         ),
