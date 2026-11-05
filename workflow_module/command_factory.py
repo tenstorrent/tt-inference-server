@@ -10,6 +10,7 @@ import logging
 import os
 import shlex
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -94,9 +95,11 @@ def _workflow_command(
     )
 
 
-def _output_leaf(args: argparse.Namespace) -> str:
-    """Directory name for this run's output."""
-    return f"{slugify_model_id(args.model)}_{args.device}_{args.workflow}"
+def _output_leaf(args: argparse.Namespace, timestamp: Optional[str] = None) -> str:
+    """Directory name for this run's output, stamped with its start time so
+    reruns don't write into the same folder."""
+    timestamp = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{slugify_model_id(args.model)}_{args.device}_{args.workflow}_{timestamp}"
 
 
 def _build_repeated_commands(
