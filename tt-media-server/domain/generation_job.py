@@ -8,19 +8,25 @@ from pydantic import BaseModel, Field, model_serializer
 
 
 class JobError(BaseModel):
-    code: Union[Literal["processing_error", "stale_job", "server_restart"], str] = (
-        Field(
-            description=(
-                "Why the job failed. More codes may be added; treat an unknown one "
-                "like `processing_error`.\n\n"
-                "- `processing_error`: the pipeline raised an error. Resubmitting "
-                "the same request is unlikely to help.\n"
-                "- `stale_job`: the job made no progress for too long and was "
-                "force-cancelled. An infrastructure failure: safe to resubmit, "
-                "preferably to another runner.\n"
-                "- `server_restart`: the server restarted while the job was queued "
-                "or running. Safe to resubmit."
-            )
+    code: Union[
+        Literal[
+            "processing_error", "stale_job", "server_restart", "upsampler_unavailable"
+        ],
+        str,
+    ] = Field(
+        description=(
+            "Why the job failed. More codes may be added; treat an unknown one "
+            "like `processing_error`.\n\n"
+            "- `processing_error`: the pipeline raised an error. Resubmitting "
+            "the same request is unlikely to help.\n"
+            "- `stale_job`: the job made no progress for too long and was "
+            "force-cancelled. An infrastructure failure: safe to resubmit, "
+            "preferably to another runner.\n"
+            "- `server_restart`: the server restarted while the job was queued "
+            "or running. Safe to resubmit.\n"
+            "- `upsampler_unavailable`: the prompt upsampler, which rewrites the "
+            "prompt before the image is generated, could not be reached or was "
+            "overloaded; nothing was generated. Safe to resubmit."
         )
     )
     message: str = Field(description="Human-readable.")

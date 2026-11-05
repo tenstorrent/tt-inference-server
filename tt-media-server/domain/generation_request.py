@@ -192,6 +192,12 @@ class GenerationRequest(BaseRequest):
         """The prompt as the model gets it."""
         return getattr(self, "prompt")
 
+    async def prepare_prompt(self) -> str:
+        """The prompt the job runs with, worked out before it reaches a device:
+        ``model_prompt()``, unless the model has its prompts rewritten first.
+        Each output reports it as its `prompt`."""
+        return self.model_prompt()
+
 
 # Inputs for the example requests: a sailboat at dawn, 256×256, inline; and
 # public files, which a deployment fetches only if it allows public hosts.

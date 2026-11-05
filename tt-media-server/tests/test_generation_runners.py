@@ -223,7 +223,7 @@ class _Flux3Pipeline:
         self.calls.append(request)
         return SimpleNamespace(
             image=Image.new("RGB", (request.width, request.height)),
-            prompt=f"a detailed caption of {request.prompt}",
+            prompt=request.prompt,
         )
 
 
@@ -251,7 +251,29 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     assert call.steps == 16
     assert call.images == tuple(images.get("images", []))
     assert image.size == (2048, 2048)
-    assert image.info["prompt"] == "a detailed caption of a cat"
+    assert "prompt" not in image.info
+
+
+def test_flux3_pipeline_has_no_upsampler_of_its_own(flux3_runner, monkeypatch):
+    created = []
+    pipeline_module = sys.modules[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    pipeline_module.Flux3KleinPipeline = lambda *args, **kwargs: created.append(kwargs)
+    weights_module = ModuleType("weights_flux3_klein")
+    weights_module.resolve_weights_dir = lambda model: "/weights"
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.flux3_klein.weights_flux3_klein",
+        weights_module,
+    )
+    flux3_runner.ttnn_device = object()
+    flux3_runner.settings = SimpleNamespace(model_weights_path="missing")
+    flux3_runner.create_pipeline()
+    (kwargs,) = created
+    assert "upsample" not in kwargs
+    params = flux3_runner.get_pipeline_device_params()
+    assert set(params) == {"fabric_config", "fabric_router_config", "l1_small_size"}
 
 
 def test_flux3_warmup_covers_every_size_with_and_without_a_reference(flux3_runner):
