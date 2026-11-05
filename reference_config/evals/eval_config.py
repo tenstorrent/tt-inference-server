@@ -12533,8 +12533,8 @@ _eval_config_list = [
                 ],
             ),
             # ---- Model-card evals with image input (lmms-eval). The
-            # gemma4_31b_qb2 server is text only, so these run but score low
-            # there until it serves images. CI sizes assume ~38 tok/s single-user
+            # gemma4_31b_qb2 profile is text only, so get_llm_eval_tasks skips
+            # them there until it serves images. CI sizes assume ~38 tok/s single-user
             # decode (a few hours each once images are served).
             # MMMU-Pro, standard (10 options) CoT, thinking on.
             _gemma4_31b_lmms_task(

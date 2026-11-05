@@ -277,7 +277,9 @@ def test_gemma4_release_models_run_the_model_card_evals_in_both_presets():
         extra = [t.task_name for t in tasks[len(gates) :]]
         assert tasks[: len(gates)] == gates
         assert all(t.priority == "should" for t in tasks[len(gates) :])
-        assert extra == (GEMMA4_31B_SHOULD_EVALS if model == "google/gemma-4-31B-it" else [])
+        assert extra == (
+            GEMMA4_31B_SHOULD_EVALS if model == "google/gemma-4-31B-it" else []
+        )
         terminal = _gemma4_task(model, "terminal_bench_2").agentic_eval_config
         names = terminal.task_names_map
         assert names[EvalLimitMode.CI_NIGHTLY] == names[EvalLimitMode.CI_LONG]
