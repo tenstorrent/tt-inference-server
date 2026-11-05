@@ -5177,7 +5177,11 @@ _eval_config_list = [
                     "stream": "false",
                     "reasoning_effort": "high",
                     "max_gen_toks": 64 * 1024,
-                    "until": [],
+                    # Never empty: the Dynamo frontend rejects `stop: []` with 400
+                    # "Stop sequences array cannot be empty" (vLLM accepted it).
+                    # Same value as the GLM-5.3 d-gen config; generation still
+                    # ends at the model's EOS.
+                    "until": ["<|endoftext|>"],
                     "do_sample": "true",
                     "temperature": 0.7,
                     "top_p": 0.95,
