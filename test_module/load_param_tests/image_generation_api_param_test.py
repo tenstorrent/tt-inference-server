@@ -164,6 +164,16 @@ class ImageGenerationAPIParamTest(ImageGenerationAPITest):
             "model": model.model_id,
             "summary": f"{passed}/{len(results)} variants passed",
             "detailed_test_results": results,
+            # One row per variant, so a model spec's known_issues can waive a
+            # variant its deployment doesn't serve yet by name.
+            "parameter_conformance_summary": [
+                {
+                    "test_case": r["check"],
+                    "status": "PASS" if r["passed"] else "FAIL",
+                    "summary": "; ".join(r["problems"]),
+                }
+                for r in results
+            ],
         }
 
     @staticmethod

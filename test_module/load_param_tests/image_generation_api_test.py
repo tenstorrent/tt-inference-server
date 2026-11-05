@@ -129,6 +129,41 @@ def image_problems(
         return [f"image does not decode: {type(e).__name__}: {e}"]
 
 
+# Lifecycle steps that report on their own, named by their problems' prefix, so a
+# model spec's known_issues can waive one (``cancel_running_job``) by name.
+# Every other problem is the ``lifecycle`` step's.
+LIFECYCLE_STEPS = (
+    "submit",
+    "submit queued job",
+    "cancel queued job",
+    "job",
+    "output",
+    "image",
+    "submit running job",
+    "cancel running job",
+)
+
+
+def lifecycle_steps(problems: list[str]) -> list[dict]:
+    """One ``{test_case, status, summary}`` row per lifecycle step."""
+    by_step: dict[str, list[str]] = {"lifecycle": []}
+    by_step.update((step.replace(" ", "_"), []) for step in LIFECYCLE_STEPS)
+    for problem in problems:
+        prefix, _, rest = problem.partition(": ")
+        if rest and prefix in LIFECYCLE_STEPS:
+            by_step[prefix.replace(" ", "_")].append(rest)
+        else:
+            by_step["lifecycle"].append(problem)
+    return [
+        {
+            "test_case": step,
+            "status": "FAIL" if found else "PASS",
+            "summary": "; ".join(found),
+        }
+        for step, found in by_step.items()
+    ]
+
+
 class ImageGenerationAPITest(GenerationJobsTest):
     """An image model's job lifecycle on the generation API."""
 
@@ -153,9 +188,11 @@ class ImageGenerationAPITest(GenerationJobsTest):
             headers=auth_headers(), timeout=timeout
         ) as session:
             try:
-                return await self._lifecycle(session, payload)
+                result = await self._lifecycle(session, payload)
             finally:
                 await self._cancel_leftovers(session)
+        result["parameter_conformance_summary"] = lifecycle_steps(result["problems"])
+        return result
 
     def _image_sizes(self, payload: dict) -> list[tuple[int, int]]:
         """The sizes of the request's images, which set its default ratio."""

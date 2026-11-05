@@ -333,6 +333,55 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: shape_16x9_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_9x16_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_2x3_1K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_16x9_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_9x16_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_2x3_2K
+        reason: 'The server serves only 1:1 (Flux2klein4bRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_one_image
+        reason: 'The server serves only 1:1, so an edit without aspect_ratio comes back 1:1, not at the ratio of its input image as the API defaults it.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_near_limit_image
+        reason: 'The server serves only 1:1, so an edit without aspect_ratio comes back 1:1, not at the ratio of its input image as the API defaults it.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_most_images
+        reason: 'The server takes at most 1 input image (Flux2klein4bRequest), not the API''s 4, so the most-images edit is refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: cancel_running_job
+        reason: 'A 1K image takes about 2 s, the same as the test''s 2 s poll, so the job completes before the test sees it running and can cancel it.'
   status: EXPERIMENTAL
 
 # FLUX 3 Image klein through the generations API (TTFlux3ImageKleinRunner): the
