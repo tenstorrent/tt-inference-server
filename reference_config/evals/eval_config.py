@@ -12770,18 +12770,15 @@ _eval_config_list = [
     ),
     # =========================================================================
     # Qwen/Qwen3.8-Flash-Next (TP4 autoport, P300X2). CI TEST ENTRY, not for merge.
-    # Thinking model; both tasks are graded against the model card: IFBench 81.3 and
-    # GPQA Diamond 91.7 (the card uses very long reasoning budgets, so the 32K one here
-    # is expected to cost points on GPQA).
-    # GPQA-only branch (IFBench dropped) for an evals dispatch on the perf2 build.
-    # Sized for an evals dispatch in the 18 h job: server start <= ~1.2 h,
-    # IFBench <= 7.5 h (release run 39592564053 reached 179/300 prompts in 3.4 h at
-    # 32-way concurrency with 32K thinking budgets, i.e. ~6 h projected incl. the
-    # low-concurrency tail), GPQA-80 <= 7.5 h (4.9 h on two normal runners; ~6.5 h
-    # projected on the slowest). With the ~3.4-5.3 h benchmark sweep this no longer
-    # fits one release dispatch; run benchmarks and evals as separate dispatches.
-    # Exceeding a bound marks that task incomplete (rc=124) instead of losing the
-    # whole run. Request timeout == wall bound (never retry).
+    # Full GPQA Diamond (198 questions) graded against the model card's 91.7.
+    # The request seed is not sent to the server: the serving spec routes every seeded
+    # request to host sampling (seeded_sampling_policy: host), which halved decode
+    # throughput in run 41888076659 (83 vs ~170 output tok/s at 32 in flight).
+    # Unseeded requests use the device sampler (top_k <= 32) with the same
+    # temperature/top_p/top_k; --seed still drives the harness RNGs.
+    # 64K thinking budget: at 32K, 5 of 80 answers in run 41888076659 were empty
+    # (reasoning cut off); the card allows up to 256K reasoning tokens.
+    # Exceeding the bound marks the task incomplete (rc=124) instead of losing the run.
     # =========================================================================
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-Flash-Next",
@@ -12803,26 +12800,24 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                wall_clock_timeout_seconds=int(7.5 * 60 * 60),
+                propagate_seed_to_gen_kwargs=False,
+                capture_reasoning=True,
+                wall_clock_timeout_seconds=int(10 * 60 * 60),
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": int(7.5 * 60 * 60),
+                    "timeout": int(10 * 60 * 60),
                 },
-                # 32K thinking budget (the card's GPQA uses far longer budgets, so
-                # truncated answers are expected to cost points).
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 65536,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
                     "top_k": 20,
                 },
-                # 80 of 198 questions (+/-4.5 pts), the first 80 docs.
+                # All 198 questions in every CI mode (+/-2.5 pts at ~87).
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 80,
-                    EvalLimitMode.CI_LONG: 80,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
