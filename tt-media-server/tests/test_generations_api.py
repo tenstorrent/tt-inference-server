@@ -1692,21 +1692,124 @@ def test_flux3_serves_one_square_shape_per_size(fields):
         Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
-async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
-    process = _FakeDevice.process
+_FLUX3 = "/v1/generations/black-forest-labs/flux-3-image-klein"
 
-    async def upsampled(self, request):
-        image = await process(self, request)
-        image.info["prompt"] = "a detailed caption"
-        return image
 
-    monkeypatch.setattr(_FakeDevice, "process", upsampled)
+@pytest.fixture
+def flux3_upsampler(monkeypatch):
+    """A fake console upsampler for FLUX.3: records each request body and
+    answers with ``answer(body)`` -> (status, json), by default a caption."""
+    from utils import prompt_upsampler
+
+    calls = []
+    state = {"answer": lambda body: (200, {"caption": f"caption of {body['prompt']}"})}
+
+    def handle(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        status, payload = state["answer"](body)
+        return httpx.Response(status, json=payload)
+
+    monkeypatch.setattr(
+        prompt_upsampler.settings, "prompt_upsampler_url", "http://upsampler"
+    )
+    monkeypatch.setattr(
+        prompt_upsampler.settings, "prompt_upsampler_timeout_seconds", 5.0
+    )
+    monkeypatch.setattr(prompt_upsampler, "BACKOFF_SECONDS", 0.01)
+    monkeypatch.setattr(prompt_upsampler, "_transport", httpx.MockTransport(handle))
+    return SimpleNamespace(calls=calls, state=state)
+
+
+async def test_flux3_generates_from_the_upsampled_caption(
+    generations_app, flux3_upsampler
+):
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(_FLUX3, json={"prompt": "a cat", "size": "1K"})
+    job = await _wait_final(client, response.json()["id"])
+    assert flux3_upsampler.calls == [{"prompt": "a cat", "images": []}]
+    assert device.requests[0]._prompt == "caption of a cat"
+    (output,) = job["outputs"]
+    assert output["prompt"] == "caption of a cat"
+
+
+async def test_flux3_shows_the_upsampler_the_cropped_reference(
+    generations_app, flux3_upsampler
+):
+    # 300x100: red, green, blue thirds; the centered square is the green one
+    reference = Image.new("RGB", (300, 100), "red")
+    reference.paste(Image.new("RGB", (100, 100), "lime"), (100, 0))
+    reference.paste(Image.new("RGB", (100, 100), "blue"), (200, 0))
+    buffer = BytesIO()
+    reference.save(buffer, format="PNG")
+    uri = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
     client, device = generations_app("tt-flux-3-image-klein")
     response = await client.post(
-        "/v1/generations/black-forest-labs/flux-3-image-klein",
-        json={"prompt": "a cat", "size": "1K"},
+        _FLUX3, json={"prompt": "make it night", "size": "1K", "images": [uri]}
     )
     job = await _wait_final(client, response.json()["id"])
-    assert device.requests[0]._prompt == "a cat"
-    (output,) = job["outputs"]
-    assert output["prompt"] == "a detailed caption"
+    assert job["status"] == "completed"
+    (body,) = flux3_upsampler.calls
+    (sent,) = body["images"]
+    assert sent.startswith("data:image/jpeg;base64,")
+    image = Image.open(BytesIO(base64.b64decode(sent.split(",", 1)[1])))
+    assert (image.format, image.size) == ("JPEG", (1024, 1024))
+    r, g, b = image.convert("RGB").getpixel((512, 512))
+    assert g > 200 and r < 60 and b < 60
+    for corner in ((5, 5), (1018, 1018)):
+        assert image.getpixel(corner)[1] > 200
+    # the device still gets the decoded reference; the pipeline crops it itself
+    assert device.requests[0]._images["images"][0].size == (300, 100)
+    assert job["outputs"][0]["prompt"] == "caption of make it night"
+
+
+async def test_flux3_fails_retryably_without_a_caption(
+    generations_app, flux3_upsampler
+):
+    flux3_upsampler.state["answer"] = lambda body: (
+        503,
+        {"error": {"message": "overloaded"}},
+    )
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(_FLUX3, json={"prompt": "a cat", "size": "1K"})
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "upsampler_unavailable"
+    assert "resubmitting is safe" in job["error"]["message"]
+    assert len(flux3_upsampler.calls) == 3
+    assert device.requests == []
+
+
+async def test_flux3_reports_a_rejected_prompt(generations_app, flux3_upsampler):
+    flux3_upsampler.state["answer"] = lambda body: (
+        400,
+        {"error": {"message": "the prompt is 9100 tokens; the limit is 8191"}},
+    )
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(_FLUX3, json={"prompt": "a cat", "size": "1K"})
+    job = await _wait_final(client, response.json()["id"])
+    assert job["error"]["code"] == "processing_error"
+    assert "9100 tokens" in job["error"]["message"]
+    assert device.requests == []
+
+
+async def test_flux3_without_an_upsampler_fails_retryably(generations_app, monkeypatch):
+    from utils import prompt_upsampler
+
+    monkeypatch.setattr(prompt_upsampler.settings, "prompt_upsampler_url", "")
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(_FLUX3, json={"prompt": "a cat", "size": "1K"})
+    job = await _wait_final(client, response.json()["id"])
+    assert job["error"]["code"] == "upsampler_unavailable"
+    assert device.requests == []
+
+
+def test_flux3_reference_is_the_centered_square():
+    from domain.flux3_image_klein_request import flux3_reference
+
+    image = Image.new("RGB", (300, 100), "red")
+    image.paste(Image.new("RGB", (100, 100), "lime"), (100, 0))
+    cropped = flux3_reference(image)
+    assert cropped.size == (1024, 1024) and cropped.getpixel((0, 0)) == (0, 255, 0)
+    square = Image.new("RGB", (1024, 1024), "blue")
+    assert flux3_reference(square).tobytes() == square.tobytes()

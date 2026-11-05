@@ -149,6 +149,13 @@ class Settings(BaseSettings):
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
 
+    # The console's prompt upsampler (FLUX.3 Image klein rewrites every prompt
+    # with it before generating): POST {url}/v1/flux3/upsample, with the token
+    # as a bearer token if set, within one deadline per prompt, retries included.
+    prompt_upsampler_url: str = ""
+    prompt_upsampler_token: str = ""
+    prompt_upsampler_timeout_seconds: float = 30.0
+
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"

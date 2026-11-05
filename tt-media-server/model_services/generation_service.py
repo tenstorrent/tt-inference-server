@@ -391,7 +391,7 @@ class GenerationService(BaseJobService):
             self.logger.warning(f"Failed to record video generation telemetry: {e}")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
-        request._prompt = request.model_prompt()
+        request._prompt = await request.prepare_prompt()
         return request
 
     async def post_process(self, result, input_request: GenerationRequest) -> str:
@@ -436,8 +436,7 @@ class GenerationService(BaseJobService):
         output = {
             "type": request.OUTPUT_TYPE,
             "seed": request._seed,
-            # a runner that rewrites the prompt on the device reports it with the image
-            "prompt": getattr(result, "info", {}).get("prompt", request._prompt),
+            "prompt": request._prompt,
         }
         if request.OUTPUT_TYPE == "image":
             pil_format, content_type = IMAGE_FORMATS[request.format]

@@ -622,7 +622,12 @@ class JobManager:
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
-            job.mark_failed(error_code="processing_error", error_message=str(e))
+            # An exception can name its own code (e.g. upsampler_unavailable).
+            code = getattr(e, "error_code", None)
+            job.mark_failed(
+                error_code=code if isinstance(code, str) else "processing_error",
+                error_message=str(e),
+            )
             self._sync_status_to_db(job)
             if job.cancel_event:
                 self._cleanup_job(job)

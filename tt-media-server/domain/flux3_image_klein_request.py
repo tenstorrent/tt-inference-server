@@ -12,6 +12,7 @@ from domain.generation_request import (
     Media,
     Seed,
 )
+from PIL import Image, ImageOps
 from pydantic import Field, WithJsonSchema
 
 # An enum, not a const, so more ratios can be added without a schema change.
@@ -26,13 +27,35 @@ FLUX3_KLEIN_SIZES: dict[str, tuple[int, int]] = {
     "4K": (4096, 4096),
 }
 FLUX3_KLEIN_STEPS = 16
+# The side of the square a reference is cropped and resized to.
+FLUX3_KLEIN_REFERENCE_SIZE = 1024
+
+
+def flux3_reference(image: Image.Image, size: int = FLUX3_KLEIN_REFERENCE_SIZE):
+    """The reference as the image model sees it: tt-metal's
+    pipeline_flux3_klein.prepare_reference (upright, RGB, the centered square,
+    LANCZOS to ``size``). The prompt upsampler is shown the same image."""
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    side = min(image.size)
+    left, top = (image.width - side) // 2, (image.height - side) // 2
+    image = image.crop((left, top, left + side, top + side))
+    return (
+        image if side == size else image.resize((size, size), Image.Resampling.LANCZOS)
+    )
 
 
 class Flux3ImageKleinRequest(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
 
-    prompt: str = Field(min_length=1, description="What to generate or how to edit.")
+    prompt: str = Field(
+        min_length=1,
+        description=(
+            "What to generate or how to edit. The prompt upsampler expands it into "
+            "the detailed caption the image is generated from, which each output "
+            "reports as its `prompt`."
+        ),
+    )
     images: list[Media] = Field(
         default_factory=list,
         max_length=1,
@@ -58,6 +81,15 @@ class Flux3ImageKleinRequest(GenerationRequest):
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return list(FLUX3_KLEIN_SIZES.values())
+
+    async def prepare_prompt(self) -> str:
+        # Every prompt goes through the console's prompt upsampler.
+        from utils.prompt_upsampler import upsample
+
+        references = [
+            flux3_reference(image) for image in self._images.get("images", [])
+        ]
+        return (await upsample(self.model_prompt(), references)).caption
 
 
 FLUX3_IMAGE_KLEIN = GenerationModel(

@@ -384,7 +384,9 @@ components:
           type: string
           minLength: 1
           title: Prompt
-          description: What to generate or how to edit.
+          description: What to generate or how to edit. The prompt upsampler expands it into
+            the detailed caption the image is generated from, which each output reports as
+            its `prompt`.
         images:
           items:
             $ref: '#/components/schemas/Media'
@@ -583,6 +585,7 @@ components:
             - processing_error
             - stale_job
             - server_restart
+            - upsampler_unavailable
           - type: string
           title: Code
           description: 'Why the job failed. More codes may be added; treat an unknown one
@@ -596,6 +599,10 @@ components:
             An infrastructure failure: safe to resubmit, preferably to another runner.
 
             - `server_restart`: the server restarted while the job was queued or running.
+            Safe to resubmit.
+
+            - `upsampler_unavailable`: the prompt upsampler, which rewrites the prompt before
+            the image is generated, could not be reached or was overloaded; nothing was generated.
             Safe to resubmit.'
         message:
           type: string
