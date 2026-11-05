@@ -7,6 +7,7 @@ import os
 from config.constants import ModelRunners, ModelServices
 from config.settings import settings
 from domain.base_request import BaseRequest
+from domain.generation_models import GENERATION_MODELS
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
@@ -60,5 +61,9 @@ def list_models():
     if settings.model_service == ModelServices.IMAGE.value:
         model_entry["id"] = settings.model_runner
         model_entry["schema"] = _resolve_image_request_model().model_json_schema()
+    elif settings.model_service == ModelServices.GENERATION.value:
+        model = GENERATION_MODELS[settings.model_runner]
+        model_entry["id"] = model.id
+        model_entry["schema"] = model.request.model_json_schema()
 
     return {"object": "list", "data": [model_entry]}

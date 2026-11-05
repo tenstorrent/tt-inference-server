@@ -2,11 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Encode video results to MP4 on a background thread so the device moves on to the next request.
-
-Ported from ``video_runner``'s encoder thread (``_encoder_loop``/``_EncodeJob``)
-so single-host and multi-host workers both overlap ffmpeg with inference.
-"""
+"""Encode video results to MP4 on a background thread so the device moves on to the next request."""
 
 from __future__ import annotations
 
@@ -35,16 +31,6 @@ class _EncodeJob:
 
 def _encode(video_manager: Any, result: Any) -> Any:
     """MP4 path for a raw video result; anything else is passed through unchanged."""
-    from utils.video_manager import VideoAudioResult
-
-    if isinstance(result, VideoAudioResult):
-        return video_manager.export_to_mp4_with_audio(
-            result.frames,
-            result.audio,
-            result.sampling_rate,
-            fps=result.fps,
-            pixel_format=getattr(result, "pixel_format", "rgb24"),
-        )
     if hasattr(result, "shape"):
         return video_manager.export_to_mp4(result)
     return result
@@ -76,7 +62,7 @@ class EncodeStage:
     ) -> EncodeStage | None:
         """An encode stage for video workers with ``video_async_encode`` on, else None.
 
-        Turns off the runner's own MP4 export (H3, Prodia) so it hands back
+        Turns off the runner's own MP4 export (Prodia) so it hands back
         raw frames for this stage to encode.
         """
         if settings.model_service != ModelServices.VIDEO.value:
@@ -86,15 +72,6 @@ class EncodeStage:
         if hasattr(runner, "export_in_runner"):
             runner.export_in_runner = False
         return cls(worker_id, result_queue, error_queue)
-
-    @staticmethod
-    def normalize_responses(responses: Any) -> Any:
-        """Audio runners return one ``VideoAudioResult`` rather than a per-request list."""
-        from utils.video_manager import VideoAudioResult
-
-        if isinstance(responses, VideoAudioResult):
-            return [responses]
-        return responses
 
     def submit(self, task_id: str, result: Any) -> None:
         """Queue one result; blocks while the encoder is ``ENCODE_QUEUE_MAXSIZE`` behind."""
