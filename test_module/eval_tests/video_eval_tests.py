@@ -53,6 +53,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         num_inference_steps=num_inference_steps,
         server_url=ctx.base_url,
         frame_sample_rate=frame_sample_rate,
+        device=ctx.device,
     )
     logger.info(f"Running VideoGenerationEvalsTest with request: {request}")
 

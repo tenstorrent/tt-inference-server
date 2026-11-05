@@ -6,19 +6,11 @@ import asyncio
 import base64
 import io
 import os
-import uuid
 from abc import abstractmethod
-from pathlib import Path
 
 import numpy as np
 import ttnn
 from config.constants import (
-    LTX_FPS,
-    LTX_HEIGHT,
-    LTX_NUM_FRAMES,
-    LTX_WIDTH,
-    MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
-    MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
@@ -49,10 +41,6 @@ except ImportError:
     # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
     # precise error if the Kontext runner is actually requested.
     Flux1KontextPipeline = None
-from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
-    MiniMaxH3Pipeline,
-    resolve_mesh_preset,
-)
 
 try:
     from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -84,13 +72,6 @@ from telemetry.image_metrics import (
 from telemetry.telemetry_client import TelemetryEvent
 from telemetry.video_stage_metrics import UNKNOWN, VideoStageRecorder
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from tt_model_runners.minimax_h3_policy import (
-    MINIMAX_H3_DEFAULT_ASPECT_RATIO,
-    MINIMAX_H3_DEFAULT_DURATION_S,
-    MINIMAX_H3_NUM_INFERENCE_STEPS,
-    minimax_h3_frames_are_aligned,
-    minimax_h3_parse_aspect_ratio,
-)
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
@@ -101,6 +82,7 @@ dit_runner_log_map = {
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
     ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
+    ModelRunners.TT_IDEOGRAM_4.value: "Ideogram-4",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
     ModelRunners.TT_WAN_2_2_T2V_PRODIA.value: "Wan22-T2V-Prodia",
@@ -111,27 +93,18 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_LTX_2_3_DISTILLED.value: "LTX-2.3-distilled",
-    ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: "MiniMaxH3-FL2VA",
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: "MiniMaxH3-Ref2VA",
-    ModelRunners.TT_MINIMAX_H3_FASTH3.value: "MiniMaxH3-FastH3",
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: "MiniMaxH3-FL2VA-LightX2V",
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
-    ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
-    # Set True by runners that require image conditioning (I2V). The SP inference
-    # loop uses this to reject image-less requests with a clean per-request error
-    # instead of letting a base VideoGenerateRequest reach the runner and crash
-    # on the missing ``image_prompts`` field.
-    requires_image_conditioning: bool = False
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
@@ -234,12 +207,20 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 )
             elif self.settings.model_service == ModelServices.VIDEO.value:
                 self.run([self._build_warmup_video_request()])
+            elif self.settings.model_service == ModelServices.GENERATION.value:
+                for request in self.warmup_requests():
+                    self.run([request])
         finally:
             self._warming_up = False
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
+
+    def warmup_requests(self) -> list:
+        """A generations-API runner's warmup requests, one per output size it
+        serves that the pipeline does not warm up itself."""
+        raise NotImplementedError
 
     def _build_warmup_video_request(self) -> VideoGenerateRequest:
         """
@@ -848,8 +829,6 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     does not accept multi-frame conditioning).
     """
 
-    requires_image_conditioning = True
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
@@ -953,8 +932,6 @@ class TTWan22I2VRunner(TTDiTRunner):
     """
     Wan2.2 image-to-video runner.
     """
-
-    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1061,8 +1038,6 @@ def _wan22_i2v_warmup_request(prompt: str = "Sunrise on a beach"):
 class TTWan22I2VAniSoraRunner(TTDiTRunner):
     """Wan2.2 I2V with AniSora V3.2 anime fine-tune weights."""
 
-    requires_image_conditioning = True
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -1158,8 +1133,6 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
     Distill bakes in classifier-free guidance, so ``guidance_scale`` is forced
     to 1.0 and ``num_inference_steps`` defaults to 4.
     """
-
-    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1257,8 +1230,6 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     environment variables by the pipeline's ``__init__``.
     """
 
-    requires_image_conditioning = True
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -1336,149 +1307,8 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
 
 
-# ---------------------------------------------------------------------------
-# LTX-2.3 distilled text->audio-video
-# ---------------------------------------------------------------------------
-
-# The served shape (LTX_NUM_FRAMES etc.) lives in config.constants so the request
-# layer can validate against it without importing tt-metal.
-
-# (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
-# device_configs entry): dynamic_load off, Ring topology, 2 links.
-LTX_DYNAMIC_LOAD = False
-# Trace + reserve L1_SMALL for the traced two-stage decode / audio vocoder.
-# Mirrors ``_ring_trace`` in models/tt_dit/tests/models/ltx/ltx_mesh_params.py:
-# without l1_small_size the vocoder OOMs ("bank size is 0 B"); the two stage
-# traces need the larger region.
-LTX_TRACED = True
-LTX_L1_SMALL_SIZE = 32768
-LTX_TRACE_REGION_BYTES = 500_000_000
-
-# Reuse the default TT_VIDEO_OUTPUT_DIR convention (VideoManager writes here too)
-# so the served-file lifecycle in open_ai_api/video.py is identical to the frame
-# runners: run() returns a filesystem path, VideoService.post_process passes a
-# str straight through, and the API streams it back with FileResponse.
-LTX_VIDEO_OUTPUT_DIR = Path(os.environ.get("TT_VIDEO_OUTPUT_DIR", "/tmp/videos"))
-
-
-class TTLTX23DistilledRunner(TTDiTRunner):
-    """LTX-2.3 distilled text->audio-video runner (Galaxy, ring topology).
-
-    Unlike the Wan runners, the LTX distilled pipeline's ``generate()`` encodes
-    the MP4 (h264 video + aac audio) itself and returns the on-disk path, so
-    ``run()`` returns ``[path]`` rather than a raw frame array.
-    """
-
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        # Set for the duration of warmup() so run() can tell the trace-capture
-        # generation apart from a real request. See _discard_warmup_output.
-        self._warming_up = False
-
-    async def warmup(self) -> bool:
-        self._warming_up = True
-        try:
-            return await super().warmup()
-        finally:
-            self._warming_up = False
-
-    def _discard_warmup_output(self, path: str) -> None:
-        """Delete the warmup generation's MP4.
-
-        create_pipeline() compiles kernels untraced; the traces themselves are
-        captured lazily on the first traced generate(), which is the run() that
-        TTDiTRunner.warmup() issues. That gen exists only for its side effects --
-        no job owns its output and VideoManager never reclaims it -- so without
-        this, every server start would orphan a ~1080p MP4 in TT_VIDEO_OUTPUT_DIR.
-        """
-        try:
-            Path(path).unlink(missing_ok=True)
-        except OSError as e:
-            # Never fail warmup over cleanup; a leaked file is the lesser problem.
-            self.logger.warning(
-                f"Device {self.device_id}: could not remove warmup output {path}: {e}"
-            )
-
-    def create_pipeline(self):
-        try:
-            # Imported lazily (as the Prodia runners do) so the LTX pipeline and
-            # its deps are not pulled in for every other runner in this module.
-            from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import (
-                LTXDistilledPipeline,
-            )
-            from models.tt_dit.utils.ltx import default_ltx_gemma
-
-            return LTXDistilledPipeline.create_pipeline(
-                mesh_device=self.ttnn_device,
-                checkpoint_name=self.settings.model_weights_path,
-                gemma_path=default_ltx_gemma(),
-                sp_axis=1,
-                tp_axis=0,
-                num_links=2,
-                dynamic_load=LTX_DYNAMIC_LOAD,
-                topology=ttnn.Topology.Ring,
-                is_fsdp=False,
-                traced=LTX_TRACED,
-                num_frames=LTX_NUM_FRAMES,
-                height=LTX_HEIGHT,
-                width=LTX_WIDTH,
-                fps=LTX_FPS,
-                image_conditioning=False,
-            )
-        except Exception as e:
-            log_exception_chain(
-                self.logger,
-                self.device_id,
-                "LTX-2.3 distilled pipeline creation failed",
-                e,
-            )
-            raise
-
-    def load_weights(self):
-        return False
-
-    @log_execution_time(
-        f"{dit_runner_log_map.get(get_settings().model_runner, 'LTX-2.3-distilled')} inference",
-        TelemetryEvent.MODEL_INFERENCE,
-        os.environ.get("TT_VISIBLE_DEVICES"),
-    )
-    def run(self, requests: list[VideoGenerateRequest]):
-        self.logger.debug(f"Device {self.device_id}: Running LTX inference")
-        request = requests[0]
-        LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
-        # generate() writes the AV MP4 to output_path and returns that path.
-        # _validate_shape has pinned these; the fallback covers warmup's
-        # model_construct() request, which skips validation.
-        result_path = self.pipeline.generate(
-            request.prompt,
-            output_path=output_path,
-            num_frames=getattr(request, "num_frames", None) or LTX_NUM_FRAMES,
-            height=getattr(request, "height", None) or LTX_HEIGHT,
-            width=getattr(request, "width", None) or LTX_WIDTH,
-            seed=int(request.seed or 0),
-            fps=getattr(request, "fps", None) or LTX_FPS,
-        )
-        self.logger.debug(f"Device {self.device_id}: LTX inference completed")
-        if self._warming_up:
-            self._discard_warmup_output(result_path)
-        return [result_path]
-
-    def get_pipeline_device_params(self):
-        # Start from the shared Wan2.2 ring/fabric defaults (FABRIC_1D_RING +
-        # RELAXED_INIT + 8k router payload for the BH Galaxy mesh), then apply the
-        # LTX-specific L1_SMALL reservation and the larger traced-decode region.
-        device_params = _wan22_dit_device_params(self.settings.device_mesh_shape)
-        device_params["l1_small_size"] = LTX_L1_SMALL_SIZE
-        if LTX_TRACED:
-            device_params["trace_region_size"] = LTX_TRACE_REGION_BYTES
-        return device_params
-
-
 class TTWan22I2VLightningRunner(TTDiTRunner):
     """Wan2.2 I2V with lightx2v/Wan2.2-Lightning distilled LoRA weights."""
-
-    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1571,419 +1401,3 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
-
-
-MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000
-MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
-MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
-MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
-MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
-
-
-def _minimax_h3_env_bool(name: str) -> bool | None:
-    raw = os.environ.get(name)
-    if raw is None:
-        return None
-    key = raw.strip().lower()
-    if key in ("1", "true"):
-        return True
-    if key in ("0", "false"):
-        return False
-    raise ValueError(f"{name}={raw!r} must be 1/true or 0/false")
-
-
-def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = None) -> dict:
-    """Device params for MiniMax-H3, keyed on the mesh shape.
-
-    Everything here is derived from the pipeline's per-shape preset so the two can't disagree:
-    fabric follows topology (Ring -> FABRIC_1D_RING), and a `trace_region_size` is reserved when
-    `trace_denoise` is on (preset: the 4x32 quad; override: MINIMAX_H3_TRACE_DENOISE) -- without it
-    the pipeline's trace capture is fatal. The region is only reserved, so a shape that does not
-    trace pays nothing but address space. `l1_small_size` is mandatory (a bare open fails as
-    "bank size is 0 B"). Ref2VA uses 16384: the video VAE's taps=3 encoder clashes with a 65536
-    pool.
-    """
-    preset = resolve_mesh_preset(mesh_shape)
-    router_config = ttnn.FabricRouterConfig()
-    router_config.max_packet_payload_size_bytes = (
-        MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY
-        if is_blackhole()
-        else MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY
-    )
-    ring = preset["topology"] == ttnn.Topology.Ring
-    if l1_small_size is None:
-        l1_small_size = (
-            MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY
-            if is_blackhole()
-            else MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY
-        )
-    params = {
-        "fabric_config": (
-            ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
-        ),
-        "fabric_router_config": router_config,
-        "l1_small_size": l1_small_size,
-    }
-    env_trace = _minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE")
-    trace = preset.get("trace_denoise", False) if env_trace is None else env_trace
-    if trace:
-        params["trace_region_size"] = MINIMAX_H3_TRACE_REGION_BYTES
-    return params
-
-
-class TTMiniMaxH3Runner(TTDiTRunner):
-    """MiniMax-H3 `t2va`: text in, a video **and its soundtrack** out."""
-
-    pipeline_task = "t2va"
-    dit_fsdp = False if is_blackhole() else True
-    num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
-
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        # Mux a/v inline by default; video_runner flips this so its encoder
-        # thread muxes off the hot path.
-        self.export_in_runner = True
-
-    def _weights_dir(self) -> str | None:
-        """A local snapshot directory, or None to let the pipeline read its own env var.
-
-        `settings.model_weights_path` defaults to the **HuggingFace repo id**
-        (`MiniMaxAI/MiniMax-H3`), not a path, so passing it through unconditionally would send the
-        pipeline looking for `MiniMaxAI/MiniMax-H3/transformer/config.json`. Only an actual
-        directory is used; otherwise `MINIMAX_H3_DIFFUSERS_DIR` decides, which is what the model's
-        own tests and docs use. The weights are ~62 GB per transformer partition and are always
-        mounted, never baked into the image.
-        """
-        configured = self.settings.model_weights_path
-        if configured and os.path.isdir(configured):
-            return configured
-        if configured:
-            self.logger.info(
-                f"Device {self.device_id}: model_weights_path={configured!r} is not a directory "
-                "(it is the HF repo id); falling back to MINIMAX_H3_DIFFUSERS_DIR"
-            )
-        return None
-
-    def create_pipeline(self):
-        try:
-            # No topology arg: the pipeline resolves it from its per-shape preset.
-            return self._pipeline_factory().create_pipeline(
-                mesh_device=self.ttnn_device,
-                weights_dir=self._weights_dir(),
-                task=self.pipeline_task,
-                dit_fsdp=self.dit_fsdp,
-                trace_denoise=_minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE"),
-                bucket_denoise=_minimax_h3_env_bool("MINIMAX_H3_BUCKET_DENOISE"),
-                **self._create_pipeline_kwargs(),
-            )
-        except Exception as e:
-            log_exception_chain(
-                self.logger,
-                self.device_id,
-                "MiniMax-H3 pipeline creation failed",
-                e,
-            )
-            raise
-
-    def load_weights(self):
-        return False
-
-    def get_pipeline_device_params(self):
-        return _minimax_h3_device_params(self.settings.device_mesh_shape)
-
-    async def warmup(self) -> bool:
-        """Load the pipeline. Construction runs `_warmup_on_init`; skip the base 2-step throwaway."""
-        self.logger.info(f"Device {self.device_id}: Loading MiniMax-H3...")
-
-        def distribute_block():
-            self.pipeline = self.create_pipeline()
-
-        weights_distribution_timeout = max(
-            self.settings.weights_distribution_timeout_seconds,
-            DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS,
-        )
-        try:
-            await asyncio.wait_for(
-                asyncio.to_thread(distribute_block),
-                timeout=weights_distribution_timeout,
-            )
-        except asyncio.TimeoutError:
-            self.logger.error(
-                f"Device {self.device_id}: pipeline construction timed out after "
-                f"{weights_distribution_timeout} seconds"
-            )
-            raise
-        except Exception as e:
-            log_exception_chain(
-                self.logger, self.device_id, "Exception during model loading", e
-            )
-            raise
-
-        self.logger.info(f"Device {self.device_id}: Model loaded")
-        return True
-
-    def _resolve_shape(
-        self, request: VideoGenerateRequest
-    ) -> tuple[tuple[int, int], int]:
-        """`(aspect_ratio, num_frames)` for this request; admitted at submit, so only resolved here.
-
-        The canvas is left to the pipeline, which resolves it from `height`/`width` when given,
-        else from the first keyframe (fl2va) or `aspect_ratio`.
-        """
-        from models.tt_dit.pipelines.minimax_h3.policy import get_num_frames
-
-        ratio = (
-            minimax_h3_parse_aspect_ratio(request.aspect_ratio)
-            if getattr(request, "aspect_ratio", None) is not None
-            else MINIMAX_H3_DEFAULT_ASPECT_RATIO
-        )
-
-        seconds = getattr(request, "duration", None)
-        if seconds is None:
-            seconds = MINIMAX_H3_DEFAULT_DURATION_S
-        seconds = int(seconds)
-
-        num_frames = get_num_frames(seconds)
-        if not minimax_h3_frames_are_aligned(num_frames):
-            # Unreachable via the duration allow-list; kept so a future edit to it cannot smuggle
-            # a frame count the VAE's 17-frame chunking would reject deep inside packing.
-            raise ValueError(
-                f"num_frames must be 17n + 5; {seconds} s resolved to {num_frames}"
-            )
-        return ratio, num_frames
-
-    @log_execution_time(
-        f"{dit_runner_log_map[get_settings().model_runner]} inference",
-        TelemetryEvent.MODEL_INFERENCE,
-        os.environ.get("TT_VISIBLE_DEVICES"),
-    )
-    def run(self, requests: list[VideoGenerateRequest]):
-        from utils.video_manager import VideoAudioResult, VideoManager
-
-        request = requests[0]
-        aspect_ratio, num_frames = self._resolve_shape(request)
-        self.logger.debug(
-            f"Device {self.device_id}: Running inference at {num_frames} frames"
-        )
-
-        output = self.pipeline(
-            request.prompt,
-            num_frames=num_frames,
-            aspect_ratio=aspect_ratio,
-            height=request.height,
-            width=request.width,
-            num_inference_steps=self.num_inference_steps,
-            seed=int(request.seed) if request.seed is not None else 0,
-            **self._pipeline_extra_kwargs(request),
-        )
-
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
-        if getattr(output, "video_format", "rgb_float") == "yuv420":
-            # Planar (F, H*3//2, W) uint8 NUMPY array straight off the device stitch -- already
-            # ffmpeg's rawvideo yuv420p layout, so no permute and no host colour conversion.
-            frames = np.ascontiguousarray(output.video)
-            pixel_format = "yuv420p"
-        else:
-            # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
-            # wants. Without the permute it reads the width as a channel count and raises.
-            frames = output.video[0].permute(1, 2, 3, 0).contiguous().numpy()
-            pixel_format = "rgb24"
-        audio = output.audio[0].numpy()
-
-        # video_runner set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
-        if not self.export_in_runner:
-            return VideoAudioResult(
-                frames, audio, output.sampling_rate, output.fps, pixel_format
-            )
-
-        path = VideoManager().export_to_mp4_with_audio(
-            frames,
-            audio,
-            output.sampling_rate,
-            fps=output.fps,
-            pixel_format=pixel_format,
-        )
-        # A **list**, one entry per request in the batch -- `base_service.py:40` and
-        # `device_worker.py:115` both do `results[0]`. Returning the bare path string is not a type
-        # error anywhere; it just gets indexed, and the job's result path becomes "/" -- the first
-        # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
-        return [path]
-
-    def _pipeline_factory(self):
-        return MiniMaxH3Pipeline
-
-    def _create_pipeline_kwargs(self) -> dict:
-        """Extra ``create_pipeline(...)`` kwargs beyond mesh/weights/task/trace."""
-        return {}
-
-    def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
-        """Extra ``pipeline(...)`` kwargs beyond prompt/shape/steps/seed."""
-        return {}
-
-
-class TTMiniMaxFastH3Runner(TTMiniMaxH3Runner):
-    """MiniMax-H3 FastH3: t2va with a distilled LoRA adapter, fixed to 4 steps."""
-
-    num_inference_steps = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
-
-    def _create_pipeline_kwargs(self) -> dict:
-        from models.tt_dit.models.transformers.minimax_h3.vsa_stages_minimax_h3 import (
-            MiniMaxH3VSAConfig,
-        )
-
-        return {
-            "lora_path": os.environ.get("MINIMAX_H3_LORA_PATH"),
-            "vsa_config": MiniMaxH3VSAConfig(sparsity=0.9),
-        }
-
-
-class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
-    """MiniMax-H3 ``fl2va``: same ``transformer/`` as t2va, optional first/last keyframes.
-
-    ``image_prompts`` use sentinels ``frame_pos=0`` (first) and ``frame_pos=-1``
-    (last). A text-only request (no ``image_prompts``) runs as t2va.
-    """
-
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.image_manager = ImageManager()
-
-    def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
-        first, last = None, None
-        for entry in getattr(request, "image_prompts", None) or []:
-            image = self.image_manager.base64_to_pil_image(entry.image)
-            if entry.frame_pos == 0:
-                first = image
-            elif entry.frame_pos == -1:
-                last = image
-        if first is None and last is None:
-            return {}
-        return {"image": first, "last_image": last}
-
-
-class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
-    """MiniMax-H3 ``ref2va``: omni-references in, a video and soundtrack out.
-
-    Loads ``transformer_ref/``. ``MultimodalReferences`` pack as images, then
-    videos, then audios.
-    """
-
-    pipeline_task = "ref2va"
-    # transformer_ref is ~62 GB SP-replicated; without FSDP each 32 GB chip OOMs on 4x32 activations.
-    dit_fsdp = True
-
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.image_manager = ImageManager()
-
-    def get_pipeline_device_params(self):
-        return _minimax_h3_device_params(
-            self.settings.device_mesh_shape, l1_small_size=16384
-        )
-
-    def _pipeline_extra_kwargs(self, request) -> dict:
-        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
-        from models.tt_dit.pipelines.minimax_h3.packing_ref2va import (
-            MiniMaxH3Reference,
-            decode_reference_audio,
-            reference_from_video_file,
-        )
-
-        if not isinstance(request, VideoRef2VAGenerateRequest):
-            raise ValueError(
-                "MiniMax-H3 Ref2VA requires a request with references "
-                "(POST /generations/ref2va)"
-            )
-
-        refs = []
-
-        for source in request.references.images:
-            refs.append(
-                MiniMaxH3Reference(
-                    image=self.image_manager.base64_to_pil_image(source.b64)
-                )
-            )
-
-        for source in request.references.videos:
-            path = self._write_media_tempfile(source.b64, suffix=".mp4")
-            try:
-                reference = reference_from_video_file(path)
-            finally:
-                os.unlink(path)
-            refs.append(reference)
-
-        for source in request.references.audios:
-            path = self._write_media_tempfile(source.b64, suffix=".wav")
-            try:
-                waveform, sample_rate = decode_reference_audio(path)
-            finally:
-                os.unlink(path)
-            refs.append(MiniMaxH3Reference(audio=waveform, sample_rate=sample_rate))
-
-        return {"references": refs}
-
-    @staticmethod
-    def _write_media_tempfile(b64: str, *, suffix: str) -> str:
-        import tempfile
-
-        fd, path = tempfile.mkstemp(suffix=suffix)
-        try:
-            os.write(fd, base64.b64decode(b64))
-        finally:
-            os.close(fd)
-        return path
-
-
-class _MiniMaxH3LightX2VMixin:
-    """Binds a lightx2v 4-step Turbo adapter onto an H3 runner's transformer.
-
-    The FL2VA and Ref2VA adapters are separate files (Ref2VA's targets ``transformer_ref/``), so one
-    deployment serves one task with the adapter for that task in ``MINIMAX_H3_LORA_PATH``. The
-    adapter's own ``alpha / rank`` is applied by the loader; ``MINIMAX_H3_LORA_STRENGTH`` multiplies
-    it and defaults to 1.0.
-
-    Each adapter was distilled at its own (video, audio) shift. A wrong shift still completes, over
-    the wrong sigma grid, so the shift is pinned per runner to the adapter it serves.
-    """
-
-    num_inference_steps = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS
-    video_shift: float
-    audio_shift: float
-
-    def _pipeline_factory(self):
-        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_turbo import (
-            MiniMaxH3TurboPipeline,
-        )
-
-        return MiniMaxH3TurboPipeline
-
-    def _create_pipeline_kwargs(self) -> dict:
-        lora_path = os.environ.get("MINIMAX_H3_LORA_PATH")
-        if not lora_path or not os.path.isfile(lora_path):
-            raise ValueError(
-                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to the lightx2v Turbo "
-                f"adapter's .safetensors file; got {lora_path!r}"
-            )
-        return {
-            "lora_path": lora_path,
-            "video_shift": float(
-                os.environ.get("MINIMAX_H3_VIDEO_SHIFT", self.video_shift)
-            ),
-            "audio_shift": float(
-                os.environ.get("MINIMAX_H3_AUDIO_SHIFT", self.audio_shift)
-            ),
-        }
-
-
-class TTMiniMaxH3FL2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3FL2VARunner):
-    """MiniMax-H3 ``fl2va`` with the lightx2v FL2VA Turbo 4-step v1.x 768p adapter."""
-
-    video_shift = 6.0
-    audio_shift = 3.0
-
-
-class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VARunner):
-    """MiniMax-H3 ``ref2va`` with the lightx2v Ref2VA Turbo 4-step v1.0 768p adapter."""
-
-    video_shift = 12.0
-    audio_shift = 3.0

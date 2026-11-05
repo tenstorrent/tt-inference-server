@@ -1,0 +1,939 @@
+openapi: 3.1.0
+paths:
+  /v1/generations/ideogram-ai/ideogram-4:
+    post:
+      tags:
+      - Generations
+      - Ideogram 4.0
+      summary: Submit an Ideogram 4.0 text-to-image job
+      operationId: submit_v1_generations_ideogram_ai_ideogram_4_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ideogram4Request'
+            examples:
+              example:
+                value:
+                  structured_prompt:
+                    high_level_description: A neon sign reading "OPEN LATE" on a brick wall
+                      at night.
+                    style_description:
+                      aesthetics: moody, urban, vibrant
+                      lighting: neon glow, deep shadows
+                      medium: graphic_design
+                      art_style: retro neon signage
+                      color_palette:
+                      - '#FF2E88'
+                      - '#1B1B2F'
+                      - '#F5F5F5'
+                    compositional_deconstruction:
+                      background: A dark red brick wall, wet from rain.
+                      elements:
+                      - type: text
+                        bbox:
+                        - 350
+                        - 150
+                        - 650
+                        - 850
+                        text: OPEN LATE
+                        desc: Glowing pink neon letters, slightly flickering.
+                  aspect_ratio: '2:3'
+                  size: 2K
+                  rendering_speed: quality
+        required: true
+      responses:
+        '202':
+          description: Accepted and queued. Poll `GET /v1/jobs/{job_id}`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          description: 'An image URL violates this deployment''s fetch policy: not `https`,
+            a host outside the allowlist, or an address that isn''t public.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: This deployment does not serve that model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: 'An input, inline or fetched, is over its limit: 30 MB per image, 50
+            MB per video, 15 MB per audio clip.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: 'The request is invalid for this model: an unknown field, a value out
+            of range, or a conflicting combination; or an image URL couldn''t be fetched or
+            doesn''t hold a supported image. Checked before queueing.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '429':
+          description: As many jobs are active as the queue holds (`max_queue_size`).
+          headers:
+            Retry-After:
+              description: Seconds; 60 today.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The model is not serving yet, or the deployment holds as many job records
+            as it can (`max_jobs`); delete finished jobs to free space.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - APIKeyHeader: []
+  /v1/jobs:
+    get:
+      tags:
+      - Generations
+      - Jobs
+      summary: List jobs
+      description: Every job this deployment still holds, any status.
+      operationId: list_jobs_v1_jobs_get
+      responses:
+        '200':
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Job'
+                type: array
+                title: Response List Jobs V1 Jobs Get
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - APIKeyHeader: []
+  /v1/jobs/{job_id}:
+    get:
+      tags:
+      - Generations
+      - Jobs
+      summary: Get a job's status
+      description: 'Poll until the status is final (`completed`, `failed`, `cancelled`). A
+
+        completed job carries its `outputs`, so no second call is needed.'
+      operationId: get_job_v1_jobs__job_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown or deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Generations
+      - Jobs
+      summary: Delete a job and its files
+      description: Only a job in a final state can be deleted; cancel an active one first.
+      operationId: delete_job_v1_jobs__job_id__delete
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deleted'
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown or deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The job is still `queued`, `in_progress` or `cancelling`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/jobs/{job_id}/content/{index}:
+    get:
+      tags:
+      - Generations
+      - Jobs
+      summary: Download one output file
+      description: 'The file behind `outputs[index].url`. Videos are MP4: H.264 (High
+
+        profile, yuv420p), faststart, with an AAC audio track when the model
+
+        generates sound (see `VideoOutput.audio`).'
+      operationId: get_job_content_v1_jobs__job_id__content__index__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: index
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+          title: Index
+      responses:
+        '200':
+          description: The file.
+          content:
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+            image/webp:
+              schema:
+                type: string
+                contentMediaType: image/webp
+            video/mp4:
+              schema:
+                type: string
+                contentMediaType: video/mp4
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown or deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The job is not `completed` (still active, failed or cancelled).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/jobs/{job_id}/cancel:
+    post:
+      tags:
+      - Generations
+      - Jobs
+      summary: Cancel a job
+      description: 'A queued job is cancelled at once (`cancelled`). A running one moves to
+
+        `cancelling`, then to `cancelled` once the pipeline stops.'
+      operationId: cancel_job_v1_jobs__job_id__cancel_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: The job, now `cancelled` or `cancelling`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          description: Missing or wrong API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown or deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The job is already `completed`, `failed` or `cancelled`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AudioTrack:
+      properties:
+        codec:
+          type: string
+          const: aac
+          title: Codec
+        sample_rate:
+          type: integer
+          title: Sample Rate
+          description: Hz.
+          examples:
+          - 32000
+        channels:
+          type: integer
+          title: Channels
+          examples:
+          - 2
+      type: object
+      required:
+      - codec
+      - sample_rate
+      - channels
+      title: AudioTrack
+    Deleted:
+      properties:
+        id:
+          type: string
+          title: Id
+        deleted:
+          type: boolean
+          const: true
+          title: Deleted
+      type: object
+      required:
+      - id
+      - deleted
+      title: Deleted
+    Error:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          description: Human-readable.
+      type: object
+      required:
+      - detail
+      title: Error
+      description: FastAPI's default for an `HTTPException`.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Ideogram4Bbox:
+      items:
+        type: integer
+        maximum: 1000.0
+        minimum: 0.0
+      type: array
+      maxItems: 4
+      minItems: 4
+      description: '`[ymin, xmin, ymax, xmax]` on a 0–1000 grid, origin top left, with `ymin
+        <= ymax` and `xmin <= xmax`.'
+    Ideogram4Caption:
+      properties:
+        high_level_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: High Level Description
+          description: One or two sentences summing up the image. Recommended.
+        style_description:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4StyleDescription'
+          - type: 'null'
+        compositional_deconstruction:
+          $ref: '#/components/schemas/Ideogram4CompositionalDeconstruction'
+      additionalProperties: false
+      type: object
+      required:
+      - compositional_deconstruction
+      title: Ideogram4Caption
+      description: 'A structured caption in the format Ideogram 4 was trained on, sent to
+
+        the model as is. Key order does not matter: the server writes it out in
+
+        the model''s order. Each output reports it as its `prompt`.
+
+
+        There is no plain-text prompt for now: Ideogram 4 needs a caption like
+
+        this, and turning plain text into one takes an LLM ("magic prompt"),
+
+        which this API doesn''t run yet.
+
+
+        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
+    Ideogram4CompositionalDeconstruction:
+      properties:
+        background:
+          type: string
+          title: Background
+        elements:
+          items:
+            oneOf:
+            - $ref: '#/components/schemas/Ideogram4ObjectElement'
+            - $ref: '#/components/schemas/Ideogram4TextElement'
+            discriminator:
+              propertyName: type
+              mapping:
+                obj: '#/components/schemas/Ideogram4ObjectElement'
+                text: '#/components/schemas/Ideogram4TextElement'
+          type: array
+          title: Elements
+      additionalProperties: false
+      type: object
+      required:
+      - background
+      - elements
+      title: Ideogram4CompositionalDeconstruction
+    Ideogram4ElementPalette:
+      items:
+        type: string
+        pattern: ^#[0-9A-F]{6}$
+      type: array
+      maxItems: 5
+      description: The element's colors as uppercase `#RRGGBB`.
+    Ideogram4ObjectElement:
+      properties:
+        type:
+          type: string
+          const: obj
+          title: Type
+        bbox:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4Bbox'
+          - type: 'null'
+        desc:
+          type: string
+          title: Desc
+        color_palette:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4ElementPalette'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - type
+      - desc
+      title: Ideogram4ObjectElement
+    Ideogram4Palette:
+      items:
+        type: string
+        pattern: ^#[0-9A-F]{6}$
+      type: array
+      maxItems: 16
+      description: Dominant colors as uppercase `#RRGGBB`.
+    Ideogram4Request:
+      properties:
+        structured_prompt:
+          $ref: '#/components/schemas/Ideogram4Caption'
+        count:
+          type: integer
+          maximum: 1.0
+          minimum: 1.0
+          title: Count
+          description: Number of images. Only 1 for now; kept so more can be allowed later
+            without a schema change.
+          default: 1
+        aspect_ratio:
+          type: string
+          enum:
+          - '1:1'
+          - '16:9'
+          - '9:16'
+          - '2:3'
+          title: Aspect Ratio
+          description: Output shape. Only these for now; more can be allowed later without
+            a schema change. Each output reports its exact size.
+          default: '1:1'
+        size:
+          type: string
+          const: 2K
+          title: Size
+          description: 'Size tier: a long side of 2048, the open model''s maximum. Only `2K`
+            for now; `1K` can be allowed later without a schema change.
+
+
+            | `aspect_ratio` | `2K`      |
+
+            | -------------- | --------- |
+
+            | `1:1`          | 2048×2048 |
+
+            | `16:9`         | 2048×1152 |
+
+            | `9:16`         | 1152×2048 |
+
+            | `2:3`          | 1360×2048 |'
+          default: 2K
+        format:
+          $ref: '#/components/schemas/ImageFormat'
+          default: png
+        seed:
+          anyOf:
+          - $ref: '#/components/schemas/Seed'
+          - type: 'null'
+        rendering_speed:
+          type: string
+          enum:
+          - turbo
+          - default
+          - quality
+          title: Rendering Speed
+          description: 'Speed and quality preset: `turbo` is fastest, `quality` gives the
+            best images, `default` is in between.'
+          default: default
+      additionalProperties: false
+      type: object
+      required:
+      - structured_prompt
+      title: Ideogram4Request
+    Ideogram4StyleDescription:
+      properties:
+        aesthetics:
+          type: string
+          title: Aesthetics
+          examples:
+          - moody, cinematic, desaturated
+        lighting:
+          type: string
+          title: Lighting
+          examples:
+          - golden hour, rim light, dramatic shadows
+        photo:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Photo
+          description: Camera and lens, for photographs.
+          examples:
+          - 35mm, f/1.4, bokeh
+        medium:
+          type: string
+          title: Medium
+          examples:
+          - photograph
+          - illustration
+          - 3d_render
+          - painting
+          - graphic_design
+        art_style:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Art Style
+          description: Art style, for anything but photographs.
+          examples:
+          - flat vector illustration, bold outlines
+        color_palette:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4Palette'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - aesthetics
+      - lighting
+      - medium
+      title: Ideogram4StyleDescription
+      description: 'Visual style. Exactly one of `photo` (photographs) or `art_style`
+
+        (everything else).'
+    Ideogram4TextElement:
+      properties:
+        type:
+          type: string
+          const: text
+          title: Type
+        bbox:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4Bbox'
+          - type: 'null'
+        text:
+          type: string
+          title: Text
+          description: The literal text to render.
+        desc:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Desc
+        color_palette:
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4ElementPalette'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - type
+      - text
+      title: Ideogram4TextElement
+    ImageFormat:
+      type: string
+      enum:
+      - png
+      - jpeg
+      - webp
+      description: Output image format.
+    ImageOutput:
+      properties:
+        url:
+          type: string
+          format: uri-reference
+          title: Url
+          description: 'Where to download the file. Today it is a path relative to this server''s
+            base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with the same API key;
+            the runner does not know the host the console reaches it by, so it never returns
+            one. If outputs later move to shared storage, it becomes an absolute URL. Clients
+            handle both: an absolute URL is used as given, a relative one is resolved against
+            the runner''s base URL (RFC 3986). Otherwise opaque.
+
+
+            Internal only. The console''s public API returns its own signed storage URLs and
+            never exposes, proxies or rewrites this one, so customers never come to depend
+            on a runner path.'
+          examples:
+          - /v1/jobs/j_8f2c1d/content/0
+        content_type:
+          type: string
+          title: Content Type
+          examples:
+          - image/png
+          - video/mp4
+        seed:
+          type: integer
+          title: Seed
+          description: 'The job''s seed (the one chosen at random if the request had none).
+            The same for every output of a job, since a batch is generated from one seed:
+            resubmitting with this seed and the same request, `count` included, reproduces
+            all of them.'
+        prompt:
+          type: string
+          title: Prompt
+          description: The prompt as the model received it. For Ideogram 4, the `structured_prompt`
+            caption as compact JSON, in the model's key order.
+        width:
+          type: integer
+          title: Width
+        height:
+          type: integer
+          title: Height
+        type:
+          type: string
+          const: image
+          title: Type
+      type: object
+      required:
+      - url
+      - content_type
+      - seed
+      - prompt
+      - width
+      - height
+      - type
+      title: ImageOutput
+    Job:
+      properties:
+        id:
+          type: string
+          title: Id
+        model:
+          type: string
+          title: Model
+          description: The `{org}/{model}` it was submitted to.
+          examples:
+          - wan-ai/wan2.2-i2v-a14b
+          - qwen/qwen-image-edit-2511
+        status:
+          type: string
+          enum:
+          - queued
+          - in_progress
+          - cancelling
+          - completed
+          - failed
+          - cancelled
+          title: Status
+          description: Final states are `completed`, `failed` and `cancelled`.
+        created_at:
+          type: integer
+          title: Created At
+          description: Unix seconds.
+        completed_at:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Completed At
+          description: Unix seconds, once the status is final.
+        expires_at:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Expires At
+          description: 'Unix seconds when the job and its output files are deleted, once the
+            status is final: `completed_at` plus the server''s retention period, 24 hours
+            by default. Applies to completed, failed and cancelled jobs alike. Download outputs
+            before then; after it, the job returns 404.'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/JobError'
+          - type: 'null'
+          description: Set when `failed`.
+        outputs:
+          anyOf:
+          - items:
+              oneOf:
+              - $ref: '#/components/schemas/ImageOutput'
+              - $ref: '#/components/schemas/VideoOutput'
+              discriminator:
+                propertyName: type
+                mapping:
+                  image: '#/components/schemas/ImageOutput'
+                  video: '#/components/schemas/VideoOutput'
+            type: array
+            minItems: 1
+          - type: 'null'
+          title: Outputs
+          description: 'Set when `completed`: one per image (`count` of them) or one video.'
+      type: object
+      required:
+      - id
+      - model
+      - status
+      - created_at
+      title: Job
+    JobError:
+      properties:
+        code:
+          anyOf:
+          - type: string
+            enum:
+            - processing_error
+            - stale_job
+            - server_restart
+          - type: string
+          title: Code
+          description: 'Why the job failed. More codes may be added; treat an unknown one
+            like `processing_error`.
+
+
+            - `processing_error`: the pipeline raised an error. Resubmitting the same request
+            is unlikely to help.
+
+            - `stale_job`: the job made no progress for too long and was force-cancelled.
+            An infrastructure failure: safe to resubmit, preferably to another runner.
+
+            - `server_restart`: the server restarted while the job was queued or running.
+            Safe to resubmit.'
+        message:
+          type: string
+          title: Message
+          description: Human-readable.
+      type: object
+      required:
+      - code
+      - message
+      title: JobError
+    Seed:
+      type: integer
+      maximum: 2147483647.0
+      minimum: 0.0
+      description: Omitted = random. Each output reports the seed it was made with.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VideoOutput:
+      properties:
+        url:
+          type: string
+          format: uri-reference
+          title: Url
+          description: 'Where to download the file. Today it is a path relative to this server''s
+            base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with the same API key;
+            the runner does not know the host the console reaches it by, so it never returns
+            one. If outputs later move to shared storage, it becomes an absolute URL. Clients
+            handle both: an absolute URL is used as given, a relative one is resolved against
+            the runner''s base URL (RFC 3986). Otherwise opaque.
+
+
+            Internal only. The console''s public API returns its own signed storage URLs and
+            never exposes, proxies or rewrites this one, so customers never come to depend
+            on a runner path.'
+          examples:
+          - /v1/jobs/j_8f2c1d/content/0
+        content_type:
+          type: string
+          title: Content Type
+          examples:
+          - image/png
+          - video/mp4
+        seed:
+          type: integer
+          title: Seed
+          description: 'The job''s seed (the one chosen at random if the request had none).
+            The same for every output of a job, since a batch is generated from one seed:
+            resubmitting with this seed and the same request, `count` included, reproduces
+            all of them.'
+        prompt:
+          type: string
+          title: Prompt
+          description: The prompt as the model received it. For Ideogram 4, the `structured_prompt`
+            caption as compact JSON, in the model's key order.
+        width:
+          type: integer
+          title: Width
+        height:
+          type: integer
+          title: Height
+        type:
+          type: string
+          const: video
+          title: Type
+        fps:
+          type: integer
+          title: Fps
+        num_frames:
+          type: integer
+          title: Num Frames
+        duration:
+          type: number
+          title: Duration
+          description: Seconds.
+        audio:
+          anyOf:
+          - $ref: '#/components/schemas/AudioTrack'
+          - type: 'null'
+      type: object
+      required:
+      - url
+      - content_type
+      - seed
+      - prompt
+      - width
+      - height
+      - type
+      - fps
+      - num_frames
+      - duration
+      title: VideoOutput
+      description: 'An MP4 file: H.264 (High profile, yuv420p), faststart. When the model
+
+        generates sound, an AAC track described by `audio`; otherwise no audio
+
+        track and `audio` is null.'
+  securitySchemes:
+    APIKeyHeader:
+      type: apiKey
+      description: '`Authorization: Bearer <API_KEY>`, one key per deployment. Off when the
+        server runs with `NO_AUTH`.'
+      in: header
+      name: Authorization
