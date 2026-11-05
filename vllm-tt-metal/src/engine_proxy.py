@@ -15,6 +15,8 @@ chunks (an LRU index of chained chunk hashes):
   holds it, unless that engine has more than ``slack`` requests in flight above the least loaded engine;
 - any other request goes to the least loaded engine (fewest in flight; ties round robin).
 
+``slack`` defaults to env ``TT_PROXY_SLACK``, else 2.
+
 So requests sharing a long prefix (a document, a long system prompt, a multi-turn conversation) gather on the engines
 that cached it, and spill to another engine (which then caches it too) instead of queueing on one. Responses stream
 back unchanged.
@@ -30,6 +32,7 @@ The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimenta
 import hashlib
 import itertools
 import json
+import os
 import re
 import time
 from collections import OrderedDict
@@ -196,13 +199,15 @@ class Router:
         backends,
         chunk_chars=256,
         min_match_chars=1024,
-        slack=2,
+        slack=None,
         capacity=262144,
         down_s=5.0,
     ):
         self.backends = list(backends)
         self.chunk_chars = chunk_chars
         self.min_match_chunks = max(1, -(-min_match_chars // chunk_chars))
+        if slack is None:
+            slack = int(os.environ.get("TT_PROXY_SLACK") or 2)
         self.slack = slack
         self.down_s = down_s
         self.index = PrefixIndex(capacity)

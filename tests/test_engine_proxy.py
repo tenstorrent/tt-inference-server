@@ -78,6 +78,21 @@ def test_router_affinity_and_spill():
     )
 
 
+
+def test_router_slack_from_env(monkeypatch):
+    monkeypatch.delenv("TT_PROXY_SLACK", raising=False)
+    assert lb.Router(["A", "B"]).slack == 2
+    monkeypatch.setenv("TT_PROXY_SLACK", "4")
+    r = lb.Router(["A", "B"])
+    assert r.slack == 4
+    assert lb.Router(["A", "B"], slack=1).slack == 1
+    first = r.pick(hashes_of(chat(DOC, "q0")))
+    r.index.record(hashes_of(chat(DOC, "q0")), first)
+    r.inflight[first] = 4  # 4 above the idle engine: still within slack 4
+    assert r.pick(hashes_of(chat(DOC, "q1"))) == first
+    r.inflight[first] = 5
+    assert r.pick(hashes_of(chat(DOC, "q2"))) != first
+
 def fake_engine(name, healthy=True):
     async def completions(request):
         await request.json()
