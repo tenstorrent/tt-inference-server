@@ -69,6 +69,7 @@ force_build=false
 force_push=false
 build=false
 push_images=false
+prune_build_cache=false
 release=false
 UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
@@ -92,6 +93,9 @@ while [ $# -gt 0 ]; do
             ;;
         --push)
             push_images=true
+            ;;
+        --prune-build-cache)
+            prune_build_cache=true
             ;;
          --force-push)
             force_push=true
@@ -309,6 +313,9 @@ if [ "$build" = true ]; then
             ci-build
         cd "$repo_root"
         rm -rf "${tt_metal_build_dir}"
+        if [ "$prune_build_cache" = true ]; then
+            docker builder prune --all --force
+        fi
     fi
     
     # build dev image
