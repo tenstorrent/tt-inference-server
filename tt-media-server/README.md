@@ -211,11 +211,9 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge, galaxy_quad |
-| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2, galaxy_quad |
-| MiniMax-H3 | galaxy, galaxy_quad |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
 | MiniMax-H3-FL2VA | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
-| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
@@ -660,10 +658,6 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 - `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
 - `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
 
-## Input and Output Requirements
-
-- [MiniMax H3](docs/minimax-h3-specs.md)
-
 ## Submit text-to-video generation job
 
 ```bash
@@ -1024,7 +1018,6 @@ export MAX_BATCH_DELAY_TIME_MS=50
 |---------------------|---------------|-------------|
 | `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
 | `WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS` | `1200` | Maximum time in seconds to wait for weights to be distributed to all workers before failing startup |
-| `VIDEO_REQUEST_TIMEOUT_SECONDS` | `300.0` | SHM response deadline used by the video sub-process runner (`SPRunner` proxy to `video_runner`). Tune for long video generations |
 
 ## Job Management Settings
 
@@ -1071,10 +1064,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
-| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
-| `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
-| `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
-| `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
+| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (Wan Prodia) hand back raw frames instead |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 
@@ -1193,7 +1183,6 @@ The server supports special environment variables for configuring device mesh sh
 | `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
 | `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
 | `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
-| `SP_MESH_4X32` | `None` | Configures device mesh as 4x32 (sequence-parallel mesh) when set to `"true"` (case-insensitive). Used for very large mesh deployments |
 
 ### Usage Examples
 
