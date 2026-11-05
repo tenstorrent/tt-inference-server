@@ -170,18 +170,24 @@ def test_a_comparison_that_could_not_be_made_is_na_not_a_pass():
     assert result["checks"][0]["detail"] == "no HF_TOKEN"
 
 
-def test_the_config_calibrates_480p_for_both_references():
+def test_the_config_calibrates_480p_for_both_references_and_720p_for_cached():
     config = gate.load_config()
     assert config["tolerance_pct"] == {"drift": 1.0, "budget": 2.0}
     assert set(config["gated_dimensions"]).isdisjoint(config["reported_dimensions"])
     calibration = config["output"]["480p"]["calibration"]
-    # R1 from the uncached ci run's 10 clips; R2 from the cached full run's 40.
-    assert {run: len(clips) for run, clips in calibration.items()} == {R1: 10, R2: 40}
+    # R1 from the uncached ci run's 10 landscape clips; R2 from cached full runs'
+    # 40 landscape and 10 portrait.
+    assert {run: len(clips) for run, clips in calibration.items()} == {R1: 10, R2: 50}
     assert set(calibration[R1]) < set(calibration[R2])
-    for clips in calibration.values():
-        assert all(v.endswith("_832x480") for v in clips)
-        assert (
-            max(c["lpips"] for c in clips.values())
-            < config["output"]["480p"]["max_clip_lpips"]
-        )
-    assert config["output"]["720p"] is None
+    assert all(v.endswith("_832x480") for v in calibration[R1])
+    assert sum(v.endswith("_480x832") for v in calibration[R2]) == 10
+    # 720p: R2 only, from the cached full run's 15 clips.
+    calibration_720p = config["output"]["720p"]["calibration"]
+    assert {run: len(clips) for run, clips in calibration_720p.items()} == {R2: 15}
+    assert all(v.endswith(("_1280x720", "_720x1280")) for v in calibration_720p[R2])
+    for res, by_run in (("480p", calibration), ("720p", calibration_720p)):
+        for clips in by_run.values():
+            assert (
+                max(c["lpips"] for c in clips.values())
+                < config["output"][res]["max_clip_lpips"]
+            )
