@@ -34,6 +34,13 @@ from test_module.eval_tests.tts_eval_tests import (
 )
 
 
+SEED_TTS_TASKS = (
+    "seed_tts_eval",
+    "seed_tts_content_consistency",
+    "seed_tts_speaker_similarity",
+)
+
+
 def _task():
     score = SimpleNamespace(
         tolerance=0.05,
@@ -475,12 +482,13 @@ class TestQwen3EvalConfig:
 
     @pytest.mark.parametrize(
         "size, wer",
-        [("1.7B", {"tts_generation"}), ("0.6B", set())],
+        [("1.7B", {"tts_generation", *SEED_TTS_TASKS}), ("0.6B", set())],
     )
     def test_base_registers_secs_and_naturalness_on_clones(self, size, wer):
         tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-Base")
         assert set(tasks) == {"tts_speaker_similarity", "tts_naturalness"} | wer
-        for task in tasks.values():
+        # The seed_tts tasks' client is EvalScope's, in its own venv.
+        for task in (t for n, t in tasks.items() if n not in SEED_TTS_TASKS):
             targets = tts_eval_tests._task_targets(task)
             client = make_tts_client(targets)
             assert client.can_clone and not client.has_default_voice
@@ -523,8 +531,8 @@ class TestQwen3EvalConfig:
     def test_0b6_never_sends_a_description(self, release):
         small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
         large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
-        # WER is calibrated only on the 1.7B Base.
-        assert set(small) == set(large) - {"tts_generation"}
+        # WER and Seed-TTS-Eval are calibrated only on the 1.7B Base.
+        assert set(small) == set(large) - {"tts_generation", *SEED_TTS_TASKS}
         for name, task in small.items():
             targets = tts_eval_tests._task_targets(task)
             assert "description" not in targets
@@ -756,3 +764,154 @@ class TestEvalNotes:
         assert text.count("**Legend**") == 1
         assert "WER ≤ 0.2" in text and "mean_utmos ≥ 4.2" in text
         assert renderers.EVALS_METHODOLOGY_NOTE not in text
+
+
+_SEED_SUMMARY = {
+    "sample_count": 1088,
+    "concurrency": 4,
+    "wer_evalscope": 0.010,
+    "wer_official": 0.0163,
+    "mean_sim": 0.689,
+}
+
+
+def _seed_tasks():
+    from reference_config.evals.eval_config import (
+        _eval_config_map,
+        resolve_task_for_device,
+    )
+
+    tasks = _eval_config_map["Qwen/Qwen3-TTS-12Hz-1.7B-Base"].tasks
+    return [
+        resolve_task_for_device(t, "GALAXY")
+        for t in tasks
+        if t.task_name in SEED_TTS_TASKS
+    ]
+
+
+def _seed_ctx(limit_samples_mode=None):
+    return SimpleNamespace(
+        model_spec=SimpleNamespace(model_name="Qwen3-TTS-12Hz-1.7B-Base"),
+        device=SimpleNamespace(name="GALAXY"),
+        base_url="http://127.0.0.1:8000",
+        runtime_config=SimpleNamespace(limit_samples_mode=limit_samples_mode),
+    )
+
+
+class TestSeedTts:
+    @pytest.fixture(autouse=True)
+    def _fresh_runs(self, monkeypatch):
+        monkeypatch.setattr(tts_eval_tests, "_SEED_TTS_RUNS", {})
+
+    def _rows(self, monkeypatch, summary, limit_samples_mode=None):
+        calls = []
+
+        def run(ctx, targets, limit=None):
+            calls.append((targets, limit))
+            if isinstance(summary, Exception):
+                raise summary
+            return dict(summary)
+
+        monkeypatch.setattr(tts_eval_tests, "_run_seed_tts_eval", run)
+        ctx = _seed_ctx(limit_samples_mode)
+        blocks = [tts_eval_tests._run_seed_tts_task(ctx, t) for t in _seed_tasks()]
+        return calls, {b.data["task_name"]: b.data for b in blocks}
+
+    @pytest.mark.parametrize(
+        "mode, limit", [(None, None), ("ci-nightly", 100), ("smoke-test", 0.01)]
+    )
+    def test_ci_mode_runs_100_clips_and_a_full_run_all(self, monkeypatch, mode, limit):
+        calls, _ = self._rows(monkeypatch, _SEED_SUMMARY, mode)
+        assert [lim for _, lim in calls] == [limit]
+
+    def test_three_rows_score_one_run(self, monkeypatch):
+        calls, rows = self._rows(monkeypatch, _SEED_SUMMARY)
+        assert len(calls) == 1 and calls[0][0]["concurrency"] == 4
+        assert rows["seed_tts_eval"]["wer"] == 0.010
+        assert rows["seed_tts_content_consistency"]["wer"] == 0.0163
+        assert rows["seed_tts_speaker_similarity"]["mean_sim"] == 0.689
+        assert rows["seed_tts_eval"]["score"] == pytest.approx(99.0)
+        assert rows["seed_tts_speaker_similarity"]["score"] == pytest.approx(68.9)
+        assert {r["accuracy_check"] for r in rows.values()} == {ReportCheckTypes.PASS}
+
+    def test_only_the_evalscope_wer_carries_the_model_card_score(self, monkeypatch):
+        _, rows = self._rows(monkeypatch, _SEED_SUMMARY)
+        evalscope = rows["seed_tts_eval"]
+        assert evalscope["published_score"] == pytest.approx(100 * (1 - 0.0124))
+        assert (
+            "huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+            in (evalscope["published_score_ref"])
+        )
+        for name in ("seed_tts_content_consistency", "seed_tts_speaker_similarity"):
+            assert rows[name]["published_score"] == "N/A"
+
+    def test_each_row_gates_on_its_own_value(self, monkeypatch):
+        summary = {**_SEED_SUMMARY, "wer_official": 0.05, "mean_sim": 0.5}
+        _, rows = self._rows(monkeypatch, summary)
+        assert rows["seed_tts_eval"]["accuracy_check"] is ReportCheckTypes.PASS
+        assert (
+            rows["seed_tts_content_consistency"]["accuracy_check"]
+            is ReportCheckTypes.FAIL
+        )
+        assert (
+            rows["seed_tts_speaker_similarity"]["accuracy_check"]
+            is ReportCheckTypes.FAIL
+        )
+
+    def test_a_failed_run_is_not_started_again_and_every_row_says_why(
+        self, monkeypatch
+    ):
+        calls, rows = self._rows(monkeypatch, RuntimeError("server gone"))
+        assert len(calls) == 1
+        for row in rows.values():
+            assert row["accuracy_check"] is ReportCheckTypes.NA
+            assert "server gone" in row["error"]
+
+    def test_the_media_server_client_is_refused_before_provisioning(self, monkeypatch):
+        import workflow_module.venv_provisioner as vp
+
+        monkeypatch.setattr(
+            vp, "get_venv_provisioner", lambda: pytest.fail("provisioned")
+        )
+        with pytest.raises(ValueError, match="vllm_omni"):
+            tts_eval_tests._run_seed_tts_eval(_seed_ctx(), {"tts_api": "qwen3_cpp"})
+
+    def test_the_runner_gets_the_venv_paths_server_and_key(self, monkeypatch, tmp_path):
+        import json
+        import subprocess
+
+        import workflow_module.venv_provisioner as vp
+
+        class Provisioner:
+            def provision(self, venv_type, model_spec):
+                return True
+
+            def venv_path(self, venv_type):
+                return tmp_path
+
+            def venv_python(self, venv_type):
+                return str(tmp_path / "bin" / "python")
+
+        seen = {}
+
+        def run(cmd, env, check, timeout):
+            seen.update(cmd=cmd, env=env)
+            out = cmd[cmd.index("--out") + 1]
+            with open(out, "w") as f:
+                json.dump(_SEED_SUMMARY, f)
+
+        monkeypatch.setattr(vp, "get_venv_provisioner", lambda: Provisioner())
+        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setenv("OPENAI_API_KEY", "tok")
+        targets = {"tts_api": "vllm_omni", "concurrency": 4}
+        assert tts_eval_tests._run_seed_tts_eval(_seed_ctx(), targets) == _SEED_SUMMARY
+        assert "--limit" not in seen["cmd"]
+        tts_eval_tests._run_seed_tts_eval(_seed_ctx(), targets, 100)
+        cmd, env = seen["cmd"], seen["env"]
+        assert cmd[cmd.index("--limit") + 1] == "100"
+        assert cmd[0] == str(tmp_path / "bin" / "python")
+        assert cmd[cmd.index("--api-url") + 1] == "http://127.0.0.1:8000/v1"
+        assert cmd[cmd.index("--concurrency") + 1] == "4"
+        assert cmd[cmd.index("--sv-checkpoint") + 1].startswith(str(tmp_path))
+        assert env["TORCH_HOME"].startswith(str(tmp_path))
+        assert env["TTS_API_KEY"] == "tok"

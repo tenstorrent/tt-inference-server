@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the EVALS_SEED_TTS workflow venv.
+# Used by: setup_evals_seed_tts() in workflows/workflow_venvs.py, and the
+# Seed-TTS-Eval runner, test_module/eval_tests/seed_tts/run_seed_tts.py.
+#
+# torch 2.5: seed-tts-eval's WavLM speaker-verification model loads its
+# upstream through s3prl, which calls torchaudio.set_audio_backend; later
+# torchaudio releases removed it. fire, librosa: seed-tts-eval's
+# verification.py imports them.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+evalscope==1.14.1
+torch==2.5.1+cpu
+torchaudio==2.5.1+cpu
+transformers==4.57.6
+s3prl==0.4.17
+jiwer==4.0.0
+zhon==2.1.1
+gdown==6.5.1
+fire==0.7.1
+librosa
+soundfile
+scipy
+requests

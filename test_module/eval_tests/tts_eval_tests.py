@@ -6,8 +6,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
+import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -20,6 +24,7 @@ from report_module.schema import Block
 
 from workflow_module import accept_blocks
 from workflow_module.context_helpers import get_num_calls
+from workflow_module.engine_types import EvalLimitMode
 from workflow_module.target_pack import get_target_pack
 
 from .._test_common import ReportCheckTypes, block_id, sweep_envelope
@@ -41,19 +46,36 @@ TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
+TASK_SEED_TTS = "seed_tts_eval"
+TASK_SEED_TTS_CC = "seed_tts_content_consistency"
+TASK_SEED_TTS_SIM = "seed_tts_speaker_similarity"
+
+SEED_TTS_RUNNER = Path(__file__).resolve().parent / "seed_tts" / "run_seed_tts.py"
+# A full test-en pass is about 20 min of generation, with Whisper-large-v3
+# transcribing on CPU at about 5 s a clip alongside, then SIM.
+SEED_TTS_TIMEOUT_S = 4 * 3600
 
 
 LIBRITTS_R_URL = "https://huggingface.co/datasets/blabble-io/libritts_r"
+SEED_TTS_EVAL_URL = "https://github.com/BytedanceSpeech/seed-tts-eval"
 EVAL_LEGEND = (
     "**Legend**\n\n"
     "- **Score**: 0-100, higher is better. tts_generation: 100 × (1 − WER); "
     "tts_speaker_similarity: 100 × mean_secs; "
-    "tts_naturalness: 100 × (mean_utmos − 1) / 4.\n"
+    "tts_naturalness: 100 × (mean_utmos − 1) / 4; "
+    "seed_tts_eval and seed_tts_content_consistency: 100 × (1 − WER); "
+    "seed_tts_speaker_similarity: 100 × mean_sim.\n"
     "- **Accuracy Check**: PASS when the task's gate, listed under Tasks, holds. "
     "Published Score is shown for reference and does not gate.\n"
     "- **WER**: word error rate, (substitutions + deletions + insertions) / words "
-    "in the input text, of the openai/whisper-base transcript; mean over samples; "
-    "0 is a perfect read.\n"
+    "in the input text, of the Whisper transcript; mean over samples; "
+    "0 is a perfect read. tts_generation transcribes with openai/whisper-base. "
+    "The seed_tts tasks share one openai/whisper-large-v3 transcript per clip: "
+    "seed_tts_eval normalizes text with EvalScope's English normalizer; "
+    "seed_tts_content_consistency as seed-tts-eval does, removing punctuation "
+    "and lowercasing.\n"
+    "- **mean_sim**: speaker-embedding cosine similarity (seed-tts-eval's "
+    "WavLM-large speaker-verification model) of each clone to its prompt clip.\n"
     "- **mean_secs**: speaker-embedding cosine similarity "
     "(microsoft/unispeech-sat-base-plus-sv) of each clone to its reference clip; "
     "1 is the same voice.\n"
@@ -64,9 +86,12 @@ EVAL_LEGEND = (
     "UTMOS22 strong.\n"
     "- **valid_samples / failed_samples / sample_count**: samples scored / "
     "requests that returned no audio / samples sent.\n\n"
-    f"**Dataset**: [LibriTTS-R]({LIBRITTS_R_URL}), test.clean split, one utterance "
-    "per speaker. For a cloning model, each sample clones one speaker's utterance "
-    "and reads the next speaker's sentence.\n\n"
+    f"**Dataset**: tts_* tasks: [LibriTTS-R]({LIBRITTS_R_URL}), test.clean split, "
+    "one utterance per speaker. For a cloning model, each sample clones one "
+    "speaker's utterance and reads the next speaker's sentence. seed_tts tasks: "
+    f"[Seed-TTS-Eval]({SEED_TTS_EVAL_URL}) test-en, Common Voice prompt clips; "
+    "each sample clones its prompt clip, given the clip's transcript, and reads "
+    "the target text. The three tasks score the same generated clips.\n\n"
     "**Tasks**"
 )
 
@@ -100,6 +125,19 @@ def _task_note(task_name: str, result: dict) -> Optional[str]:
             f"mean_utmos ≥ {get('utmos_threshold')}"
         )
         what = "naturalness. UTMOS scores each clone"
+    elif task_name == TASK_SEED_TTS:
+        gate = get("wer_threshold") is not None and f"WER ≤ {get('wer_threshold')}"
+        what = (
+            "Seed-TTS-Eval test-en WER, by EvalScope, which also generates the "
+            "clips. Published Score is the model card's test-en WER over all "
+            "1,088 clips, 1.24%, as 100 × (1 − 0.0124)"
+        )
+    elif task_name == TASK_SEED_TTS_CC:
+        gate = get("wer_threshold") is not None and f"WER ≤ {get('wer_threshold')}"
+        what = "Seed-TTS-Eval test-en content consistency: WER by seed-tts-eval"
+    elif task_name == TASK_SEED_TTS_SIM:
+        gate = get("sim_floor") is not None and f"mean_sim ≥ {get('sim_floor')}"
+        what = "Seed-TTS-Eval test-en speaker similarity: SIM by seed-tts-eval"
     else:
         return None
     gate = f" Pass: {gate}." if gate else ""
@@ -511,10 +549,166 @@ def _run_naturalness_task(ctx: MediaContext, task) -> Block:
     )
 
 
+# One Seed-TTS-Eval run per server, client and concurrency, shared by the three seed_tts
+# tasks: each scores the same clips. A failed run is kept too, so the tasks
+# after it report its error instead of starting it again.
+_SEED_TTS_RUNS: dict = {}
+
+
+def _seed_tts_limit(ctx: MediaContext, task):
+    """The task's sample limit for the run's --limit-samples-mode (--ci-mode
+    sets ci-nightly); None runs every sample."""
+    rc = getattr(ctx, "runtime_config", None)
+    mode = EvalLimitMode.from_string(getattr(rc, "limit_samples_mode", None))
+    return task.limit_samples_map.get(mode) if mode else None
+
+
+def _run_seed_tts_eval(ctx: MediaContext, targets: dict, limit=None) -> dict:
+    """Run Seed-TTS-Eval test-en in its own venv; return the runner's summary.
+
+    EvalScope and seed-tts-eval's scorer pin torch and transformers versions
+    this venv cannot hold, so the runner is a subprocess of the
+    EVALS_SEED_TTS venv's python.
+    """
+    from workflow_module.engine_types import WorkflowVenvType
+    from workflow_module.venv_provisioner import get_venv_provisioner
+    from workflows.workflow_venvs import (
+        SEED_TTS_EVAL_DIR_NAME,
+        SEED_TTS_SV_CKPT_NAME,
+        SEED_TTS_TORCH_HOME,
+    )
+
+    from .tts_client import TTS_API_VLLM_OMNI, auth_headers
+
+    if targets.get("tts_api") != TTS_API_VLLM_OMNI:
+        raise ValueError(
+            f"Seed-TTS-Eval sends vLLM-Omni requests; tts_api is "
+            f"{targets.get('tts_api')!r}, not {TTS_API_VLLM_OMNI!r}"
+        )
+    provisioner = get_venv_provisioner()
+    venv_type = WorkflowVenvType.EVALS_SEED_TTS
+    if not provisioner.provision(venv_type, ctx.model_spec):
+        raise RuntimeError(f"Failed to provision the {venv_type.name} venv")
+    venv = Path(provisioner.venv_path(venv_type))
+    token = auth_headers()["Authorization"].removeprefix("Bearer ")
+    with tempfile.TemporaryDirectory(prefix="seed_tts_eval_") as tmp:
+        out = Path(tmp) / "result.json"
+        cmd = [
+            provisioner.venv_python(venv_type),
+            str(SEED_TTS_RUNNER),
+            "--api-url",
+            f"{ctx.base_url}/v1",
+            "--work-dir",
+            str(Path(tmp) / "work"),
+            "--out",
+            str(out),
+            "--seed-tts-eval-dir",
+            str(venv / SEED_TTS_EVAL_DIR_NAME),
+            "--sv-checkpoint",
+            str(venv / SEED_TTS_SV_CKPT_NAME),
+            "--concurrency",
+            str(targets.get("concurrency", 1)),
+        ]
+        if limit is not None:
+            cmd += ["--limit", str(limit)]
+        logger.info("Running Seed-TTS-Eval: %s", " ".join(cmd))
+        subprocess.run(
+            cmd,
+            env={
+                **os.environ,
+                "TORCH_HOME": str(venv / SEED_TTS_TORCH_HOME),
+                "TTS_API_KEY": token,
+            },
+            check=True,
+            timeout=SEED_TTS_TIMEOUT_S,
+        )
+        return json.loads(out.read_text())
+
+
+def _seed_tts_result(ctx: MediaContext, task) -> dict:
+    """The shared Seed-TTS-Eval run's summary; raises the run's error."""
+    targets = _task_targets(task)
+    limit = _seed_tts_limit(ctx, task)
+    key = (
+        ctx.base_url,
+        targets.get("tts_api"),
+        targets.get("concurrency", 1),
+        limit,
+    )
+    if key not in _SEED_TTS_RUNS:
+        try:
+            _SEED_TTS_RUNS[key] = _run_seed_tts_eval(ctx, targets, limit)
+        except Exception as e:
+            logger.exception("Seed-TTS-Eval failed to run")
+            _SEED_TTS_RUNS[key] = e
+    run = _SEED_TTS_RUNS[key]
+    if isinstance(run, Exception):
+        raise run
+    return run
+
+
+# task -> (summary key, report metric, gate target, whether higher passes)
+_SEED_TTS_ROWS = {
+    TASK_SEED_TTS: ("wer_evalscope", "wer", "wer_threshold", False),
+    TASK_SEED_TTS_CC: ("wer_official", "wer", "wer_threshold", False),
+    TASK_SEED_TTS_SIM: ("mean_sim", "mean_sim", "sim_floor", True),
+}
+
+
+def _run_seed_tts_task(ctx: MediaContext, task) -> Block:
+    """One seed_tts task's row of the shared Seed-TTS-Eval run -> one Block."""
+    summary_key, metric, gate_key, higher_passes = _SEED_TTS_ROWS[task.task_name]
+    targets = _task_targets(task)
+    try:
+        summary = _seed_tts_result(ctx, task)
+    except Exception as e:
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=f"Seed-TTS-Eval failed to run: {type(e).__name__}: {e}",
+            metrics={metric: None},
+        )
+
+    value = summary.get(summary_key)
+    gate = targets.get(gate_key)
+    if value is None or gate is None:
+        accuracy_check = ReportCheckTypes.NA
+    else:
+        passed = value >= gate if higher_passes else value <= gate
+        accuracy_check = ReportCheckTypes.PASS if passed else ReportCheckTypes.FAIL
+    if value is None:
+        score = None
+    elif higher_passes:
+        score = round(max(0.0, value) * 100.0, 2)
+    else:
+        score = _intelligibility_score(value)
+    logger.info(
+        "%s: %s=%s gate %s=%s samples=%s -> check=%s",
+        task.task_name,
+        metric,
+        value,
+        gate_key,
+        gate,
+        summary.get("sample_count"),
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=score,
+        accuracy_check=accuracy_check,
+        metrics={metric: value, "sample_count": summary.get("sample_count")},
+        result={**summary, gate_key: gate},
+    )
+
+
 _TASK_RUNNERS = {
     TASK_WER: _run_wer_task,
     TASK_SECS: _run_secs_task,
     TASK_NATURALNESS: _run_naturalness_task,
+    **{name: _run_seed_tts_task for name in _SEED_TTS_ROWS},
 }
 
 

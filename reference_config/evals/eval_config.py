@@ -693,6 +693,14 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# Seed-TTS-Eval test-en has 1,088 clips; CPU Whisper-large-v3 transcribes about
+# one every 5 s, so all of them add about 1 h 40 min. --ci-mode runs the first 100
+# (about 10 min); a full-evals run, without --ci-mode, runs all of them.
+SEED_TTS_LIMIT_SAMPLES_MAP = {
+    EvalLimitMode.SMOKE_TEST: 0.01,
+    EvalLimitMode.CI_NIGHTLY: 100,
+}
+
 _eval_config_list = [
     # Fixed Granite release cohorts; published scores are context, not GPU controls.
     EvalConfig(
@@ -11209,6 +11217,81 @@ _eval_config_list = [
                             "min_reference_seconds": 3,
                             "max_reference_seconds": 12,
                             "utmos_threshold": 4.2,
+                            "concurrency": 4,
+                        }
+                    }
+                },
+            ),
+            # The seed_tts tasks score one Seed-TTS-Eval test-en run. Only the
+            # vllm_omni client sends the transcript an in-context clone needs, so
+            # they report NA on the C++ media server.
+            # Measured on GALAXY at C=4: EvalScope WER 0.0100, seed-tts-eval WER
+            # 0.0163, SIM 0.689.
+            EvalTask(
+                task_name="seed_tts_eval",
+                workflow_venv_type=WorkflowVenvType.EVALS_SEED_TTS,
+                limit_samples_map=SEED_TTS_LIMIT_SAMPLES_MAP,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    # 100 × (1 − WER) of the card's Seed-TTS test-en WER, 1.24%.
+                    published_score=98.76,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={"wer_threshold": 0.03},
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "wer_threshold": 0.03,
+                            "concurrency": 4,
+                        }
+                    }
+                },
+            ),
+            EvalTask(
+                task_name="seed_tts_content_consistency",
+                workflow_venv_type=WorkflowVenvType.EVALS_SEED_TTS,
+                limit_samples_map=SEED_TTS_LIMIT_SAMPLES_MAP,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={"wer_threshold": 0.03},
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "wer_threshold": 0.03,
+                            "concurrency": 4,
+                        }
+                    }
+                },
+            ),
+            EvalTask(
+                task_name="seed_tts_speaker_similarity",
+                workflow_venv_type=WorkflowVenvType.EVALS_SEED_TTS,
+                limit_samples_map=SEED_TTS_LIMIT_SAMPLES_MAP,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={"sim_floor": 0.60},
+                device_overrides={
+                    "GALAXY": {
+                        "model_kwargs": {
+                            "tts_api": "vllm_omni",
+                            "sim_floor": 0.60,
                             "concurrency": 4,
                         }
                     }

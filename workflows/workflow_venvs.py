@@ -76,6 +76,28 @@ MINIMAX_VERIFIER_PATHS = (
     "output-dir/MiniMax-M3/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
+# Seed-TTS-Eval's official speaker similarity (SIM): seed-tts-eval's copy of
+# UniSpeech's verification code, its WavLM-large speaker-verification
+# checkpoint, and the s3prl hub entry point that code loads WavLM-large through.
+SEED_TTS_EVAL_REPO = "https://github.com/BytedanceSpeech/seed-tts-eval.git"
+SEED_TTS_EVAL_COMMIT = "752f4297f090c46bb1a55a1f7439e5944ddefe8d"
+SEED_TTS_EVAL_DIR_NAME = "seed-tts-eval"
+SEED_TTS_SV_DIR = "thirdparty/UniSpeech/downstreams/speaker_verification"
+SEED_TTS_EVAL_PATHS = (
+    f"{SEED_TTS_SV_DIR}/verification.py",
+    f"{SEED_TTS_SV_DIR}/models",
+)
+# torch.hub.load("s3prl/s3prl", ...) uses this directory when it exists, so the
+# hub entry point stays at the pip-pinned s3prl's tag instead of s3prl's main.
+S3PRL_REPO = "https://github.com/s3prl/s3prl.git"
+S3PRL_COMMIT = "a03430cc8a78585770eab67f4d90d2af421e446b"  # v0.4.17
+SEED_TTS_TORCH_HOME = "torch_home"
+# The checkpoint seed-tts-eval's README links; it is published only on Google Drive.
+SEED_TTS_SV_CKPT_GDRIVE_ID = "1-aE1NfzpRCLxA4GUxX9ITI3F9LlbtEGP"
+SEED_TTS_SV_CKPT_NAME = "wavlm_large_finetune.pth"
+SEED_TTS_SV_CKPT_SHA256 = (
+    "51f07e3b94d9e0262a6a675ef5a087be3dd09e8c62e9d886827f44f82fe7f94b"
+)
 TARBALL_TIMEOUT_S = 300
 # Written next to the exported files: the commit they came from.
 SOURCE_COMMIT_FILE = ".source_commit"
@@ -385,6 +407,68 @@ def setup_minimax_verifier(
         MINIMAX_VERIFIER_COMMIT,
         MINIMAX_VERIFIER_PATHS,
     )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def setup_evals_seed_tts(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for EVALS_SEED_TTS: the pieces of seed-tts-eval's SIM scorer.
+
+    Exports UniSpeech's verification code from seed-tts-eval and s3prl's
+    ``hubconf.py`` at their pins, marks s3prl trusted for torch.hub, and
+    downloads the WavLM-large checkpoint, checked against its SHA-256. The
+    runner sets ``TORCH_HOME`` to the venv's ``torch_home`` so torch.hub reads
+    these, not the user's cache.
+    """
+    venv = venv_config.venv_path
+    if not export_repo_commit(
+        venv / SEED_TTS_EVAL_DIR_NAME,
+        SEED_TTS_EVAL_REPO,
+        SEED_TTS_EVAL_COMMIT,
+        SEED_TTS_EVAL_PATHS,
+    ):
+        return False
+    hub = venv / SEED_TTS_TORCH_HOME / "hub"
+    if not export_repo_commit(
+        hub / "s3prl_s3prl_main", S3PRL_REPO, S3PRL_COMMIT, ("hubconf.py",)
+    ):
+        return False
+    # torch.hub asks on stdin before running a repo not in this list.
+    (hub / "trusted_list").write_text("s3prl_s3prl\n")
+
+    ckpt = venv / SEED_TTS_SV_CKPT_NAME
+    if ckpt.is_file() and _sha256(ckpt) == SEED_TTS_SV_CKPT_SHA256:
+        return True
+    partial = ckpt.with_name(ckpt.name + ".partial")
+    partial.unlink(missing_ok=True)
+    gdown = venv / "bin" / "gdown"
+    if (
+        run_command(f"{gdown} {SEED_TTS_SV_CKPT_GDRIVE_ID} -O {partial}", logger=logger)
+        != 0
+    ):
+        logger.error("Failed to download %s from Google Drive", SEED_TTS_SV_CKPT_NAME)
+        return False
+    actual = _sha256(partial)
+    if actual != SEED_TTS_SV_CKPT_SHA256:
+        logger.error(
+            "%s SHA-256 is %s, expected %s",
+            SEED_TTS_SV_CKPT_NAME,
+            actual,
+            SEED_TTS_SV_CKPT_SHA256,
+        )
+        partial.unlink(missing_ok=True)
+        return False
+    partial.rename(ckpt)
+    return True
 
 
 def check_docker_available(
@@ -990,6 +1074,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_EMBEDDING,
         requirements_file="evals-embedding.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_SEED_TTS,
+        requirements_file="evals-seed-tts.txt",
+        setup_function=setup_evals_seed_tts,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
