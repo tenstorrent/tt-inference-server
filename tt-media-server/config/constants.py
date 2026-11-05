@@ -296,11 +296,27 @@ WAN22_ANISORA_NUM_STEPS = 8
 # The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
 # counts sigma grid points, which is one more than the forward count.
 MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
+# The generations API takes no step count: these models run their reference
+# defaults.
+WAN22_I2V_A14B_NUM_STEPS = 40
+MINIMAX_H3_NUM_INFERENCE_STEPS = 50
+# LTX-2.3 distilled fixes its own schedules: 8 forwards at half resolution,
+# then 3 at full (tt_dit's DISTILLED_SIGMA_VALUES, STAGE_2_DISTILLED_SIGMA_VALUES).
+LTX23_DISTILLED_NUM_FORWARDS = 8 + 3
+# H3's step counts are grid points, one more than the forwards it runs.
+_MINIMAX_H3_FORWARDS = MINIMAX_H3_NUM_INFERENCE_STEPS - 1
+_MINIMAX_H3_LIGHTX2V_FORWARDS = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS - 1
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V: WAN22_I2V_A14B_NUM_STEPS,
+    ModelRunners.TT_LTX_2_3_DISTILLED: LTX23_DISTILLED_NUM_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
 }
 
 

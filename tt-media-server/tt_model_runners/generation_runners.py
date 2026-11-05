@@ -30,6 +30,8 @@ from config.constants import (
     LTX_NUM_FRAMES,
     LTX_WIDTH,
     MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    MINIMAX_H3_NUM_INFERENCE_STEPS,
+    WAN22_I2V_A14B_NUM_STEPS,
     WAN22_NUM_FRAMES,
     Resolution,
     generation_job_dir,
@@ -67,7 +69,6 @@ _WARMUP_PROMPT = "Sunrise on a beach"
 # Warmup only compiles and traces, so it runs fewer steps where it can.
 _WARMUP_STEPS = 2
 
-WAN_STEPS = 40
 WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
 
@@ -168,7 +169,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 prompts=[request._prompt],
                 negative_prompts=[request.negative_prompt],
                 image_prompt=image_prompt,
-                num_inference_steps=self._steps(WAN_STEPS),
+                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS),
                 guidance_scale=WAN_GUIDANCE_SCALES[0],
                 guidance_scale_2=WAN_GUIDANCE_SCALES[1],
                 flow_shift=WAN_SHIFT,
@@ -268,8 +269,6 @@ MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
 MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
-# The denoising steps of the base model; the distilled adapters fix their own.
-MINIMAX_H3_STEPS = 50
 
 
 class TTFlux3ImageKleinRunner(_GenerationRunner):
@@ -403,7 +402,8 @@ class _MiniMaxH3Runner(_GenerationRunner):
 
     pipeline_task = "t2va"
     dit_fsdp = not is_blackhole()
-    num_inference_steps = MINIMAX_H3_STEPS
+    # The base model's steps; the distilled adapters fix their own.
+    num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
     # Off on the other ranks of a multi-host mesh, whose output is discarded.
     export_in_runner = True
 

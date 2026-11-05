@@ -46,18 +46,25 @@ def media_format_error(kind: str, probe: ReferenceMediaProbe) -> str | None:
     return None
 
 
+# PIL reads a JPEG with several pictures, e.g. a phone photo with a depth or
+# gain map, as MPO.
+_IMAGE_FORMATS = ("PNG", "JPEG", "MPO", "WEBP")
+
+
 def decode_image(data: bytes) -> Image.Image:
     """The RGB image in ``data``, upright as a camera's EXIF orientation says.
 
-    Raises ``ValueError`` if it has more than ``Image.MAX_IMAGE_PIXELS``
-    pixels, and PIL's ``UnidentifiedImageError`` or ``OSError`` if it is not a
-    decodable image.
+    Raises ``ValueError`` if it is not PNG, JPEG or WebP or has more than
+    ``Image.MAX_IMAGE_PIXELS`` pixels, and PIL's ``UnidentifiedImageError`` or
+    ``OSError`` if it is not a decodable image.
     """
     too_large = ValueError(f"image has more than {Image.MAX_IMAGE_PIXELS} pixels")
     try:
         image = Image.open(io.BytesIO(data))
     except Image.DecompressionBombError:
         raise too_large
+    if image.format not in _IMAGE_FORMATS:
+        raise ValueError(f"is a {image.format} image; must be PNG, JPEG or WebP")
     # Checked before decoding: PIL only refuses twice the limit.
     if Image.MAX_IMAGE_PIXELS and image.width * image.height > Image.MAX_IMAGE_PIXELS:
         raise too_large

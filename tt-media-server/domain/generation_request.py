@@ -26,7 +26,8 @@ def _media_checker(kind: MediaKind, example: str):
     data_uri = re.compile(rf"^data:{kind}/[a-z0-9.+-]+;base64,", re.IGNORECASE)
 
     def check(value: str) -> str:
-        if value.startswith("https://") or data_uri.match(value):
+        # An http:// URL passes here: the fetch policy refuses it with a 400.
+        if value.startswith(("https://", "http://")) or data_uri.match(value):
             return value
         raise ValueError(f"must be an https:// URL or a base64 data URI ({example})")
 
