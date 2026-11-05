@@ -7,6 +7,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import runpy
 import shlex
 import sys
@@ -524,6 +525,20 @@ def set_metal_timeout_env_vars():
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
+# ``${NAME:-default}``: the shell's default-value form, which os.path.expandvars
+# leaves untouched
+_DEFAULT_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
+
+
+def expand_env_defaults(value: str, environ=None) -> str:
+    """Replace every ``${NAME:-default}`` in ``value`` by NAME's value in
+    ``environ`` (default ``os.environ``) when it is set and non-empty, else by
+    ``default``, as the shell does. Other ``$`` references are left for
+    os.path.expandvars."""
+    env = os.environ if environ is None else environ
+    return _DEFAULT_REF.sub(lambda m: env.get(m.group(1)) or m.group(2), value)
+
+
 def set_runtime_env_vars(model_spec_json):
     """Set runtime environment variables from model spec.
 
@@ -539,6 +554,12 @@ def set_runtime_env_vars(model_spec_json):
     TT_METAL_HOME, which differs between a local server (--tt-metal-home) and
     a container image. Variables are expanded in spec order, so a later value
     may reference one set earlier in the same spec.
+
+    ``${VAR:-default}`` takes VAR from the launch environment when it is set
+    and non-empty, else the default. A spec can then name a default that the
+    operator overrides at launch: ``FLAG: "${FLAG:-value}"`` is ``value``
+    unless the server was started with ``FLAG`` set, whereas a plain
+    ``FLAG: "value"`` always replaces the launch environment's.
     """
     env_vars = {}
 
@@ -571,7 +592,7 @@ def set_runtime_env_vars(model_spec_json):
             value = str(value)
 
         if "$" in value:
-            expanded = os.path.expandvars(value)
+            expanded = os.path.expandvars(expand_env_defaults(value))
             if "$" in expanded:
                 # expandvars leaves unknown names untouched, which would other-
                 # wise reach the consumer as a literal '$VAR' and fail somewhere

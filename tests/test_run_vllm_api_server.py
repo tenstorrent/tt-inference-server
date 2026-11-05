@@ -344,3 +344,38 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+def test_expand_env_defaults_takes_the_environment_or_the_default(
+    run_vllm_api_server_module,
+):
+    expand = run_vllm_api_server_module.expand_env_defaults
+    assert expand("${FLAG:-hold-all}", {}) == "hold-all"
+    assert expand("${FLAG:-hold-all}", {"FLAG": "hold"}) == "hold"
+    assert expand("${FLAG:-hold-all}", {"FLAG": ""}) == "hold-all"  # the shell's ':-'
+    assert expand("${A:-4x1028,2x2052}", {}) == "4x1028,2x2052"
+    assert expand("${A:-}", {}) == ""
+    assert expand("x${A:-1}y${B:-2}", {"B": "3"}) == "x1y3"
+    assert (
+        expand("${TT_METAL_HOME}/p", {}) == "${TT_METAL_HOME}/p"
+    )  # left for expandvars
+
+
+def test_set_runtime_env_vars_lets_the_launch_environment_override_a_default(
+    run_vllm_api_server_module, monkeypatch
+):
+    monkeypatch.delenv("ENV_DEFAULT_TEST_ARM", raising=False)
+    monkeypatch.delenv("ENV_DEFAULT_TEST_PLAIN", raising=False)
+    spec = {
+        "env_vars": {
+            "ENV_DEFAULT_TEST_ARM": "${ENV_DEFAULT_TEST_ARM:-hold-all}",
+            "ENV_DEFAULT_TEST_PLAIN": "hold-all",
+        }
+    }
+    run_vllm_api_server_module.set_runtime_env_vars(spec)
+    assert os.environ["ENV_DEFAULT_TEST_ARM"] == "hold-all"
+    monkeypatch.setenv("ENV_DEFAULT_TEST_ARM", "hold")
+    monkeypatch.setenv("ENV_DEFAULT_TEST_PLAIN", "hold")
+    run_vllm_api_server_module.set_runtime_env_vars(spec)
+    assert os.environ["ENV_DEFAULT_TEST_ARM"] == "hold"  # the launch environment's
+    assert os.environ["ENV_DEFAULT_TEST_PLAIN"] == "hold-all"  # a plain value replaces it
