@@ -134,6 +134,10 @@ templates:
   inference_engine: MEDIA
   env_vars:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    # The generation API serves H.264 High profile. video_manager defaults to
+    # ultrafast, which drops the stream to Constrained Baseline; superfast is
+    # the fastest preset that keeps High.
+    TT_VIDEO_EXPORT_PRESET: superfast
   device_model_specs:
     - device: T3K
       max_concurrency: 1
