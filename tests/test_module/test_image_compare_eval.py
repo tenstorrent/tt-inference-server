@@ -78,6 +78,37 @@ def test_select_cases_by_subset_and_input_count():
         data.select_cases(manifest, "nightly")
 
 
+def test_a_reference_that_covers_some_cases_leaves_the_others_out(
+    tmp_path, monkeypatch
+):
+    manifest = [
+        {"case_id": c, "dev": True, "ci": True, "images": [f"inputs/{c}.png"]}
+        for c in ("a", "b", "c")
+    ]
+    (tmp_path / "cases").mkdir()
+    (tmp_path / "cases" / "manifest.json").write_text(json.dumps(manifest))
+    (tmp_path / "refs" / "r2" / "tt_matched").mkdir(parents=True)
+    (tmp_path / "refs" / "r2" / "tt_matched" / "index.json").write_text(
+        json.dumps([{"case_id": "a"}, {"case_id": "c"}])
+    )
+    fetched = []
+    monkeypatch.setattr(
+        data,
+        "snapshot",
+        lambda model_id, patterns: fetched.append(patterns) or tmp_path,
+    )
+    root, cases = data.load_cases(
+        "qwen/qwen-image-edit-2511", "ci", "refs/r2/tt_matched"
+    )
+    assert root == tmp_path and [c["case_id"] for c in cases] == ["a", "c"]
+    # Only the kept cases' inputs and reference images are fetched.
+    assert (
+        "inputs/b.png" not in fetched[-1] and "refs/r2/tt_matched/c.png" in fetched[-1]
+    )
+    assert data.reference_for("qwen/qwen-image-edit-2511") == "refs/r2/tt_matched"
+    assert data.reference_for("ideogram-ai/ideogram-4") == "refs/r1"
+
+
 def test_identical_images_compare_as_identical():
     a = scene()
     assert scorer.psnr(a, a) == 100.0
@@ -232,7 +263,10 @@ def run_eval(
     root = tmp_path / "data"
     cases = make_dataset(root)
     for case in cases:
-        save(root / "refs" / "r1" / f"{case['case_id']}.png", gpu_image(root, case))
+        save(
+            root / data.reference_for(QWEN.model_id) / f"{case['case_id']}.png",
+            gpu_image(root, case),
+        )
     monkeypatch.setattr(
         eval_, "load_cases", lambda model_id, subset, reference: (root, cases)
     )
@@ -287,9 +321,10 @@ def test_the_eval_sends_each_cases_inputs_and_compares_with_r1(tmp_path, monkeyp
     assert {(b["aspect_ratio"], b["format"]) for b in seen} == {("16:9", "png")}
     assert [b["seed"] for b in seen] == [10, 11, 12]
     d = section.data
+    # Qwen's server runs DBCache, so it's compared with R2, on the cases it covers.
     assert (d["api"], d["reference"], d["subset"]) == (
         "generation_api",
-        "refs/r1",
+        "refs/r2/tt_matched",
         "ci",
     )
     assert d["num_generated"] == 3 and d["not_served"] == {}

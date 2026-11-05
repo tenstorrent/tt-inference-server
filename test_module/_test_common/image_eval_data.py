@@ -10,14 +10,19 @@ inputs, ``aspect_ratio``, ``size``, seed, and ``dev`` and ``ci`` flags),
 ``inputs/`` and the GPU runs under ``refs/`` (``refs/r1/<case_id>.png``); the
 dataset's README says how each was made. The run's eval scope picks the
 subset, as for Wan2.2 I2V: dev under ``--limit-samples-mode smoke-test``, ci
-under ``--ci-mode`` and the other CI modes, all on a full-evals run.
+under ``--ci-mode`` and the other CI modes, all on a full-evals run. A model is
+compared with its ``REFERENCES`` run, ``refs/r1`` by default; a reference that
+covers only some cases (its ``index.json``) leaves the others out.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # model_id -> (Hugging Face dataset, pinned revision)
 EVAL_DATA = {
@@ -27,16 +32,24 @@ EVAL_DATA = {
     ),
     "qwen/qwen-image-edit-2511": (
         "Tenstorrent/qwen-image-edit-2511-refs",
-        "fd051f2d8247aba386971e75509fac3e5deedc24",
+        "fdf84cacb2f8aafab996de20ac7be9fe06afec0c",
     ),
     "ideogram-ai/ideogram-4": (
         "Tenstorrent/ideogram-4-refs",
         "9b8d74ca4fe1ad0fe811db1199c765e5c81faf90",
     ),
 }
+# model_id -> the GPU run TT is compared with, where it isn't refs/r1. Qwen's
+# server runs DBCache with cache-dit's `tt` recipe, so R2; and only on the cases
+# whose inputs tt-metal resizes as diffusers does (the folder's README).
+REFERENCES = {"qwen/qwen-image-edit-2511": "refs/r2/tt_matched"}
 SUBSETS = ("dev", "ci", "all")
 # A reference run's text-to-image scores (longtext_score.py, dpg_score.py).
 REFERENCE_SCORES = ("longtext.json", "dpg.json")
+
+
+def reference_for(model_id: str) -> str:
+    return REFERENCES.get(model_id, "refs/r1")
 
 
 def eval_subset(limit_samples_mode: str | None) -> str:
@@ -86,10 +99,20 @@ def load_cases(
 
     Returns the local dataset folder and the cases.
     """
-    root = snapshot(model_id, ["cases/*"])
+    root = snapshot(model_id, ["cases/*", f"{reference}/index.json"])
     cases = select_cases(
         json.loads((root / "cases" / "manifest.json").read_text()), subset, max_images
     )
+    covered = {
+        entry["case_id"]
+        for entry in json.loads((root / reference / "index.json").read_text())
+    }
+    if left_out := [case for case in cases if case["case_id"] not in covered]:
+        logger.info(
+            f"{model_id}: {len(left_out)} of {len(cases)} {subset} cases have no image "
+            f"in {reference}, and are left out"
+        )
+        cases = [case for case in cases if case["case_id"] in covered]
     files = {path for case in cases for path in case.get("images") or []}
     files |= {f"{reference}/{case['case_id']}.png" for case in cases}
     files |= {f"{reference}/index.json", f"{reference}/provenance.json"}

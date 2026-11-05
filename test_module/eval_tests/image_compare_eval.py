@@ -46,7 +46,12 @@ from .._test_common.image_clients import (
     GenerationAPIClient,
     GenerationError,
 )
-from .._test_common.image_eval_data import EVAL_DATA, eval_subset, load_cases
+from .._test_common.image_eval_data import (
+    EVAL_DATA,
+    eval_subset,
+    load_cases,
+    reference_for,
+)
 from .._test_common.image_generation_api import ImageModel, model_for
 from ..context import MediaContext
 from .text_image_scores import score_text_images
@@ -256,7 +261,8 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
     client = make_client(model, ctx.base_url)
     runtime_config = getattr(ctx, "runtime_config", None)
     subset = eval_subset(getattr(runtime_config, "limit_samples_mode", None))
-    data_dir, cases = load_cases(model.model_id, subset, client.reference)
+    reference = reference_for(model.model_id)
+    data_dir, cases = load_cases(model.model_id, subset, reference)
     published = client.published_schema()
     if published is None:
         logger.warning(
@@ -272,7 +278,7 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         logger.info(f"⏭️  {case_id}: not served, {why}")
     logger.info(
         f"{model.model_id}: {len(usable)} of {len(cases)} {subset} cases through {client.name}, "
-        f"against {client.reference}"
+        f"against {reference}"
     )
     out_dir = Path(ctx.output_path) / "images" / "evals"
     index, failures = asyncio.run(generate_all(client, usable, data_dir, out_dir))
@@ -280,18 +286,18 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
     result, problem = (
         (None, "no image was made")
         if not index
-        else run_compare(out_dir, data_dir, client.reference)
+        else run_compare(out_dir, data_dir, reference)
     )
     text_image = score_text_images(
         out_dir,
         data_dir,
-        client.reference,
+        reference,
         index,
         usable,
         device=os.environ.get(SCORER_DEVICE_ENV, "cpu"),
     )
     gate = (
-        grade(result or {}, model.model_id, client.reference, text_image=text_image)
+        grade(result or {}, model.model_id, reference, text_image=text_image)
         if result or text_image
         else None
     )
@@ -299,7 +305,7 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         "heading": f"{model.model_id} on {ctx.device.name}",
         "model": model.model_id,
         "api": client.name,
-        "reference": client.reference,
+        "reference": reference,
         "subset": subset,
         "num_cases": len(cases),
         "num_generated": len(index),
@@ -336,7 +342,7 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         accuracy_check = ReportCheckTypes.FAIL
     summary = {
         "task_name": TASK_NAME,
-        "reference": client.reference,
+        "reference": reference,
         "num_cases": len(usable),
         "num_generated": len(index),
         "accuracy_check": accuracy_check,
@@ -349,6 +355,6 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         task_type="image",
         title="Image Eval",
         id=block_id(ctx) or None,
-        targets={"task_name": TASK_NAME, "reference": client.reference},
+        targets={"task_name": TASK_NAME, "reference": reference},
         data=summary,
     )

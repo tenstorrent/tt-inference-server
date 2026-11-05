@@ -125,7 +125,6 @@ class GenerationAPIClient:
     """One image per case through the generation API, as PNG."""
 
     name = "generation_api"
-    reference = "refs/r1"
 
     def __init__(
         self,
