@@ -31,6 +31,7 @@ from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
+    get_dev_mode_media_server_env_vars,
     get_media_server_docker_env_vars,
 )
 from workflows.runtime_config import RuntimeConfig
@@ -1427,6 +1428,22 @@ class TestMediaServerDockerEnvVars:
 
         assert env_vars.get("SERVER_MODE") != "cpp"
         assert env_vars["HF_HOME"] == "/home/container_app_user/cache_root/huggingface"
+
+    @pytest.mark.parametrize("dev_mode", [True, False])
+    def test_only_dev_mode_fetches_media_urls_from_public_hosts(self, dev_mode):
+        runtime_config = RuntimeConfig(
+            model="Wan2.2-I2V-A14B-Diffusers",
+            workflow="spec_tests",
+            device="blackhole_galaxy",
+            dev_mode=dev_mode,
+        )
+
+        env_vars = get_dev_mode_media_server_env_vars(runtime_config)
+
+        if dev_mode:
+            assert env_vars == {"MEDIA_URL_ALLOW_PUBLIC_HOSTS": "true"}
+        else:
+            assert "MEDIA_URL_ALLOW_PUBLIC_HOSTS" not in env_vars
 
 
 class TestSecretsHandling:

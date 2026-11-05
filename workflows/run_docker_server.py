@@ -272,6 +272,19 @@ def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List
     return mounts
 
 
+def get_dev_mode_media_server_env_vars(runtime_config):
+    """Media server environment that only --dev-mode runs (local and CI) get.
+
+    The server fetches no image URLs until a deployment allows some hosts, so
+    on its defaults the spec tests never reach its fetch (422) or
+    private-address (400) checks. Dev runs allow any public host; private,
+    loopback and metadata addresses stay blocked. Prod runs keep the defaults.
+    """
+    if not runtime_config.dev_mode:
+        return {}
+    return {"MEDIA_URL_ALLOW_PUBLIC_HOSTS": "true"}
+
+
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
     if _is_cpp_media_spec(model_spec):
@@ -725,6 +738,9 @@ def generate_docker_run_command(
         # effect. Runtime-derived values below override these.
         docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        # A spec's own env_vars win over the dev-mode defaults.
+        for key, value in get_dev_mode_media_server_env_vars(runtime_config).items():
+            docker_env_vars.setdefault(key, value)
         if (
             _is_cpp_media_spec(model_spec)
             and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
