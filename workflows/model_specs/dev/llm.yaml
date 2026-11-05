@@ -1796,8 +1796,8 @@ templates:
 # head4_ccl4_norm4_lofi, which scored 38.4 on GPQA-diamond. Prefix caching needs
 # 128-token blocks (64-token resumes perturb logits); 4096-token scheduler budget
 # matches the model's prefill chunk.
-# K2_VLLM_HOST_COMPAT=1 admits the plugin's host-sampling route, which every
-# temperature/top_p eval request takes (the device sampler is greedy/top-k only).
+# K2_VLLM_HOST_COMPAT=1 admits the plugin's host-sampling route for requests the device
+# sampler cannot serve (top_k > 64); GPQA's top_k 40 samples on device.
 - weights:
     - IFM/K2-Horizon-MoVA-36B-A4B
   impl: k2_horizon_mova_qb2
@@ -1833,7 +1833,7 @@ templates:
         reasoning-parser: k2_horizon
         enable-auto-tool-choice: true
         tool-call-parser: k2_horizon
-  status: EXPERIMENTAL
+  status: FUNCTIONAL
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1

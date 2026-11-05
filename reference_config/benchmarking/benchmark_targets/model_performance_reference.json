@@ -7429,6 +7429,46 @@
             }
         ]
     },
+    "IFM/K2-Horizon-MoVA-36B-A4B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention.",
+                    "Decode reads the per-token active weights: attention 1.64B + 8/100 routed experts 2.12B + 4/64 value experts",
+                    "0.47B + shared/dense/router 0.43B + untied LM head 0.64B = 5.30B params = 10.6 GB bf16, 2.65 GB per chip",
+                    "= 4.7 ms per step = 211 t/s/u. TTFT is MoE-aware rather than two decode steps: a 127-token prompt routes",
+                    "1016 picks over 100 experts (and 508 over 64 value experts), so prefill streams essentially every weight,",
+                    "36.8B params = 73.6 GB bf16, 18.4 GB per chip = ~33 ms; prefill emits the first token, so no extra step.",
+                    "theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured: tt-shield benchmarks run 42017156688 (2026-11-05, bh-qb-ge, tt-metal a6b9cc84) gave TTFT 103.8 ms",
+                    "and TPOT 34.6 ms (28.9 t/s/u, 28.5 t/s) at 128/128 c1 n=8. Tolerance 0.2."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "k2_horizon_mova_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 33,
+                        "tput_user": 211,
+                        "tput": 211
+                    },
+                    "measured": {
+                        "ttft_ms": 103.8,
+                        "tput_user": 28.9,
+                        "tput": 28.5,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
     "meta-models/Muse-Glimmer-30B": {
         "p300x2": [
             {
