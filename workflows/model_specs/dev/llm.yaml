@@ -3562,7 +3562,12 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096  # 4K prefill chunks, as the default entry
         enable-prefix-caching: true
-        prefix-cache-retention-interval: 1024  # as the default entry: prefix hits on the SWA groups
+        # A sliding-window prefix checkpoint every 4096 tokens (default entry 1024). Each checkpoint keeps
+        # ~4 blocks in each of the 5 SWA groups, so at 1024 they took 20 of the 28 blocks per 1024 cached
+        # tokens and an engine held ~1.26M tokens of prefixes; at 4096 it is 13 blocks, ~2.7M tokens.
+        # Prompt ends and shared-prefix junctions stay retained exactly, so only a first mid-prompt hit
+        # lands up to 4095 tokens short (AgentX c=28: ~2.0 pts of hit rate lost to eviction at 1024).
+        prefix-cache-retention-interval: 4096
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
