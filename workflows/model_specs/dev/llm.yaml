@@ -3537,6 +3537,11 @@ templates:
         # Verify attention on the whole compute grid (the groups' share of 8 x 8 cores is idle-heavy).
         MIMO_SDPA_FULL_GRID: 1
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
+        # A prefix-matched request stays on the engine holding its prefix while that engine has at most
+        # 4 requests in flight above the least loaded one (engine_proxy default 2). AgentX c=28 with slack 2
+        # spilled 98 requests to engines without their prefix, 73 of them at exactly +3: each re-prefilled
+        # its whole prompt (TTFT p50 20 s vs 1 s on a hit), about 3.9 points of prefix-cache hit rate.
+        TT_PROXY_SLACK: 4
       override_tt_config:
         trace_mode: decode_only
         # The default entry's traces plus the verify step and the MTP draft program per replica.
@@ -3550,8 +3555,8 @@ templates:
       vllm_args:
         data_parallel_size: 4  # the four engines
         # Per engine: a verify needs MIMO_SPEC_SLOTS decode slots. Every request drafts while an
-        # engine holds at most 4; the proxy keeps engines within 2 requests of each other, and an
-        # engine holding more runs those steps without drafts.
+        # engine holds at most 4; the proxy keeps engines within TT_PROXY_SLACK requests of each other,
+        # and an engine holding more runs those steps without drafts.
         max_num_seqs: 8
         block_size: 64
         enable_chunked_prefill: true

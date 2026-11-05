@@ -1559,6 +1559,7 @@ def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
     assert vllm_args["max_num_seqs"] == 8 and vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
     assert vllm_args["prefix-cache-retention-interval"] == 1024
+    assert spec.device_model_spec.env_vars["TT_PROXY_SLACK"] == 4
     # MTP keeps the default KV budget: a larger one is unverified with its extra memory.
     assert "MIMO_KV_GB_PER_CHIP" not in spec.device_model_spec.env_vars
     speculative = json.loads(vllm_args["speculative_config"])
