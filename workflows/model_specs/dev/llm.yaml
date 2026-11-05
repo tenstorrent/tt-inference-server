@@ -3472,6 +3472,10 @@ templates:
         reasoning-parser: mimo
         enable-auto-tool-choice: true
         tool-call-parser: mimo
+        # generation_config.json sets max_new_tokens 2048, which vLLM applies as the default max_tokens of
+        # every request that sends none. Reasoning alone often runs past it (tau3 banking: 51 of 97 agent
+        # turns cut at 2048 with no content or tool call); drop it and keep the card's temperature/top_p.
+        override_generation_config: '{"max_new_tokens": null}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # The repo name has no "<N>B", so the param-count defaults do not apply (and would assume fp16
@@ -3561,6 +3565,7 @@ templates:
         # Async scheduling: plain lane steps overlap, and fused verifies chain on device (the model
         # declares supports_async_spec_decode). 3 drafts: the model caps them per step by its group width.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        override_generation_config: '{"max_new_tokens": null}'  # as the default entry: no 2048 default cap
   status: EXPERIMENTAL
   has_builtin_warmup: true
   # As the default entry: the repo name has no "<N>B" to infer these from.
