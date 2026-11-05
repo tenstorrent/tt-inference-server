@@ -3450,7 +3450,9 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 38
+      # P/D (Dynamo prefill/decode) deployment: 3 concurrent users at 128K context.
+      # Sets the benchmark sweep ceiling and caps eval client concurrency.
+      max_concurrency: 3
       max_context: 131072  # 128 * 1024
       default_impl: true
   status: EXPERIMENTAL

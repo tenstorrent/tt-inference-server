@@ -11452,6 +11452,9 @@ _eval_config_list = [
                 # Sized from Shield run 37996687040 (QB2, limited): 14/15 samples in 10136 s, the 15th ~75k
                 # tokens deep at 19 tok/s, so 15 ~= 12,700 s and the full 30 ~= 25,400 s; x1.4 margin.
                 wall_clock_timeout_seconds=36000,
+                # Blaze P/D (Dynamo prefill/decode) on SUPER_CLUSTER serves 3 users at 128K.
+                # Earlier P/D run scored 93.33. The QB2 timeouts above were measured at 4 clients.
+                device_overrides={"SUPER_CLUSTER": {"max_concurrent": 3}},
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -11513,6 +11516,8 @@ _eval_config_list = [
                 # Slower of two measured QB2 rates: 7 samples / 498 s (run 37996687040) and 48/198 in
                 # 8100 s (run 37097968441) -> 0.0059 samples/s, 198 ~= 33,600 s; x1.25 margin.
                 wall_clock_timeout_seconds=42000,
+                # Blaze P/D on SUPER_CLUSTER: 3 users at 128K. Earlier P/D run scored 80.81.
+                device_overrides={"SUPER_CLUSTER": {"max_concurrent": 3}},
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -11548,6 +11553,15 @@ _eval_config_list = [
                 },
                 # 0.15-limited QB2 run (37996687040) took 2940 s, so full ~= 19,600 s; x1.3 margin.
                 wall_clock_timeout_seconds=25600,
+                # Blaze P/D on SUPER_CLUSTER: 3 users at 128K. Earlier P/D run scored 86.40.
+                # The 25600 s budget above was sized at 128 clients and would cut off a full
+                # run at 3 clients, so P/D runs have no task deadline until one is measured.
+                device_overrides={
+                    "SUPER_CLUSTER": {
+                        "max_concurrent": 3,
+                        "wall_clock_timeout_seconds": None,
+                    }
+                },
             ),
         ],
     ),
