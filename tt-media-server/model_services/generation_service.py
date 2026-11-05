@@ -208,6 +208,8 @@ class GenerationService(BaseJobService):
 
         async def load(kind: str, value: str) -> tuple[bytes, Any]:
             try:
+                if value.startswith("http://"):
+                    raise MediaDownloadPolicyError("Media URL must be https")
                 if value.startswith("https://"):
                     data = await download_media_url(
                         value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]

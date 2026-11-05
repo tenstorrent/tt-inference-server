@@ -97,9 +97,9 @@ def test_unknown_field_rejected():
 
 @pytest.mark.parametrize(
     "media",
-    ["http://example.com/a.png", "iVBORw0KGgo=", "data:text/plain;base64,aGk="],
+    ["ftp://example.com/a.png", "iVBORw0KGgo=", "data:text/plain;base64,aGk="],
 )
-def test_media_must_be_https_or_image_data_uri(media):
+def test_media_must_be_a_url_or_image_data_uri(media):
     with pytest.raises(ValidationError, match="https:// URL or a base64 data URI"):
         Wan22i2vA14bRequest(
             prompt="a boat", first_frame=media, aspect_ratio="16:9", size="480p"
@@ -435,6 +435,13 @@ async def test_disallowed_url_is_400_and_large_image_413(generations_app, monkey
     )
     assert disallowed.status_code == 400
     assert disallowed.json()["detail"] == "host is not allowed"
+
+    # The spec counts a URL that isn't https as against the fetch policy.
+    insecure = await client.post(
+        _WAN, json=_wan_body(first_frame="http://example.com/a.png")
+    )
+    assert insecure.status_code == 400
+    assert insecure.json()["detail"] == "Media URL must be https"
 
     monkeypatch.setitem(MEDIA_MAX_BYTES, "image", 10)
     large = await client.post(_WAN, json=_wan_body(first_frame=_data_uri()))
