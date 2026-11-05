@@ -4,9 +4,8 @@
 
 """Parameter-sweep test for the Wan2.2 image-to-video endpoint.
 
-Sends several payload variations (different seeds, num_inference_steps,
-prompts, frame positions) at ``POST /v1/videos/generations/i2v`` and
-verifies:
+Sends several payload variations (different seeds, prompts, a last frame) at the generations API's ``POST /v1/generations/wan-ai/wan2.2-i2v-a14b``
+and verifies:
 
 * identical payloads are accepted consistently,
 * differing parameters yield distinct job IDs (each request is unique),
@@ -20,20 +19,21 @@ Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
 
 import asyncio
-import base64
 import copy
-import json
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
 from report_module.schema import Block
 
-from workflow_module.target_pack import get_target_pack
-
-from .._test_common import BaseTest, HardwareRequirement, TestConfig
+from .._test_common import (
+    BaseTest,
+    HardwareRequirement,
+    TestConfig,
+    fixture_image_data_uri,
+    wan_size_for_device,
+)
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -41,17 +41,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
-
-# Fixture is sourced from the test_fixtures datasets directory, which is
-# the canonical location used by other v2 vision tests as well
-# (see e.g. video_generation_i2v_test.py).
-FIXTURE_IMAGE_PATH = (
-    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
-)
-
+SUBMIT_PATH = "/v1/generations/wan-ai/wan2.2-i2v-a14b"
 HTTP_ACCEPTED = 202
-DEFAULT_NUM_INFERENCE_STEPS = 40
 WARMUP_AND_MEASURE_ITERATIONS = 2
 
 HEADERS = {
@@ -61,32 +52,25 @@ HEADERS = {
 }
 
 
-def _load_fixture_image_base64() -> str:
-    """Read the repo-checked-in fixture image and return it base64-encoded."""
-    if not FIXTURE_IMAGE_PATH.exists():
-        raise FileNotFoundError(
-            f"I2V fixture image missing at {FIXTURE_IMAGE_PATH}. "
-            "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
-        )
-    return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
-
-
 def _build_payload(
     *,
     prompt: str,
-    num_inference_steps: int,
     seed: int,
-    image_b64: str,
-    frame_pos: int = 0,
+    image: str,
+    size: str,
+    last_frame: bool = False,
     negative_prompt: str | None = "blurry, low quality, distorted, shaky",
 ) -> dict:
-    """Build an I2V request body with the conditioning frame attached."""
+    """Build an I2V request body with the first frame (and last) attached."""
     payload = {
         "prompt": prompt,
-        "num_inference_steps": num_inference_steps,
         "seed": seed,
-        "image_prompts": [{"image": image_b64, "frame_pos": frame_pos}],
+        "first_frame": image,
+        "size": size,
+        "aspect_ratio": "16:9",
     }
+    if last_frame:
+        payload["last_frame"] = image
     if negative_prompt is not None:
         payload["negative_prompt"] = negative_prompt
     return payload
@@ -100,16 +84,13 @@ class VideoGenerationI2VParamTest(BaseTest):
     HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
-        self.url = f"{self.base_url}/v1/videos/generations/i2v"
+        self.url = f"{self.base_url}{SUBMIT_PATH}"
         logger.info(f"Testing I2V parameters at {self.url}")
 
-        model_name = self.config.get("model", "test-model")
-        default_steps = self._get_num_inference_steps_from_reference(
-            model_name, DEFAULT_NUM_INFERENCE_STEPS
-        )
-        logger.info(f"Using num_inference_steps={default_steps} for model={model_name}")
-
-        image_b64 = _load_fixture_image_base64()
+        frames = {
+            "image": fixture_image_data_uri(),
+            "size": wan_size_for_device(self.ctx.device if self.ctx else None),
+        }
         base_prompt = (
             "A tranquil sunrise over rolling hills, soft golden light, "
             "cinematic camera pan"
@@ -120,13 +101,8 @@ class VideoGenerationI2VParamTest(BaseTest):
         )
 
         # Variations probe the same parameter axes covered by the T2V param
-        # test, plus an I2V-only frame_pos variation.
-        default_payload = _build_payload(
-            prompt=base_prompt,
-            num_inference_steps=default_steps,
-            seed=42,
-            image_b64=image_b64,
-        )
+        # test, plus an I2V-only last-frame variation.
+        default_payload = _build_payload(prompt=base_prompt, seed=42, **frames)
         payloads = [
             {"name": "default_payload", "payload": default_payload},
             {
@@ -134,50 +110,26 @@ class VideoGenerationI2VParamTest(BaseTest):
                 "payload": copy.deepcopy(default_payload),
             },
             {
-                "name": "inference_steps_15_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=15,
-                    seed=42,
-                    image_b64=image_b64,
-                ),
-            },
-            {
                 "name": "seed_123_payload",
-                "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=default_steps,
-                    seed=123,
-                    image_b64=image_b64,
-                ),
+                "payload": _build_payload(prompt=base_prompt, seed=123, **frames),
             },
             {
                 "name": "no_negative_prompt_payload",
                 "payload": _build_payload(
-                    prompt=base_prompt,
-                    num_inference_steps=default_steps,
-                    seed=42,
-                    image_b64=image_b64,
-                    negative_prompt=None,
+                    prompt=base_prompt, seed=42, negative_prompt=None, **frames
                 ),
             },
             {
                 "name": "different_prompt_payload",
-                "payload": _build_payload(
-                    prompt=alt_prompt,
-                    num_inference_steps=default_steps,
-                    seed=42,
-                    image_b64=image_b64,
-                ),
+                "payload": _build_payload(prompt=alt_prompt, seed=42, **frames),
             },
             {
-                "name": "frame_pos_4_payload",
+                "name": "last_frame_payload",
                 "payload": _build_payload(
                     prompt=base_prompt,
-                    num_inference_steps=default_steps,
                     seed=42,
-                    image_b64=image_b64,
-                    frame_pos=4,
+                    last_frame=True,
+                    **frames,
                 ),
             },
         ]
@@ -317,33 +269,6 @@ class VideoGenerationI2VParamTest(BaseTest):
                 )
 
         return sorted(response_data_list, key=lambda x: x["index"])
-
-    def _load_accuracy_reference(self) -> dict:
-        """Load accuracy reference data from JSON file."""
-        logger.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
-        try:
-            with open(ACCURACY_REFERENCE_PATH, "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            logger.warning(
-                f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}, "
-                "using defaults"
-            )
-            return {}
-        except json.JSONDecodeError as e:
-            logger.warning(
-                f"Invalid JSON in accuracy reference file: {e}, using defaults"
-            )
-            return {}
-
-    def _get_num_inference_steps_from_reference(
-        self, model_name: str, default: int
-    ) -> int:
-        """Get num_inference_steps from reference data for a given model."""
-        reference_data = self._load_accuracy_reference()
-        if model_name in reference_data:
-            return reference_data[model_name].get("num_inference_steps", default)
-        return default
 
 
 def run_video_generation_i2v_param(
