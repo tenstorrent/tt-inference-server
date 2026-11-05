@@ -8916,10 +8916,10 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "max_turns": 50,
-                        "model_info": {"max_input_tokens": 64 * 1024, "max_output_tokens": 16 * 1024},
+                        "model_info": {"max_input_tokens": 64 * 1024, "max_output_tokens": 12 * 1024},
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 16 * 1024,
+                            "max_tokens": 12 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {"top_k": 20},
                         },
