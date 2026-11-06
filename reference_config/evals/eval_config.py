@@ -11894,7 +11894,7 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 14400,
+                    "timeout": 21600,
                 },
                 gen_kwargs={
                     "stream": "false",

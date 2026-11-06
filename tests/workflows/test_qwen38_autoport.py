@@ -45,7 +45,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 16
     assert gpqa.gen_kwargs["max_gen_toks"] == 81920
-    assert gpqa.model_kwargs["timeout"] == 14400
+    assert gpqa.model_kwargs["timeout"] == 21600
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
         assert len(cfg.task_names_map[EvalLimitMode.SMOKE_TEST]) == 2
