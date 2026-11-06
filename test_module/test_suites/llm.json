@@ -336,23 +336,6 @@
         "quetzal"
       ],
       "models": [
-        "Qwen/Qwen3-4B"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
         "Qwen/Qwen3-14B"
       ],
       "test_cases": [
@@ -375,7 +358,12 @@
       "test_cases": [
         {
           "enabled": true,
-          "template": "VLLMParamConformanceTest"
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
         }
       ]
     },
@@ -490,23 +478,6 @@
       ],
       "models": [
         "meta-llama/Llama-3.2-3B-Instruct"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
-        "Qwen/Qwen3-0.6B"
       ],
       "test_cases": [
         {
@@ -1174,12 +1145,107 @@
         "quetzal"
       ],
       "models": [
+        "mistralai/Devstral-Small-2-24B-Instruct-2512"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "IFM/K2-Horizon-MoVA-36B-A4B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
         "IFM/K2-Horizon-7B"
       ],
       "test_cases": [
         {
           "enabled": true,
           "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-0.6B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
         }
       ]
     }
