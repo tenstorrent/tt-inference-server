@@ -173,7 +173,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
 
 ARG TT_QUETZAL_COMMIT_SHA=""
 
-LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
+LABEL maintainer="Tenstorrent <support@tenstorrent.com>" \
     org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server \
     org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA}
 
