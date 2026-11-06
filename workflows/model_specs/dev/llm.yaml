@@ -3467,6 +3467,33 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# Mistral Small 4 on the Blaze d-gen P/D deployment on exabox (decode: the
+# tt-blaze reload ring on one galaxy; prefill: tt-metal on one galaxy; chart
+# values in tt-orchestration charts/ttop-pmix-disaggregated-dgen/values/
+# values.mistral-small-4.yaml). Remote-served like the entries above: evaluated
+# against the dynamo frontend via `--server-url`; the device entry only lets the
+# model resolve through MODEL_SPECS / EVAL_CONFIGS (r1_gpqa_diamond).
+# max_concurrency follows the chart's global.pd.maxSlots (4). max_context is the
+# 256K the GPU reference ran at (vLLM --max-model-len 262144); the chart serves
+# 8192 tokens per request until the decode context is raised.
+- weights:
+    - mistralai/Mistral-Small-4-119B-2603
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 4
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    mistralai/Mistral-Small-4-119B-2603:
+      remote_api_model: mistralai/Mistral-Small-4-119B-2603
+      reasoning_parser_name: mistral
+      tool_call_parser_name: mistral
+
 - weights:
     - moonshotai/Kimi-K2.7-Code
   impl: blaze
