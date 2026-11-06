@@ -273,7 +273,9 @@ def run_eval(
     monkeypatch.setattr(
         eval_,
         "make_client",
-        lambda model, base_url: GenerationAPIClient(base_url, model, poll_interval=0),
+        lambda model, base_url, **kwargs: GenerationAPIClient(
+            base_url, model, poll_interval=0, **kwargs
+        ),
     )
     if compare_in_process:
 
@@ -567,3 +569,32 @@ def test_the_section_renders_groups_and_notes():
     assert "nothing calibrated yet" in rendered
     assert "| edit  | 2" in rendered and "1.5 / 0.5" in rendered
     assert "Not sent (1)" in rendered and "DINO unavailable" in rendered
+
+
+def test_the_client_sends_a_frozen_caption_only_to_a_deployment_with_frozen_prompts():
+    flux3 = MODELS["black-forest-labs/flux-3-image-klein"]
+    case = {
+        "case_id": "longtext_0_1024x1024",
+        "prompt": "a sign that reads OPEN",
+        "frozen_prompt": "A photograph of a wooden sign that reads OPEN ...",
+        "aspect_ratio": "1:1",
+        "size": "1K",
+        "seed": 1,
+    }
+    frozen = GenerationAPIClient("http://x", flux3, frozen_prompts=True)
+    live = GenerationAPIClient("http://x", flux3)
+    assert frozen.request(case, [])["prompt"] == case["frozen_prompt"]
+    assert live.request(case, [])["prompt"] == case["prompt"]
+    # A case without a frozen caption keeps its prompt either way.
+    del case["frozen_prompt"]
+    assert frozen.request(case, [])["prompt"] == case["prompt"]
+
+
+def test_a_datasets_checks_of_its_own_gpu_run_are_no_cases():
+    manifest = [
+        {"case_id": "a", "task": "t2i", "dev": True, "ci": True},
+        {"case_id": "bfl", "task": "bfl_check", "dev": True, "ci": True},
+    ]
+    for subset in data.SUBSETS:
+        assert [c["case_id"] for c in data.select_cases(manifest, subset)] == ["a"]
+

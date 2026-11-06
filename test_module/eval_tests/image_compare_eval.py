@@ -81,8 +81,10 @@ def eval_model(hf_model_repo: str) -> ImageModel | None:
     return model if model.model_id in EVAL_DATA else None
 
 
-def make_client(model: ImageModel, base_url: str) -> GenerationAPIClient:
-    return GenerationAPIClient(base_url, model)
+def make_client(
+    model: ImageModel, base_url: str, frozen_prompts: bool = False
+) -> GenerationAPIClient:
+    return GenerationAPIClient(base_url, model, frozen_prompts=frozen_prompts)
 
 
 async def generate_all(
@@ -258,8 +260,16 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
 
     from .._test_common import sweep_envelope
 
-    client = make_client(model, ctx.base_url)
     runtime_config = getattr(ctx, "runtime_config", None)
+    # A deployment with frozen prompts (workflows/prompt_upsampler.py: dev mode
+    # by default) uses them exactly as sent, so a model whose prompts are
+    # upsampled first gets the GPU run's frozen captions and is compared alone.
+    # Otherwise the deployment upsamples each prompt itself, end to end, and its
+    # wording can differ from the GPU's.
+    from workflows.prompt_upsampler import prompts_frozen
+
+    frozen_prompts = prompts_frozen(bool(getattr(runtime_config, "dev_mode", False)))
+    client = make_client(model, ctx.base_url, frozen_prompts=frozen_prompts)
     subset = eval_subset(getattr(runtime_config, "limit_samples_mode", None))
     reference = reference_for(model.model_id)
     data_dir, cases = load_cases(model.model_id, subset, reference)
@@ -312,6 +322,10 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         "generation_failed": failures,
         "not_served": not_served,
     }
+    if any(case.get("frozen_prompt") for case in usable):
+        # Which prompts the images were made from: the GPU run's frozen
+        # captions, or the deployment's own upsampling of the original prompts.
+        data["prompts"] = "frozen" if frozen_prompts else "upsampled"
     if result:
         data.update(
             groups=result["groups"],
