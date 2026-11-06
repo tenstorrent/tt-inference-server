@@ -7631,6 +7631,10 @@ templates:
         max_num_batched_tokens: "2048"
         revision: "842da3794eaa0b77d5f08bae87a17459d91ff475"
         tokenizer_revision: "842da3794eaa0b77d5f08bae87a17459d91ff475"
+        # Native HF thought channels and mini-swe-agent v2 function calls.
+        reasoning_parser: gemma4
+        tool_call_parser: gemma4
+        enable_auto_tool_choice: true
         language_model_only: true
         async_scheduling: true
         enable_prefix_caching: true

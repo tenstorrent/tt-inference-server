@@ -78,3 +78,10 @@ def test_autoport_release_benchmark_matrix_is_isolated(monkeypatch):
         (row.isl, row.osl, row.max_concurrency, row.num_prompts) for row in rows
     ] == [(128, 128, 1, 8)]
     assert not rows[0].targets
+
+
+def test_autoport_native_thinking_and_tool_protocol_flags():
+    args = _spec().device_model_spec.vllm_args
+    assert args["reasoning_parser"] == "gemma4"
+    assert args["tool_call_parser"] == "gemma4"
+    assert args["enable_auto_tool_choice"] is True
