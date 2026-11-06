@@ -1797,8 +1797,8 @@ templates:
 # Qwen3.8-27B BH Galaxy MTP spec decode with the GDN state in vLLM's KV cache blocks (QWEN36_MAMBA_SPEC):
 # the qwen36_blackhole_mtp spec above with vLLM-owned GDN state instead of the model's GDN prefix snapshots.
 # TP=8 x DP=4, text, image and video. Not the default: select it with --impl qwen36-blackhole-mtp-mambaspec.
-# Needs tt-metal viktorpus/qwen36-mambaspec-spec 12cc5287ff4 and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
-# ee5de5f (vLLM 0.30), or later: both sides pass the GDN state blocks as one mamba_state keyword.
+# Needs tt-metal viktorpus/qwen36-mambaspec-spec 1395eb9e66e and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
+# 26511d2 (vLLM 0.30), or later: both sides pass the GDN state blocks as one mamba_state keyword.
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen36_blackhole_mtp_mambaspec
@@ -1906,11 +1906,12 @@ templates:
         # atupe/qwen38-glx-mtp 05679b83fe4 and vllm-tt-plugin atupe/qwen38-glx-mtp c3f5448 or later.
         # Per-chunk size: at most long_prefill_token_threshold, lowered with depth by prefill_chunk_cap_table.
         enable_chunked_prefill: true
-        # GDN prefix hits land on block boundaries, so the block size is the hit granularity; vLLM keeps the GDN state
-        # every 1024 tokens of decode too (retention interval).
+        # GDN prefix hits land on block boundaries, so the block size is the hit granularity. Retention 0: vLLM keeps
+        # no decode-written GDN state. At 1024 a follow-up can resume inside the previous reply, but a prefill then
+        # waits for a pending verify that may reach a boundary: -4% throughput at 32 concurrent requests on a Galaxy.
         block_size: "1024"
         enable_prefix_caching: true
-        prefix_cache_retention_interval: "1024"
+        prefix_cache_retention_interval: "0"
         long_prefill_token_threshold: "16384"
         speculative-config: '{"method":"custom_class","model":"vllm_tt_plugin.model_owned_drafter","num_speculative_tokens":3}'
       override_tt_config:
