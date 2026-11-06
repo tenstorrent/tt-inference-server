@@ -12,7 +12,9 @@ dataset's README says how each was made. The run's eval scope picks the
 subset, as for Wan2.2 I2V: dev under ``--limit-samples-mode smoke-test``, ci
 under ``--ci-mode`` and the other CI modes, all on a full-evals run. A model is
 compared with its ``REFERENCES`` run, ``refs/r1`` by default; a reference that
-covers only some cases (its ``index.json``) leaves the others out.
+covers only some cases (its ``index.json``) leaves the others out. A case with a
+``caption_key`` (FLUX 3) also gets its prompt as the GPU run's upsampler wrote it,
+``captions/frozen/<caption_key>.json``, as ``frozen_prompt``.
 """
 
 from __future__ import annotations
@@ -38,11 +40,17 @@ EVAL_DATA = {
         "Tenstorrent/ideogram-4-refs",
         "9b8d74ca4fe1ad0fe811db1199c765e5c81faf90",
     ),
+    "black-forest-labs/flux-3-image-klein": (
+        "Tenstorrent/flux-3-image-klein-refs",
+        "91da28bd0bf46f32c27d380fe6dcae602bc7992c",
+    ),
 }
 # model_id -> the GPU run TT is compared with, where it isn't refs/r1. Qwen's
 # server runs DBCache with cache-dit's `tt` recipe, so R2.
 REFERENCES = {"qwen/qwen-image-edit-2511": "refs/r2/tt"}
 SUBSETS = ("dev", "ci", "all")
+# Case tasks that check a dataset's GPU run itself, not a deployment.
+GPU_RUN_CHECKS = ("bfl_check",)
 # A reference run's text-to-image scores (longtext_score.py, dpg_score.py).
 REFERENCE_SCORES = ("longtext.json", "dpg.json")
 
@@ -80,13 +88,18 @@ def snapshot(model_id: str, patterns: list[str]) -> Path:
 def select_cases(
     manifest: list[dict], subset: str, max_images: int | None = None
 ) -> list[dict]:
-    """The manifest's cases in ``subset``; ``max_images`` leaves out cases with more inputs."""
+    """The manifest's cases in ``subset``; ``max_images`` leaves out cases with more inputs.
+
+    A dataset's checks of its own GPU run (FLUX 3's ``bfl_check``, against the
+    model publisher's images) are not cases for a deployment.
+    """
     if subset not in SUBSETS:
         raise ValueError(f"eval subset {subset!r}; expected one of {SUBSETS}")
     return [
         case
         for case in manifest
         if (subset == "all" or case[subset])
+        and case.get("task") not in GPU_RUN_CHECKS
         and (max_images is None or len(case.get("images") or []) <= max_images)
     ]
 
@@ -117,4 +130,19 @@ def load_cases(
     files |= {f"{reference}/index.json", f"{reference}/provenance.json"}
     # The reference run's text-to-image scores, where it has them.
     files |= {f"{reference}/{name}" for name in REFERENCE_SCORES}
-    return snapshot(model_id, ["cases/*", *sorted(files)]), cases
+    # A model whose prompts are upsampled first (FLUX 3) has each case's
+    # caption, upsampled once on the GPU and frozen.
+    files |= {frozen_caption_path(case) for case in cases if case.get("caption_key")}
+    root = snapshot(model_id, ["cases/*", *sorted(files)])
+    for case in cases:
+        if case.get("caption_key"):
+            path = root / frozen_caption_path(case)
+            if path.is_file():
+                case["frozen_prompt"] = json.loads(path.read_text())["caption"]
+            else:
+                logger.warning(f"{case['case_id']}: no frozen caption at {path}")
+    return root, cases
+
+
+def frozen_caption_path(case: dict) -> str:
+    return f"captions/frozen/{case['caption_key']}.json"

@@ -132,11 +132,15 @@ class GenerationAPIClient:
         model: ImageModel,
         poll_interval: float = 2,
         poll_timeout: float = 900,
+        frozen_prompts: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
+        # Send a case's frozen caption (``frozen_prompt``) where it has one, for
+        # a deployment that uses prompts exactly as sent (PROMPT_UPSAMPLER_FROZEN).
+        self.frozen_prompts = frozen_prompts
 
     def published_schema(self, timeout: float = 30) -> tuple[dict, dict] | None:
         """The deployment's OpenAPI document and this model's request schema in
@@ -170,6 +174,8 @@ class GenerationAPIClient:
         }
         if self.model.prompt_field == "structured_prompt":
             request["structured_prompt"] = case["structured_prompt"]
+        elif self.frozen_prompts and case.get("frozen_prompt"):
+            request["prompt"] = case["frozen_prompt"]
         else:
             request["prompt"] = case["prompt"]
         if self.model.size_tiers and case.get("size"):
