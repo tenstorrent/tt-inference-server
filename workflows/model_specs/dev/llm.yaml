@@ -7634,3 +7634,55 @@ templates:
     ibm-granite/granite-4.2-30b:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_xml
+
+# Stage-11 validated autoport; select explicitly with --impl qwen38-autoport.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen38_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities: [text]
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 8
+      max_context: 262144
+      max_tokens_all_users_override: 1049568
+      default_impl: false
+      tensor_cache_timeout: 7200
+      env_vars:
+        MESH_DEVICE: P300x2
+        QWEN38_HOST_SAMPLING_COMPAT: "1"
+        VLLM_RPC_TIMEOUT: "7200000"
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
+        QWEN38_PRECISION_CONFIG: "/home/container_app_user/tt-metal/models/autoports/qwen_qwen3_8_27b/tt/selected_precision_config.json"
+        TT_METAL_TRACE_ALLOC_TRACKING: "0"
+        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
+      vllm_args:
+        revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        max_num_seqs: 8
+        block_size: 32
+        max_num_batched_tokens: 32768
+        long_prefill_token_threshold: 4096
+        enable_chunked_prefill: true
+        max_logprobs: -1
+        async_scheduling: true
+        no-enable-prefix-caching: true
+        language_model_only: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
+        shutdown_timeout: 10
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        trace_region_size: 0
+        seeded_sampling_policy: host
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      model_path_env: QWEN38_CHECKPOINT
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder

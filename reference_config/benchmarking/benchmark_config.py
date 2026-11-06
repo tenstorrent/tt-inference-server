@@ -598,6 +598,51 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     ``device_model_spec`` fields needed to generate benchmark tasks.
     """
 
+    # Frozen stage-11 matrix for this generated implementation. It deliberately
+    # excludes unsupported decode concurrencies and unrelated structured-output tests.
+    if model_spec.impl.impl_id == "qwen38_autoport":
+        rows = [
+            (128, 128, 1, 8),
+            (128, 128, 32, 256),
+            (128, 1024, 1, 4),
+            (128, 1024, 32, 128),
+            (1024, 128, 1, 4),
+            (1024, 128, 32, 128),
+            (2048, 128, 1, 4),
+            (2048, 128, 32, 128),
+            (4096, 128, 1, 4),
+            (4096, 128, 32, 128),
+            (8192, 128, 1, 2),
+            (8192, 128, 32, 64),
+            (8192, 1024, 1, 2),
+            (8192, 1024, 32, 64),
+            (10000, 1024, 1, 2),
+            (10000, 1024, 32, 64),
+            (16384, 128, 1, 2),
+            (32768, 128, 1, 1),
+            (65536, 128, 1, 1),
+            (65536, 128, 8, 8),
+            (131072, 128, 1, 1),
+        ]
+        return BenchmarkConfig(
+            model_id=model_spec.model_id,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        model_spec.device_type: [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=clients,
+                                num_prompts=count,
+                            )
+                            for isl, osl, clients, count in rows
+                        ]
+                    }
+                )
+            ],
+        )
+
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency
