@@ -116,6 +116,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "noise_n": "Noise n",
     "noise_se": "Noise SE",
     "noise_z": "Noise z",
+    "n_evaluator_not_run": "Evaluator Did Not Run",
     # Benchmarks report a performance-target verdict, not an accuracy check.
     "target_check": "Target Check",
     # Liveness / infra

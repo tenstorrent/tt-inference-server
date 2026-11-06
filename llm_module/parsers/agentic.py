@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
@@ -44,6 +45,10 @@ class AgenticEvalParser(LLMResultParser):
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
+        if self.result_path is not None:
+            n_not_run = _count_evaluator_not_run(raw, self.result_path.parent)
+            if n_not_run is not None:
+                metrics["n_evaluator_not_run"] = n_not_run
         targets: Dict[str, Any] = {"task_name": self.task_name}
         if device:
             targets["device"] = device
@@ -61,6 +66,8 @@ class AgenticEvalParser(LLMResultParser):
         if self.result_path is not None:
             targets["job_result_path"] = str(self.result_path)
         _attach_harbor_targets(targets, metrics)
+        if "n_evaluator_not_run" in metrics:
+            targets["n_evaluator_not_run"] = metrics["n_evaluator_not_run"]
 
         return Block(
             kind=self.kind,
@@ -153,6 +160,8 @@ def _build_evals_data(
         "mean_seconds_per_task": metrics.get("mean_seconds_per_task"),
         "priority": priority,
     }
+    if "n_evaluator_not_run" in metrics:
+        data["n_evaluator_not_run"] = metrics["n_evaluator_not_run"]
     if not success:
         data["success"] = False
         if subprocess_rc is not None:
@@ -187,6 +196,63 @@ def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if mean_seconds is not None:
         metrics["mean_seconds_per_task"] = mean_seconds
     return metrics
+
+
+def _count_evaluator_not_run(raw: Mapping[str, Any], job_dir: Path) -> Optional[int]:
+    """Count scored tau3 trials where the evaluator did not run.
+
+    Detect tau3's schema by its boolean ``used_tau2_evaluator`` marker and
+    count only explicit false values, using the same first eval entry as
+    ``n_trials``. Early-terminated trials scored by the evaluator's
+    premature-termination path still count as evaluated zeros. Missing,
+    malformed or unrelated results provide no evidence; omit the count if
+    none use this schema. With partial coverage, count only observed results.
+    """
+    stats = raw.get("stats", {})
+    evals = stats.get("evals", {}) if isinstance(stats, Mapping) else {}
+    if not isinstance(evals, Mapping) or not evals:
+        return None
+    eval_stats = next(iter(evals.values()))
+    if not isinstance(eval_stats, Mapping):
+        return None
+    reward_stats = eval_stats.get("reward_stats", {})
+    rewards = (
+        reward_stats.get("reward", {}) if isinstance(reward_stats, Mapping) else {}
+    )
+    trial_names = set()
+    if isinstance(rewards, Mapping):
+        for names in rewards.values():
+            if isinstance(names, list):
+                trial_names.update(name for name in names if isinstance(name, str))
+
+    n_not_run = 0
+    found = False
+    for name in trial_names:
+        try:
+            # Trial names are basenames; even symlink targets must stay in the job.
+            if not name or name in {".", ".."} or "/" in name or "\\" in name:
+                continue
+            root = job_dir.resolve()
+            path = (root / name / "verifier" / "result.json").resolve()
+            if not path.is_relative_to(root) or not path.is_file():
+                continue
+            with path.open("rb") as stream:
+                contents = stream.read(1024 * 1024 + 1)
+            if len(contents) > 1024 * 1024:
+                continue
+            result = json.loads(contents)
+            if not isinstance(result, Mapping):
+                continue
+            used = result.get("used_tau2_evaluator")
+            if used is not True and used is not False:
+                continue
+            found = True
+            if used is False:
+                n_not_run += 1
+        except Exception:
+            # Verifier metadata is optional; a failed probe must not break a run.
+            continue
+    return n_not_run if found else None
 
 
 def _mean_seconds_per_task(
