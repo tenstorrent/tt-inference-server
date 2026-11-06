@@ -11969,10 +11969,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                doc_ids=[152, 189, 46, 87, 52, 181, 31, 185, 50, 187],
+                doc_ids=list(range(198)),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 198,
                 },
             ),
             EvalTask(
@@ -12057,27 +12057,16 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.SMOKE_TEST: [
+                        mode: [
                             "terminal-bench/llm-inference-batching-scheduler",
                             "terminal-bench/mailman",
-                        ],
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/llm-inference-batching-scheduler",
-                            "terminal-bench/mailman",
-                            "terminal-bench/db-wal-recovery",
-                            "terminal-bench/winning-avg-corewars",
-                            "terminal-bench/feal-linear-cryptanalysis",
-                            "terminal-bench/fix-code-vulnerability",
-                            "terminal-bench/constraints-scheduling",
-                            "terminal-bench/sparql-university",
-                            "terminal-bench/dna-insert",
-                            "terminal-bench/video-processing",
-                        ],
+                        ]
+                        for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY)
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
         ],

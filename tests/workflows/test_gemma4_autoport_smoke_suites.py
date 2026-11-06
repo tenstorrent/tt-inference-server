@@ -53,7 +53,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         runtime_config=SimpleNamespace(limit_samples_mode=mode),
     )
     assert json.loads(command[command.index("--samples") + 1]) == {
-        "r1_gpqa_diamond": [] if mode == "ci-nightly" else [152, 189, 46]
+        "r1_gpqa_diamond": list(range(198)) if mode == "ci-nightly" else [0, 1, 2]
     }
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
@@ -95,19 +95,6 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
     tmp_path, mode, index, names
 ):
     task = TASKS[index]
-    if mode == "ci-nightly" and task.task_name == "terminal_bench_2_1":
-        names = [
-            "terminal-bench/llm-inference-batching-scheduler",
-            "terminal-bench/mailman",
-            "terminal-bench/db-wal-recovery",
-            "terminal-bench/winning-avg-corewars",
-            "terminal-bench/feal-linear-cryptanalysis",
-            "terminal-bench/fix-code-vulnerability",
-            "terminal-bench/constraints-scheduling",
-            "terminal-bench/sparql-university",
-            "terminal-bench/dna-insert",
-            "terminal-bench/video-processing",
-        ]
     if mode == "ci-nightly" and task.task_name == "r1_gpqa_diamond":
         names = [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
     config = build_harbor_config(
@@ -148,19 +135,8 @@ def test_only_prepared_candidate_enabled():
     from reference_config.evals.eval_config import EvalLimitMode
 
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
+        198,
         0,
         0,
-        10,
     ]
-    assert TASKS[2].agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
-        "terminal-bench/llm-inference-batching-scheduler",
-        "terminal-bench/mailman",
-        "terminal-bench/db-wal-recovery",
-        "terminal-bench/winning-avg-corewars",
-        "terminal-bench/feal-linear-cryptanalysis",
-        "terminal-bench/fix-code-vulnerability",
-        "terminal-bench/constraints-scheduling",
-        "terminal-bench/sparql-university",
-        "terminal-bench/dna-insert",
-        "terminal-bench/video-processing",
-    ]
+    assert TASKS[0].doc_ids == list(range(198))
