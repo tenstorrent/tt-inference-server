@@ -112,3 +112,10 @@ def test_autoport_phase_export_is_periodic_and_unique_per_process():
     )
     assert env["GEMMA4_PHASE_AUTOEXPORT_SECONDS"] == "1"
     assert env["GEMMA4_RETAIN_DECODE_TOKENS"] == "1"
+
+
+def test_autoport_stock_response_observability_config():
+    device = _spec().device_model_spec
+    assert device.env_vars["VLLM_DEBUG_LOG_API_SERVER_RESPONSE"] == "true"
+    assert device.vllm_args["enable_log_requests"] is True
+    assert device.vllm_args["max_log_len"] == 0
