@@ -1194,7 +1194,10 @@ templates:
         GEMMA4_SPEC_MAX_ROWS: "8"  # above 8 live rows the model proposes nothing and the step is the plain decode (no retry overhead)
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
-        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_CCL_TOPOLOGY: "ring"  # ring over the loop-wired four chips with 2 links: prose c8 +13 %, c16 +10 %, greedy c1 +31 % vs linear with the same seeds on a Galaxy QB2 block (2026-11-06); GPQA subset 28/40 with the three knobs below (tt-inference-server#5538)
+        GEMMA4_CCL_NUM_LINKS: "2"  # see GEMMA4_CCL_TOPOLOGY
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # lm_head weights in bfloat8_b: +2..3 % decode on the same block (2026-11-05), coherence and the GPQA subset unchanged
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # resident decode traces per batch bucket (adds the 4- and 16-row buckets): prose c8 +4.6 % on the same block (2026-11-05)
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # KV pool: 6 users at 256K. The single global KV head is replicated on every chip (8.7 KB per pool
         # token per chip: 8 global layers x 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
