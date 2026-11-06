@@ -12499,10 +12499,10 @@ _eval_config_list = [
             ),
         ],
     ),
-    # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4 autoport, P300X2), branch-only: GPQA Diamond
-    # (evals workflow) and a 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings: reasoning_effort=high (the
-    # chat template default), temperature 1.0, top_p 0.95; 32768 output tokens as in the
-    # bring-up's stage-11 run and the card's HF example.
+    # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4, P300X2): GPQA Diamond (evals workflow) and a
+    # 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings:
+    # reasoning_effort=high (the chat template default), temperature 1.0, top_p 0.95; 32768
+    # output tokens as in the card's HF example.
     EvalConfig(
         hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
         tasks=[
@@ -12525,8 +12525,8 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 524288,
-                    # Host-sampled decode at 32 users ran ~4 tok/s/user in the bring-up:
-                    # a 32768-token answer needs ~2.3 h, plus queueing.
+                    # A 32768-token answer at 32 users (~20 tok/s/user) takes ~30 min;
+                    # the margin covers queueing when the KV pool is full.
                     "timeout": 14400,
                 },
                 gen_kwargs={
