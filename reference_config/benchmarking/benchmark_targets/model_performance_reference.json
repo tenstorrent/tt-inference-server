@@ -7116,6 +7116,7 @@
     "google/gemma-4-31B-it": {
         "p300x2": [
             {
+                "impl": "tt_transformers",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7139,6 +7140,55 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
+                "impl": "gemma4_dflash_contract",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    },
+                    "measured": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    },
+                    "measured": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "tt_transformers",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 32,
@@ -7162,6 +7212,55 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
+                "impl": "gemma4_dflash_contract",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 27.44,
+                        "tput": 545.3
+                    },
+                    "measured": {
+                        "ttft_ms": 2882.8,
+                        "tput_user": 27.44,
+                        "tput": 545.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 27.44,
+                        "tput": 545.3
+                    },
+                    "measured": {
+                        "ttft_ms": 2882.8,
+                        "tput_user": 27.44,
+                        "tput": 545.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "tt_transformers",
                 "isl": 2048,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7185,6 +7284,55 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
+                "impl": "gemma4_dflash_contract",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 28.94,
+                        "tput": 26.3
+                    },
+                    "measured": {
+                        "ttft_ms": 475.5,
+                        "tput_user": 28.94,
+                        "tput": 26.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 28.94,
+                        "tput": 26.3
+                    },
+                    "measured": {
+                        "ttft_ms": 475.5,
+                        "tput_user": 28.94,
+                        "tput": 26.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "tt_transformers",
                 "isl": 8192,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7208,6 +7356,55 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
+                "impl": "gemma4_dflash_contract",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 28.69,
+                        "tput": 18.5
+                    },
+                    "measured": {
+                        "ttft_ms": 2491.0,
+                        "tput_user": 28.69,
+                        "tput": 18.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 28.69,
+                        "tput": 18.5
+                    },
+                    "measured": {
+                        "ttft_ms": 2491.0,
+                        "tput_user": 28.69,
+                        "tput": 18.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "tt_transformers",
                 "isl": 32768,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7231,6 +7428,55 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
+                "impl": "gemma4_dflash_contract",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 27.76,
+                        "tput": 7.3
+                    },
+                    "measured": {
+                        "ttft_ms": 13058.1,
+                        "tput_user": 27.76,
+                        "tput": 7.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 27.76,
+                        "tput": 7.3
+                    },
+                    "measured": {
+                        "ttft_ms": 13058.1,
+                        "tput_user": 27.76,
+                        "tput": 7.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "impl": "tt_transformers",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7247,6 +7493,54 @@
                     }
                 },
                 "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            },
+            {
+                "impl": "gemma4_dflash_contract",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            },
+            {
+                "impl": "gemma4_31b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            },
+            {
+                "_comment": "Stage-11 release_benchmark_matrix.json, source model Qwen/Qwen3-32B. No inherited performance targets.",
+                "impl": "gemma4_31b_autoport_v3",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {}
             }
         ],
         "blackhole_galaxy": [

@@ -58,7 +58,7 @@ def test_gemma4_terminal_bench_2_is_pinned_to_the_hub_digest():
         TERMINAL_BENCH_2_DATASET_REF.startswith("sha256:")
         and len(TERMINAL_BENCH_2_DATASET_REF) == 71
     )
-    for model in ("google/gemma-4-31B-it", "google/gemma-4-12B-it"):
+    for model in ("google/gemma-4-26B-A4B-it", "google/gemma-4-12B-it"):
         task = next(
             t
             for t in _eval_config_map[model].tasks

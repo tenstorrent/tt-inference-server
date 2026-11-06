@@ -363,22 +363,20 @@ def test_qwen35_27b_tasks_think_against_a_thinking_off_serving_default():
 
 
 def test_gemma4_31b_tasks_request_thinking_themselves():
-    """gemma-4-31B-it's references (GPQA card 84.3 / H100 83.33, LiveCodeBench
-    and Terminal-Bench) are thinking mode and MMMU-Pro's GPU reference is a
-    thinking-off run, so each task pins its mode in its own requests instead
-    of relying on the serving entry's default."""
+    """The fresh text-only suite pins thinking on all three request paths."""
     from llm_module.request_overrides import resolve_request_body
 
     tasks = {t.task_name: t for t in _eval_config_map["google/gemma-4-31B-it"].tasks}
-    for name in ("r1_gpqa_diamond", "livecodebench"):
-        assert tasks[name].use_chat_api is True, name
-        assert resolve_request_body(tasks[name]) == {
-            "chat_template_kwargs": {"enable_thinking": True}
-        }, name
-    assert resolve_request_body(tasks["mmmu_pro_standard_cot"]) == {
-        "chat_template_kwargs": {"enable_thinking": False}
+    gpqa = tasks["r1_gpqa_diamond"]
+    assert gpqa.use_chat_api is True
+    assert resolve_request_body(gpqa) == {
+        "chat_template_kwargs": {"enable_thinking": True}
     }
-    tb = tasks["terminal_bench_2"].agentic_eval_config.agent_kwargs
+    tb = tasks["terminal_bench_2_1"].agentic_eval_config.agent_kwargs
     assert tb["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
         "enable_thinking": True
     }
+    swe = tasks["swe_bench_verified"].agentic_eval_config.agent_kwargs
+    assert swe["config"]["model"]["model_kwargs"]["extra_body"][
+        "chat_template_kwargs"
+    ] == {"enable_thinking": True}

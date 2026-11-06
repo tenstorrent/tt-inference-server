@@ -1002,7 +1002,11 @@ def test_merge_cli_fails_closed_when_the_merged_results_cannot_be_scored(
 # benchmark against the v6 reference. The shards must partition exactly the
 # configured ids, and the merge must accept only that set.
 
-LCB_MODEL, LCB_TASK, LCB_DATASET_DOCS = "google/gemma-4-31B-it", "livecodebench", 1055
+LCB_MODEL, LCB_TASK, LCB_DATASET_DOCS = (
+    "google/gemma-4-26B-A4B-it",
+    "livecodebench",
+    1055,
+)
 
 
 def _lcb_task(**overrides):
@@ -1017,7 +1021,7 @@ def _lcb_task(**overrides):
 def _lcb_model_spec():
     return SimpleNamespace(
         model_id="m",
-        model_name="gemma-4-31B-it",
+        model_name="gemma-4-26B-A4B-it",
         hf_model_repo=LCB_MODEL,
         docker_image="img",
         status=SimpleNamespace(name="EXPERIMENTAL"),
@@ -1059,7 +1063,7 @@ def _run_lcb_shard(root: Path, index: int, count: int, task, monkeypatch, solved
         task, _lcb_model_spec(), "P300X2", str(attempt), 8000, runtime_config=rc
     )
     docs = json.loads(cmd[cmd.index("--samples") + 1])[LCB_TASK]
-    out = attempt / "eval_x" / "google__gemma-4-31B-it"
+    out = attempt / "eval_x" / "google__gemma-4-26B-A4B-it"
     out.mkdir(parents=True)
     rows = [
         {"doc_id": d, "filter": "none", "acc": d in solved, "doc_hash": str(d)}

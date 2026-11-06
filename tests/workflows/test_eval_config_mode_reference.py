@@ -215,10 +215,29 @@ def _gemma4_task(model, task_name):
 
 
 GEMMA4_RELEASE_MODELS = (
-    "google/gemma-4-31B-it",
     "google/gemma-4-26B-A4B-it",
     "google/gemma-4-12B-it",
 )
+
+
+def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
+    tasks = _eval_config_map["google/gemma-4-31B-it"].tasks
+    assert [task.task_name for task in tasks] == [
+        "r1_gpqa_diamond",
+        "swe_bench_verified",
+        "terminal_bench_2_1",
+    ]
+    assert all(task.priority == "should" for task in tasks)
+    gpqa = tasks[0]
+    assert gpqa.doc_ids == [152, 189]
+    assert gpqa.thinking is True
+    assert gpqa.score.published_score == 84.3
+    assert gpqa.score.gpu_reference_score == 83.33
+    assert not gpqa.score.mode_reference_scores
+    for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY):
+        # Dedicated CI publications may disable this suite to isolate another.
+        assert gpqa.limit_samples_map[mode] in (0, 2)
+        assert not resolve_eval_reference(gpqa.score, mode)["is_subset_reference"]
 
 
 def test_gemma4_gpqa_runs_the_full_set_in_every_preset():
@@ -318,7 +337,7 @@ def test_gemma4_12b_fleurs_is_the_audio_gate_scored_as_100_minus_wer():
 
 
 def _gemma4_multimodal_release_specs():
-    """The six tt-transformers Blackhole QB2 / Galaxy blocks of the release entries."""
+    """The four unchanged 26B/12B tt-transformers Blackhole release blocks."""
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
     )
@@ -342,7 +361,7 @@ def test_gemma4_evals_pin_thinking_per_request_over_the_serving_default(
     the lmms-eval task)."""
     monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
     specs = _gemma4_multimodal_release_specs()
-    assert len(specs) == 6
+    assert len(specs) == 4
     for spec in specs:
         assert (
             spec.device_model_spec.vllm_args["default-chat-template-kwargs"]

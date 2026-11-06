@@ -267,6 +267,13 @@ class ImplSpec:
     code_path: str
 
 
+gemma4_31b_autoport_v3_impl = ImplSpec(
+    impl_id="gemma4_31b_autoport_v3",
+    impl_name="gemma4-31b-autoport-v3",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/google_gemma_4_31b_it",
+)
+
 tt_transformers_impl = ImplSpec(
     impl_id="tt_transformers",
     impl_name="tt-transformers",
@@ -483,6 +490,7 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
 )
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "gemma4_31b_autoport_v3": gemma4_31b_autoport_v3_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
