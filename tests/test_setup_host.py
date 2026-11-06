@@ -1438,7 +1438,7 @@ def test_pinned_failed_host_download_cannot_fall_back_to_other_weights(
             manager.setup_weights_huggingface()
 
 
-def test_unpinned_host_hf_cache_does_not_mount_shared_blobs(
+def test_unpinned_host_hf_cache_mounts_shared_blobs(
     tmp_path, tiny_model_spec, mock_cli_args
 ):
     root = tmp_path / "cache"
@@ -1462,7 +1462,7 @@ def test_unpinned_host_hf_cache_does_not_mount_shared_blobs(
     docker, _ = TestSetupHostDockerCommand()._generate_cmd(
         tiny_model_spec, mock_cli_args, config, json_path
     )
-    assert not any(f"src={shared}," in arg for arg in docker)
+    assert any(f"src={shared}," in arg for arg in docker)
 
 
 def test_pinned_unsharded_checkpoint_uses_normal_format_validation(
