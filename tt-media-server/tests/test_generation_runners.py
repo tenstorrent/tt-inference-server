@@ -138,21 +138,20 @@ def _runner(class_name: str, warming_up: bool = False):
     return runner
 
 
-def _resolved(request, width, height, images=None, seed=5, prompt=None):
+def _resolved(request, width, height, files=None, seed=5, prompt=None):
     request._width, request._height, request._seed = width, height, seed
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = prompt if prompt is not None else request.prompt
     return request
 
 
 def test_wan_passes_both_frames_as_they_are(monkeypatch):
     monkeypatch.setattr(
-        runners, "ImagePrompt", lambda image, frame_pos: (image, frame_pos)
+        runners, "ImagePrompt", lambda image, frame_pos: (image.size, frame_pos)
     )
     runner = _runner("TTWan22I2VA14BRunner")
-    # The pipeline crops and resizes them.
-    first = Image.new("RGB", (2000, 720))
-    last = Image.new("RGB", (640, 360))
+    # The runner decodes them; the pipeline crops and resizes them.
+    first, last = _png(2000, 720), _png(640, 360)
     request = _resolved(
         Wan22i2vA14bRequest(
             prompt="a boat",
@@ -167,7 +166,7 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
     )
     assert runner.run([request]) == ["output"]
     (call,) = runner.pipeline.calls
-    assert call.pop("image_prompt") == [(first, 0), (last, 80)]
+    assert call.pop("image_prompt") == [((2000, 720), 0), ((640, 360), 80)]
     assert call == {
         "prompts": ["a boat"],
         "negative_prompts": [WAN_NEGATIVE_PROMPT],

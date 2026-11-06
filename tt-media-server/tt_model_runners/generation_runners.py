@@ -4,7 +4,7 @@
 
 """Runners of the generations API. Each consumes its model's request from
 domain/ directly, with the inputs the service resolved before queueing it:
-decoded images, output size, seed and the prompt the model gets.
+the media files, output size, seed and the prompt the model gets.
 
 The tt_dit pipelines take the output size per call, so one deployment serves
 every size its request schema allows. Warmup runs every size and input
@@ -83,12 +83,18 @@ def _warmup_request(
     request: GenerationRequest,
     width: int,
     height: int,
-    images: dict[str, list[Image.Image]] | None = None,
+    files: dict[str, list[bytes]] | None = None,
 ) -> GenerationRequest:
     request._width, request._height = width, height
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = _WARMUP_PROMPT
     return request
+
+
+def _png(width: int, height: int, color: str = "black") -> bytes:
+    png = BytesIO()
+    Image.new("RGB", (width, height), color).save(png, "PNG")
+    return png.getvalue()
 
 
 class _GenerationRunner(TTDiTRunner):
@@ -114,6 +120,11 @@ class _GenerationRunner(TTDiTRunner):
         request = requests[0]
         request._task_id = CANARY_DEEP_TASK_ID
         return request
+
+    @staticmethod
+    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files."""
+        return [decode_image(data) for data in request._files.get(name, [])]
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
@@ -159,7 +170,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 width,
                 height,
                 {
-                    name: [Image.new("RGB", (width, height))]
+                    name: [_png(width, height)]
                     for name in ("first_frame", "last_frame")[: 1 + last_frame]
                 },
             )
@@ -174,12 +185,12 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         # The pipeline center-crops each image to the output's aspect ratio and
         # resizes it.
         image_prompt = [
-            ImagePrompt(image=request._images["first_frame"][0], frame_pos=0)
+            ImagePrompt(image=self._images(request, "first_frame")[0], frame_pos=0)
         ]
         if request.last_frame is not None:
             image_prompt.append(
                 ImagePrompt(
-                    image=request._images["last_frame"][0],
+                    image=self._images(request, "last_frame")[0],
                     frame_pos=request.frames - 1,
                 )
             )
@@ -477,10 +488,6 @@ class _MiniMaxH3Runner(_GenerationRunner):
         """The task's inputs, as ``pipeline(...)`` kwargs."""
         return {}
 
-    @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        return [decode_image(data) for data in request._files.get(name, [])]
-
 
 class _MiniMaxH3KeyframesRunner(_MiniMaxH3Runner):
     """Text, with an optional first and last keyframe."""
@@ -511,9 +518,7 @@ class _MiniMaxH3ReferencesRunner(_MiniMaxH3Runner):
 
     def _build_warmup_video_request(self) -> GenerationRequest:
         request = super()._build_warmup_video_request()
-        png = BytesIO()
-        Image.new("RGB", (H3_SHORT_EDGE, H3_SHORT_EDGE), "gray").save(png, "PNG")
-        request._files = {"images": [png.getvalue()]}
+        request._files = {"images": [_png(H3_SHORT_EDGE, H3_SHORT_EDGE, "gray")]}
         return request
 
     def _inputs(self, request: GenerationRequest) -> dict:

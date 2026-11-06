@@ -605,9 +605,9 @@ async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
     assert response.status_code == 202, response.text
     await _wait_final(client, response.json()["id"])
     (request,) = device.requests
-    # The runner reads the decoded images, not the files.
-    assert set(request._images) == {"first_frame", "last_frame"}
-    assert request._files == {}
+    # The runner decodes the frames: only their files go to the device.
+    assert request._images == {}
+    assert set(request._files) == {"first_frame", "last_frame"}
 
 
 async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypatch):
