@@ -915,6 +915,8 @@ templates:
         GEMMA_EXPERIMENT_SHARE_BF8_DOWN: '1'
         GEMMA_EXPERIMENT_SHARE_BF8_GATE_UP: '1'
         GEMMA_EXPERIMENT_FILLPAD_RUNTIME_HMOD: '1'
+        # tt-metal main + Gemma commits carries the op and model overlays in tree.
+        GEMMA_METAL_IN_TREE: '1'
         GEMMA_EXPERIMENT_NATIVE_ALIAS: '1'
         GEMMA_EXPERIMENT_NATIVE_ALIAS_AUDIT: '1'
         # Speculative decoding: host n-gram drafts, 32-row sampled verify (lossless at T>0).
