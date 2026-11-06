@@ -387,6 +387,15 @@ qwen36_blackhole_mtp_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Same tt-metal code as qwen36_blackhole_mtp; distinct impl_id so the MTP profile
+# with the GDN state in vLLM's KV cache blocks (QWEN36_MAMBA_SPEC) gets its own
+# model_id. Selectable via --impl qwen36-blackhole-mtp-mambaspec.
+qwen36_blackhole_mtp_mambaspec_impl = ImplSpec(
+    impl_id="qwen36_blackhole_mtp_mambaspec",
+    impl_name="qwen36-blackhole-mtp-mambaspec",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -513,6 +522,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "qwen36_blackhole_mtp": qwen36_blackhole_mtp_impl,
+    "qwen36_blackhole_mtp_mambaspec": qwen36_blackhole_mtp_mambaspec_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
