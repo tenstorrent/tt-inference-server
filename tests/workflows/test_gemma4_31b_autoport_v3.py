@@ -103,3 +103,11 @@ def test_autoport_pins_current_validated_harbor_source():
     assert (
         _spec().metadata["harbor_git_ref"] == "e76c762fca5267dfb36e1f900f0a7724ed72e735"
     )
+
+
+def test_autoport_phase_export_is_periodic_and_unique_per_process():
+    env = _spec().device_model_spec.env_vars
+    assert env["GEMMA4_BENCHMARK_PHASE_LOG"] == (
+        "/home/container_app_user/cache_root/logs/gemma4-phase-{pid}-{time_ns}.jsonl"
+    )
+    assert env["GEMMA4_PHASE_AUTOEXPORT_SECONDS"] == "1"

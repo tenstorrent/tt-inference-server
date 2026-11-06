@@ -53,9 +53,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         runtime_config=SimpleNamespace(limit_samples_mode=mode),
     )
     assert json.loads(command[command.index("--samples") + 1]) == {
-        "r1_gpqa_diamond": [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
-        if mode == "ci-nightly"
-        else [152, 189, 46]
+        "r1_gpqa_diamond": [] if mode == "ci-nightly" else [152, 189, 46]
     }
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
@@ -116,6 +114,7 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
     assert agent["override_timeout_sec"] == 21600
     kwargs = agent["kwargs"]
     if index == 1:
+        assert agent["env"]["BASH_ENV"] == "/root/.bashrc"
         assert kwargs["version"] == MINI_SWE_AGENT_VERSION == "2.2.8"
         assert kwargs["max_tokens"] == 32768
         model = kwargs["config"]["model"]["model_kwargs"]
@@ -130,3 +129,17 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
         "top_k": 20,
         "chat_template_kwargs": {"enable_thinking": True},
     }
+
+
+def test_retry_enables_only_original_swe_smoke_in_nightly_dispatch():
+    from reference_config.evals.eval_config import EvalLimitMode
+
+    assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
+        0,
+        2,
+        0,
+    ]
+    assert TASKS[1].agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "pylint-dev__pylint-7080",
+        "django__django-11265",
+    ]
