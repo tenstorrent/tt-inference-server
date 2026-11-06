@@ -3536,6 +3536,10 @@ templates:
         MIMO_SPEC_GROUPS: adaptive
         # Verify attention on the whole compute grid (the groups' share of 8 x 8 cores is idle-heavy).
         MIMO_SDPA_FULL_GRID: 1
+        # The KV pair split merges by all-gather instead of merge_heads' fabric exchange: a stopgap for
+        # the MTP token soup (needs tt-metal mimo-v2.6/spec-decode-throughput-pair-merge-gather). AgentX
+        # full: soup 47/2131 -> 0/2108, acceptance collapses 8 -> 0, Out Tok/s/User 135.4 -> 129.0.
+        MIMO_PAIR_MERGE_GATHER: 1
         # MIMO_KV_GB_PER_CHIP stays at the 6 GB default: MTP uses extra memory and 6.6 is unverified here.
         # A prefix-matched request stays on the engine holding its prefix while that engine has at most
         # 4 requests in flight above the least loaded one (engine_proxy default 2). AgentX c=28 with slack 2
