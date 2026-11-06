@@ -42,6 +42,7 @@ class DenoiseStep:
     step: int
     total: int
     sigma: float
+    cached: bool | None = None
 
 
 class FakeFrame:
@@ -216,6 +217,38 @@ class TestVideoStageRecorder:
         recorder(DenoiseStep(step=1, total=4, sigma=0.5))
         assert recorder.denoise_seconds is None
         assert recorder.vae_seconds is None
+        assert recorder.teacache_outcomes == []
+
+    def test_records_teacache_outcomes_without_requiring_a_closed_span(self):
+        model = "stages-teacache"
+        recorder = VideoStageRecorder(model_type=model, device_id="0")
+        recorder(DenoiseStep(step=0, total=4, sigma=1.0, cached=False))
+        recorder(DenoiseStep(step=1, total=4, sigma=0.8, cached=True))
+        recorder(DenoiseStep(step=2, total=4, sigma=0.5, cached=True))
+        recorder.flush(FakeTensor(1, 81, 480, 832, 3))
+
+        base = labels(model)
+        assert (
+            sample(
+                "tt_media_server_video_teacache_steps_total",
+                outcome="computed",
+                **base,
+            )
+            == 1
+        )
+        assert (
+            sample(
+                "tt_media_server_video_teacache_steps_total",
+                outcome="cached",
+                **base,
+            )
+            == 2
+        )
+        # No closed denoise/vae span, so stage timings stay absent.
+        assert (
+            sample("tt_media_server_video_denoise_duration_seconds_count", **base)
+            is None
+        )
 
     def test_a_decode_that_raised_still_reports_its_denoise_loop(self):
         model = "stages-decode-crashed"

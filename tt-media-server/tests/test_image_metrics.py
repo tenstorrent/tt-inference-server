@@ -26,6 +26,7 @@ from telemetry.image_metrics import (
     record_image_run,
     resolution_of_images,
     sampler_name,
+    teacache_outcome,
 )
 
 
@@ -45,6 +46,9 @@ class DenoiseStep:
     step: int
     total: int
     sigma: float
+    cached: bool | None = None
+    skipped: bool | None = None
+    teacache_hit: bool | None = None
 
 
 class FakeImage:
@@ -95,6 +99,44 @@ def drive_full_run(recorder, steps=4, encoders=("clip", "t5")):
     recorder(SectionStart("vae"))
     recorder(SectionEnd("vae"))
     recorder(SectionEnd("total"))
+
+
+class TestTeacacheOutcome:
+    def test_missing_flag_is_none(self):
+        assert teacache_outcome(DenoiseStep(step=1, total=4, sigma=0.5)) is None
+
+    def test_cached_true_and_false(self):
+        assert (
+            teacache_outcome(DenoiseStep(step=1, total=4, sigma=0.5, cached=True))
+            == "cached"
+        )
+        assert (
+            teacache_outcome(DenoiseStep(step=1, total=4, sigma=0.5, cached=False))
+            == "computed"
+        )
+
+    def test_skipped_and_teacache_hit_aliases(self):
+        assert (
+            teacache_outcome(DenoiseStep(step=1, total=4, sigma=0.5, skipped=True))
+            == "cached"
+        )
+        assert (
+            teacache_outcome(
+                DenoiseStep(step=1, total=4, sigma=0.5, teacache_hit=False)
+            )
+            == "computed"
+        )
+
+    def test_cached_wins_when_several_flags_are_set(self):
+        assert (
+            teacache_outcome(
+                DenoiseStep(step=1, total=4, sigma=0.5, cached=False, skipped=True)
+            )
+            == "computed"
+        )
+
+    def test_ignores_other_event_types(self):
+        assert teacache_outcome(SectionStart("denoising")) is None
 
 
 class TestResolutionHelpers:
@@ -291,6 +333,50 @@ class TestImageStageRecorder:
         recorder(DenoiseStep(step=1, total=10, sigma=0.5))
         assert recorder.step_seconds == []
         assert recorder.engine_seconds is None
+        assert recorder.teacache_outcomes == []
+
+    def test_records_teacache_outcomes_only_when_the_flag_is_present(self):
+        model_type = "recorder-teacache"
+        recorder = ImageStageRecorder(model_type, "0", sampler="euler-solver", batch=1)
+        recorder(DenoiseStep(step=0, total=4, sigma=1.0))
+        recorder(DenoiseStep(step=1, total=4, sigma=0.8, cached=False))
+        recorder(DenoiseStep(step=2, total=4, sigma=0.5, cached=True))
+        recorder(DenoiseStep(step=3, total=4, sigma=0.2, skipped=True))
+        recorder.flush([FakeImage()])
+
+        labels = denoise_labels(model_type)
+        assert (
+            sample(
+                "tt_media_server_image_teacache_steps_total",
+                outcome="computed",
+                **labels,
+            )
+            == 1
+        )
+        assert (
+            sample(
+                "tt_media_server_image_teacache_steps_total",
+                outcome="cached",
+                **labels,
+            )
+            == 2
+        )
+        # Today's DenoiseStep (no flag) must not mint a utilization series.
+        assert recorder.teacache_outcomes == ["computed", "cached", "cached"]
+
+    def test_teacache_is_not_published_until_flush(self):
+        model_type = "recorder-teacache-nopub"
+        recorder = ImageStageRecorder(model_type, "0", sampler="euler-solver", batch=1)
+        recorder(DenoiseStep(step=0, total=1, sigma=0.5, cached=True))
+        assert recorder.teacache_outcomes == ["cached"]
+        assert (
+            sample(
+                "tt_media_server_image_teacache_steps_total",
+                outcome="cached",
+                **denoise_labels(model_type),
+            )
+            is None
+        )
 
     def test_unknown_resolution_when_output_shape_is_unreadable(self):
         model_type = "recorder-noshape"
