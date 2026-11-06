@@ -41,6 +41,7 @@ from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.flux3_image_klein_request import (
     FLUX3_KLEIN_STEPS,
     Flux3ImageKleinRequest,
+    flux3_upsampler,
 )
 from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
@@ -400,10 +401,13 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
-            # The prompt arrives upsampled (GenerationService.pre_process), so
-            # the pipeline runs without its own upsampler.
+            # With the console's upsampler, or with frozen prompts, the prompt
+            # arrives as the pipeline should use it (GenerationService.pre_process);
+            # the local upsampler shares the mesh's first chip and rewrites it.
             return Flux3KleinPipeline(
-                self.ttnn_device, snapshots={"distilled": snapshot}
+                self.ttnn_device,
+                snapshots={"distilled": snapshot},
+                upsample=flux3_upsampler() == "local",
             )
         except Exception as e:
             log_exception_chain(
@@ -413,14 +417,22 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
 
     def get_pipeline_device_params(self):
         # From tt-metal's models/tt_dit/tests/models/flux3_klein: a ring with 8 KB
-        # packets and L1_SMALL for the VAE conv2d.
+        # packets and L1_SMALL for the VAE conv2d, plus the local prompt
+        # upsampler's two command queues and trace region (it shares the first
+        # chip).
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
-        return {
+        params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
         }
+        if flux3_upsampler() == "local":
+            params |= {
+                "num_command_queues": 2,
+                "trace_region_size": 256 * 1024 * 1024,
+            }
+        return params
 
     def warmup_requests(self) -> list[GenerationRequest]:
         reference = Image.new("RGB", (1024, 1024))
@@ -452,6 +464,9 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                 images=tuple(request._images.get("images", [])),
             )
         )
+        if flux3_upsampler() == "local":
+            # the local upsampler's caption, which the output reports as its prompt
+            result.image.info["prompt"] = result.prompt
         return [result.image]
 
 

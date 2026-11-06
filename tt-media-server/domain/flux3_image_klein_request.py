@@ -27,6 +27,16 @@ FLUX3_KLEIN_SIZES: dict[str, tuple[int, int]] = {
     "4K": (4096, 4096),
 }
 FLUX3_KLEIN_STEPS = 16
+def flux3_upsampler() -> Optional[str]:
+    """Where this deployment upsamples prompts: ``"remote"`` (the console's
+    upsampler), ``"local"`` (the pipeline's own, on the device), or None when
+    prompts are frozen and used exactly as sent."""
+    from config.settings import get_settings
+
+    settings = get_settings()
+    return None if settings.prompt_upsampler_frozen else settings.prompt_upsampler
+
+
 # The side of the square a reference is cropped and resized to.
 FLUX3_KLEIN_REFERENCE_SIZE = 1024
 
@@ -83,7 +93,10 @@ class Flux3ImageKleinRequest(GenerationRequest):
         return list(FLUX3_KLEIN_SIZES.values())
 
     async def prepare_prompt(self) -> str:
-        # Every prompt goes through the console's prompt upsampler.
+        # With the console's upsampler, every prompt goes through it here; the
+        # local one rewrites it on the device (TTFlux3ImageKleinRunner).
+        if flux3_upsampler() != "remote":
+            return self.model_prompt()
         from utils.prompt_upsampler import upsample
 
         references = [

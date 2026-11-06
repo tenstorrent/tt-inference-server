@@ -4,7 +4,7 @@
 
 import os
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
@@ -155,6 +155,14 @@ class Settings(BaseSettings):
     prompt_upsampler_url: str = ""
     prompt_upsampler_token: str = ""
     prompt_upsampler_timeout_seconds: float = 30.0
+    # Where FLUX.3 Image klein's prompts are upsampled: "remote", the console's
+    # upsampler above, or "local", the pipeline's own on the first chip of the
+    # image model's mesh.
+    prompt_upsampler: Literal["local", "remote"] = "remote"
+    # Every prompt is used exactly as sent, upsampled nowhere: for evals that
+    # send prompts upsampled in advance, so they test the image model alone.
+    # Dev-mode runs (local and CI) set it; production never does.
+    prompt_upsampler_frozen: bool = False
 
     # Telemetry settings
     enable_telemetry: bool = True

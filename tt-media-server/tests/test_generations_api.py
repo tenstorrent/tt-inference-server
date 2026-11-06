@@ -1793,6 +1793,29 @@ async def test_flux3_reports_a_rejected_prompt(generations_app, flux3_upsampler)
     assert device.requests == []
 
 
+@pytest.mark.parametrize(
+    "upsampler, frozen", [("remote", True), ("local", True), ("local", False)]
+)
+async def test_flux3_calls_no_console_upsampler_when_frozen_or_local(
+    generations_app, flux3_upsampler, monkeypatch, upsampler, frozen
+):
+    # Frozen prompts reach the image model exactly as sent; the local upsampler
+    # rewrites them on the device instead.
+    from utils import prompt_upsampler
+
+    monkeypatch.setattr(prompt_upsampler.settings, "prompt_upsampler", upsampler)
+    monkeypatch.setattr(prompt_upsampler.settings, "prompt_upsampler_frozen", frozen)
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        _FLUX3, json={"prompt": "a frozen caption", "size": "1K"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert flux3_upsampler.calls == []
+    assert device.requests[0]._prompt == "a frozen caption"
+    assert job["outputs"][0]["prompt"] == "a frozen caption"
+
+
 async def test_flux3_without_an_upsampler_fails_retryably(generations_app, monkeypatch):
     from utils import prompt_upsampler
 
