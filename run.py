@@ -853,6 +853,9 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.workflow != "agentic" and args.agentic_benchmark == "swebench":
+        # This run branch's default only applies to --workflow agentic.
+        args.agentic_benchmark = None
     if args.agentic_benchmark and args.workflow != "agentic":
         parser.error(
             "--agentic-benchmark selects which agentic eval(s) to run and requires "
