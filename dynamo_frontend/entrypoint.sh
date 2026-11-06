@@ -6,8 +6,14 @@
 set -e
 
 # Tokenizers are baked into the image at the path each worker advertises in its
-# MDC, so the frontend resolves every discovered model locally and serves
-# whatever registers in etcd — no --model-path overlay or runtime download.
+# MDC. Provision the optional gated Llama-1B profile when it is selected at
+# runtime; unrelated deployments continue to use only the baked-in assets.
+SELECTED_MODEL="${MODEL:-${HF_MODEL_ID:-}}"
+if [ "${SELECTED_MODEL}" = "meta-llama/Llama-3.2-1B-Instruct" ]; then
+    fetch_tokenizers.sh \
+        "${TOKENIZER_DIR:-/home/container_app_user/app/server/cpp_server/tokenizers}" \
+        "${SELECTED_MODEL}"
+fi
 
 # Default to Dynamo's Rust-native chat processor. The HTTP server, router,
 # and preprocessing all live in Rust (driven by Tokio); Python is just the

@@ -17,10 +17,12 @@
 # so the Dynamo frontend resolves the worker's MDC paths locally instead of
 # treating them as HuggingFace repo ids (which 404).
 #
-# Usage: fetch_tokenizers.sh [TARGET_DIR]
+# Usage: fetch_tokenizers.sh [TARGET_DIR] [MODEL_ID]
 #   TARGET_DIR  destination tokenizers root. Defaults to the TOKENIZER_DIR env
 #               var, else <this-script>/../tokenizers (i.e. cpp_server/tokenizers).
 #               The positional arg wins over the env var.
+#   MODEL_ID    fetch only this model, failing if its required assets cannot be
+#               obtained. Complete cached assets are reused without network/auth.
 #
 # Requires: wget. Honors HF_TOKEN / HUGGING_FACE_HUB_TOKEN (or
 # ~/.cache/huggingface/token) for gated models.
@@ -29,6 +31,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOKENIZER_DIR="${1:-${TOKENIZER_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)/tokenizers}}"
+SELECTED_MODEL="${2:-}"
+SELECTED_MODEL_FOUND=false
 mkdir -p "${TOKENIZER_DIR}"
 
 HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
@@ -44,10 +48,11 @@ download_hf_file() {
     local url="$2"
     local requires_auth="$3"
     local model_name="$4"
+    local temp
     local filename
     filename=$(basename "${dest}")
 
-    if [ -f "${dest}" ]; then
+    if [ -s "${dest}" ]; then
         return 0
     fi
 
@@ -63,12 +68,17 @@ download_hf_file() {
         wget_args+=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
     fi
 
-    if wget -q "${wget_args[@]}" -O "${dest}" "${url}" 2>&1; then
+    # Publish each complete file atomically so another startup sharing this
+    # cache cannot mistake an in-flight download for a ready tokenizer asset.
+    temp=$(mktemp "${dest}.tmp.XXXXXX") || return 1
+    if wget -q "${wget_args[@]}" -O "${temp}" "${url}" 2>&1 && [ -s "${temp}" ]; then
+        chmod 644 "${temp}"
+        mv -f "${temp}" "${dest}"
         echo "  ${filename} downloaded"
         return 0
     fi
 
-    rm -f "${dest}"
+    rm -f "${temp}"
     echo "  ERROR: Failed to download ${model_name}/${filename}."
     echo "  URL: ${url}"
     if [ "${requires_auth}" = "true" ]; then
@@ -99,6 +109,10 @@ download_hf_file() {
 # eos set (e.g. gpt-oss's <|call|>, MiniMax's only eos).
 download_tokenizer() {
     local model_name="$1"
+    if [ -n "${SELECTED_MODEL}" ] && [ "${SELECTED_MODEL}" != "${model_name}" ]; then
+        return 0
+    fi
+    SELECTED_MODEL_FOUND=true
     local hf_repo="$2"
     local requires_auth="$3"
     local placeholder_config="${4:-}"
@@ -120,8 +134,29 @@ download_tokenizer() {
         fi
     fi
 
+    # Runtime provisioning must work offline when the selected model was baked
+    # into the image or mounted from a previously populated tokenizer directory.
+    if [ -n "${SELECTED_MODEL}" ]; then
+        local complete=true
+        local f
+        for f in "${required_files[@]}" config.json; do
+            if [ ! -s "${model_dir}/${f}" ]; then
+                complete=false
+                break
+            fi
+        done
+        if [ "${complete}" = "true" ]; then
+            echo "  Using existing ${model_name} tokenizer + config."
+            return 0
+        fi
+    fi
+
     # Skip gated models without auth token (covers all downloads below).
     if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        if [ -n "${SELECTED_MODEL}" ]; then
+            echo "  ERROR: ${model_name} tokenizer is missing; set HF_TOKEN or provide cached assets." >&2
+            return 1
+        fi
         echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
         return 0
     fi
@@ -134,7 +169,6 @@ download_tokenizer() {
                 "${requires_auth}" "${model_name}" >/dev/null 2>&1; then
             echo "  ${model_name}/generation_config.json downloaded"
         else
-            rm -f "${gen_config}"
             echo "  note: no generation_config.json for ${model_name} (optional; skipped)"
         fi
     fi
@@ -142,12 +176,12 @@ download_tokenizer() {
     # Fast path: tokenizer essentials + config already present.
     local all_exist=true
     for f in "${required_files[@]}"; do
-        if [ ! -f "${model_dir}/${f}" ]; then
+        if [ ! -s "${model_dir}/${f}" ]; then
             all_exist=false
             break
         fi
     done
-    if [ "${all_exist}" = "true" ] && [ -f "${model_config}" ]; then
+    if [ "${all_exist}" = "true" ] && [ -s "${model_config}" ]; then
         echo "  Using existing ${model_name} tokenizer + config."
         return 0
     fi
@@ -162,7 +196,7 @@ download_tokenizer() {
     done
 
     # Download config.json with placeholder fallback
-    if [ ! -f "${model_config}" ]; then
+    if [ ! -s "${model_config}" ]; then
         if download_hf_file "${model_config}" "${hf_repo}/config.json" "${requires_auth}" "${model_name}" 2>/dev/null; then
             :
         elif [ -n "${placeholder_config}" ]; then
@@ -194,6 +228,15 @@ download_tokenizer \
     "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
     "true" \
     '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
+
+# The optional Llama-1B serving profile requires its own gated assets. Do not
+# make builds for other models depend on access to this model's license.
+if [ "${SELECTED_MODEL:-${MODEL:-${HF_MODEL_ID:-}}}" = "meta-llama/Llama-3.2-1B-Instruct" ]; then
+    download_tokenizer \
+        "meta-llama/Llama-3.2-1B-Instruct" \
+        "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct/resolve/main" \
+        "true"
+fi
 
 # Kimi K2.6 (public tiktoken tokenizer + jinja chat template; no tokenizer.json on HF)
 # Uses /resolve/main for tiktoken.model (LFS file) but /raw/main for text files
@@ -281,6 +324,9 @@ download_tokenizer \
 # "PromptFormatter.from_mdc: syntax error: unexpected float".
 for GLM_TMPL in "${TOKENIZER_DIR}/zai-org/GLM-5.1/chat_template.jinja" \
                 "${TOKENIZER_DIR}/zai-org/GLM-5.2/chat_template.jinja"; do
+    if [ -n "${SELECTED_MODEL}" ] && [ "${GLM_TMPL}" != "${TOKENIZER_DIR}/${SELECTED_MODEL}/chat_template.jinja" ]; then
+        continue
+    fi
     if [ -f "${GLM_TMPL}" ] && grep -q 'm\.content\.0' "${GLM_TMPL}"; then
         sed -i 's/m\.content\.0/m.content[0]/g' "${GLM_TMPL}"
         echo "  patched ${GLM_TMPL#"${TOKENIZER_DIR}/"} for minijinja (.0 -> [0])"
@@ -324,5 +370,10 @@ download_tokenizer \
     "https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main" \
     "false" \
     '{"model_type":"bert","architectures":["BertModel"]}'
+
+if [ -n "${SELECTED_MODEL}" ] && [ "${SELECTED_MODEL_FOUND}" != "true" ]; then
+    echo "ERROR: Unsupported tokenizer model: ${SELECTED_MODEL}" >&2
+    exit 1
+fi
 
 echo ""

@@ -213,6 +213,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "moonshotai/Kimi-K2.7-Code";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
+    case config::ModelType::LLAMA_3_2_1B_INSTRUCT:
+      return "meta-llama/Llama-3.2-1B-Instruct";
     case config::ModelType::GPT_OSS_120B:
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
@@ -238,6 +240,9 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
+    case config::ModelType::LLAMA_3_2_1B_INSTRUCT:
+      return std::make_unique<LlamaTokenizer>(
+          path, "meta-llama/Llama-3.2-1B-Instruct");
     case config::ModelType::KIMI_K2_6:
     case config::ModelType::KIMI_K2_7_CODE:
       // Kimi K2.6 / K2.7-Code use model-specific files, but currently share the
@@ -489,6 +494,14 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return deepseekR1Info();
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return llama31Info();
+    case config::ModelType::LLAMA_3_2_1B_INSTRUCT: {
+      static const StaticTokenizerInfo info = [] {
+        auto result = llama31Info();
+        result.modelName = "meta-llama/Llama-3.2-1B-Instruct";
+        return result;
+      }();
+      return info;
+    }
     case config::ModelType::KIMI_K2_6:
       return kimiK26Info();
     case config::ModelType::KIMI_K2_7_CODE:

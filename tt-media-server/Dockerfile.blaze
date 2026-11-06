@@ -297,6 +297,8 @@ ENV ENVIRONMENT=development \
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
+    wget \
+    ca-certificates \
     libjsoncpp-dev \
     librdkafka1 \
     librdkafka++1 \

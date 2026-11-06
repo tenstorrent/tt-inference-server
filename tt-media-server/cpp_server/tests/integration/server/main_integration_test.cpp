@@ -25,6 +25,7 @@
 
 #include "../support/multiturn_prefix_cache.hpp"
 #include "../support/test_server.hpp"
+#include "api/response_writer/non_stream_response_writer.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
@@ -34,6 +35,7 @@
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
 
@@ -90,6 +92,40 @@ class MainIntegrationTest : public ::testing::Test {
 std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
 
 using tt::test::ChatRequest;
+
+TEST(CompletionResponseWriterTest, TokenBufferIsOptIn) {
+  for (bool collectIds : {false, true}) {
+    tt::api::ResponseWriterParams params{};
+    params.countTokenIds = collectIds;
+    bool built = false;
+    auto writer = tt::api::NonStreamResponseWriter::create(
+        params, [](const drogon::HttpResponsePtr&) {},
+        [&](const tt::domain::llm::LLMResponse& response) {
+          built = true;
+          const auto& choice = response.choices.at(0);
+          EXPECT_EQ(choice.text, "hello");
+          if (collectIds) {
+            EXPECT_EQ(choice.token_ids, (std::vector<uint32_t>{42, 128009}));
+            EXPECT_EQ(response.usage.completion_tokens, 2);
+          } else {
+            EXPECT_TRUE(choice.token_ids.empty());
+            EXPECT_EQ(response.usage.completion_tokens, 1);
+          }
+          return std::string("{}");
+        });
+    tt::domain::llm::LLMStreamChunk chunk{0};
+    tt::domain::llm::LLMChoice token;
+    token.token_id = 42;
+    token.text = "hello";
+    chunk.choices.push_back(token);
+    writer->handleTokenChunk(chunk);
+    chunk.choices[0].token_id = 128009;
+    chunk.choices[0].text.clear();
+    writer->handleTokenChunk(chunk);
+    writer->finalize();
+    EXPECT_TRUE(built);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -584,6 +620,143 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   ASSERT_EQ(body["choices"].size(), 1u);
   EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
   EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
+}
+
+TEST_F(MainIntegrationTest, RawEndpointUnavailableOnOtherModels) {
+  ASSERT_NE(tt::config::modelType(),
+            tt::config::ModelType::LLAMA_3_2_1B_INSTRUCT);
+  auto response = tt::test::HttpResponse::parse(tt::test::sendAndReceive(
+      server->host(), server->port(), R"({"prompt":[11],"max_tokens":1})",
+      "your-secret-key", 250, "/v1/completions"));
+  EXPECT_EQ(response.statusCode(), 404) << response.body();
+}
+
+TEST_F(MainIntegrationTest, CompletionsPreservePromptAndEveryOutputToken) {
+  auto future = std::async(std::launch::async, [] {
+    return tt::test::sendAndReceive(
+        server->host(), server->port(),
+        R"({"prompt":[11,22,33],"max_tokens":3,"return_token_ids":true,"logprobs":0,"stop_token_ids":[128009]})",
+        "your-secret-key", 2000, "/v1/completions");
+  });
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_EQ(seq->getTokenIds(), (std::vector<uint32_t>{11, 22, 33}));
+  tt::test::WorkerResponse(seq->taskId)
+      .token(0)
+      .token(42)
+      .tokenWithFlags(128009, tt::ipc::SharedToken::FLAG_FINAL)
+      .sendTo(server->resultQueue());
+  auto response = tt::test::HttpResponse::parse(future.get());
+  ASSERT_EQ(response.statusCode(), 200) << response.body();
+  auto body = response.json();
+  EXPECT_EQ(body["object"], "text_completion");
+  auto choice = body["choices"][0];
+  EXPECT_EQ(choice["token_ids"].size(), 3u);
+  EXPECT_EQ(choice["token_ids"][0], 0);
+  EXPECT_EQ(choice["token_ids"][1], 42);
+  EXPECT_EQ(choice["token_ids"][2], 128009);
+  EXPECT_EQ(choice["finish_reason"], "stop");
+  EXPECT_TRUE(choice["logprobs"].isNull());
+  EXPECT_EQ(body["usage"]["prompt_tokens"], 3);
+  EXPECT_EQ(body["usage"]["completion_tokens"], 3);
+}
+
+TEST_F(MainIntegrationTest, CompletionsBatchPreservesOrderAndAggregatesUsage) {
+  auto future = std::async(std::launch::async, [] {
+    return tt::test::sendAndReceive(
+        server->host(), server->port(),
+        R"({"prompt":[[51,52],[61,62,63],[71]],"max_tokens":1,"return_token_ids":true})",
+        "your-secret-key", 2000, "/v1/completions");
+  });
+  const std::vector<std::vector<uint32_t>> prompts{
+      {51, 52}, {61, 62, 63}, {71}};
+  for (size_t i = 0; i < prompts.size(); ++i) {
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_EQ(seq->getTokenIds(), prompts[i]);
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(100 + i, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+  }
+  auto response = tt::test::HttpResponse::parse(future.get());
+  ASSERT_EQ(response.statusCode(), 200) << response.body();
+  auto body = response.json();
+  ASSERT_EQ(body["choices"].size(), 3u);
+  for (Json::ArrayIndex i = 0; i < 3; ++i) {
+    EXPECT_EQ(body["choices"][i]["index"].asUInt(), i);
+    EXPECT_EQ(body["choices"][i]["token_ids"][0].asUInt(), 100 + i);
+    EXPECT_EQ(body["choices"][i]["finish_reason"], "length");
+  }
+  EXPECT_EQ(body["usage"]["prompt_tokens"], 6);
+  EXPECT_EQ(body["usage"]["completion_tokens"], 3);
+}
+
+TEST_F(MainIntegrationTest, CompletionsIgnoreEosReportsLengthAtModelStopToken) {
+  auto future = std::async(std::launch::async, [] {
+    return tt::test::sendAndReceive(
+        server->host(), server->port(),
+        R"({"prompt":[81,82],"max_tokens":1,"return_token_ids":true,"ignore_eos":true,"stop_token_ids":[]})",
+        "your-secret-key", 2000, "/v1/completions");
+  });
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_TRUE(seq->getSamplingParams().ignore_eos);
+  const auto stopToken = tt::utils::tokenizers::staticInfo().stopTokenIds.at(0);
+  tt::test::WorkerResponse(seq->taskId)
+      .tokenWithFlags(stopToken, tt::ipc::SharedToken::FLAG_FINAL)
+      .sendTo(server->resultQueue());
+  auto response = tt::test::HttpResponse::parse(future.get());
+  ASSERT_EQ(response.statusCode(), 200) << response.body();
+  const auto choice = response.json()["choices"][0];
+  EXPECT_EQ(choice["token_ids"][0].asUInt(), stopToken);
+  EXPECT_EQ(choice["finish_reason"], "length");
+}
+
+TEST_F(MainIntegrationTest, CompletionsRejectIgnoreEosWithExplicitStopTokens) {
+  auto response = tt::test::HttpResponse::parse(tt::test::sendAndReceive(
+      server->host(), server->port(),
+      R"({"prompt":[11,22],"ignore_eos":true,"stop_token_ids":[42]})",
+      "your-secret-key", 250, "/v1/completions"));
+  EXPECT_EQ(response.statusCode(), 400) << response.body();
+  EXPECT_NE(response.body().find("ignore_eos=true with stop_token_ids"),
+            std::string::npos);
+}
+
+TEST_F(MainIntegrationTest, CompletionsRejectInvalidOrUnsupportedRequests) {
+  for (const char* body :
+       {R"({"prompt":[128256]})",
+        R"({"prompt":[1],"stop_token_ids":[128256]})",
+        R"({"prompt":[1],"top_k":33})",
+        R"({"prompt":[]})",
+        R"({"prompt":[-1]})",
+        R"({"prompt":[1.5]})",
+        R"({"prompt":[1],"max_tokens":0})",
+        R"({"prompt":[1],"stream":true})",
+        R"({"prompt":[1],"seed":0})",
+        R"({"prompt":[1],"seed":123})",
+        R"({"prompt":[1],"logprobs":5})",
+        R"({"prompt":[1],"top_p":0})",
+        R"({"prompt":[1],"stop":["foo"]})",
+        R"({"prompt":[1],"allowed_token_ids":[42]})",
+        R"({"prompt":[1],"prompt_logprobs":1})",
+        R"({"prompt":[1],"truncate_prompt_tokens":1})",
+        R"({"prompt":[1],"best_of":2})",
+        R"({"prompt":[1],"logit_bias":{"42":100}})",
+        R"({"prompt":[1],"guided_json":{"type":"object"}})",
+        R"({"prompt":[1],"guided_regex":"[ab]+"})",
+        R"({"prompt":[1],"guided_choice":["yes","no"]})",
+        R"({"prompt":[1],"guided_grammar":"root ::= 'yes'"})",
+        R"({"prompt":[1],"structured_outputs":{"choice":["yes","no"]}})",
+        R"({"prompt":[1],"length_penalty":2})",
+        R"({"prompt":[1],"stop_token_ids":128009})",
+        R"({"prompt":[1],"stop_token_ids":[-1]})",
+        R"({"prompt":[1],"stop_token_ids":[1.5]})",
+        R"({"prompt":[1],"stop_token_ids":[2147483648]})"}) {
+    auto response = tt::test::HttpResponse::parse(
+        tt::test::sendAndReceive(server->host(), server->port(), body,
+                                 "your-secret-key", 250, "/v1/completions"));
+    EXPECT_EQ(response.statusCode(), 400) << body << " " << response.body();
+  }
 }
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {

@@ -79,6 +79,8 @@ struct LLMChoice {
   std::optional<Json::Value> logprobs;
   std::optional<std::string> finish_reason;
   std::optional<uint32_t> token_id;
+  std::vector<uint32_t>
+      token_ids;  // accumulated non-streaming output, including EOS
   std::optional<Json::Value> tool_calls;
   uint32_t spec_accepts = 0;
   uint32_t spec_rejects = 0;
