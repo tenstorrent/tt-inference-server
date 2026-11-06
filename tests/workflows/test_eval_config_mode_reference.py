@@ -237,7 +237,7 @@ def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
     for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY):
         # Dedicated CI publications may disable this suite to isolate another.
         assert gpqa.limit_samples_map[mode] == (
-            0 if mode == EvalLimitMode.CI_NIGHTLY else 2
+            10 if mode == EvalLimitMode.CI_NIGHTLY else 2
         )
         assert not resolve_eval_reference(gpqa.score, mode)["is_subset_reference"]
 
