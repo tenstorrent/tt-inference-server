@@ -15,7 +15,11 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     args = spec.device_model_spec.vllm_args
-    assert args["max_num_seqs"] == 16
+    assert args["max_num_seqs"] == 32
+    assert spec.device_model_spec.max_concurrency == 32
+    assert args["max_num_batched_tokens"] == 131072
+    assert "num_gpu_blocks_override" not in args
+    assert args.get("distributed_executor_backend", "uni") == "uni"
     assert args["block_size"] == 32
     assert args["no-enable-prefix-caching"] is True
     assert args["enable_auto_tool_choice"] is True
@@ -104,7 +108,7 @@ def test_benchmark_entry_preserves_counts_and_uses_pinned_fixed_chat_protocol():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     assert "default-chat-template-kwargs" not in spec.device_model_spec.vllm_args
-    assert spec.device_model_spec.max_tokens_all_users == 524768
+    assert spec.device_model_spec.max_tokens_all_users == 1049568
     assert (
         get_pinned_revision(spec, required=True)
         == "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
