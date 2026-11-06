@@ -10514,6 +10514,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="black-forest-labs/flux-3-image-klein",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="ideogram-ai/ideogram-4",
         tasks=[
             EvalTask(
