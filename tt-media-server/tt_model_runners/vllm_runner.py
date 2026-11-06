@@ -87,8 +87,16 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
             additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        # Settings resolves mounted/downloaded weights to a local directory.
+        # Preserve the configured vLLM model ID when no local weights exist.
+        weights_path = self.settings.model_weights_path
+        model = (
+            weights_path
+            if weights_path and os.path.isdir(weights_path)
+            else self.settings.vllm.model
+        )
         engine_args = AsyncEngineArgs(
-            model=self.settings.vllm.model,
+            model=model,
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,

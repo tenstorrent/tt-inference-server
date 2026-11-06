@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import pytest
+from config.constants import ModelRunners
+from config.settings import Settings
+from config.vllm_settings import VLLMSettings
 from domain.completion_request import CompletionRequest
 from tt_model_runners.vllm_runner import VLLMForgeRunner
 
@@ -194,3 +197,58 @@ async def test_warmup_reads_env_into_additional_config(
     assert add_cfg["optimization_level"] == expected["optimization_level"]
     assert add_cfg["cpu_sampling"] is expected["cpu_sampling"]
     assert add_cfg["enable_trace"] is expected["enable_trace"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mount_state", ["populated", "empty", "missing"])
+@patch("tt_model_runners.vllm_runner.AsyncLLMEngine")
+@patch("tt_model_runners.vllm_runner.AsyncEngineArgs")
+@patch("tt_model_runners.base_device_runner.get_settings")
+async def test_warmup_uses_resolved_mounted_weights(
+    mock_get_settings, mock_engine_args, mock_llm_engine, tmp_path, mount_state
+):
+    snapshot = tmp_path / "snapshot"
+    if mount_state != "missing":
+        snapshot.mkdir()
+    if mount_state == "populated":
+        (snapshot / "config.json").write_text("{}")
+    repo_id = "tiiuae/Falcon3-7B-Instruct"
+    # Exercise the real Settings mount resolution instead of injecting the
+    # already-resolved path. The engine is the hardware boundary of this test.
+    with patch.dict(os.environ, {"MODEL_WEIGHTS_DIR": str(snapshot)}, clear=True):
+        settings = Settings(
+            device=None,
+            is_galaxy=False,
+            model_runner=ModelRunners.VLLMForge.value,
+            model_weights_path=repo_id,
+            vllm=VLLMSettings(model=repo_id),
+        )
+        mock_get_settings.return_value = settings
+        mock_llm_engine.from_engine_args.return_value = MockAsyncLLMEngine(["hello"])
+        # -1 avoids touching thread/device settings during this CPU-only test.
+        runner = VLLMForgeRunner(device_id="-1")
+        for _ in range(2):
+            assert await runner.warmup()
+            expected = str(snapshot) if mount_state == "populated" else repo_id
+            assert mock_engine_args.call_args.kwargs["model"] == expected
+        # The public model identifier is not rewritten to a filesystem path.
+        assert settings.vllm.model == repo_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("weights_path", ["", "another-org/another-model"])
+@patch("tt_model_runners.vllm_runner.AsyncLLMEngine")
+@patch("tt_model_runners.vllm_runner.AsyncEngineArgs")
+@patch("tt_model_runners.base_device_runner.get_settings")
+async def test_warmup_preserves_vllm_model_without_local_weights(
+    mock_get_settings, mock_engine_args, mock_llm_engine, weights_path
+):
+    settings = MagicMock()
+    settings.device_mesh_shape = (1, 1)
+    settings.model_weights_path = weights_path
+    settings.vllm.model = "explicit-org/explicit-model"
+    mock_get_settings.return_value = settings
+    mock_llm_engine.from_engine_args.return_value = MockAsyncLLMEngine(["hello"])
+    runner = VLLMForgeRunner(device_id="-1")
+    assert await runner.warmup()
+    assert mock_engine_args.call_args.kwargs["model"] == settings.vllm.model
