@@ -23,12 +23,16 @@
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "utils/logger.hpp"
-#ifdef KAFKA_ENABLED
+#ifdef ENABLE_BLAZE
 #include "config/settings.hpp"
+#include "messaging/kvm_zmq_transport.hpp"
+#include "services/remote_kv_manager_adapter.hpp"
+#include "services/remote_kv_manager_zmq_impl.hpp"
+#endif
+#ifdef KAFKA_ENABLED
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
 #include "services/composite_migration_client.hpp"
-#include "services/remote_kv_manager_adapter.hpp"
 #include "services/remote_kv_manager_impl.hpp"
 #endif
 
@@ -320,15 +324,21 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
 // Runner-type-driven migration client factory that hands out the shmem-backed
 // MigrationLayerClientAdapter for real device runs, or a MockMigrationClient
 // for the mock pipeline. This is the client the PrefillScheduler gets when
-// PREFILL_USE_REMOTE_KV_MANAGER is off, AND — when it is on — the loopback
-// backend that a CompositeMigrationClient uses to serve migrate() calls the
-// Kafka RemoteKVManagerAdapter cannot handle (ALLOCATE(migrate_from_slot)
-// prefix-cache slot copies). Kept as a separate helper so both callers share
-// exactly one runner_type switch.
+// PREFILL_USE_REMOTE_KV_MANAGER is off, AND — on the Kafka transport only —
+// the loopback backend that a CompositeMigrationClient uses to serve
+// migrate() calls the Kafka RemoteKVManagerAdapter cannot handle
+// (ALLOCATE(migrate_from_slot) prefix-cache slot copies). Kept as a separate
+// helper so both callers share exactly one runner_type switch.
+//
+// The ZMQ transport deliberately does NOT use this as a loopback: a prefill
+// process can never receive an ALLOCATE with migrate_from_slot (see the
+// reachability note on makePrefillZmqMigrationClient), and attaching the
+// shmem client anyway blocks worker startup for two minutes on queues that
+// do not exist in a kv_manager deployment.
 //
 // NOTE: this is not the top-level factory called by the scheduler factory —
 // that is makeMigrationClientInterface() below, which dispatches to either
-// this helper or the Kafka path.
+// this helper or one of the RemoteKVManager transports.
 inline std::unique_ptr<sch::MigrationClientInterface>
 makeShmemOrMockMigrationClient(const tt::config::BlazeConfig& config) {
   if (!config.enableMigration) {
@@ -417,28 +427,99 @@ makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
 }
 #endif  // KAFKA_ENABLED
 
+// ZMQ-backed migration client for the PrefillScheduler. kv_manager serves
+// every migration this process issues, so this is a single backend — no
+// CompositeMigrationClient, and no shmem loopback:
+//
+//   RemoteKVManagerAdapter wraps a RemoteKVManagerZmqImpl bound to the
+//   kv_manager prefill-leader endpoints. Every enqueued layer becomes a
+//   single ZMQ command message; the adapter aggregates per-burst acks into
+//   one `on_migration_complete` event so the PrefillScheduler's "one
+//   terminal event per burst" contract holds unchanged.
+//
+// The Kafka path pairs its adapter with a shmem loopback backend to serve
+// the single-shot migrate() calls the adapter does not implement
+// (ALLOCATE(migrate_from_slot) prefix-cache slot copies). That backend is
+// dead weight in a prefill process: PrefixCacheRouter::getSlot only sets
+// slotIdToCopyFrom under LLMMode::DECODE_ONLY ("slot copies require
+// migration workers that only exist in decode-only mode"), so
+// ISRequest::migrate_from_slot is never set here, PrefillScheduler's
+// pending_alloc_migrations_ queue never fills, and its lone migrate() call
+// site (prefill_scheduler.cpp, ack_reader_loop) is unreachable. Attaching
+// the shmem client anyway meant blocking in
+// MigrationLayerClientAdapter::create() for TT_MIGRATION_CLIENT_ATTACH_
+// TIMEOUT_MS (2 min default) on mig_ep0_* queues no one creates in a
+// kv_manager deployment — a silent stall at worker startup.
+//
+// RemoteKVManagerAdapter covers every other MigrationClientInterface method
+// the scheduler touches: poll() is real, connect_to()/wait_ready() are
+// no-ops (kv_manager discovery happens at construction), and
+// cmd_queue_write_space() returns UINT32_MAX, which disables the
+// kCmdQueueBackpressureMargin throttle — correct here, since there is no
+// shmem cmd queue to overrun and kv_manager applies its own backpressure.
+// migrate() still throws std::logic_error; that is the tripwire if the
+// router is ever changed to emit prefix copies in prefill mode.
+//
+// Unlike the Kafka path, no LayerToPartition mapping is needed: kv_manager
+// owns internal fan-out from the prefill-leader to its peers, so from our
+// side every command targets the same ZMQ endpoint regardless of
+// layer_begin. Only compiled when ENABLE_BLAZE=ON (which pulls in
+// cppzmq/libzmq unconditionally via the top-level CMake).
+inline std::unique_ptr<sch::MigrationClientInterface>
+makePrefillZmqMigrationClient(const tt::config::BlazeConfig& config) {
+  tt::messaging::KvmZmqTransportConfig transportCfg{
+      .endpoint = config.kvmZmqEndpoint,
+  };
+  auto transport =
+      std::make_unique<tt::messaging::KvmZmqTransport>(std::move(transportCfg));
+  auto kvManager = std::make_unique<tt::services::RemoteKVManagerZmqImpl>(
+      std::move(transport),
+      std::chrono::milliseconds(tt::config::kvMigrationTimeoutMs()),
+      std::chrono::milliseconds(tt::config::kvMigrationSweepIntervalMs()),
+      static_cast<int>(tt::config::kvMigrationDrainPollMs()));
+  TT_LOG_INFO(
+      "makePrefillZmqMigrationClient: RemoteKVManagerAdapter over ZMQ wired "
+      "(endpoint={}); no shmem loopback "
+      "backend — kv_manager serves every migration this process issues",
+      config.kvmZmqEndpoint);
+  return std::make_unique<tt::services::RemoteKVManagerAdapter>(
+      std::move(kvManager));
+}
+
 // Top-level migration-client factory for the PrefillScheduler. Dispatches
-// on the (env-derived) prefillUseRemoteKvManager flag carried on the config:
-// when true, the burst path goes through the Kafka-backed
-// RemoteKVManagerAdapter (composed with a shmem/mock loopback for migrate()
-// calls the adapter cannot service); when false, the scheduler talks directly
-// to the shmem/mock client. This function is what
-// blaze_scheduler_factory::makePrefillScheduler calls; the two helpers above
-// are private-in-spirit implementation details.
+// on config.prefillUseRemoteKvManager (feature gate) and, when on, on
+// config.prefillKvManagerTransport ("zmq" [default] or "kafka") to pick
+// the burst backend. When the feature gate is off the scheduler talks
+// directly to the shmem/mock client. This function is what
+// blaze_scheduler_factory::makePrefillScheduler calls; the *MigrationClient
+// helpers above are private-in-spirit implementation details.
 inline std::unique_ptr<sch::MigrationClientInterface>
 makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
   if (!config.enableMigration) {
     return nullptr;
   }
   if (config.prefillUseRemoteKvManager) {
+    const std::string& transport = config.prefillKvManagerTransport;
+    // ZMQ is the default (see defaults.hpp); empty string is treated as
+    // "zmq" so an operator that only sets PREFILL_USE_REMOTE_KV_MANAGER=1
+    // gets the new path without having to know about the transport flag.
+    if (transport == "zmq" || transport.empty()) {
+      return makePrefillZmqMigrationClient(config);
+    }
+    if (transport == "kafka") {
 #ifdef KAFKA_ENABLED
-    return makePrefillKafkaMigrationClient(config);
+      return makePrefillKafkaMigrationClient(config);
 #else
-    throw std::runtime_error(
-        "PREFILL_USE_REMOTE_KV_MANAGER=1 but this binary was built without "
-        "KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON or unset "
-        "PREFILL_USE_REMOTE_KV_MANAGER to use the shmem MigrationLayerClient.");
+      throw std::runtime_error(
+          "PREFILL_KV_MANAGER_TRANSPORT=kafka but this binary was built "
+          "without KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON, unset "
+          "PREFILL_KV_MANAGER_TRANSPORT to use the default ZMQ path, or "
+          "unset PREFILL_USE_REMOTE_KV_MANAGER to use the shmem "
+          "MigrationLayerClient.");
 #endif
+    }
+    throw std::runtime_error("Unknown PREFILL_KV_MANAGER_TRANSPORT='" +
+                             transport + "'; expected 'zmq' or 'kafka'.");
   }
   return makeShmemOrMockMigrationClient(config);
 }
