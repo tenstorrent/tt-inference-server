@@ -10,7 +10,11 @@ from llm_module.agentic.harbor import _write_harbor_config
 from llm_module.config import DriverContext, ServerConnection
 from llm_module.drivers.agentic import build_harbor_config
 from llm_module.eval_command import build_eval_command
-from reference_config.evals.eval_config import MINI_SWE_AGENT_VERSION, _eval_config_map
+from reference_config.evals.eval_config import (
+    MINI_SWE_AGENT_VERSION,
+    EvalLimitMode,
+    _eval_config_map,
+)
 
 MODEL = "google/gemma-4-31B-it"
 TASKS = _eval_config_map[MODEL].tasks
@@ -50,7 +54,10 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         runtime_config=SimpleNamespace(limit_samples_mode=mode),
     )
     assert json.loads(command[command.index("--samples") + 1]) == {
-        "r1_gpqa_diamond": [152, 189]
+        "r1_gpqa_diamond": []
+        if mode == "ci-nightly"
+        and TASKS[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+        else [152, 189]
     }
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
