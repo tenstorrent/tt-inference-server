@@ -168,6 +168,7 @@ def grade(
     reference: str,
     config: dict | None = None,
     text_image: dict | None = None,
+    subset: str | None = None,
 ) -> dict:
     """The compare gate's checks per group, and the verdict as a ReportCheckTypes name.
 
@@ -175,6 +176,9 @@ def grade(
     set is NA. Calibration means are per group, over the cases both runs have.
     A text-to-image benchmark the run has fails if TT's score is more than
     ``text_image_max_drop`` below the GPU run's, or if it could not be scored.
+    That drop is one number, or one per eval subset (``{"ci": 16.0, "all":
+    3.0}``): a CI run scores few images, so one image moves its score further;
+    a subset the map leaves out is not checked.
     """
     config = config if config is not None else json.loads(GATE_CONFIG.read_text())
     limits = (config.get("models", {}).get(model_id) or {}).get(reference) or {}
@@ -232,6 +236,8 @@ def grade(
                 }
             )
     for name, drop in (limits.get("text_image_max_drop") or {}).items():
+        if isinstance(drop, dict):
+            drop = drop.get(subset)
         score = (text_image or {}).get(name)
         if drop is None or score is None or "skipped" in score:
             continue
@@ -307,7 +313,13 @@ def run_image_compare_eval(ctx: MediaContext, model: ImageModel) -> Block:
         device=os.environ.get(SCORER_DEVICE_ENV, "cpu"),
     )
     gate = (
-        grade(result or {}, model.model_id, reference, text_image=text_image)
+        grade(
+            result or {},
+            model.model_id,
+            reference,
+            text_image=text_image,
+            subset=subset,
+        )
         if result or text_image
         else None
     )
