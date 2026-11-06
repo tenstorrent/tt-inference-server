@@ -281,7 +281,9 @@ def flux3_runner(monkeypatch):
 @pytest.mark.parametrize("with_image", [False, True])
 def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     images = {"images": [Image.new("RGB", (3000, 1000))]} if with_image else {}
-    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048, images)
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048)
+    # The service decodes FLUX.3's reference: the runner gets the image itself.
+    request._images = images
     (image,) = flux3_runner.run([request])
     (call,) = flux3_runner.pipeline.calls
     assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
