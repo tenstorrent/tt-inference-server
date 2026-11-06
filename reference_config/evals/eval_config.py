@@ -11932,7 +11932,7 @@ _eval_config_list = [
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
-                        "interleaved_thinking": False,
+                        "interleaved_thinking": True,
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,

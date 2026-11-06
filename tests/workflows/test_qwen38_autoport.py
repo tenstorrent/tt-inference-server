@@ -63,7 +63,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     )
     assert cfg.agent_kwargs["model_info"]["max_output_tokens"] == 32768
     assert cfg.agent_kwargs["llm_kwargs"]["timeout"] == 7200
-    assert cfg.agent_kwargs.get("interleaved_thinking", False) is False
+    assert cfg.agent_kwargs["interleaved_thinking"] is True
     assert cfg.agent_kwargs["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
         "reasoning_effort": "medium"
     }
