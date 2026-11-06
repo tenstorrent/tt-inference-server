@@ -97,3 +97,9 @@ def test_autoport_caches_use_stock_persistent_container_mount():
     env = spec.device_model_spec.env_vars
     assert Path(env["HF_HUB_CACHE"]) == root / "weights" / "hub"
     assert Path(env["TT_METAL_CACHE"]) == root / "tt-metal-jit"
+
+
+def test_autoport_pins_current_validated_harbor_source():
+    assert (
+        _spec().metadata["harbor_git_ref"] == "e76c762fca5267dfb36e1f900f0a7724ed72e735"
+    )
