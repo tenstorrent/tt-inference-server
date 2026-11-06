@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# uv overrides applied when installing tt-vllm-plugin into the main venv.
+# A marker that is never true removes the dependency from the resolution.
+# CUDA-only packages that vllm's PyPI wheel drags in and nothing on a Tenstorrent host can use.
+cupy-cuda12x ; sys_platform == 'never'
+triton ; sys_platform == 'never'
