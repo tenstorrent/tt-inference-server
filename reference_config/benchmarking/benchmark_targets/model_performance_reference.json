@@ -7126,17 +7126,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 116.1,
                         "tput_user": 30.2,
                         "tput": 29.6
                     },
                     "measured": {
-                        "ttft_ms": 119.8,
-                        "tput_user": 30.2,
-                        "tput": 29.6,
+                        "ttft_ms": 116.1,
+                        "tput_user": 50.89,
+                        "tput": 49.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 119.8, tput_user 30.2, tput 29.6. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42174441742) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7149,17 +7150,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 2865.7,
                         "tput_user": 27.44,
                         "tput": 545.3
                     },
                     "measured": {
-                        "ttft_ms": 2882.8,
-                        "tput_user": 27.44,
-                        "tput": 545.3,
+                        "ttft_ms": 2866.8,
+                        "tput_user": 27.18,
+                        "tput": 543.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 2882.8, tput_user 27.44, tput 545.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350187377) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7172,17 +7174,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 475.5,
                         "tput_user": 28.94,
                         "tput": 26.3
                     },
                     "measured": {
-                        "ttft_ms": 475.5,
-                        "tput_user": 28.94,
-                        "tput": 26.3,
+                        "ttft_ms": 584.7,
+                        "tput_user": 34.16,
+                        "tput": 29.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 475.5, tput_user 28.94, tput 26.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7195,17 +7198,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 2491.0,
                         "tput_user": 28.69,
                         "tput": 18.5
                     },
                     "measured": {
-                        "ttft_ms": 2491.0,
-                        "tput_user": 28.69,
-                        "tput": 18.5,
+                        "ttft_ms": 2659.2,
+                        "tput_user": 30.33,
+                        "tput": 18.7,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 2491.0, tput_user 28.69, tput 18.5. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7218,17 +7222,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 13058.1,
                         "tput_user": 27.76,
                         "tput": 7.3
                     },
                     "measured": {
-                        "ttft_ms": 13058.1,
-                        "tput_user": 27.76,
-                        "tput": 7.3,
+                        "ttft_ms": 13510.6,
+                        "tput_user": 27.81,
+                        "tput": 7.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 13058.1, tput_user 27.76, tput 7.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7262,17 +7267,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 109.8,
                         "tput_user": 25.41,
                         "tput": 25.0
                     },
                     "measured": {
-                        "ttft_ms": 136.4,
-                        "tput_user": 29.15,
-                        "tput": 28.5,
+                        "ttft_ms": 119.1,
+                        "tput_user": 31.62,
+                        "tput": 30.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 118.2, tput_user 25.41, tput 25.0. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064592653 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 136.4, tput_user 29.15, tput 28.5. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350164247) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7286,17 +7292,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 2070.0,
                         "tput_user": 18.73,
                         "tput": 1804.4
                     },
                     "measured": {
-                        "ttft_ms": 2511.2,
-                        "tput_user": 23.92,
-                        "tput": 1520.0,
+                        "ttft_ms": 2070.0,
+                        "tput_user": 24.86,
+                        "tput": 2133.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2285.9, tput_user 18.73, tput 1804.4. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064592653 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 2511.2, tput_user 23.92, tput 1520.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064592653) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7310,17 +7317,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 490.9,
                         "tput_user": 24.47,
                         "tput": 22.3
                     },
                     "measured": {
-                        "ttft_ms": 1036.9,
-                        "tput_user": 27.47,
-                        "tput": 25.4,
+                        "ttft_ms": 523.1,
+                        "tput_user": 30.85,
+                        "tput": 27.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 546.7, tput_user 24.47, tput 22.3. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064592653 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 1036.9, tput_user 27.47, tput 25.4. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350164247) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7334,17 +7342,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 2075.3,
                         "tput_user": 23.5,
                         "tput": 16.5
                     },
                     "measured": {
-                        "ttft_ms": 2332.2,
-                        "tput_user": 28.17,
-                        "tput": 18.9,
+                        "ttft_ms": 2075.3,
+                        "tput_user": 30.58,
+                        "tput": 20.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2351.0, tput_user 23.5, tput 16.5. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064592653 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 2332.2, tput_user 28.17, tput 18.9. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064592653) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7358,17 +7367,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 9527.7,
                         "tput_user": 20.26,
                         "tput": 7.5
                     },
                     "measured": {
-                        "ttft_ms": 10333.4,
-                        "tput_user": 25.71,
-                        "tput": 9.4,
+                        "ttft_ms": 9527.7,
+                        "tput_user": 29.99,
+                        "tput": 9.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 10728.3, tput_user 20.26, tput 7.5. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064592653 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 10333.4, tput_user 25.71, tput 9.4. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064592653) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7488,7 +7498,7 @@
                 }
             },
             {
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2.",
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 71.9, tput_user 45.69, tput 44.9. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350202054) (tt-inference-server#5538).",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -7500,13 +7510,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 69.6,
                         "tput_user": 45.69,
                         "tput": 44.9
                     },
                     "measured": {
-                        "ttft_ms": 71.9,
-                        "tput_user": 45.69,
-                        "tput": 44.9,
+                        "ttft_ms": 113.0,
+                        "tput_user": 76.1,
+                        "tput": 71.8,
                         "tolerance": 0.2
                     }
                 }
@@ -7523,17 +7534,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 891.1,
                         "tput_user": 31.67,
                         "tput": 835.0
                     },
                     "measured": {
-                        "ttft_ms": 891.1,
-                        "tput_user": 31.67,
-                        "tput": 835.0,
+                        "ttft_ms": 1061.9,
+                        "tput_user": 30.89,
+                        "tput": 790.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 891.1, tput_user 31.67, tput 835.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7547,17 +7559,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 310.5,
                         "tput_user": 44.59,
                         "tput": 40.5
                     },
                     "measured": {
-                        "ttft_ms": 310.5,
-                        "tput_user": 44.59,
-                        "tput": 40.5,
+                        "ttft_ms": 313.7,
+                        "tput_user": 73.33,
+                        "tput": 62.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 310.5, tput_user 44.59, tput 40.5. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7571,17 +7584,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1243.2,
                         "tput_user": 44.41,
                         "tput": 30.8
                     },
                     "measured": {
-                        "ttft_ms": 1298.6,
-                        "tput_user": 44.41,
-                        "tput": 30.8,
+                        "ttft_ms": 1243.2,
+                        "tput_user": 68.8,
+                        "tput": 41.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 1298.6, tput_user 44.41, tput 30.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42156852264) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7595,17 +7609,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 5597.4,
                         "tput_user": 43.41,
                         "tput": 14.3
                     },
                     "measured": {
-                        "ttft_ms": 6028.1,
-                        "tput_user": 43.41,
-                        "tput": 14.3,
+                        "ttft_ms": 5597.4,
+                        "tput_user": 46.0,
+                        "tput": 15.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 6028.1, tput_user 43.41, tput 14.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42156852264) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7640,6 +7655,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 105.7,
                         "tput_user": 37.04,
                         "tput": 36.2
                     },
@@ -7650,7 +7666,7 @@
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 103.5, tput_user 37.04, tput 36.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 103.5, tput_user 37.04, tput 36.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41579637121) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7664,6 +7680,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1479.5,
                         "tput_user": 31.88,
                         "tput": 3165.6
                     },
@@ -7674,7 +7691,7 @@
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1186.7, tput_user 31.88, tput 3165.6; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1186.7, tput_user 31.88, tput 3165.6; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41579637121) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7688,6 +7705,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 420.8,
                         "tput_user": 36.05,
                         "tput": 32.7
                     },
@@ -7698,7 +7716,7 @@
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 388.8, tput_user 36.05, tput 32.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 388.8, tput_user 36.05, tput 32.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41579637121) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7712,6 +7730,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1115.2,
                         "tput_user": 34.84,
                         "tput": 26.7
                     },
@@ -7722,7 +7741,7 @@
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1142.1, tput_user 34.84, tput 26.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1142.1, tput_user 34.84, tput 26.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41579637121) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7736,6 +7755,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 4767.7,
                         "tput_user": 30.56,
                         "tput": 14.2
                     },
@@ -7746,7 +7766,7 @@
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 4864.6, tput_user 30.56, tput 14.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 4864.6, tput_user 30.56, tput 14.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41579637121) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7856,17 +7876,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 67.2,
                         "tput_user": 52.73,
                         "tput": 51.6
                     },
                     "measured": {
-                        "ttft_ms": 70.1,
-                        "tput_user": 52.73,
-                        "tput": 51.6,
+                        "ttft_ms": 67.2,
+                        "tput_user": 54.03,
+                        "tput": 52.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 109.2, tput_user 60.76, tput 58.2. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7879,17 +7900,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1383.7,
                         "tput_user": 47.89,
                         "tput": 992.3
                     },
                     "measured": {
-                        "ttft_ms": 1475.0,
-                        "tput_user": 47.89,
-                        "tput": 992.3,
+                        "ttft_ms": 1383.7,
+                        "tput_user": 46.01,
+                        "tput": 988.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 1390.7, tput_user 46.59, tput 994.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7902,17 +7924,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 270.6,
                         "tput_user": 50.34,
                         "tput": 45.8
                     },
                     "measured": {
-                        "ttft_ms": 270.6,
-                        "tput_user": 50.34,
-                        "tput": 45.8,
+                        "ttft_ms": 292.9,
+                        "tput_user": 57.24,
+                        "tput": 51.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 326.1, tput_user 49.99, tput 44.6. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7925,17 +7948,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1316.0,
                         "tput_user": 49.81,
                         "tput": 32.1
                     },
                     "measured": {
-                        "ttft_ms": 1433.1,
-                        "tput_user": 49.81,
+                        "ttft_ms": 1316.0,
+                        "tput_user": 47.54,
                         "tput": 32.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 1429.2, tput_user 50.07, tput 32.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7948,17 +7972,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 6175.7,
                         "tput_user": 47.81,
                         "tput": 13.2
                     },
                     "measured": {
-                        "ttft_ms": 7037.6,
-                        "tput_user": 47.81,
-                        "tput": 13.2,
+                        "ttft_ms": 6175.7,
+                        "tput_user": 45.51,
+                        "tput": 14.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 6639.5, tput_user 48.01, tput 13.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7992,17 +8017,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 63.2,
                         "tput_user": 44.19,
                         "tput": 43.4
                     },
                     "measured": {
-                        "ttft_ms": 85.1,
-                        "tput_user": 56.82,
-                        "tput": 55.2,
+                        "ttft_ms": 67.2,
+                        "tput_user": 60.79,
+                        "tput": 59.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 72.0, tput_user 44.19, tput 43.4. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064578621 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 85.1, tput_user 56.82, tput 55.2. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350171612) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -8016,17 +8042,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 982.6,
                         "tput_user": 30.03,
                         "tput": 2999.6
                     },
                     "measured": {
-                        "ttft_ms": 1316.0,
-                        "tput_user": 42.37,
-                        "tput": 2790.0,
+                        "ttft_ms": 1056.6,
+                        "tput_user": 42.79,
+                        "tput": 4047.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1219.4, tput_user 30.03, tput 2999.6. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064578621 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 1316.0, tput_user 42.37, tput 2790.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350171612) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -8040,17 +8067,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 248.1,
                         "tput_user": 41.99,
                         "tput": 38.5
                     },
                     "measured": {
-                        "ttft_ms": 573.9,
-                        "tput_user": 54.95,
-                        "tput": 49.0,
+                        "ttft_ms": 250.5,
+                        "tput_user": 56.66,
+                        "tput": 51.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 296.7, tput_user 41.99, tput 38.5. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064578621 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 573.9, tput_user 54.95, tput 49.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350171612) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -8064,17 +8092,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 1116.9,
                         "tput_user": 39.75,
                         "tput": 28.7
                     },
                     "measured": {
-                        "ttft_ms": 1351.0,
-                        "tput_user": 54.35,
-                        "tput": 36.0,
+                        "ttft_ms": 1116.9,
+                        "tput_user": 56.02,
+                        "tput": 37.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1261.2, tput_user 39.75, tput 28.7. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064578621 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 1351.0, tput_user 54.35, tput 36.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064578621) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -8088,17 +8117,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 4847.4,
                         "tput_user": 32.68,
                         "tput": 13.5
                     },
                     "measured": {
-                        "ttft_ms": 5518.3,
-                        "tput_user": 51.55,
-                        "tput": 18.3,
+                        "ttft_ms": 4847.4,
+                        "tput_user": 54.65,
+                        "tput": 17.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 5572.9, tput_user 32.68, tput 13.5. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064578621 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 5518.3, tput_user 51.55, tput 18.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064578621) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
