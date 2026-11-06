@@ -7,7 +7,8 @@
     "Every threshold is set from the first CI run (the calibration run), generously, and changed only with review. Until then a group's checks are NA: the comparison is reported, not gated.",
     "FLUX.2 klein 4B refs/r1: calibrated from a local release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-de55f31-127107813048, tt-inference-server 4957eece4: the 381 of 629 all cases the deployment serves (1:1, at most 1 input image). max_image_lpips and min_mean_dino apply to every group, so they fit text to image, which is far from the GPU's images (PSNR about 11 dB, LPIPS about 0.55): 0.9 is about 0.1 over the worst image (0.798, dpg_partiprompts12_1024x1024) and 0.72 about 0.05 under the lowest group mean (0.771, dpg_2K). Edits (about 19 dB, LPIPS about 0.2) are held by their mean margins. DPG: TT 88.48 vs GPU 88.48 over 109 images; LongText isn't scored on a CPU.",
     "Ideogram 4 refs/r1: calibrated from a local CI-mode release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-1c23c16-127372085668, tt-inference-server bdf35030d: the 27 ci cases, all 2K (the deployment serves only 2K). Text to image is far from the GPU's images (PSNR about 14 dB, LPIPS about 0.39): max_image_lpips 0.7 is about 0.13 over the worst image (0.568, longtext_0_quality_2048x2048) and min_mean_dino 0.83 about 0.05 under the lowest group mean (0.884, longtext_2K). DPG: TT 92.54 vs GPU 95.84 over 11 images (-3.3); with so few images one image moves the score by several points, so the drop allowed is 6. LongText isn't scored on a CPU.",
-    "Qwen-Image-Edit-2511 refs/r2/tt: calibrated from a local full release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-1c23c16-127372085668, tt-inference-server 0ca4650b8: all 250 cases. TT is deterministic here (the 24 ci cases scored the same in a CI-mode run). max_image_lpips 0.97 sits just over one outlier, gedit_motion_change_e9b3b27074575e7615723b7ff89de9a0_input_768x1376 (0.942: TT redraws the scene, 91% changed and 387 px drift, where the GPU changes 46%); the next worst images are multi-reference, about 0.81. min_mean_dino 0.7 is about 0.05 under the lowest group mean (0.751, multi_ref_3). Not gated: edit drift, TT 10.8 px vs GPU 4.4 (edit) and 24.5 vs 1.0 (input_ratio)."
+    "Qwen-Image-Edit-2511 refs/r2/tt: calibrated from a local full release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-1c23c16-127372085668, tt-inference-server 0ca4650b8: all 250 cases. TT is deterministic here (the 24 ci cases scored the same in a CI-mode run). max_image_lpips 0.97 sits just over one outlier, gedit_motion_change_e9b3b27074575e7615723b7ff89de9a0_input_768x1376 (0.942: TT redraws the scene, 91% changed and 387 px drift, where the GPU changes 46%); the next worst images are multi-reference, about 0.81. min_mean_dino 0.7 is about 0.05 under the lowest group mean (0.751, multi_ref_3). Not gated: edit drift, TT 10.8 px vs GPU 4.4 (edit) and 24.5 vs 1.0 (input_ratio).",
+    "FLUX.3 Image klein refs/r1: calibrated from a local CI-mode release eval on BH Galaxy, 2026-11-06, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-8e59245c1973cef6f721d56d877897a0f79e9399-b54d4fa-127834727599, tt-inference-server ec39d7bca, frozen prompts (the plan's R4): the 26 ci cases, all 1:1 (18 at 1K, 8 at 2K). TT is close to the GPU's images (text to image PSNR about 17-27 dB, LPIPS about 0.09-0.2): max_image_lpips 0.45 is about 0.1 over the worst image (0.349, dpg_whoops38_1024x1024: the same scene, framed differently) and min_mean_dino 0.92 about 0.05 under the lowest group mean (0.969, dpg). DPG: TT 86.95 vs GPU 98.95 over 5 images (-12.0): three images each miss one of their 10 questions on images close to the GPU's, and with 5 images each miss moves the score 2 points, so the drop allowed is 16. LongText isn't scored on a CPU. Not gated: edit drift, TT 6.2 px vs GPU 2.2 (edit) and 32.8 vs 0.0 (edit_2K), most of it gedit_color_alter_8c541c8aaed6d5a8eb2d86162d39d01b_2048x2048 (107 px: TT shrinks the plate inside the frame the edit adds)."
   ],
   "models": {
     "qwen/qwen-image-edit-2511": {
@@ -688,6 +689,40 @@
           "longtext_8_1024x1024": {"psnr": 10.02, "ssim": 0.1561, "lpips": 0.6223},
           "longtext_8_2048x2048": {"psnr": 10.16, "ssim": 0.2201, "lpips": 0.6549},
           "longtext_9_1024x1024": {"psnr": 8.41, "ssim": 0.1513, "lpips": 0.6398}
+        }
+      }
+    },
+    "black-forest-labs/flux-3-image-klein": {
+      "refs/r1": {
+        "max_image_lpips": 0.45, "min_mean_dino": 0.92, "mean_margin": {"psnr": 1.5, "ssim": 0.05, "lpips": 0.05},
+        "text_image_max_drop": {"longtext": null, "dpg": 16.0},
+        "calibration": {
+          "bfl_boxes_balloons_1024x1024": {"psnr": 30.75, "ssim": 0.9059, "lpips": 0.0447},
+          "bfl_boxes_boxes_cactus_1024x1024": {"psnr": 34.49, "ssim": 0.9736, "lpips": 0.0139},
+          "dpg_119_1024x1024": {"psnr": 22.28, "ssim": 0.7093, "lpips": 0.1504},
+          "dpg_146_2048x2048": {"psnr": 29.22, "ssim": 0.8939, "lpips": 0.0699},
+          "dpg_localized16_1024x1024": {"psnr": 22.21, "ssim": 0.8157, "lpips": 0.114},
+          "dpg_stanford29_2048x2048": {"psnr": 24.5, "ssim": 0.8385, "lpips": 0.1155},
+          "dpg_whoops38_1024x1024": {"psnr": 15.18, "ssim": 0.5724, "lpips": 0.3486},
+          "gedit_background_change_f7d391ffa970e18fc8393888295899f8_1024x1024": {"psnr": 29.32, "ssim": 0.9295, "lpips": 0.0379},
+          "gedit_color_alter_8c541c8aaed6d5a8eb2d86162d39d01b_2048x2048": {"psnr": 16.85, "ssim": 0.8601, "lpips": 0.3394},
+          "gedit_material_alter_43e8fede0b26141d75c64c1f03bfc96e_1024x1024": {"psnr": 35.32, "ssim": 0.9744, "lpips": 0.0205},
+          "gedit_material_alter_6dc67bf92a79edb4f966836df4252145_2048x2048": {"psnr": 27.01, "ssim": 0.9004, "lpips": 0.0923},
+          "gedit_style_change_599dbcd5dd042cec90da287aa11414ce_1024x1024": {"psnr": 25.61, "ssim": 0.9101, "lpips": 0.0373},
+          "gedit_style_change_f4dfe5ffe8cb955f41ac3858dd6ac5d7_1024x1024": {"psnr": 22.47, "ssim": 0.6954, "lpips": 0.1867},
+          "gedit_subject-remove_08a671d4c5067a5659ea84cded659fd8_2048x2048": {"psnr": 17.5, "ssim": 0.8523, "lpips": 0.1326},
+          "gedit_subject-remove_ce693a75c84f7c0f2975c6cc50f2af9e_1024x1024": {"psnr": 21.94, "ssim": 0.7835, "lpips": 0.0936},
+          "gedit_subject-replace_93e3bdd834cb2924864675b3dc5de9e5_1024x1024": {"psnr": 20.68, "ssim": 0.8562, "lpips": 0.1329},
+          "gedit_text_change_bdd77c99d54bdb14bcd48ee0ee3faafa_1024x1024": {"psnr": 31.96, "ssim": 0.969, "lpips": 0.0124},
+          "gedit_tone_transfer_f57ec87ccf7bc1788dfd5be1da4dbe7a_1024x1024": {"psnr": 32.45, "ssim": 0.9642, "lpips": 0.0201},
+          "gedit_tone_transfer_f57ec87ccf7bc1788dfd5be1da4dbe7a_2048x2048": {"psnr": 25.81, "ssim": 0.8941, "lpips": 0.1228},
+          "longtext_0_1024x1024": {"psnr": 18.71, "ssim": 0.6749, "lpips": 0.1492},
+          "longtext_101_2048x2048": {"psnr": 19.81, "ssim": 0.8277, "lpips": 0.1071},
+          "longtext_134_1024x1024": {"psnr": 15.81, "ssim": 0.7571, "lpips": 0.1325},
+          "longtext_189_1024x1024": {"psnr": 18.05, "ssim": 0.7257, "lpips": 0.1016},
+          "longtext_44_1024x1024": {"psnr": 19.22, "ssim": 0.721, "lpips": 0.1698},
+          "longtext_8_2048x2048": {"psnr": 19.05, "ssim": 0.7084, "lpips": 0.1391},
+          "longtext_9_1024x1024": {"psnr": 15.26, "ssim": 0.6288, "lpips": 0.1828}
         }
       }
     }
