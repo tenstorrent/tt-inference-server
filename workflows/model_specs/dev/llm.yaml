@@ -1812,7 +1812,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # DP=4 x 8 per rank
       max_context: 262144
-      max_tokens_all_users_override: 2101248  # attention tokens: 4 DP ranks x 525312 per rank (GDN state blocks come on top)
+      max_tokens_all_users_override: 4161536  # attention tokens: 4 DP ranks x 1040384 per rank (GDN state blocks come on top)
       # MTP spec decode via vllm-tt-plugin custom_class (Qwen36MTPContractForCausalLM); text, image and video
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
@@ -1822,10 +1822,12 @@ templates:
         OMP_NUM_THREADS: "8"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
-        # Attention tokens per rank. With QWEN36_MAMBA_SPEC the plugin adds one output block and the GDN state blocks
-        # (3 GDN groups x (2 + K + 1 checkpoint)) of each of the 8 requests: 513 + 8 + 144 = 665 blocks of 1024 tokens
-        # per rank, 665 x 16 layer slots x 1024 tokens x 544 B (BF8 K and V) = 5.9 GB per device.
-        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        # Attention tokens per rank, sized so the pool takes the per-device DRAM of the qwen36_blackhole_mtp spec's KV
+        # pool plus its 256 GDN prefix snapshots (525,824 tokens x 8,704 B + 256 x 21.75 MiB = 10.4 GB). A block of
+        # 1024 tokens is 16 layer slots x 1024 x 544 B (BF8 K and V) = 8.9 MB, so 1168 blocks fit. The plugin adds one
+        # output block and the GDN state blocks (3 GDN groups x (2 + K + 1 checkpoint)) of each of the 8 requests, 152 in
+        # all, which leaves 1016 attention blocks.
+        QWEN36_MAX_TOKENS_ALL_USERS: "1040384"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
         VLLM_IMAGE_FETCH_TIMEOUT: "30"
         QWEN_SDPA_BF8: "1"  # bfp8 paged KV cache: +12-14% aggregate at 8k-32k context, accuracy within noise (see QWEN38_GALAXY_HANDOFF.md §1a)
