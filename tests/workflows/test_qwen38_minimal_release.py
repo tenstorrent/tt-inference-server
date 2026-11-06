@@ -60,7 +60,7 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
         WorkflowVenvType.EVALS_AGENTIC,
         WorkflowVenvType.EVALS_AGENTIC,
     ]
-    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 2
+    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config

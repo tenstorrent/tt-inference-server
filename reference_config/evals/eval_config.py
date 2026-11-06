@@ -11889,11 +11889,11 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=2,
+                max_concurrent=10,
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 7200,
+                    "timeout": 14400,
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -11905,7 +11905,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 2,
+                    EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 2,
                 },
             ),
@@ -12007,7 +12007,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 2,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
         ],
