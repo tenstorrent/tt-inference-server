@@ -272,6 +272,16 @@ def _get_task_side_endpoint(config: HarborRunConfig) -> str:
 
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
+    if (
+        config.agent == "mini-swe-agent"
+        and config.dataset == "swebench-verified"
+        and config.environment_type == "docker"
+        and config.agent_import_path is None
+    ):
+        # Official SWE-bench images activate testbed in this startup file.
+        # Harbor starts the agent with bash -c; source it before mini's child
+        # shells inherit the environment, preserving the image's own PATH.
+        env.setdefault("BASH_ENV", "/root/.bashrc")
     endpoint = _get_task_side_endpoint(config)
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env

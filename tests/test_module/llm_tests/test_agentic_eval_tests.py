@@ -1060,6 +1060,7 @@ class TestMiniSweAgentParity:
         config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
         harbor_config = json.loads(config_path.read_text())
         assert harbor_config["agents"][0]["env"] == {
+            "BASH_ENV": "/root/.bashrc",
             "OPENAI_BASE_URL": "http://172.17.0.1:8000/v1",
             "OPENAI_API_BASE": "http://172.17.0.1:8000/v1",
         }
