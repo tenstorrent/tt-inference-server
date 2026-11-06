@@ -140,21 +140,20 @@ def _runner(class_name: str, warming_up: bool = False):
     return runner
 
 
-def _resolved(request, width, height, images=None, seed=5, prompt=None):
+def _resolved(request, width, height, files=None, seed=5, prompt=None):
     request._width, request._height, request._seed = width, height, seed
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = prompt if prompt is not None else request.prompt
     return request
 
 
 def test_wan_passes_both_frames_as_they_are(monkeypatch):
     monkeypatch.setattr(
-        runners, "ImagePrompt", lambda image, frame_pos: (image, frame_pos)
+        runners, "ImagePrompt", lambda image, frame_pos: (image.size, frame_pos)
     )
     runner = _runner("TTWan22I2VA14BRunner")
-    # The pipeline crops and resizes them.
-    first = Image.new("RGB", (2000, 720))
-    last = Image.new("RGB", (640, 360))
+    # The runner decodes them; the pipeline crops and resizes them.
+    first, last = _png(2000, 720), _png(640, 360)
     request = _resolved(
         Wan22i2vA14bRequest(
             prompt="a boat",
@@ -169,7 +168,7 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
     )
     assert runner.run([request]) == ["output"]
     (call,) = runner.pipeline.calls
-    assert call.pop("image_prompt") == [(first, 0), (last, 80)]
+    assert call.pop("image_prompt") == [((2000, 720), 0), ((640, 360), 80)]
     assert call == {
         "prompts": ["a boat"],
         "negative_prompts": [WAN_NEGATIVE_PROMPT],
@@ -196,6 +195,44 @@ def test_wan_warmup_covers_every_combination():
         (call,) = runner.pipeline.calls
         assert (call["width"], call["height"]) == (request._width, request._height)
         assert call["num_inference_steps"] == 2
+
+
+def test_wan_deep_canary_runs_a_short_warmup_request():
+    from config.constants import CANARY_DEEP_TASK_ID
+
+    # The multi-host lockstep runner and its followers run it outside warmup.
+    runner = _runner("TTWan22I2VA14BRunner")
+    request = runner._build_warmup_video_request()
+    assert isinstance(request, Wan22i2vA14bRequest)
+    assert request._task_id == CANARY_DEEP_TASK_ID
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert (call["width"], call["height"]) == (request._width, request._height)
+    assert call["num_inference_steps"] == 2
+
+
+@pytest.mark.parametrize(
+    "mesh_shape, inherited, expected",
+    [
+        ((4, 8), {"trace_region_size": 125_000_000}, 512 * 1024 * 1024),
+        ((4, 32), {"trace_region_size": 125_000_000}, 256 * 1024 * 1024),
+        # No region reserved: the traces are allocated as they are captured.
+        ((2, 2), {}, None),
+    ],
+)
+def test_wan_trace_region_fits_every_bucket(
+    monkeypatch, mesh_shape, inherited, expected
+):
+    runner = _runner("TTWan22I2VA14BRunner")
+    runner.settings.device_mesh_shape = mesh_shape
+    monkeypatch.setitem(
+        runners.TTWan22I2VRunner.get_pipeline_device_params.__globals__,
+        "_wan22_dit_device_params",
+        lambda shape: {"fabric_config": "ring", **inherited},
+    )
+    params = runner.get_pipeline_device_params()
+    assert params["fabric_config"] == "ring"
+    assert params.get("trace_region_size") == expected
 
 
 def test_wan_warmup_conditions_the_last_frame(monkeypatch):

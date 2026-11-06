@@ -41,6 +41,7 @@ from utils.media_downloader import (
     MediaDownloadPolicyError,
     MediaDownloadTooLargeError,
     download_media_url,
+    redact_url,
 )
 from utils.media_probe import (
     decode_image,
@@ -77,19 +78,25 @@ def _decode_data_uri(uri: str, kind: str) -> bytes:
 
 
 def _request_parameters(request: GenerationRequest) -> dict:
-    """The request as stored with its job, with data URIs replaced by their
-    SHA-256 so the record stays small."""
+    """The request as stored with its job: data URIs replaced by their SHA-256
+    so the record stays small, and URLs without their credentials and query,
+    which can hold a presigned URL's signature."""
     parameters = request.model_dump(mode="json")
     for name in request.MEDIA_FIELDS:
         value = parameters.get(name)
         if isinstance(value, list):
-            parameters[name] = [_digest_data_uri(item) for item in value]
+            parameters[name] = [_stored_media(item) for item in value]
         elif value is not None:
-            parameters[name] = _digest_data_uri(value)
+            parameters[name] = _stored_media(value)
     return parameters
 
 
-def _digest_data_uri(value: str) -> str:
+def _stored_media(value: str) -> str:
+    return redact_url(_without_data(value))
+
+
+def _without_data(value: str) -> str:
+    """A data URI's SHA-256 in its place; any other value as it is."""
     if value[:5].lower() != "data:":
         return value
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
@@ -292,6 +299,14 @@ class GenerationService(BaseJobService):
                 error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
+        # The runner gets the loaded inputs: a data URI kept in its field would
+        # go to the device worker, and to every rank, a second time.
+        for name in request.MEDIA_FIELDS:
+            value = getattr(request, name)
+            if isinstance(value, list):
+                setattr(request, name, [_without_data(item) for item in value])
+            elif value is not None:
+                setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
         """Run one job; a video job is reported to the video metric family, as

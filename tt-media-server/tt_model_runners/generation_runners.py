@@ -4,7 +4,7 @@
 
 """Runners of the generations API. Each consumes its model's request from
 domain/ directly, with the inputs the service resolved before queueing it:
-decoded images, output size, seed and the prompt the model gets.
+the media files, output size, seed and the prompt the model gets.
 
 The tt_dit pipelines take the output size per call, so one deployment serves
 every size its request schema allows. Warmup runs every size and input
@@ -71,6 +71,11 @@ _WARMUP_STEPS = 2
 
 WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
+# Per spatial bucket traced, each expert has one trace without DBCache and three
+# with it. tt-metal's test_pipeline_wan_resolutions.py fits a bucket's in 256 MiB.
+WAN_TRACE_REGION_BYTES_PER_BUCKET = 256 * 1024 * 1024
+# The meshes whose tt_dit preset serves 480p and 720p, two buckets.
+WAN_TWO_BUCKET_MESH_SHAPES = frozenset({(4, 8)})
 
 _inference_timer = log_execution_time(
     f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -83,17 +88,48 @@ def _warmup_request(
     request: GenerationRequest,
     width: int,
     height: int,
-    images: dict[str, list[Image.Image]] | None = None,
+    files: dict[str, list[bytes]] | None = None,
 ) -> GenerationRequest:
     request._width, request._height = width, height
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = _WARMUP_PROMPT
     return request
 
 
+def _png(width: int, height: int, color: str = "black") -> bytes:
+    png = BytesIO()
+    Image.new("RGB", (width, height), color).save(png, "PNG")
+    return png.getvalue()
+
+
 class _GenerationRunner(TTDiTRunner):
-    def _steps(self, steps: int) -> int:
-        return _WARMUP_STEPS if self._warming_up else steps
+    def _steps(self, steps: int, request: GenerationRequest | None = None) -> int:
+        """``steps``, or fewer for a warmup or a deep canary request, which
+        only exercise the compiled programs."""
+        if self._warming_up or (
+            request is not None and request._task_id == CANARY_DEEP_TASK_ID
+        ):
+            return _WARMUP_STEPS
+        return steps
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the first warmup request. It
+        replaces the old video runners' builder, whose request ``run`` can't
+        take."""
+        requests = self.warmup_requests()
+        if not requests:
+            raise NotImplementedError(
+                f"{type(self).__name__} sends no warmup requests; it must build "
+                "its deep canary request itself"
+            )
+        request = requests[0]
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
+
+    @staticmethod
+    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files."""
+        return [decode_image(data) for data in request._files.get(name, [])]
 
     def _image_stage_recorder(self) -> ImageStageRecorder | None:
         if self._warming_up:
@@ -120,6 +156,19 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
             )
             raise
 
+    def get_pipeline_device_params(self):
+        # Where the old runner reserved a trace region, for one size without
+        # DBCache, reserve one per bucket. Elsewhere none is reserved, and
+        # tt-metal allocates the traces in DRAM as they are captured.
+        device_params = super().get_pipeline_device_params()
+        if "trace_region_size" in device_params:
+            mesh_shape = tuple(self.settings.device_mesh_shape)
+            buckets = 2 if mesh_shape in WAN_TWO_BUCKET_MESH_SHAPES else 1
+            device_params["trace_region_size"] = (
+                buckets * WAN_TRACE_REGION_BYTES_PER_BUCKET
+            )
+        return device_params
+
     def warmup_requests(self) -> list[GenerationRequest]:
         # The pipeline's own warmup is untraced and first frame only. Each size
         # is traced here, with and without the last frame: conditioning it makes
@@ -136,7 +185,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 width,
                 height,
                 {
-                    name: [Image.new("RGB", (width, height))]
+                    name: [_png(width, height)]
                     for name in ("first_frame", "last_frame")[: 1 + last_frame]
                 },
             )
@@ -151,12 +200,12 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         # The pipeline center-crops each image to the output's aspect ratio and
         # resizes it.
         image_prompt = [
-            ImagePrompt(image=request._images["first_frame"][0], frame_pos=0)
+            ImagePrompt(image=self._images(request, "first_frame")[0], frame_pos=0)
         ]
         if request.last_frame is not None:
             image_prompt.append(
                 ImagePrompt(
-                    image=request._images["last_frame"][0],
+                    image=self._images(request, "last_frame")[0],
                     frame_pos=request.frames - 1,
                 )
             )
@@ -169,7 +218,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 prompts=[request._prompt],
                 negative_prompts=[request.negative_prompt],
                 image_prompt=image_prompt,
-                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS),
+                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS, request),
                 guidance_scale=WAN_GUIDANCE_SCALES[0],
                 guidance_scale_2=WAN_GUIDANCE_SCALES[1],
                 flow_shift=WAN_SHIFT,
@@ -528,10 +577,6 @@ class _MiniMaxH3Runner(_GenerationRunner):
         """The task's inputs, as ``pipeline(...)`` kwargs."""
         return {}
 
-    @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        return [decode_image(data) for data in request._files.get(name, [])]
-
 
 class _MiniMaxH3KeyframesRunner(_MiniMaxH3Runner):
     """Text, with an optional first and last keyframe."""
@@ -562,9 +607,7 @@ class _MiniMaxH3ReferencesRunner(_MiniMaxH3Runner):
 
     def _build_warmup_video_request(self) -> GenerationRequest:
         request = super()._build_warmup_video_request()
-        png = BytesIO()
-        Image.new("RGB", (H3_SHORT_EDGE, H3_SHORT_EDGE), "gray").save(png, "PNG")
-        request._files = {"images": [png.getvalue()]}
+        request._files = {"images": [_png(H3_SHORT_EDGE, H3_SHORT_EDGE, "gray")]}
         return request
 
     def _inputs(self, request: GenerationRequest) -> dict:

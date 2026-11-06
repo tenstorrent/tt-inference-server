@@ -610,9 +610,9 @@ async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
     assert response.status_code == 202, response.text
     await _wait_final(client, response.json()["id"])
     (request,) = device.requests
-    # The runner reads the decoded images, not the files.
-    assert set(request._images) == {"first_frame", "last_frame"}
-    assert request._files == {}
+    # The runner decodes the frames: only their files go to the device.
+    assert request._images == {}
+    assert set(request._files) == {"first_frame", "last_frame"}
 
 
 async def test_a_refused_input_stops_the_other_fetches(generations_app, monkeypatch):
@@ -1067,6 +1067,19 @@ def test_stored_request_digests_data_uris():
     assert url == "https://x/a.png"
 
 
+def test_stored_request_drops_url_credentials():
+    from model_services.generation_service import _request_parameters
+
+    signed = "https://user:secret@bucket.example/a.png?X-Amz-Signature=abc#part"
+    clean = "https://bucket.example/a.png"
+    references = MiniMaxH3Ref2VARequest(prompt="x", images=[signed])
+    assert _request_parameters(references)["images"] == [clean]
+    keyframe = Wan22i2vA14bRequest(
+        prompt="x", first_frame=signed, aspect_ratio="16:9", size="480p"
+    )
+    assert _request_parameters(keyframe)["first_frame"] == clean
+
+
 def test_images_are_turned_upright():
     from utils.media_probe import decode_image
 
@@ -1354,9 +1367,11 @@ async def test_h3_keyframes_job(generations_app):
     assert job["status"] == "completed", job
     (request,) = device.requests
     assert (request._width, request._height) == (768, 1024)
-    # The runner decodes the keyframe: only its file goes to the device.
+    # The runner decodes the keyframe: only its file goes to the device, and
+    # the field holds the data URI's digest.
     assert request._images == {}
     assert Image.open(BytesIO(request._files["first_frame"][0])).size == (600, 800)
+    assert request.first_frame.startswith("sha256:")
     (output,) = job["outputs"]
     assert output["audio"] == {"codec": "aac", "sample_rate": 48000, "channels": 2}
     assert output["fps"] == 24 and output["num_frames"] == 124
@@ -1394,6 +1409,13 @@ async def test_h3_references_are_loaded_and_checked(generations_app):
     (request,) = device.requests
     assert request._images == {}
     assert Image.open(BytesIO(request._files["images"][0])).size == (64, 96)
+    # Only the files go to the device: each field holds its data URI's digest,
+    # as the stored request does.
+    from model_services.generation_service import _without_data
+
+    inputs = {"images": _data_uri(64, 96), "videos": video, "audios": audio}
+    for name, uri in inputs.items():
+        assert getattr(request, name) == [_without_data(uri)]
     assert request._files["videos"] == [base64.b64decode(video.split(",")[1])]
     assert request._files["audios"] == [base64.b64decode(audio.split(",")[1])]
     (video_probe,) = request._probes["videos"]
