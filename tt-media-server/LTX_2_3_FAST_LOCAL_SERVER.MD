@@ -123,10 +123,10 @@ configuration:
 - `TT_METAL_HOME=$HOME/tt-metal`
 - `TT_DIT_CACHE_DIR=$HOME/tt-metal/tt_dit_cache`
 - `TT_VIDEO_OUTPUT_DIR=$HOME/tt-media-videos`
+- `TT_GENERATIONS_DIR=$HOME/tt-media-generations`
 - `LTX_YUV_EXPORT=1`
 - `DEVICE=galaxy`
 - `MODEL=LTX-2.3-distilled`
-- `SERVED_MODEL_NAME=Lightricks/LTX-2.3-Fast`
 - `ENABLE_JOB_PERSISTENCE=true`
 - `JOB_DATABASE_PATH=$HOME/ltx-media-server-jobs.db`
 
@@ -162,7 +162,7 @@ Unless `API_KEY` is set, the default key is `your-secret-key`.
 AUTH='Authorization: Bearer your-secret-key'
 
 JOB=$(
-  curl -s -X POST http://127.0.0.1:8000/v1/videos/generations \
+  curl -s -X POST http://127.0.0.1:8000/v1/generations/lightricks/ltx-2.3-22b-distilled \
     -H "$AUTH" \
     -H 'Content-Type: application/json' \
     -d '{"prompt":"a cinematic shot of a futuristic city at sunset","seed":10}' \
@@ -175,18 +175,18 @@ echo "$JOB"
 The shape fields may be passed explicitly; this is equivalent to the above:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/v1/videos/generations \
+curl -s -X POST http://127.0.0.1:8000/v1/generations/lightricks/ltx-2.3-22b-distilled \
   -H "$AUTH" \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"a cinematic shot of a futuristic city at sunset","seed":10,
-       "duration":6,"fps":25,"height":1088,"width":1920}'
+       "duration":6,"fps":25,"aspect_ratio":"16:9","size":"1080p"}'
 ```
 
 Poll until `status` becomes `completed`:
 
 ```bash
 curl -s -H "$AUTH" \
-  "http://127.0.0.1:8000/v1/videos/generations/$JOB" | jq
+  "http://127.0.0.1:8000/v1/jobs/$JOB" | jq
 ```
 
 Download the result:
@@ -194,7 +194,7 @@ Download the result:
 ```bash
 curl -L -H "$AUTH" \
   -o out.mp4 \
-  "http://127.0.0.1:8000/v1/videos/generations/$JOB/download"
+  "http://127.0.0.1:8000/v1/jobs/$JOB/content/0"
 ```
 
 

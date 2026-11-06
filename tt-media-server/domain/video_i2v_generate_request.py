@@ -2,26 +2,23 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Image-to-Video request schema for Wan2.2 I2V and MiniMax-H3 FL2VA.
+"""Image-to-Video request schema for Wan2.2 I2V.
 
 Extends ``VideoGenerateRequest`` with a list of image prompts. Each entry
 pairs an image — base64-encoded, or an http(s)/presigned URL (#4974) — with
 a frame position so the caller can anchor the generation at one or more
 frames across the output video.
 
-Validation mirrors the upstream ``WanPipelineI2V.prepare_latents`` contract
-for Wan, and MiniMax-H3 FL2VA's first/last keyframe sentinels (``0``, ``-1``).
+Validation mirrors the upstream ``WanPipelineI2V.prepare_latents`` contract.
 The pipeline-level ``num_frames`` for Wan (used by both the runner and the
 validators below) is the single source of truth in
 ``config.constants.WAN22_NUM_FRAMES``.
 """
 
 import math
-import os
 from typing import List
 
-from config.constants import WAN22_NUM_FRAMES, ModelNames, ModelRunners
-from config.settings import get_settings
+from config.constants import WAN22_NUM_FRAMES
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
 
@@ -33,8 +30,8 @@ MAX_BASE64_IMAGE_LEN = 4 * math.ceil(MAX_IMAGE_BYTES / 3)
 class ImagePromptEntry(BaseModel):
     """One image + its frame position inside the generated video.
 
-    ``frame_pos=-1`` is the last frame (Python list indexing). Wan's pipeline
-    already resolves negatives; MiniMax-H3 FL2VA accepts only ``{0, -1}``.
+    ``frame_pos=-1`` is the last frame (Python list indexing), which Wan's
+    pipeline resolves.
     """
 
     # Base64 or an http(s) URL; decoded once at submit, after URL downloads
@@ -44,7 +41,7 @@ class ImagePromptEntry(BaseModel):
 
 
 class VideoI2VGenerateRequest(VideoGenerateRequest):
-    """Video generation request with image conditioning (I2V / FL2VA)."""
+    """Video generation request with image conditioning."""
 
     image_prompts: List[ImagePromptEntry] = Field(
         min_length=1, max_length=WAN22_NUM_FRAMES
@@ -62,46 +59,4 @@ class VideoI2VGenerateRequest(VideoGenerateRequest):
                     "each image must target a distinct frame"
                 )
             seen.add(entry.frame_pos)
-        if _is_minimax_h3_fl2va():
-            from tt_model_runners.minimax_h3_policy import MINIMAX_H3_FL2VA_FRAME_POS
-
-            if len(v) > 2:
-                raise ValueError(
-                    "MiniMax-H3 FL2VA accepts at most two image_prompts "
-                    "(frame_pos 0 = first keyframe, -1 = last keyframe)"
-                )
-            illegal = [
-                entry.frame_pos
-                for entry in v
-                if entry.frame_pos not in MINIMAX_H3_FL2VA_FRAME_POS
-            ]
-            if illegal:
-                raise ValueError(
-                    "MiniMax-H3 FL2VA image_prompts[].frame_pos must be 0 "
-                    f"(first) or -1 (last); got {illegal}"
-                )
         return v
-
-
-def _is_minimax_h3_fl2va() -> bool:
-    try:
-        runner = get_settings().model_runner
-    except Exception:  # noqa: BLE001
-        return False
-    if runner in {
-        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
-        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
-    }:
-        return True
-    if runner != ModelRunners.SP_RUNNER.value:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3_FL2VA,
-            ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
-        }
-    except ValueError:
-        return False

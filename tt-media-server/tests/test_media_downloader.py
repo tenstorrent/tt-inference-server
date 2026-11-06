@@ -208,6 +208,44 @@ class TestDownload:
             with pytest.raises(MediaDownloadPolicyError):
                 await download_media_url("https://allowed.example/x", client=client)
 
+    async def test_https_only_refuses_http(self, media_url_defaults):
+        async def handler(request):
+            raise AssertionError(f"fetched {request.url}")
+
+        async with _client(handler) as client:
+            with pytest.raises(MediaDownloadPolicyError, match="must be https"):
+                await download_media_url(
+                    "http://host.example/x.png", client=client, https_only=True
+                )
+
+    async def test_https_only_refuses_a_redirect_to_http(self, media_url_defaults):
+        fetched = []
+
+        async def handler(request):
+            fetched.append(str(request.url))
+            return httpx.Response(
+                302, headers={"location": "http://host.example/x.png"}
+            )
+
+        async with _client(handler) as client:
+            with pytest.raises(MediaDownloadPolicyError, match="must be https"):
+                await download_media_url(
+                    "https://host.example/start", client=client, https_only=True
+                )
+        assert fetched == ["https://host.example/start"]
+
+    async def test_a_redirect_to_http_is_followed_by_default(self, media_url_defaults):
+        async def handler(request):
+            if request.url.scheme == "https":
+                return httpx.Response(
+                    302, headers={"location": "http://host.example/x.png"}
+                )
+            return httpx.Response(200, content=b"over-http")
+
+        async with _client(handler) as client:
+            data = await download_media_url("https://host.example/start", client=client)
+        assert data == b"over-http"
+
     async def test_redirect_limit(self, media_url_defaults, monkeypatch):
         monkeypatch.setattr(settings, "media_url_max_redirects", 2)
 
