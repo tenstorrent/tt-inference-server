@@ -5,7 +5,8 @@
     "max_image_lpips: an image fails above it. mean_margin: the group fails if its mean PSNR or SSIM drops, or LPIPS rises, more than this from the calibration's mean over the same cases. min_mean_dino: the group's mean DINO similarity must reach it.",
     "text_image_max_drop: per text-to-image benchmark the run has (longtext, dpg; text_image_scores.py), the most TT's score may fall below the GPU run's over the same cases, in the benchmark's units (LongText 0-1, DPG 0-100). A benchmark that could not be scored fails. LongText needs a GPU, so the eval doesn't score it and its limit is never checked there.",
     "Every threshold is set from the first CI run (the calibration run), generously, and changed only with review. Until then a group's checks are NA: the comparison is reported, not gated.",
-    "FLUX.2 klein 4B refs/r1: calibrated from a local release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-de55f31-127107813048, tt-inference-server 4957eece4: the 381 of 629 all cases the deployment serves (1:1, at most 1 input image). max_image_lpips and min_mean_dino apply to every group, so they fit text to image, which is far from the GPU's images (PSNR about 11 dB, LPIPS about 0.55): 0.9 is about 0.1 over the worst image (0.798, dpg_partiprompts12_1024x1024) and 0.72 about 0.05 under the lowest group mean (0.771, dpg_2K). Edits (about 19 dB, LPIPS about 0.2) are held by their mean margins. DPG: TT 88.48 vs GPU 88.48 over 109 images; LongText isn't scored on a CPU."
+    "FLUX.2 klein 4B refs/r1: calibrated from a local release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-de55f31-127107813048, tt-inference-server 4957eece4: the 381 of 629 all cases the deployment serves (1:1, at most 1 input image). max_image_lpips and min_mean_dino apply to every group, so they fit text to image, which is far from the GPU's images (PSNR about 11 dB, LPIPS about 0.55): 0.9 is about 0.1 over the worst image (0.798, dpg_partiprompts12_1024x1024) and 0.72 about 0.05 under the lowest group mean (0.771, dpg_2K). Edits (about 19 dB, LPIPS about 0.2) are held by their mean margins. DPG: TT 88.48 vs GPU 88.48 over 109 images; LongText isn't scored on a CPU.",
+    "Ideogram 4 refs/r1: calibrated from a local CI-mode release eval on BH Galaxy, 2026-11-05, image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.26.1-ea24a5429f153f183704a8bdcf65a88026d38f06-1c23c16-127372085668, tt-inference-server bdf35030d: the 27 ci cases, all 2K (the deployment serves only 2K). Text to image is far from the GPU's images (PSNR about 14 dB, LPIPS about 0.39): max_image_lpips 0.7 is about 0.13 over the worst image (0.568, longtext_0_quality_2048x2048) and min_mean_dino 0.83 about 0.05 under the lowest group mean (0.884, longtext_2K). DPG: TT 92.54 vs GPU 95.84 over 11 images (-3.3); with so few images one image moves the score by several points, so the drop allowed is 6. LongText isn't scored on a CPU."
   ],
   "models": {
     "qwen/qwen-image-edit-2511": {
@@ -13,8 +14,37 @@
     },
     "ideogram-ai/ideogram-4": {
       "refs/r1": {
-        "max_image_lpips": null, "min_mean_dino": null, "mean_margin": null, "calibration": {},
-        "text_image_max_drop": {"longtext": null, "dpg": null}
+        "max_image_lpips": 0.7, "min_mean_dino": 0.83, "mean_margin": {"psnr": 1.5, "ssim": 0.05, "lpips": 0.05},
+        "text_image_max_drop": {"longtext": null, "dpg": 6.0},
+        "calibration": {
+          "dpg_119_default_1152x2048": {"psnr": 15.54, "ssim": 0.6564, "lpips": 0.3459},
+          "dpg_119_default_1360x2048": {"psnr": 14.47, "ssim": 0.5667, "lpips": 0.4285},
+          "dpg_119_default_2048x1152": {"psnr": 14.15, "ssim": 0.5098, "lpips": 0.4763},
+          "dpg_146_quality_2048x2048": {"psnr": 21.45, "ssim": 0.8481, "lpips": 0.1893},
+          "dpg_146_turbo_2048x2048": {"psnr": 18.2, "ssim": 0.8068, "lpips": 0.2979},
+          "dpg_46_default_2048x2048": {"psnr": 12.92, "ssim": 0.6143, "lpips": 0.5022},
+          "dpg_COCOval2014000000023272_default_2048x2048": {"psnr": 15.66, "ssim": 0.714, "lpips": 0.267},
+          "dpg_stanford29_default_2048x2048": {"psnr": 18.59, "ssim": 0.8041, "lpips": 0.2595},
+          "dpg_whoops38_default_1152x2048": {"psnr": 15.11, "ssim": 0.6423, "lpips": 0.3598},
+          "dpg_whoops38_default_1360x2048": {"psnr": 14.67, "ssim": 0.6198, "lpips": 0.4503},
+          "dpg_whoops38_default_2048x1152": {"psnr": 14.97, "ssim": 0.638, "lpips": 0.4667},
+          "longtext_0_default_1152x2048": {"psnr": 12.4, "ssim": 0.4822, "lpips": 0.421},
+          "longtext_0_default_1360x2048": {"psnr": 12.69, "ssim": 0.4679, "lpips": 0.4582},
+          "longtext_0_default_2048x1152": {"psnr": 12.87, "ssim": 0.328, "lpips": 0.4692},
+          "longtext_0_quality_2048x2048": {"psnr": 11.41, "ssim": 0.3414, "lpips": 0.5682},
+          "longtext_0_turbo_2048x2048": {"psnr": 13.9, "ssim": 0.4231, "lpips": 0.4105},
+          "longtext_101_default_2048x2048": {"psnr": 17.39, "ssim": 0.843, "lpips": 0.1928},
+          "longtext_104_default_1360x2048": {"psnr": 18.0, "ssim": 0.9068, "lpips": 0.1298},
+          "longtext_160_default_2048x2048": {"psnr": 16.6, "ssim": 0.6885, "lpips": 0.3528},
+          "longtext_199_default_1152x2048": {"psnr": 11.09, "ssim": 0.6316, "lpips": 0.517},
+          "longtext_199_default_1360x2048": {"psnr": 10.61, "ssim": 0.6715, "lpips": 0.4915},
+          "longtext_199_default_2048x1152": {"psnr": 13.6, "ssim": 0.691, "lpips": 0.2344},
+          "longtext_199_default_2048x2048": {"psnr": 10.96, "ssim": 0.7319, "lpips": 0.381},
+          "longtext_38_default_2048x2048": {"psnr": 13.75, "ssim": 0.6873, "lpips": 0.5395},
+          "longtext_3_default_2048x1152": {"psnr": 12.17, "ssim": 0.4394, "lpips": 0.4999},
+          "longtext_4_default_2048x2048": {"psnr": 12.48, "ssim": 0.5659, "lpips": 0.3955},
+          "longtext_7_default_1152x2048": {"psnr": 16.24, "ssim": 0.7105, "lpips": 0.2792}
+        }
       }
     },
     "black-forest-labs/flux.2-klein-4b": {
