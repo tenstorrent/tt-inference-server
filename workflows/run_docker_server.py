@@ -857,7 +857,7 @@ def run_docker_command(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
-    TIMEOUT = 30  # seconds
+    TIMEOUT = 180  # Docker can take over 30 seconds to start on a busy CI host.
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""
@@ -869,6 +869,8 @@ def run_docker_command(
         ).strip()
         if container_id:
             break
+        if docker_process.poll() is not None:
+            break
         time.sleep(POLL_INTERVAL)
 
     if not container_id:
@@ -879,6 +881,19 @@ def run_docker_command(
         logger.error(f"Docker image: {model_spec.docker_image}")
         logger.error("Check logs for more information.")
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
+        # A timed-out docker run can finish starting after this check. Remove
+        # only this launch's named container before the caller retries, so it
+        # cannot retain the service port or device behind the retry.
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if docker_process.poll() is None:
+            docker_process.terminate()
+        docker_process.wait(timeout=30)
+        docker_log_file.close()
         raise RuntimeError("Docker container failed to start.")
 
     skip_workflows = {WorkflowType.SERVER}
