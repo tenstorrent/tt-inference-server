@@ -135,3 +135,35 @@ def test_benchmark_entry_preserves_counts_and_uses_pinned_fixed_chat_protocol():
         assert argv[argv.index("--num-prompts") + 1] == str(config.num_prompts)
         body = json.loads(argv[argv.index("--extra-body") + 1])
         assert body["seed"] == 42 and body["truncate_prompt_tokens"] == config.isl
+
+
+def test_gpqa_active_nightly_prefix_preserves_cohort_and_native_labels():
+    import hashlib
+    import json
+
+    gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
+    n = gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
+    assert n == 16
+    original_prefix = [195, 40, 76, 148, 121, 197, 32, 49, 70, 8, 92, 153, 122, 54, 118, 85]
+    selected = gpqa.doc_ids[:n]
+    assert selected == sorted(original_prefix)
+    assert set(selected) == set(original_prefix)
+    assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
+    assert hashlib.sha256(json.dumps(gpqa.doc_ids[n:]).encode()).hexdigest() == (
+        "d35a06332ca22d64073e58508387cda13319331405210d9f2147803d65f92166"
+    )
+
+    # lm-eval af401ef3: api/task.py:590-595 filters in dataset order;
+    # evaluator.py:634-643 labels ordinal positions with the supplied IDs.
+    # This repair is scoped to this profile's active CI_NIGHTLY prefix.
+    def native_selection_and_labels(indices):
+        return [
+            (indices[ordinal], doc)
+            for ordinal, doc in enumerate(x for x in range(198) if x in indices)
+        ]
+
+    before = native_selection_and_labels(original_prefix)
+    after = native_selection_and_labels(selected)
+    assert any(label != doc for label, doc in before)
+    assert all(label == doc for label, doc in after)
+    assert [doc for _, doc in before] == [doc for _, doc in after]
