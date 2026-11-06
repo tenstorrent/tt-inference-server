@@ -12004,6 +12004,7 @@ _eval_config_list = [
                                     "top_p": 0.95,
                                     "extra_body": {
                                         "top_k": 20,
+                                        "return_token_ids": True,
                                         "chat_template_kwargs": {
                                             "enable_thinking": True
                                         },

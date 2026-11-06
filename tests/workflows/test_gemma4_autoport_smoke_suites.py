@@ -134,6 +134,7 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
     assert model["timeout"] == 3600
     assert model["top_p"] == 0.95
     assert model["extra_body"] == {
+        **({"return_token_ids": True} if index == 1 else {}),
         "top_k": 20,
         "chat_template_kwargs": {"enable_thinking": True},
     }
