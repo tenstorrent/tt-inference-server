@@ -50,7 +50,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     )
     cfg = terminal.agentic_eval_config
     assert cfg.n_concurrent_trials == 10
-    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
     assert (
         cfg.dataset_ref
         == "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a"
@@ -73,10 +73,19 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
         "terminal-bench/hf-model-inference",
         "terminal-bench/financial-document-processor",
     ]
-    assert swe.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
-    assert swe.agentic_eval_config.n_concurrent_trials == 2
+    assert swe.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 5
+    assert swe.agentic_eval_config.n_concurrent_trials == 5
     assert swe.agentic_eval_config.agent_kwargs["max_tokens"] == 32768
-    assert swe.agentic_eval_config.llm_timeout_sec == 3600
+    assert swe.agentic_eval_config.llm_timeout_sec == 7200
+    assert swe.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "django__django-11299",
+        "astropy__astropy-14096",
+        "matplotlib__matplotlib-25332",
+        "sympy__sympy-13551",
+        "scikit-learn__scikit-learn-14629",
+    ]
+    assert swe.agentic_eval_config.dataset_ref is None
+    assert swe.agentic_eval_config.agent_kwargs["version"] == "2.2.8"
     assert swe.score.published_score is None
 
 

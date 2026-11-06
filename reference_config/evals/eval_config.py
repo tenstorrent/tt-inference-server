@@ -11967,7 +11967,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
@@ -11985,11 +11985,11 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=2,
+                    n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=6 * 60 * 60,
-                    llm_timeout_sec=60 * 60,
+                    llm_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         "max_tokens": 32 * 1024,
@@ -12011,12 +12011,15 @@ _eval_config_list = [
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
                         ],
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
         ],
