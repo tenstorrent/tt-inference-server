@@ -70,6 +70,9 @@ def test_benchmark_entry_preserves_counts_and_uses_pinned_fixed_chat_protocol():
     spec = next(
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
+    assert json.loads(
+        spec.device_model_spec.vllm_args["default-chat-template-kwargs"]
+    ) == {"enable_thinking": False}
     assert spec.device_model_spec.max_tokens_all_users == 1049568
     assert (
         get_pinned_revision(spec, required=True)

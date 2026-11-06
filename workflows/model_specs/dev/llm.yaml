@@ -7672,6 +7672,9 @@ templates:
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_coder
         reasoning_parser: qwen3
+        # Content-only native fixed timing must not divide by reasoning tokens.
+        # Benchmark-only profile: eval profiles must restore thinking defaults.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
         shutdown_timeout: 10
       override_tt_config:
         fabric_config: FABRIC_1D_RING
