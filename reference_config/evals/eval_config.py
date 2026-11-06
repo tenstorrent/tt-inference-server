@@ -12499,6 +12499,117 @@ _eval_config_list = [
             ),
         ],
     ),
+    # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4, P300X2): GPQA Diamond (evals workflow) and a
+    # 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings:
+    # reasoning_effort=high (the chat template default), temperature 1.0, top_p 0.95; 32768
+    # output tokens as in the card's HF example.
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=80.8,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    # A 32768-token answer at 32 users (~20 tok/s/user) takes ~30 min;
+                    # the margin covers queueing when the KV pool is full.
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2 (JSON-in-text actions, no server tool
+                # parser), set up as the K2-Horizon-7B row: dispatch the agentic workflow
+                # with --ci-mode for its 5-task subset only.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The 5-task CI subset is not comparable to a full-set score.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 5 tasks at 5 concurrent: one wave, the slowest task sets the wall time.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95), host-sampled; 128K
+                    # input plus 32K output; prefix caching serves the repeated history.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        # The MoVA chat template rejects assistant history turns without a
+                        # thinking field, so feed reasoning_content back into the history.
+                        "interleaved_thinking": True,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    # The K2-Horizon-7B CI subset (tasks it usually finishes in about an hour).
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[

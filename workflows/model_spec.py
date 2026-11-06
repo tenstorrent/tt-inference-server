@@ -472,6 +472,14 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/k2_horizon_7b_qb2",
 )
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 on QB2 under models/demos/k2_horizon_mova_36b_a4b_qb2
+# (architecture TTK2HorizonMoVAQB2ForCausalLM), produced by the tt-model-bringup pipeline.
+k2_horizon_mova_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_mova_qb2",
+    impl_name="k2-horizon-mova-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/k2_horizon_mova_36b_a4b_qb2",
+)
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
 # produced by the tt-model-bringup pipeline.
@@ -492,6 +500,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "k2_horizon_mova_qb2": k2_horizon_mova_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
