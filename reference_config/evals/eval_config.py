@@ -11679,6 +11679,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
+                capture_reasoning=True,
                 doc_ids=[
                     195,
                     40,

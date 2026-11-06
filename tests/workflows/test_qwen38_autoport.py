@@ -35,6 +35,8 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
 
 def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     gpqa, terminal, swe = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
+    assert gpqa.capture_reasoning is True
+    assert gpqa.log_samples is True
     assert gpqa.max_concurrent == 10
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
