@@ -119,3 +119,10 @@ def test_autoport_stock_response_observability_config():
     assert device.env_vars["VLLM_DEBUG_LOG_API_SERVER_RESPONSE"] == "true"
     assert device.vllm_args["enable_log_requests"] is True
     assert device.vllm_args["max_log_len"] == 0
+
+
+def test_autoport_expanded_b8_pool_opt_in():
+    device = _spec().device_model_spec
+    assert device.env_vars["GEMMA4_B8_KV_POOL_IDS"] == "20480"
+    assert device.vllm_args["max_num_seqs"] == "8"
+    assert device.max_context == 262144
