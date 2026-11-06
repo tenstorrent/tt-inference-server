@@ -85,3 +85,15 @@ def test_autoport_native_thinking_and_tool_protocol_flags():
     assert args["reasoning_parser"] == "gemma4"
     assert args["tool_call_parser"] == "gemma4"
     assert args["enable_auto_tool_choice"] is True
+
+
+def test_autoport_caches_use_stock_persistent_container_mount():
+    from pathlib import Path
+
+    from workflows.setup_host import SetupConfig
+
+    spec = _spec()
+    root = SetupConfig(spec).cache_root
+    env = spec.device_model_spec.env_vars
+    assert Path(env["HF_HUB_CACHE"]) == root / "weights" / "hub"
+    assert Path(env["TT_METAL_CACHE"]) == root / "tt-metal-jit"
