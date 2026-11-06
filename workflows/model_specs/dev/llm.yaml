@@ -1797,7 +1797,7 @@ templates:
 # Qwen3.8-27B BH Galaxy MTP spec decode with the GDN state in vLLM's KV cache blocks (QWEN36_MAMBA_SPEC):
 # the qwen36_blackhole_mtp spec above with vLLM-owned GDN state instead of the model's GDN prefix snapshots.
 # TP=8 x DP=4, text, image and video. Not the default: select it with --impl qwen36-blackhole-mtp-mambaspec.
-# Needs tt-metal viktorpus/qwen36-mambaspec-spec 1dda5a7e487 and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
+# Needs tt-metal viktorpus/qwen36-mambaspec-spec 0fda3c0e6aa and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
 # 7bd73a4 (vLLM 0.30), or later.
 - weights:
     - Qwen/Qwen3.8-27B
