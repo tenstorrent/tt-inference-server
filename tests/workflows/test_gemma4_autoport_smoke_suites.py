@@ -94,6 +94,46 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
             102,
             182,
             173,
+            109,
+            193,
+            192,
+            47,
+            19,
+            18,
+            48,
+            17,
+            36,
+            114,
+            154,
+            73,
+            115,
+            144,
+            166,
+            179,
+            150,
+            91,
+            176,
+            67,
+            86,
+            194,
+            163,
+            63,
+            16,
+            60,
+            131,
+            62,
+            2,
+            139,
+            122,
+            169,
+            167,
+            84,
+            35,
+            147,
+            12,
+            158,
+            56,
+            120,
         ]
         if mode == "ci-nightly"
         else [152, 189, 46]
@@ -101,7 +141,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
     for expected in (
-        "num_concurrent=8",
+        "num_concurrent=4",
         "timeout=14400",
         "max_length=262080",
         "revision=842da3794eaa0b77d5f08bae87a17459d91ff475",
@@ -199,7 +239,7 @@ def test_only_prepared_candidate_enabled():
     from reference_config.evals.eval_config import EvalLimitMode
 
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
-        40,
+        80,
         0,
         0,
     ]

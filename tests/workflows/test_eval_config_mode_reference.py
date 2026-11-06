@@ -270,6 +270,46 @@ def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
         102,
         182,
         173,
+        109,
+        193,
+        192,
+        47,
+        19,
+        18,
+        48,
+        17,
+        36,
+        114,
+        154,
+        73,
+        115,
+        144,
+        166,
+        179,
+        150,
+        91,
+        176,
+        67,
+        86,
+        194,
+        163,
+        63,
+        16,
+        60,
+        131,
+        62,
+        2,
+        139,
+        122,
+        169,
+        167,
+        84,
+        35,
+        147,
+        12,
+        158,
+        56,
+        120,
     ]
     assert gpqa.thinking is True
     assert gpqa.score.published_score == 84.3
@@ -278,7 +318,7 @@ def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
     for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY):
         # Dedicated CI publications may disable this suite to isolate another.
         assert gpqa.limit_samples_map[mode] == (
-            40 if mode == EvalLimitMode.CI_NIGHTLY else 2
+            80 if mode == EvalLimitMode.CI_NIGHTLY else 2
         )
         assert not resolve_eval_reference(gpqa.score, mode)["is_subset_reference"]
 
