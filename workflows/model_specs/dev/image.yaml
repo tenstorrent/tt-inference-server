@@ -414,6 +414,70 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: shape_16x9_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_9x16_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_2x3_1K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_16x9_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_9x16_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_2x3_2K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_16x9_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_9x16_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_2x3_4K
+        reason: 'The first release serves only 1:1 (Flux3ImageKleinRequest), so the API''s other aspect ratios are refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_one_image
+        reason: 'The first release serves only 1:1, so an edit without aspect_ratio comes back 1:1, not at the ratio of its input image as the API defaults it.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_near_limit_image
+        reason: 'The first release serves only 1:1, so an edit without aspect_ratio comes back 1:1, not at the ratio of its input image as the API defaults it.'
+      - workflow_type: SPEC_TESTS
+        task_name: edit_most_images
+        reason: 'The first release takes at most 1 input image (Flux3ImageKleinRequest), so the most-images edit (10 images) is refused with 422.'
   status: EXPERIMENTAL
 
 # Ideogram 4 through the generations API (TTIdeogram4Runner), from the fp8
