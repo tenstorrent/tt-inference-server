@@ -41,7 +41,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         model_name="gemma-4-31B-it",
         hf_model_repo=MODEL,
         device_model_spec=SimpleNamespace(
-            max_context=262144, max_concurrency=2, eval_max_retries=0
+            max_context=262144, max_concurrency=8, eval_max_retries=0
         ),
     )
     command = build_eval_command(
@@ -53,12 +53,14 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         runtime_config=SimpleNamespace(limit_samples_mode=mode),
     )
     assert json.loads(command[command.index("--samples") + 1]) == {
-        "r1_gpqa_diamond": [] if mode == "ci-nightly" else [152, 189, 46]
+        "r1_gpqa_diamond": [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
+        if mode == "ci-nightly"
+        else [152, 189, 46]
     }
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
     for expected in (
-        "num_concurrent=2",
+        "num_concurrent=4",
         "timeout=14400",
         "max_length=262080",
         "revision=842da3794eaa0b77d5f08bae87a17459d91ff475",
@@ -156,9 +158,9 @@ def test_only_prepared_candidate_enabled():
     from reference_config.evals.eval_config import EvalLimitMode
 
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
-        0,
-        0,
         10,
+        0,
+        0,
     ]
     assert TASKS[1].agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "pylint-dev__pylint-7080",
