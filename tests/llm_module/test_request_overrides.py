@@ -347,6 +347,33 @@ class TestLmmsEvalWrapper:
         Completions().create(model="m", messages=[])
         assert calls[-1]["extra_body"] == {"top_k": 1}
 
+    def test_a_reply_without_content_scores_as_an_empty_string(self, monkeypatch):
+        """A null message content (the thinking trace used the whole budget) is
+        blanked on the way back; a reply with content and one without choices
+        pass through unchanged."""
+        Completions, calls = self._install_fake_sdk(monkeypatch)
+        replies = []
+        Completions.create = lambda self, *a, extra_body=None, **k: replies[-1]
+        wrapper.patch_openai_chat_client({})
+        null = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=None))]
+        )
+        replies.append(null)
+        assert (
+            Completions().create(model="m", messages=[]).choices[0].message.content
+            == ""
+        )
+        text = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="B"))]
+        )
+        replies.append(text)
+        assert (
+            Completions().create(model="m", messages=[]).choices[0].message.content
+            == "B"
+        )
+        replies.append("reply")
+        assert Completions().create(model="m", messages=[]) == "reply"
+
     def test_audio_parts_go_out_as_input_audio_wav(self, monkeypatch):
         """lmms-eval v0.4.1 forwards an audio task's HF Audio dict unencoded under
         audio_url; the patched client sends it as a base64 16-bit PCM WAV
