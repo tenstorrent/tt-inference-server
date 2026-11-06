@@ -295,6 +295,9 @@ class VideoManager:
         if preset:
             cmd.extend(["-preset", preset])
 
+        # Keyframe every second for seeking (x264 defaults to every 250 frames).
+        cmd.extend(["-g", str(max(1, round(fps)))])
+
         cmd.extend(["-movflags", "+faststart", output_path])
         return cmd
 
