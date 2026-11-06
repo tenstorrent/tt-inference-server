@@ -434,6 +434,18 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      # The spec tests run Ideogram 4 at 2K only (test_suites/image.json
+      # sizes target): the server serves no 1K.
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: shape_4x3_2K
+        reason: 'The server serves only 1:1, 16:9, 9:16 and 2:3, so the API''s 4:3 is refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x4_2K
+        reason: 'The server serves only 1:1, 16:9, 9:16 and 2:3, so the API''s 3:4 is refused with 422.'
+      - workflow_type: SPEC_TESTS
+        task_name: shape_3x2_2K
+        reason: 'The server serves only 1:1, 16:9, 9:16 and 2:3, so the API''s 3:2 is refused with 422.'
   status: EXPERIMENTAL
 
 - weights:

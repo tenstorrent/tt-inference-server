@@ -66,7 +66,7 @@ def variants(
     model: ImageModel, sizes: tuple[str, ...] | None = None
 ) -> list[tuple[str, dict]]:
     """``(name, request)`` for each variant the model is swept over."""
-    base = base_request(model)
+    base = base_request(model, sizes)
     tiers = [t for t in model.size_tiers if sizes is None or t in sizes]
     result = []
     for ratio, size in model.sizes:
@@ -129,7 +129,7 @@ class ImageGenerationAPIParamTest(ImageGenerationAPITest):
     async def _run_specific_test_async(self):
         self._configure(DEFAULT_POLL_TIMEOUT_SECONDS, DEFAULT_POLL_INTERVAL_SECONDS)
         model = self._set_model()
-        sizes = self.targets.get("sizes")
+        sizes = tuple(self.targets.get("sizes") or ()) or None
         timeout = aiohttp.ClientTimeout(total=None, sock_read=self.poll_timeout)
         results: list[dict[str, Any]] = []
         paths: dict[str, str] = {}
@@ -137,7 +137,7 @@ class ImageGenerationAPIParamTest(ImageGenerationAPITest):
             headers=auth_headers(), timeout=timeout
         ) as session:
             try:
-                for name, request in variants(model, tuple(sizes) if sizes else None):
+                for name, request in variants(model, sizes):
                     job, path, problems = await self._generate(session, request, name)
                     paths[name] = path
                     results.append(
@@ -153,7 +153,7 @@ class ImageGenerationAPIParamTest(ImageGenerationAPITest):
                 await self._cancel_leftovers(session)
 
         # The base request is the 1:1 shape at its size; same_seed repeats it.
-        base_name = f"shape_1x1_{base_request(model).get('size') or 'default'}"
+        base_name = f"shape_1x1_{base_request(model, sizes).get('size') or 'default'}"
         results += self._seed_checks(paths, base_name)
         for result in results:
             for problem in result["problems"]:

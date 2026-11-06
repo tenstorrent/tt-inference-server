@@ -87,8 +87,14 @@ def image_size(image: bytes) -> tuple[int, int]:
         return decoded.size
 
 
-def base_request(model: ImageModel) -> dict[str, Any]:
-    """The model's simplest request: 1:1 at its smallest size, with a seed."""
+def base_request(
+    model: ImageModel, sizes: tuple[str, ...] | None = None
+) -> dict[str, Any]:
+    """The model's simplest request: 1:1 at its smallest size, with a seed.
+
+    ``sizes`` (``targets["sizes"]``) limits the size tiers, so the smallest is
+    the smallest the deployment serves (Ideogram 4 serves only 2K).
+    """
     request: dict[str, Any] = {"aspect_ratio": "1:1", "seed": SEED}
     if model.prompt_field == "structured_prompt":
         request["structured_prompt"] = copy.deepcopy(IDEOGRAM_CAPTION)
@@ -98,8 +104,9 @@ def base_request(model: ImageModel) -> dict[str, Any]:
         request["prompt"] = PROMPT
     if model.min_images:
         request["images"] = [data_uri(fixture_image())] * model.min_images
-    if model.size_tiers:
-        request["size"] = model.size_tiers[0]
+    tiers = [t for t in model.size_tiers if sizes is None or t in sizes]
+    if tiers:
+        request["size"] = tiers[0]
     return request
 
 
@@ -181,7 +188,8 @@ class ImageGenerationAPITest(GenerationJobsTest):
     async def _run_specific_test_async(self):
         self._configure(DEFAULT_POLL_TIMEOUT_SECONDS, DEFAULT_POLL_INTERVAL_SECONDS)
         model = self._set_model()
-        payload = base_request(model)
+        sizes = self.targets.get("sizes")
+        payload = base_request(model, tuple(sizes) if sizes else None)
         logger.info(f"Testing {model.model_id} at {self.base_url}{model.submit_path}")
         timeout = aiohttp.ClientTimeout(total=None, sock_read=self.poll_timeout)
         async with aiohttp.ClientSession(

@@ -364,12 +364,26 @@
                 {
                     "template": "ImageGenerationAPITest",
                     "enabled": true,
-                    "description": "Generation API lifecycle: submit, query, list, poll, output, download, cancel, delete"
+                    "description": "Generation API lifecycle: submit, query, list, poll, output, download, cancel, delete",
+                    "model_targets": {
+                        "ideogram4": {
+                            "sizes": [
+                                "2K"
+                            ]
+                        }
+                    }
                 },
                 {
                     "template": "ImageGenerationAPIParamTest",
                     "enabled": true,
-                    "description": "Generation API parameter sweep: every ratio and size, every format, seeds, defaults, edits with input images, the model's own fields"
+                    "description": "Generation API parameter sweep: every ratio and size, every format, seeds, defaults, edits with input images, the model's own fields",
+                    "model_targets": {
+                        "ideogram4": {
+                            "sizes": [
+                                "2K"
+                            ]
+                        }
+                    }
                 }
             ]
         }
