@@ -1,0 +1,15 @@
+{{- if .Values.runtimeModelSpecJson }}
+{{- include "tt-inference-server.validateValues" . }}
+# Pre-resolved runtime model spec (runtimeModelSpecJson), mounted into the
+# container; RUNTIME_MODEL_SPEC_JSON_PATH (release ConfigMap) points at it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}-runtime-model-spec
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+data:
+  runtime_model_spec.json: |
+    {{- .Values.runtimeModelSpecJson | nindent 4 }}
+{{- end }}

@@ -23,6 +23,9 @@ under CACHE_ROOT, so this mirrors run_docker_server.py's media/forge branch.
 {{- $_ := set $data "NO_AUTH" "1" }}
 {{- end }}
 {{- end }}
+{{- if and (eq $engine "vllm") .Values.runtimeModelSpecJson }}
+{{- $_ := set $data "RUNTIME_MODEL_SPEC_JSON_PATH" (include "tt-inference-server.runtimeModelSpecPath" .) }}
+{{- end }}
 {{- range $cfg.extraEnv }}
 {{- if .value }}
 {{- $_ := set $data .name (.value | toString) }}
