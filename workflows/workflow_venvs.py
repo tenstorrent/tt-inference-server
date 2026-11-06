@@ -667,6 +667,7 @@ def setup_evals_meta(
         or model_spec.model_type == ModelType.IMAGE
         or model_spec.model_type == ModelType.EMBEDDING
         or model_spec.model_type == ModelType.TEXT_TO_SPEECH
+        or model_spec.model_type == ModelType.RERANK
     ):
         return True
 

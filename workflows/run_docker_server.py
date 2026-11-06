@@ -789,6 +789,7 @@ def generate_docker_run_command(
                 ModelType.TEXT_TO_SPEECH,
                 ModelType.AUDIO,
                 ModelType.TRAINING,
+                ModelType.RERANK,
             )
         ):
             docker_command += _media_server_dev_mounts(

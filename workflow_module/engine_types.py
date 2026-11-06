@@ -195,6 +195,7 @@ class ModelType(IntEnum):
     VIDEO = auto()
     VLM = auto()  # Vision-Language Models (text+image-to-text)
     TRAINING = auto()
+    RERANK = auto()  # Cross-encoder rerankers (query + document -> relevance score)
 
     @property
     def display_name(self) -> str:
@@ -208,6 +209,7 @@ class ModelType(IntEnum):
             ModelType.VIDEO: "Video",
             ModelType.VLM: "Vision-Language Model",
             ModelType.TRAINING: "Training",
+            ModelType.RERANK: "Reranker",
         }
         return display_names[self]
 
@@ -223,6 +225,7 @@ class ModelType(IntEnum):
             ModelType.TEXT_TO_SPEECH: "TTS",
             ModelType.VIDEO: "Video",
             ModelType.TRAINING: "Training",
+            ModelType.RERANK: "Rerank",
         }
         return short_names[self]
 
@@ -238,6 +241,7 @@ class ModelType(IntEnum):
             ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
             ModelType.TRAINING: "training",
+            ModelType.RERANK: "rerank",
         }
         return task_types[self]
 

@@ -16,6 +16,7 @@ This server is built to serve non-LLM models. Currently supported models:
 12. VLLM with TT Plugin
 13. bge-large-en-v1.5
 14. Qwen3-Embedding-8B
+15. llama-nemotron-rerank-1b-v2 (reranker)
 
 # Repo structure
 
@@ -77,6 +78,8 @@ The following endpoints were already on `/v1` and have no legacy path:
 | `/v1/completions`              | POST   | OpenAI-compatible text completions (vLLM)                       |
 | `/v1/chat/completions`         | POST   | OpenAI-compatible chat completions (vLLM)                       |
 | `/v1/embeddings`               | POST   | OpenAI-compatible text embeddings                               |
+| `/v1/rerank`                   | POST   | Rerank documents against a query (vLLM / Cohere shape)          |
+| `/v1/score`                    | POST   | Relevance score of text_2 against text_1 (vLLM shape)           |
 
 ## Deprecation headers
 
@@ -612,6 +615,68 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 ```json
 {"text": "Hello world", "response_format": "verbose_json"}
 ```
+
+# Rerank test call
+
+`nvidia/llama-nemotron-rerank-1b-v2` (`MODEL=llama-nemotron-rerank-1b-v2`, runner `nemotron-rerank`) is a cross-encoder:
+it scores each `question:{query} \n \n passage:{document}` pair and returns one relevance logit per pair. The
+model is tt-metal's `models/demos/blackhole/llama_nemotron_rerank_1b`; one P150 serves it (`DEVICE=p150`). A
+request is split into one (query, document) pair per document, and the worker takes up to `MAX_BATCH_SIZE`
+(32) pairs from all requests at a time. The model's traced runner packs those pairs back to back into rows of
+128, 256 or 512 tokens (a mask keeps each pair to its own tokens) and runs the rows as traced batches of 1, 8
+or 32 rows. Pairs are truncated to the largest of those row lengths that is not above `VLLM__MAX_MODEL_LENGTH`
+(512 by default; 500 would give 256).
+
+```bash
+export MODEL=llama-nemotron-rerank-1b-v2
+export DEVICE=p150
+uvicorn main:app --lifespan on --port 8000
+```
+
+The server is ready when the log says `Model warmup completed` (about 40 s with a warm weight cache).
+
+**Rerank** (vLLM / Cohere shape; results sorted best first; `relevance_score` is the sigmoid of `logit`):
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/rerank' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "nvidia/llama-nemotron-rerank-1b-v2",
+       "query": "What is the capital of France?",
+       "documents": ["Berlin is the capital of Germany.", "Paris is the capital and largest city of France."],
+       "top_n": 1, "return_documents": true}'
+```
+
+```json
+{"id": "rerank-...", "model": "nvidia/llama-nemotron-rerank-1b-v2", "usage": {"total_tokens": 43},
+ "results": [{"index": 1, "relevance_score": 0.9999998, "logit": 15.4,
+              "document": {"text": "Paris is the capital and largest city of France."}}]}
+```
+
+**Score** (vLLM shape; `text_2` is one document or a list, scores in input order):
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/score' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "llama-nemotron-rerank-1b-v2", "text_1": "What is the capital of France?",
+       "text_2": ["Paris is the capital of France.", "Bananas are yellow."]}'
+```
+
+`model` may be the Hugging Face id, the short name or left out. `top_n` 0 or left out returns every document. An
+empty document list, more than 1000 documents (`documents` or `text_2`) or another model name is rejected with 422
+before it reaches the worker.
+
+Settings for this model (`ModelConfigs[(nemotron-rerank, p150)]`; an environment variable of the same name in upper
+case overrides each):
+
+| Setting | Default | Effect |
+|---|---|---|
+| `MAX_BATCH_SIZE` | 32 | most pairs per worker batch; also caps the traced batch size (1 / 8 / 32 rows) |
+| `VLLM__MAX_MODEL_LENGTH` | 512 | longest traced row (128, 256, 512, ... not above it); pairs are truncated to that length |
+| `TRACE_REGION_SIZE` | 400000000 | device memory reserved for the traces |
+| `DEFAULT_THROTTLE_LEVEL` | "0" | copied into `TT_MM_THROTTLE_PERF`; the image default 5 slows the FF1 + FF3 matmul |
+| `API_KEY` | `your-secret-key` | bearer token the endpoints check; set your own |
 
 # Image search test call
 

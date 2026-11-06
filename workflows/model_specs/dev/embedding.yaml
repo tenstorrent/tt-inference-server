@@ -1,5 +1,5 @@
 # Model spec catalog: Embedding templates.
-# Edit this file to add or modify a Embedding model spec.
+# Edit this file to add or modify an Embedding or reranker model spec.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -295,3 +295,32 @@ templates:
         USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"
         TT_METAL_INSPECTOR_RPC: "0"
+
+# =============================================================================
+# Reranker templates (cross-encoders: one relevance score per query-document pair)
+# =============================================================================
+# Served by tt-media-server's nemotron-rerank runner (/v1/rerank, /v1/score). The
+# tt-metal code is on branch jerrywangTT/llama-nemotron-rerank (commit 04b717f9322 or
+# later; tenstorrent/tt-metal#63253), not on main; dev entries carry no tt_metal_commit,
+# so supply an image built from that commit with --override-docker-image.
+- weights:
+    - nvidia/llama-nemotron-rerank-1b-v2
+  impl: llama_nemotron_rerank
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: RERANK
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150
+      max_concurrency: 32
+      max_context: 512
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "16384"
+        VLLM__MAX_MODEL_LENGTH: "512"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "32"
+        MAX_BATCH_SIZE: "32"
+        # The image default (5) throttles minimal_matmul (FF1 + FF3).
+        DEFAULT_THROTTLE_LEVEL: "0"
+  status: EXPERIMENTAL

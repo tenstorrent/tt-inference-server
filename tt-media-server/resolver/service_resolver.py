@@ -35,6 +35,9 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.EMBEDDING: lambda: __import__(
         "model_services.embedding_service", fromlist=["EmbeddingService"]
     ).EmbeddingService(),
+    ModelServices.RERANK: lambda: __import__(
+        "model_services.rerank_service", fromlist=["RerankService"]
+    ).RerankService(),
 }
 
 # Singleton holders per service type
