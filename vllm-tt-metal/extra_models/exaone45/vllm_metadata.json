@@ -1,0 +1,4 @@
+{
+    "arch": "Exaone4_5_ForConditionalGeneration",
+    "main_class": "models.tt_transformers.tt.generator_vllm:Exaone4_5_ForConditionalGeneration"
+}
