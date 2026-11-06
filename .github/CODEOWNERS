@@ -22,15 +22,15 @@ tt-media-server/tests/test_fine_tuning_api.py @idjuricTT @ztorlakTT @mcupacTT @m
 tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT @ddjukicTT
 
 # vllm-tt-metal
-vllm-tt-metal/ @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
+vllm-tt-metal/ @bgoelTT @tenstorrent/tt-inference-server-codeowners
 
 # workflows
-run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
-workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners
-workflows/model_spec.py @tstescoTT @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
+run.py @bgoelTT @tenstorrent/tt-inference-server-codeowners
+workflows/ @tenstorrent/tt-inference-server-codeowners
+workflows/model_spec.py @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
 workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
 workflows/model_specs/dev/ @tenstorrent/tt-inference-server-codeowners
-workflows/model_specs/prod/ @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tstescoTT @bgoelTT
+workflows/model_specs/prod/ @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @bgoelTT
 
 # helm charts
 charts/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT
@@ -44,10 +44,10 @@ tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicT
 
 
 # benchmarking
-reference_config/benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
+reference_config/benchmarking/ @bgoelTT @tenstorrent/tt-inference-server-codeowners
 
 # evals
-evals/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
+evals/ @bgoelTT @tenstorrent/tt-inference-server-codeowners
 
 # utils
 utils/ @tenstorrent/tt-inference-server-codeowners
@@ -56,16 +56,16 @@ utils/ @tenstorrent/tt-inference-server-codeowners
 tests/ @tenstorrent/tt-inference-server-codeowners
 
 # scripts
-scripts/* @tstescoTT @tenstorrent/tt-inference-server-codeowners
-scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT @vcankovicTT @acvejicTTs
+scripts/* @tenstorrent/tt-inference-server-codeowners
+scripts/release/* @vmaksimovicTT @bgoelTT @vcankovicTT @acvejicTT
 
 # github actions
-.github/CODEOWNERS @tstescoTT @bgoelTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT
-.github/workflows/ @tstescoTT @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @mdobrosavljevicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
+.github/CODEOWNERS @bgoelTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT
+.github/workflows/ @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @mdobrosavljevicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
 
 # docs
 docs/ @tenstorrent/tt-inference-server-codeowners
-/README.md @tstescoTT @bgoelTT @idjuricTT
+/README.md @bgoelTT @idjuricTT
 
 # dynamo_frontend
 dynamo_frontend/ @idjuricTT @ljovanovicTT @lmuravljovTT @vpetrovicTT @ztorlakTT
