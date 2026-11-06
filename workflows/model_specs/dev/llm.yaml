@@ -1797,7 +1797,7 @@ templates:
 # Qwen3.8-27B BH Galaxy MTP spec decode with the GDN state in vLLM's KV cache blocks (QWEN36_MAMBA_SPEC):
 # the qwen36_blackhole_mtp spec above with vLLM-owned GDN state instead of the model's GDN prefix snapshots.
 # TP=8 x DP=4, text, image and video. Not the default: select it with --impl qwen36-blackhole-mtp-mambaspec.
-# Needs tt-metal viktorpus/qwen36-mambaspec-spec 0fda3c0e6aa and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
+# Needs tt-metal viktorpus/qwen36-mambaspec-spec 33b746aa385 and vllm-tt-plugin viktorpus/mambaspec-on-glx-mtp
 # 7bd73a4 (vLLM 0.30), or later.
 - weights:
     - Qwen/Qwen3.8-27B
@@ -1842,7 +1842,8 @@ templates:
         QWEN36_SPEC_CHUNKED_PREFILL: "1"
         # GDN recurrent state and conv history in vLLM's KV cache blocks (mamba cache mode align), so prefix hits resume
         # from vLLM's blocks and the model keeps no GDN prefix snapshots (no QWEN36_PREFIX_CACHE_* variables).
-        # Chained state moves, prefill checkpoints and the block write and copy traces default on with it.
+        # Chained state moves, prefill checkpoints (written from in-replay GDN snapshots) and the block write and copy
+        # traces default on with it.
         QWEN36_MAMBA_SPEC: "1"
         QWEN36_MAMBA_SPEC_LAYOUT: "two_pool"
         QWEN36_KV_BLOCK_SIZE: "1024"  # equal to vllm_args block_size
