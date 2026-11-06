@@ -545,9 +545,13 @@ class TestGalaxyQuadDevice:
         [
             ("MiniMax-H3-FL2VA-LightX2V", "tt-minimax-h3-fl2va-lightx2v"),
             ("MiniMax-H3-Ref2VA-LightX2V", "tt-minimax-h3-ref2va-lightx2v"),
+            ("MiniMax-H3-FL2VA-HyperFlow", "tt-minimax-h3-fl2va-hyperflow"),
+            ("MiniMax-H3-Ref2VA-HyperFlow", "tt-minimax-h3-ref2va-hyperflow"),
         ],
     )
-    def test_lightx2v_on_blackhole_galaxy_is_4x8(self, monkeypatch, model, runner):
+    def test_adapter_runners_on_blackhole_galaxy_are_4x8(
+        self, monkeypatch, model, runner
+    ):
         # run.py sends DEVICE=blackhole_galaxy for a BLACKHOLE_GALAXY spec.
         settings = self._settings(monkeypatch, "blackhole_galaxy", model=model)
         assert settings.model_runner == runner

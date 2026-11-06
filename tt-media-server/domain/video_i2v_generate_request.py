@@ -91,6 +91,7 @@ def _is_minimax_h3_fl2va() -> bool:
     if runner in {
         ModelRunners.TT_MINIMAX_H3_FL2VA.value,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW.value,
     }:
         return True
     if runner != ModelRunners.SP_RUNNER.value:
@@ -102,6 +103,7 @@ def _is_minimax_h3_fl2va() -> bool:
         return ModelNames(model_env) in {
             ModelNames.MINIMAX_H3_FL2VA,
             ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
+            ModelNames.MINIMAX_H3_FL2VA_HYPERFLOW,
         }
     except ValueError:
         return False
