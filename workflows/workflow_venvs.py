@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -331,9 +332,43 @@ def setup_evals_agentic(
     is available on disk. The adapters are not part of the Harbor wheel and live
     outside ``src/``, so a ``.pth`` file exposes the repo root to Python imports.
     """
+    metadata = getattr(model_spec, "metadata", None) or {}
+    harbor_ref = HARBOR_REF
+    if "harbor_git_ref" in metadata:
+        requested_ref = metadata["harbor_git_ref"]
+        if (
+            not isinstance(requested_ref, str)
+            or re.fullmatch(r"[0-9a-fA-F]{40}", requested_ref) is None
+        ):
+            raise ValueError(
+                "metadata.harbor_git_ref must be a full 40-character commit SHA"
+            )
+        harbor_ref = requested_ref.lower()
+
     harbor_dir = venv_config.venv_path / "harbor"
-    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
+    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, harbor_ref):
         return False
+    try:
+        resolved_ref = subprocess.run(
+            ["git", "-C", str(harbor_dir), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.error("Could not verify Harbor checkout: %s", exc)
+        return False
+    if re.fullmatch(r"[0-9a-f]{40}", resolved_ref) is None or (
+        "harbor_git_ref" in metadata and resolved_ref != harbor_ref
+    ):
+        logger.error(
+            "Harbor checkout mismatch: requested=%s resolved=%s",
+            harbor_ref,
+            resolved_ref,
+        )
+        return False
+    logger.info("Harbor source: requested=%s resolved=%s", harbor_ref, resolved_ref)
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
