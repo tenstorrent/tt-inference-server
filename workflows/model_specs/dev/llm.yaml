@@ -7644,9 +7644,9 @@ templates:
   supported_modalities: [text]
   device_model_specs:
     - device: P300X2
-      max_concurrency: 8
+      max_concurrency: 32
       max_context: 262144
-      max_tokens_all_users_override: 262368
+      max_tokens_all_users_override: 1049568
       default_impl: false
       tensor_cache_timeout: 7200
       env_vars:
@@ -7660,9 +7660,9 @@ templates:
       vllm_args:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
-        max_num_seqs: 8
+        max_num_seqs: 32
         block_size: 32
-        max_num_batched_tokens: 32768
+        max_num_batched_tokens: 131072
         long_prefill_token_threshold: 4096
         enable_chunked_prefill: true
         max_logprobs: -1
@@ -7686,3 +7686,9 @@ templates:
       model_path_env: QWEN38_CHECKPOINT
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+      benchmark_protocol: fixed_workload
+      benchmark_require_complete_metrics: true
+      benchmark_repetitions: 1
+      benchmark_tokenizer_sha256:
+        tokenizer.json: 0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3
+        tokenizer_config.json: b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27
