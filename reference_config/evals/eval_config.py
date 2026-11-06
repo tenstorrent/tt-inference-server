@@ -11989,7 +11989,7 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    agent_timeout_sec=6 * 60 * 60,
+                    agent_timeout_sec=10 * 60 * 60,
                     llm_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,

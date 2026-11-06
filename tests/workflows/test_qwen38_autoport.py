@@ -49,7 +49,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
         assert len(cfg.task_names_map[EvalLimitMode.SMOKE_TEST]) == 2
-        assert cfg.agent_timeout_sec == 21600
+        assert cfg.agent_timeout_sec == (36000 if task is swe else 21600)
         assert cfg.override_cpus is cfg.override_memory_mb is None
     assert (
         terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 32768
