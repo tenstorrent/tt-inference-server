@@ -111,3 +111,4 @@ def test_autoport_phase_export_is_periodic_and_unique_per_process():
         "/home/container_app_user/cache_root/logs/gemma4-phase-{pid}-{time_ns}.jsonl"
     )
     assert env["GEMMA4_PHASE_AUTOEXPORT_SECONDS"] == "1"
+    assert env["GEMMA4_RETAIN_DECODE_TOKENS"] == "1"

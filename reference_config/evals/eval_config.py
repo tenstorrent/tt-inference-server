@@ -11972,7 +11972,7 @@ _eval_config_list = [
                 doc_ids=[152, 189, 46, 87, 52, 181, 31, 185, 50, 187],
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
@@ -12029,7 +12029,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
             EvalTask(
