@@ -12019,7 +12019,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 2,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
@@ -12057,16 +12057,27 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        mode: [
+                        EvalLimitMode.SMOKE_TEST: [
                             "terminal-bench/llm-inference-batching-scheduler",
                             "terminal-bench/mailman",
-                        ]
-                        for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY)
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/llm-inference-batching-scheduler",
+                            "terminal-bench/mailman",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/winning-avg-corewars",
+                            "terminal-bench/feal-linear-cryptanalysis",
+                            "terminal-bench/fix-code-vulnerability",
+                            "terminal-bench/constraints-scheduling",
+                            "terminal-bench/sparql-university",
+                            "terminal-bench/dna-insert",
+                            "terminal-bench/video-processing",
+                        ],
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 10,
                 },
             ),
         ],
