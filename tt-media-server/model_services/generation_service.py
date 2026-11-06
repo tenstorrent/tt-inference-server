@@ -86,8 +86,13 @@ def _request_parameters(request: GenerationRequest) -> dict:
 
 
 def _stored_media(value: str) -> str:
+    return redact_url(_without_data(value))
+
+
+def _without_data(value: str) -> str:
+    """A data URI's SHA-256 in its place; any other value as it is."""
     if value[:5].lower() != "data:":
-        return redact_url(value)
+        return value
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 
 
@@ -288,6 +293,14 @@ class GenerationService(BaseJobService):
                 error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
+        # The runner gets the loaded inputs: a data URI kept in its field would
+        # go to the device worker, and to every rank, a second time.
+        for name in request.MEDIA_FIELDS:
+            value = getattr(request, name)
+            if isinstance(value, list):
+                setattr(request, name, [_without_data(item) for item in value])
+            elif value is not None:
+                setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
         """Run one job; a video job is reported to the video metric family, as

@@ -1362,9 +1362,11 @@ async def test_h3_keyframes_job(generations_app):
     assert job["status"] == "completed", job
     (request,) = device.requests
     assert (request._width, request._height) == (768, 1024)
-    # The runner decodes the keyframe: only its file goes to the device.
+    # The runner decodes the keyframe: only its file goes to the device, and
+    # the field holds the data URI's digest.
     assert request._images == {}
     assert Image.open(BytesIO(request._files["first_frame"][0])).size == (600, 800)
+    assert request.first_frame.startswith("sha256:")
     (output,) = job["outputs"]
     assert output["audio"] == {"codec": "aac", "sample_rate": 48000, "channels": 2}
     assert output["fps"] == 24 and output["num_frames"] == 124
@@ -1402,6 +1404,13 @@ async def test_h3_references_are_loaded_and_checked(generations_app):
     (request,) = device.requests
     assert request._images == {}
     assert Image.open(BytesIO(request._files["images"][0])).size == (64, 96)
+    # Only the files go to the device: each field holds its data URI's digest,
+    # as the stored request does.
+    from model_services.generation_service import _without_data
+
+    inputs = {"images": _data_uri(64, 96), "videos": video, "audios": audio}
+    for name, uri in inputs.items():
+        assert getattr(request, name) == [_without_data(uri)]
     assert request._files["videos"] == [base64.b64decode(video.split(",")[1])]
     assert request._files["audios"] == [base64.b64decode(audio.split(",")[1])]
     (video_probe,) = request._probes["videos"]
