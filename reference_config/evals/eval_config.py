@@ -11969,10 +11969,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                doc_ids=list(range(198)),
+                doc_ids=[152, 189, 46, 87, 52, 181, 31, 185, 50, 187],
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 198,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
@@ -12013,13 +12013,22 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        mode: ["pylint-dev__pylint-7080", "django__django-11265"]
-                        for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY)
+                        EvalLimitMode.SMOKE_TEST: [
+                            "pylint-dev__pylint-7080",
+                            "django__django-11265",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "pylint-dev__pylint-7080",
+                            "django__django-11265",
+                            "psf__requests-1766",
+                            "pydata__xarray-4966",
+                            "astropy__astropy-14598",
+                        ],
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
             EvalTask(
