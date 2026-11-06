@@ -1786,18 +1786,18 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 autoport (models/autoports/ifm_k2_horizon_mova_36b_a4b)
-# from the tt-model-bringup multigoal pipeline (skills b6752095, Codex gpt-6-astra high) on a
-# 4x p300c QB2. Requires tt-metal branch vkovacevic/k2-horizon-mova-ci and vllm-tt-plugin
-# branch vkovacevic/k2-horizon-mova (82322af + the authorized opt-in intermediate prefill row
-# mask + a host sampling speedup). The adapter loads through TT_MODEL_CLASS_OVERRIDES.
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 (models/demos/k2_horizon_mova_36b_a4b_qb2) from the
+# tt-model-bringup pipeline on a 4x p300c QB2. The TT plugin registers
+# TTK2HorizonMoVAQB2ForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR;
+# hf-overrides selects it (K2-Horizon-7B registers the checkpoint's own K2HorizonForCausalLM).
 # Precision dense8_hifi2_bfp4experts (BFP8 attention/dense/value, HiFi2; experts BFP4):
-# 96.1% HF top-1 over a 3000-token reasoning trace vs 85.2% for the bring-up's
+# 96.5% HF top-1 over a 3000-token reasoning trace vs 85.2% for the bring-up's
 # head4_ccl4_norm4_lofi, which scored 38.4 on GPQA-diamond. Prefix caching needs
 # 128-token blocks (64-token resumes perturb logits); 4096-token scheduler budget
 # matches the model's prefill chunk.
 # K2_VLLM_HOST_COMPAT=1 admits the plugin's host-sampling route for requests the device
-# sampler cannot serve (top_k > 64); GPQA's top_k 40 samples on device.
+# sampler cannot serve (top_k unset or > 64) and for prefill steps with an intermediate
+# chunk; GPQA's top_k 40 samples on device.
 - weights:
     - IFM/K2-Horizon-MoVA-36B-A4B
   impl: k2_horizon_mova_qb2
@@ -1812,7 +1812,7 @@ templates:
       default_impl: true
       env_vars:
         MESH_DEVICE: P300x2
-        TT_MODEL_CLASS_OVERRIDES: "TTK2HorizonForCausalLM=models.autoports.ifm_k2_horizon_mova_36b_a4b.tt.generator_vllm:K2HorizonForCausalLM"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         K2_VLLM_HOST_COMPAT: "1"
         VLLM_RPC_TIMEOUT: "300000"
       override_tt_config:
@@ -1827,6 +1827,7 @@ templates:
         max-logprobs: "-1"
         enable-prefix-caching: true
         trust-remote-code: true
+        hf-overrides: '{"architectures":["TTK2HorizonMoVAQB2ForCausalLM"]}'
         chat-template-content-format: string
         revision: e9ce717642b2074082875be233c02c729ba47960
         tokenizer_revision: e9ce717642b2074082875be233c02c729ba47960

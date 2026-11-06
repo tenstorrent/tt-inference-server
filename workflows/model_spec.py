@@ -492,14 +492,13 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/k2_horizon_7b_qb2",
 )
-# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 autoport produced by the tt-model-bringup pipeline
-# (Codex gpt-6-astra high). The code_path lives under models/autoports/ and exists only on
-# the tt-metal branch vkovacevic/k2-horizon-mova-ci, not on main.
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 on QB2 under models/demos/k2_horizon_mova_36b_a4b_qb2
+# (architecture TTK2HorizonMoVAQB2ForCausalLM), produced by the tt-model-bringup pipeline.
 k2_horizon_mova_qb2_impl = ImplSpec(
     impl_id="k2_horizon_mova_qb2",
     impl_name="k2-horizon-mova-qb2",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/autoports/ifm_k2_horizon_mova_36b_a4b",
+    code_path="models/demos/k2_horizon_mova_36b_a4b_qb2",
 )
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
