@@ -121,8 +121,16 @@ def test_autoport_stock_response_observability_config():
     assert device.vllm_args["max_log_len"] == 0
 
 
-def test_autoport_expanded_b8_pool_opt_in():
+def test_autoport_default_b8_pool_without_opt_in():
     device = _spec().device_model_spec
-    assert device.env_vars["GEMMA4_B8_KV_POOL_IDS"] == "20480"
+    assert "GEMMA4_B8_KV_POOL_IDS" not in device.env_vars
     assert device.vllm_args["max_num_seqs"] == "8"
     assert device.max_context == 262144
+
+
+def test_autoport_model_owned_logging_config_path():
+    assert _spec().device_model_spec.vllm_args[
+        "logging-config.pylogging_config_file"
+    ] == (
+        "/home/container_app_user/tt-metal/models/autoports/google_gemma_4_31b_it/tt/native_logging.json"
+    )
