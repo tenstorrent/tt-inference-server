@@ -836,6 +836,12 @@ def generate_docker_run_command(
     return docker_command, container_name
 
 
+class DockerLaunchError(RuntimeError):
+    """Launch failed before ownership could be handed to the readiness monitor."""
+
+    retry_safe = False
+
+
 def run_docker_command(
     docker_command, container_name, runtime_config, model_spec, docker_log_file_path
 ):
@@ -851,35 +857,73 @@ def run_docker_command(
     Returns:
         Dict with container identity, foreground process, log path, and service port.
     """
+    from workflow_module.commands import _readiness_timeout
+
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    docker_process = subprocess.Popen(
-        docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
-    )
-
-    TIMEOUT = 30  # seconds
-    POLL_INTERVAL = 0.5  # seconds
-    start_time = time.time()
-    container_id = ""
-
-    while (time.time() - start_time) < TIMEOUT:
-        container_id = subprocess.check_output(
-            ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
-            text=True,
-        ).strip()
-        if container_id:
-            break
-        time.sleep(POLL_INTERVAL)
-
-    if not container_id:
-        logger.error(
-            f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
+    docker_process = None
+    try:
+        docker_process = subprocess.Popen(
+            docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
         )
-        logger.error(f"Docker container {container_name} failed to start.")
-        logger.error(f"Docker image: {model_spec.docker_image}")
-        logger.error("Check logs for more information.")
-        logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
-        raise RuntimeError("Docker container failed to start.")
+        # Container creation can include slow daemon work before docker ps sees it.
+        # Use the existing model startup budget instead of a separate 30s cutoff.
+        timeout = _readiness_timeout(model_spec)
+        deadline = time.monotonic() + timeout
+        container_id = ""
+        while time.monotonic() < deadline:
+            returncode = docker_process.poll()
+            if returncode is not None:
+                raise RuntimeError(f"docker run exited with status {returncode}")
+            container_id = subprocess.check_output(
+                [
+                    "docker",
+                    "ps",
+                    "-f",
+                    f"name=^/{container_name}$",
+                    "--format",
+                    "{{.ID}}",
+                ],
+                text=True,
+                timeout=min(10, max(0.1, deadline - time.monotonic())),
+            ).strip()
+            if container_id:
+                break
+            time.sleep(0.5)
+        if not container_id:
+            raise RuntimeError(f"Docker container startup timed out after {timeout}s")
+    except Exception as error:
+        # A killed CLI does not prove the daemon cancelled an in-flight create.
+        # Preserve this attempt's identity and fail closed rather than overlap a retry.
+        try:
+            if docker_process is not None and docker_process.poll() is None:
+                docker_process.terminate()
+                try:
+                    docker_process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    docker_process.kill()
+                    docker_process.wait(timeout=10)
+            cleanup = subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if cleanup.returncode:
+                logger.warning(
+                    "Owned container cleanup not confirmed for %s", container_name
+                )
+        except Exception:
+            logger.exception(
+                "Owned Docker launch cleanup failed for %s", container_name
+            )
+        finally:
+            docker_log_file.close()
+        raise DockerLaunchError(
+            f"Docker launch failed for {container_name}: {error}. "
+            f"Logs: {docker_log_file_path}; automatic retry disabled because "
+            "daemon creation may still be pending."
+        ) from error
 
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
