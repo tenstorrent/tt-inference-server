@@ -19,6 +19,7 @@ from .base import DriverResult, LLMDriver
 from .genai_perf import GenAIPerfDriver
 from .guidellm import GuideLLMDriver
 from .vllm import VLLMBenchDriver
+from .vllm_structured_output import VLLMStructuredOutputDriver
 
 __all__ = [
     "LLMDriver",
@@ -36,5 +37,6 @@ __all__ = [
     "GuideLLMDriver",
     "HarborAgenticDriver",
     "VLLMBenchDriver",
+    "VLLMStructuredOutputDriver",
     "make_agentic_driver",
 ]

@@ -11,6 +11,8 @@
 # sync with VLLM_PIN_VERSION in workflow_venvs.py. `aiohttp` covers the v2
 # orchestrator's eager import chain (workflow_module -> test_module.context ->
 # health_tests); `requests`/`pyjwt` back the health checks + JWT minting.
+# `jsonschema` checks the structured-output benchmark's outputs against their
+# schemas (llm_module/structured_output_client.py).
 #
 # transformers is NOT pinned here: vllm==0.13.0 transitively caps it at <5, but
 # gemma-4's tokenizer needs 5.x (see llm-vllm-overrides.txt). It is forced
@@ -28,3 +30,4 @@ pyarrow==25.0.1
 aiohttp
 requests
 pyjwt
+jsonschema==4.25.1

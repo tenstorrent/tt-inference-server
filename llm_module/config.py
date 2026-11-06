@@ -70,6 +70,35 @@ class LLMRunConfig:
 
 
 @dataclass(frozen=True)
+class StructuredOutputRunConfig:
+    """One run of vLLM's structured-output benchmark.
+
+    Modeled on v1's ``BenchmarkTaskParams`` for the ``structured_output`` task
+    type (``STRUCTURED_OUTPUT_PAIRS`` in reference_config). The dataset sets
+    the prompts, so ``isl`` is 0; it and the fields after it are the
+    ``LLMRunConfig`` fields ``LLMPerformanceRunner`` reads.
+    """
+
+    dataset: str
+    # Fraction of requests sent with the dataset's schema; None runs with
+    # --no-structured-output.
+    structured_output_ratio: Optional[float]
+    osl: int
+    max_concurrency: int
+    num_prompts: int
+    # When set, every prompt is rendered as a chat turn with these template
+    # arguments (llm_module/structured_output_client.py). Set for models served
+    # with a reasoning parser, so the prompt ends the reasoning and the grammar
+    # applies from the first output token.
+    chat_template_kwargs: Optional[dict] = field(default=None, compare=False)
+    isl: int = 0
+    targets: dict = field(default_factory=dict, compare=False)
+    repetitions: int = 1
+    full_workload_warmup: bool = False
+    token_timing: bool = False
+
+
+@dataclass(frozen=True)
 class ServerConnection:
     """How a driver reaches the inference server."""
 
