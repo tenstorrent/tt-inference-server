@@ -7126,18 +7126,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 117.3,
+                        "ttft_ms": 116.1,
                         "tput_user": 30.2,
                         "tput": 29.6
                     },
                     "measured": {
-                        "ttft_ms": 119.8,
-                        "tput_user": 30.2,
-                        "tput": 29.6,
+                        "ttft_ms": 116.1,
+                        "tput_user": 50.89,
+                        "tput": 49.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350187377) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 119.8, tput_user 30.2, tput 29.6. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42174441742) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7155,13 +7155,13 @@
                         "tput": 545.3
                     },
                     "measured": {
-                        "ttft_ms": 2882.8,
-                        "tput_user": 27.44,
-                        "tput": 545.3,
+                        "ttft_ms": 2866.8,
+                        "tput_user": 27.18,
+                        "tput": 543.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350187377) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 2882.8, tput_user 27.44, tput 545.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41350187377) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7179,13 +7179,13 @@
                         "tput": 26.3
                     },
                     "measured": {
-                        "ttft_ms": 475.5,
-                        "tput_user": 28.94,
-                        "tput": 26.3,
+                        "ttft_ms": 584.7,
+                        "tput_user": 34.16,
+                        "tput": 29.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 475.5, tput_user 28.94, tput 26.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7203,13 +7203,13 @@
                         "tput": 18.5
                     },
                     "measured": {
-                        "ttft_ms": 2491.0,
-                        "tput_user": 28.69,
-                        "tput": 18.5,
+                        "ttft_ms": 2659.2,
+                        "tput_user": 30.33,
+                        "tput": 18.7,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 2491.0, tput_user 28.69, tput 18.5. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7227,13 +7227,13 @@
                         "tput": 7.3
                     },
                     "measured": {
-                        "ttft_ms": 13058.1,
-                        "tput_user": 27.76,
-                        "tput": 7.3,
+                        "ttft_ms": 13510.6,
+                        "tput_user": 27.81,
+                        "tput": 7.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42174441742 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40155707983, the entry with the knob off): ttft 13058.1, tput_user 27.76, tput 7.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
