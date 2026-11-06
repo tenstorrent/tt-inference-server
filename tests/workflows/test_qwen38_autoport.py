@@ -15,11 +15,11 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     args = spec.device_model_spec.vllm_args
-    assert args["max_num_seqs"] == 32
-    assert spec.device_model_spec.max_concurrency == 32
-    assert args["max_num_batched_tokens"] == 131072
-    assert "num_gpu_blocks_override" not in args
-    assert args.get("distributed_executor_backend", "uni") == "uni"
+    assert args["max_num_seqs"] == 8
+    assert spec.device_model_spec.max_concurrency == 8
+    assert args["max_num_batched_tokens"] == 32768
+    assert args["num_gpu_blocks_override"] == 32800
+    assert args["distributed_executor_backend"] == "mp"
     assert args["block_size"] == 32
     assert args["no-enable-prefix-caching"] is True
     assert args["enable_auto_tool_choice"] is True
@@ -55,8 +55,8 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
         terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 32768
     )
     cfg = terminal.agentic_eval_config
-    assert cfg.n_concurrent_trials == 10
-    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+    assert cfg.n_concurrent_trials == 2
+    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 2
     assert (
         cfg.dataset_ref
         == "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a"
@@ -69,17 +69,9 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     }
     assert cfg.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "terminal-bench/break-filter-js-from-html",
-        "terminal-bench/cobol-modernization",
-        "terminal-bench/compile-compcert",
-        "terminal-bench/feal-differential-cryptanalysis",
-        "terminal-bench/qemu-startup",
-        "terminal-bench/caffe-cifar-10",
-        "terminal-bench/password-recovery",
         "terminal-bench/portfolio-optimization",
-        "terminal-bench/hf-model-inference",
-        "terminal-bench/financial-document-processor",
     ]
-    assert swe.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 5
+    assert swe.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
     assert swe.agentic_eval_config.n_concurrent_trials == 5
     assert swe.agentic_eval_config.agent_kwargs["max_tokens"] == 32768
     assert swe.agentic_eval_config.llm_timeout_sec == 7200

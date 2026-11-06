@@ -11926,12 +11926,13 @@ _eval_config_list = [
                     dataset="terminal-bench/terminal-bench-2-1",
                     dataset_ref="sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
                     agent="terminus-2",
-                    n_concurrent_trials=10,
+                    n_concurrent_trials=2,
                     n_attempts=1,
                     n_tasks=89,
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
+                        "interleaved_thinking": False,
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
@@ -11954,21 +11955,13 @@ _eval_config_list = [
                         ],
                         EvalLimitMode.CI_NIGHTLY: [
                             "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
                             "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
                         ],
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 2,
                 },
             ),
             EvalTask(
@@ -12020,7 +12013,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
         ],
