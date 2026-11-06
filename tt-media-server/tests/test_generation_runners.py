@@ -265,16 +265,6 @@ def flux3_runner(monkeypatch):
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
         pipeline_module,
     )
-    dbcache_module = ModuleType("dbcache_flux3_klein")
-    dbcache_module.flux3_klein_dbcache_config = lambda num_references=0: (
-        "dbcache",
-        num_references,
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "models.tt_dit.pipelines.flux3_klein.dbcache_flux3_klein",
-        dbcache_module,
-    )
     runner = _runner("TTFlux3ImageKleinRunner")
     runner.pipeline = _Flux3Pipeline()
     return runner
@@ -289,7 +279,6 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
     assert call.steps == 16
     assert call.images == tuple(images.get("images", []))
-    assert call.cache == ("dbcache", len(call.images))
     assert image.size == (2048, 2048)
     assert image.info["prompt"] == "a detailed caption of a cat"
 

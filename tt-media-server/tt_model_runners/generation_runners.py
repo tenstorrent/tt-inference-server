@@ -438,15 +438,11 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
 
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
-        from models.tt_dit.pipelines.flux3_klein.dbcache_flux3_klein import (
-            flux3_klein_dbcache_config,
-        )
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
             Flux3KleinRequest,
         )
 
         request = requests[0]
-        images = tuple(request._images.get("images", []))
         result = self.pipeline.generate(
             Flux3KleinRequest(
                 prompt=request._prompt,
@@ -454,10 +450,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                 height=request._height,
                 seed=request._seed,
                 steps=self._steps(FLUX3_KLEIN_STEPS),
-                images=images,
-                # DBCache step skipping, with the pipeline's settings for this
-                # many references (more warmup steps with one).
-                cache=flux3_klein_dbcache_config(num_references=len(images)),
+                images=tuple(request._images.get("images", [])),
             )
         )
         # the upsampled caption, which the output reports as its prompt
