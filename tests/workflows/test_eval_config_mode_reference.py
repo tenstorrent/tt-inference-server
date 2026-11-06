@@ -229,28 +229,7 @@ def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
     ]
     assert all(task.priority == "should" for task in tasks)
     gpqa = tasks[0]
-    assert gpqa.doc_ids == [
-        152,
-        189,
-        46,
-        87,
-        52,
-        181,
-        31,
-        185,
-        50,
-        187,
-        153,
-        135,
-        81,
-        93,
-        7,
-        42,
-        24,
-        168,
-        20,
-        28,
-    ]
+    assert gpqa.doc_ids == [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
     assert gpqa.thinking is True
     assert gpqa.score.published_score == 84.3
     assert gpqa.score.gpu_reference_score == 83.33
@@ -258,7 +237,7 @@ def test_gemma4_31b_autoport_smoke_preserves_references_without_score_gates():
     for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY):
         # Dedicated CI publications may disable this suite to isolate another.
         assert gpqa.limit_samples_map[mode] == (
-            20 if mode == EvalLimitMode.CI_NIGHTLY else 2
+            10 if mode == EvalLimitMode.CI_NIGHTLY else 2
         )
         assert not resolve_eval_reference(gpqa.score, mode)["is_subset_reference"]
 

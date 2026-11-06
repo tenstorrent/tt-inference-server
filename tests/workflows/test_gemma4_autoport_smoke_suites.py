@@ -53,28 +53,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
         runtime_config=SimpleNamespace(limit_samples_mode=mode),
     )
     assert json.loads(command[command.index("--samples") + 1]) == {
-        "r1_gpqa_diamond": [
-            152,
-            189,
-            46,
-            87,
-            52,
-            181,
-            31,
-            185,
-            50,
-            187,
-            153,
-            135,
-            81,
-            93,
-            7,
-            42,
-            24,
-            168,
-            20,
-            28,
-        ]
+        "r1_gpqa_diamond": [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
         if mode == "ci-nightly"
         else [152, 189, 46]
     }
@@ -179,7 +158,7 @@ def test_only_prepared_candidate_enabled():
     from reference_config.evals.eval_config import EvalLimitMode
 
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
-        20,
+        10,
         0,
         0,
     ]
