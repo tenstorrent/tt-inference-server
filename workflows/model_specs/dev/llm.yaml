@@ -3494,6 +3494,28 @@ templates:
       reasoning_parser_name: mistral
       tool_call_parser_name: mistral
 
+# Llama 3.1 8B on the Blaze d-gen P/D deployment on exabox (decode: tt-blaze on
+# one galaxy; prefill: tt-metal on one galaxy; chart values in tt-orchestration
+# charts/ttop-pmix-disaggregated-dgen/values/values.llama31-8b.yaml). The small
+# P/D smoke model, used to test tt-d-gen branches on hardware. Remote-served:
+# the device entry only lets the model resolve for `--server-url` workflows.
+# max_concurrency follows the chart's global.pd.maxSlots (4); max_context stays
+# under the chart's maxSeqLen (33792).
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 4
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      remote_api_model: meta-llama/Llama-3.1-8B-Instruct
+      tool_call_parser_name: llama3_json
+
 - weights:
     - moonshotai/Kimi-K2.7-Code
   impl: blaze
