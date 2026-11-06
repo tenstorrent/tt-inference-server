@@ -15,6 +15,15 @@ def install_history_reservation(metal):
         raise RuntimeError("Invalid history reservation selector")
     bundle = Path(__file__).with_name("gemma_prefix_overlay") / "history-reservation"
     manifest = json.loads((bundle / "payload-manifest.json").read_text())
+    if os.environ.get("GEMMA_METAL_IN_TREE", "0") == "1":
+        # tt-metal already carries the payload's model files; require them at target, install the rest.
+        for entry in manifest["files"]:
+            if entry["root"] == "metal":
+                path = metal / entry["path"]
+                actual = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+                if actual != entry["target"]:
+                    raise RuntimeError("In-tree Gemma model source differs from history target: " + entry["path"])
+        manifest = dict(manifest, files=[e for e in manifest["files"] if e["root"] != "metal"])
     roots = {"metal": metal, "plugin": metal.parent / "vllm-tt-plugin",
              "purelib": Path(sysconfig.get_paths()["purelib"])}
     digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None

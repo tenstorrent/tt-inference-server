@@ -58,6 +58,11 @@ def configure_kernel_cache(build,target,proof_sha256,is_target):
     return {'prior_environment':prior,'environment':str(cache),'marker_sha256':sha(marker),'marker':expected}
 
 def install_runtime(metal):
+    if os.environ.get('GEMMA_METAL_IN_TREE','0')=='1':
+        # The stride fix and runtime-H_mod32 FillPad are compiled into this tt-metal; nothing to rebuild.
+        require(os.environ.get('GEMMA_EXPERIMENT_FILLPAD_RUNTIME_HMOD')=='1','FillPad runtime flag required')
+        logging.getLogger(__name__).info('GEMMA_RUNTIME_IN_TREE %s',json.dumps({'metal':str(metal)}))
+        return
     metal=Path(metal);bundle=Path(__file__).with_name('gemma_prefix_overlay')/'fillpad-runtime'
     require(os.environ.get('TT_METAL_TRACE_ALLOC_TRACKING')=='1' and os.environ.get('TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE')=='0','Trace allocation policy mismatch')
     require(os.environ.get('GEMMA_EXPERIMENT_FILLPAD_RUNTIME_HMOD')=='1','FillPad candidate flag required before import')
