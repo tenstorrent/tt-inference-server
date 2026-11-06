@@ -12007,7 +12007,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 2,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
         ],
