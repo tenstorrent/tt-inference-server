@@ -66,6 +66,11 @@ _WARMUP_STEPS = 2
 
 WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
+# Per spatial bucket traced, each expert has one trace without DBCache and three
+# with it. tt-metal's test_pipeline_wan_resolutions.py fits a bucket's in 256 MiB.
+WAN_TRACE_REGION_BYTES_PER_BUCKET = 256 * 1024 * 1024
+# The meshes whose tt_dit preset serves 480p and 720p, two buckets.
+WAN_TWO_BUCKET_MESH_SHAPES = frozenset({(4, 8)})
 
 _inference_timer = log_execution_time(
     f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -124,6 +129,19 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 self.logger, self.device_id, "Wan I2V pipeline creation failed", e
             )
             raise
+
+    def get_pipeline_device_params(self):
+        # Where the old runner reserved a trace region, for one size without
+        # DBCache, reserve one per bucket. Elsewhere none is reserved, and
+        # tt-metal allocates the traces in DRAM as they are captured.
+        device_params = super().get_pipeline_device_params()
+        if "trace_region_size" in device_params:
+            mesh_shape = tuple(self.settings.device_mesh_shape)
+            buckets = 2 if mesh_shape in WAN_TWO_BUCKET_MESH_SHAPES else 1
+            device_params["trace_region_size"] = (
+                buckets * WAN_TRACE_REGION_BYTES_PER_BUCKET
+            )
+        return device_params
 
     def warmup_requests(self) -> list[GenerationRequest]:
         # The pipeline's own warmup is untraced and first frame only. Each size
