@@ -21,17 +21,10 @@ from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
-from domain.video_ref2va_generate_request import (
-    MediaSource,
-    MultimodalReferences,
-    VideoRef2VAGenerateRequest,
-)
 from fastapi import HTTPException
 from open_ai_api.video import (
-    MAX_INLINE_MEDIA_LEN,
     _check_request_media,
     _enforce_inline_media_total,
-    _redact_media_urls,
     _resolve_image_prompt_urls,
     _submit_video_request,
     submit_generate_video_i2v_request,
@@ -75,47 +68,29 @@ class TestImagePromptEntryAcceptsUrls:
         assert exc_info.value.status_code == 422
 
 
-def _ref2va_videos(*sources: MediaSource) -> VideoRef2VAGenerateRequest:
-    return VideoRef2VAGenerateRequest(
-        prompt="p", references=MultimodalReferences(videos=list(sources))
+def _i2v(*images: str) -> VideoI2VGenerateRequest:
+    return VideoI2VGenerateRequest(
+        prompt="p",
+        image_prompts=[
+            {"image": image, "frame_pos": index} for index, image in enumerate(images)
+        ],
     )
 
 
 class TestInlineMediaTotal:
-    _HALF = "A" * (MAX_INLINE_MEDIA_LEN // 2)
-
     def test_total_at_cap_accepted(self):
-        _enforce_inline_media_total(
-            _ref2va_videos(MediaSource(b64=self._HALF), MediaSource(b64=self._HALF))
-        )
-
-    def test_total_over_cap_rejected_with_413(self):
-        request = _ref2va_videos(
-            MediaSource(b64=self._HALF),
-            MediaSource(b64=self._HALF),
-            MediaSource(b64="AAAA"),
-        )
-        with pytest.raises(HTTPException) as exc_info:
-            _enforce_inline_media_total(request)
-        assert exc_info.value.status_code == 413
-
-    def test_url_sources_not_counted(self):
-        _enforce_inline_media_total(
-            _ref2va_videos(
-                MediaSource(b64=self._HALF),
-                MediaSource(b64=self._HALF),
-                MediaSource(url="https://example.com/v.mp4"),
-            )
-        )
+        with patch("open_ai_api.video.MAX_INLINE_MEDIA_LEN", 2 * len(_TINY_PNG_BASE64)):
+            _enforce_inline_media_total(_i2v(_TINY_PNG_BASE64, _TINY_PNG_BASE64))
 
     def test_i2v_inline_images_counted(self):
-        request = VideoI2VGenerateRequest(
-            prompt="p", image_prompts=[{"image": _TINY_PNG_BASE64, "frame_pos": 0}]
-        )
         with patch("open_ai_api.video.MAX_INLINE_MEDIA_LEN", 10):
             with pytest.raises(HTTPException) as exc_info:
-                _enforce_inline_media_total(request)
+                _enforce_inline_media_total(_i2v(_TINY_PNG_BASE64))
         assert exc_info.value.status_code == 413
+
+    def test_url_images_not_counted(self):
+        with patch("open_ai_api.video.MAX_INLINE_MEDIA_LEN", len(_TINY_PNG_BASE64)):
+            _enforce_inline_media_total(_i2v(_TINY_PNG_BASE64, _URL))
 
 
 class TestResolveImagePromptUrls:
@@ -248,17 +223,3 @@ class TestSubmitPathResolvesUrls:
         echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
         assert echoed["image_prompts"][0]["image"] == _URL.split("?")[0]
         assert request.image_prompts[0].image == _TINY_PNG_BASE64
-
-    def test_echoed_reference_urls_are_redacted(self):
-        request = VideoRef2VAGenerateRequest(
-            prompt="p",
-            references=MultimodalReferences(
-                images=[MediaSource(b64=_TINY_PNG_BASE64)],
-                videos=[MediaSource(url="https://u:p@host/clip.mp4?sig=s")],
-            ),
-        )
-        parameters = request.model_dump(mode="json")
-        _redact_media_urls(parameters)
-        assert parameters["references"]["videos"][0]["url"] == "https://host/clip.mp4"
-        assert parameters["references"]["images"][0]["b64"] == _TINY_PNG_BASE64
-        assert request.references.videos[0].url == "https://u:p@host/clip.mp4?sig=s"

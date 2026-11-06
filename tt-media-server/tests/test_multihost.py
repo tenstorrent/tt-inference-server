@@ -15,16 +15,10 @@ from unittest.mock import MagicMock, patch
 import multihost
 import pytest
 from domain.image_generate_request import ImageGenerateRequest
+from domain.minimax_h3_request import MiniMaxH3Ref2VARequest
 from domain.video_generate_request import VideoGenerateRequest
-from domain.video_i2v_generate_request import (
-    ImagePromptEntry,
-    VideoI2VGenerateRequest,
-)
-from domain.video_ref2va_generate_request import (
-    MediaSource,
-    MultimodalReferences,
-    VideoRef2VAGenerateRequest,
-)
+from PIL import Image
+from utils.media_probe import ReferenceMediaProbe
 from multihost import comm, is_follower_rank, is_multihost_launch, launch_rank
 from multihost.comm import (
     CanaryMessage,
@@ -37,10 +31,6 @@ from multihost.follower import MultiHostLockstepFollower
 from multihost import lockstep_runner
 from multihost.lockstep_runner import MultiHostLockstepRunner, wrap_if_multihost
 
-_TINY_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
-    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-)
 _TIMEOUT_S = 5.0
 _PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _VENV_DIR = os.path.join(_PROJECT_DIR, "python_env")
@@ -238,28 +228,27 @@ class TestRequestData:
         )
         _assert_same_request(request, self._round_trip(request))
 
-    @patch("domain.video_i2v_generate_request.get_settings")
-    def test_fl2va_image_prompts(self, get_settings):
-        get_settings.return_value = MagicMock(model_runner="tt-minimax-h3-fl2va")
-        request = VideoI2VGenerateRequest(
-            prompt="keyframes",
-            image_prompts=[
-                ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=0),
-                ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=-1),
-            ],
+    def test_generation_request_keeps_its_loaded_media(self):
+        request = MiniMaxH3Ref2VARequest(
+            prompt="a song", images=["https://x/a.png"], videos=["https://x/a.mp4"]
         )
+        request._images = {"images": [Image.new("RGB", (4, 2), "red")]}
+        request._files = {"images": [b"png"], "videos": [b"mp4"]}
+        request._probes = {"videos": [ReferenceMediaProbe(3.0, (4, 2), 25.0, 2)]}
+        request._seed, request._prompt = 7, "a song"
+        # Manager proxies on rank 0, which another host can't unpickle.
+        request._cancel_event = threading.Event()
+        request._worker_assignment = threading.Event()
         rebuilt = self._round_trip(request)
         _assert_same_request(request, rebuilt)
-        assert [e.frame_pos for e in rebuilt.image_prompts] == [0, -1]
-
-    def test_ref2va_references(self):
-        request = VideoRef2VAGenerateRequest(
-            prompt="a quiet room",
-            references=MultimodalReferences(images=[MediaSource(b64=_TINY_PNG_BASE64)]),
+        assert (
+            rebuilt._images["images"][0].tobytes()
+            == request._images["images"][0].tobytes()
         )
-        rebuilt = self._round_trip(request)
-        _assert_same_request(request, rebuilt)
-        assert rebuilt.references.images[0].b64 == _TINY_PNG_BASE64
+        assert (rebuilt._files, rebuilt._probes) == (request._files, request._probes)
+        assert (rebuilt._seed, rebuilt._prompt) == (7, "a song")
+        assert rebuilt._cancel_event is None
+        assert rebuilt._worker_assignment is None
 
     def test_warmup_style_request_skips_validation(self):
         request = VideoGenerateRequest.model_construct(
@@ -518,7 +507,6 @@ class TestGalaxyQuadDevice:
         for var in (
             "MODEL_RUNNER",
             "DEVICE_MESH_SHAPE",
-            "SP_MESH_4X32",
             "SD_3_5_FAST",
             "SD_3_5_BASE",
             "TP2",

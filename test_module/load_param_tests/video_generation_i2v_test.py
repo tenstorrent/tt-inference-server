@@ -4,25 +4,32 @@
 
 """End-to-end test for Wan2.2 Image-to-Video generation.
 
-Uploads a fixture image as the conditioning frame, submits a job to
-``POST /v1/videos/generations/i2v``, polls until completion, and asserts
-the returned MP4 is a non-empty file.
+Sends a fixture image as the first frame to the generations API's
+``POST /v1/generations/wan-ai/wan2.2-i2v-a14b``, polls the job until
+completion, and asserts the MP4 behind the output's ``url`` is a non-empty
+file.
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
 
 import asyncio
-import base64
 import json
 import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 
 import aiohttp
 from report_module.schema import Block
 
-from .._test_common import BaseTest, HardwareRequirement, TestConfig
+from .._test_common import (
+    BaseTest,
+    HardwareRequirement,
+    TestConfig,
+    fixture_image_data_uri,
+    wan_size_for_device,
+)
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -30,20 +37,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Fixture is sourced from the test_fixtures datasets directory, which is
-# the canonical location used by other v2 vision tests as well
-# (see e.g. vision_evals_test.py).
-FIXTURE_IMAGE_PATH = (
-    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
-)
-
-SUBMIT_PATH = "/v1/videos/generations/i2v"
-STATUS_PATH = "/v1/videos/generations/{job_id}"
-DOWNLOAD_PATH = "/v1/videos/generations/{job_id}/download"
+SUBMIT_PATH = "/v1/generations/wan-ai/wan2.2-i2v-a14b"
+STATUS_PATH = "/v1/jobs/{job_id}"
 
 DEFAULT_POLL_INTERVAL_SECONDS = 5
 DEFAULT_POLL_TIMEOUT_SECONDS = 1200
-DEFAULT_NUM_INFERENCE_STEPS = 40
 
 HTTP_OK = 200
 HTTP_ACCEPTED = 202
@@ -53,17 +51,6 @@ _HEADERS = {
     "Content-Type": "application/json",
     "Authorization": "Bearer your-secret-key",
 }
-
-
-def _load_fixture_image_base64() -> str:
-    """Read the repo-checked-in fixture image and return it base64-encoded."""
-    if not FIXTURE_IMAGE_PATH.exists():
-        raise FileNotFoundError(
-            f"I2V fixture image missing at {FIXTURE_IMAGE_PATH}. "
-            "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
-        )
-    raw_bytes = FIXTURE_IMAGE_PATH.read_bytes()
-    return base64.b64encode(raw_bytes).decode("ascii")
 
 
 class VideoGenerationI2VTest(BaseTest):
@@ -80,23 +67,19 @@ class VideoGenerationI2VTest(BaseTest):
         self.poll_interval = self.targets.get(
             "poll_interval", DEFAULT_POLL_INTERVAL_SECONDS
         )
-        num_inference_steps = self.targets.get(
-            "num_inference_steps", DEFAULT_NUM_INFERENCE_STEPS
-        )
-
         submit_url = f"{self.base_url}{SUBMIT_PATH}"
         logger.info(f"Testing I2V generation at {submit_url}")
 
-        image_b64 = _load_fixture_image_base64()
         payload = {
             "prompt": (
                 "A tranquil sunrise over rolling hills, soft golden light, "
                 "cinematic camera pan"
             ),
             "negative_prompt": "blurry, low quality, distorted",
-            "num_inference_steps": num_inference_steps,
             "seed": 42,
-            "image_prompts": [{"image": image_b64, "frame_pos": 0}],
+            "first_frame": fixture_image_data_uri(),
+            "size": wan_size_for_device(self.ctx.device if self.ctx else None),
+            "aspect_ratio": "16:9",
         }
 
         session_timeout = aiohttp.ClientTimeout(total=self.poll_timeout)
@@ -127,7 +110,7 @@ class VideoGenerationI2VTest(BaseTest):
         self, session: aiohttp.ClientSession, url: str, payload: dict
     ) -> str:
         """POST the I2V request; return the job_id on 202, else empty string."""
-        logger.info("Submitting I2V job (image_prompts=[frame_pos=0])")
+        logger.info("Submitting I2V job (first_frame only)")
         async with session.post(url, json=payload) as response:
             body = await response.text()
             if response.status != HTTP_ACCEPTED:
@@ -149,7 +132,7 @@ class VideoGenerationI2VTest(BaseTest):
     async def _poll_until_complete(
         self, session: aiohttp.ClientSession, job_id: str
     ) -> str:
-        """Poll GET /v1/videos/generations/{job_id} until terminal state.
+        """Poll GET /v1/jobs/{job_id} until terminal state.
 
         Returns the downloaded MP4 path on success, empty string otherwise.
         """
@@ -170,7 +153,7 @@ class VideoGenerationI2VTest(BaseTest):
                 status = data.get("status")
                 logger.info(f"job {job_id} status={status}")
                 if status == "completed":
-                    return await self._download_result(session, job_id)
+                    return await self._download_result(session, job_id, data)
                 if status in ("failed", "cancelled"):
                     logger.error(f"I2V job {job_id} reached terminal state: {status}")
                     return ""
@@ -179,13 +162,14 @@ class VideoGenerationI2VTest(BaseTest):
         return ""
 
     async def _download_result(
-        self, session: aiohttp.ClientSession, job_id: str
+        self, session: aiohttp.ClientSession, job_id: str, job: dict
     ) -> str:
-        """Stream the MP4 attachment to /tmp/videos and return its path."""
+        """Save the completed job's MP4 to /tmp/videos and return its path."""
         output_dir = Path("/tmp/videos")
         output_dir.mkdir(parents=True, exist_ok=True)
         out_path = output_dir / f"{job_id}_i2v.mp4"
-        download_url = f"{self.base_url}{DOWNLOAD_PATH.format(job_id=job_id)}"
+
+        download_url = urljoin(self.base_url + "/", job["outputs"][0]["url"])
 
         async with session.get(download_url) as response:
             if response.status != HTTP_OK:
