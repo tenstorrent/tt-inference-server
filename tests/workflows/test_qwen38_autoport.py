@@ -15,11 +15,11 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     args = spec.device_model_spec.vllm_args
-    assert args["max_num_seqs"] == 8
-    assert spec.device_model_spec.max_concurrency == 8
-    assert args["max_num_batched_tokens"] == 32768
-    assert args["num_gpu_blocks_override"] == 32800
-    assert args["distributed_executor_backend"] == "mp"
+    assert args["max_num_seqs"] == 32
+    assert spec.device_model_spec.max_concurrency == 32
+    assert args["max_num_batched_tokens"] == 131072
+    assert "num_gpu_blocks_override" not in args
+    assert args.get("distributed_executor_backend", "uni") == "uni"
     assert args["block_size"] == 32
     assert args["no-enable-prefix-caching"] is True
     assert args["enable_auto_tool_choice"] is True
@@ -41,9 +41,9 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     gpqa, terminal, swe = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     assert gpqa.capture_reasoning is True
     assert gpqa.log_samples is True
-    assert gpqa.max_concurrent == 10
+    assert gpqa.max_concurrent == 12
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
-    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 12
     assert gpqa.gen_kwargs["max_gen_toks"] == 81920
     assert gpqa.model_kwargs["timeout"] == 14400
     for task in (terminal, swe):
@@ -56,14 +56,14 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     )
     cfg = terminal.agentic_eval_config
     assert cfg.n_concurrent_trials == 2
-    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 2
+    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
     assert (
         cfg.dataset_ref
         == "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a"
     )
     assert cfg.agent_kwargs["model_info"]["max_output_tokens"] == 32768
     assert cfg.agent_kwargs["llm_kwargs"]["timeout"] == 7200
-    assert cfg.agent_kwargs["interleaved_thinking"] is True
+    assert cfg.agent_kwargs["interleaved_thinking"] is False
     assert cfg.agent_kwargs["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
         "reasoning_effort": "medium"
     }

@@ -11890,7 +11890,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=10,
+                max_concurrent=12,
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
@@ -11906,7 +11906,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 12,
                     EvalLimitMode.SMOKE_TEST: 2,
                 },
             ),
@@ -11932,7 +11932,7 @@ _eval_config_list = [
                     agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
-                        "interleaved_thinking": True,
+                        "interleaved_thinking": False,
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
@@ -11961,7 +11961,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 2,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
