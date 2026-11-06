@@ -498,6 +498,29 @@ def test_the_gate_checks_what_the_config_sets():
     assert gate["verdict"] == "FAIL"
 
 
+def test_the_text_image_drop_can_be_set_per_subset():
+    model, ref = "black-forest-labs/flux-3-image-klein", "refs/r1"
+    config = {
+        "models": {
+            model: {ref: {"text_image_max_drop": {"dpg": {"ci": 16.0, "all": 3.0}}}}
+        }
+    }
+    # 12 points under the GPU: within a CI run's 16, not a full run's 3.
+    text_image = {"dpg": {"tt": 86.95, "gpu": 98.95, "images": 5}}
+
+    def dpg(subset):
+        gate = eval_.grade({}, model, ref, config, text_image, subset=subset)
+        return gate["verdict"], [c.get("threshold") for c in gate["checks"]]
+
+    assert dpg("ci") == ("PASS", [82.95])
+    assert dpg("all") == ("FAIL", [95.95])
+    # A subset the map leaves out is not checked.
+    assert dpg("dev") == ("NA", [])
+    # One number applies to every subset, as before.
+    config["models"][model][ref]["text_image_max_drop"]["dpg"] = 16.0
+    assert dpg("all") == ("PASS", [82.95])
+
+
 def test_the_generation_api_client_gets_the_cases_png(monkeypatch):
     monkeypatch.delenv("API_KEY", raising=False)
     server = FakeImageServer(QWEN)
