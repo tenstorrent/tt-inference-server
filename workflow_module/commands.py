@@ -444,6 +444,9 @@ class ServerCommand(Command):
                 logger.exception("Server bring-up failed: %s", e)
                 last_error = str(e)
                 _teardown_server(spec, None)
+                if getattr(e, "retry_safe", True) is False:
+                    logger.error("Not retrying an unreconciled server launch")
+                    break
                 continue
 
             ready_error = _wait_until_ready(spec, payload)
