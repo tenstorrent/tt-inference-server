@@ -446,6 +446,11 @@ def _check_request_overrides_supported(task, request_body: dict, model_spec) -> 
             "only reach the server on the chat API; the completions API renders "
             "the chat template client-side. Set use_chat_api=True."
         )
+    if getattr(task, "expand_chat_messages", False) and not task.use_chat_api:
+        raise ValueError(
+            f"{task.task_name}: expand_chat_messages rewrites the chat payload's "
+            "messages, so it needs use_chat_api=True."
+        )
     thinking = getattr(task, "thinking", None)
     if thinking is None:
         return
@@ -605,7 +610,8 @@ def build_eval_command(
 
     lm_eval_prefix = [str(lm_eval_exec)]
     request_body = resolve_request_body(task)
-    if request_body:
+    expand_chat_messages = getattr(task, "expand_chat_messages", False)
+    if request_body or expand_chat_messages:
         _check_request_overrides_supported(task, request_body, model_spec)
         # One wrapper covers every payload patch for a task that opts into
         # request overrides (body, seed drop, reasoning capture). Tasks without
@@ -622,6 +628,8 @@ def build_eval_command(
             lm_eval_prefix.append("--drop-server-seed")
         if getattr(task, "capture_reasoning", False):
             lm_eval_prefix.append("--preserve-reasoning")
+        if expand_chat_messages:
+            lm_eval_prefix.append("--expand-chat-messages")
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
             WorkflowVenvType.EVALS_AUDIO,

@@ -19,6 +19,7 @@ from typing import List, Optional, Tuple, Union
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.request_overrides import resolve_request_body
 from llm_module.eval_command import _resolve_eval_samples, build_eval_command
+from llm_module.lmms_plugins import lmms_plugin_env
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
@@ -584,6 +585,16 @@ def _run_eval_task(
     if auth_token:
         # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
         env["OPENAI_API_KEY"] = auth_token
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        if getattr(task, "eval_class", None) == "openai_compatible_tt":
+            # Only tasks on the TT client load the plugin package
+            # (llm_module/lmms_plugins); other models' lmms-eval runs are untouched.
+            env = lmms_plugin_env(env)
+        # lmms-eval's OpenAI client refuses to construct without a key, even
+        # against a server that runs with --no-auth (the text path's lm-eval
+        # client does not care). "EMPTY" is the placeholder the agentic harness
+        # uses for the same reason; a real auth token above takes precedence.
+        env.setdefault("OPENAI_API_KEY", "EMPTY")
     if getattr(task, "allow_code_execution", False):
         # HF evaluate's code_eval metric refuses to run without this. Scoped to
         # this subprocess only -- never os.environ, the image, or the workflow

@@ -1,0 +1,30 @@
+# Codeforces Elo, the "Codeforces ELO" row of the Gemma 4 model card, on
+# open-r1/codeforces (verifiable-prompts test split: late-2024 / early-2025 contests,
+# C++17 prompts). Solutions are compiled and judged on the eval host against the
+# official + open-r1 generated tests; codeforces_elo is the maximum-likelihood rating
+# over the judged problems' ratings. See codeforces_utils.py.
+task: codeforces_elo
+dataset_path: open-r1/codeforces
+dataset_name: verifiable-prompts
+test_split: test
+output_type: generate_until
+process_docs: !function codeforces_utils.process_docs
+doc_to_text: "{{prompt}}"
+doc_to_target: rating
+process_results: !function codeforces_utils.process_results
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: codeforces_elo
+    aggregation: !function codeforces_utils.elo_aggregation
+    higher_is_better: true
+  - metric: pass_at_1
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

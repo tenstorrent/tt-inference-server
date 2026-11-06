@@ -423,6 +423,11 @@ class EvalTask:
     # tasks on the openai_compatible client get it through the same wrapper
     # (--harness lmms-eval, merged into the openai SDK's extra_body).
     request_body: Dict[str, Any] = field(default_factory=dict)
+    # Send each doc as the multi-turn conversation its text carries (a JSON
+    # message list behind lm_eval_request_overrides.CHAT_MESSAGES_SENTINEL)
+    # instead of one user message, e.g. MRCR. Needs use_chat_api=True; runs
+    # through the same lm-eval request-overrides wrapper as request_body.
+    expand_chat_messages: bool = False
     # Convenience for the common case. None (default) leaves the model in the
     # serving entry's default thinking mode; True/False force it for this task
     # only, as chat_template_kwargs[thinking_kwarg]. Needs use_chat_api=True on
@@ -678,6 +683,159 @@ TERMINAL_BENCH_2_DATASET_REF = (
 _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
+
+# Custom lm-eval tasks for model-card evals the pinned fork does not ship (AIME
+# 2026, generative MMMLU, BBEH, MRCR, Codeforces Elo). Absolute, like
+# _K2_HORIZON_LM_EVAL_TASKS.
+_CARD_EVALS_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "card_evals"
+)
+
+# lmms-eval tasks of the TT plugin package (llm_module/lmms_plugins): MMMU-Pro and
+# MATH-Vision in a fixed shuffled order, HLE and OmniDocBench v1.5. lmms-eval v0.4.1
+# builds its task index before it adds the LMMS_EVAL_PLUGINS task directories, so
+# the plugin's tasks only resolve through --include_path. Absolute, like
+# _K2_HORIZON_LM_EVAL_TASKS.
+_TT_LMMS_PLUGIN_TASKS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "llm_module",
+    "lmms_plugins",
+    "tt_lmms_plugins",
+    "tasks",
+)
+
+# Gemma 4 sampling (model card / HF README) for the gemma-4-31B-it chat tasks; top_k
+# stays at 20 (not the card's 64) so it fits the QB2 device sampler's 1..32 range.
+_GEMMA4_SAMPLING_GEN_KWARGS = {
+    "stream": "false",
+    "until": [],
+    "do_sample": "true",
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.95,
+}
+
+
+def _gemma4_31b_tau2_task(domain: str, n_tasks: int, ci_tasks: List[str]) -> EvalTask:
+    """One tau2-bench domain of the Gemma 4 card's "Tau2 (average over 3)" row,
+    run through Harbor's tau3-bench adapter (airline, retail and telecom are the
+    tau2 domains, with tau3's task fixes). The served model is also the simulated
+    user and the natural-language assertion judge. The card publishes only the
+    three-domain average (76.9), so each domain row is ungated (NA) and the
+    average is read off the three rows."""
+    ci_names = [f"sierra-research/tau3-bench__tau3-{domain}-{t}" for t in ci_tasks]
+    return EvalTask(
+        task_name=f"tau2_{domain}",
+        priority="should",
+        workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        score=EvalTaskScore(
+            published_score=None,
+            published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            score_func=score_task_single_key,
+            score_func_kwargs={
+                "result_keys": ["accuracy"],
+                "unit": "percent",
+            },
+        ),
+        agentic_eval_config=TerminalBenchEvalConfig(
+            dataset="sierra-research/tau3-bench",
+            agent="tau3_llm_agent",
+            agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+            task_names=[f"sierra-research/tau3-bench__tau3-{domain}-*"],
+            # One trial at a time: the agent and the simulated user share one
+            # server, and gemma4_31b_qb2 serves a single request at a time.
+            n_concurrent_trials=1,
+            n_attempts=1,
+            n_tasks=n_tasks,
+            override_cpus=4,
+            override_memory_mb=8 * 1024,
+            agent_timeout_sec=3600,
+            agent_kwargs={
+                "tau2_trial_index": 0,
+                "temperature": 1.0,
+                "max_steps": 200,
+                "tool_timeout_sec": 900,
+                "read_timeout_sec": 120,
+                # build_llm_args() sets only temperature; top_p rides here (top_k 20
+                # is the gemma4_31b_qb2 server default). Must stay a JSON *string*.
+                "llm_args_json": '{"top_p": 0.95}',
+            },
+            # Literal model names: the Harbor container does not expand templates.
+            environment_env={
+                "TAU2_USER_MODEL": "openai/google/gemma-4-31B-it",
+            },
+            verifier_env={
+                "TAU2_NL_ASSERTIONS_MODEL": "openai/google/gemma-4-31B-it",
+            },
+            # Seeded (random.Random(42)) sample of 5 tasks from the domain's
+            # tau2 "base" split; ci-long runs the same tasks.
+            task_names_map={
+                EvalLimitMode.CI_NIGHTLY: ci_names,
+                EvalLimitMode.CI_LONG: ci_names,
+            },
+        ),
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 1},
+    )
+
+
+def _gemma4_31b_lmms_task(
+    task_name: str,
+    published_score: float,
+    published_score_ref: str,
+    result_key: str,
+    unit: str,
+    enable_thinking: bool,
+    gen_kwargs: Dict[str, str],
+    ci_limit: int,
+    search_rounds: int = 0,
+) -> EvalTask:
+    """A Gemma 4 card eval with image input, run through lmms-eval on the TT
+    client (llm_module/lmms_plugins), from the plugin's task directory.
+    A server that serves text only rejects every request that carries an
+    image, so those documents score as empty answers. ``unit`` "percent" for a
+    0-1 metric, anything else for one already in points. ``search_rounds`` > 0
+    gives the client its Wikipedia search tool (tt_lmms_plugins.search) and
+    must match the task YAML's own search_rounds, which the prompt states."""
+    model_kwargs = {
+        # One attempt: a rejected image request fails at once instead of
+        # sleeping between retries.
+        "max_retries": 1,
+        "request_timeout": 3600,
+        "enable_thinking": "true" if enable_thinking else "false",
+    }
+    if search_rounds:
+        model_kwargs["search_rounds"] = str(search_rounds)
+    return EvalTask(
+        task_name=task_name,
+        eval_class="openai_compatible_tt",
+        priority="should",
+        workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+        include_path=_TT_LMMS_PLUGIN_TASKS,
+        apply_chat_template=False,
+        use_chat_api=True,
+        # One request at a time on the single-user gemma4_31b_qb2 server (the
+        # device's max_concurrency clamps both anyway).
+        batch_size=1,
+        max_concurrent=1,
+        score=EvalTaskScore(
+            published_score=published_score,
+            published_score_ref=published_score_ref,
+            gpu_reference_score=None,
+            gpu_reference_score_ref=None,
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": [result_key], "unit": unit},
+        ),
+        model_kwargs=model_kwargs,
+        gen_kwargs=gen_kwargs,
+        limit_samples_map={
+            EvalLimitMode.CI_NIGHTLY: ci_limit,
+            EvalLimitMode.CI_LONG: ci_limit,
+            EvalLimitMode.SMOKE_TEST: 2,
+        },
+    )
+
 
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
@@ -12255,6 +12413,264 @@ _eval_config_list = [
                     EvalLimitMode.CI_LONG: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
+            ),
+            # ---- Model-card evals added for the QB2 customer requirements. ----
+            # priority="should" until each has a measured QB2 baseline. The
+            # ci-nightly sizes fit one 18 h tt-shield job on the single-user
+            # gemma4_31b_qb2 server (max_concurrency 1).
+            EvalTask(
+                # AIME 2026 (MathArena, 30 problems), thinking on, one sample each.
+                task_name="aime_2026",
+                include_path=_CARD_EVALS_LM_EVAL_TASKS,
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=89.2,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    **_GEMMA4_SAMPLING_GEN_KWARGS,
+                    "max_gen_toks": 64 * 1024,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,
+                    EvalLimitMode.CI_LONG: 30,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # MMMLU (14 languages), generative CoT with simple-evals' answer
+                # extraction; the limit applies per language.
+                task_name="mmmlu_cot",
+                include_path=_CARD_EVALS_LM_EVAL_TASKS,
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=88.4,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": 3600,
+                },
+                gen_kwargs={
+                    **_GEMMA4_SAMPLING_GEN_KWARGS,
+                    "max_gen_toks": 16384,
+                },
+                # 25 per language = 350 questions (SE ~1.7 points at 88%).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 25,
+                    EvalLimitMode.CI_LONG: 25,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # BIG-Bench Extra Hard, micro average (the card's metric); docs are
+                # interleaved across the 23 tasks, BBEH-mini first.
+                task_name="bbeh",
+                include_path=_CARD_EVALS_LM_EVAL_TASKS,
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=74.4,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    **_GEMMA4_SAMPLING_GEN_KWARGS,
+                    "max_gen_toks": 32 * 1024,
+                },
+                # 115 = 5 BBEH-mini questions from each of the 23 tasks.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 115,
+                    EvalLimitMode.CI_LONG: 115,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # OpenAI MRCR, 8 needles, the bins up to 128K tokens, sent as the
+                # real multi-turn conversation (expand_chat_messages).
+                task_name="mrcr_8needle_128k",
+                include_path=_CARD_EVALS_LM_EVAL_TASKS,
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=66.4,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["mrcr_score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                expand_chat_messages=True,
+                min_context_required=131072 + 32 * 1024,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    **_GEMMA4_SAMPLING_GEN_KWARGS,
+                    "max_gen_toks": 32 * 1024,
+                },
+                # 100 = 20 samples from each of the five bins up to 128K tokens.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 100,
+                    EvalLimitMode.CI_LONG: 100,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # Codeforces Elo on open-r1/codeforces' test split (late-2024 /
+                # early-2025 contests): C++17 solutions compiled with the host's
+                # g++ and judged on this host, rated by maximum likelihood over
+                # the problem ratings. Not Google's (unpublished) protocol.
+                task_name="codeforces_elo",
+                include_path=_CARD_EVALS_LM_EVAL_TASKS,
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=2150,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["codeforces_elo,none"],
+                        "unit": "elo",
+                    },
+                ),
+                use_chat_api=True,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    **_GEMMA4_SAMPLING_GEN_KWARGS,
+                    "max_gen_toks": 32 * 1024,
+                },
+                # 40 problems interleaved across five rating buckets.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.CI_LONG: 40,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            _gemma4_31b_tau2_task(
+                "airline", n_tasks=50, ci_tasks=["1", "10", "28", "26", "44"]
+            ),
+            _gemma4_31b_tau2_task(
+                "retail", n_tasks=114, ci_tasks=["3", "19", "52", "32", "60"]
+            ),
+            _gemma4_31b_tau2_task(
+                "telecom",
+                n_tasks=114,
+                ci_tasks=[
+                    "mms-issue-airplane-mode-on-bad-network-preference-bad-wifi-calling-break-apn-mms-setting-break-app-storage-permission-data-mode-off-data-usage-exceeded-unseat-sim-card-persona-easy",
+                    "mms-issue-airplane-mode-on-bad-network-preference-data-usage-exceeded-persona-none",
+                    "mobile-data-issue-airplane-mode-on-bad-network-preference-bad-vpn-data-mode-off-data-saver-mode-on-data-usage-exceeded-user-abroad-roaming-disabled-on-persona-none",
+                    "mms-issue-airplane-mode-on-break-app-both-permissions-persona-hard",
+                    "mobile-data-issue-bad-network-preference-bad-vpn-data-mode-off-data-saver-mode-on-data-usage-exceeded-user-abroad-roaming-enabled-off-persona-easy",
+                ],
+            ),
+            # ---- Model-card evals with image input (lmms-eval). The
+            # gemma4_31b_qb2 profile is text only, so get_llm_eval_tasks skips
+            # them there until it serves images. CI sizes assume ~38 tok/s single-user
+            # decode (a few hours each once images are served).
+            # MMMU-Pro, standard (10 options) CoT, thinking on.
+            _gemma4_31b_lmms_task(
+                "mmmu_pro_standard_cot_shuffled",
+                published_score=76.9,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                result_key="mmmu_acc,none",
+                unit="percent",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "16384"},
+                ci_limit=120,
+            ),
+            # MATH-Vision test, rule-based boxed-answer scoring, thinking on.
+            _gemma4_31b_lmms_task(
+                "mathvision_test_shuffled",
+                published_score=85.6,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                result_key="mathvision_standard_eval,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=120,
+            ),
+            # OmniDocBench v1.5 page-to-Markdown; the card's 0.131 overall edit
+            # distance is graded as (1 - 0.131) * 100 = 86.9 edit score.
+            _gemma4_31b_lmms_task(
+                "omnidocbench_v15",
+                published_score=86.9,
+                published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4 (overall edit distance 0.131)",
+                result_key="omnidocbench_edit_score,none",
+                unit="points",
+                enable_thinking=False,
+                gen_kwargs={"temperature": "0", "max_new_tokens": "16384"},
+                ci_limit=100,
+            ),
+            # HLE without tools: text and image questions, judged by the served
+            # model (thinking off) with the official judge prompt.
+            _gemma4_31b_lmms_task(
+                "hle_no_tools",
+                published_score=19.5,
+                published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                result_key="hle_accuracy,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=40,
+            ),
+            # HLE with search: hle_no_tools plus up to 5 Wikipedia SEARCH / OPEN
+            # turns per question, run by the client. The card's search tool is
+            # not published; this one is keyless English Wikipedia.
+            _gemma4_31b_lmms_task(
+                "hle_with_search",
+                published_score=26.5,
+                published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                result_key="hle_accuracy,none",
+                unit="points",
+                enable_thinking=True,
+                gen_kwargs={"temperature": "1.0", "max_new_tokens": "32768"},
+                ci_limit=30,
+                search_rounds=5,
             ),
         ],
     ),

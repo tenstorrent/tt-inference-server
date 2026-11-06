@@ -1,0 +1,30 @@
+# Humanity's Last Exam (cais/hle) with search: hle_no_tools plus a Wikipedia search
+# tool (SEARCH: / OPEN: lines, see tt_lmms_plugins/search.py). The tool turns run in
+# the TT client, so the EvalTask sets the client's search_rounds model arg to the
+# search_rounds below; the judge and hle_accuracy are hle_no_tools'.
+task: hle_with_search
+dataset_path: cais/hle
+dataset_kwargs:
+  token: True
+test_split: test
+output_type: generate_until
+process_docs: !function utils.process_docs
+doc_to_visual: !function utils.doc_to_visual
+doc_to_text: !function utils.doc_to_text_search
+doc_to_target: answer
+process_results: !function utils.process_results
+generation_kwargs:
+  max_new_tokens: 32768
+  temperature: 1.0
+metric_list:
+  - metric: hle_accuracy
+    aggregation: !function utils.aggregate_accuracy
+    higher_is_better: true
+  - metric: hle_judge_failures
+    aggregation: !function utils.aggregate_judge_failures
+    higher_is_better: false
+lmms_eval_specific_kwargs:
+  default:
+    search_rounds: 5
+metadata:
+  version: 1.0
