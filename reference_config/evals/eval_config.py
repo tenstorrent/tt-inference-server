@@ -12029,7 +12029,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0,
                 },
             ),
             EvalTask(
@@ -12051,6 +12051,7 @@ _eval_config_list = [
                     agent_timeout_sec=21600,
                     agent_kwargs={
                         "parser_name": "json",
+                        "store_all_messages": True,
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 262144,
@@ -12067,16 +12068,27 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        mode: [
+                        EvalLimitMode.SMOKE_TEST: [
                             "terminal-bench/llm-inference-batching-scheduler",
                             "terminal-bench/mailman",
-                        ]
-                        for mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_NIGHTLY)
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/llm-inference-batching-scheduler",
+                            "terminal-bench/mailman",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/winning-avg-corewars",
+                            "terminal-bench/feal-linear-cryptanalysis",
+                            "terminal-bench/fix-code-vulnerability",
+                            "terminal-bench/constraints-scheduling",
+                            "terminal-bench/sparql-university",
+                            "terminal-bench/dna-insert",
+                            "terminal-bench/video-processing",
+                        ],
                     },
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 2,
-                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.CI_NIGHTLY: 10,
                 },
             ),
         ],

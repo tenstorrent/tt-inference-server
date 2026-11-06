@@ -103,8 +103,19 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
             "pydata__xarray-4966",
             "astropy__astropy-14598",
         ]
-    if mode == "ci-nightly" and task.task_name == "r1_gpqa_diamond":
-        names = [152, 189, 46, 87, 52, 181, 31, 185, 50, 187]
+    if mode == "ci-nightly" and task.task_name == "terminal_bench_2_1":
+        names = [
+            "terminal-bench/llm-inference-batching-scheduler",
+            "terminal-bench/mailman",
+            "terminal-bench/db-wal-recovery",
+            "terminal-bench/winning-avg-corewars",
+            "terminal-bench/feal-linear-cryptanalysis",
+            "terminal-bench/fix-code-vulnerability",
+            "terminal-bench/constraints-scheduling",
+            "terminal-bench/sparql-university",
+            "terminal-bench/dna-insert",
+            "terminal-bench/video-processing",
+        ]
     config = build_harbor_config(
         task,
         ServerConnection(base_url="http://localhost", service_port=8000, model=MODEL),
@@ -128,6 +139,7 @@ def test_stock_harbor_route_preserves_smoke_limits_and_task_resources(
         model = kwargs["config"]["model"]["model_kwargs"]
         assert model["temperature"] == 1.0
     else:
+        assert kwargs["store_all_messages"] is True
         assert kwargs["temperature"] == 1.0
         model = kwargs["llm_kwargs"]
         assert model["max_tokens"] == 32768
@@ -145,8 +157,8 @@ def test_only_prepared_candidate_enabled():
 
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in TASKS] == [
         0,
-        5,
         0,
+        10,
     ]
     assert TASKS[1].agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "pylint-dev__pylint-7080",
