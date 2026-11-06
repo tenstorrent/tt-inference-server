@@ -7646,7 +7646,7 @@ templates:
     - device: P300X2
       max_concurrency: 8
       max_context: 262144
-      max_tokens_all_users_override: 1049568
+      max_tokens_all_users_override: 262368
       default_impl: false
       tensor_cache_timeout: 7200
       env_vars:
