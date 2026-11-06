@@ -3,6 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
+
+# Gemma main-rebase comparison run branch: benchmark only the gating reference points (no sweeps).
+os.environ.setdefault("ONLY_BENCHMARK_TARGETS", "1")
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
