@@ -1062,6 +1062,19 @@ def test_stored_request_digests_data_uris():
     assert url == "https://x/a.png"
 
 
+def test_stored_request_drops_url_credentials():
+    from model_services.generation_service import _request_parameters
+
+    signed = "https://user:secret@bucket.example/a.png?X-Amz-Signature=abc#part"
+    clean = "https://bucket.example/a.png"
+    references = MiniMaxH3Ref2VARequest(prompt="x", images=[signed])
+    assert _request_parameters(references)["images"] == [clean]
+    keyframe = Wan22i2vA14bRequest(
+        prompt="x", first_frame=signed, aspect_ratio="16:9", size="480p"
+    )
+    assert _request_parameters(keyframe)["first_frame"] == clean
+
+
 def test_images_are_turned_upright():
     from utils.media_probe import decode_image
 

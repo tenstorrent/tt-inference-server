@@ -87,8 +87,28 @@ def _warmup_request(
 
 
 class _GenerationRunner(TTDiTRunner):
-    def _steps(self, steps: int) -> int:
-        return _WARMUP_STEPS if self._warming_up else steps
+    def _steps(self, steps: int, request: GenerationRequest | None = None) -> int:
+        """``steps``, or fewer for a warmup or a deep canary request, which
+        only exercise the compiled programs."""
+        if self._warming_up or (
+            request is not None and request._task_id == CANARY_DEEP_TASK_ID
+        ):
+            return _WARMUP_STEPS
+        return steps
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the first warmup request. It
+        replaces the old video runners' builder, whose request ``run`` can't
+        take."""
+        requests = self.warmup_requests()
+        if not requests:
+            raise NotImplementedError(
+                f"{type(self).__name__} sends no warmup requests; it must build "
+                "its deep canary request itself"
+            )
+        request = requests[0]
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
@@ -154,7 +174,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 prompts=[request._prompt],
                 negative_prompts=[request.negative_prompt],
                 image_prompt=image_prompt,
-                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS),
+                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS, request),
                 guidance_scale=WAN_GUIDANCE_SCALES[0],
                 guidance_scale_2=WAN_GUIDANCE_SCALES[1],
                 flow_shift=WAN_SHIFT,

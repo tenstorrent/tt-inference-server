@@ -196,6 +196,20 @@ def test_wan_warmup_covers_every_combination():
         assert call["num_inference_steps"] == 2
 
 
+def test_wan_deep_canary_runs_a_short_warmup_request():
+    from config.constants import CANARY_DEEP_TASK_ID
+
+    # The multi-host lockstep runner and its followers run it outside warmup.
+    runner = _runner("TTWan22I2VA14BRunner")
+    request = runner._build_warmup_video_request()
+    assert isinstance(request, Wan22i2vA14bRequest)
+    assert request._task_id == CANARY_DEEP_TASK_ID
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert (call["width"], call["height"]) == (request._width, request._height)
+    assert call["num_inference_steps"] == 2
+
+
 def test_wan_warmup_conditions_the_last_frame(monkeypatch):
     monkeypatch.setattr(
         runners, "ImagePrompt", lambda image, frame_pos: (image, frame_pos)

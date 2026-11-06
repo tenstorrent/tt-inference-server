@@ -41,6 +41,7 @@ from utils.media_downloader import (
     MediaDownloadPolicyError,
     MediaDownloadTooLargeError,
     download_media_url,
+    redact_url,
 )
 from utils.media_probe import (
     decode_image,
@@ -71,21 +72,22 @@ def _decode_data_uri(uri: str, kind: str) -> bytes:
 
 
 def _request_parameters(request: GenerationRequest) -> dict:
-    """The request as stored with its job, with data URIs replaced by their
-    SHA-256 so the record stays small."""
+    """The request as stored with its job: data URIs replaced by their SHA-256
+    so the record stays small, and URLs without their credentials and query,
+    which can hold a presigned URL's signature."""
     parameters = request.model_dump(mode="json")
     for name in request.MEDIA_FIELDS:
         value = parameters.get(name)
         if isinstance(value, list):
-            parameters[name] = [_digest_data_uri(item) for item in value]
+            parameters[name] = [_stored_media(item) for item in value]
         elif value is not None:
-            parameters[name] = _digest_data_uri(value)
+            parameters[name] = _stored_media(value)
     return parameters
 
 
-def _digest_data_uri(value: str) -> str:
+def _stored_media(value: str) -> str:
     if value[:5].lower() != "data:":
-        return value
+        return redact_url(value)
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 
 
