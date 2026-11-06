@@ -7876,18 +7876,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 69.8,
+                        "ttft_ms": 67.2,
                         "tput_user": 52.73,
                         "tput": 51.6
                     },
                     "measured": {
-                        "ttft_ms": 109.2,
-                        "tput_user": 60.76,
-                        "tput": 58.2,
+                        "ttft_ms": 67.2,
+                        "tput_user": 54.03,
+                        "tput": 52.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064530430 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 70.1, tput_user 52.73, tput 51.6. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield release run 41506508638) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 109.2, tput_user 60.76, tput 58.2. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
@@ -7900,18 +7900,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1390.7,
+                        "ttft_ms": 1383.7,
                         "tput_user": 47.89,
                         "tput": 992.3
                     },
                     "measured": {
-                        "ttft_ms": 1390.7,
-                        "tput_user": 46.59,
-                        "tput": 994.8,
+                        "ttft_ms": 1383.7,
+                        "tput_user": 46.01,
+                        "tput": 988.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064530430 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 1475.0, tput_user 47.89, tput 992.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064530430) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 1390.7, tput_user 46.59, tput 994.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 2048,
@@ -7929,13 +7929,13 @@
                         "tput": 45.8
                     },
                     "measured": {
-                        "ttft_ms": 326.1,
-                        "tput_user": 49.99,
-                        "tput": 44.6,
+                        "ttft_ms": 292.9,
+                        "tput_user": 57.24,
+                        "tput": 51.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064530430 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 270.6, tput_user 50.34, tput 45.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 326.1, tput_user 49.99, tput 44.6. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
             },
             {
                 "isl": 8192,
@@ -7948,18 +7948,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1429.2,
+                        "ttft_ms": 1316.0,
                         "tput_user": 49.81,
                         "tput": 32.1
                     },
                     "measured": {
-                        "ttft_ms": 1429.2,
-                        "tput_user": 50.07,
-                        "tput": 32.3,
+                        "ttft_ms": 1316.0,
+                        "tput_user": 47.54,
+                        "tput": 32.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064530430 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 1433.1, tput_user 49.81, tput 32.1. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064530430) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 1429.2, tput_user 50.07, tput 32.3. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 32768,
@@ -7972,18 +7972,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 6639.5,
+                        "ttft_ms": 6175.7,
                         "tput_user": 47.81,
                         "tput": 13.2
                     },
                     "measured": {
-                        "ttft_ms": 6639.5,
-                        "tput_user": 48.01,
-                        "tput": 13.8,
+                        "ttft_ms": 6175.7,
+                        "tput_user": 45.51,
+                        "tput": 14.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42064530430 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (knob off): ttft 7037.6, tput_user 47.81, tput 13.2. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42064530430) (tt-inference-server#5538)."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42151578013 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 42064530430, the entry before the ring/bfp8-lm_head/buckets knobs): ttft 6639.5, tput_user 48.01, tput 13.8. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (tt-shield benchmarks run 42151578013) (tt-inference-server#5538)."
             },
             {
                 "isl": 128,
