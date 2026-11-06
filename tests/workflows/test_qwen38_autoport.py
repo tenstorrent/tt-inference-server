@@ -37,22 +37,44 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     gpqa, terminal, swe = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     assert gpqa.max_concurrent == 10
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
-    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
     assert gpqa.gen_kwargs["max_gen_toks"] == 81920
     assert gpqa.model_kwargs["timeout"] == 14400
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
-        assert cfg.n_concurrent_trials == 2
-        assert len(cfg.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 2
-        assert (
-            cfg.task_names_map[EvalLimitMode.SMOKE_TEST]
-            == cfg.task_names_map[EvalLimitMode.CI_NIGHTLY]
-        )
+        assert len(cfg.task_names_map[EvalLimitMode.SMOKE_TEST]) == 2
         assert cfg.agent_timeout_sec == 21600
         assert cfg.override_cpus is cfg.override_memory_mb is None
     assert (
-        terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 16384
+        terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 32768
     )
+    cfg = terminal.agentic_eval_config
+    assert cfg.n_concurrent_trials == 10
+    assert terminal.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert (
+        cfg.dataset_ref
+        == "sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a"
+    )
+    assert cfg.agent_kwargs["model_info"]["max_output_tokens"] == 32768
+    assert cfg.agent_kwargs["llm_kwargs"]["timeout"] == 7200
+    assert cfg.agent_kwargs.get("interleaved_thinking", False) is False
+    assert cfg.agent_kwargs["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
+        "reasoning_effort": "medium"
+    }
+    assert cfg.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "terminal-bench/break-filter-js-from-html",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/feal-differential-cryptanalysis",
+        "terminal-bench/qemu-startup",
+        "terminal-bench/caffe-cifar-10",
+        "terminal-bench/password-recovery",
+        "terminal-bench/portfolio-optimization",
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/financial-document-processor",
+    ]
+    assert swe.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+    assert swe.agentic_eval_config.n_concurrent_trials == 2
     assert swe.agentic_eval_config.agent_kwargs["max_tokens"] == 32768
     assert swe.agentic_eval_config.llm_timeout_sec == 3600
     assert swe.score.published_score is None

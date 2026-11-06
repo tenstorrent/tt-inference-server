@@ -60,13 +60,17 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
         WorkflowVenvType.EVALS_AGENTIC,
         WorkflowVenvType.EVALS_AGENTIC,
     ]
-    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in tasks] == [
+        0,
+        10,
+        0,
+    ]
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config
-    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 2
+    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 10
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 2
-    assert terminal.n_concurrent_trials == 2
+    assert terminal.n_concurrent_trials == 10
     assert swe.n_concurrent_trials == 2
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
     assert swe.llm_timeout_sec == 60 * 60
