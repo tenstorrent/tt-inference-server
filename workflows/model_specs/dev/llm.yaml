@@ -3493,6 +3493,79 @@ templates:
       model_path_env: MIMO_MODEL_PATH
       tt_cache_env: MIMO_TT_CACHE
 
+# MiMo-V2.6-Flash-MOPD with image, video and audio input (--impl mimo-v2.6-flash-mm; the text
+# entries above and below are unchanged). vLLM resolves the checkpoint (it carries a vision_config)
+# to MiMoV2OmniForCausalLM; TT_MODEL_CLASS_OVERRIDES serves that with the TT multimodal class, which
+# runs vLLM's upstream MiMo-V2-Omni processor and merges the items' embeddings into the prefill.
+# Needs an image built from tt-metal mimo-v2.6/multimodal and vllm-tt-plugin mimo-v2.6-flash/multimodal
+# (the plugin's mm_items contract; it keeps vLLM's chunked multimodal input, so an image or video can
+# straddle the 4096-token prefill chunks) with torchaudio installed (the vllm-tt-metal Dockerfile installs
+# the one matching torch): without it every audio request answers 500. Encoders: MIMO_MM_ENCODER (default
+# the host backend). The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable
+# media host answers 400 instead of vLLM's 500. Text-only requests run the text class's paths unchanged.
+# No MTP: drafters would see placeholder embeddings at multimodal positions (acceptance only); the MTP
+# entry stays the text default.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: mimo_v2_6_flash_mm
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+    - audio
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16
+      max_context: 1048576  # 1024 * 1024
+      default_impl: false  # the MTP text entry stays the default
+      tensor_cache_timeout: 10800.0
+      submesh_engines: true
+      env_vars:
+        MESH_DEVICE: "(4, 8)"
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        MIMO_KV_GB_PER_CHIP: 6.7
+        TT_MODEL_CLASS_OVERRIDES: "TTMiMoV2OmniForCausalLM=models.experimental.mimo_v2_6_flash.tt.generator_vllm:MiMoV2OmniForCausalLM"
+        # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each)
+        # and inline them; a failed download answers 400 (vLLM answers 500 for a media host's
+        # 5xx / timeout / DNS failure, which OpenRouter counts against uptime).
+        TT_PROXY_FETCH_MEDIA: 1
+      override_tt_config:
+        trace_mode: decode_only
+        trace_region_size: 1000000000
+        l1_small_size: 65536
+        dispatch_core_axis: col
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 4
+        block_size: 64
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        enable-prefix-caching: true
+        prefix-cache-retention-interval: 1024
+        trust-remote-code: true
+        reasoning-parser: mimo
+        enable-auto-tool-choice: true
+        tool-call-parser: mimo
+        override_generation_config: '{"max_new_tokens": null}'
+        # Per request: up to 8 images (MMMU-Pro sends up to 7), 1 video, 4 audio clips.
+        limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 4}'
+        # vLLM's video loader samples 32 frames (its default, pinned here so every deployment
+        # samples alike): 16 temporal grids, 14,080 tokens for a 720p video.
+        media-io-kwargs: '{"video": {"num_frames": 32}}'
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  min_disk_gb: 450
+  min_ram_gb: 128
+  metadata:
+    XiaomiMiMo/MiMo-V2.6-Flash-MOPD:
+      reasoning_parser_name: mimo
+      tool_call_parser_name: mimo
+      model_path_env: MIMO_MODEL_PATH
+      tt_cache_env: MIMO_TT_CACHE
+
 # MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
 # mimo-v2.6-flash serves without it). The MTP layers draft for each of an engine's requests in its
 # own draft group of a verify (MIMO_SPEC_SLOTS=8: 3 drafts each in groups of 4 slots for up to 2
