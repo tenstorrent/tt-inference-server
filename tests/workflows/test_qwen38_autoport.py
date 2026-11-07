@@ -44,7 +44,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     assert gpqa.max_concurrent == 8
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 32
-    assert gpqa.gen_kwargs["max_gen_toks"] == 131072
+    assert gpqa.gen_kwargs["max_gen_toks"] == 98304
     assert gpqa.model_kwargs["timeout"] == 21600
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
@@ -221,7 +221,7 @@ def test_gpqa_cap_candidate_fits_measured_prompt_and_one_page_reserve():
     assert gpqa.model_kwargs == {"max_length": 262144, "timeout": 21600}
     assert gpqa.gen_kwargs == {
         "stream": "false",
-        "max_gen_toks": 131072,
+        "max_gen_toks": 98304,
         "until": [],
         "do_sample": "true",
         "temperature": 1.0,
