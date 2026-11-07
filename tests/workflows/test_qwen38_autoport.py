@@ -15,10 +15,10 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     args = spec.device_model_spec.vllm_args
-    assert args["max_num_seqs"] == 16
-    assert spec.device_model_spec.max_concurrency == 16
+    assert args["max_num_seqs"] == 8
+    assert spec.device_model_spec.max_concurrency == 8
     assert args["max_num_batched_tokens"] == 65536
-    assert args["num_gpu_blocks_override"] == 49441
+    assert args["num_gpu_blocks_override"] == 32913
     assert args["distributed_executor_backend"] == "mp"
     assert args["block_size"] == 32
     assert args["no-enable-prefix-caching"] is True
@@ -41,10 +41,10 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     gpqa, terminal, swe = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     assert gpqa.capture_reasoning is True
     assert gpqa.log_samples is True
-    assert gpqa.max_concurrent == 16
+    assert gpqa.max_concurrent == 8
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 32
-    assert gpqa.gen_kwargs["max_gen_toks"] == 98304
+    assert gpqa.gen_kwargs["max_gen_toks"] == 131072
     assert gpqa.model_kwargs["timeout"] == 21600
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
@@ -100,7 +100,7 @@ def test_benchmark_entry_preserves_counts_and_uses_pinned_fixed_chat_protocol():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     assert "default-chat-template-kwargs" not in spec.device_model_spec.vllm_args
-    assert spec.device_model_spec.max_tokens_all_users == 1582080
+    assert spec.device_model_spec.max_tokens_all_users == 1053184
     assert (
         get_pinned_revision(spec, required=True)
         == "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
@@ -203,7 +203,7 @@ def test_gpqa_active_nightly_prefix_preserves_cohort_and_native_labels():
 
 
 def test_gpqa_cap_candidate_fits_measured_prompt_and_one_page_reserve():
-    """Original32 candidate: C16, measured max prompt542, one extra page/user."""
+    """Original32 candidate: C8/B8, measured prompt542, page reserve."""
     from math import ceil
 
     templates = load_templates_from_yaml(Path("workflows/model_specs/dev/llm.yaml"))
@@ -213,16 +213,35 @@ def test_gpqa_cap_candidate_fits_measured_prompt_and_one_page_reserve():
     args = spec.device_model_spec.vllm_args
     gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
     usable = (args["num_gpu_blocks_override"] - 1) * args["block_size"]
-    required = 16 * (ceil((542 + gpqa.gen_kwargs["max_gen_toks"]) / 32) * 32 + 32)
-    assert usable == required == spec.device_model_spec.max_tokens_all_users == 1582080
-    assert args["max_num_seqs"] == gpqa.max_concurrent == 16
+    required = 8 * (ceil((542 + gpqa.gen_kwargs["max_gen_toks"]) / 32) * 32 + 32)
+    assert usable == spec.device_model_spec.max_tokens_all_users == 1053184
+    assert required <= usable
+    assert args["max_num_seqs"] == 8
+    assert gpqa.max_concurrent == 8
     assert gpqa.model_kwargs == {"max_length": 262144, "timeout": 21600}
     assert gpqa.gen_kwargs == {
         "stream": "false",
-        "max_gen_toks": 98304,
+        "max_gen_toks": 131072,
         "until": [],
         "do_sample": "true",
         "temperature": 1.0,
         "top_k": 20,
         "top_p": 0.95,
     }
+
+
+def test_native_gpqa_argv_preserves_planned_clients(monkeypatch):
+    from llm_module.eval_command import build_eval_command
+
+    monkeypatch.delenv("TT_EVAL_CLIENT_CONCURRENCY", raising=False)
+    templates = load_templates_from_yaml(Path("workflows/model_specs/dev/llm.yaml"))
+    spec = next(
+        t for t in templates if t.impl.impl_id == "qwen38_autoport"
+    ).expand_to_specs()[0]
+    gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
+    argv = build_eval_command(
+        gpqa, spec, spec.device_type, Path("/tmp/host-only-unused"), 8000
+    )
+    model_args = argv[argv.index("--model_args") + 1]
+    assert "num_concurrent=8" in model_args.split(",")
+    assert spec.device_model_spec.vllm_args["max_num_seqs"] == 8

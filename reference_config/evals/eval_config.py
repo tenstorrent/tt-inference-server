@@ -11890,7 +11890,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
+                max_concurrent=8,
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
@@ -11898,7 +11898,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 96 * 1024,
+                    "max_gen_toks": 128 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
