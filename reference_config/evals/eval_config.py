@@ -3220,6 +3220,40 @@ _eval_config_list = [
                     ),
                 )
             ],
+            # MMMU-Pro as Artificial Analysis runs it (standard 10 options, 1730
+            # questions, AA's prompt and multi-stage regex, pass@1; thinking on,
+            # temperature 1.0 / top_p 0.95 as MiMo's card recommends, 131072 output
+            # tokens): tt-metal's mmmu_pro_aa task. AA's MiMo-V2.6-Flash score is the
+            # reference (reasoning variant on Xiaomi's API, which serves the RL weights;
+            # this checkpoint is MOPD). 1730 items: the 95% interval of the difference
+            # is about +/-3 points.
+            EvalTask(
+                task_name="mmmu_pro_aa",
+                workflow_venv_type=WorkflowVenvType.EVALS_MULTIMODAL,
+                eval_class="mimo_openrouter",
+                modalities=["image"],
+                use_chat_api=True,
+                apply_chat_template=False,
+                thinking=True,
+                max_concurrent=16,
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=73.06,
+                    published_score_ref="https://artificialanalysis.ai/models/mimo-v2-6-flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["aa_accuracy,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"video_max_mb": "64"},
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             # GPQA-Diamond as OpenRouter's harness runs it: openbench's prompt and
             # data, temperature 0.5, 10 epochs, options shuffled per question.
             # Thinking stays on (no switch sent), as OpenRouter sends none.

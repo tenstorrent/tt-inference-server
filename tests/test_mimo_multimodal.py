@@ -9,6 +9,7 @@ and openbench_eval.py's output as the eval workflow reads it."""
 import json
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -154,6 +155,13 @@ def test_mimo_eval_tasks():
         assert task.workflow_venv_type == WorkflowVenvType.EVALS_MULTIMODAL
         assert task.eval_class == "mimo_openrouter" and task.modalities == [modality]
         assert task.thinking is False and task.priority == "should"
+    aa = tasks["mmmu_pro_aa"]
+    assert aa.workflow_venv_type == WorkflowVenvType.EVALS_MULTIMODAL
+    assert aa.thinking is True and aa.modalities == ["image"]
+    assert aa.score.published_score == 73.06  # Artificial Analysis, MiMo-V2.6-Flash
+    results = {"mmmu_pro_aa": {"aa_accuracy,none": 0.7306}}
+    kwargs = aa.score.score_func_kwargs
+    assert round(aa.score.score_func(results, "mmmu_pro_aa", kwargs), 2) == 73.06
     for name in ("gpqa_diamond_openrouter", "tau2_airline"):
         assert tasks[name].workflow_venv_type == WorkflowVenvType.EVALS_OPENBENCH
     assert tasks["gpqa_diamond_openrouter"].model_kwargs["epochs"] == "10"
@@ -176,6 +184,14 @@ def _spec():
 
 def _arg(cmd, flag):
     return cmd[cmd.index(flag) + 1]
+
+
+def test_mmmu_pro_aa_command_turns_thinking_on(tmp_path):
+    cmd = build_eval_command(_tasks()["mmmu_pro_aa"], _spec(), "galaxy", tmp_path, 8000)
+    args = dict(kv.split("=", 1) for kv in _arg(cmd, "--model_args").split(","))
+    assert _arg(cmd, "--tasks") == "mmmu_pro_aa" and args["thinking"] == "on"
+    tasks_dir = Path(_arg(cmd, "--include_path"))
+    assert (tasks_dir / "mmmu_pro_aa" / "mmmu_pro_aa.yaml").exists()
 
 
 def test_multimodal_command(tmp_path):
