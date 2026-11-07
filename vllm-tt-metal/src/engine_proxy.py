@@ -3,47 +3,70 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Prefix-cache aware HTTP proxy in front of a model's submesh engines (``DeviceModelSpec.submesh_engines``).
+"""Prefix-cache aware HTTP proxy in front of a model's submesh engines
+(``DeviceModelSpec.submesh_engines``).
 
-``run_vllm_api_server.py`` starts one vLLM engine per device group and serves this proxy on the service port, so every
-client keeps talking to one OpenAI-compatible endpoint. Each engine has its own prefix cache, so a request only hits
-on the engine that already holds its prefix. The proxy keys each request by its prompt (chat messages and tools, a
-completion prompt or its token ids, ``cache_salt``) in ``chunk_chars`` chunks and remembers which engines served which
+``run_vllm_api_server.py`` starts one vLLM engine per device group and serves this proxy
+on the service port, so every
+client keeps talking to one OpenAI-compatible endpoint. Each engine has its own prefix
+cache, so a request only hits
+on the engine that already holds its prefix. The proxy keys each request by its prompt
+(chat messages and tools, a
+completion prompt or its token ids, ``cache_salt``) in ``chunk_chars`` chunks and
+remembers which engines served which
 chunks (an LRU index of chained chunk hashes):
 
-- a request whose longest known prefix is at least ``min_match_chars`` long goes to the least loaded engine that
-  holds it, unless that engine has more than ``slack`` requests in flight above the least loaded engine;
-- any other request goes to the least loaded engine (fewest in flight; ties round robin).
+- a request whose longest known prefix is at least ``min_match_chars`` long goes to the
+  least loaded engine that
+  holds it, unless that engine has more than ``slack`` requests in flight above the
+  least loaded engine;
+- any other request goes to the least loaded engine (fewest in flight; ties round
+  robin).
 
 ``slack`` defaults to env ``TT_PROXY_SLACK``, else 2.
 
-So requests sharing a long prefix (a document, a long system prompt, a multi-turn conversation) gather on the engines
-that cached it, and spill to another engine (which then caches it too) instead of queueing on one. Responses stream
+So requests sharing a long prefix (a document, a long system prompt, a multi-turn
+conversation) gather on the engines
+that cached it, and spill to another engine (which then caches it too) instead of
+queueing on one. Responses stream
 back unchanged.
 
-GET /health is 200 only when every engine answers its own /health. GET /metrics merges every engine's metrics into one
+GET /health is 200 only when every engine answers its own /health. GET /metrics merges
+every engine's metrics into one
 exposition, each sample labeled with its engine's index (``merge_metrics``).
-GET /lb/stats shows in-flight and served counts and the prefix routing counters. A request whose engine refuses the
+GET /lb/stats shows in-flight and served counts and the prefix routing counters. A
+request whose engine refuses the
 connection goes to another engine (the refusing one is skipped for ``down_s`` seconds).
 
-Multimodal requests in OpenRouter's forms (``Shim``; env ``TT_PROXY_REQUEST_SHIM=0`` turns it off):
+Multimodal requests in OpenRouter's forms (``Shim``; env ``TT_PROXY_REQUEST_SHIM=0``
+turns it off):
 
-- media parts are keyed by a digest of their payload (``MEDIA_KEY_CHARS`` characters each), not by their base64 text,
+- media parts are keyed by a digest of their payload (``MEDIA_KEY_CHARS`` characters
+  each), not by their base64 text,
   so a 20 MB video is a few index entries instead of ~80K;
-- chat requests that vLLM 0.30 would reject or misread are rewritten (``rewrite_chat``): ``input_audio`` in pcm16 /
-  pcm24 becomes WAV, the legacy ``input_video`` part becomes ``video_url``, OpenRouter's ``reasoning`` object becomes
-  ``chat_template_kwargs.enable_thinking`` / ``include_reasoning``, and a FLAC without its length gets it. A request
+- chat requests that vLLM 0.30 would reject or misread are rewritten (``rewrite_chat``):
+  ``input_audio`` in pcm16 /
+  pcm24 becomes WAV, the legacy ``input_video`` part becomes ``video_url``, OpenRouter's
+  ``reasoning`` object becomes
+  ``chat_template_kwargs.enable_thinking`` / ``include_reasoning``, and a FLAC without
+  its length gets it. A request
   needing none of that is forwarded byte for byte;
-- vLLM's 422 (a media URL that could not be fetched) is answered as 400 with vLLM's message (``map_error``): OpenRouter
+- vLLM's 422 (a media URL that could not be fetched) is answered as 400 with vLLM's
+  message (``map_error``): OpenRouter
   counts 400 as the caller's error, 422 in neither list;
 - a body above ``TT_PROXY_MAX_REQUEST_MB`` (256) is refused with 413;
-- with ``TT_PROXY_FETCH_MEDIA=1`` the proxy itself downloads a chat request's http(s) image /
-  video / audio URLs (bounded time and size) and inlines them as data URIs, answering 400 when a download fails: vLLM
-  0.30 turns a media host's 5xx, 408, 429, timeout or DNS failure into a 500, which OpenRouter counts against uptime.
+- with ``TT_PROXY_FETCH_MEDIA=1`` the proxy itself downloads a chat request's http(s)
+  image /
+  video / audio URLs (bounded time and size) and inlines them as data URIs, answering
+  400 when a download fails: vLLM
+  0.30 turns a media host's 5xx, 408, 429, timeout or DNS failure into a 500, which
+  OpenRouter counts against uptime.
 
-Settings come from ``TT_PROXY_*`` env vars (``Shim.from_env``), which a model spec's ``env_vars`` set.
+Settings come from ``TT_PROXY_*`` env vars (``Shim.from_env``), which a model spec's
+``env_vars`` set.
 
-The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimental/mimo_v2_6_flash/serving/lb.py);
+The same proxy serves tt-metal's MiMo-V2.6-Flash row engines
+(models/experimental/mimo_v2_6_flash/serving/lb.py);
 keep the two in step.
 """
 
@@ -93,16 +116,20 @@ OFFLOAD_BYTES = (
     256 << 10
 )  # bodies above this are parsed / rewritten / keyed in a worker thread
 
-# Content-part keys whose value is media: a URL or base64 string, or a dict holding one under "url" / "data".
+# Content-part keys whose value is media: a URL or base64 string, or a dict holding one
+# under "url" / "data".
 MEDIA_KEYS = ("image_url", "video_url", "audio_url", "input_audio", "file_data")
-# Characters a media part occupies in a prefix key: one item alone reaches the default --min-match-chars (1024), so a
-# repeated image / video / clip is routed to the engine that holds its encoder output and KV, while a 20 MB video costs
+# Characters a media part occupies in a prefix key: one item alone reaches the default
+# --min-match-chars (1024), so a
+# repeated image / video / clip is routed to the engine that holds its encoder output
+# and KV, while a 20 MB video costs
 # 4 index entries (of 256 chars) instead of ~80K.
 MEDIA_KEY_CHARS = 1024
 
 
 def media_key(payload):
-    """A media payload (URL or base64 / data URI string) as a fixed-size prefix key: its sha256, repeated."""
+    """A media payload (URL or base64 / data URI string) as a fixed-size prefix key: its
+    sha256, repeated."""
     tag = (
         "<media sha256:"
         + hashlib.sha256(payload.encode("utf-8", "surrogatepass")).hexdigest()
@@ -112,7 +139,8 @@ def media_key(payload):
 
 
 def media_key_view(obj):
-    """``obj`` (messages / Responses input) with every media payload replaced by ``media_key``. Returns ``obj`` itself
+    """``obj`` (messages / Responses input) with every media payload replaced by
+    ``media_key``. Returns ``obj`` itself
     when it holds no media, so a text-only request keys exactly as before."""
     if isinstance(obj, list):
         out = [media_key_view(x) for x in obj]
@@ -151,13 +179,15 @@ def parse_json(body):
 
 
 def prefix_text(path, body):
-    """The text that determines a request's prompt prefix, in prompt order, or None (no prefix routing)."""
+    """The text that determines a request's prompt prefix, in prompt order, or None (no
+    prefix routing)."""
     req = parse_json(body)
     return None if req is None else prefix_text_of(path, req)
 
 
 def prefix_text_of(path, req):
-    """prefix_text of a parsed request. Media payloads count as ``media_key`` text (``media_key_view``)."""
+    """prefix_text of a parsed request. Media payloads count as ``media_key`` text
+    (``media_key_view``)."""
     head = json.dumps(
         {
             "model": req.get("model"),
@@ -195,19 +225,23 @@ def prefix_text_of(path, req):
     return None
 
 
-# ---------------------------------------------------------------- the multimodal request shim (pure functions)
+# --------------------------------------------------------------------- the multimodal
+# request shim (pure functions)
 
 
 class ShimError(ValueError):
-    """A request the shim cannot rewrite: answered 400 with this message (vLLM would reject it too)."""
+    """A request the shim cannot rewrite: answered 400 with this message (vLLM would
+    reject it too)."""
 
 
 def pcm_to_wav(raw, sample_width, sample_rate, channels=1):
-    """Headerless little-endian signed PCM (``sample_width`` bytes per sample, interleaved channels) as a WAV file."""
+    """Headerless little-endian signed PCM (``sample_width`` bytes per sample,
+    interleaved channels) as a WAV file."""
     frame = sample_width * channels
     if len(raw) == 0 or len(raw) % frame:
         raise ShimError(
-            f"input_audio: {len(raw)} bytes of PCM is not a whole number of {frame}-byte frames"
+            f"input_audio: {len(raw)} bytes of PCM is not a whole number of "
+            f"{frame}-byte frames"
         )
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -228,7 +262,8 @@ def _b64decode(data, what):
 
 
 def flac_total_samples(data):
-    """The total-samples field of a FLAC file's STREAMINFO (0 = unknown), or None when ``data`` is not FLAC."""
+    """The total-samples field of a FLAC file's STREAMINFO (0 = unknown), or None when
+    ``data`` is not FLAC."""
     if (
         len(data) < 26 or data[:4] != b"fLaC" or data[4] & 0x7F != 0
     ):  # STREAMINFO must be the first block
@@ -237,10 +272,14 @@ def flac_total_samples(data):
 
 
 def fix_flac_length(data):
-    """A FLAC whose STREAMINFO says "length unknown" (an encoder writing to a pipe cannot seek back to fill it in) with
-    the length filled in from its frames, or None when there is nothing to fix. vLLM 0.30 decodes FLAC with libsndfile,
-    which reads an unknown length as 2^63 samples and fails its duration guard ("Audio exceeds maximum allowed
-    duration ... 418293516410647.4s"). Counting the frames needs only PyAV's demuxer (no decode); without PyAV the file
+    """A FLAC whose STREAMINFO says "length unknown" (an encoder writing to a pipe
+    cannot seek back to fill it in) with
+    the length filled in from its frames, or None when there is nothing to fix. vLLM
+    0.30 decodes FLAC with libsndfile,
+    which reads an unknown length as 2^63 samples and fails its duration guard ("Audio
+    exceeds maximum allowed
+    duration ... 418293516410647.4s"). Counting the frames needs only PyAV's demuxer (no
+    decode); without PyAV the file
     is left as it is."""
     if flac_total_samples(data) != 0:
         return None
@@ -254,7 +293,8 @@ def fix_flac_length(data):
             stream = container.streams.audio[0]
             for packet in container.demux(stream):
                 total += packet.duration or 0
-    except Exception:  # noqa: BLE001 - an unreadable file stays as it is; vLLM answers it
+    # An unreadable file stays as it is; vLLM answers it.
+    except Exception:  # noqa: BLE001
         return None
     if not 0 < total < (1 << 36):
         return None
@@ -265,12 +305,14 @@ def fix_flac_length(data):
 
 
 def _rewrite_part(part, shim):
-    """One content part rewritten for vLLM 0.30, or the same object when it needs nothing."""
+    """One content part rewritten for vLLM 0.30, or the same object when it needs
+    nothing."""
     if not isinstance(part, dict):
         return part
     kind = part.get("type")
     if kind == "input_video":
-        # OpenRouter's legacy video part: the same payload as video_url (vLLM knows only video_url).
+        # OpenRouter's legacy video part: the same payload as video_url (vLLM knows only
+        # video_url).
         video = part.get("video_url")
         if isinstance(video, str):
             video = {"url": video}
@@ -307,14 +349,21 @@ def _rewrite_part(part, shim):
 
 
 def map_reasoning(req):
-    """OpenRouter's ``reasoning`` object as the fields vLLM 0.30 and MiMo's chat template read, or ``req`` itself.
+    """OpenRouter's ``reasoning`` object as the fields vLLM 0.30 and MiMo's chat
+    template read, or ``req`` itself.
 
-    - ``enabled: false``, ``effort: "none"`` or ``max_tokens: 0`` -> ``chat_template_kwargs.enable_thinking = false``;
-      ``enabled: true`` or any other effort -> true. Never over an explicit ``chat_template_kwargs.enable_thinking``,
-      and not when the top-level ``reasoning_effort`` is set (vLLM already maps that one).
-    - ``exclude: true`` -> ``include_reasoning: false`` (OpenRouter: the model reasons, the reasoning is not returned;
-      vLLM implements that field natively), unless the request sets ``include_reasoning`` itself.
-    A top-level ``include_reasoning`` passes through: it hides the reasoning, it does not switch thinking off."""
+    - ``enabled: false``, ``effort: "none"`` or ``max_tokens: 0`` ->
+      ``chat_template_kwargs.enable_thinking = false``;
+      ``enabled: true`` or any other effort -> true. Never over an explicit
+      ``chat_template_kwargs.enable_thinking``,
+      and not when the top-level ``reasoning_effort`` is set (vLLM already maps that
+      one).
+    - ``exclude: true`` -> ``include_reasoning: false`` (OpenRouter: the model reasons,
+      the reasoning is not returned;
+      vLLM implements that field natively), unless the request sets
+      ``include_reasoning`` itself.
+    A top-level ``include_reasoning`` passes through: it hides the reasoning, it does
+    not switch thinking off."""
     reasoning = req.get("reasoning")
     if not isinstance(reasoning, dict):
         return req
@@ -337,8 +386,10 @@ def map_reasoning(req):
 
 
 def rewrite_chat(req, shim):
-    """A chat-completions request rewritten for vLLM 0.30 (``_rewrite_part`` on every content part, ``map_reasoning``),
-    or ``req`` itself when nothing applies. Raises ShimError for a request that cannot be rewritten."""
+    """A chat-completions request rewritten for vLLM 0.30 (``_rewrite_part`` on every
+    content part, ``map_reasoning``),
+    or ``req`` itself when nothing applies. Raises ShimError for a request that cannot
+    be rewritten."""
     out = map_reasoning(req)
     messages = out.get("messages")
     if isinstance(messages, list):
@@ -356,8 +407,10 @@ def rewrite_chat(req, shim):
 
 
 def map_error(status, body):
-    """An engine's error answer as the proxy returns it: vLLM's 422 (a media URL it could not fetch: 404, invalid URL,
-    too large) becomes 400 with vLLM's message, since OpenRouter counts 400 as the caller's error and lists 422 nowhere.
+    """An engine's error answer as the proxy returns it: vLLM's 422 (a media URL it
+    could not fetch: 404, invalid URL,
+    too large) becomes 400 with vLLM's message, since OpenRouter counts 400 as the
+    caller's error and lists 422 nowhere.
     Everything else is unchanged."""
     if status != 422:
         return status, body
@@ -378,7 +431,8 @@ def error_body(status, message, kind):
     ).encode()
 
 
-# Content-part keys whose http(s) URL the proxy may download and inline (OpenRouter's audio is base64 only; vLLM's own
+# Content-part keys whose http(s) URL the proxy may download and inline (OpenRouter's
+# audio is base64 only; vLLM's own
 # audio_url form can be a URL).
 REMOTE_MEDIA_KEYS = ("image_url", "video_url", "audio_url")
 
@@ -392,7 +446,8 @@ def _part_url(value):
 
 
 def remote_media_urls(req):
-    """The distinct http(s) URLs of a chat request's image / video / audio parts, in prompt order."""
+    """The distinct http(s) URLs of a chat request's image / video / audio parts, in
+    prompt order."""
     urls = []
     for message in req.get("messages") or []:
         content = message.get("content") if isinstance(message, dict) else None
@@ -411,7 +466,8 @@ def remote_media_urls(req):
 
 
 def inline_media(req, data_uris):
-    """``req`` with every media URL in ``data_uris`` ({url: data URI}) replaced by its data URI (``req`` untouched)."""
+    """``req`` with every media URL in ``data_uris`` ({url: data URI}) replaced by its
+    data URI (``req`` untouched)."""
     messages = []
     for message in req.get("messages") or []:
         content = message.get("content") if isinstance(message, dict) else None
@@ -436,8 +492,10 @@ def inline_media(req, data_uris):
 
 
 def media_type(content_type, url):
-    """The MIME type for a downloaded file's data URI: the server's media Content-Type, else a guess from the URL's
-    extension, else application/octet-stream (vLLM decodes by content, not by the declared type)."""
+    """The MIME type for a downloaded file's data URI: the server's media Content-Type,
+    else a guess from the URL's
+    extension, else application/octet-stream (vLLM decodes by content, not by the
+    declared type)."""
     declared = (content_type or "").split(";", 1)[0].strip().lower()
     if declared.startswith(("image/", "video/", "audio/")):
         return declared
@@ -446,8 +504,10 @@ def media_type(content_type, url):
 
 
 async def fetch_media(session, urls, timeout_s, max_bytes):
-    """{url: data URI} for every URL, downloaded concurrently, each within ``timeout_s`` and ``max_bytes``. Raises
-    ShimError (answered 400) naming the first URL that failed: non-200, too large, timeout, connection error."""
+    """{url: data URI} for every URL, downloaded concurrently, each within ``timeout_s``
+    and ``max_bytes``. Raises
+    ShimError (answered 400) naming the first URL that failed: non-200, too large,
+    timeout, connection error."""
 
     async def one(url):
         where = url if len(url) <= 200 else url[:200] + "..."
@@ -455,23 +515,27 @@ async def fetch_media(session, urls, timeout_s, max_bytes):
             async with session.get(url, timeout=ClientTimeout(total=timeout_s)) as resp:
                 if resp.status != 200:
                     raise ShimError(
-                        f"Failed to fetch media from URL: HTTP {resp.status} error ({where})"
+                        "Failed to fetch media from URL: "
+                        f"HTTP {resp.status} error ({where})"
                     )
                 if resp.content_length is not None and resp.content_length > max_bytes:
                     raise ShimError(
-                        f"Failed to fetch media from URL: larger than {max_bytes} bytes ({where})"
+                        "Failed to fetch media from URL: "
+                        f"larger than {max_bytes} bytes ({where})"
                     )
                 data = bytearray()
                 async for chunk in resp.content.iter_chunked(1 << 16):
                     data += chunk
                     if len(data) > max_bytes:
                         raise ShimError(
-                            f"Failed to fetch media from URL: larger than {max_bytes} bytes ({where})"
+                            "Failed to fetch media from URL: "
+                            f"larger than {max_bytes} bytes ({where})"
                         )
                 mime = media_type(resp.headers.get("Content-Type"), url)
         except asyncio.TimeoutError:
             raise ShimError(
-                f"Failed to fetch media from URL: no answer within {timeout_s:g} s ({where})"
+                "Failed to fetch media from URL: "
+                f"no answer within {timeout_s:g} s ({where})"
             ) from None
         except ClientError as exc:
             raise ShimError(
@@ -501,21 +565,26 @@ def _env_flag(name, default):
 @dataclasses.dataclass
 class Shim:
     enabled: bool = True
-    # OpenRouter documents pcm16 / pcm24 only by name. Its one stated PCM convention (the speech-to-text endpoint's
-    # "pcm": 16-bit LE mono at 16 kHz) is for another format name; pcm16 / pcm24 follow OpenAI's audio format names, where
-    # pcm16 is 24 kHz mono. Assumed: 24 kHz mono, little-endian, signed (TT_PROXY_PCM_SAMPLE_RATE to change).
+    # OpenRouter documents pcm16 / pcm24 only by name. Its one stated PCM convention
+    # (the speech-to-text endpoint's
+    # "pcm": 16-bit LE mono at 16 kHz) is for another format name; pcm16 / pcm24 follow
+    # OpenAI's audio format names, where
+    # pcm16 is 24 kHz mono. Assumed: 24 kHz mono, little-endian, signed
+    # (TT_PROXY_PCM_SAMPLE_RATE to change).
     pcm_sample_rate: int = 24000
     pcm_channels: int = 1
     fix_flac: bool = True
     max_request_bytes: int = 256 << 20
-    # Download http(s) media in the proxy (off by default: a text-only deployment never needs it).
+    # Download http(s) media in the proxy (off by default: a text-only deployment never
+    # needs it).
     fetch_media: bool = False
     fetch_timeout_s: float = 30.0
     fetch_max_bytes: int = 100 << 20
 
     @classmethod
     def from_env(cls, **overrides):
-        """Defaults from the TT_PROXY_* env vars (as tt-inference-server sets them per model spec), then overrides."""
+        """Defaults from the TT_PROXY_* env vars (as tt-inference-server sets them per
+        model spec), then overrides."""
         env = dict(
             enabled=_env_flag("TT_PROXY_REQUEST_SHIM", True),
             pcm_sample_rate=int(os.environ.get("TT_PROXY_PCM_SAMPLE_RATE") or 24000),
@@ -533,7 +602,8 @@ class Shim:
 
 
 def rewrite(path, body, shim):
-    """(parsed request, its rewrite): (None, None) when the body is not a JSON object on a prefix path; the rewrite is
+    """(parsed request, its rewrite): (None, None) when the body is not a JSON object on
+    a prefix path; the rewrite is
     the parsed request itself when the shim changes nothing."""
     req = parse_json(body) if path in PREFIX_PATHS else None
     if req is None:
@@ -544,7 +614,8 @@ def rewrite(path, body, shim):
 
 
 def finish(path, body, req, new, chunk_chars):
-    """(body to forward, prefix hashes): the original bytes unless the request was rewritten."""
+    """(body to forward, prefix hashes): the original bytes unless the request was
+    rewritten."""
     if req is None:
         return body, []
     if new is not req:
@@ -554,14 +625,17 @@ def finish(path, body, req, new, chunk_chars):
 
 
 def prepare(path, body, shim, chunk_chars):
-    """(body to forward, prefix hashes) for a POST, without media downloads: the shim's rewrite of a chat request (the
-    original bytes when nothing changed) and its prefix keys. Raises ShimError (answered 400)."""
+    """(body to forward, prefix hashes) for a POST, without media downloads: the shim's
+    rewrite of a chat request (the
+    original bytes when nothing changed) and its prefix keys. Raises ShimError (answered
+    400)."""
     req, new = rewrite(path, body, shim)
     return finish(path, body, req, new, chunk_chars)
 
 
 async def prepare_async(path, body, shim, chunk_chars, session):
-    """``prepare`` in the proxy: large bodies off the event loop, and with ``shim.fetch_media`` the chat request's
+    """``prepare`` in the proxy: large bodies off the event loop, and with
+    ``shim.fetch_media`` the chat request's
     http(s) media downloaded and inlined. Raises ShimError (answered 400)."""
     loop = asyncio.get_running_loop()
 
@@ -593,7 +667,8 @@ async def prepare_async(path, body, shim, chunk_chars, session):
 
 
 def chunk_hashes(text, chunk_chars):
-    """Chained hashes of the text's full chunks: hash i covers chunks 0..i (a partial last chunk is not keyed)."""
+    """Chained hashes of the text's full chunks: hash i covers chunks 0..i (a partial
+    last chunk is not keyed)."""
     out, h = [], b""
     data = text.encode("utf-8", "surrogatepass")
     step = chunk_chars  # bytes; equal to characters for ASCII prompts
@@ -606,10 +681,14 @@ def chunk_hashes(text, chunk_chars):
 def merge_metrics(texts):
     """The engines' Prometheus texts (in backend order) as one exposition.
 
-    Each engine is its own vLLM server, so all of them label their samples ``engine="0"``: concatenated, every series
-    and every family's HELP / TYPE would appear once per engine, which a Prometheus parser rejects or collapses. Here
-    every sample gets ``engine="<index of its engine>"``, as vLLM labels the engines of one data-parallel server, and
-    each family is written once: HELP / TYPE from the first engine that has them, then every engine's samples."""
+    Each engine is its own vLLM server, so all of them label their samples
+    ``engine="0"``: concatenated, every series
+    and every family's HELP / TYPE would appear once per engine, which a Prometheus
+    parser rejects or collapses. Here
+    every sample gets ``engine="<index of its engine>"``, as vLLM labels the engines of
+    one data-parallel server, and
+    each family is written once: HELP / TYPE from the first engine that has them, then
+    every engine's samples."""
     families = (
         OrderedDict()
     )  # family name -> {"HELP": line, "TYPE": line, "samples": [lines]}
@@ -643,8 +722,10 @@ def merge_metrics(texts):
 
 
 class PrefixIndex:
-    """Chunk hash -> the engines that served a prompt with that prefix, as an LRU of at most ``capacity`` hashes. A
-    request's hashes are touched longest first, so eviction drops the tails of old prompts before their heads (as an
+    """Chunk hash -> the engines that served a prompt with that prefix, as an LRU of at
+    most ``capacity`` hashes. A
+    request's hashes are touched longest first, so eviction drops the tails of old
+    prompts before their heads (as an
     engine's prefix cache does) and every prefix of a kept hash stays kept."""
 
     def __init__(self, capacity):
@@ -652,7 +733,8 @@ class PrefixIndex:
         self.entries = OrderedDict()
 
     def match(self, hashes, backends):
-        """{backend: matched chunks} for the backends holding at least the first chunk."""
+        """{backend: matched chunks} for the backends holding at least the first
+        chunk."""
         alive = set(backends)
         lengths = {}
         for i, h in enumerate(hashes):
@@ -788,8 +870,10 @@ def make_app(router, session_factory=None, shim=None):
                 )
             router.inflight[b] += 1
             if hashes:
-                # Now, not when the response starts: a request sent while this one prefills (or a non-streaming one,
-                # whose headers come at its end) should find the prefix where it is being computed.
+                # Now, not when the response starts: a request sent while this one
+                # prefills (or a non-streaming one,
+                # whose headers come at its end) should find the prefix where it is
+                # being computed.
                 router.index.record(hashes, b)
             try:
                 async with state["session"].request(
@@ -841,7 +925,8 @@ def make_app(router, session_factory=None, shim=None):
         return web.json_response(router.snapshot())
 
     async def all_metrics(_):
-        # An engine that fails or hangs leaves out only its own samples (its index keeps its place).
+        # An engine that fails or hangs leaves out only its own samples (its index keeps
+        # its place).
         texts, missing = [], []
         for i, b in enumerate(router.backends):
             try:

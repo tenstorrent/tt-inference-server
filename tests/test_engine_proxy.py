@@ -3,9 +3,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""vllm-tt-metal/src/engine_proxy.py: prefix keys, the prefix index, routing, the multimodal request shim, media
+"""vllm-tt-metal/src/engine_proxy.py: prefix keys, the prefix index, routing, the
+multimodal request shim, media
 downloads, and the proxy over fake engines. The shim tests mirror tt-metal's
-models/experimental/mimo_v2_6_flash/tests/test_serving_lb_host.py (lb.py is the same proxy)."""
+models/experimental/mimo_v2_6_flash/tests/test_serving_lb_host.py (lb.py is the same
+proxy)."""
 
 import asyncio
 import base64
@@ -162,7 +164,8 @@ def test_proxy_affinity_retry_and_health():
     assert snap["prefix"]["prefix_routed"] == 4
 
 
-# What every engine (a DP-1 vLLM server) exposes: the same families and the same engine="0" label.
+# What every engine (a DP-1 vLLM server) exposes: the same families and the same
+# engine="0" label.
 ENGINE_METRICS = """# HELP vllm:generation_tokens_total Number of generation tokens processed.
 # TYPE vllm:generation_tokens_total counter
 vllm:generation_tokens_total{engine="0",model_name="m"} 5.0
@@ -222,11 +225,13 @@ def test_proxy_metrics_without_a_dead_or_hung_engine(monkeypatch):
     assert 'vllm:generation_tokens_total{model_name="m",engine="0"} 5.0' in text
 
 
-# ---------------------------------------------------------------- the multimodal request shim
+# --------------------------------------------------------------------- the multimodal
+# request shim
 
 
 def legacy_prefix_text(path, body):
-    """prefix_text before the shim (media keyed as text), frozen: text-only requests must key exactly like
+    """prefix_text before the shim (media keyed as text), frozen: text-only requests
+    must key exactly like
     this."""
     try:
         req = json.loads(body)
@@ -377,7 +382,8 @@ def test_media_parts_are_keyed_by_digest():
     assert len(lb.media_key("x")) == lb.MEDIA_KEY_CHARS
     hashes = lb.chunk_hashes(text, 256)
     assert len(hashes) < 10  # instead of ~10K chunks of base64
-    # Same image, another question: the image's chunks match; another image: nothing after the head does.
+    # Same image, another question: the image's chunks match; another image: nothing
+    # after the head does.
     same = lb.chunk_hashes(
         lb.prefix_text_of("/v1/chat/completions", req(big, "And now?")), 256
     )
@@ -636,11 +642,12 @@ def test_fix_flac_length():
     )
 
 
-# ---------------------------------------------------------------- the shim in the proxy
+# -------------------------------------------------------------- the shim in the proxy
 
 
 def echo_engine():
-    """An engine that answers what it received (sha256 of the raw body, and the parsed body), and 422 for a media URL
+    """An engine that answers what it received (sha256 of the raw body, and the parsed
+    body), and 422 for a media URL
     it cannot fetch, as vLLM 0.30 does."""
 
     async def completions(request):
@@ -762,7 +769,7 @@ def test_proxy_shim_end_to_end():
     assert snap["prefix"]["too_large"] == 1
 
 
-# ---------------------------------------------------------------- downloading http(s) media in the proxy
+# --------------------------------------------- downloading http(s) media in the proxy
 
 PNG = (
     b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 10
@@ -770,7 +777,8 @@ PNG = (
 
 
 def media_host():
-    """A local media server: an image, a file without a media Content-Type, 404, a slow answer, and two files above
+    """A local media server: an image, a file without a media Content-Type, 404, a slow
+    answer, and two files above
     the size limit (one declaring its length, one streamed)."""
 
     async def png(_):
