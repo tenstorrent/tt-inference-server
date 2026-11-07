@@ -17,6 +17,7 @@ from typing import Any, Optional
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
 from domain.generation_request import (
+    MAX_INLINE_MEDIA_CHARS,
     MAX_SEED,
     MEDIA_MAX_BYTES,
     GenerationRequest,
@@ -167,6 +168,15 @@ class GenerationService(BaseJobService):
             )
         self._job_manager.check_admission()
 
+        total = request.inline_media_chars()
+        if total > MAX_INLINE_MEDIA_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Inline media totals {total} characters, over the "
+                    f"{MAX_INLINE_MEDIA_CHARS}-character cap; send large assets by URL"
+                ),
+            )
         await self._load_media(request)
         request._width, request._height = request.output_size()
         if request.RUNNER_DECODES_IMAGES:

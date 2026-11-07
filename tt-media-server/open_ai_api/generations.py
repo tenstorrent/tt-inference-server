@@ -58,7 +58,8 @@ _SUBMIT_RESPONSES: Responses = {
     404: _error("This deployment does not serve that model."),
     413: _error(
         "An input, inline or fetched, is over its limit: 30 MB per image, 50 MB "
-        "per video, 15 MB per audio clip."
+        "per video, 15 MB per audio clip; or the request's inline (data URI) "
+        "media total more than 64,000,000 characters (about 48 MB)."
     ),
     422: {
         "description": (

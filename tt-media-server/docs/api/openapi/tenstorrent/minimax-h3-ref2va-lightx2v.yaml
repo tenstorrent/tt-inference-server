@@ -56,7 +56,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '413':
           description: 'An input, inline or fetched, is over its limit: 30 MB per image, 50
-            MB per video, 15 MB per audio clip.'
+            MB per video, 15 MB per audio clip; or the request''s inline (data URI) media
+            total more than 64,000,000 characters (about 48 MB).'
           content:
             application/json:
               schema:
@@ -553,13 +554,14 @@ components:
         with 422.
 
 
-        PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the job is submitted,
-        so a URL only has to stay valid until then (a presigned URL is fine). Which hosts
-        may be fetched is set per deployment: an allowlist of domains, or any public host;
-        private, loopback and cloud-metadata addresses never are, including after a redirect.
-        Submission fails with 400 if a URL is not allowed, 413 if an image is too large, and
-        422 if a URL can''t be fetched (expired, network error, timeout) or doesn''t hold
-        a supported image.'
+        PNG, JPEG or WebP, at most 30 MB per image. All data URIs in one request together
+        may hold at most 64,000,000 characters (about 48 MB); send larger inputs by URL. URLs
+        are fetched when the job is submitted, so a URL only has to stay valid until then
+        (a presigned URL is fine). Which hosts may be fetched is set per deployment: an allowlist
+        of domains, or any public host; private, loopback and cloud-metadata addresses never
+        are, including after a redirect. Submission fails with 400 if a URL is not allowed,
+        413 if an image is too large, and 422 if a URL can''t be fetched (expired, network
+        error, timeout) or doesn''t hold a supported image.'
     MiniMaxH3Ref2VARequest:
       properties:
         prompt:

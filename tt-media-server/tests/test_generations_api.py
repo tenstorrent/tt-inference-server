@@ -1634,6 +1634,80 @@ async def test_a_too_large_clip_is_413_naming_its_kind(generations_app, monkeypa
     assert response.json()["detail"] == "A video input is over 10 bytes"
 
 
+_INLINE_CAP = "model_services.generation_service.MAX_INLINE_MEDIA_CHARS"
+
+
+async def test_inline_media_over_the_total_cap_is_413(generations_app, monkeypatch):
+    image, video = _data_uri(), _clip_data_uri(3)
+    total = len(image) + len(video)
+    monkeypatch.setattr(_INLINE_CAP, total - 1)
+    client, device = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={"prompt": "x", "images": [image], "videos": [video]},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        f"Inline media totals {total} characters, over the {total - 1}-character "
+        "cap; send large assets by URL"
+    )
+    assert device.requests == [] and (await client.get("/v1/jobs")).json() == []
+
+
+async def test_the_inline_cap_is_checked_before_any_fetch(generations_app, monkeypatch):
+    async def fetch(url, **kwargs):
+        raise AssertionError("fetched")
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    monkeypatch.setattr(_INLINE_CAP, 1)
+    client, _ = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={
+            "prompt": "x",
+            "images": [_data_uri()],
+            "videos": ["https://example.com/a.mp4"],
+        },
+    )
+    assert response.status_code == 413
+
+
+async def test_media_urls_do_not_count_toward_the_inline_cap(
+    generations_app, monkeypatch
+):
+    png = base64.b64decode(_data_uri().split(",")[1])
+
+    async def fetch(url, **kwargs):
+        return png
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    monkeypatch.setattr(_INLINE_CAP, 0)
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+
+
+async def test_inline_media_at_the_cap_is_accepted(generations_app, monkeypatch):
+    png = base64.b64decode(_data_uri().split(",")[1])
+
+    async def fetch(url, **kwargs):
+        return png
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    image = _data_uri()
+    monkeypatch.setattr(_INLINE_CAP, len(image))
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN,
+        json=_wan_body(first_frame=image, last_frame="https://example.com/b.png"),
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+
+
 def test_the_service_downloads_no_weights(monkeypatch):
     # The pipelines load their own weights.
     from model_services import base_service

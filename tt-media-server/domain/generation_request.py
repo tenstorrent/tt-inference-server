@@ -19,6 +19,8 @@ MEDIA_MAX_BYTES: dict[str, int] = {
     "video": 50_000_000,
     "audio": 15_000_000,
 }
+# All data URIs in one request, in characters; URLs don't count, they aren't in the body.
+MAX_INLINE_MEDIA_CHARS = 64_000_000
 
 
 def _media_checker(kind: MediaKind, example: str):
@@ -60,7 +62,9 @@ Media = Annotated[
         "An `https://` URL, which the server fetches, or a data URI "
         "(`data:image/png;base64,…`). Inline images must be data URIs: bare "
         "base64 without the `data:` prefix is rejected with 422.\n\n"
-        "PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the "
+        "PNG, JPEG or WebP, at most 30 MB per image. All data URIs in one "
+        "request together may hold at most 64,000,000 characters (about 48 MB); "
+        "send larger inputs by URL. URLs are fetched when the "
         "job is submitted, so a URL only has to stay valid until then (a "
         "presigned URL is fine). Which hosts may be fetched is set per "
         "deployment: an allowlist of domains, or any public host; private, "
@@ -138,6 +142,15 @@ class GenerationRequest(BaseRequest):
             if value is not None:
                 media[name] = value if isinstance(value, list) else [value]
         return media
+
+    def inline_media_chars(self) -> int:
+        """Characters of media sent inline, as data URIs."""
+        return sum(
+            len(value)
+            for values in self.media().values()
+            for value in values
+            if not value.startswith(("https://", "http://"))
+        )
 
     @classmethod
     def media_kind(cls, name: str) -> MediaKind:
