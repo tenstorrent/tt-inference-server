@@ -43,7 +43,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     assert gpqa.log_samples is True
     assert gpqa.max_concurrent == 16
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
-    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 16
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 32
     assert gpqa.gen_kwargs["max_gen_toks"] == 81920
     assert gpqa.model_kwargs["timeout"] == 21600
     for task in (terminal, swe):
@@ -143,14 +143,14 @@ def test_gpqa_active_nightly_prefix_preserves_cohort_and_native_labels():
 
     gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
     n = gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
-    assert n == 16
-    original_prefix = [195, 40, 76, 148, 121, 197, 32, 49, 70, 8, 92, 153, 122, 54, 118, 85]
+    assert n == 32
+    original_prefix = [195, 40, 76, 148, 121, 197, 32, 49, 70, 8, 92, 153, 122, 54, 118, 85, 97, 196, 150, 108, 151, 140, 59, 75, 11, 138, 0, 98, 79, 170, 39, 144]
     selected = gpqa.doc_ids[:n]
     assert selected == sorted(original_prefix)
     assert set(selected) == set(original_prefix)
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert hashlib.sha256(json.dumps(gpqa.doc_ids[n:]).encode()).hexdigest() == (
-        "d35a06332ca22d64073e58508387cda13319331405210d9f2147803d65f92166"
+        "5cca2964df8d81effba0c331cc0c236d39bf80e2fb6d3a5af81bd18db7cb2183"
     )
 
     # lm-eval af401ef3: api/task.py:590-595 filters in dataset order;

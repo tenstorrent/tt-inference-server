@@ -61,7 +61,7 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
         WorkflowVenvType.EVALS_AGENTIC,
     ]
     assert [task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] for task in tasks] == [
-        16,
+        32,
         0,
         0,
     ]
