@@ -70,6 +70,7 @@ _MOCK_VLLM_SERVE_FLAGS = (
     ("served_model_name", "+"),
     ("cudagraph_capture_sizes", "+"),
     ("lora_modules", "+"),
+    ("allowed_media_domains", "+"),
     ("allowed_origins", None),
     ("default_chat_template_kwargs", None),
     ("hf_overrides", None),
@@ -1511,6 +1512,25 @@ def test_cache_subdir_envs_live_inside_the_tt_cache_dir(
         spec.update(metadata={"cache_subdir_envs": bad})
         with pytest.raises(ValueError, match="cache_subdir_envs"):
             module.model_setup(spec)
+
+
+def test_mimo_mm_engines_get_allowed_media_domains_as_one_token_per_domain(
+    monkeypatch, run_vllm_api_server_module
+):
+    """The mm spec's list renders as vLLM's nargs='+' flag: the engines refuse every
+    media URL, so only the proxy (with its address checks) downloads."""
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash_mm"
+    )
+    (spec,) = template.expand_to_specs()
+    domains = spec.device_model_spec.vllm_args["allowed-media-domains"]
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), [], {"allowed-media-domains": domains}
+    )
+    assert sys.argv[1:] == ["--allowed-media-domains", "fetched-by-the-proxy.invalid"]
 
 
 def test_tt_cache_env_rejects_non_env_var_names(

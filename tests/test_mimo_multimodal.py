@@ -60,6 +60,8 @@ def test_mm_spec_serves_the_multimodal_class_and_leaves_text_entries_alone():
         "audio": 4,
     }
     assert json.loads(args["media-io-kwargs"]) == {"video": {"num_frames": 32}}
+    # vLLM fetches no URL itself: only the proxy downloads, with its address checks.
+    assert args["allowed-media-domains"] == ["fetched-by-the-proxy.invalid"]
     assert "hf_overrides" not in args and "hf-overrides" not in args
     assert args["max_num_batched_tokens"] == 4096 and args["data_parallel_size"] == 4
     # The text entries: no multimodal class, no media downloads, MTP the default.

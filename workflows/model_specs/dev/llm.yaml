@@ -3528,9 +3528,10 @@ templates:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         MIMO_KV_GB_PER_CHIP: 6.7
         TT_MODEL_CLASS_OVERRIDES: "TTMiMoV2OmniForCausalLM=models.experimental.mimo_v2_6_flash.tt.generator_vllm:MiMoV2OmniForCausalLM"
-        # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each)
-        # and inline them; a failed download answers 400 (vLLM answers 500 for a media host's
-        # 5xx / timeout / DNS failure, which OpenRouter counts against uptime).
+        # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each,
+        # public addresses only, every redirect checked, the connection pinned to the checked address)
+        # and inline them; a failed or refused download answers 400 (vLLM answers 500 for a media
+        # host's 5xx / timeout / DNS failure, which OpenRouter counts against uptime).
         TT_PROXY_FETCH_MEDIA: 1
       override_tt_config:
         trace_mode: decode_only
@@ -3556,6 +3557,9 @@ templates:
         # vLLM's video loader samples 32 frames (its default, pinned here so every deployment
         # samples alike): 16 temporal grids, 14,080 tokens for a 720p video.
         media-io-kwargs: '{"video": {"num_frames": 32}}'
+        # The engines accept no media URL (.invalid never resolves; vLLM answers 400): only the proxy
+        # downloads callers' URLs (TT_PROXY_FETCH_MEDIA, public addresses only) and passes data: URIs on.
+        allowed-media-domains: ["fetched-by-the-proxy.invalid"]
   status: EXPERIMENTAL
   has_builtin_warmup: true
   min_disk_gb: 450
