@@ -141,7 +141,7 @@ def test_stock_common_route_exact_gpqa_cohort(tmp_path, monkeypatch, mode):
     assert "--limit" not in command
     args = command[command.index("--model_args") + 1]
     for expected in (
-        "num_concurrent=4",
+        "num_concurrent=8",
         "timeout=14400",
         "max_length=262080",
         "revision=842da3794eaa0b77d5f08bae87a17459d91ff475",

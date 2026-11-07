@@ -11954,7 +11954,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 thinking=True,
-                max_concurrent=4,
+                max_concurrent=8,
                 model_kwargs={
                     "max_length": 262144,
                     "timeout": 14400,
