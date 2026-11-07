@@ -18,7 +18,7 @@ def test_autoport_uses_validated_serving_contract_and_exact_release_matrix():
     assert args["max_num_seqs"] == 16
     assert spec.device_model_spec.max_concurrency == 16
     assert args["max_num_batched_tokens"] == 65536
-    assert args["num_gpu_blocks_override"] == 49153
+    assert args["num_gpu_blocks_override"] == 49441
     assert args["distributed_executor_backend"] == "mp"
     assert args["block_size"] == 32
     assert args["no-enable-prefix-caching"] is True
@@ -44,7 +44,7 @@ def test_smoke_cohorts_are_exact_and_limits_preserve_release_values():
     assert gpqa.max_concurrent == 16
     assert len(gpqa.doc_ids) == len(set(gpqa.doc_ids)) == 198
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 32
-    assert gpqa.gen_kwargs["max_gen_toks"] == 81920
+    assert gpqa.gen_kwargs["max_gen_toks"] == 98304
     assert gpqa.model_kwargs["timeout"] == 21600
     for task in (terminal, swe):
         cfg = task.agentic_eval_config
@@ -100,7 +100,7 @@ def test_benchmark_entry_preserves_counts_and_uses_pinned_fixed_chat_protocol():
         t for t in templates if t.impl.impl_id == "qwen38_autoport"
     ).expand_to_specs()[0]
     assert "default-chat-template-kwargs" not in spec.device_model_spec.vllm_args
-    assert spec.device_model_spec.max_tokens_all_users == 1572864
+    assert spec.device_model_spec.max_tokens_all_users == 1582080
     assert (
         get_pinned_revision(spec, required=True)
         == "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
@@ -144,7 +144,40 @@ def test_gpqa_active_nightly_prefix_preserves_cohort_and_native_labels():
     gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
     n = gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
     assert n == 32
-    original_prefix = [195, 40, 76, 148, 121, 197, 32, 49, 70, 8, 92, 153, 122, 54, 118, 85, 97, 196, 150, 108, 151, 140, 59, 75, 11, 138, 0, 98, 79, 170, 39, 144]
+    original_prefix = [
+        195,
+        40,
+        76,
+        148,
+        121,
+        197,
+        32,
+        49,
+        70,
+        8,
+        92,
+        153,
+        122,
+        54,
+        118,
+        85,
+        97,
+        196,
+        150,
+        108,
+        151,
+        140,
+        59,
+        75,
+        11,
+        138,
+        0,
+        98,
+        79,
+        170,
+        39,
+        144,
+    ]
     selected = gpqa.doc_ids[:n]
     assert selected == sorted(original_prefix)
     assert set(selected) == set(original_prefix)
@@ -167,3 +200,29 @@ def test_gpqa_active_nightly_prefix_preserves_cohort_and_native_labels():
     assert any(label != doc for label, doc in before)
     assert all(label == doc for label, doc in after)
     assert [doc for _, doc in before] == [doc for _, doc in after]
+
+
+def test_gpqa_cap_candidate_fits_measured_prompt_and_one_page_reserve():
+    """Original32 candidate: C16, measured max prompt542, one extra page/user."""
+    from math import ceil
+
+    templates = load_templates_from_yaml(Path("workflows/model_specs/dev/llm.yaml"))
+    spec = next(
+        t for t in templates if t.impl.impl_id == "qwen38_autoport"
+    ).expand_to_specs()[0]
+    args = spec.device_model_spec.vllm_args
+    gpqa = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[0]
+    usable = (args["num_gpu_blocks_override"] - 1) * args["block_size"]
+    required = 16 * (ceil((542 + gpqa.gen_kwargs["max_gen_toks"]) / 32) * 32 + 32)
+    assert usable == required == spec.device_model_spec.max_tokens_all_users == 1582080
+    assert args["max_num_seqs"] == gpqa.max_concurrent == 16
+    assert gpqa.model_kwargs == {"max_length": 262144, "timeout": 21600}
+    assert gpqa.gen_kwargs == {
+        "stream": "false",
+        "max_gen_toks": 98304,
+        "until": [],
+        "do_sample": "true",
+        "temperature": 1.0,
+        "top_k": 20,
+        "top_p": 0.95,
+    }

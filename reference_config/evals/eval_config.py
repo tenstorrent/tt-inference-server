@@ -11898,7 +11898,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 80 * 1024,
+                    "max_gen_toks": 96 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
