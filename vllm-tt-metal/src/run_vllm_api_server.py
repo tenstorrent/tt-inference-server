@@ -868,6 +868,18 @@ def model_setup(model_spec_json):
             ):
                 raise ValueError(f"{key} must be an environment variable name")
             dynamic_env_vars[env_name] = str(value)
+    # cache_subdir_envs: {ENV: subdir}, more caches the model keeps inside its TT cache
+    # dir (so inside the model's persistent volume), e.g. a vision encoder's weights.
+    for env_name, subdir in (metadata.get("cache_subdir_envs") or {}).items():
+        if not isinstance(env_name, str) or not re.fullmatch(
+            r"[A-Z][A-Z0-9_]*", env_name
+        ):
+            raise ValueError(
+                "cache_subdir_envs keys must be environment variable names"
+            )
+        if not isinstance(subdir, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", subdir):
+            raise ValueError("cache_subdir_envs values must be plain directory names")
+        dynamic_env_vars[env_name] = str(Path(os.getenv("TT_CACHE_PATH")) / subdir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")

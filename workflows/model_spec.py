@@ -265,6 +265,10 @@ class ImplSpec:
     impl_name: str
     repo_url: str
     code_path: str
+    # The impl whose persistent volume (and so TT tensor cache) this one uses: impls
+    # serving the same weights with the same cache layout share one volume instead of
+    # converting the cache again. None: the impl's own volume.
+    volume_impl_id: Optional[str] = None
 
 
 tt_transformers_impl = ImplSpec(
@@ -500,6 +504,9 @@ mimo_v2_6_flash_mm_impl = ImplSpec(
     impl_name="mimo-v2.6-flash-mm",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/mimo_v2_6_flash",
+    # The LLM weights are the text entries': reuse the default (MTP) entry's volume and
+    # its ~186 GB TT cache (the MTP files there are extra, the rest is the same set).
+    volume_impl_id="mimo_v2_6_flash_mtp",
 )
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,

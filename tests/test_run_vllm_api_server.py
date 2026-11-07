@@ -1491,6 +1491,28 @@ def test_tt_cache_env_points_at_tt_cache_path(
     assert os.environ["CUSTOM_TT_CACHE"] == str(tmp_path / "tt-cache")
 
 
+def test_cache_subdir_envs_live_inside_the_tt_cache_dir(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.delenv("MIMO_VISION_CACHE", raising=False)
+    spec = _weights_spec()
+    spec.update(metadata={"cache_subdir_envs": {"MIMO_VISION_CACHE": "vision"}})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    module.model_setup(spec)
+    assert os.environ["MIMO_VISION_CACHE"] == str(tmp_path / "tt-cache" / "vision")
+    for bad in ({"lower": "vision"}, {"MIMO_VISION_CACHE": "../escape"}):
+        spec.update(metadata={"cache_subdir_envs": bad})
+        with pytest.raises(ValueError, match="cache_subdir_envs"):
+            module.model_setup(spec)
+
+
 def test_tt_cache_env_rejects_non_env_var_names(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
@@ -1517,7 +1539,9 @@ def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
     (spec,) = template.expand_to_specs()
     vllm_args = spec.device_model_spec.vllm_args
     assert spec.device_type.name == "BLACKHOLE_GALAXY"
-    assert not spec.device_model_spec.default_impl  # MTP is the default (--impl mimo-v2.6-flash)
+    assert (
+        not spec.device_model_spec.default_impl
+    )  # MTP is the default (--impl mimo-v2.6-flash)
     assert vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_seqs"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096

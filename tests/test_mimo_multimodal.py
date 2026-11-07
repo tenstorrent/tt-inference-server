@@ -72,6 +72,54 @@ def test_mm_spec_serves_the_multimodal_class_and_leaves_text_entries_alone():
     assert mtp.device_model_spec.default_impl
 
 
+def test_mm_impl_shares_the_mtp_entry_volume_and_tt_cache(tmp_path):
+    from dataclasses import asdict
+
+    from utils import cache_monitor
+    from workflows.run_docker_server import generate_docker_volume_name
+    from workflows.setup_host import SetupConfig
+
+    templates = _mimo_templates()
+    specs = {k: t.expand_to_specs()[0] for k, t in templates.items()}
+    mm, mtp, text = (
+        specs["mimo_v2_6_flash_mm"],
+        specs["mimo_v2_6_flash_mtp"],
+        specs["mimo_v2_6_flash"],
+    )
+    assert mm.impl.volume_impl_id == "mimo_v2_6_flash_mtp"
+    configs = {
+        k: SetupConfig(model_spec=spec, host_volume=str(tmp_path))
+        for k, spec in (("mm", mm), ("mtp", mtp), ("text", text))
+    }
+    for attr in (
+        "docker_volume_name",
+        "host_model_volume_root",
+        "host_tt_metal_cache_dir",
+        "container_tt_metal_cache_dir",
+    ):
+        assert getattr(configs["mm"], attr) == getattr(configs["mtp"], attr), attr
+    assert configs["mtp"].docker_volume_name == (
+        "volume_id_mimo_v2_6_flash_mtp-MiMo-V2.6-Flash-MOPD"
+    )
+    # The other text impl keeps its own volume; nothing else moved.
+    assert configs["text"].docker_volume_name != configs["mtp"].docker_volume_name
+    assert generate_docker_volume_name(mm) == generate_docker_volume_name(mtp)
+    # The runtime JSON form (cache monitor) resolves the same volume.
+    as_json = {"impl": asdict(mm.impl), "model_name": mm.model_name, "version": None}
+    assert (
+        cache_monitor.get_docker_volume_name(as_json)
+        == configs["mtp"].docker_volume_name
+    )
+    # (dev specs carry no version; the monitor's host path needs one)
+    root = cache_monitor.get_host_model_volume_root(
+        dict(as_json, version="1"), tmp_path
+    )
+    assert root == tmp_path.resolve() / (
+        "volume_id_mimo_v2_6_flash_mtp-MiMo-V2.6-Flash-MOPD-v1"
+    )
+    assert mm.metadata["cache_subdir_envs"] == {"MIMO_VISION_CACHE": "vision"}
+
+
 def test_the_serving_image_installs_torchaudio():
     dockerfile = (
         get_repo_root_path() / "vllm-tt-metal" / "vllm.tt-metal.src.dev.Dockerfile"

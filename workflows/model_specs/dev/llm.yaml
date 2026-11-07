@@ -3504,7 +3504,8 @@ templates:
 # the host backend). The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable
 # media host answers 400 instead of vLLM's 500. Text-only requests run the text class's paths unchanged.
 # No MTP: drafters would see placeholder embeddings at multimodal positions (acceptance only); the MTP
-# entry stays the text default.
+# entry stays the text default. It uses the MTP entry's persistent volume and TT cache (impl
+# volume_impl_id: same weights), so it converts nothing on its first start.
 - weights:
     - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
   impl: mimo_v2_6_flash_mm
@@ -3565,6 +3566,10 @@ templates:
       tool_call_parser_name: mimo
       model_path_env: MIMO_MODEL_PATH
       tt_cache_env: MIMO_TT_CACHE
+      # The device ViT's converted weights (~180 MB per chip) in <TT cache>/vision, inside the
+      # volume this impl shares with the MTP entry (model_spec.py volume_impl_id).
+      cache_subdir_envs:
+        MIMO_VISION_CACHE: vision
 
 # MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
 # mimo-v2.6-flash serves without it). The MTP layers draft for each of an engine's requests in its
