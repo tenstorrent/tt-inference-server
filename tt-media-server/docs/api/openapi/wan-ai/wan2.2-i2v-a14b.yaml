@@ -20,7 +20,7 @@ paths:
                   first_frame: https://interactive-examples.mdn.mozilla.net/media/examples/plumeria.jpg
                   last_frame: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEABAMAAACuXLVVAAAAFVBMVEX0smbwjFr61oz/7KooTm4cOFQeHiinjRUIAAAB7klEQVR42u2d222DQBBF90EBSyqIqGDTQ8pOC2khogOoAPIRRVEk46xmZ3dMOPfLNmZ9dOeFANt+dLYKDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIQQQgghhBBCCCGEEEIIIYQQQsbyVXvH7Jxz71YAXx9fieAn0W6v7s359PN8EQMM4j1/fWN63FfhMkEpduJQigHSPUN6AOS/iFoDRKV6UryFI3UE8Ldi4DsCpFsxkFkQ5CWoY0HQjHbqBOAP6kBkQU0VZI3aCar1lroA+MNeJIlBVSPKRiE4bsd9AJJqO66bBdnCAa87Es9+R2W2BogGAOmuBelqOVAfg2oHsjWAuQPR3IFsDRCvngO1MVAAiJ0B1oqtjXIgWydhNK+C3BVgF29s50BNDIZJg+Bl/n70dMVOWLeKkgPP1gDBGsB+HItjID5b/vFgDpwXoCQEU+GL29zIgdJ1Z5EDBRcaSs86jK1yoHDG7u2SsOxAbz1pFRRd8Ss57bAt53QgqBXY3BJgU3nLqWfB3CoCpQBbqwicZxzPjSLwAJ1Q55fbd/EyxceEi3EO/ONjwuXqDgAAAAAADPyPCTnANAQAAADohExDcoBpCAAAANAJmYbkANMQAAAAoBMyDckBpiEAAABweYBPtZUsv0RpNtoAAAAASUVORK5CYII=
                   aspect_ratio: '16:9'
-                  size: 720p
+                  size: 480p
                   frames: 81
                   seed: 1234
         required: true

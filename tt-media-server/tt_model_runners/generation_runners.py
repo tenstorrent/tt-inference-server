@@ -39,14 +39,16 @@ from config.constants import (
 from config.settings import get_settings
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
-from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
+from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
 )
+from models.tt_dit.pipelines.minimax_h3.policy import MINIMAX_H3_SHORT_EDGE
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
+from models.tt_dit.pipelines.wan.policy import served_resolutions
 from PIL import Image
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
@@ -69,8 +71,6 @@ WAN_SHIFT = 5.0
 # Per spatial bucket traced, each expert has one trace without DBCache and three
 # with it. tt-metal's test_pipeline_wan_resolutions.py fits a bucket's in 256 MiB.
 WAN_TRACE_REGION_BYTES_PER_BUCKET = 256 * 1024 * 1024
-# The meshes whose tt_dit preset serves 480p and 720p, two buckets.
-WAN_TWO_BUCKET_MESH_SHAPES = frozenset({(4, 8)})
 
 _inference_timer = log_execution_time(
     f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -147,8 +147,9 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         # tt-metal allocates the traces in DRAM as they are captured.
         device_params = super().get_pipeline_device_params()
         if "trace_region_size" in device_params:
-            mesh_shape = tuple(self.settings.device_mesh_shape)
-            buckets = 2 if mesh_shape in WAN_TWO_BUCKET_MESH_SHAPES else 1
+            # Sizes with the same area share a bucket.
+            served = served_resolutions(self.settings.device_mesh_shape)
+            buckets = len({width * height for width, height in served})
             device_params["trace_region_size"] = (
                 buckets * WAN_TRACE_REGION_BYTES_PER_BUCKET
             )
@@ -518,7 +519,9 @@ class _MiniMaxH3ReferencesRunner(_MiniMaxH3Runner):
 
     def _build_warmup_video_request(self) -> GenerationRequest:
         request = super()._build_warmup_video_request()
-        request._files = {"images": [_png(H3_SHORT_EDGE, H3_SHORT_EDGE, "gray")]}
+        request._files = {
+            "images": [_png(MINIMAX_H3_SHORT_EDGE, MINIMAX_H3_SHORT_EDGE, "gray")]
+        }
         return request
 
     def _inputs(self, request: GenerationRequest) -> dict:

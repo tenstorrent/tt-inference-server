@@ -31,8 +31,9 @@ from .._test_common import (
     BaseTest,
     HardwareRequirement,
     TestConfig,
+    WAN_ASPECT_RATIO,
+    WAN_SIZE,
     fixture_image_data_uri,
-    wan_size_for_device,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ def _build_payload(
         "seed": seed,
         "first_frame": image,
         "size": size,
-        "aspect_ratio": "16:9",
+        "aspect_ratio": WAN_ASPECT_RATIO,
     }
     if last_frame:
         payload["last_frame"] = image
@@ -89,7 +90,7 @@ class VideoGenerationI2VParamTest(BaseTest):
 
         frames = {
             "image": fixture_image_data_uri(),
-            "size": wan_size_for_device(self.ctx.device if self.ctx else None),
+            "size": WAN_SIZE,
         }
         base_prompt = (
             "A tranquil sunrise over rolling hills, soft golden light, "

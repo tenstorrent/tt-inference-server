@@ -228,6 +228,7 @@ class TestRequestData:
         )
         _assert_same_request(request, self._round_trip(request))
 
+    @pytest.mark.requires_tt_metal_policy
     def test_generation_request_keeps_its_loaded_media(self):
         request = MiniMaxH3Ref2VARequest(
             prompt="a song", images=["https://x/a.png"], videos=["https://x/a.mp4"]
@@ -648,6 +649,13 @@ class _MockFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 
 sys.meta_path.insert(0, _MockFinder())
+try:
+    import models.tt_dit.pipelines.minimax_h3.policy
+    import models.tt_dit.pipelines.wan.policy
+except ImportError:
+    from tests.fake_tt_metal_policy import placeholder_policies
+
+    sys.modules.update(placeholder_policies())
 """
 
 

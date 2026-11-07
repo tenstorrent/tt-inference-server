@@ -213,14 +213,18 @@ def test_wan_deep_canary_runs_a_short_warmup_request():
     "mesh_shape, inherited, expected",
     [
         ((4, 8), {"trace_region_size": 125_000_000}, 512 * 1024 * 1024),
-        ((4, 32), {"trace_region_size": 125_000_000}, 256 * 1024 * 1024),
+        ((4, 32), {"trace_region_size": 125_000_000}, 512 * 1024 * 1024),
         # No region reserved: the traces are allocated as they are captured.
         ((2, 2), {}, None),
     ],
 )
+@pytest.mark.requires_tt_metal_policy
 def test_wan_trace_region_fits_every_bucket(
     monkeypatch, mesh_shape, inherited, expected
 ):
+    monkeypatch.setattr(
+        sys.modules["models.tt_dit.pipelines.wan.policy"], "_is_blackhole", lambda: True
+    )
     runner = _runner("TTWan22I2VA14BRunner")
     runner.settings.device_mesh_shape = mesh_shape
     monkeypatch.setitem(
@@ -334,6 +338,7 @@ def h3_exports(monkeypatch, tmp_path):
     return exports
 
 
+@pytest.mark.requires_tt_metal_policy
 def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_path):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(
@@ -464,6 +469,7 @@ def test_h3_undecodable_input_fails_only_the_request(monkeypatch, h3_exports):
         ("TTMiniMaxH3Ref2VARunner", {"images": [(768, 768)]}),
     ],
 )
+@pytest.mark.requires_tt_metal_policy
 def test_h3_deep_canary_is_the_shortest_video(class_name, inputs):
     runner = _h3_runner(class_name)
     request = runner._build_warmup_video_request()

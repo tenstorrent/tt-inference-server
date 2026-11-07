@@ -56,13 +56,10 @@ def _capture_submit(monkeypatch, job_id: str) -> dict:
     return captured
 
 
-@pytest.mark.parametrize(
-    ("device", "size"),
-    [("T3K", "480p"), ("GALAXY", "480p"), ("BLACKHOLE_GALAXY", "720p")],
-)
-def test_wan_i2v_a14b_routes_to_the_generations_api(monkeypatch, device, size):
+@pytest.mark.parametrize("device", ["T3K", "GALAXY", "BLACKHOLE_GALAXY"])
+def test_wan_i2v_a14b_routes_to_the_generations_api(monkeypatch, device):
     # Wan2.2-I2V-A14B is served by the generations API: its own submit path,
-    # the image as a data URI, and a size the device's tt_dit preset serves.
+    # the image as a data URI, and 480p, which every device serves.
     captured = _capture_submit(monkeypatch, "job-123")
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(model_name="Wan2.2-I2V-A14B-Diffusers"),
@@ -85,7 +82,7 @@ def test_wan_i2v_a14b_routes_to_the_generations_api(monkeypatch, device, size):
         "negative_prompt": "blurry, low quality, distorted",
         "seed": 42,
         "first_frame": "data:image/jpeg;base64,ZmFrZQ==",
-        "size": size,
+        "size": "480p",
         "aspect_ratio": "16:9",
     }
 

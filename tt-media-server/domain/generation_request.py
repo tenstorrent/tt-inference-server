@@ -143,9 +143,10 @@ class GenerationRequest(BaseRequest):
     def media_kind(cls, name: str) -> MediaKind:
         return cls.MEDIA_KINDS.get(name, "image")
 
-    def media_errors(self) -> list[tuple[str, int, str]]:
+    def media_errors(self) -> list[tuple[str, int | None, str]]:
         """(field, index, message) for each loaded input the model cannot
-        take, from what the schema cannot see: image sizes, clip lengths."""
+        take, from what the schema cannot see: image sizes, clip lengths. An
+        index of None reports against the field as a whole."""
         return []
 
     def output_size(self) -> tuple[int, int]:

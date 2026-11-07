@@ -208,9 +208,9 @@ class GenerationService(BaseJobService):
         deadline = time.monotonic() + settings.media_url_timeout_seconds
         errors = []
 
-        def error(name: str, index: int, message: str) -> None:
-            is_list = isinstance(getattr(request, name), list)
-            loc = ("body", name, index) if is_list else ("body", name)
+        def error(name: str, index: int | None, message: str) -> None:
+            is_item = index is not None and isinstance(getattr(request, name), list)
+            loc = ("body", name, index) if is_item else ("body", name)
             errors.append({"loc": loc, "msg": message, "type": "value_error"})
 
         async def load(kind: str, value: str) -> tuple[bytes, Any]:
