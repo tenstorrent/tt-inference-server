@@ -1024,7 +1024,6 @@ export MAX_BATCH_DELAY_TIME_MS=50
 |---------------------|---------------|-------------|
 | `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
 | `WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS` | `1200` | Maximum time in seconds to wait for weights to be distributed to all workers before failing startup |
-| `VIDEO_REQUEST_TIMEOUT_SECONDS` | `300.0` | SHM response deadline used by the video sub-process runner (`SPRunner` proxy to `video_runner`). Tune for long video generations |
 
 ## Job Management Settings
 
@@ -1072,9 +1071,6 @@ These settings configure VLLM-based model runners and are grouped under `setting
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
 | `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
-| `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
-| `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
-| `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 
@@ -1193,7 +1189,6 @@ The server supports special environment variables for configuring device mesh sh
 | `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
 | `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
 | `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
-| `SP_MESH_4X32` | `None` | Configures device mesh as 4x32 (sequence-parallel mesh) when set to `"true"` (case-insensitive). Used for very large mesh deployments |
 
 ### Usage Examples
 
