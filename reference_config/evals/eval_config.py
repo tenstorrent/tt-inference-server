@@ -3138,6 +3138,145 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
+            # ---- Multimodal suite and OpenRouter's Auto Exacto benchmarks ----
+            # tt-metal models/experimental/mimo_v2_6_flash/doc/multimodal_evals.md
+            # (mimo-v2.6/mm-evals): the requests take the forms OpenRouter sends
+            # (data: URI images and videos, WAV input_audio), through tt-metal's
+            # mimo_openrouter lmms-eval model, so a TT run and a reference run
+            # (the same client against OpenRouter or a GPU server) see the same
+            # bytes. The media tasks run only on a profile that serves their
+            # modality (the mimo_v2_6_flash_mm spec). No same-protocol GPU
+            # reference exists yet: every task is "should" (graded NA until one
+            # is measured) so none blocks a release.
+            *[
+                EvalTask(
+                    task_name=name,
+                    workflow_venv_type=WorkflowVenvType.EVALS_MULTIMODAL,
+                    eval_class="mimo_openrouter",
+                    modalities=[modality],
+                    use_chat_api=True,
+                    apply_chat_template=False,
+                    # Short-answer and CoT prompts: reasoning off per request
+                    # (chat_template_kwargs.enable_thinking=false).
+                    thinking=False,
+                    max_concurrent=16,
+                    priority="should",
+                    score=EvalTaskScore(
+                        published_score=None,
+                        published_score_ref=None,
+                        gpu_reference_score=None,
+                        gpu_reference_score_ref=None,
+                        score_func=score_task_single_key,
+                        score_func_kwargs=score_kwargs,
+                    ),
+                    # Video-MME short's largest file is 33.8 MB: send every one
+                    # as is (no re-encode).
+                    model_kwargs={"video_max_mb": "64"},
+                    limit_samples_map={
+                        EvalLimitMode.CI_NIGHTLY: 0.2,
+                        EvalLimitMode.SMOKE_TEST: 0.01,
+                    },
+                )
+                for name, modality, score_kwargs in (
+                    # MMMU-Pro standard (10 options), CoT prompt: 1730 questions.
+                    (
+                        "mmmu_pro_standard_cot",
+                        "image",
+                        {"result_keys": ["mmmu_acc,none"], "unit": "percent"},
+                    ),
+                    # OCRBench: 1000 text-reading questions, string match.
+                    (
+                        "ocrbench",
+                        "image",
+                        {"result_keys": ["ocrbench_accuracy,none"], "unit": "percent"},
+                    ),
+                    # Video-MME, short videos, no subtitles: 900 questions on 300
+                    # videos (tt-metal's videomme_short task; the videos must be
+                    # in $HF_HOME/videomme/data, prefetch_datasets.py).
+                    (
+                        "videomme_short",
+                        "video",
+                        {
+                            "result_keys": ["videomme_perception_score,none"],
+                            "unit": "percent",
+                            "already_percent": True,
+                        },
+                    ),
+                    # MMAU test-mini: 1000 sound / music / speech questions.
+                    (
+                        "mmau_test_mini",
+                        "audio",
+                        {
+                            "result_keys": ["accuracy,none"],
+                            "unit": "percent",
+                            "already_percent": True,
+                        },
+                    ),
+                    # LibriSpeech test-clean: 2620 utterances, WER.
+                    (
+                        "librispeech_test_clean",
+                        "audio",
+                        {"result_keys": ["wer,none"], "unit": "WER"},
+                    ),
+                )
+            ],
+            # GPQA-Diamond as OpenRouter's harness runs it: openbench's prompt and
+            # data, temperature 0.5, 10 epochs, options shuffled per question.
+            # Thinking stays on (no switch sent), as OpenRouter sends none.
+            EvalTask(
+                task_name="gpqa_diamond_openrouter",
+                workflow_venv_type=WorkflowVenvType.EVALS_OPENBENCH,
+                eval_class="openbench",
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=16,
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"epochs": "10"},
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # tau2-bench Airline (openbench tau_bench_airline, temperature 0, one
+            # epoch): 50 tasks. The user simulator runs on OpenRouter (gpt-4.1,
+            # openbench's default user model; needs OPENROUTER_API_KEY), not on
+            # MiMo, so scores compare across endpoints.
+            EvalTask(
+                task_name="tau2_airline",
+                workflow_venv_type=WorkflowVenvType.EVALS_OPENBENCH,
+                eval_class="openbench",
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=16,
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy,none"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                model_kwargs={"user_model": "openrouter/openai/gpt-4.1"},
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.02,
+                },
+            ),
         ],
     ),
     EvalConfig(
