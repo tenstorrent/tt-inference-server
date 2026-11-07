@@ -709,9 +709,7 @@ video_last_generation_timestamp = Gauge(
 )
 
 # MP4 encode (ffmpeg) cost, recorded where the encode actually runs. Emitted
-# by in-process runners and the CPU postprocessing workers; a multihost
-# SP_RUNNER deployment encodes inside the external peer process, which does
-# not serve /metrics, so these series are absent there by design.
+# by in-process runners and the CPU postprocessing workers.
 video_encode_duration = Histogram(
     "tt_media_server_video_encode_duration_seconds",
     "ffmpeg mp4 encode duration in seconds",
@@ -738,8 +736,8 @@ class VideoGenerationStats:
     """Content-aware facts about one finished video generation.
 
     Everything except ``request_type``, ``duration_seconds`` and ``status`` is
-    optional: the SP_RUNNER path only learns frame count and resolution by
-    probing the produced mp4, which can fail (no PyAV, truncated file). Unknown
+    optional: frame count and resolution are learned by probing the produced
+    mp4, which can fail (no PyAV, truncated file). Unknown
     fields are skipped rather than guessed, so a bogus 0 never lands in a
     throughput histogram.
 
@@ -943,8 +941,8 @@ class TelemetryClient:
         """Fan one generation out across the video metric family.
 
         Derived throughputs are recorded only when both operands are known and
-        positive: a failed generation has no frames, and the SP_RUNNER path can
-        fail to probe the mp4. Observing 0 there would drag every quantile down
+        positive: a failed generation has no frames, and probing the mp4 can
+        fail. Observing 0 there would drag every quantile down
         and make a broken probe look like a slow pipeline.
         """
         model_type = self.settings.model_runner

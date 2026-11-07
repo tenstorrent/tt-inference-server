@@ -218,10 +218,7 @@ class VideoManager:
         """Report encode cost to Prometheus without ever failing the export.
 
         Encoding runs in whichever process owns the frames — a CPU
-        postprocessing worker, an in-process runner, or (for SP_RUNNER) the
-        external peer. Only the first two are in the server's process tree and
-        therefore visible on /metrics; the peer's observations land nowhere,
-        which is why this is best-effort and silent on error.
+        postprocessing worker or an in-process runner.
         """
         try:
             get_telemetry_client().record_video_encode(
@@ -453,10 +450,7 @@ def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:
 class VideoProbe:
     """Shape and length facts read back off a produced mp4.
 
-    Every field is optional. The server side of a multihost video deployment
-    (SP_RUNNER) receives only a file path from its peer — it never sees the
-    frame tensors — so probing the container is the only way to learn what was
-    actually generated. A probe that partly fails yields partly-populated
+    Every field is optional. A probe that partly fails yields partly-populated
     stats rather than nothing, and callers skip the unknown fields.
     """
 

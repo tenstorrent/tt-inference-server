@@ -305,15 +305,12 @@ Three things to know when reading these:
   last hour.
 
 * **Frame count and resolution come from probing the produced mp4** (PyAV, in
-  `utils.video_manager.probe_video`). On a multihost `sp_runner` deployment the
-  server only receives a file path from its MPI peer, so this is the only source
-  of shape truth. If the probe fails, the resolution label is `unknown` and the
-  shape-derived series are skipped rather than recorded as zero.
+  `utils.video_manager.probe_video`). If the probe fails, the resolution label is
+  `unknown` and the shape-derived series are skipped rather than recorded as zero.
 
-* **`video_encode_*` is absent on multihost `sp_runner` deployments.** The mp4 is
-  encoded inside the external runner peer, which serves no `/metrics`. It *is*
-  populated for in-process runners and the CPU postprocessing workers — including
-  a small `resolution="64x64"` series from the postprocessing warmup task.
+* **`video_encode_*`** is populated for in-process runners and the CPU
+  postprocessing workers — including a small `resolution="64x64"` series from the
+  postprocessing warmup task.
 
 ### Stage timings: denoise and VAE decode
 

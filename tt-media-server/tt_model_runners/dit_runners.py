@@ -119,7 +119,6 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
-    ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
@@ -1640,7 +1639,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        # Mux a/v inline by default; video_runner flips this so its encoder
+        # Mux a/v inline by default; the encode stage flips this so its encoder
         # thread muxes off the hot path.
         self.export_in_runner = True
 
@@ -1790,7 +1789,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             pixel_format = "rgb24"
         audio = output.audio[0].numpy()
 
-        # video_runner set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
+        # The encode stage set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
         if not self.export_in_runner:
             return VideoAudioResult(
                 frames, audio, output.sampling_rate, output.fps, pixel_format

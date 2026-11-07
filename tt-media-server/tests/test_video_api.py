@@ -28,7 +28,6 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from open_ai_api.video import (
     _is_i2v_only_deployment,
-    _sp_peer_is_known_non_ref2va,
     cancel_video_job,
     delete_video_job,
     download_video_content,
@@ -110,33 +109,6 @@ class TestIsI2VOnlyDeployment:
     @patch("open_ai_api.video.settings.model_runner", "not-a-runner")
     def test_unknown_runner_is_not_i2v(self):
         with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_falls_back_to_model_env(self):
-        """SP_RUNNER serves either T2V or I2V, so MODEL disambiguates it."""
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is True
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_with_t2v_model_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_unknown_model_env_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "not-a-model"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fl2va")
-    def test_fl2va_runner_is_not_i2v_only(self):
-        """FL2VA shares the t2va transformer and accepts text-only /generations."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_with_fl2va_model_is_not_i2v_only(self):
-        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
             assert _is_i2v_only_deployment() is False
 
 
@@ -530,13 +502,7 @@ class TestCancelVideoJob:
 
 
 class TestRejectRef2vaOnWrongDeployment:
-    """/generations/ref2va must refuse only a deployment PROVEN not to serve it.
-
-    An SP frontend loads no weights, so MODEL is its only evidence about the
-    peer's task -- and MODEL is advisory there. Recognising any known model name
-    would 422 a working ref2va deployment whose MODEL happens to name something
-    else, so only the H3 T2VA/FL2VA names may trigger the refusal.
-    """
+    """/generations/ref2va must refuse a deployment that does not serve it."""
 
     @staticmethod
     def _refuses():
@@ -565,91 +531,6 @@ class TestRejectRef2vaOnWrongDeployment:
     @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fasth3")
     def test_in_process_fasth3_runner_is_refused(self):
         assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_for_a_ref2va_lightx2v_peer_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA-LightX2V"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fl2va_lightx2v_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_t2va_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fl2va_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fasth3_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_without_model_stays_permissive(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("MODEL", None)
-            assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_an_unrelated_model_stays_permissive(self):
-        """The regression guard: a known name that says nothing about the H3
-        task must not refuse a peer that may well be serving Ref2VA."""
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "not-a-model-name"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_with_an_unknown_model_stays_permissive(self):
-        assert self._refuses() is None
-
-
-class TestSpPeerIsKnownNonRef2va:
-    """The helper must recognise the H3 non-Ref2VA task names."""
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
-    def test_t2va_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
-    def test_fl2va_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
-    def test_fasth3_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
-    def test_ref2va_name_is_not_a_non_ref2va_model(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
-    def test_ref2va_lightx2v_name_is_not_a_non_ref2va_model(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
-    def test_a_known_but_unrelated_model_is_inconclusive(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "garbage"})
-    def test_unknown_string_is_inconclusive(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    def test_unset_model_is_inconclusive(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("MODEL", None)
-            assert _sp_peer_is_known_non_ref2va() is False
 
 
 class TestDownloadTempFileCleanup:
@@ -1045,7 +926,7 @@ class TestLTXShapeValidation:
 
     def test_non_ltx_leaves_shape_fields_unresolved(self):
         """Wan resolves its shape from settings/mesh, so the request must not
-        pin one. sp_runner's `or DEFAULT` turns these Nones into its defaults."""
+        pin one."""
         with self._wan():
             r = VideoGenerateRequest(prompt="p")
         assert r.height is None and r.width is None
@@ -1256,37 +1137,6 @@ class TestMiniMaxH3Admission:
             _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
         assert exc_info.value.status_code == 422
         assert "whole number" in exc_info.value.detail
-
-    @pytest.mark.parametrize(
-        "model",
-        [
-            "MiniMax-H3",
-            "MiniMax-H3-FL2VA",
-            "MiniMax-H3-Ref2VA",
-            "MiniMax-H3-FastH3",
-            "MiniMax-H3-FL2VA-LightX2V",
-            "MiniMax-H3-Ref2VA-LightX2V",
-        ],
-    )
-    @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_with_h3_model_is_admitted(
-        self, mock_settings, model, h3_admission
-    ):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "sp_runner"
-        with patch.dict(os.environ, {"MODEL": model}):
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        h3_admission.assert_called_once()
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_without_model_is_not_admitted(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "sp_runner"
-        with patch.dict(os.environ, {}, clear=True):
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        h3_admission.assert_not_called()
 
     @patch("domain.video_generate_request.get_settings")
     def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings, h3_admission):

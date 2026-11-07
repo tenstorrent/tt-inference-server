@@ -553,7 +553,6 @@ class TestExecutedVsRequestedSteps:
 
     def test_helper_forces_fasth3_to_4(self):
         from config.constants import (
-            ModelNames,
             ModelRunners,
             MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
             video_executed_inference_steps,
@@ -563,36 +562,15 @@ class TestExecutedVsRequestedSteps:
             video_executed_inference_steps(20, ModelRunners.TT_MINIMAX_H3_FASTH3.value)
             == MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
         )
-        assert (
-            video_executed_inference_steps(
-                20,
-                ModelRunners.SP_RUNNER.value,
-                ModelNames.MINIMAX_H3_FASTH3.value,
-            )
-            == MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
-        )
 
     @pytest.mark.parametrize(
-        ("runner", "model"),
-        [
-            ("TT_MINIMAX_H3_FL2VA_LIGHTX2V", "MINIMAX_H3_FL2VA_LIGHTX2V"),
-            ("TT_MINIMAX_H3_REF2VA_LIGHTX2V", "MINIMAX_H3_REF2VA_LIGHTX2V"),
-        ],
+        "runner",
+        ["TT_MINIMAX_H3_FL2VA_LIGHTX2V", "TT_MINIMAX_H3_REF2VA_LIGHTX2V"],
     )
-    def test_helper_forces_lightx2v_to_5(self, runner, model):
-        from config.constants import (
-            ModelNames,
-            ModelRunners,
-            video_executed_inference_steps,
-        )
+    def test_helper_forces_lightx2v_to_5(self, runner):
+        from config.constants import ModelRunners, video_executed_inference_steps
 
         assert video_executed_inference_steps(20, ModelRunners[runner].value) == 5
-        assert (
-            video_executed_inference_steps(
-                20, ModelRunners.SP_RUNNER.value, ModelNames[model].value
-            )
-            == 5
-        )
 
     def test_helper_forces_anisora_to_8(self):
         from config.constants import (
@@ -606,23 +584,6 @@ class TestExecutedVsRequestedSteps:
                 20, ModelRunners.TT_WAN_2_2_I2V_ANISORA.value
             )
             == WAN22_ANISORA_NUM_STEPS
-        )
-
-    def test_helper_sp_runner_uses_model_name(self):
-        from config.constants import (
-            ModelNames,
-            ModelRunners,
-            WAN22_LIGHTNING_NUM_STEPS,
-            video_executed_inference_steps,
-        )
-
-        assert (
-            video_executed_inference_steps(
-                20,
-                ModelRunners.SP_RUNNER.value,
-                ModelNames.WAN_2_2_I2V_LIGHTNING.value,
-            )
-            == WAN22_LIGHTNING_NUM_STEPS
         )
 
     def test_recorder_counts_distill_executed_steps(self):
@@ -735,7 +696,7 @@ class TestClassifyRequest:
 
 
 class TestProbeVideo:
-    """probe_video is the only source of shape truth on the SP_RUNNER path."""
+    """probe_video reads the shape back off a produced mp4."""
 
     def test_reads_shape_and_length(self, tmp_path):
         path = write_mp4(tmp_path / "clip.mp4", num_frames=8, width=64, height=32)
