@@ -7652,6 +7652,7 @@ templates:
       env_vars:
         MESH_DEVICE: P300x2
         QWEN38_HOST_SAMPLING_COMPAT: "1"
+        QWEN38_PRIVATE_PREFIX_CACHE_BYTES: "0"
         VLLM_RPC_TIMEOUT: "7200000"
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.qwen_qwen3_8_27b.tt.generator_vllm:Qwen38ForCausalLM"
         QWEN38_PRECISION_CONFIG: "/home/container_app_user/tt-metal/models/autoports/qwen_qwen3_8_27b/tt/selected_precision_config.json"
@@ -7661,6 +7662,9 @@ templates:
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         max_num_seqs: 32
+        distributed_executor_backend: uni
+        num_gpu_blocks_override: 32800
+        seed: 9472
         block_size: 32
         max_num_batched_tokens: 131072
         long_prefill_token_threshold: 4096
