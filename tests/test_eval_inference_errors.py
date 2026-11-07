@@ -67,6 +67,46 @@ def test_no_errors_is_zero(tmp_path):
     assert mod.count_inference_errors(files) == (0, 2)
 
 
+def _lmms_attempt(tmp_path: Path, stamp: str, answers):
+    """An lmms-eval attempt: ``<stamp>_results.json`` beside
+    ``<stamp>_samples_<task>.jsonl``, with ``filtered_resps`` a plain string."""
+    model_spec = SimpleNamespace(model_id="id_mimo_m_galaxy", hf_model_repo="org/m")
+    out = tmp_path / f"eval_{model_spec.model_id}" / "org__m"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{stamp}_results.json").write_text(
+        json.dumps({"results": {"ocrbench": {"ocrbench_accuracy,none": 0.5}}})
+    )
+    rows = [
+        {"doc_id": i, "input": "what is written?", "filtered_resps": answer}
+        for i, answer in enumerate(answers)
+    ]
+    (out / f"{stamp}_samples_ocrbench.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n"
+    )
+    return tmp_path, model_spec
+
+
+def test_lmms_eval_sample_logs_are_scanned(tmp_path):
+    failed = "[LMMS_EVAL_REQUEST_FAILED after 5 retries] Error code: 500"
+    root, model_spec = _lmms_attempt(
+        tmp_path, "20261107_091539", [failed, "CENTRE", "[MIMO_REQUEST_FAILED 500] x"]
+    )
+    files = mod.discover_eval_results(root, model_spec)
+    assert mod.count_inference_errors(files) == (2, 3)
+
+
+def test_only_the_scored_lmms_attempt_is_scanned(tmp_path):
+    # An earlier attempt's errored log in the same directory, its results gone.
+    root, model_spec = _lmms_attempt(
+        tmp_path, "20261106_000000", ["[MIMO_REQUEST_FAILED"]
+    )
+    out = root / f"eval_{model_spec.model_id}" / "org__m"
+    (out / "20261106_000000_results.json").unlink()
+    _lmms_attempt(tmp_path, "20261107_091539", ["CENTRE", "FRIEND"])
+    files = mod.discover_eval_results(root, model_spec)
+    assert mod.count_inference_errors(files) == (0, 2)
+
+
 def _graded_block(score=0.0):
     return Block(
         kind="evals",
