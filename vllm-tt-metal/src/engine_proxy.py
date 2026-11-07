@@ -101,6 +101,7 @@ from aiohttp import (
     ClientError,
     ClientSession,
     ClientTimeout,
+    ServerDisconnectedError,
     TCPConnector,
     web,
 )
@@ -116,6 +117,10 @@ HOP = {
     "host",
 }
 PREFIX_PATHS = ("/v1/chat/completions", "/v1/completions", "/v1/responses")
+# Idle upstream connections are closed by the proxy before the engine's HTTP server
+# closes them (uvicorn's default keep-alive is 5 s): a request written into a
+# connection the engine is closing gets "Server disconnected" and no reply.
+UPSTREAM_KEEPALIVE_S = 2.0
 SAMPLE = re.compile(
     r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?(\s.*)$"
 )  # name, labels, value [timestamp]
@@ -948,7 +953,9 @@ class Router:
             "matched_chars": 0,
             "retried": 0,
         }
-        self.stats.update(shim_rejected=0, errors_mapped=0, too_large=0)
+        self.stats.update(
+            shim_rejected=0, errors_mapped=0, too_large=0, stale_retried=0
+        )
 
     def up(self, exclude=()):
         now = time.monotonic()
@@ -1022,6 +1029,7 @@ def make_app(router, session_factory=None, shim=None):
                 )
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
         tried = []
+        stale_retry = True
         while True:
             b = router.pick(hashes, exclude=tried)
             if b is None:
@@ -1035,6 +1043,7 @@ def make_app(router, session_factory=None, shim=None):
                 # whose headers come at its end) should find the prefix where it is
                 # being computed.
                 router.index.record(hashes, b)
+            started = False
             try:
                 async with state["session"].request(
                     request.method,
@@ -1056,10 +1065,20 @@ def make_app(router, session_factory=None, shim=None):
                         },
                     )
                     await resp.prepare(request)
+                    started = True
                     async for chunk in up.content.iter_any():
                         await resp.write(chunk)
                     await resp.write_eof()
                     return resp
+            except ServerDisconnectedError:
+                # The engine closed the connection before answering: almost always a
+                # pooled keep-alive connection it was closing as we wrote into it (the
+                # engine never read the request). Resend once on a new connection; a
+                # disconnect after the reply started cannot be retried.
+                if started or not stale_retry:
+                    raise
+                stale_retry = False
+                router.stats["stale_retried"] += 1
             except ClientConnectorError:
                 # Nothing reached the client yet: try another engine.
                 router.mark_down(b)
@@ -1118,7 +1137,8 @@ def make_app(router, session_factory=None, shim=None):
 
     async def on_start(app):
         state["session"] = (session_factory or ClientSession)(
-            timeout=ClientTimeout(total=None), connector=TCPConnector(limit=0)
+            timeout=ClientTimeout(total=None),
+            connector=TCPConnector(limit=0, keepalive_timeout=UPSTREAM_KEEPALIVE_S),
         )
 
     async def on_stop(app):
