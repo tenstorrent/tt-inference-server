@@ -351,10 +351,11 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
     prompt: str = Field(
         min_length=1,
         description=(
-            "Refer to references by kind and position, numbered per kind in the "
-            "order given: `Picture 1` (the first of `images`), `Video 1`, `Audio "
-            "1`. The model sees each reference under that label. A video's own "
-            "sound track counts as an audio reference too."
+            "Refer to references by kind and position: `Picture i` is the i-th of "
+            "`images` and `Video k` the k-th of `videos`. `Audio j` numbers "
+            "everything with sound: first the soundtracks of `videos`, in order, "
+            "then `audios`. So with one video that has sound, the first of "
+            "`audios` is `Audio 2`. The model sees each reference under that label."
         ),
     )
     images: list[Media] = Field(
@@ -494,7 +495,7 @@ class MiniMaxH3Ref2VARequest(_MiniMaxH3ReferencesRequest):
 _REF2VA_EXAMPLE = {
     "prompt": (
         "The plumeria from Picture 1 sways in the garden from Video 1 while the "
-        "wren from Audio 1 sings nearby."
+        "wren from Audio 2 sings nearby."
     ),
     "images": [EXAMPLE_IMAGE_URL],
     "videos": [EXAMPLE_VIDEO_URL],

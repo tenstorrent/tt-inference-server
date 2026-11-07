@@ -369,7 +369,7 @@ async def test_job_lifecycle(generations_app, tmp_path):
     # The fake device's clip: 9 frames of 64x64 at 25 fps, stereo at 16 kHz.
     assert output == {
         "type": "video",
-        "url": f"/v1/jobs/{job['id']}/content/0",
+        "url": f"v1/jobs/{job['id']}/content/0",
         "content_type": "video/mp4",
         "seed": 7,
         "prompt": "a violinist",
@@ -564,6 +564,25 @@ async def test_a_failed_or_oversized_fetch(
         assert detail["loc"] == ["body", "first_frame"]
         assert "HTTP 403" in detail["msg"]
     assert device.requests == []
+
+
+async def test_an_oversized_fetch_names_the_deployments_url_cap(
+    generations_app, monkeypatch
+):
+    import utils.media_downloader
+    from model_services import generation_service
+
+    async def fetch(url, **kwargs):
+        raise utils.media_downloader.MediaDownloadTooLargeError("too big")
+
+    monkeypatch.setattr(generation_service, "download_media_url", fetch)
+    monkeypatch.setattr(generation_service.settings, "media_url_max_bytes", 1000)
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "An image input is over 1000 bytes"
 
 
 def _encoded(image_format: str) -> bytes:
@@ -891,7 +910,9 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert job["error"] == {"code": "processing_error", "message": "device fell over"}
     assert job["expires_at"] > job["completed_at"]
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
-    assert list(tmp_path.iterdir()) == []
+    # Made at submit, empty, and deleted with the job.
+    assert list(tmp_path.iterdir()) == [tmp_path / job["id"]]
+    assert list((tmp_path / job["id"]).iterdir()) == []
 
 
 @pytest.fixture
@@ -1061,7 +1082,6 @@ async def test_what_a_runner_leaves_in_a_failed_jobs_directory_goes_with_it(
     client, device = generations_app("tt-ltx-2.3-distilled")
 
     def video(request):
-        (tmp_path / request._task_id).mkdir()
         (tmp_path / request._task_id / "ltx.mp4").write_bytes(b"mp4")
         raise RuntimeError("device fell over")
 

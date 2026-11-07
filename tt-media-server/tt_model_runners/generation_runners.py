@@ -280,7 +280,9 @@ class TTLtx23DistilledRunner(_GenerationRunner):
         # Into the job's directory, so a file a cancelled or failed job leaves
         # behind is deleted with it.
         directory = Path(generation_job_dir(request._task_id))
-        directory.mkdir(parents=True, exist_ok=True)
+        if self._warming_up or request._task_id == CANARY_DEEP_TASK_ID:
+            # No job made a directory for these.
+            directory.mkdir(parents=True, exist_ok=True)
         try:
             # generate() writes an MP4 with the soundtrack and returns its path.
             path = self.pipeline.generate(
@@ -472,10 +474,13 @@ class _MiniMaxH3Runner(_GenerationRunner):
         )
         # Into the job's directory, so a file a cancelled or failed job leaves
         # behind is deleted with it.
-        directory = Path(generation_job_dir(request._task_id))
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / "h3.mp4"
-        shutil.move(encoded, path)
+        path = Path(generation_job_dir(request._task_id)) / "h3.mp4"
+        try:
+            shutil.move(encoded, path)
+        except FileNotFoundError:
+            # The job was deleted while it ran.
+            Path(encoded).unlink(missing_ok=True)
+            raise
         return [str(path)]
 
     def _pipeline_factory(self):

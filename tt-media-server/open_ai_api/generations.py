@@ -51,7 +51,7 @@ _JOB_NOT_FOUND: Responses = {404: _error("Unknown or deleted.")}
 _SUBMIT_RESPONSES: Responses = {
     202: {"description": "Accepted and queued. Poll `GET /v1/jobs/{job_id}`."},
     400: _error(
-        "An image URL violates this deployment's fetch policy: not `https`, a "
+        "A media URL violates this deployment's fetch policy: not `https`, a "
         "host outside the allowlist, or an address that isn't public."
     ),
     **_UNAUTHORIZED,
@@ -120,7 +120,7 @@ def _outputs(service: GenerationService, job_id: str) -> Optional[list[dict]]:
     return [
         {
             **{k: v for k, v in output.items() if k != "file"},
-            "url": f"/v1/jobs/{job_id}/content/{index}",
+            "url": f"v1/jobs/{job_id}/content/{index}",
         }
         for index, output in enumerate(outputs)
     ]

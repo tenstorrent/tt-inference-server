@@ -54,12 +54,12 @@ from utils.video_manager import VideoManager, probe_video
 MANIFEST = "outputs.json"
 
 
-def _too_large(kind: str) -> HTTPException:
+def _too_large(kind: str, max_bytes: int) -> HTTPException:
     return HTTPException(
         status_code=413,
         detail=(
             f"{'An' if kind[0] in 'aeiou' else 'A'} {kind} input is over "
-            f"{MEDIA_MAX_BYTES[kind]} bytes"
+            f"{max_bytes} bytes"
         ),
     )
 
@@ -67,7 +67,7 @@ def _too_large(kind: str) -> HTTPException:
 def _decode_data_uri(uri: str, kind: str) -> bytes:
     data = base64.b64decode(uri.split(",", 1)[1], validate=True)
     if len(data) > MEDIA_MAX_BYTES[kind]:
-        raise _too_large(kind)
+        raise _too_large(kind, MEDIA_MAX_BYTES[kind])
     return data
 
 
@@ -183,18 +183,26 @@ class GenerationService(BaseJobService):
         request._cancel_event = self._processManager.Event()
         request._worker_assignment = self._processManager.Namespace()
         request._worker_assignment.identity = None
-        return await self._job_manager.create_job(
-            job_id=request._task_id,
-            job_type=JobTypes.GENERATION,
-            model=model_id,
-            request=request,
-            task_function=self.process_request,
-            start_event=request._start_event,
-            cancel_event=request._cancel_event,
-            worker_assignment=request._worker_assignment,
-            request_parameters=_request_parameters(request),
-            result_path=generation_job_dir(request._task_id),
-        )
+        # Made here and only here, so a runner that finishes after the job is
+        # deleted can't bring it back.
+        result_path = generation_job_dir(request._task_id)
+        Path(result_path).mkdir(parents=True)
+        try:
+            return await self._job_manager.create_job(
+                job_id=request._task_id,
+                job_type=JobTypes.GENERATION,
+                model=model_id,
+                request=request,
+                task_function=self.process_request,
+                start_event=request._start_event,
+                cancel_event=request._cancel_event,
+                worker_assignment=request._worker_assignment,
+                request_parameters=_request_parameters(request),
+                result_path=result_path,
+            )
+        except BaseException:
+            shutil.rmtree(result_path, ignore_errors=True)
+            raise
 
     async def _load_media(self, request: GenerationRequest) -> None:
         """Fetch every input, decode the images and probe the clips, and
@@ -229,7 +237,10 @@ class GenerationService(BaseJobService):
             except MediaDownloadPolicyError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except MediaDownloadTooLargeError:
-                raise _too_large(kind)
+                # The download cap is the smaller of the two.
+                raise _too_large(
+                    kind, min(MEDIA_MAX_BYTES[kind], settings.media_url_max_bytes)
+                )
             if kind == "image":
                 return data, await asyncio.to_thread(decode_image, data)
             probe = await asyncio.to_thread(probe_reference_media, data)
@@ -424,7 +435,6 @@ class GenerationService(BaseJobService):
         # A runner may already have written into it.
         result_path = generation_job_dir(request._task_id)
         directory = Path(result_path)
-        directory.mkdir(parents=True, exist_ok=True)
         try:
             outputs = [
                 self._write_output(directory, index, request, result)

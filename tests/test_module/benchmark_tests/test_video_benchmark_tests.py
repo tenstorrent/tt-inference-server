@@ -131,7 +131,7 @@ def test_job_status_and_download_urls(monkeypatch, model_name, status, download)
 
         @staticmethod
         def json():
-            return {"outputs": [{"url": "/v1/jobs/job-1/content/0"}]}
+            return {"outputs": [{"url": "v1/jobs/job-1/content/0"}]}
 
     def _fake_get(url, headers, timeout):
         requested.append(url)

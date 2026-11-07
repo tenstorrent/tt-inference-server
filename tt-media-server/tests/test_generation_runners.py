@@ -264,6 +264,7 @@ def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
         request = _resolved(
             Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5
         )
+        (tmp_path / request._task_id).mkdir()
     (path,) = runner.run([request])
     (call,) = runner.pipeline.calls
     assert call == {
@@ -346,6 +347,7 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
         768,
         1344,
     )
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
     (path,) = runner.run([request])
     (call,) = runner.pipeline.calls
     assert call == {
@@ -363,12 +365,25 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
     assert kwargs == {"fps": 24, "pixel_format": "yuv420p"}
 
 
-def test_h3_leaves_the_shape_of_an_adaptive_request_to_the_keyframe(h3_exports):
+@pytest.mark.requires_tt_metal_policy
+def test_h3_does_not_bring_back_a_deleted_jobs_directory(h3_exports, tmp_path):
+    runner = _h3_runner("TTMiniMaxH3Runner")
+    request = _resolved(MiniMaxH3FL2VARequest(prompt="waves", duration=6), 768, 1344)
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert not (tmp_path / "generations").exists()
+    assert not any((tmp_path / "encoded").iterdir())
+
+
+def test_h3_leaves_the_shape_of_an_adaptive_request_to_the_keyframe(
+    h3_exports, tmp_path
+):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(
         MiniMaxH3FL2VARequest(prompt="waves", first_frame="https://x/a.png"), 768, 1344
     )
     request._files = {"first_frame": [_png(32, 64)]}
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
     runner.run([request])
     (call,) = runner.pipeline.calls
     assert "aspect_ratio" not in call
