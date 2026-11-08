@@ -34,7 +34,10 @@ engines, routed as above). This needs engines that share KV through a host store
 TTKVStoreConnector with ttserve-kvstore): the prefill engine saves the prompt's KV as it computes it, and the decoding
 engine loads it instead of prefilling, so long prefills never stall the decoding engines' running requests. A request
 whose prompt is mostly cached goes straight to a decoding engine, which loads what another engine stored. If the
-prefill engine fails, the decoding engine prefills the request itself.
+prefill engine fails, the decoding engine prefills the request itself. When every prefill engine has more than
+``TT_PROXY_PD_FLEX`` (2) requests in flight, a decoding engine with nothing in flight takes the prefill instead (a
+burst of new prompts would otherwise queue on the prefill engines while decoding engines idle); a negative value turns
+this off.
 
 The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimental/mimo_v2_6_flash/serving/lb.py).
 """
@@ -295,6 +298,7 @@ class Router:
         down_s=5.0,
         prefill=None,
         pd_min_chars=None,
+        pd_flex=None,
     ):
         self.backends = list(backends)
         # Prefill / decode disaggregation: the first ``prefill`` backends only prefill (module docstring).
@@ -308,6 +312,9 @@ class Router:
             self.backends[prefill:] if self.pd else list(self.backends)
         )
         self.pd_min_chars = pd_min_chars
+        if pd_flex is None:
+            pd_flex = int(os.environ.get("TT_PROXY_PD_FLEX") or 2)
+        self.pd_flex = pd_flex
         self.chunk_chars = chunk_chars
         self.min_match_chunks = max(1, -(-min_match_chars // chunk_chars))
         if slack is None:
@@ -331,6 +338,7 @@ class Router:
             "pd_prefill_failed": 0,
             "pd_prefill_s": 0.0,
             "pd_direct": 0,
+            "pd_flex": 0,
         }
 
     def up(self, exclude=(), pool=None):
@@ -363,6 +371,23 @@ class Router:
                 self.stats["prefix_spilled"] += 1
         self.stats["least_loaded"] += 1
         return self.least_loaded(cands)
+
+    def prefill_target(self, hashes):
+        """The engine for a prefill-only pass: a prefill engine, or an idle decoding engine when every prefill engine
+        has more than ``pd_flex`` requests in flight."""
+        p = self.pick(hashes, pool=self.prefill_backends)
+        if p is None or self.pd_flex < 0:
+            return p
+        if (
+            min(self.inflight[b] for b in self.up(pool=self.prefill_backends))
+            <= self.pd_flex
+        ):
+            return p
+        idle = [b for b in self.up(pool=self.decode_backends) if self.inflight[b] == 0]
+        if not idle:
+            return p
+        self.stats["pd_flex"] += 1
+        return self.least_loaded(idle)
 
     def uncached_chars(self, hashes, total_chars):
         """Characters of a prompt beyond the longest prefix any backend has served (all of them share KV through the
@@ -472,7 +497,7 @@ def make_app(router, session_factory=None):
         pbody = prefill_body(body)
         if pbody is None:
             return
-        p = router.pick(hashes, pool=router.prefill_backends)
+        p = router.prefill_target(hashes)
         if p is None:
             return
         router.inflight[p] += 1

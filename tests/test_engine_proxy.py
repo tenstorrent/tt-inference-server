@@ -507,3 +507,21 @@ def test_proxy_decodes_anyway_when_the_prefill_engine_is_down(monkeypatch):
     backend, snap = asyncio.run(with_proxy([pd_engine("D1", seen)], run, dead=1))
     assert backend == "D1" and len(seen) == 1
     assert snap["prefix"]["pd_prefill_failed"] == 1
+
+
+def test_prefill_spills_to_an_idle_decoding_engine_when_prefill_is_backed_up():
+    r = lb.Router(["P", "D1", "D2"], prefill=1, pd_flex=2)
+    h = hashes_of(chat(DOC, "q0"))
+    assert r.prefill_target(h) == "P"
+    r.inflight["P"] = 3  # more than pd_flex in flight
+    r.inflight["D1"] = 1  # decoding
+    assert r.prefill_target(h) == "D2"  # the idle decoding engine
+    assert r.stats["pd_flex"] == 1
+    r.inflight["D2"] = 2
+    assert (
+        r.prefill_target(h) == "P"
+    )  # no idle decoding engine: queue on the prefill engine
+    assert lb.Router(["P", "D"], prefill=1, pd_flex=-1).pd_flex == -1
+    off = lb.Router(["P", "D"], prefill=1, pd_flex=-1)
+    off.inflight["P"] = 9
+    assert off.prefill_target(h) == "P"
