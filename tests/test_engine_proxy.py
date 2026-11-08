@@ -509,19 +509,49 @@ def test_proxy_decodes_anyway_when_the_prefill_engine_is_down(monkeypatch):
     assert snap["prefix"]["pd_prefill_failed"] == 1
 
 
-def test_prefill_spills_to_an_idle_decoding_engine_when_prefill_is_backed_up():
+def test_prefill_passes_are_pulled_by_free_prefill_or_idle_decoding_engines():
     r = lb.Router(["P", "D1", "D2"], prefill=1, pd_flex=2)
     h = hashes_of(chat(DOC, "q0"))
     assert r.prefill_target(h) == "P"
-    r.inflight["P"] = 3  # more than pd_flex in flight
+    r.inflight["P"] = 2  # full: pd_flex passes running
     r.inflight["D1"] = 1  # decoding
     assert r.prefill_target(h) == "D2"  # the idle decoding engine
     assert r.stats["pd_flex"] == 1
     r.inflight["D2"] = 2
-    assert (
-        r.prefill_target(h) == "P"
-    )  # no idle decoding engine: queue on the prefill engine
-    assert lb.Router(["P", "D"], prefill=1, pd_flex=-1).pd_flex == -1
+    assert r.prefill_target(h) is None  # nobody free: the pass waits in the proxy
+    r.inflight["P"] = 1
+    assert r.prefill_target(h) == "P"
     off = lb.Router(["P", "D"], prefill=1, pd_flex=-1)
     off.inflight["P"] = 9
-    assert off.prefill_target(h) == "P"
+    assert off.prefill_target(h) == "P"  # off: always the prefill engine
+
+
+def test_proxy_holds_a_prefill_pass_until_an_engine_frees_up(monkeypatch):
+    monkeypatch.setenv("TT_PROXY_PD_MIN_CHARS", "4096")
+    seen = []
+
+    async def run(session, url, router):
+        router.prefill_backends = [router.backends[0]]
+        router.decode_backends = router.backends[1:]
+        router.pd, router.pd_flex = True, 1
+        router.inflight[router.backends[0]] = 1  # the prefill engine is full
+        router.inflight[router.backends[1]] = 1  # the decoding engine is busy
+
+        async def free_later():
+            await asyncio.sleep(0.3)
+            router.inflight[router.backends[0]] = 0
+
+        task = asyncio.ensure_future(free_later())
+        async with session.post(
+            url + "/v1/chat/completions", data=chat(DOC, "q0")
+        ) as r:
+            assert r.status == 200
+        await task
+        return router.snapshot()
+
+    snap = asyncio.run(with_proxy([pd_engine("P", seen), pd_engine("D1", seen)], run))
+    assert [name for name, _ in seen] == [
+        "P",
+        "D1",
+    ]  # prefilled on P once it was free, then decoded
+    assert snap["prefix"]["pd_wait_s"] >= 0.2 and snap["prefix"]["pd_prefilled"] == 1

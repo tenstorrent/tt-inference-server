@@ -34,14 +34,16 @@ engines, routed as above). This needs engines that share KV through a host store
 TTKVStoreConnector with ttserve-kvstore): the prefill engine saves the prompt's KV as it computes it, and the decoding
 engine loads it instead of prefilling, so long prefills never stall the decoding engines' running requests. A request
 whose prompt is mostly cached goes straight to a decoding engine, which loads what another engine stored. If the
-prefill engine fails, the decoding engine prefills the request itself. When every prefill engine has more than
-``TT_PROXY_PD_FLEX`` (2) requests in flight, a decoding engine with nothing in flight takes the prefill instead (a
-burst of new prompts would otherwise queue on the prefill engines while decoding engines idle); a negative value turns
-this off.
+prefill engine fails, the decoding engine prefills the request itself. Prefill passes are pulled, not pushed: a
+prefill engine runs at most ``TT_PROXY_PD_FLEX`` (2) of them at once, a decoding engine with nothing in flight takes
+the next one when every prefill engine is full, and the rest wait in the proxy until one of the two frees up (a burst
+of new prompts would otherwise sit in a prefill engine's queue while decoding engines idle). A negative value turns
+this off: every prefill pass goes straight to a prefill engine.
 
 The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimental/mimo_v2_6_flash/serving/lb.py).
 """
 
+import asyncio
 import hashlib
 import itertools
 import json
@@ -81,6 +83,7 @@ PROBE_TIMEOUT_S = (
 UPSTREAM_KEEPALIVE_S = 2.0
 STRUCTURED_PATHS = ("/v1/chat/completions", "/v1/completions")
 PD_PATHS = ("/v1/chat/completions", "/v1/completions")
+PD_POLL_S = 0.05  # how often a waiting prefill pass looks for a free engine
 # Request fields a prefill-only copy drops: they shape the output, not the prompt (structured outputs would also make the
 # prefill engine compile a grammar for one token).
 PREFILL_DROP = (
@@ -339,6 +342,7 @@ class Router:
             "pd_prefill_s": 0.0,
             "pd_direct": 0,
             "pd_flex": 0,
+            "pd_wait_s": 0.0,
         }
 
     def up(self, exclude=(), pool=None):
@@ -373,21 +377,22 @@ class Router:
         return self.least_loaded(cands)
 
     def prefill_target(self, hashes):
-        """The engine for a prefill-only pass: a prefill engine, or an idle decoding engine when every prefill engine
-        has more than ``pd_flex`` requests in flight."""
-        p = self.pick(hashes, pool=self.prefill_backends)
-        if p is None or self.pd_flex < 0:
-            return p
-        if (
-            min(self.inflight[b] for b in self.up(pool=self.prefill_backends))
-            <= self.pd_flex
-        ):
-            return p
+        """The engine for a prefill-only pass now, or None to wait: a prefill engine running fewer than ``pd_flex``
+        prefill passes (prefix holders first), else a decoding engine with nothing in flight."""
+        if self.pd_flex < 0:
+            return self.pick(hashes, pool=self.prefill_backends)
+        free = [
+            b
+            for b in self.up(pool=self.prefill_backends)
+            if self.inflight[b] < self.pd_flex
+        ]
+        if free:
+            return self.pick(hashes, pool=free)
         idle = [b for b in self.up(pool=self.decode_backends) if self.inflight[b] == 0]
-        if not idle:
-            return p
-        self.stats["pd_flex"] += 1
-        return self.least_loaded(idle)
+        if idle:
+            self.stats["pd_flex"] += 1
+            return self.least_loaded(idle)
+        return None
 
     def uncached_chars(self, hashes, total_chars):
         """Characters of a prompt beyond the longest prefix any backend has served (all of them share KV through the
@@ -497,9 +502,10 @@ def make_app(router, session_factory=None):
         pbody = prefill_body(body)
         if pbody is None:
             return
-        p = router.prefill_target(hashes)
-        if p is None:
-            return
+        t_wait = time.monotonic()
+        while (p := router.prefill_target(hashes)) is None:
+            await asyncio.sleep(PD_POLL_S)  # every engine that may prefill is busy
+        router.stats["pd_wait_s"] += time.monotonic() - t_wait
         router.inflight[p] += 1
         t0 = time.monotonic()
         ok = False
