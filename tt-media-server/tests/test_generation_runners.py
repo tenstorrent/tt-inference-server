@@ -304,6 +304,47 @@ def test_flux3_warmup_covers_every_size_with_and_without_a_reference(flux3_runne
     assert {call.steps for call in calls} == {2}
 
 
+@pytest.mark.parametrize("frozen", [False, True])
+def test_flux3_upsamples_on_the_device_unless_prompts_are_frozen(
+    flux3_runner, monkeypatch, frozen
+):
+    created = []
+    pipeline_module = sys.modules[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    pipeline_module.Flux3KleinPipeline = lambda *args, **kwargs: created.append(kwargs)
+    weights_module = ModuleType("weights_flux3_klein")
+    weights_module.resolve_weights_dir = lambda model: "/weights"
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.flux3_klein.weights_flux3_klein",
+        weights_module,
+    )
+    flux3_runner.ttnn_device = object()
+    flux3_runner.settings = SimpleNamespace(
+        model_weights_path="missing", prompt_upsampler_frozen=frozen
+    )
+    flux3_runner.create_pipeline()
+    (kwargs,) = created
+    assert kwargs["upsample"] is not frozen
+    # The upsampler's command queues and trace region only when it runs.
+    params = flux3_runner.get_pipeline_device_params()
+    assert {"fabric_config", "fabric_router_config", "l1_small_size"} <= set(params)
+    upsampler_params = {"num_command_queues", "trace_region_size"}
+    assert bool(upsampler_params & set(params)) is not frozen
+    # Without the upsampler the pipeline returns the prompt as sent, and the
+    # output reports it.
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=Image.new("RGB", (request.width, request.height)),
+        prompt=request.prompt if frozen else f"a detailed caption of {request.prompt}",
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert image.info["prompt"] == (
+        "a cat" if frozen else "a detailed caption of a cat"
+    )
+
+
 @pytest.mark.parametrize("warming_up", [False, True])
 def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
     monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path))

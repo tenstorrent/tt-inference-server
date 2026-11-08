@@ -336,8 +336,12 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
+            # With frozen prompts the pipeline runs without its upsampler and
+            # uses each prompt as sent.
             return Flux3KleinPipeline(
-                self.ttnn_device, snapshots={"distilled": snapshot}, upsample=True
+                self.ttnn_device,
+                snapshots={"distilled": snapshot},
+                upsample=not self.settings.prompt_upsampler_frozen,
             )
         except Exception as e:
             log_exception_chain(
@@ -348,16 +352,21 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
     def get_pipeline_device_params(self):
         # From tt-metal's models/tt_dit/tests/models/flux3_klein: a ring with 8 KB
         # packets and L1_SMALL for the VAE conv2d, plus the prompt upsampler's two
-        # command queues and trace region (it shares the first chip).
+        # command queues and trace region (it shares the first chip) unless
+        # prompts are frozen.
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
-        return {
+        params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
-            "num_command_queues": 2,
-            "trace_region_size": 256 * 1024 * 1024,
         }
+        if not self.settings.prompt_upsampler_frozen:
+            params |= {
+                "num_command_queues": 2,
+                "trace_region_size": 256 * 1024 * 1024,
+            }
+        return params
 
     def warmup_requests(self) -> list[GenerationRequest]:
         reference = Image.new("RGB", (1024, 1024))
