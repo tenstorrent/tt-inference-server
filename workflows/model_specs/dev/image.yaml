@@ -298,8 +298,8 @@ templates:
 
 # Qwen-Image-Edit-2511 through the generations API (TTQwenImageEdit2511Runner):
 # 1 to 3 input images, seven ratios at about 1 MP, 40 steps with true CFG 4.0.
-# Needs tt-metal's qwenimage pipeline with Edit-Plus support (branch
-# friedrich/console-bringup until it merges). Disk and RAM are estimates.
+# Needs tt-metal main's qwenimage pipeline, with Edit-Plus support. Disk and
+# RAM are estimates.
 - weights:
     - Qwen/Qwen-Image-Edit-2511
   impl: tt_transformers
@@ -317,8 +317,8 @@ templates:
   status: EXPERIMENTAL
 
 # FLUX.2 klein 4B through the generations API (TTFlux2Klein4BRunner): text to
-# image and edits with up to 4 input images, 4 steps. Needs tt-metal's flux2
-# pipeline with image inputs (not merged yet). Disk and RAM are estimates.
+# image and edits with up to 4 input images, 4 steps. Needs tt-metal main's
+# flux2 pipeline, with image inputs. Disk and RAM are estimates.
 - weights:
     - black-forest-labs/FLUX.2-klein-4B
   impl: tt_transformers
@@ -388,7 +388,8 @@ templates:
 # distilled model, eager, every prompt rewritten by its upsampler
 # (black-forest-labs/flux-3-image-klein-pup, which the pipeline fetches itself);
 # 1:1 at 1K, 2K and 4K with no reference or one. Needs tt-metal's flux3_klein
-# pipeline with the upsampler (tenstorrent/tt-metal#64162, on #64101). Disk:
+# pipeline with the upsampler, not on main: branch nwoodall/flux3-klein-pup
+# (tenstorrent/tt-metal#64162, on #64101). Disk:
 # the repo without the diffusers transformer (21 GB) on the host and again in
 # the container's HF cache, the upsampler (19 GB) and the tt_dit caches.
 - weights:
@@ -416,8 +417,9 @@ templates:
   status: EXPERIMENTAL
 
 # Ideogram 4 through the generations API (TTIdeogram4Runner), from the fp8
-# checkpoint, dequantized to bf16 on the host. Needs tt-metal's ideogram4
-# pipeline (branch friedrich/console-bringup until it merges). Disk and RAM are
+# checkpoint, dequantized to bf16 on the host. Needs tt-metal main's ideogram4
+# pipeline from tenstorrent/tt-metal#63894 on, which sets the 128 MB trace
+# region the runner reserves on a 4x8 mesh. Disk and RAM are
 # estimates: the fp8 checkpoint plus the bf16 cache the pipeline writes next to it.
 - weights:
     - ideogram-ai/ideogram-4
