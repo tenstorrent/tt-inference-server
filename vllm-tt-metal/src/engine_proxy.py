@@ -26,6 +26,16 @@ exposition, each sample labeled with its engine's index (``merge_metrics``).
 GET /lb/stats shows in-flight and served counts and the prefix routing counters. A request whose engine refuses the
 connection goes to another engine (the refusing one is skipped for ``down_s`` seconds).
 
+Prefill / decode disaggregation (env ``TT_PROXY_PD_PREFILL=N``, off by default): the first N engines only prefill.
+A generation request whose prompt is mostly new to every engine (more than ``TT_PROXY_PD_MIN_CHARS`` characters, 8192
+by default, beyond the longest prefix any engine has served) is first sent to a prefill engine as a copy that stops
+after one token (``prefill_body``); once that answers, the request itself goes to a decoding engine (the other
+engines, routed as above). This needs engines that share KV through a host store (vllm-tt-plugin's
+TTKVStoreConnector with ttserve-kvstore): the prefill engine saves the prompt's KV as it computes it, and the decoding
+engine loads it instead of prefilling, so long prefills never stall the decoding engines' running requests. A request
+whose prompt is mostly cached goes straight to a decoding engine, which loads what another engine stored. If the
+prefill engine fails, the decoding engine prefills the request itself.
+
 The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimental/mimo_v2_6_flash/serving/lb.py).
 """
 
@@ -67,6 +77,23 @@ PROBE_TIMEOUT_S = (
 # keep-alive is 5 s): a request written into a connection the engine is closing gets "Server disconnected" and no reply.
 UPSTREAM_KEEPALIVE_S = 2.0
 STRUCTURED_PATHS = ("/v1/chat/completions", "/v1/completions")
+PD_PATHS = ("/v1/chat/completions", "/v1/completions")
+# Request fields a prefill-only copy drops: they shape the output, not the prompt (structured outputs would also make the
+# prefill engine compile a grammar for one token).
+PREFILL_DROP = (
+    "stream_options",
+    "logprobs",
+    "top_logprobs",
+    "prompt_logprobs",
+    "response_format",
+    "structured_outputs",
+    "guided_json",
+    "guided_regex",
+    "guided_choice",
+    "guided_grammar",
+    "min_tokens",
+    "echo",
+)
 
 
 def normalize_structured_outputs(body):
@@ -101,6 +128,31 @@ def normalize_structured_outputs(body):
         del req["structured_outputs"]
         changed = True
     return json.dumps(req).encode() if changed else body
+
+
+def prefill_body(body):
+    """The bytes of a prefill-only copy of a generation request (the same prompt, one output token, not streamed), or
+    None when the body is not a JSON object. Everything that renders the prompt (messages or prompt, tools,
+    chat_template_kwargs, cache_salt, ...) is kept as it is, so the prefill engine computes exactly the prompt the
+    decoding engine will be asked for."""
+    try:
+        req = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(req, dict):
+        return None
+    for key in PREFILL_DROP:
+        req.pop(key, None)
+    req["stream"] = False
+    req["max_tokens"] = 1
+    if "max_completion_tokens" in req:
+        req["max_completion_tokens"] = 1
+    req["n"] = 1
+    if req.get("tool_choice") not in (None, "auto", "none"):
+        req["tool_choice"] = (
+            "auto"  # "required" / a named tool constrain the output with a grammar, not the prompt
+        )
+    return json.dumps(req).encode()
 
 
 def prefix_text(path, body):
@@ -241,8 +293,21 @@ class Router:
         slack=None,
         capacity=262144,
         down_s=5.0,
+        prefill=None,
+        pd_min_chars=None,
     ):
         self.backends = list(backends)
+        # Prefill / decode disaggregation: the first ``prefill`` backends only prefill (module docstring).
+        if prefill is None:
+            prefill = int(os.environ.get("TT_PROXY_PD_PREFILL") or 0)
+        if pd_min_chars is None:
+            pd_min_chars = int(os.environ.get("TT_PROXY_PD_MIN_CHARS") or 8192)
+        self.pd = 0 < prefill < len(self.backends)
+        self.prefill_backends = self.backends[:prefill] if self.pd else []
+        self.decode_backends = (
+            self.backends[prefill:] if self.pd else list(self.backends)
+        )
+        self.pd_min_chars = pd_min_chars
         self.chunk_chars = chunk_chars
         self.min_match_chunks = max(1, -(-min_match_chars // chunk_chars))
         if slack is None:
@@ -262,22 +327,25 @@ class Router:
             "retried": 0,
             "stale_retried": 0,
             "structured_outputs_normalized": 0,
+            "pd_prefilled": 0,
+            "pd_prefill_failed": 0,
+            "pd_prefill_s": 0.0,
+            "pd_direct": 0,
         }
 
-    def up(self, exclude=()):
+    def up(self, exclude=(), pool=None):
         now = time.monotonic()
-        ups = [
-            b for b in self.backends if b not in exclude and self.down_until[b] <= now
-        ]
-        return ups or [b for b in self.backends if b not in exclude]
+        pool = self.backends if pool is None else pool
+        ups = [b for b in pool if b not in exclude and self.down_until[b] <= now]
+        return ups or [b for b in pool if b not in exclude]
 
     def least_loaded(self, cands):
         low = min(self.inflight[b] for b in cands)
         ties = [b for b in cands if self.inflight[b] == low]
         return ties[next(self.rr) % len(ties)]
 
-    def pick(self, hashes, exclude=()):
-        cands = self.up(exclude)
+    def pick(self, hashes, exclude=(), pool=None):
+        cands = self.up(exclude, pool)
         if not cands:
             return None
         if hashes:
@@ -296,15 +364,28 @@ class Router:
         self.stats["least_loaded"] += 1
         return self.least_loaded(cands)
 
+    def uncached_chars(self, hashes, total_chars):
+        """Characters of a prompt beyond the longest prefix any backend has served (all of them share KV through the
+        store in disaggregated mode)."""
+        lengths = self.index.match(hashes, self.backends) if hashes else {}
+        return total_chars - max(lengths.values(), default=0) * self.chunk_chars
+
     def mark_down(self, backend):
         self.down_until[backend] = time.monotonic() + self.down_s
 
     def snapshot(self):
-        return {
+        out = {
             "inflight": self.inflight,
             "served": self.served,
             "prefix": dict(self.stats, indexed_chunks=len(self.index.entries)),
         }
+        if self.pd:
+            out["pd"] = {
+                "prefill": self.prefill_backends,
+                "decode": self.decode_backends,
+                "min_chars": self.pd_min_chars,
+            }
+        return out
 
 
 def make_app(router, session_factory=None):
@@ -318,15 +399,23 @@ def make_app(router, session_factory=None):
                 router.stats["structured_outputs_normalized"] += 1
                 body = fixed
         hashes = []
+        text = None
         if request.method == "POST" and request.path in PREFIX_PATHS:
             text = prefix_text(request.path, body)
             if text is not None:
                 hashes = chunk_hashes(text, router.chunk_chars)
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
+        if router.pd and text is not None and request.path in PD_PATHS:
+            total = len(text.encode("utf-8", "surrogatepass"))
+            if router.uncached_chars(hashes, total) >= router.pd_min_chars:
+                await prefill(request.path, body, headers, hashes)
+            else:
+                router.stats["pd_direct"] += 1
+        pool = router.decode_backends if router.pd else None
         tried = []
         stale_retry = True
         while True:
-            b = router.pick(hashes, exclude=tried)
+            b = router.pick(hashes, exclude=tried, pool=pool)
             if b is None:
                 return web.json_response(
                     {"error": "no backend accepted the request"}, status=503
@@ -370,12 +459,54 @@ def make_app(router, session_factory=None):
                 router.mark_down(b)
                 tried.append(b)
                 router.stats["retried"] += 1
-                if len(tried) == len(router.backends):
+                if len(tried) == len(pool or router.backends):
                     return web.json_response(
                         {"error": "every backend refused the connection"}, status=503
                     )
             finally:
                 router.inflight[b] -= 1
+
+    async def prefill(path, body, headers, hashes):
+        """Run the prompt on a prefill engine (one output token) so that its KV is in the store before the decoding
+        engine gets the request. Any failure is logged in the stats and leaves the prefill to the decoding engine."""
+        pbody = prefill_body(body)
+        if pbody is None:
+            return
+        p = router.pick(hashes, pool=router.prefill_backends)
+        if p is None:
+            return
+        router.inflight[p] += 1
+        t0 = time.monotonic()
+        ok = False
+        try:
+            for attempt in range(
+                2
+            ):  # resend once after an unanswered keep-alive disconnect, as proxy() does
+                try:
+                    async with state["session"].post(
+                        p + path, data=pbody, headers=headers
+                    ) as up:
+                        await up.read()
+                        ok = up.status == 200
+                    break
+                except ServerDisconnectedError:
+                    if attempt:
+                        break
+                    router.stats["stale_retried"] += 1
+                except ClientConnectorError:
+                    router.mark_down(p)
+                    break
+        finally:
+            router.inflight[p] -= 1
+        if ok:
+            router.served[p] += 1
+            # Recorded once the prompt is computed (and stored), not when it was sent: a request arriving meanwhile
+            # with the same new prefix is prefilled too instead of being sent to a decoding engine as if cached.
+            router.index.record(hashes, p)
+            router.stats["pd_prefilled"] += 1
+            router.stats["pd_prefill_s"] += time.monotonic() - t0
+        else:
+            router.stats["pd_prefill_failed"] += 1
 
     async def stats(_):
         return web.json_response(router.snapshot())

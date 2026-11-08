@@ -368,3 +368,142 @@ def test_proxy_resends_once_after_an_unanswered_disconnect(close_first, want_sta
     assert status == want_status
     assert requests == 2  # one resend, never more
     assert snap["prefix"]["stale_retried"] == 1
+
+
+# Prefill / decode disaggregation (TT_PROXY_PD_PREFILL).
+
+
+def test_prefill_body_keeps_the_prompt_and_stops_after_one_token():
+    body = json.dumps(
+        {
+            "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "tools": [{"type": "function", "function": {"name": "f"}}],
+            "tool_choice": "required",
+            "chat_template_kwargs": {"enable_thinking": True},
+            "cache_salt": "s",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "max_tokens": 4096,
+            "max_completion_tokens": 4096,
+            "min_tokens": 100,
+            "ignore_eos": True,
+            "n": 2,
+            "logprobs": True,
+            "top_logprobs": 5,
+            "response_format": {"type": "json_object"},
+        }
+    ).encode()
+    req = json.loads(lb.prefill_body(body))
+    assert req["stream"] is False and req["max_tokens"] == 1
+    assert req["max_completion_tokens"] == 1 and req["n"] == 1
+    assert req["tool_choice"] == "auto"
+    for key in (
+        "stream_options",
+        "min_tokens",
+        "logprobs",
+        "top_logprobs",
+        "response_format",
+    ):
+        assert key not in req
+    for key in ("model", "messages", "tools", "chat_template_kwargs", "cache_salt"):
+        assert req[key] == json.loads(body)[key]
+    assert lb.prefill_body(b"[1, 2]") is None and lb.prefill_body(b"{") is None
+
+
+def test_router_pd_split_from_env(monkeypatch):
+    monkeypatch.setenv("TT_PROXY_PD_PREFILL", "1")
+    monkeypatch.setenv("TT_PROXY_PD_MIN_CHARS", "4096")
+    r = lb.Router(["P", "D1", "D2"])
+    assert r.pd and r.prefill_backends == ["P"] and r.decode_backends == ["D1", "D2"]
+    assert r.pd_min_chars == 4096
+    assert r.snapshot()["pd"]["prefill"] == ["P"]
+    # every backend a prefill engine (or none): no disaggregation
+    assert not lb.Router(["P", "D"], prefill=2).pd
+    assert not lb.Router(["P", "D"], prefill=0).pd
+    # decode routing never picks the prefill engine, even when it holds the prefix
+    h = hashes_of(chat(DOC, "q0"))
+    r.index.record(h, "P")
+    assert r.pick(h, pool=r.decode_backends) in ("D1", "D2")
+    assert r.uncached_chars(h, len(h) * 256 + 100) == 100
+    assert r.uncached_chars([], 5000) == 5000
+
+
+def pd_engine(name, seen):
+    async def completions(request):
+        req = await request.json()
+        seen.append((name, req))
+        return web.json_response({"backend": name})
+
+    async def health(_):
+        return web.Response(status=200)
+
+    app = web.Application(client_max_size=1 << 26)
+    app.router.add_post("/v1/chat/completions", completions)
+    app.router.add_get("/health", health)
+    return app
+
+
+def test_proxy_prefills_a_new_long_prompt_then_decodes_elsewhere(monkeypatch):
+    monkeypatch.setenv("TT_PROXY_PD_PREFILL", "1")
+    monkeypatch.setenv("TT_PROXY_PD_MIN_CHARS", "4096")
+    seen = []
+
+    async def run(session, url, router):
+        out = []
+        for q in ("q0", "q1"):  # a new long prompt, then the same document again
+            async with session.post(
+                url + "/v1/chat/completions",
+                json={
+                    "model": "m",
+                    "messages": [
+                        {"role": "user", "content": DOC + "\n\nQuestion: " + q}
+                    ],
+                    "stream": True,
+                    "max_tokens": 64,
+                },
+            ) as r:
+                assert r.status == 200
+                out.append((await r.json())["backend"])
+        async with session.post(
+            url + "/v1/chat/completions",
+            json={"model": "m", "messages": [{"role": "user", "content": "short"}]},
+        ) as r:
+            out.append((await r.json())["backend"])
+        return out, router.snapshot()
+
+    out, snap = asyncio.run(
+        with_proxy(
+            [pd_engine("P", seen), pd_engine("D1", seen), pd_engine("D2", seen)], run
+        )
+    )
+    # q0: prefill on P (one token, not streamed), then the request itself on a decoding engine
+    assert seen[0][0] == "P" and seen[0][1]["max_tokens"] == 1
+    assert seen[0][1]["stream"] is False
+    assert seen[1][0] in ("D1", "D2") and seen[1][1]["max_tokens"] == 64
+    assert seen[1][1]["stream"] is True
+    # q1 shares the document (now stored): straight to the engine that decoded q0; the short prompt: no prefill
+    assert [name for name, _ in seen[2:]] == [seen[1][0], seen[3][0]]
+    assert out[0] == out[1] == seen[1][0] and "P" not in out
+    assert snap["prefix"]["pd_prefilled"] == 1 and snap["prefix"]["pd_direct"] == 2
+    assert snap["prefix"]["pd_prefill_failed"] == 0
+
+
+def test_proxy_decodes_anyway_when_the_prefill_engine_is_down(monkeypatch):
+    monkeypatch.setenv("TT_PROXY_PD_MIN_CHARS", "4096")
+    seen = []
+
+    async def run(session, url, router):
+        # the dead backend (appended last by with_proxy) as the only prefill engine
+        router.prefill_backends = [router.backends[-1]]
+        router.decode_backends = router.backends[:-1]
+        router.pd = True
+        async with session.post(
+            url + "/v1/chat/completions", data=chat(DOC, "q0")
+        ) as r:
+            assert r.status == 200
+            return (await r.json())["backend"], router.snapshot()
+
+    backend, snap = asyncio.run(with_proxy([pd_engine("D1", seen)], run, dead=1))
+    assert backend == "D1" and len(seen) == 1
+    assert snap["prefix"]["pd_prefill_failed"] == 1
