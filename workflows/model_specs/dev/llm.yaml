@@ -3505,10 +3505,10 @@ templates:
 # vllm-tt-metal Dockerfile installs the one matching torch): without it every audio request answers 500.
 # MTP drafts see placeholder embeddings at multimodal positions, which costs acceptance only, never output.
 # The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable media host answers 400
-# instead of vLLM's 500. Accuracy (these engine settings as row engines on bhg4, 2026-11-07; the scores and
-# MiMo's OpenRouter providers through the same client are in tt-metal mimo-v2.6/multimodal
-# doc/multimodal_plan.md "Results"): OCRBench 84.0, MMAU 61.1, LibriSpeech WER 2.02, Video-MME short 80.8,
-# MMMU-Pro 64.05, VGI-Bench 36.2%. It uses the MTP
+# instead of vLLM's 500. Accuracy of this entry's container (image from tt-metal 6312ef6d4dc and vllm-tt-plugin
+# b4acf686, bhg4, 2026-11-08, no failed request): OCRBench 83.6, MMAU test-mini 61.6, LibriSpeech test-clean WER
+# 1.73, Video-MME short 81.6; MiMo's OpenRouter providers through the same client and the longer sets (MMMU-Pro,
+# VGI-Bench) are in tt-metal mimo-v2.6/multimodal doc/multimodal_evals.md "Results". It uses the MTP
 # entry's persistent volume and TT cache (impl volume_impl_id: same weights), so it converts nothing on its
 # first start.
 - weights:
