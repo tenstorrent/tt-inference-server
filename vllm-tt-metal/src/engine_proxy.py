@@ -41,6 +41,7 @@ from aiohttp import (
     ClientConnectorError,
     ClientSession,
     ClientTimeout,
+    ServerDisconnectedError,
     TCPConnector,
     web,
 )
@@ -62,6 +63,44 @@ LABEL = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
 PROBE_TIMEOUT_S = (
     10.0  # an engine's /health or /metrics answer; generation requests have no timeout
 )
+# Idle upstream connections are closed by the proxy before the engine's HTTP server closes them (uvicorn's default
+# keep-alive is 5 s): a request written into a connection the engine is closing gets "Server disconnected" and no reply.
+UPSTREAM_KEEPALIVE_S = 2.0
+STRUCTURED_PATHS = ("/v1/chat/completions", "/v1/completions")
+
+
+def normalize_structured_outputs(body):
+    """Request bytes vLLM would reject for an empty structured-outputs constraint -> bytes it accepts; else unchanged.
+
+    vLLM (0.30) turns ``response_format: {"type": "json_schema", "json_schema": {...}}`` into a JSON-schema constraint
+    with ``json_schema.schema``. That field is optional in the OpenAI API, but without it vLLM builds a constraint with
+    every field empty and answers 400 ("You must use one kind of structured outputs constraint but none are
+    specified"). A json_schema format without a schema asks for JSON with no schema, which is JSON mode, so it becomes
+    ``{"type": "json_object"}``. An empty ``structured_outputs`` object (vLLM's own extension) is dropped. Bodies
+    without either key are returned as they are, byte for byte.
+    """
+    if b'"response_format"' not in body and b'"structured_outputs"' not in body:
+        return body
+    try:
+        req = json.loads(body)
+    except ValueError:
+        return body
+    if not isinstance(req, dict):
+        return body
+    changed = False
+    fmt = req.get("response_format")
+    if isinstance(fmt, dict) and fmt.get("type") == "json_schema":
+        schema = fmt.get("json_schema")
+        if not isinstance(schema, dict) or schema.get("schema") is None:
+            req["response_format"] = {"type": "json_object"}
+            changed = True
+    so = req.get("structured_outputs")
+    if isinstance(so, dict) and all(
+        v in (None, False, "", [], {}) for v in so.values()
+    ):
+        del req["structured_outputs"]
+        changed = True
+    return json.dumps(req).encode() if changed else body
 
 
 def prefix_text(path, body):
@@ -221,6 +260,8 @@ class Router:
             "least_loaded": 0,
             "matched_chars": 0,
             "retried": 0,
+            "stale_retried": 0,
+            "structured_outputs_normalized": 0,
         }
 
     def up(self, exclude=()):
@@ -271,6 +312,11 @@ def make_app(router, session_factory=None):
 
     async def proxy(request: web.Request):
         body = await request.read()
+        if request.method == "POST" and request.path in STRUCTURED_PATHS:
+            fixed = normalize_structured_outputs(body)
+            if fixed is not body:
+                router.stats["structured_outputs_normalized"] += 1
+                body = fixed
         hashes = []
         if request.method == "POST" and request.path in PREFIX_PATHS:
             text = prefix_text(request.path, body)
@@ -278,6 +324,7 @@ def make_app(router, session_factory=None):
                 hashes = chunk_hashes(text, router.chunk_chars)
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
         tried = []
+        stale_retry = True
         while True:
             b = router.pick(hashes, exclude=tried)
             if b is None:
@@ -289,6 +336,7 @@ def make_app(router, session_factory=None):
                 # Now, not when the response starts: a request sent while this one prefills (or a non-streaming one,
                 # whose headers come at its end) should find the prefix where it is being computed.
                 router.index.record(hashes, b)
+            started = False
             try:
                 async with state["session"].request(
                     request.method,
@@ -304,10 +352,19 @@ def make_app(router, session_factory=None):
                         },
                     )
                     await resp.prepare(request)
+                    started = True
                     async for chunk in up.content.iter_any():
                         await resp.write(chunk)
                     await resp.write_eof()
                     return resp
+            except ServerDisconnectedError:
+                # The engine closed the connection before answering: almost always a pooled keep-alive connection it
+                # was closing as we wrote into it (the engine never read the request). Resend once on a new
+                # connection; a disconnect after the reply started cannot be retried.
+                if started or not stale_retry:
+                    raise
+                stale_retry = False
+                router.stats["stale_retried"] += 1
             except ClientConnectorError:
                 # Nothing reached the client yet: try another engine.
                 router.mark_down(b)
@@ -356,7 +413,8 @@ def make_app(router, session_factory=None):
 
     async def on_start(app):
         state["session"] = (session_factory or ClientSession)(
-            timeout=ClientTimeout(total=None), connector=TCPConnector(limit=0)
+            timeout=ClientTimeout(total=None),
+            connector=TCPConnector(limit=0, keepalive_timeout=UPSTREAM_KEEPALIVE_S),
         )
 
     async def on_stop(app):
