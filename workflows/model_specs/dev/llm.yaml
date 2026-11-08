@@ -1811,6 +1811,134 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen3.8-27B BH Galaxy MTP spec decode with the GDN state in vLLM's KV cache blocks (QWEN36_MAMBA_SPEC):
+# the qwen36_blackhole_mtp spec above with vLLM-owned GDN state instead of the model's GDN prefix snapshots.
+# TP=8 x DP=4, text, image and video. Not the default: select it with --impl qwen36-blackhole-mtp-mambaspec.
+# Needs tt-metal and vllm-tt-plugin viktorpus/qwen38-mtp-mambaspec (vLLM 0.31): the qwen36_blackhole_mtp code ported to
+# main, plus the MambaSpec work. There the plugin's chained, fused and device top-K verifies are fixed behavior (no
+# VLLM_TT_SPEC_* variables), and the plugin takes no long_prefill_alone_*, max_concurrent_partial_prefills or
+# prefill_chunk_cap_table keys.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36_blackhole_mtp_mambaspec
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+    - image
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # DP=4 x 8 per rank
+      max_context: 262144
+      max_tokens_all_users_override: 4161536  # attention tokens: 4 DP ranks x 1040384 per rank (GDN state blocks come on top)
+      # MTP spec decode via vllm-tt-plugin custom_class (Qwen36MTPContractForCausalLM); text, image and video
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
+        QWEN36_SPEC_K: "3"
+        QWEN36_SPEC_FAST_PREFILL: "1"
+        OMP_NUM_THREADS: "8"
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
+        # Attention tokens per rank, sized so the pool takes the per-device DRAM of the qwen36_blackhole_mtp spec's KV
+        # pool plus its 256 GDN prefix snapshots (525,824 tokens x 8,704 B + 256 x 21.75 MiB = 10.4 GB). A block of
+        # 1024 tokens is 16 layer slots x 1024 x 544 B (BF8 K and V) = 8.9 MB, so 1168 blocks fit. The plugin adds one
+        # output block and the GDN state blocks (3 GDN groups x (2 + K + 1 checkpoint)) of each of the 8 requests, 152 in
+        # all, which leaves 1016 attention blocks.
+        QWEN36_MAX_TOKENS_ALL_USERS: "1040384"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
+        VLLM_IMAGE_FETCH_TIMEOUT: "30"
+        QWEN_SDPA_BF8: "1"  # bfp8 paged KV cache: +12-14% aggregate at 8k-32k context, accuracy within noise (see QWEN38_GALAXY_HANDOFF.md §1a)
+        # Accept on device, chained verify traces, async overlap
+        QWEN36_SPEC_FUSED: "1"
+        QWEN36_SPEC_CHAIN: "1"
+        QWEN36_SPEC_CHAIN_SAMPLED: "1"  # a top-k overflow in a deferred sampled step raises (rate 0 in ~30k steps)
+        QWEN36_SPEC_FUSED_AUDIT_EVERY: "8"  # host check of every 8th device accept
+        QWEN36_SPEC_CHAIN_AUDIT_EVERY: "8"  # host check of every 8th chain step
+        # Chunked prefill on the MTP class (tt-metal atupe/qwen38-glx-mtp-chunk): exact resume at each chunk end
+        QWEN36_SPEC_CHUNKED_PREFILL: "1"
+        # GDN recurrent state and conv history in vLLM's KV cache blocks (mamba cache mode align), so prefix hits resume
+        # from vLLM's blocks and the model keeps no GDN prefix snapshots (no QWEN36_PREFIX_CACHE_* variables).
+        # Chained state moves, prefill checkpoints (written from in-replay GDN snapshots) and the block write and copy
+        # traces are always on with it.
+        QWEN36_MAMBA_SPEC: "1"
+        # Long prefill: an 8192-row chunk trace runs the full 8192-token blocks of each chunk (all SDPA cores busy at
+        # depth); the prefill SDPA uses the approximate exponential by default (QWEN36_SDPA_PREFILL_EXP_APPROX=1)
+        QWEN36_PREFILL_BIG_CHUNK: "8192"
+        QWEN36_PREFILL_RS_LINKS: "2"  # long prefill: MLP-down and attention-wo reduce-scatters use 2 Ethernet links (default: auto)
+        QWEN36_PREFILL_RS_WORKERS: "8"  # 8 workers per prefill reduce-scatter
+        QWEN36_PREFILL_AGMM_TUNED: "1"  # swept per-shape AGMM configs for prefill chunks (needs tt-metal bb41841dfe4 or later)
+        QWEN36_PREFILL_MASKED_BIG: "1"  # masked 4096/8192-row traces serve the remainder after full 8192-row blocks (needs BIG_CHUNK 8192)
+        QWEN36_SDPA_PREFIX_REUSE: "auto"  # prefill SDPA reuses K/V prefix chains (bit-identical)
+        QWEN36_SDPA_PREFILL_QSPLIT: "32"  # split Q chunks in the prefill SDPA
+        QWEN36_PREFILL_MTP_LEAN: "1"  # lean drafter prompt warm-up
+        QWEN36_PREFILL_GDN_GLUE: "1"  # GDN prefill glue cuts
+        QWEN36_PREFILL_HOST_TOLIST: "1"
+        QWEN36_JOIN_LOGITS_ONE_COPY: "1"
+        # Decode step (tt-metal atupe/qwen38-glx-mtp-x8merge, measured on one column: b1/b8 step 28.6/31.0 -> 19.6/22.5 ms;
+        # greedy streams unchanged except at exact bf16 ties; work/x8merge_1104/40_rounds12.md)
+        QWEN36_SPEC_STEP_VALUE_BLOCKS: "4"  # gdn_spec_step: GDN state columns split over 4 cores
+        QWEN36_SPEC_STEP_OPT: "250"  # gdn_spec_step kernel_opts (bit-identical restructurings)
+        QWEN36_SPEC_STEP_NARROW_GR: "1"
+        QWEN36_DECODE_AR_ONESHOT: "1"  # one-shot (RS + AG) decode all-reduce
+        QWEN36_DECODE_AR_FUSE_RESIDUAL: "1"  # residual add fused into the decode all-reduce
+        QWEN36_SPEC_ACCEPT_KERNEL: "1"
+        QWEN36_SPEC_ACCEPT_KERNEL_SAMPLED: "1"
+        QWEN36_SPEC_CHAIN_KERNEL: "1"
+        QWEN36_SPEC_ARGMAX_FUSED: "1"  # exact fp32 argmax for verify and drafter
+        QWEN36_DRAFT_LMHEAD_BFP4: "1"  # BFP4 LM-head copy for the drafter only (verify output unchanged)
+        QWEN36_DRAFT_HEAD_DSHARD: "1"
+        QWEN36_LMHEAD_DSHARD: "mc"
+        QWEN36_LMHEAD_DSHARD_OUT_PCN: "10"
+        QWEN36_LMHEAD_DSHARD_SCOPE: "draft"
+        QWEN36_MTP_KV_ONLY: "1"  # drafter maintenance forwards stop after the KV write
+        QWEN36_MTP_EMBED_ROW: "1"
+        QWEN36_SPEC_DR_OUTS_PREALLOC: "1"
+        QWEN36_SPEC_VFY_OUTS_PREALLOC: "1"
+        QWEN36_VERIFY_OUT_RES40: "1"
+        QWEN36_KV_WRITE_MULTIROW: "1"  # one paged KV write per distinct tile (replaces the masked write)
+        QWEN36_SPEC_SDPA_PACKED: "1"
+        QWEN36_ATTN_GLUE_CUTS: "1"
+      vllm_args:
+        data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 32 -> max_num_seqs 8 per rank
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        exclude_tools_when_tool_choice_none: true
+        # backend must be explicit: the validator rejects this under "auto".
+        # Disabling any_whitespace forces the closing brace (see the non-MTP Qwen3.8 template).
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace":
+          true}'
+        max_num_batched_tokens: "525312"  # per-rank KV capacity, as for the non-MTP template
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: "0"
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
+        media-io-kwargs: '{"video": {"num_frames": 16}}'
+        # Prefix caching, async scheduling and chunked prefill are on. Per-chunk size: at most
+        # long_prefill_token_threshold when more than one request is eligible (vLLM 0.31 drops the threshold for a
+        # lone request).
+        enable_chunked_prefill: true
+        # GDN prefix hits land on block boundaries, so the block size is the hit granularity. Retention 0: vLLM keeps
+        # no decode-written GDN state. At 1024 a follow-up can resume inside the previous reply, but a prefill then
+        # waits for a pending verify that may reach a boundary: -4% throughput at 32 concurrent requests on a Galaxy.
+        block_size: "1024"
+        enable_prefix_caching: true
+        prefix_cache_retention_interval: "0"
+        long_prefill_token_threshold: "16384"
+        speculative-config: '{"method":"custom_class","model":"vllm_tt_plugin.model_owned_drafter","num_speculative_tokens":3}'
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING  # each rank is a Galaxy column; its Ring CCLs need the column's wrap link
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        decode_interleave_prefill_steps: 1  # one decode step after each prefill (chunk) step
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen38_27b_qb2
