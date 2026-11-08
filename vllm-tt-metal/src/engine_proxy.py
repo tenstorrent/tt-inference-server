@@ -55,6 +55,12 @@ turns it off):
   message (``map_error``): OpenRouter
   counts 400 as the caller's error, 422 in neither list;
 - a body above ``TT_PROXY_MAX_REQUEST_MB`` (256) is refused with 413;
+- with ``TT_PROXY_THINKING_GREEDY=T,P`` (off by default) a chat request asking for
+  temperature 0 with thinking on is sampled at temperature T, top-p P instead
+  (``map_greedy_thinking``; MiMo's model card asks for 1.0,0.95), as MiMo's GPU providers
+  on OpenRouter serve it: in thinking mode they sample whatever temperature a request asks
+  for, while MiMo's greedy reasoning loops until the token limit on hard long-video
+  questions;
 - with ``TT_PROXY_FETCH_MEDIA=1`` the proxy itself downloads a chat request's http(s)
   image /
   video / audio URLs (bounded time and size) and inlines them as data URIs, answering
@@ -435,12 +441,39 @@ def map_reasoning(req):
     return out
 
 
+def map_greedy_thinking(req, sampling):
+    """``req`` with ``sampling`` = (temperature, top_p) in place of a requested
+    temperature 0 when thinking is on, or ``req`` itself. MiMo's chat template thinks
+    unless ``chat_template_kwargs.enable_thinking`` is false, so this runs after
+    ``map_reasoning``. ``sampling`` None (the default) never changes a request.
+
+    Why: MiMo's greedy reasoning on a question it cannot settle (VGI-Bench's
+    false-premise questions over a 130K-token video) re-checks the same evidence until
+    the token limit, and so does it at temperature 0.05 or 0.2; the model card asks for
+    1.0 / 0.95. MiMo's GPU providers on OpenRouter already sample in thinking mode
+    whatever the request's temperature (GMICloud: four different answers to one
+    temperature-0 request with thinking on, one answer with thinking off), so
+    OpenRouter's temperature-0 runs of MiMo are sampled runs."""
+    if sampling is None:
+        return req
+    temperature = req.get("temperature")
+    if (
+        isinstance(temperature, bool)
+        or not isinstance(temperature, (int, float))
+        or temperature != 0
+    ):
+        return req
+    kwargs = req.get("chat_template_kwargs")
+    if isinstance(kwargs, dict) and kwargs.get("enable_thinking") is False:
+        return req
+    return dict(req, temperature=sampling[0], top_p=sampling[1])
+
+
 def rewrite_chat(req, shim):
     """A chat-completions request rewritten for vLLM 0.30 (``_rewrite_part`` on every
-    content part, ``map_reasoning``),
-    or ``req`` itself when nothing applies. Raises ShimError for a request that cannot
-    be rewritten."""
-    out = map_reasoning(req)
+    content part, ``map_reasoning``, ``map_greedy_thinking``), or ``req`` itself when
+    nothing applies. Raises ShimError for a request that cannot be rewritten."""
+    out = map_greedy_thinking(map_reasoning(req), shim.thinking_greedy)
     messages = out.get("messages")
     if isinstance(messages, list):
         new_messages = []
@@ -780,6 +813,26 @@ class Shim:
     # a deployment that is itself
     # private and fetches from an internal store. Never on a public endpoint.
     fetch_allow_private: bool = False
+    # (temperature, top_p) for chat requests asking for temperature 0 with thinking on
+    # (map_greedy_thinking); None: off.
+    thinking_greedy: tuple = None
+
+    @staticmethod
+    def parse_sampling(value):
+        """The string "T,P" (e.g. "1.0,0.95") -> (T, P); "" or None -> None."""
+        if value in (None, ""):
+            return None
+        parts = str(value).split(",")
+        try:
+            t, p = (float(v) for v in parts) if len(parts) == 2 else (0.0, 0.0)
+        except ValueError:
+            t = p = 0.0
+        if not (t > 0 and 0 < p <= 1):
+            raise ValueError(
+                f"thinking-greedy sampling {value!r}: want T,P with temperature T > 0,"
+                " 0 < top_p P <= 1"
+            )
+        return (t, p)
 
     @classmethod
     def from_env(cls, **overrides):
@@ -797,6 +850,9 @@ class Shim:
                 float(os.environ.get("TT_PROXY_FETCH_MAX_MB") or 100) * 2**20
             ),
             fetch_allow_private=_env_flag("TT_PROXY_FETCH_ALLOW_PRIVATE", False),
+            thinking_greedy=cls.parse_sampling(
+                os.environ.get("TT_PROXY_THINKING_GREEDY")
+            ),
         )
         env.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**env)
