@@ -105,7 +105,7 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
+    && ( for i in 1 2 3 4 5; do CXX=clang++-20 CC=clang-20 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
@@ -116,9 +116,24 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
+#
+# TEMPORARY BRIDGE: if vllm-tt-metal/patches/vllm-tt-plugin/<full checked-out SHA>/
+# exists, its *.patch files (git format-patch output) are applied on top of the
+# checkout, in order. Used to carry plugin commits that are not yet upstream; a
+# failing patch fails the build. SHAs without a matching directory are unaffected.
+# Remove the directory once the commits land in tenstorrent/vllm-tt-plugin.
+COPY vllm-tt-metal/patches /tmp/tis-patches
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && plugin_sha=\$(git rev-parse HEAD) \
+    && plugin_patch_dir=/tmp/tis-patches/vllm-tt-plugin/\${plugin_sha} \
+    && if [ -d \${plugin_patch_dir} ]; then \
+         for p in \$(ls \${plugin_patch_dir}/*.patch | sort); do \
+           echo \"Applying plugin patch \$p\"; \
+           git -c user.name=tt -c user.email=tt@local am --3way \$p || exit 1; \
+         done; \
+       fi \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \

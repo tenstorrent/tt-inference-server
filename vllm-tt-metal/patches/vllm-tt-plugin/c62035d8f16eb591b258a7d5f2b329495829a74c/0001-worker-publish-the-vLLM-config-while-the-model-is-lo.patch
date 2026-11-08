@@ -1,0 +1,39 @@
+From 5297163ec3a9919477202c6935248d7ecf24b30c Mon Sep 17 00:00:00 2001
+From: atupe-tt <atupe@tenstorrent.com>
+Date: Sat, 10 Oct 2026 18:49:32 +0000
+Subject: [PATCH 1/2] worker: publish the vLLM config while the model is loaded
+
+Wrap TTWorker.load_model in set_current_vllm_config (as vLLM's GPU worker does) so
+TT model classes can read e.g. cache_config.enable_prefix_caching at construction.
+---
+ src/vllm_tt_plugin/worker.py | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/vllm_tt_plugin/worker.py b/src/vllm_tt_plugin/worker.py
+index 269923b..6da4c5b 100644
+--- a/src/vllm_tt_plugin/worker.py
++++ b/src/vllm_tt_plugin/worker.py
+@@ -9,7 +9,7 @@ from contextlib import suppress
+ from typing import TYPE_CHECKING, Any
+ 
+ import ttnn
+-from vllm.config import VllmConfig
++from vllm.config import VllmConfig, set_current_vllm_config
+ from vllm.model_executor.model_loader import get_model_architecture
+ from vllm.tasks import SupportedTask
+ from vllm.utils.torch_utils import (
+@@ -281,7 +281,10 @@ class TTWorker(WorkerBase):
+         )
+ 
+     def load_model(self):
+-        self.model_runner.load_model()
++        # Publish the vLLM config while the model is built so model classes can read it (e.g. enable_prefix_caching);
++        # vLLM's own GPU worker does the same around load_model.
++        with set_current_vllm_config(self.vllm_config):
++            self.model_runner.load_model()
+ 
+     def take_draft_token_ids(self) -> "DraftTokenIds | None":
+         """Hand the runner's proposed drafts to the engine.
+-- 
+2.34.1
+

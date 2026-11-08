@@ -1,0 +1,251 @@
+From b47d7ee70c9d046e2dd602dbf6af3bf4e4ed4e88 Mon Sep 17 00:00:00 2001
+From: atupe-tt <atupe@tenstorrent.com>
+Date: Sat, 10 Oct 2026 23:40:27 +0000
+Subject: [PATCH 2/2] model_runner: pass video multimodal inputs per request
+
+_validate_mm_feature accepts the video modality; _gather_multi_modal_inputs also
+gathers pixel_values_videos / video_grid_thw per prefill row (None for rows without
+video), added only when some row has video so image-only models see unchanged kwargs.
+Needed for Qwen3.5/3.6/3.8 video requests (OpenAI video_url parts).
+---
+ src/vllm_tt_plugin/model_runner.py |  78 +++++++++++++---------
+ tests/test_multimodal_gather.py    | 103 +++++++++++++++++++++++++++++
+ 2 files changed, 149 insertions(+), 32 deletions(-)
+ create mode 100644 tests/test_multimodal_gather.py
+
+diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runner.py
+index 667609d..4c6fe0b 100644
+--- a/src/vllm_tt_plugin/model_runner.py
++++ b/src/vllm_tt_plugin/model_runner.py
+@@ -1048,9 +1048,12 @@ class TTModelRunner:
+         self.input_batch.refresh_logitsprocs()
+ 
+     def _validate_mm_feature(self, mm_feature: MultiModalFeatureSpec) -> None:
+-        """Validate the multimodal feature is an image."""
+-        if mm_feature.modality != "image":
+-            raise NotImplementedError("Only images are supported for now")
++        """Validate the multimodal feature is an image or a video."""
++        if mm_feature.modality not in ("image", "video"):
++            raise NotImplementedError(
++                f"Unsupported multimodal modality {mm_feature.modality!r}: "
++                "only 'image' and 'video' are supported for now"
++            )
+ 
+     def _gather_multi_modal_inputs(
+         self, req_indices: list[int] | None = None
+@@ -1058,31 +1061,25 @@ class TTModelRunner:
+         """
+         Gather and batch multi-modal inputs for the current persistent batch.
+ 
+-        Currently only supports image inputs in the "pixel_values" and
+-        "image_grid_thw" fields.
++        Supports image inputs ("pixel_values", "image_grid_thw") and video
++        inputs ("pixel_values_videos", "video_grid_thw").
+ 
+-        Returns a dict with keys "pixel_values" and "image_grid_thw".
+-        Each value is a list aligned with the persistent batch order
+-        (`self.input_batch.req_ids[:num_reqs]`).
++        Returns a dict whose values are lists aligned with `req_indices`
++        (default: the persistent batch order). The video keys are only
++        present when at least one row has a video feature, so image-only
++        models see exactly the same kwargs as before.
+ 
+-        For request i:
+-        - If it has no `mm_features`, the entry is None.
+-        - Otherwise the entry is a list aligned with that request's
+-          `mm_features` (currently only images), where each element is a
+-          tensor (or None if that feature has no data).
++        For request i and each modality:
++        - If it has no feature of that modality, the entry is None.
++        - Otherwise the entry is a list of per-item tensors (or None if that
++          feature has no data), in the order of the request's `mm_features`.
+ 
+-        Example (3 scheduled requests: text-only, 1 image, 2 images):
++        Example (3 requests: text-only, 1 image, 1 image + 1 video):
+         {
+-          "pixel_values": [
+-            None,
+-            [pv_req1_img0],
+-            [pv_req2_img0, pv_req2_img1],
+-          ],
+-          "image_grid_thw": [
+-            None,
+-            [ig_req1_img0],
+-            [ig_req2_img0, ig_req2_img1],
+-          ],
++          "pixel_values": [None, [pv_r1_img0], [pv_r2_img0]],
++          "image_grid_thw": [None, [ig_r1_img0], [ig_r2_img0]],
++          "pixel_values_videos": [None, None, [pvv_r2_vid0]],
++          "video_grid_thw": [None, None, [vg_r2_vid0]],
+         }
+         """
+ 
+@@ -1090,6 +1087,8 @@ class TTModelRunner:
+             "pixel_values": [],
+             "image_grid_thw": [],
+         }
++        video_pv_rows: list[list[torch.Tensor | None] | None] = []
++        video_grid_rows: list[list[torch.Tensor | None] | None] = []
+ 
+         if req_indices is None:
+             req_indices = list(range(self.input_batch.num_reqs))
+@@ -1102,24 +1101,39 @@ class TTModelRunner:
+             if not req_state.mm_features:
+                 multi_modal_kwargs["pixel_values"].append(None)
+                 multi_modal_kwargs["image_grid_thw"].append(None)
++                video_pv_rows.append(None)
++                video_grid_rows.append(None)
+                 continue
+ 
+             pv_array: list[torch.Tensor | None] = []
+             image_grid_thw_array: list[torch.Tensor | None] = []
++            vpv_array: list[torch.Tensor | None] = []
++            vgrid_array: list[torch.Tensor | None] = []
+             for mm_feature in req_state.mm_features:
+                 self._validate_mm_feature(mm_feature)
++                is_video = mm_feature.modality == "video"
++                if is_video:
++                    pv_list, grid_list = vpv_array, vgrid_array
++                    pv_key, grid_key = "pixel_values_videos", "video_grid_thw"
++                else:
++                    pv_list, grid_list = pv_array, image_grid_thw_array
++                    pv_key, grid_key = "pixel_values", "image_grid_thw"
+                 item = mm_feature.data
+                 if item is None:
+-                    pv_array.append(None)
+-                    image_grid_thw_array.append(None)
++                    pv_list.append(None)
++                    grid_list.append(None)
+                     continue
+-                pv_array.append(item["pixel_values"].data)
+-                image_grid_thw_array.append(
+-                    item["image_grid_thw"].data if "image_grid_thw" in item else None
+-                )
++                pv_list.append(item[pv_key].data)
++                grid_list.append(item[grid_key].data if grid_key in item else None)
++
++            multi_modal_kwargs["pixel_values"].append(pv_array or None)
++            multi_modal_kwargs["image_grid_thw"].append(image_grid_thw_array or None)
++            video_pv_rows.append(vpv_array or None)
++            video_grid_rows.append(vgrid_array or None)
+ 
+-            multi_modal_kwargs["pixel_values"].append(pv_array)
+-            multi_modal_kwargs["image_grid_thw"].append(image_grid_thw_array)
++        if any(r is not None for r in video_pv_rows):
++            multi_modal_kwargs["pixel_values_videos"] = video_pv_rows
++            multi_modal_kwargs["video_grid_thw"] = video_grid_rows
+ 
+         return multi_modal_kwargs
+ 
+diff --git a/tests/test_multimodal_gather.py b/tests/test_multimodal_gather.py
+new file mode 100644
+index 0000000..8768fce
+--- /dev/null
++++ b/tests/test_multimodal_gather.py
+@@ -0,0 +1,103 @@
++# SPDX-License-Identifier: Apache-2.0
++"""CPU-only tests for image/video multimodal input gathering."""
++
++from types import SimpleNamespace
++
++import pytest
++import torch
++
++import vllm_tt_plugin  # noqa: F401  (activates tt platform / ttnn import)
++from vllm_tt_plugin.model_runner import TTModelRunner
++
++
++def _field(t):
++    return SimpleNamespace(data=t)
++
++
++def _image(tag):
++    return SimpleNamespace(
++        modality="image",
++        data={
++            "pixel_values": _field(torch.full((4, 3), float(tag))),
++            "image_grid_thw": _field(torch.tensor([[1, 2, 2]])),
++        },
++    )
++
++
++def _video(tag):
++    return SimpleNamespace(
++        modality="video",
++        data={
++            "pixel_values_videos": _field(torch.full((8, 3), float(tag))),
++            "video_grid_thw": _field(torch.tensor([[2, 2, 2]])),
++        },
++    )
++
++
++def _runner(features_per_req):
++    req_ids = [f"r{i}" for i in range(len(features_per_req))]
++    runner = SimpleNamespace(
++        input_batch=SimpleNamespace(req_ids=req_ids, num_reqs=len(req_ids)),
++        requests={
++            rid: SimpleNamespace(mm_features=feats)
++            for rid, feats in zip(req_ids, features_per_req)
++        },
++        _validate_mm_feature=lambda f: TTModelRunner._validate_mm_feature(None, f),
++    )
++    return runner
++
++
++def _gather(features_per_req, req_indices=None):
++    return TTModelRunner._gather_multi_modal_inputs(
++        _runner(features_per_req), req_indices
++    )
++
++
++def test_text_only_and_image_rows_have_no_video_keys():
++    out = _gather([[], [_image(1)], [_image(2), _image(3)]])
++    assert set(out) == {"pixel_values", "image_grid_thw"}
++    assert out["pixel_values"][0] is None
++    assert out["image_grid_thw"][0] is None
++    assert len(out["pixel_values"][1]) == 1
++    assert [t[0, 0].item() for t in out["pixel_values"][2]] == [2.0, 3.0]
++
++
++def test_video_row():
++    out = _gather([[], [_video(5)]])
++    assert out["pixel_values_videos"][0] is None
++    assert out["video_grid_thw"][0] is None
++    assert out["pixel_values_videos"][1][0][0, 0].item() == 5.0
++    assert out["video_grid_thw"][1][0].tolist() == [[2, 2, 2]]
++    # video-only request has no image entries
++    assert out["pixel_values"] == [None, None]
++    assert out["image_grid_thw"] == [None, None]
++
++
++def test_mixed_batch_and_req_indices():
++    feats = [[], [_image(1)], [_video(2)], [_image(3), _video(4), _video(5)]]
++    out = _gather(feats)
++    assert out["pixel_values"][2] is None
++    assert out["pixel_values_videos"][1] is None
++    assert [t[0, 0].item() for t in out["pixel_values"][3]] == [3.0]
++    assert [t[0, 0].item() for t in out["pixel_values_videos"][3]] == [4.0, 5.0]
++    assert len(out["video_grid_thw"][3]) == 2
++    for v in out.values():
++        assert len(v) == 4
++    # subset / reordered rows
++    sub = _gather(feats, req_indices=[3, 0])
++    assert len(sub["pixel_values_videos"]) == 2
++    assert sub["pixel_values_videos"][1] is None
++    assert len(sub["pixel_values_videos"][0]) == 2
++
++
++def test_item_none_data_video():
++    f = SimpleNamespace(modality="video", data=None)
++    out = _gather([[f]])
++    assert out["pixel_values_videos"] == [[None]]
++    assert out["video_grid_thw"] == [[None]]
++
++
++def test_unsupported_modality_rejected():
++    f = SimpleNamespace(modality="audio", data=None)
++    with pytest.raises(NotImplementedError, match="audio"):
++        _gather([[f]])
+-- 
+2.34.1
+
