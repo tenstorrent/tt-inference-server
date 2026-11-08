@@ -26,6 +26,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.prompt_upsampler import prompt_upsampler_env_vars
 from workflows.quetzal_package import (
     quetzal_package_env,
     resolve_quetzal_package_mount,
@@ -741,6 +742,9 @@ def generate_docker_run_command(
         # A spec's own env_vars win over the dev-mode defaults.
         for key, value in get_dev_mode_media_server_env_vars(runtime_config).items():
             docker_env_vars.setdefault(key, value)
+        # Whether prompts are upsampled: the run's choice, which its evals read
+        # too (workflows/prompt_upsampler.py), so it wins over the spec.
+        docker_env_vars.update(prompt_upsampler_env_vars(bool(runtime_config.dev_mode)))
         if (
             _is_cpp_media_spec(model_spec)
             and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME

@@ -1443,7 +1443,7 @@ class TestMediaServerDockerEnvVars:
         if dev_mode:
             assert env_vars == {"MEDIA_URL_ALLOW_PUBLIC_HOSTS": "true"}
         else:
-            assert "MEDIA_URL_ALLOW_PUBLIC_HOSTS" not in env_vars
+            assert env_vars == {}
 
 
 class TestSecretsHandling:
