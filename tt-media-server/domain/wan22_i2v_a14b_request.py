@@ -35,6 +35,9 @@ WAN_NEGATIVE_PROMPT = (
 class Wan22i2vA14bRequest(GenerationRequest):
     OUTPUT_TYPE = "video"
     MEDIA_FIELDS = ("first_frame", "last_frame")
+    # A frame can decode to hundreds of MB, too much to hold while queued and
+    # to send to every rank of a multi-host mesh.
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1)
     negative_prompt: str = Field(

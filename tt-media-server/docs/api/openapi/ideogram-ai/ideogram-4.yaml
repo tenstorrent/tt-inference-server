@@ -352,8 +352,6 @@ components:
       properties:
         codec:
           type: string
-          enum:
-          - aac
           const: aac
           title: Codec
         sample_rate:
@@ -380,8 +378,6 @@ components:
           title: Id
         deleted:
           type: boolean
-          enum:
-          - true
           const: true
           title: Deleted
       type: object
@@ -487,8 +483,6 @@ components:
       properties:
         type:
           type: string
-          enum:
-          - obj
           const: obj
           title: Type
         bbox:
@@ -540,8 +534,6 @@ components:
           default: '1:1'
         size:
           type: string
-          enum:
-          - 2K
           const: 2K
           title: Size
           description: 'Size tier: a long side of 2048, the open model''s maximum. Only `2K`
@@ -637,8 +629,6 @@ components:
       properties:
         type:
           type: string
-          enum:
-          - text
           const: text
           title: Type
         bbox:
@@ -716,8 +706,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - image
           const: image
           title: Type
       type: object
@@ -908,8 +896,6 @@ components:
           title: Height
         type:
           type: string
-          enum:
-          - video
           const: video
           title: Type
         fps:

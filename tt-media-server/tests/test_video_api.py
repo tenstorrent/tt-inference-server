@@ -785,6 +785,7 @@ class TestVideoRequestShape:
         assert r.height is None and r.width is None
         assert r.num_frames is None and r.fps is None
 
+
 class TestSnapNumFrames:
     """The duration -> frame-count rule: (num_frames - 1) % 8 == 0."""
 

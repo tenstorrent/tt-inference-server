@@ -27,7 +27,6 @@ from domain.generation_request import (
 from pydantic import BeforeValidator, Field, field_validator, model_validator
 
 
-
 def _normalized_ratio(value):
     """``16x9``, ``16/9`` and `` 16 : 9 `` as ``16:9``, as the earlier H3 API
     took them."""
@@ -357,24 +356,36 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
         for index, image in enumerate(self._images.get("images", [])):
             if not _within_1_4_and_4_1(*image.size):
                 errors.append(
-                    ("images", index, f"is {image.size[0]}×{image.size[1]}; the "
-                     "ratio must be from 1:4 to 4:1")
+                    (
+                        "images",
+                        index,
+                        f"is {image.size[0]}×{image.size[1]}; the "
+                        "ratio must be from 1:4 to 4:1",
+                    )
                 )
         for name in ("videos", "audios"):
             probes = self._probes.get(name, [])
             for index, probe in enumerate(probes):
                 if not H3_CLIP_MIN_S <= probe.duration_s <= H3_CLIP_MAX_S:
                     errors.append(
-                        (name, index, f"is {probe.duration_s:g} s; each clip must "
-                         f"be {H3_CLIP_MIN_S:g} to {H3_CLIP_MAX_S:g} s")
+                        (
+                            name,
+                            index,
+                            f"is {probe.duration_s:g} s; each clip must "
+                            f"be {H3_CLIP_MIN_S:g} to {H3_CLIP_MAX_S:g} s",
+                        )
                     )
                 if name == "videos":
                     if probe.size is None:
                         errors.append((name, index, "has no video stream"))
                     elif not _within_1_4_and_4_1(*probe.size):
                         errors.append(
-                            (name, index, f"is {probe.size[0]}×{probe.size[1]}; "
-                             "the ratio must be from 1:4 to 4:1")
+                            (
+                                name,
+                                index,
+                                f"is {probe.size[0]}×{probe.size[1]}; "
+                                "the ratio must be from 1:4 to 4:1",
+                            )
                         )
                     if not probe.fps:
                         errors.append((name, index, "reports no frame rate"))
@@ -382,15 +393,22 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
                     errors.append((name, index, "has no audio stream"))
                 if probe.audio_channels not in (None, 1, 2):
                     errors.append(
-                        (name, index, f"has {probe.audio_channels} audio channels; "
-                         "must be mono or stereo")
+                        (
+                            name,
+                            index,
+                            f"has {probe.audio_channels} audio channels; "
+                            "must be mono or stereo",
+                        )
                     )
         videos = self._probes.get("videos", [])
         total = sum(probe.duration_s for probe in videos)
         if total > H3_CLIPS_MAX_S:
             errors.append(
-                ("videos", len(videos) - 1, f"the clips are {total:g} s together; "
-                 f"at most {H3_CLIPS_MAX_S:g} s")
+                (
+                    "videos",
+                    len(videos) - 1,
+                    f"the clips are {total:g} s together; at most {H3_CLIPS_MAX_S:g} s",
+                )
             )
         # The soundtracks of the videos alone stay within the audio limits, or
         # the videos are over theirs; going over takes an audio clip, and the
@@ -400,15 +418,23 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
             sounds = audios + [probe for probe in videos if probe.audio_channels]
             if len(sounds) > H3_AUDIO_REFERENCES_MAX:
                 errors.append(
-                    ("audios", len(audios) - 1, f"with the videos' soundtracks, "
-                     f"{len(sounds)} audio references; at most "
-                     f"{H3_AUDIO_REFERENCES_MAX}")
+                    (
+                        "audios",
+                        len(audios) - 1,
+                        f"with the videos' soundtracks, "
+                        f"{len(sounds)} audio references; at most "
+                        f"{H3_AUDIO_REFERENCES_MAX}",
+                    )
                 )
             total = sum(probe.duration_s for probe in sounds)
             if total > H3_CLIPS_MAX_S:
                 errors.append(
-                    ("audios", len(audios) - 1, f"with the videos' soundtracks, "
-                     f"{total:g} s of audio together; at most {H3_CLIPS_MAX_S:g} s")
+                    (
+                        "audios",
+                        len(audios) - 1,
+                        f"with the videos' soundtracks, "
+                        f"{total:g} s of audio together; at most {H3_CLIPS_MAX_S:g} s",
+                    )
                 )
         return errors
 
