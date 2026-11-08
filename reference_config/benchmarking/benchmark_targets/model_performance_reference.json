@@ -7126,17 +7126,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.74,
-                        "tput": 26.2
+                        "tput_user": 30.2,
+                        "tput": 29.6
                     },
                     "measured": {
-                        "ttft_ms": 129.6,
-                        "tput_user": 26.74,
-                        "tput": 26.2,
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7149,17 +7149,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 20.17,
-                        "tput": 435.3
+                        "tput_user": 27.44,
+                        "tput": 545.3
                     },
                     "measured": {
-                        "ttft_ms": 3112.4,
-                        "tput_user": 20.17,
-                        "tput": 435.3,
+                        "ttft_ms": 2882.8,
+                        "tput_user": 27.44,
+                        "tput": 545.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7172,17 +7172,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 25.56,
-                        "tput": 23.1
+                        "tput_user": 28.94,
+                        "tput": 26.3
                     },
                     "measured": {
-                        "ttft_ms": 581.9,
-                        "tput_user": 25.56,
-                        "tput": 23.1,
+                        "ttft_ms": 475.5,
+                        "tput_user": 28.94,
+                        "tput": 26.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7195,17 +7195,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 25.37,
-                        "tput": 16.6
+                        "tput_user": 28.69,
+                        "tput": 18.5
                     },
                     "measured": {
-                        "ttft_ms": 2726.3,
-                        "tput_user": 25.37,
-                        "tput": 16.6,
+                        "ttft_ms": 2491.0,
+                        "tput_user": 28.69,
+                        "tput": 18.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7218,17 +7218,35 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 24.62,
-                        "tput": 6.5
+                        "tput_user": 27.76,
+                        "tput": 7.3
                     },
                     "measured": {
-                        "ttft_ms": 14420.4,
-                        "tput_user": 24.62,
-                        "tput": 6.5,
+                        "ttft_ms": 13058.1,
+                        "tput_user": 27.76,
+                        "tput": 7.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch benchmarks run 40155707983 (2026-10-25, BH-Quietbox-2, tt-metal 6f5b1fe42ba): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119.8,
+                        "tput_user": 30.2,
+                        "tput": 29.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ],
         "blackhole_galaxy": [
@@ -7248,13 +7266,13 @@
                         "tput": 25.0
                     },
                     "measured": {
-                        "ttft_ms": 118.2,
-                        "tput_user": 25.41,
-                        "tput": 25.0,
+                        "ttft_ms": 136.4,
+                        "tput_user": 29.15,
+                        "tput": 28.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 118.2, tput_user 25.41, tput 25.0. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7272,13 +7290,13 @@
                         "tput": 1804.4
                     },
                     "measured": {
-                        "ttft_ms": 2285.9,
-                        "tput_user": 18.73,
-                        "tput": 1804.4,
+                        "ttft_ms": 2511.2,
+                        "tput_user": 23.92,
+                        "tput": 1520.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2285.9, tput_user 18.73, tput 1804.4. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7296,13 +7314,13 @@
                         "tput": 22.3
                     },
                     "measured": {
-                        "ttft_ms": 546.7,
-                        "tput_user": 24.47,
-                        "tput": 22.3,
+                        "ttft_ms": 1036.9,
+                        "tput_user": 27.47,
+                        "tput": 25.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 546.7, tput_user 24.47, tput 22.3. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7320,13 +7338,13 @@
                         "tput": 16.5
                     },
                     "measured": {
-                        "ttft_ms": 2351.0,
-                        "tput_user": 23.5,
-                        "tput": 16.5,
+                        "ttft_ms": 2332.2,
+                        "tput_user": 28.17,
+                        "tput": 18.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 2351.0, tput_user 23.5, tput 16.5. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7344,13 +7362,32 @@
                         "tput": 7.5
                     },
                     "measured": {
-                        "ttft_ms": 10728.3,
-                        "tput_user": 20.26,
-                        "tput": 7.5,
+                        "ttft_ms": 10333.4,
+                        "tput_user": 25.71,
+                        "tput": 9.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_31b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 10728.3, tput_user 20.26, tput 7.5. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 118.2,
+                        "tput_user": 25.41,
+                        "tput": 25.0
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -7389,6 +7426,346 @@
                         "tolerance": 0.05
                     }
                 }
+            }
+        ]
+    },
+    "meta-models/Muse-Glimmer-30B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B entry; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries. Decoder + untied LM",
+                    "head = 26.5B params = 53.0 GB bf16, 13.3 GB per chip on the 4-chip TP mesh at ~560 GB/s = 23.7 ms per step",
+                    "= 42 t/s/u; TTFT floor two step-times (~50 ms). The deployed BFP4/BFP8 precision streams ~3.5x fewer bytes, so",
+                    "measured decode is above this ceiling; theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: release runs 38773036733 and 39584812502 (tt-agentic-bringup-qb2, bh-qb-ge) gave",
+                    "TTFT 84.5-84.6 ms and 58.1 t/s/u. Tolerance 0.30, the runner-spread cap the Kolibri-1 entry uses."
+                ],
+                "impl": "muse_glimmer_30b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 42,
+                        "tput": 42
+                    },
+                    "measured": {
+                        "ttft_ms": 84.5,
+                        "tput_user": 58.1,
+                        "tput": 56.3,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "google/gemma-4-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "Calculated QB2 top-performance estimate, not a measurement. Assumes about 3.8B active MoE parameters per token, BFP8 expert weights, BF16 dense weights, ideal four-chip scaling, full bandwidth utilization, and first-token decode included. The approximately 25.2B total parameters affect residency, not per-token compute. Pure roofline is about 17 ms TTFT and 320 T/S/U; the stored target applies a 70% practical derating, yielding about 24 ms TTFT and 224 T/S/U.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "gemma4_26b_a4b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 24,
+                        "tput_user": 224,
+                        "tput": 224
+                    }
+                }
+            },
+            {
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 45.69,
+                        "tput": 44.9
+                    },
+                    "measured": {
+                        "ttft_ms": 71.9,
+                        "tput_user": 45.69,
+                        "tput": 44.9,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.67,
+                        "tput": 835.0
+                    },
+                    "measured": {
+                        "ttft_ms": 891.1,
+                        "tput_user": 31.67,
+                        "tput": 835.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 44.59,
+                        "tput": 40.5
+                    },
+                    "measured": {
+                        "ttft_ms": 310.5,
+                        "tput_user": 44.59,
+                        "tput": 40.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 44.41,
+                        "tput": 30.8
+                    },
+                    "measured": {
+                        "ttft_ms": 1298.6,
+                        "tput_user": 44.41,
+                        "tput": 30.8,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "impl": "tt_transformers",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 43.41,
+                        "tput": 14.3
+                    },
+                    "measured": {
+                        "ttft_ms": 6028.1,
+                        "tput_user": 43.41,
+                        "tput": 14.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40120766326 (tt-metal b6e3bd3e4a8). Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "impl": "tt_transformers",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 71.9,
+                        "tput_user": 45.69,
+                        "tput": 44.9
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 37.04,
+                        "tput": 36.2
+                    },
+                    "measured": {
+                        "ttft_ms": 139.4,
+                        "tput_user": 38.26,
+                        "tput": 37.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 103.5, tput_user 37.04, tput 36.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.88,
+                        "tput": 3165.6
+                    },
+                    "measured": {
+                        "ttft_ms": 2760.3,
+                        "tput_user": 28.53,
+                        "tput": 2267.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1186.7, tput_user 31.88, tput 3165.6; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 36.05,
+                        "tput": 32.7
+                    },
+                    "measured": {
+                        "ttft_ms": 740.1,
+                        "tput_user": 36.23,
+                        "tput": 30.1,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 388.8, tput_user 36.05, tput 32.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 34.84,
+                        "tput": 26.7
+                    },
+                    "measured": {
+                        "ttft_ms": 1398.3,
+                        "tput_user": 34.95,
+                        "tput": 25.4,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 1142.1, tput_user 34.84, tput 26.7; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.56,
+                        "tput": 14.2
+                    },
+                    "measured": {
+                        "ttft_ms": 4987.3,
+                        "tput_user": 29.99,
+                        "tput": 13.9,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, one 32-chip lane engine, data_parallel_size 4 folded into lanes, the catalog entry's serving config incl. the MTP contract vision class with a lone-row K, 128/256/1024-token lane prefill frames and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template; per-point seed and cache_salt), run galaxy_26b_pad256_x; mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-26, plain lanes entry at eafd079cd3b): ttft 4864.6, tput_user 30.56, tput 14.2; the c128 and 2K/8K TTFT are higher on this tree (the batched lane prefill pads the ~144-token prompt to 256 and the lone-row prefill carries the drafter), a tracked follow-up. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 103.5,
+                        "tput_user": 37.04,
+                        "tput": 36.2
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point (shield run 40276183422) until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -7479,17 +7856,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 45.2,
-                        "tput": 44.4
+                        "tput_user": 52.73,
+                        "tput": 51.6
                     },
                     "measured": {
-                        "ttft_ms": 75.8,
-                        "tput_user": 45.2,
-                        "tput": 44.4,
+                        "ttft_ms": 70.1,
+                        "tput_user": 52.73,
+                        "tput": 51.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7502,17 +7879,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 31.61,
-                        "tput": 717.7
+                        "tput_user": 47.89,
+                        "tput": 992.3
                     },
                     "measured": {
-                        "ttft_ms": 1688.6,
-                        "tput_user": 31.61,
-                        "tput": 717.7,
+                        "ttft_ms": 1475.0,
+                        "tput_user": 47.89,
+                        "tput": 992.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7525,17 +7902,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 43.36,
-                        "tput": 39.2
+                        "tput_user": 50.34,
+                        "tput": 45.8
                     },
                     "measured": {
-                        "ttft_ms": 332.3,
-                        "tput_user": 43.36,
-                        "tput": 39.2,
+                        "ttft_ms": 270.6,
+                        "tput_user": 50.34,
+                        "tput": 45.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7548,17 +7925,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 42.9,
-                        "tput": 29.3
+                        "tput_user": 49.81,
+                        "tput": 32.1
                     },
                     "measured": {
-                        "ttft_ms": 1402.7,
-                        "tput_user": 42.9,
-                        "tput": 29.3,
+                        "ttft_ms": 1433.1,
+                        "tput_user": 49.81,
+                        "tput": 32.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7571,17 +7948,35 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 41.31,
-                        "tput": 13.0
+                        "tput_user": 47.81,
+                        "tput": 13.2
                     },
                     "measured": {
-                        "ttft_ms": 6736.6,
-                        "tput_user": 41.31,
-                        "tput": 13.0,
+                        "ttft_ms": 7037.6,
+                        "tput_user": 47.81,
+                        "tput": 13.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+                "_comment": "Gating point. Measured on the tt-shield benchmarks run 40161260166 (tt-metal 6f5b1fe42ba). Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 70.1,
+                        "tput_user": 52.73,
+                        "tput": 51.6
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ],
         "blackhole_galaxy": [
@@ -7601,13 +7996,13 @@
                         "tput": 43.4
                     },
                     "measured": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 44.19,
-                        "tput": 43.4,
+                        "ttft_ms": 85.1,
+                        "tput_user": 56.82,
+                        "tput": 55.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 72.0, tput_user 44.19, tput 43.4. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7625,13 +8020,13 @@
                         "tput": 2999.6
                     },
                     "measured": {
-                        "ttft_ms": 1219.4,
-                        "tput_user": 30.03,
-                        "tput": 2999.6,
+                        "ttft_ms": 1316.0,
+                        "tput_user": 42.37,
+                        "tput": 2790.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1219.4, tput_user 30.03, tput 2999.6. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7649,13 +8044,13 @@
                         "tput": 38.5
                     },
                     "measured": {
-                        "ttft_ms": 296.7,
-                        "tput_user": 41.99,
-                        "tput": 38.5,
+                        "ttft_ms": 573.9,
+                        "tput_user": 54.95,
+                        "tput": 49.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 296.7, tput_user 41.99, tput 38.5. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7673,13 +8068,13 @@
                         "tput": 28.7
                     },
                     "measured": {
-                        "ttft_ms": 1261.2,
-                        "tput_user": 39.75,
-                        "tput": 28.7,
+                        "ttft_ms": 1351.0,
+                        "tput_user": 54.35,
+                        "tput": 36.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 1261.2, tput_user 39.75, tput 28.7. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7697,13 +8092,32 @@
                         "tput": 13.5
                     },
                     "measured": {
-                        "ttft_ms": 5572.9,
-                        "tput_user": 32.68,
-                        "tput": 13.5,
+                        "ttft_ms": 5518.3,
+                        "tput_user": 51.55,
+                        "tput": 18.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+                "_comment": "Gating point. Measured 2026-10-31 on a Blackhole Galaxy (bh-glx-exp-b03u14, DP=4, the catalog entry's serving config incl. the MTP contract class, dynamic-K table, fused (1,8) decode and the 256/512/1024 prefill padding policy) at tt-metal arg/gemma4_spec_default 9f8d2ca87ef with the release client construction (vllm bench serve, random dataset, openai-chat: a 128-token prompt is ~144 tokens after the chat template), run galaxy_12b_asship_x (the committed entry, per-point seed and cache_salt as the release client sends them: no prefix-cache hits between points); mean TTFT / 1000 over mean TPOT / output throughput. Previous shield-measured row (2026-10-08): ttft 5572.9, tput_user 32.68, tput 13.5. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "data_parallel": 4,
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 44.19,
+                        "tput": 43.4
+                    }
+                },
+                "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
             }
         ]
     },
@@ -8061,6 +8475,61 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {}
+            }
+        ]
+    },
+    "ibm-granite/granite-4.2-30b": {
+        "p300x2": [
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 24,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 16,
+                "num_prompts": 48,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "_comment": "Provisional user-specified QB2 estimates for ISL/OSL128, concurrency1; not measured or formally established performance targets.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 68,
+                        "tput_user": 65,
+                        "tput": 65
+                    }
+                }
             }
         ]
     }

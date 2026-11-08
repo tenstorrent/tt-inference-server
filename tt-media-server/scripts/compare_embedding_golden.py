@@ -15,8 +15,7 @@ Two phases:
    (single or batched variant) above a threshold. This exercises the dynamic
    batching path under real concurrency.
 
-Usage (server must already be running; see
-cpp_server/docs/embedding_serving_guide.md for the launch recipe):
+Usage (server must already be running):
 
     python scripts/compare_embedding_golden.py \
         --golden scripts/goldens/bge_large_en_v1_5_n150.json

@@ -4,12 +4,15 @@
 
 import json
 import subprocess
+import urllib.error
 from types import SimpleNamespace
 
 import pytest
 
 from scripts.release.create_post_release_pr import (
     build_rows,
+    fetch_run_jobs,
+    jobs_that_ran,
     render_body,
     render_table,
     resolve_galaxy_sw_versions,
@@ -389,3 +392,170 @@ def test_two_impls_of_one_model_device_are_released_and_linked_separately(tmp_pa
         IDENTITY: 1,
         TT_IDENTITY: 2,
     }
+
+
+# A re-run ("re-run failed jobs") is a new attempt of the same run. GitHub copies
+# every job that already passed into it under a NEW job id; the copy keeps the
+# original's start time but has no artifacts, so nothing was collected under its
+# id. These are the timestamps of tt-shield run 38572819455 (v0.25.0).
+ATTEMPT_1 = "2026-10-14T13:33:49Z"
+ATTEMPT_2 = "2026-10-15T01:15:15Z"
+RAN_IN_1 = "2026-10-14T16:01:57Z"
+RAN_IN_2 = "2026-10-15T01:15:19Z"
+
+
+def _job(job_id, name, conclusion, started_at):
+    return {
+        "id": job_id,
+        "name": name,
+        "conclusion": conclusion,
+        "started_at": started_at,
+    }
+
+
+def _ids(jobs):
+    return sorted(job["id"] for job in jobs)
+
+
+def test_a_rerun_keeps_the_jobs_that_ran_not_their_copies():
+    attempts = [
+        {
+            "run_started_at": ATTEMPT_1,
+            "jobs": [
+                _job(1, "run-release-qwen", "success", RAN_IN_1),
+                _job(2, "run-release-wan", "failure", RAN_IN_1),
+            ],
+        },
+        {
+            "run_started_at": ATTEMPT_2,
+            "jobs": [
+                _job(11, "run-release-qwen", "success", RAN_IN_1),  # the copy of job 1
+                _job(12, "run-release-wan", "success", RAN_IN_2),  # re-ran
+            ],
+        },
+    ]
+    assert _ids(jobs_that_ran(attempts)) == [1, 12]
+
+
+def test_a_job_that_fails_twice_is_taken_from_the_attempt_it_passed():
+    attempt_3 = "2026-10-16T00:00:00Z"
+    attempts = [
+        {
+            "run_started_at": ATTEMPT_1,
+            "jobs": [
+                _job(1, "a", "success", RAN_IN_1),
+                _job(2, "b", "failure", RAN_IN_1),
+            ],
+        },
+        {
+            "run_started_at": ATTEMPT_2,
+            "jobs": [
+                _job(11, "a", "success", RAN_IN_1),
+                _job(12, "b", "failure", RAN_IN_2),
+            ],
+        },
+        {
+            "run_started_at": attempt_3,
+            "jobs": [
+                _job(21, "a", "success", RAN_IN_1),
+                _job(22, "b", "success", "2026-10-16T00:00:05Z"),
+            ],
+        },
+    ]
+    assert _ids(jobs_that_ran(attempts)) == [1, 22]
+
+
+def test_a_success_wins_over_a_newer_failure_of_the_same_job():
+    # "Re-run all jobs": every job runs again, and this one failed the second time.
+    attempts = [
+        {"run_started_at": ATTEMPT_1, "jobs": [_job(1, "a", "success", RAN_IN_1)]},
+        {"run_started_at": ATTEMPT_2, "jobs": [_job(11, "a", "failure", RAN_IN_2)]},
+    ]
+    assert _ids(jobs_that_ran(attempts)) == [1]
+
+
+def test_one_attempt_is_returned_as_listed():
+    jobs = [
+        _job(1, "a", "success", RAN_IN_1),
+        _job(2, "b", "failure", RAN_IN_1),
+        _job(3, "c", "skipped", None),
+    ]
+    assert jobs_that_ran([{"run_started_at": ATTEMPT_1, "jobs": jobs}]) == jobs
+
+
+def test_two_jobs_of_one_name_in_an_attempt_are_both_kept_for_build_rows_to_refuse():
+    jobs = [_job(1, "a", "success", RAN_IN_1), _job(2, "a", "success", RAN_IN_1)]
+    assert _ids(jobs_that_ran([{"run_started_at": ATTEMPT_1, "jobs": jobs}])) == [1, 2]
+
+
+@pytest.mark.parametrize("rerun", ["success", "failure"])
+def test_a_partial_rerun_of_a_duplicated_name_stays_ambiguous(rerun):
+    # Which of the two the re-run replaced is unknowable: every execution stays.
+    attempts = [
+        {
+            "run_started_at": ATTEMPT_1,
+            "jobs": [
+                _job(1, "a", "success", RAN_IN_1),
+                _job(2, "a", "failure", RAN_IN_1),
+            ],
+        },
+        {
+            "run_started_at": ATTEMPT_2,
+            "jobs": [
+                _job(11, "a", "success", RAN_IN_1),
+                _job(12, "a", rerun, RAN_IN_2),
+            ],
+        },
+    ]
+    assert _ids(jobs_that_ran(attempts)) == [1, 2, 12]
+
+
+class _FakeApi:
+    """The GitHub REST paths fetch_run_jobs reads, for one run with two attempts."""
+
+    def __init__(self):
+        base = "https://api.github.com/repos/tenstorrent/tt-shield/actions/runs/7"
+        self.responses = {
+            base: {"run_attempt": 2},
+            f"{base}/attempts/1": {"run_started_at": ATTEMPT_1},
+            f"{base}/attempts/2": {"run_started_at": ATTEMPT_2},
+            f"{base}/attempts/1/jobs?per_page=100&page=1": {
+                "jobs": [
+                    _job(1, "a", "success", RAN_IN_1),
+                    _job(2, "b", "failure", RAN_IN_1),
+                ]
+            },
+            f"{base}/attempts/2/jobs?per_page=100&page=1": {
+                "jobs": [
+                    _job(11, "a", "success", RAN_IN_1),
+                    _job(12, "b", "success", RAN_IN_2),
+                ]
+            },
+        }
+        self.requested = []
+
+    def __call__(self, url, token):
+        self.requested.append(url)
+        if url not in self.responses:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return self.responses[url]
+
+
+def test_fetch_run_jobs_reads_every_attempt(monkeypatch):
+    api = _FakeApi()
+    monkeypatch.setattr("scripts.release.create_post_release_pr._api_get", api)
+    assert _ids(fetch_run_jobs("tenstorrent/tt-shield", "7", "token")) == [1, 12]
+    assert not any("filter=" in url or url.endswith("/7/jobs") for url in api.requested)
+
+
+def test_fetch_run_jobs_is_none_when_the_run_cannot_be_read(monkeypatch):
+    api = _FakeApi()
+    del api.responses[
+        next(
+            u
+            for u in api.responses
+            if u.endswith("/attempts/2/jobs?per_page=100&page=1")
+        )
+    ]
+    monkeypatch.setattr("scripts.release.create_post_release_pr._api_get", api)
+    assert fetch_run_jobs("tenstorrent/tt-shield", "7", "token") is None

@@ -49,7 +49,9 @@ class SingleProcessWorker {
   void start();
   void stop();
 
-  pid_t pid{-1};
+  // Written by whichever thread spawns the worker (start() or the warmup
+  // coordinator), read by the liveness checker and /health concurrently.
+  std::atomic<pid_t> pid{-1};
   bool is_ready{false};
   std::atomic<bool> is_alive{true};
   int worker_id{-1};

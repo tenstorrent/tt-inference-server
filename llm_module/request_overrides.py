@@ -11,7 +11,9 @@ applies a request-level ``chat_template_kwargs`` over the server default, so
 the override is scoped to that task's requests only; the server is untouched.
 
 * lm-eval tasks: ``llm_module/lm_eval_request_overrides.py`` merges the body
-  into every ``/v1/chat/completions`` (or ``/v1/completions``) payload.
+  into every ``/v1/chat/completions`` (or ``/v1/completions``) payload; for
+  lmms-eval tasks on the ``openai_compatible`` client the same wrapper
+  (``--harness lmms-eval``) merges it into the openai SDK's ``extra_body``.
 * Harbor (agentic) tasks: the body becomes the agent's ``extra_body``
   (``terminus-2`` -> ``llm_call_kwargs.extra_body``; ``mini-swe-agent`` ->
   ``config.model.model_kwargs.extra_body``, forwarded by litellm).

@@ -11,11 +11,14 @@
 #include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "config/types.hpp"
+#include "ipc/embedding_ipc.hpp"
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/blaze_runner/blaze_tts_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_tts_scheduler_factory.hpp"
+#include "runtime/runners/embedding_ipc_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
+#include "runtime/runners/mock_embedding_runner.hpp"
 #include "runtime/runners/qwen3_tts/qwen3_tts_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
@@ -85,15 +88,77 @@ void registerLLM() {
 void registerEmbedding() {
   if (!config::isEmbeddingService()) return;
 
-  ServiceRegistry::instance().registerService(
-      config::ModelService::EMBEDDING, []() -> std::shared_ptr<IService> {
-        return std::make_shared<EmbeddingService>();
+  auto& runners = utils::RunnerRegistry::instance();
+  runners.registerMediaRunner(
+      config::ModelService::EMBEDDING, config::ModelRunnerType::EMBEDDING_MOCK,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::MockEmbeddingRunner>(
+            std::get<config::EmbeddingConfig>(cfg));
       });
 
-  // No runner registration here: EmbeddingService builds its runner directly
-  // in the forked worker via runners::makeEmbeddingRunner(), which selects the
-  // implementation from cfg.runner_type. The registry entry that used to sit
-  // here was never reached.
+  auto realEmbeddingFactory = [](const config::RunnerConfig& cfg)
+      -> std::unique_ptr<runners::IRunnerBase> {
+    return std::make_unique<runners::EmbeddingRunner>(
+        std::get<config::EmbeddingConfig>(cfg));
+  };
+  runners.registerMediaRunner(config::ModelService::EMBEDDING,
+                              config::ModelRunnerType::TT_BGE_LARGE_EN,
+                              realEmbeddingFactory);
+  runners.registerMediaRunner(config::ModelService::EMBEDDING,
+                              config::ModelRunnerType::TT_BGE_M3,
+                              realEmbeddingFactory);
+  runners.registerMediaRunner(config::ModelService::EMBEDDING,
+                              config::ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+                              realEmbeddingFactory);
+
+  auto embeddingIpcFactory =
+      [](const config::RunnerConfig& cfg, ipc::IResultQueue* /*resultQueue*/,
+         ipc::ITaskQueue* /*taskQueue*/, ipc::ICancelQueue* /*cancelQueue*/)
+      -> std::unique_ptr<runners::IRunner> {
+    const char* workerIdEnv = std::getenv("TT_WORKER_ID");
+    const int workerId = workerIdEnv ? std::atoi(workerIdEnv) : 0;
+    auto embCfg = std::get<config::EmbeddingConfig>(cfg);
+    embCfg.worker_id = static_cast<size_t>(std::max(0, workerId));
+    TT_LOG_INFO(
+        "[RunnerRegistry] Creating embedding IPC runner worker={} "
+        "runner_type='{}' TT_VISIBLE_DEVICES='{}'",
+        workerId, config::toString(embCfg.runner_type), embCfg.visible_devices);
+    return std::make_unique<runners::EmbeddingIpcRunner>(embCfg, workerId);
+  };
+  runners.registerIpcRunner(config::ModelService::EMBEDDING,
+                            config::ModelRunnerType::EMBEDDING_MOCK,
+                            embeddingIpcFactory);
+  runners.registerIpcRunner(config::ModelService::EMBEDDING,
+                            config::ModelRunnerType::TT_BGE_LARGE_EN,
+                            embeddingIpcFactory);
+  runners.registerIpcRunner(config::ModelService::EMBEDDING,
+                            config::ModelRunnerType::TT_BGE_M3,
+                            embeddingIpcFactory);
+  runners.registerIpcRunner(config::ModelService::EMBEDDING,
+                            config::ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+                            embeddingIpcFactory);
+
+  const auto cfg = config::embeddingEngineConfig();
+  ServiceRegistry::instance().registerService(
+      config::ModelService::EMBEDDING, [cfg]() -> std::shared_ptr<IService> {
+        const size_t configuredWorkers = config::numWorkers();
+        TT_LOG_INFO(
+            "[RegisterEmbedding] Creating worker-backed embedding service "
+            "with {} worker process(es)",
+            configuredWorkers);
+        tt::worker::WorkerManagerOptions wmOpts;
+        wmOpts.sequentialLeadWorkerWarmup = true;
+        wmOpts.warmupTimeoutMs = config::embeddingWarmupTimeoutMs();
+        auto queueSet = std::make_unique<tt::ipc::embedding::EmbeddingQueueSet>(
+            static_cast<int>(configuredWorkers), cfg.max_seq_len,
+            cfg.max_batch_size);
+        return std::make_shared<EmbeddingService>(
+            cfg,
+            std::make_unique<tt::worker::WorkerManager>(configuredWorkers,
+                                                        wmOpts),
+            std::move(queueSet));
+      });
 
   api::RouteRegistry::instance().registerRoute(config::ModelService::EMBEDDING,
                                                "POST", "/v1/embeddings",

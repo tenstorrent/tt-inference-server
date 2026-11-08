@@ -535,6 +535,108 @@ class TestServerCommandBootRetry:
         assert len(attempts) == 2
         assert result.error.endswith("server process exited during startup")
 
+    def test_fatal_warmup_log_marker_fails_without_waiting_for_timeout(
+        self, monkeypatch, tmp_path
+    ):
+        import urllib.error
+        import urllib.request
+        import workflow_module.commands as commands
+
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        log_path = tmp_path / "server.log"
+        log_path.write_text(
+            "[WorkerManager] Worker warmup failed; stopping all spawned workers\n"
+        )
+        attempts = []
+
+        def running_docker(*args, **kwargs):
+            attempts.append(1)
+            return {
+                "process": SimpleNamespace(poll=lambda: None),
+                "service_port": "8000",
+                "docker_log_file_path": str(log_path),
+            }
+
+        def unavailable(*args, **kwargs):
+            raise urllib.error.URLError("503 Service Unavailable")
+
+        _install_fake_launchers(monkeypatch, docker=running_docker)
+        monkeypatch.setattr(urllib.request, "urlopen", unavailable)
+        monkeypatch.setattr(commands, "_teardown_server", lambda *args: None)
+        monkeypatch.setattr(
+            "time.sleep",
+            lambda seconds: pytest.fail(
+                "fatal warmup failure must not sleep until timeout"
+            ),
+        )
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+
+        result = ServerCommand(spec).execute()
+
+        assert result.return_code == 1
+        assert len(attempts) == 2
+        assert "worker warmup failed during startup" in result.error
+
+    def test_fatal_health_error_payload_fails_without_waiting_for_timeout(
+        self, monkeypatch, tmp_path
+    ):
+        import io
+        import urllib.error
+        import urllib.request
+        import workflow_module.commands as commands
+
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        log_path = tmp_path / "server.log"
+        log_path.write_text("starting server\n")
+        attempts = []
+
+        def running_docker(*args, **kwargs):
+            attempts.append(1)
+            return {
+                "process": SimpleNamespace(poll=lambda: None),
+                "service_port": "8000",
+                "docker_log_file_path": str(log_path),
+            }
+
+        def dead_worker_503(*args, **kwargs):
+            body = io.BytesIO(b'{"status":"unhealthy","error":"worker 0 is dead"}')
+            raise urllib.error.HTTPError(
+                "http://127.0.0.1:8000/health",
+                503,
+                "Service Unavailable",
+                {},
+                body,
+            )
+
+        _install_fake_launchers(monkeypatch, docker=running_docker)
+        monkeypatch.setattr(urllib.request, "urlopen", dead_worker_503)
+        monkeypatch.setattr(commands, "_teardown_server", lambda *args: None)
+        monkeypatch.setattr(
+            "time.sleep",
+            lambda seconds: pytest.fail(
+                "dead worker health response must not sleep until timeout"
+            ),
+        )
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+
+        result = ServerCommand(spec).execute()
+
+        assert result.return_code == 1
+        assert len(attempts) == 2
+        assert "server reported fatal health error (worker 0 is dead)" in result.error
+
 
 def _llm_spec(*, version="0.16.0", tensor_cache_timeout=5400.0, engine="vLLM"):
     return SimpleNamespace(

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -30,6 +31,9 @@ void ZeroOverheadLogger::initialize(std::string instanceTag) {
   // contract (the first tag wins).
   static std::once_flag onceFlag;
   std::call_once(onceFlag, [&] {
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+    setvbuf(stderr, nullptr, _IOLBF, 0);
+
     // Set log level from environment variable
     const char* logLevelEnv = std::getenv("TT_LOG_LEVEL");
     if (logLevelEnv) {
@@ -97,6 +101,7 @@ void ZeroOverheadLogger::initialize(std::string instanceTag) {
     }
 
     // Register logger globally
+    logger->flush_on(spdlog::level::trace);
     spdlog::register_logger(logger);
 
     // Log initialization message
