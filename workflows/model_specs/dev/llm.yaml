@@ -3494,19 +3494,23 @@ templates:
       model_path_env: MIMO_MODEL_PATH
       tt_cache_env: MIMO_TT_CACHE
 
-# MiMo-V2.6-Flash-MOPD with image, video and audio input (--impl mimo-v2.6-flash-mm; the text
-# entries above and below are unchanged). vLLM resolves the checkpoint (it carries a vision_config)
-# to MiMoV2OmniForCausalLM; TT_MODEL_CLASS_OVERRIDES serves that with the TT multimodal class, which
-# runs vLLM's upstream MiMo-V2-Omni processor and merges the items' embeddings into the prefill.
-# Needs an image built from tt-metal mimo-v2.6/multimodal and vllm-tt-plugin mimo-v2.6-flash/multimodal
-# (the plugin's mm_items contract; it keeps vLLM's chunked multimodal input, so an image or video can
-# straddle the 4096-token prefill chunks) with torchaudio installed (the vllm-tt-metal Dockerfile installs
-# the one matching torch): without it every audio request answers 500. Encoders: MIMO_MM_ENCODER (default
-# the host backend). The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable
-# media host answers 400 instead of vLLM's 500. Text-only requests run the text class's paths unchanged.
-# No MTP: drafters would see placeholder embeddings at multimodal positions (acceptance only); the MTP
-# entry stays the text default. It uses the MTP entry's persistent volume and TT cache (impl
-# volume_impl_id: same weights), so it converts nothing on its first start.
+# MiMo-V2.6-Flash-MOPD with image, video and audio input (--impl mimo-v2.6-flash-mm): the MTP entry
+# below plus the multimodal class, so text requests run exactly as they do there. vLLM resolves the
+# checkpoint (it carries a vision_config) to MiMoV2OmniForCausalLM; TT_MODEL_CLASS_OVERRIDES serves that
+# with the TT multimodal class, which runs vLLM's upstream MiMo-V2-Omni processor, encodes on the engine's
+# row (ViT, audio tokenizer and audio patch encoder on device; tt-metal MIMO_MM_ENCODER) and merges the
+# items' embeddings into the prefill. Needs an image built from tt-metal mimo-v2.6/multimodal and
+# vllm-tt-plugin mimo-v2.6-flash/multimodal (the plugin's mm_items contract; it keeps vLLM's chunked
+# multimodal input, so an item can straddle the 4096-token prefill chunks) with torchaudio installed (the
+# vllm-tt-metal Dockerfile installs the one matching torch): without it every audio request answers 500.
+# MTP drafts see placeholder embeddings at multimodal positions, which costs acceptance only, never output.
+# The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable media host answers 400
+# instead of vLLM's 500. Accuracy (these engine settings as row engines on bhg4, 2026-11-07; the scores and
+# MiMo's OpenRouter providers through the same client are in tt-metal mimo-v2.6/multimodal
+# doc/multimodal_plan.md "Results"): OCRBench 84.0, MMAU 61.1, LibriSpeech WER 2.02, Video-MME short 80.8,
+# MMMU-Pro 64.05, VGI-Bench 36.2%. It uses the MTP
+# entry's persistent volume and TT cache (impl volume_impl_id: same weights), so it converts nothing on its
+# first start.
 - weights:
     - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
   impl: mimo_v2_6_flash_mm
@@ -3525,39 +3529,50 @@ templates:
       tensor_cache_timeout: 10800.0
       submesh_engines: true
       env_vars:
-        MESH_DEVICE: "(4, 8)"
+        MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-        MIMO_KV_GB_PER_CHIP: 6.7
+        MIMO_SPEC_DECODE: mtp
+        MIMO_SPEC_SLOTS: 8
+        MIMO_SPEC_GROUPS: adaptive
+        MIMO_SDPA_FULL_GRID: 1
+        TT_PROXY_SLACK: 4
         TT_MODEL_CLASS_OVERRIDES: "TTMiMoV2OmniForCausalLM=models.experimental.mimo_v2_6_flash.tt.generator_vllm:MiMoV2OmniForCausalLM"
         # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each,
         # public addresses only, every redirect checked, the connection pinned to the checked address)
         # and inline them; a failed or refused download answers 400 (vLLM answers 500 for a media
         # host's 5xx / timeout / DNS failure, which OpenRouter counts against uptime).
         TT_PROXY_FETCH_MEDIA: 1
+        # Not set: TT_PROXY_THINKING_GREEDY=1.0,0.95 samples temperature-0 requests that think (as
+        # MiMo's GPU providers on OpenRouter do); greedy reasoning can loop to the token limit on long
+        # videos (VGI-Bench).
       override_tt_config:
         trace_mode: decode_only
-        trace_region_size: 1000000000
+        trace_region_size: 1200000000  # as the MTP entry and the measured multimodal runs
         l1_small_size: 65536
         dispatch_core_axis: col
         sample_on_device_mode: decode_only
+        prefill_chunk_alignment: 256
       vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 4
+        data_parallel_size: 4  # the four engines
+        max_num_seqs: 8
         block_size: 64
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096
         enable-prefix-caching: true
-        prefix-cache-retention-interval: 1024
+        prefix-cache-retention-interval: 4096
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility, e.g. on OpenRouter)
         tool-call-parser: mimo
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         override_generation_config: '{"max_new_tokens": null}'
         # Per request: up to 8 images (MMMU-Pro sends up to 7), 1 video, 4 audio clips.
         limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 4}'
-        # vLLM's video loader samples 32 frames (its default, pinned here so every deployment
-        # samples alike): 16 temporal grids, 14,080 tokens for a 720p video.
-        media-io-kwargs: '{"video": {"num_frames": 32}}'
+        # Frames at 2 per second, as MiMo's own endpoint (Xiaomi on OpenRouter) samples them: the same
+        # video then costs the same prompt tokens there and here (vLLM's default of 32 frames sees far
+        # less of a long video; Video-MME short 60.6 -> 80.8 with this and the video's audio track).
+        media-io-kwargs: '{"video": {"num_frames": -1, "fps": 2}}'
         # The engines accept no media URL (.invalid never resolves; vLLM answers 400): only the proxy
         # downloads callers' URLs (TT_PROXY_FETCH_MEDIA, public addresses only) and passes data: URIs on.
         allowed-media-domains: ["fetched-by-the-proxy.invalid"]
