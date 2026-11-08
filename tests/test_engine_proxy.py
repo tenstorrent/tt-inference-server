@@ -78,7 +78,6 @@ def test_router_affinity_and_spill():
     )
 
 
-
 def test_router_slack_from_env(monkeypatch):
     monkeypatch.delenv("TT_PROXY_SLACK", raising=False)
     assert lb.Router(["A", "B"]).slack == 2
@@ -92,6 +91,7 @@ def test_router_slack_from_env(monkeypatch):
     assert r.pick(hashes_of(chat(DOC, "q1"))) == first
     r.inflight[first] = 5
     assert r.pick(hashes_of(chat(DOC, "q2"))) != first
+
 
 def fake_engine(name, healthy=True):
     async def completions(request):
@@ -214,3 +214,157 @@ def test_proxy_metrics_without_a_dead_or_hung_engine(monkeypatch):
     assert text.startswith("# engine 1 (")  # the hung engine
     assert "# engine 2 (" in text  # the one nothing listens for
     assert 'vllm:generation_tokens_total{model_name="m",engine="0"} 5.0' in text
+
+
+@pytest.mark.parametrize(
+    "fmt, want",
+    [
+        (
+            {"type": "json_schema", "json_schema": {"name": "answer"}},
+            {"type": "json_object"},
+        ),
+        (
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "a", "strict": True, "schema": None},
+            },
+            {"type": "json_object"},
+        ),
+        ({"type": "json_schema"}, {"type": "json_object"}),
+    ],
+)
+def test_normalize_json_schema_without_schema_becomes_json_mode(fmt, want):
+    body = json.dumps(
+        {
+            "model": "m",
+            "messages": [],
+            "tools": [{"type": "function"}],
+            "response_format": fmt,
+        }
+    ).encode()
+    out = json.loads(lb.normalize_structured_outputs(body))
+    assert out["response_format"] == want
+    assert out["tools"] == [{"type": "function"}] and out["messages"] == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+        {"model": "m", "messages": [], "response_format": {"type": "json_object"}},
+        {"model": "m", "messages": [], "response_format": {"type": "text"}},
+        {
+            "model": "m",
+            "messages": [],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "a", "schema": {"type": "object"}},
+            },
+        },
+        {"model": "m", "messages": [], "structured_outputs": {"choice": ["a", "b"]}},
+    ],
+)
+def test_normalize_leaves_valid_requests_byte_identical(body):
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    assert lb.normalize_structured_outputs(raw) is raw
+
+
+def test_normalize_drops_empty_structured_outputs():
+    body = json.dumps({"model": "m", "messages": [], "structured_outputs": {}}).encode()
+    assert "structured_outputs" not in json.loads(lb.normalize_structured_outputs(body))
+    body = json.dumps(
+        {
+            "model": "m",
+            "messages": [],
+            "structured_outputs": {"json": None, "regex": None},
+        }
+    ).encode()
+    assert "structured_outputs" not in json.loads(lb.normalize_structured_outputs(body))
+
+
+def recording_engine(seen):
+    async def completions(request):
+        seen.append(await request.json())
+        return web.json_response({"ok": True})
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", completions)
+    return app
+
+
+def test_proxy_rewrites_an_empty_json_schema_before_the_engine():
+    seen = []
+
+    async def run(session, url, router):
+        body = {
+            "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "answer"},
+            },
+        }
+        async with session.post(url + "/v1/chat/completions", json=body) as r:
+            assert r.status == 200
+        return router.snapshot()
+
+    snap = asyncio.run(with_proxy([recording_engine(seen)], run))
+    assert seen[0]["response_format"] == {"type": "json_object"}
+    assert snap["prefix"]["structured_outputs_normalized"] == 1
+
+
+def closing_engine(close_first):
+    """A raw HTTP/1.1 engine that reads the first ``close_first`` requests and closes their connections without a
+    reply (an engine closing a pooled keep-alive connection as the proxy writes into it), then answers normally."""
+    seen = {"n": 0}
+
+    async def handle(reader, writer):
+        while True:
+            head = await reader.readuntil(b"\r\n\r\n")
+            length = 0
+            for line in head.decode().split("\r\n"):
+                if line.lower().startswith("content-length:"):
+                    length = int(line.split(":", 1)[1])
+            await reader.readexactly(length)
+            seen["n"] += 1
+            if seen["n"] <= close_first:
+                writer.close()
+                return
+            data = json.dumps({"backend": "R"}).encode()
+            writer.write(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n"
+                % len(data)
+                + data
+            )
+            await writer.drain()
+
+    return handle, seen
+
+
+@pytest.mark.parametrize("close_first, want_status", [(1, 200), (2, 500)])
+def test_proxy_resends_once_after_an_unanswered_disconnect(close_first, want_status):
+    async def run():
+        handle, seen = closing_engine(close_first)
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        router = lb.Router([f"http://127.0.0.1:{port}"])
+        proxy = TestServer(lb.make_app(router), host="127.0.0.1")
+        await proxy.start_server()
+        try:
+            async with ClientSession() as session:
+                async with session.post(
+                    f"http://127.0.0.1:{proxy.port}/v1/chat/completions",
+                    data=chat("short", "q"),
+                    headers={"Content-Type": "application/json"},
+                ) as r:
+                    status = r.status
+            return status, seen["n"], router.snapshot()
+        finally:
+            await proxy.close()
+            server.close()
+            await server.wait_closed()
+
+    status, requests, snap = asyncio.run(run())
+    assert status == want_status
+    assert requests == 2  # one resend, never more
+    assert snap["prefix"]["stale_retried"] == 1
