@@ -1,0 +1,104 @@
+From 71be392e1a80bd4bd20bcae979524571d8395a65 Mon Sep 17 00:00:00 2001
+From: atupe-tt <atupe@tenstorrent.com>
+Date: Sun, 11 Oct 2026 01:34:12 +0000
+Subject: [PATCH 3/3] scheduler: skip prefix-cache reads for multimodal
+ requests
+
+The TT runner re-runs the vision tower from token 0 on every prefill, but
+vLLM strips pixel payloads of mm items covered by a prefix-cache hit, which
+crashed _gather_multi_modal_inputs with KeyError. Multimodal requests now
+never read the prefix cache; the runner raises a clear error if a payload
+is missing anyway.
+---
+ src/vllm_tt_plugin/model_runner.py | 10 ++++++++++
+ src/vllm_tt_plugin/scheduler.py    |  7 +++++++
+ tests/test_multimodal_gather.py    | 10 ++++++++++
+ tests/test_scheduler.py            | 18 ++++++++++++++++++
+ 4 files changed, 45 insertions(+)
+
+diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runner.py
+index 4c6fe0b..2d5d8b8 100644
+--- a/src/vllm_tt_plugin/model_runner.py
++++ b/src/vllm_tt_plugin/model_runner.py
+@@ -1123,6 +1123,16 @@ class TTModelRunner:
+                     pv_list.append(None)
+                     grid_list.append(None)
+                     continue
++                if pv_key not in item:
++                    raise RuntimeError(
++                        f"Multimodal payload '{pv_key}' missing for request "
++                        f"{req_id} ({mm_feature.modality} item "
++                        f"{getattr(mm_feature, 'identifier', None)}): it was "
++                        "stripped by the scheduler because the item was fully "
++                        "covered by a prefix-cache hit. The TT runner needs "
++                        "the payload to re-run the vision tower; multimodal "
++                        "requests must skip prefix-cache reads."
++                    )
+                 pv_list.append(item[pv_key].data)
+                 grid_list.append(item[grid_key].data if grid_key in item else None)
+ 
+diff --git a/src/vllm_tt_plugin/scheduler.py b/src/vllm_tt_plugin/scheduler.py
+index 42db15e..95a1f52 100644
+--- a/src/vllm_tt_plugin/scheduler.py
++++ b/src/vllm_tt_plugin/scheduler.py
+@@ -414,6 +414,13 @@ class TTScheduler(AsyncScheduler):
+     )
+ 
+     def add_request(self, request: Request) -> None:
++        if request.mm_features:
++            # The TT runner re-runs the vision tower from token 0 on every
++            # prefill, but vLLM's strip_covered_mm_data drops the pixel payload
++            # of any mm item fully covered by a prefix-cache hit. Never read
++            # the prefix cache for multimodal requests so payloads stay intact.
++            # (A plain attribute, derived once in Request.__init__.)
++            request.skip_reading_prefix_cache = True
+         if self._is_block_output_model:
+             existing = self.requests.get(request.request_id)
+             if existing is not None and existing.streaming_queue is None:
+diff --git a/tests/test_multimodal_gather.py b/tests/test_multimodal_gather.py
+index 8768fce..74640f3 100644
+--- a/tests/test_multimodal_gather.py
++++ b/tests/test_multimodal_gather.py
+@@ -101,3 +101,13 @@ def test_unsupported_modality_rejected():
+     f = SimpleNamespace(modality="audio", data=None)
+     with pytest.raises(NotImplementedError, match="audio"):
+         _gather([[f]])
++
++
++def test_stripped_item_raises_clear_error():
++    stripped = SimpleNamespace(
++        modality="image",
++        identifier="abc123",
++        data={"image_grid_thw": _field(torch.tensor([[1, 2, 2]]))},
++    )
++    with pytest.raises(RuntimeError, match=r"r0.*image.*abc123.*prefix-cache"):
++        _gather([[stripped]])
+diff --git a/tests/test_scheduler.py b/tests/test_scheduler.py
+index 651d1b1..6db57af 100644
+--- a/tests/test_scheduler.py
++++ b/tests/test_scheduler.py
+@@ -188,3 +188,21 @@ def test_decode_only_hides_continuations_and_restores_them(monkeypatch):
+ 
+     assert seen["running"] == [decode]
+     assert scheduler.running == [decode, continuation]
++
++
++def test_add_request_skips_prefix_cache_read_for_multimodal(monkeypatch):
++    seen = []
++    monkeypatch.setattr(
++        AsyncScheduler, "add_request", lambda self, request: seen.append(request)
++    )
++    scheduler = TTScheduler.__new__(TTScheduler)
++    scheduler._is_block_output_model = False
++
++    mm = SimpleNamespace(mm_features=[object()], skip_reading_prefix_cache=False)
++    text = SimpleNamespace(mm_features=[], skip_reading_prefix_cache=False)
++    scheduler.add_request(mm)
++    scheduler.add_request(text)
++
++    assert mm.skip_reading_prefix_cache is True
++    assert text.skip_reading_prefix_cache is False
++    assert seen == [mm, text]
+-- 
+2.34.1
+
