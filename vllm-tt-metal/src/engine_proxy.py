@@ -141,6 +141,41 @@ MEDIA_KEYS = ("image_url", "video_url", "audio_url", "input_audio", "file_data")
 # and KV, while a 20 MB video costs
 # 4 index entries (of 256 chars) instead of ~80K.
 MEDIA_KEY_CHARS = 1024
+STRUCTURED_PATHS = ("/v1/chat/completions", "/v1/completions")
+
+
+def normalize_structured_outputs(body):
+    """Request bytes vLLM would reject for an empty structured-outputs constraint -> bytes it accepts; else unchanged.
+
+    vLLM (0.30) turns ``response_format: {"type": "json_schema", "json_schema": {...}}`` into a JSON-schema constraint
+    with ``json_schema.schema``. That field is optional in the OpenAI API, but without it vLLM builds a constraint with
+    every field empty and answers 400 ("You must use one kind of structured outputs constraint but none are
+    specified"). A json_schema format without a schema asks for JSON with no schema, which is JSON mode, so it becomes
+    ``{"type": "json_object"}``. An empty ``structured_outputs`` object (vLLM's own extension) is dropped. Bodies
+    without either key are returned as they are, byte for byte.
+    """
+    if b'"response_format"' not in body and b'"structured_outputs"' not in body:
+        return body
+    try:
+        req = json.loads(body)
+    except ValueError:
+        return body
+    if not isinstance(req, dict):
+        return body
+    changed = False
+    fmt = req.get("response_format")
+    if isinstance(fmt, dict) and fmt.get("type") == "json_schema":
+        schema = fmt.get("json_schema")
+        if not isinstance(schema, dict) or schema.get("schema") is None:
+            req["response_format"] = {"type": "json_object"}
+            changed = True
+    so = req.get("structured_outputs")
+    if isinstance(so, dict) and all(
+        v in (None, False, "", [], {}) for v in so.values()
+    ):
+        del req["structured_outputs"]
+        changed = True
+    return json.dumps(req).encode() if changed else body
 
 
 def media_key(payload):
@@ -952,10 +987,10 @@ class Router:
             "least_loaded": 0,
             "matched_chars": 0,
             "retried": 0,
+            "stale_retried": 0,
+            "structured_outputs_normalized": 0,
         }
-        self.stats.update(
-            shim_rejected=0, errors_mapped=0, too_large=0, stale_retried=0
-        )
+        self.stats.update(shim_rejected=0, errors_mapped=0, too_large=0)
 
     def up(self, exclude=()):
         now = time.monotonic()
@@ -1014,6 +1049,20 @@ def make_app(router, session_factory=None, shim=None):
             body = await request.read()
         except web.HTTPRequestEntityTooLarge:
             return too_large()
+        if (
+            request.method == "POST"
+            and request.path in STRUCTURED_PATHS
+            and (b'"response_format"' in body or b'"structured_outputs"' in body)
+        ):
+            if len(body) > OFFLOAD_BYTES:
+                fixed = await asyncio.get_running_loop().run_in_executor(
+                    None, normalize_structured_outputs, body
+                )
+            else:
+                fixed = normalize_structured_outputs(body)
+            if fixed is not body:
+                router.stats["structured_outputs_normalized"] += 1
+                body = fixed
         hashes = []
         if request.method == "POST" and request.path in PREFIX_PATHS:
             try:

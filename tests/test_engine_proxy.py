@@ -670,6 +670,82 @@ def echo_engine():
     return app
 
 
+@pytest.mark.parametrize(
+    "fmt, want",
+    [
+        (
+            {"type": "json_schema", "json_schema": {"name": "answer"}},
+            {"type": "json_object"},
+        ),
+        (
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "a", "strict": True, "schema": None},
+            },
+            {"type": "json_object"},
+        ),
+        ({"type": "json_schema"}, {"type": "json_object"}),
+    ],
+)
+def test_normalize_json_schema_without_schema_becomes_json_mode(fmt, want):
+    body = json.dumps(
+        {
+            "model": "m",
+            "messages": [],
+            "tools": [{"type": "function"}],
+            "response_format": fmt,
+        }
+    ).encode()
+    out = json.loads(lb.normalize_structured_outputs(body))
+    assert out["response_format"] == want
+    assert out["tools"] == [{"type": "function"}] and out["messages"] == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+        {"model": "m", "messages": [], "response_format": {"type": "json_object"}},
+        {"model": "m", "messages": [], "response_format": {"type": "text"}},
+        {
+            "model": "m",
+            "messages": [],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "a", "schema": {"type": "object"}},
+            },
+        },
+        {"model": "m", "messages": [], "structured_outputs": {"choice": ["a", "b"]}},
+    ],
+)
+def test_normalize_leaves_valid_requests_byte_identical(body):
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    assert lb.normalize_structured_outputs(raw) is raw
+
+
+def test_normalize_drops_empty_structured_outputs():
+    body = json.dumps({"model": "m", "messages": [], "structured_outputs": {}}).encode()
+    assert "structured_outputs" not in json.loads(lb.normalize_structured_outputs(body))
+    body = json.dumps(
+        {
+            "model": "m",
+            "messages": [],
+            "structured_outputs": {"json": None, "regex": None},
+        }
+    ).encode()
+    assert "structured_outputs" not in json.loads(lb.normalize_structured_outputs(body))
+
+
+def recording_engine(seen):
+    async def completions(request):
+        seen.append(await request.json())
+        return web.json_response({"ok": True})
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", completions)
+    return app
+
+
 async def raw_post(session, url, body):
     async with session.post(
         url + "/v1/chat/completions",
@@ -1221,6 +1297,27 @@ def test_proxy_fetches_media_when_enabled():
     status, got = out["cat.png"]
     assert status == 400 and "(loopback); refused" in got["error"]["message"]
     assert sum(snap["served"].values()) == 0
+
+
+def test_proxy_rewrites_an_empty_json_schema_before_the_engine():
+    seen = []
+
+    async def run(session, url, router):
+        body = {
+            "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "answer"},
+            },
+        }
+        async with session.post(url + "/v1/chat/completions", json=body) as r:
+            assert r.status == 200
+        return router.snapshot()
+
+    snap = asyncio.run(with_proxy([recording_engine(seen)], run))
+    assert seen[0]["response_format"] == {"type": "json_object"}
+    assert snap["prefix"]["structured_outputs_normalized"] == 1
 
 
 def closing_engine(close_first):

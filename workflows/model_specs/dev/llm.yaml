@@ -3471,6 +3471,7 @@ templates:
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility, e.g. on OpenRouter)
         tool-call-parser: mimo
         # generation_config.json sets max_new_tokens 2048, which vLLM applies as the default max_tokens of
         # every request that sends none. Reasoning alone often runs past it (tau3 banking: 51 of 97 agent
@@ -3653,6 +3654,7 @@ templates:
         trust-remote-code: true
         reasoning-parser: mimo
         enable-auto-tool-choice: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility, e.g. on OpenRouter)
         tool-call-parser: mimo
         # Async scheduling: plain lane steps overlap, and fused verifies chain on device (the model
         # declares supports_async_spec_decode). 3 drafts: the model caps them per step by its group width.
