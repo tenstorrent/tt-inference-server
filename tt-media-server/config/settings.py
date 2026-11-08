@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
 
+    # FLUX.3 Image klein uses every prompt exactly as sent, without its prompt
+    # upsampler: for evals that send prompts upsampled in advance, so they test
+    # the image model alone. Dev-mode runs (local and CI) set it; production
+    # never does.
+    prompt_upsampler_frozen: bool = False
+
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
