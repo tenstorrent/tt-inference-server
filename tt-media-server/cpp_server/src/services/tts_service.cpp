@@ -149,6 +149,9 @@ bool TtsService::generate(domain::tts::TtsRequest request,
     return false;
   }
 
+  // Stamped before preprocessing so the traffic record's ttfc/total cover
+  // the whole server-side life of the request, not just post-admission.
+  const uint64_t receivedMonoUs = utils::tts_traffic::monoNowUs();
   auto task = prepareTask(request);
   TT_LOG_INFO(
       "[TtsService] Prepared TTS task task_id={} promptTokens={} "
@@ -161,8 +164,17 @@ bool TtsService::generate(domain::tts::TtsRequest request,
   arrival.taskId = task.task_id;
   arrival.text = &request.text;
   arrival.description = request.description.has_value() ? &*request.description : nullptr;
-  arrival.promptSpeechIds = request.promptSpeechIds.size();
+  arrival.speechIds = &request.promptSpeechIds;
+  if (request.voiceSample.has_value()) {
+    arrival.voicePcm = &request.voiceSample->wavPcm;
+    arrival.voiceSampleRateHz = request.voiceSample->sampleRateHz;
+    arrival.voiceChannels = request.voiceSample->channels;
+  }
+  arrival.clientRequestId =
+      request.clientRequestId.has_value() ? &*request.clientRequestId : nullptr;
+  arrival.wireFormat = request.wireFormat.c_str();
   arrival.promptTokens = task.promptTokens.size();
+  arrival.receivedMonoUs = receivedMonoUs;
   arrival.capacity = capacityLimit();
 
   {

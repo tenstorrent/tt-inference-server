@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 // Per-request traffic capture for the TTS endpoint.
 //
@@ -20,8 +21,11 @@
 //   * arrival     -- wall clock and monotonic, plus how many requests were
 //                    already in flight, so a trace can be replayed with its
 //                    original concurrency rather than as an even rate.
-//   * input       -- the text, its length, the voice-prompt speech-id count,
-//                    and the compiled prompt token count.
+//   * input       -- everything needed to resend the request as it came in:
+//                    the text, the description, the exact speech_ids, the
+//                    wire format and the client's X-Request-Id. Plus the
+//                    compiled prompt token count and the time preprocessing
+//                    took before the request was admitted.
 //   * output      -- time to first chunk, the offset and sample count of every
 //                    chunk, total latency, and how the request ended.
 //
@@ -32,25 +36,43 @@
 // here is an atomic load and a return. Nothing in this file throws into the
 // request path -- a capture failure disables the log and the request proceeds.
 //
-// Privacy: records contain the client's prompt text verbatim by default, which
-// is the point (it is what gets replayed), but it does make the file
-// customer data. Set TTS_TRAFFIC_LOG_TEXT=0 to store only the length and a
-// stable hash; the hash is written either way, so runs captured with and
-// without the text still correlate request-for-request.
+// Voice samples are never written: a record carries only voice_sha, the
+// sample count, rate and channels -- enough to tell which requests shared a
+// voice, not to reproduce it. A replay supplies its own voice clips.
+//
+// Privacy: records contain the client's payload verbatim by default -- text,
+// description and speech_ids -- which is the point (it is what gets
+// replayed), but it does make the file customer data. Set
+// TTS_TRAFFIC_LOG_TEXT=0 to store only lengths and stable hashes for all of
+// them; the hashes are written either way, so runs captured
+// with and without the payload still correlate request-for-request.
 namespace tt::utils::tts_traffic {
 
 // Everything known about a request when it arrives, before any work is done.
+// Pointers are not owned, may be null, and are copied only if captured.
 struct ArrivalInfo {
   uint32_t taskId = 0;
-  const std::string* text = nullptr;         // not owned; copied if captured
-  const std::string* description = nullptr;  // not owned; may be null
-  size_t promptSpeechIds = 0;
+  const std::string* text = nullptr;
+  const std::string* description = nullptr;
+  const std::vector<uint32_t>* speechIds = nullptr;
+  // Voice sample as decoded from the client's WAV; null when none was sent.
+  const std::vector<int16_t>* voicePcm = nullptr;
+  uint32_t voiceSampleRateHz = 0;
+  uint16_t voiceChannels = 0;
+  const std::string* clientRequestId = nullptr;
+  const char* wireFormat = nullptr;
   size_t promptTokens = 0;
+  // steady_clock microseconds when the service received the request, before
+  // preprocessing. Records measure ttfc/total from here; 0 means "now".
+  uint64_t receivedMonoUs = 0;
   // Requests already admitted and not yet finished, sampled at arrival. This
   // is the load signal: without it a replay cannot tell a burst from a trickle.
   size_t inflightOnArrival = 0;
   size_t capacity = 0;
 };
+
+// steady_clock now, in the units ArrivalInfo::receivedMonoUs expects.
+uint64_t monoNowUs();
 
 // True when TTS_TRAFFIC_LOG named a writable file. Cheap enough to call on the
 // hot path; call sites need not cache it.

@@ -40,6 +40,15 @@ struct TtsRequest : tt::domain::BaseRequest {
    * prompt compiler does. Mutually exclusive with voiceSample.
    */
   std::vector<uint32_t> promptSpeechIds;
+  /** Client correlation id from the X-Request-Id header, if sent. Not used for
+   * scheduling; carried only so a traffic capture can be joined
+   * request-for-request with the client's own records.
+   */
+  std::optional<std::string> clientRequestId;
+  /** How the request arrived on the wire: "json" or "multipart". A replay has
+   * to send it the same way -- a voice sample can only travel as multipart.
+   */
+  std::string wireFormat;
 
   static std::vector<uint32_t> parseSpeechIds(const Json::Value& ids) {
     json_field::checkArray(ids, "speech_ids");
@@ -61,6 +70,7 @@ struct TtsRequest : tt::domain::BaseRequest {
 
   static TtsRequest fromJson(const Json::Value& json, uint32_t taskId) {
     TtsRequest request(taskId);
+    request.wireFormat = "json";
     if (!json.isMember("text") || json["text"].isNull()) {
       throw std::invalid_argument("Missing required field: text");
     }

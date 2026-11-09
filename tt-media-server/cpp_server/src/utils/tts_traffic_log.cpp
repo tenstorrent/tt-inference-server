@@ -20,13 +20,6 @@ namespace tt::utils::tts_traffic {
 
 namespace {
 
-uint64_t monoUs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
-}
-
 uint64_t wallUs() {
   return static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
@@ -36,20 +29,65 @@ uint64_t wallUs() {
 
 // FNV-1a. Not cryptographic and not meant to be -- it only has to be stable
 // across processes and runs so a record captured with TTS_TRAFFIC_LOG_TEXT=0
-// can still be matched to the same prompt captured elsewhere.
-std::string stableHash(const std::string& value) {
-  uint64_t h = 1469598103934665603ULL;
-  for (const unsigned char c : value) {
-    h ^= c;
-    h *= 1099511628211ULL;
+// can still be matched to the same payload captured elsewhere.
+class Fnv1a {
+ public:
+  void add(const void* data, size_t len) {
+    const auto* p = static_cast<const unsigned char*>(data);
+    for (size_t i = 0; i < len; ++i) {
+      h_ ^= p[i];
+      h_ *= 1099511628211ULL;
+    }
   }
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string out(16, '0');
-  for (int i = 15; i >= 0; --i) {
-    out[i] = kHex[h & 0xF];
-    h >>= 4;
+  std::string hex() const {
+    static constexpr char kHex[] = "0123456789abcdef";
+    uint64_t h = h_;
+    std::string out(16, '0');
+    for (int i = 15; i >= 0; --i) {
+      out[i] = kHex[h & 0xF];
+      h >>= 4;
+    }
+    return out;
+  }
+
+ private:
+  uint64_t h_ = 1469598103934665603ULL;
+};
+
+std::string stableHash(const std::string& value) {
+  Fnv1a h;
+  h.add(value.data(), value.size());
+  return h.hex();
+}
+
+// speech_ids hash is taken over the canonical text form "12,34,56" so it can
+// be reproduced from the JSON array in any language without caring about
+// integer width or byte order.
+std::string speechIdsText(const std::vector<uint32_t>& ids) {
+  std::string out;
+  for (size_t i = 0; i < ids.size(); ++i) {
+    if (i != 0) {
+      out += ',';
+    }
+    out += std::to_string(ids[i]);
   }
   return out;
+}
+
+// Voice hash covers the PCM16 samples as little-endian bytes (what a WAV file
+// stores), plus rate and channels, so the same clip resampled differently
+// does not collide.
+std::string voiceHash(const std::vector<int16_t>& pcm, uint32_t rateHz, uint16_t channels) {
+  Fnv1a h;
+  for (const int16_t s : pcm) {
+    const auto u = static_cast<uint16_t>(s);
+    const unsigned char bytes[2] = {static_cast<unsigned char>(u & 0xFF),
+                                    static_cast<unsigned char>(u >> 8)};
+    h.add(bytes, 2);
+  }
+  const std::string tail = ":" + std::to_string(rateHz) + ":" + std::to_string(channels);
+  h.add(tail.data(), tail.size());
+  return h.hex();
 }
 
 // An unterminated request leaves its record open. That is a bug worth seeing
@@ -60,14 +98,29 @@ constexpr size_t kMaxOpenRecords = 4096;
 struct Record {
   uint64_t arrivalWallUs = 0;
   uint64_t arrivalMonoUs = 0;
+  uint64_t preprocessUs = 0;
   size_t inflightOnArrival = 0;
   size_t capacity = 0;
-  std::string text;  // empty when TTS_TRAFFIC_LOG_TEXT=0
+  std::string clientRequestId;
+  std::string wireFormat;
+  // Payload fields are empty when TTS_TRAFFIC_LOG_TEXT=0; the hash and
+  // length siblings are always set.
+  std::string text;
   std::string textHash;
   size_t textChars = 0;
   bool hasDescription = false;
   std::string description;
-  size_t promptSpeechIds = 0;
+  std::string descriptionHash;
+  size_t descriptionChars = 0;
+  const char* voiceSource = "none";
+  bool captureSpeechIds = false;
+  std::vector<uint32_t> speechIds;
+  size_t speechIdCount = 0;
+  std::string speechIdsHash;
+  std::string voiceHashHex;
+  size_t voiceSamples = 0;
+  uint32_t voiceSampleRateHz = 0;
+  uint16_t voiceChannels = 0;
   size_t promptTokens = 0;
   uint32_t sampleRateHz = 0;
   uint64_t ttfcUs = 0;
@@ -84,7 +137,7 @@ class TrafficLog {
 
   bool enabled() const { return enabled_.load(std::memory_order_acquire); }
   const std::string& path() const { return path_; }
-  bool captureText() const { return captureText_; }
+  bool capturePayload() const { return capturePayload_; }
 
   void open(const ArrivalInfo& info, Record record) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -106,7 +159,7 @@ class TrafficLog {
       return;
     }
     Record& r = it->second;
-    const uint64_t offset = monoUs() - r.arrivalMonoUs;
+    const uint64_t offset = monoNowUs() - r.arrivalMonoUs;
     if (r.chunkOffsetsUs.empty()) {
       r.ttfcUs = offset;
     }
@@ -131,26 +184,53 @@ class TrafficLog {
       record = std::move(it->second);
       open_.erase(it);
     }
-    write(taskId, record, outcome, monoUs() - record.arrivalMonoUs);
+    write(taskId, record, outcome, monoNowUs() - record.arrivalMonoUs);
   }
 
   void write(uint32_t taskId, const Record& r, const char* outcome, uint64_t totalUs) {
     Json::Value j(Json::objectValue);
     j["task_id"] = taskId;
+    if (!r.clientRequestId.empty()) {
+      j["client_request_id"] = r.clientRequestId;
+    }
+    j["wire_format"] = r.wireFormat;
     j["arrival_wall_us"] = static_cast<Json::UInt64>(r.arrivalWallUs);
     j["arrival_mono_us"] = static_cast<Json::UInt64>(r.arrivalMonoUs);
+    j["preprocess_us"] = static_cast<Json::UInt64>(r.preprocessUs);
     j["inflight_on_arrival"] = static_cast<Json::UInt64>(r.inflightOnArrival);
     j["capacity"] = static_cast<Json::UInt64>(r.capacity);
 
     j["text_chars"] = static_cast<Json::UInt64>(r.textChars);
     j["text_sha"] = r.textHash;
-    if (!r.text.empty()) {
+    if (capturePayload_) {
       j["text"] = r.text;
     }
     if (r.hasDescription) {
-      j["description"] = r.description;
+      j["description_chars"] = static_cast<Json::UInt64>(r.descriptionChars);
+      j["description_sha"] = r.descriptionHash;
+      if (capturePayload_) {
+        j["description"] = r.description;
+      }
     }
-    j["prompt_speech_ids"] = static_cast<Json::UInt64>(r.promptSpeechIds);
+
+    j["voice_source"] = r.voiceSource;
+    j["prompt_speech_ids"] = static_cast<Json::UInt64>(r.speechIdCount);
+    if (r.speechIdCount != 0) {
+      j["speech_ids_sha"] = r.speechIdsHash;
+      if (r.captureSpeechIds) {
+        Json::Value ids(Json::arrayValue);
+        for (const uint32_t id : r.speechIds) {
+          ids.append(id);
+        }
+        j["speech_ids"] = ids;
+      }
+    }
+    if (!r.voiceHashHex.empty()) {
+      j["voice_sha"] = r.voiceHashHex;
+      j["voice_samples"] = static_cast<Json::UInt64>(r.voiceSamples);
+      j["voice_sample_rate_hz"] = r.voiceSampleRateHz;
+      j["voice_channels"] = r.voiceChannels;
+    }
     j["prompt_tokens"] = static_cast<Json::UInt64>(r.promptTokens);
 
     j["outcome"] = outcome;
@@ -176,6 +256,7 @@ class TrafficLog {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";  // one record per line
     builder["commentStyle"] = "None";
+    builder["emitUTF8"] = true;   // keep non-ASCII text readable, not \u-escaped
     const std::string line = Json::writeString(builder, j);
 
     std::lock_guard<std::mutex> lock(fileMutex_);
@@ -207,14 +288,14 @@ class TrafficLog {
       return;
     }
     const char* text = std::getenv("TTS_TRAFFIC_LOG_TEXT");
-    captureText_ = !(text != nullptr && text[0] == '0' && text[1] == '\0');
+    capturePayload_ = !(text != nullptr && text[0] == '0' && text[1] == '\0');
     enabled_.store(true, std::memory_order_release);
-    TT_LOG_INFO("[tts-traffic] capturing to {} (prompt text: {})", path_,
-                captureText_ ? "included" : "hash and length only");
+    TT_LOG_INFO("[tts-traffic] capturing to {} (payload: {})", path_,
+                capturePayload_ ? "included" : "hashes and lengths only");
   }
 
   std::atomic<bool> enabled_{false};
-  bool captureText_ = true;
+  bool capturePayload_ = true;
   std::string path_;
   std::ofstream out_;
   std::mutex fileMutex_;
@@ -225,28 +306,66 @@ class TrafficLog {
 
 Record makeRecord(const ArrivalInfo& info) {
   TrafficLog& log = TrafficLog::instance();
+  const bool payload = log.capturePayload();
   Record r;
-  r.arrivalWallUs = wallUs();
-  r.arrivalMonoUs = monoUs();
+  const uint64_t nowMono = monoNowUs();
+  const uint64_t nowWall = wallUs();
+  r.arrivalMonoUs = info.receivedMonoUs != 0 && info.receivedMonoUs <= nowMono
+                        ? info.receivedMonoUs
+                        : nowMono;
+  r.preprocessUs = nowMono - r.arrivalMonoUs;
+  // Wall clock is only sampled now; shift it back by the same interval so
+  // both arrival stamps describe the same instant.
+  r.arrivalWallUs = nowWall - r.preprocessUs;
   r.inflightOnArrival = info.inflightOnArrival;
   r.capacity = info.capacity;
+  if (info.clientRequestId != nullptr) {
+    r.clientRequestId = *info.clientRequestId;
+  }
+  r.wireFormat = info.wireFormat != nullptr ? info.wireFormat : "";
   if (info.text != nullptr) {
     r.textChars = info.text->size();
     r.textHash = stableHash(*info.text);
-    if (log.captureText()) {
+    if (payload) {
       r.text = *info.text;
     }
   }
   if (info.description != nullptr) {
     r.hasDescription = true;
-    r.description = *info.description;
+    r.descriptionChars = info.description->size();
+    r.descriptionHash = stableHash(*info.description);
+    if (payload) {
+      r.description = *info.description;
+    }
   }
-  r.promptSpeechIds = info.promptSpeechIds;
+  if (info.speechIds != nullptr && !info.speechIds->empty()) {
+    r.voiceSource = "speech_ids";
+    r.speechIdCount = info.speechIds->size();
+    r.speechIdsHash = stableHash(speechIdsText(*info.speechIds));
+    r.captureSpeechIds = payload;
+    if (payload) {
+      r.speechIds = *info.speechIds;
+    }
+  }
+  if (info.voicePcm != nullptr) {
+    r.voiceSource = "voice_sample";
+    r.voiceSamples = info.voicePcm->size();
+    r.voiceSampleRateHz = info.voiceSampleRateHz;
+    r.voiceChannels = info.voiceChannels;
+    r.voiceHashHex = voiceHash(*info.voicePcm, info.voiceSampleRateHz, info.voiceChannels);
+  }
   r.promptTokens = info.promptTokens;
   return r;
 }
 
 }  // namespace
+
+uint64_t monoNowUs() {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
 
 bool enabled() { return TrafficLog::instance().enabled(); }
 
@@ -294,7 +413,8 @@ void onRejected(const ArrivalInfo& info, const char* reason) {
     return;
   }
   try {
-    log.write(info.taskId, makeRecord(info), reason, 0);
+    const Record r = makeRecord(info);
+    log.write(info.taskId, r, reason, monoNowUs() - r.arrivalMonoUs);
   } catch (const std::exception& e) {
     TT_LOG_WARN("[tts-traffic] onRejected failed for task {}: {}", info.taskId, e.what());
   }

@@ -81,7 +81,7 @@ std::vector<uint32_t> parseSpeechIdsParam(const std::string& raw) {
   return TtsRequest::parseSpeechIds(parsed);
 }
 
-TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
+TtsRequest parseTtsBody(const drogon::HttpRequestPtr& req, uint32_t taskId) {
   if (auto json = req->getJsonObject()) {
     return TtsRequest::fromJson(*json, taskId);
   }
@@ -98,6 +98,7 @@ TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
   }
 
   TtsRequest request(taskId);
+  request.wireFormat = "multipart";
   request.text = *text;
   request.description = findParam(params, "description");
 
@@ -111,6 +112,18 @@ TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
     const auto& content = file.fileContent();
     request.voiceSample = tt::utils::audio_codec::decodePcm16Wav(
         std::string_view(content.data(), content.size()));
+  }
+  return request;
+}
+
+TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
+  TtsRequest request = parseTtsBody(req, taskId);
+  // Correlation id for traffic capture; bounded so a hostile header cannot
+  // bloat the capture file.
+  constexpr size_t kMaxClientRequestIdLen = 128;
+  const std::string& clientRequestId = req->getHeader("x-request-id");
+  if (!clientRequestId.empty()) {
+    request.clientRequestId = clientRequestId.substr(0, kMaxClientRequestIdLen);
   }
   return request;
 }
