@@ -10,6 +10,12 @@ ARG TT_METAL_DOCKERFILE_URL
 # with a sanitized, exact-commit named context supplied by the build script.
 FROM scratch AS quetzal_source
 
+# Native builds resolve this name to an empty stage too. A build that ships the shared KV page
+# store overrides it with a context that holds the ttserve-kvstore binary
+# (build_single_docker.sh --kvstore-bin); without it the image has no store and the launcher
+# serves without one.
+FROM scratch AS kvstore_source
+
 # ==============================================================================
 # BUILDER STAGE - Contains all build dependencies and artifacts
 # ==============================================================================
@@ -281,6 +287,13 @@ RUN if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# The shared KV page store of a host's submesh engines (run_vllm_api_server.py starts it when the
+# model spec configures vllm-tt-plugin's TTKVStoreConnector), when the build supplied its binary.
+RUN --mount=type=bind,from=kvstore_source,source=.,target=/tmp/kvstore-source,ro \
+    if [ -f /tmp/kvstore-source/ttserve-kvstore ]; then \
+      install -m 0755 /tmp/kvstore-source/ttserve-kvstore /usr/local/bin/ttserve-kvstore; \
+    fi
 
 # Switch to non-root user for runtime
 USER ${CONTAINER_APP_USERNAME}

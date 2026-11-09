@@ -3528,6 +3528,8 @@ templates:
       default_impl: false  # the MTP text entry stays the default
       tensor_cache_timeout: 10800.0
       submesh_engines: true
+      # /dev/shm of the container: the shared KV store's pools (kv-transfer-config below: 96 + 24 GiB).
+      docker_shm_size: 128g
       env_vars:
         MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -3576,6 +3578,15 @@ templates:
         # The engines accept no media URL (.invalid never resolves; vLLM answers 400): only the proxy
         # downloads callers' URLs (TT_PROXY_FETCH_MEDIA, public addresses only) and passes data: URIs on.
         allowed-media-domains: ["fetched-by-the-proxy.invalid"]
+        # Shared KV store: the four engines keep the KV of prompt prefixes in one host-memory store
+        # (ttserve-kvstore, started by run_vllm_api_server.py when the image ships it; vllm-tt-plugin's
+        # TTKVStoreConnector), so a prefix one engine computed (a long system prompt, a conversation the
+        # proxy moved to a less loaded engine, a video already asked about) is loaded by the others in
+        # ~0.1 s per 128K tokens instead of prefilled again. Block keys carry the media items' content
+        # hashes, so two requests share KV only for the same tokens and the same media. Text AgentX at
+        # concurrency 32 on bhg2 (2026-11-09): 2,975 vs 2,516 requests an hour, TTFT P90 4.8 vs 13.3 s,
+        # prefilled tokens -34%. TT_KVSTORE=0 serves without it.
+        kv-transfer-config: '{"kv_connector": "TTKVStoreConnector", "kv_connector_module_path": "vllm_tt_plugin.kv_connector", "kv_role": "kv_both", "kv_connector_extra_config": {"socket": "/tmp/ttserve-kvstore.sock", "global_gib": 96, "swa_gib": 24, "min_tokens": 1024}}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   min_disk_gb: 450

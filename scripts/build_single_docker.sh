@@ -97,6 +97,7 @@ TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TT_QUETZAL_COMMIT_SHA=""
 TT_QUETZAL_SOURCE_DIR=""
 TAG_SUFFIX=""
+KVSTORE_BIN=""
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
 # Process CLI options
@@ -183,6 +184,16 @@ while [ $# -gt 0 ]; do
             IMAGE_REPO="$2"
             shift
             ;;            
+        --kvstore-bin)
+            # The ttserve-kvstore binary (the shared KV page store of a host's submesh engines)
+            # to install in the image as /usr/local/bin/ttserve-kvstore.
+            if [ $# -lt 2 ] || [ ! -f "$2" ]; then
+                echo "⛔ Error: --kvstore-bin requires the path of the ttserve-kvstore binary."
+                exit 1
+            fi
+            KVSTORE_BIN="$(realpath "$2")"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -363,15 +374,26 @@ generate_model_specs_json()
             )
         fi
 
+        KVSTORE_BUILD_ARGS=()
+        if [[ -n "$KVSTORE_BIN" ]]; then
+            # A context holding only the binary, named as the Dockerfile's kvstore_source stage.
+            KVSTORE_CONTEXT="$(mktemp -d)"
+            cp "$KVSTORE_BIN" "${KVSTORE_CONTEXT}/ttserve-kvstore"
+            KVSTORE_BUILD_ARGS+=(--build-context "kvstore_source=${KVSTORE_CONTEXT}")
+            export DOCKER_BUILDKIT=1
+        fi
+
         docker build \
         -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         "${QUETZAL_BUILD_ARGS[@]}" \
+        "${KVSTORE_BUILD_ARGS[@]}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
+        if [[ -n "${KVSTORE_CONTEXT:-}" ]]; then rm -rf "${KVSTORE_CONTEXT}"; fi
         echo "✅ built image: ${dev_image_tag}"
     else
         echo "skipping, build_dev_image=${build_dev_image}"
