@@ -646,6 +646,24 @@ async def test_a_bad_data_uri_payload_is_422(generations_app, payload):
     assert device.requests == []
 
 
+@pytest.mark.parametrize(
+    "output_format, options",
+    [("jpeg", {"quality": 95, "subsampling": 0}), ("webp", {"quality": 90})],
+)
+def test_lossy_outputs_are_saved_at_high_quality(tmp_path, output_format, options):
+    from model_services.generation_service import GenerationService
+
+    pixels = np.random.default_rng(0).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    image = Image.fromarray(pixels)
+    request = SimpleNamespace(
+        OUTPUT_TYPE="image", format=output_format, _seed=0, _prompt="x"
+    )
+    output = GenerationService._write_output(tmp_path, 0, request, image)
+    expected = BytesIO()
+    image.save(expected, format=output_format.upper(), **options)
+    assert (tmp_path / output["file"]).read_bytes() == expected.getvalue()
+
+
 async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkeypatch):
     async def fetch(url, **kwargs):
         raise AssertionError("fetched")
