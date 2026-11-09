@@ -13596,9 +13596,11 @@ _eval_config_list = [
     # samples such requests on the host from the returned logits. The chat
     # template thinks by default ("Reasoning Effort: Max" + <think>), so no
     # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
-    # the thought channel into reasoning_content. Concurrency 16 = the 128 K
-    # profile's admission (the eval profile; on the 1 M profile the engine
-    # admits 4 and queues the rest), max_length = its context. Published
+    # the thought channel into reasoning_content. Concurrency 16: the 128 K
+    # profile serves all 16 at once; the DEFAULT 1 M profile (a release run's)
+    # admits 4 and queues the other 12 in vLLM, so an eval there runs at 4
+    # live users. max_length = the 128 K context (both profiles serve it).
+    # Published
     # scores are the model card's (.eval_results/GLM-5.3-Flash.yaml):
     # Terminal-Bench 2.1 84.3 (Claude Code harness, not terminus-2), DeepSWE
     # 63.4 (not SWE-bench Verified), no GPQA / LiveCodeBench number; GPU
@@ -13627,7 +13629,7 @@ _eval_config_list = [
                 # Chat endpoint: the server applies the chat template (thinking on
                 # by default) and the reasoning parser.
                 use_chat_api=True,
-                max_concurrent=16,  # = the 128 K profile's admission (every slot decodes in one stack step)
+                max_concurrent=16,  # the 128 K profile's admission; the default 1 M profile serves 4 at a time
                 model_kwargs={
                     "max_length": 131072,
                     # Long thinking generations exceed lm-eval's 1800 s default.

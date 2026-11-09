@@ -8538,8 +8538,9 @@
             {
                 "_comment": [
                     "The persistent-stack profiles (tt-metal #64931): the theoretical tier is the e2e row of the same point",
-                    "(tests/test_mk_e2e.py on an 8x4, 45 layers: TTFT of the batched prefill at 3.0-3.7 K tok/s, decode of",
-                    "the full-width stack step: 27 ms at 4 slots, 71 ms at 16, so a lone user decodes at the profile's rate);",
+                    "(tests/test_mk_e2e.py on an 8x4, 45 layers): TTFT of the long prompts at 3.0-3.7 K tok/s, of the short",
+                    "prompts from the served walls (the stack prefills a batch one slot at a time: 128 x 4 ~2 s, 128 x 16 ~6 s),",
+                    "decode of the full-width stack step (27 ms at 4 slots, 71 ms at 16, so a lone user decodes at the profile's rate);",
                     "the measured tier is filled by a release run through the server, not by the e2e rows."
                 ]
             },
@@ -8555,7 +8556,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1300,
+                        "ttft_ms": 900,
                         "tput_user": 37.0,
                         "tput": 37.0
                     },
@@ -8574,7 +8575,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1400,
+                        "ttft_ms": 2500,
                         "tput_user": 36.7,
                         "tput": 146.8
                     },
@@ -8593,7 +8594,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1400,
+                        "ttft_ms": 2500,
                         "tput_user": 36.7,
                         "tput": 146.8
                     },
@@ -8688,7 +8689,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1300,
+                        "ttft_ms": 2000,
                         "tput_user": 14.0,
                         "tput": 14.0
                     },
@@ -8707,7 +8708,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1600,
+                        "ttft_ms": 7000,
                         "tput_user": 14.6,
                         "tput": 233.6
                     },
@@ -8726,7 +8727,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1600,
+                        "ttft_ms": 7000,
                         "tput_user": 14.6,
                         "tput": 233.6
                     },

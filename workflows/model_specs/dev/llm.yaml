@@ -7690,8 +7690,9 @@ templates:
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
       max_tokens_all_users_override: 4194304  # 4 x 1048576
       default_impl: true
-      # The first boot builds the tile cache from the checkpoint (hours: 174 GB of reference-format tiles) and writes
-      # the permuted expert copies; a warm cache boots in ~10 min (the stack build ~6 min + the warm-up).
+      # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
+      # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
+      # ~11-12 min (the stack build ~5.5 min + the prefill-bucket and decode captures).
       tensor_cache_timeout: 14400.0
       env_vars:
         # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): the plugin's built-in map registers
@@ -7758,8 +7759,9 @@ templates:
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
       max_tokens_all_users_override: 2097152  # 16 x 131072
       default_impl: false
-      # The first boot builds the tile cache from the checkpoint (hours: 174 GB of reference-format tiles) and writes
-      # the permuted expert copies; a warm cache boots in ~10 min (the stack build ~6 min + the warm-up).
+      # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
+      # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
+      # ~11-12 min (the stack build ~5.5 min + the prefill-bucket and decode captures).
       tensor_cache_timeout: 14400.0
       env_vars:
         # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): the plugin's built-in map registers
