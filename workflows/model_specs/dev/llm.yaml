@@ -7712,12 +7712,17 @@ templates:
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
         sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
-        prefill_chunk_alignment: 128  # the TP prefill resumes a chunked prompt only on its 128-row grid
+        # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
+        # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
+        # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
+        prefill_chunk_alignment: 8192
         decode_interleave_enabled: false
       vllm_args:
         max_num_seqs: 4  # = the stack's construction width (the adapter refuses another)
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
-        max_num_batched_tokens: 8192  # one 8192-token prefill bucket per engine step (the buckets are 2048 / 8192)
+        # one 8192-token prefill bucket per engine step plus one decode token per slot: a prefill chunk beside decoding
+        # users still fills a whole bucket (an offer short of the bucket would wait for a step that never comes)
+        max_num_batched_tokens: 8196  # 8192 + 4
         enable_chunked_prefill: true
         no-enable-prefix-caching: true  # the stack declares no prefix cache
         enable-auto-tool-choice: true
@@ -7775,12 +7780,16 @@ templates:
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
         sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
-        prefill_chunk_alignment: 128  # the TP prefill resumes a chunked prompt only on its 128-row grid
+        # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
+        # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
+        # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
+        prefill_chunk_alignment: 8192
         decode_interleave_enabled: false
       vllm_args:
         max_num_seqs: 16  # = the stack's construction width (the adapter refuses another)
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
-        max_num_batched_tokens: 8192  # one 8192-token prefill bucket per engine step (the buckets are 2048 / 8192)
+        # one 8192-token prefill bucket per engine step plus one decode token per slot (see the 1 M profile)
+        max_num_batched_tokens: 8208  # 8192 + 16
         enable_chunked_prefill: true
         no-enable-prefix-caching: true  # the stack declares no prefix cache
         enable-auto-tool-choice: true
