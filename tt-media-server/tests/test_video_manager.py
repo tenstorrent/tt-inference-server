@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -241,6 +242,26 @@ class TestExportToMp4:
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         path = manager.export_to_mp4(frames, fps=24)
         assert path.endswith(".mp4")
+
+    @pytest.mark.parametrize(
+        "model_runner, fps", [("tt-mochi-1", 30), ("tt-wan2.2", 16), (None, 16)]
+    )
+    @patch("utils.video_manager.subprocess.Popen")
+    @patch("utils.video_manager.Path.mkdir")
+    def test_default_fps_is_the_served_models(
+        self, mock_mkdir, mock_popen, manager, model_runner, fps
+    ):
+        proc = MagicMock()
+        proc.wait.return_value = 0
+        proc.stderr.read.return_value = b""
+        mock_popen.return_value = proc
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        with patch(
+            "utils.video_manager.settings", SimpleNamespace(model_runner=model_runner)
+        ):
+            manager.export_to_mp4(frames)
+        cmd = mock_popen.call_args.args[0]
+        assert cmd[cmd.index("-r") + 1] == str(fps)
 
     @patch("utils.video_manager.subprocess.Popen")
     @patch("utils.video_manager.Path.mkdir")

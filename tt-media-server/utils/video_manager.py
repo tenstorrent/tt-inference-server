@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from config.constants import video_export_fps
+from config.settings import settings
 from numpy.typing import NDArray
 from telemetry.telemetry_client import get_telemetry_client
 
@@ -60,12 +62,13 @@ class VideoManager:
         self._logger = TTLogger()
 
     @log_execution_time("Exporting video to MP4")
-    def export_to_mp4(self, frames: NDArray, fps: int = 16) -> str:
+    def export_to_mp4(self, frames: NDArray, fps: Optional[int] = None) -> str:
         """
         Export frames to MP4 (H.264 via ffmpeg).
 
         Frames are streamed to ffmpeg one at a time so encoding overlaps with
         Python-side dtype conversion, avoiding large temporary allocations.
+        ``fps`` defaults to the served model's frame rate (``video_export_fps``).
 
         Env (optional):
             TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
@@ -73,6 +76,8 @@ class VideoManager:
         """
         if hasattr(frames, "frames"):
             frames = frames.frames
+        if fps is None:
+            fps = video_export_fps(settings.model_runner)
 
         _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
