@@ -567,6 +567,21 @@ WAN22_NUM_FRAMES = 81
 WAN22_RESOLUTION_LARGE_MESH = Resolution(height=720, width=1280)
 WAN22_RESOLUTION_SMALL_MESH = Resolution(height=480, width=832)
 
+# Mochi 1 generates at 30 fps (model card; tt_dit's test_pipeline_mochi exports at 30).
+MOCHI_FPS = 30
+DEFAULT_VIDEO_EXPORT_FPS = 16
+VIDEO_EXPORT_FPS_BY_RUNNER = {ModelRunners.TT_MOCHI_1: MOCHI_FPS}
+
+
+def video_export_fps(model_runner: Optional[str]) -> int:
+    """Frame rate a runner's raw frames are encoded at when it does not pass one."""
+    try:
+        return VIDEO_EXPORT_FPS_BY_RUNNER.get(
+            ModelRunners(model_runner), DEFAULT_VIDEO_EXPORT_FPS
+        )
+    except ValueError:
+        return DEFAULT_VIDEO_EXPORT_FPS
+
 
 def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     """Resolve Wan2.2 target resolution from a (rows, cols) mesh shape."""
