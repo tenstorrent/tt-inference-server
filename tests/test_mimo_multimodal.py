@@ -60,7 +60,10 @@ def test_mm_spec_serves_the_multimodal_class_and_leaves_text_entries_alone():
         "video": 1,
         "audio": 4,
     }
-    assert json.loads(args["media-io-kwargs"]) == {"video": {"num_frames": 32}}
+    # frames at 2 per second, as MiMo's own endpoint samples them
+    assert json.loads(args["media-io-kwargs"]) == {
+        "video": {"num_frames": -1, "fps": 2}
+    }
     # vLLM fetches no URL itself: only the proxy downloads, with its address checks.
     assert args["allowed-media-domains"] == ["fetched-by-the-proxy.invalid"]
     assert "hf_overrides" not in args and "hf-overrides" not in args
