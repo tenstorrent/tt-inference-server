@@ -285,11 +285,24 @@ engine_sched::GenerationParams toEngineGeneration(
   // converging on <|speech_end|> -- generation runs to max_new_tokens with a
   // noise tail instead of ending naturally.
   //
-  // These are the values the reference standalone driver uses, which produces
-  // clean speech on the same weights and terminates at <|speech_end|>.
-  out.sampling.temperature = 0.6F;
-  out.sampling.top_k = 32;
-  out.sampling.top_p = 0.9F;
+  // Values come from TtsConfig (TTS_TEMPERATURE / TTS_TOP_P / TTS_TOP_K,
+  // defaulting to 1.0 / 0.9 / 64, plus TTS_REPETITION_PENALTY /
+  // TTS_FREQUENCY_PENALTY, defaulting to 1.1 / 0.1). A zero
+  // means "not set" and leaves the engine's own default in place, which only
+  // happens for callers that build GenerationParams directly, such as tests.
+  if (generation.temperature > 0.0F) {
+    out.sampling.temperature = generation.temperature;
+  }
+  if (generation.topP > 0.0F) {
+    out.sampling.top_p = generation.topP;
+  }
+  if (generation.topK > 0) {
+    out.sampling.top_k = static_cast<int32_t>(generation.topK);
+  }
+  // The engine copies these onto every wire row (speechlm_writer); blaze
+  // applies them on device from 1721755859.
+  out.sampling.repetition_penalty = generation.repetitionPenalty;
+  out.sampling.frequency_penalty = generation.frequencyPenalty;
   return out;
 }
 
@@ -388,10 +401,13 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   // to strip tokens from decoded text.
   TT_LOG_INFO(
       "makeTtsScheduler: tokenizer ids — speech_end={} speech_token_base={} "
-      "vocab_size={} max_new_tokens={} max_batch_size={} page_width={}",
+      "vocab_size={} max_new_tokens={} max_batch_size={} page_width={} "
+      "temperature={} top_p={} top_k={} repetition_penalty={} "
+      "frequency_penalty={}",
       params.speech_end_token, params.speech_token_base,
       tokenizer.getEncodedVocab().size(), params.max_new_tokens,
-      params.max_batch_size, params.page_width);
+      params.max_batch_size, params.page_width, config.temperature, config.topP,
+      config.topK, config.repetitionPenalty, config.frequencyPenalty);
   return params;
 }
 

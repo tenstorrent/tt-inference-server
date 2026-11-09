@@ -22,10 +22,16 @@ namespace sched = tts_scheduler;
 namespace {
 
 sched::GenerationParams toSchedulerGeneration(
-    const domain::tts::TtsGenerationParams& generation) {
+    const domain::tts::TtsGenerationParams& generation,
+    const config::TtsConfig& config) {
   sched::GenerationParams out;
   out.ignoreEos = generation.ignoreEos;
   out.stopTokens = generation.stopTokenIds;
+  out.temperature = config.temperature;
+  out.topP = config.topP;
+  out.topK = config.topK;
+  out.repetitionPenalty = config.repetitionPenalty;
+  out.frequencyPenalty = config.frequencyPenalty;
   return out;
 }
 
@@ -375,7 +381,7 @@ void BlazeTtsRunner::handleAllocateAck(
   submit.taskId = task.task_id;
   submit.slotId = response.slotId;
   submit.promptTokens = std::move(task.promptTokens);
-  submit.generation = toSchedulerGeneration(task.generation);
+  submit.generation = toSchedulerGeneration(task.generation, config);
   if (!scheduler->submit(submit)) {
     sendFinish(slot->task_id, domain::tts::TtsFinishReason::Error,
                "TTS scheduler queue full during SUBMIT", slot->slotId);

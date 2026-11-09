@@ -128,6 +128,15 @@ struct TtsConfig : RunnerConfigBase {
   uint32_t tcP99Ms = defaults::TTS_TC_P99_MS;
   uint32_t tc4P99Ms = defaults::TTS_TC4_P99_MS;
 
+  // Speech sampling, sent to blaze on every submit. Process-wide: the TTS API
+  // has no per-request sampling, so these apply to every request.
+  // See defaults::TTS_TEMPERATURE and friends.
+  float temperature = defaults::TTS_TEMPERATURE;
+  float topP = defaults::TTS_TOP_P;
+  uint32_t topK = defaults::TTS_TOP_K;
+  float repetitionPenalty = defaults::TTS_REPETITION_PENALTY;
+  float frequencyPenalty = defaults::TTS_FREQUENCY_PENALTY;
+
   // Tokenizer for the SpeechLM backbone, including TTS audio/speech tokens.
   std::string tokenizerPath;
 

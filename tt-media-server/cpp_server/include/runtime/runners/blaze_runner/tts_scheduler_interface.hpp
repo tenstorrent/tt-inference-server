@@ -32,6 +32,16 @@ struct GenerationParams {
   uint32_t maxNewTokens = 0;
   bool ignoreEos = false;
   std::vector<uint32_t> stopTokens;
+  // Speech sampling. The TTS API exposes no per-request sampling, so these are
+  // filled from TtsConfig for every request; they ride here rather than on the
+  // scheduler params because the engine takes sampling per submit.
+  float temperature = 0.0F;  // 0 = leave the engine default alone
+  float topP = 0.0F;
+  uint32_t topK = 0;
+  // Identity defaults (no penalty); always forwarded, unlike the 0-sentinel
+  // fields above, because the identity is also the engine's default.
+  float repetitionPenalty = 1.0F;
+  float frequencyPenalty = 0.0F;
 };
 
 struct TtsSubmit {

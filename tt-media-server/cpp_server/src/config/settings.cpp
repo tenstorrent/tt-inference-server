@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -102,6 +103,28 @@ unsigned long envUlong(const char* name, unsigned long defaultValue) {
   try {
     return std::stoul(v);
   } catch (const std::exception&) {
+    return defaultValue;
+  }
+}
+
+float envFloat(const char* name, float defaultValue) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return defaultValue;
+  try {
+    size_t consumed = 0;
+    const float parsed = std::stof(v, &consumed);
+    // Reject trailing junk ("0.6x") rather than silently taking the prefix:
+    // a sampling value that is quietly not what was asked for is worse than
+    // one that is loudly rejected.
+    if (consumed != std::string(v).size()) {
+      TT_LOG_WARN("[Config] {}=\"{}\" is not a number, using default={}", name,
+                  v, defaultValue);
+      return defaultValue;
+    }
+    return parsed;
+  } catch (const std::exception&) {
+    TT_LOG_WARN("[Config] {}=\"{}\" is not a number, using default={}", name, v,
+                defaultValue);
     return defaultValue;
   }
 }
@@ -596,6 +619,34 @@ TtsConfig ttsEngineConfig() {
       }
       return v;
     };
+    // Speech sampling. Ranges mirror the device-side clamps so a bad value is
+    // rejected here, by name, instead of being silently clamped on device.
+    cfg.temperature = envFloat("TTS_TEMPERATURE", defaults::TTS_TEMPERATURE);
+    if (!(cfg.temperature > 0.0F)) {
+      throw std::runtime_error("[Config] TTS_TEMPERATURE must be > 0");
+    }
+    cfg.topP = envFloat("TTS_TOP_P", defaults::TTS_TOP_P);
+    if (cfg.topP <= 0.0F || cfg.topP > 1.0F) {
+      throw std::runtime_error("[Config] TTS_TOP_P must be in (0, 1]");
+    }
+    cfg.topK = static_cast<uint32_t>(envUlong("TTS_TOP_K", defaults::TTS_TOP_K));
+    if (cfg.topK < 1 || cfg.topK > defaults::TTS_TOP_K_MAX) {
+      throw std::runtime_error(
+          "[Config] TTS_TOP_K must be in [1, " +
+          std::to_string(defaults::TTS_TOP_K_MAX) + "]");
+    }
+    cfg.repetitionPenalty =
+        envFloat("TTS_REPETITION_PENALTY", defaults::TTS_REPETITION_PENALTY);
+    // Divisive, so 0 or a negative value would blow up or flip the logits.
+    if (!(cfg.repetitionPenalty > 0.0F) || std::isinf(cfg.repetitionPenalty)) {
+      throw std::runtime_error("[Config] TTS_REPETITION_PENALTY must be > 0 (1 = off)");
+    }
+    cfg.frequencyPenalty =
+        envFloat("TTS_FREQUENCY_PENALTY", defaults::TTS_FREQUENCY_PENALTY);
+    if (!std::isfinite(cfg.frequencyPenalty)) {
+      throw std::runtime_error("[Config] TTS_FREQUENCY_PENALTY must be a finite number (0 = off)");
+    }
+
     cfg.firstChunkTokens =
         readChunk("TTS_FIRST_CHUNK_TOKENS", defaults::TTS_FIRST_CHUNK_TOKENS);
     cfg.secondChunkTokens =

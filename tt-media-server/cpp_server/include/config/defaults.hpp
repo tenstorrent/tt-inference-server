@@ -242,6 +242,39 @@ constexpr bool TTS_ENCODER_ENABLED = true;
 // <|speech_end|>; this bounds that runaway to a predictable truncation.
 constexpr uint32_t TTS_MAX_NEW_TOKENS = 0;
 
+// Speech sampling sent to blaze per request. Anything is better than leaving
+// it unset: the engine's default-constructed SamplingParams (1.0 / -1 / 1.0)
+// is untruncated sampling over the 65536-entry FSQ codebook, whose long
+// low-probability tail degrades the audio and keeps the model from converging
+// on <|speech_end|>.
+//
+// top_k: tt-blaze multi_token_new up to d771a3886 clamped it to [1, 32] on
+// device (softmax_top_p kernel). From 1721755859 (llama rebase, tt-metal
+// v0.83.0-dev20261105) the SpeechLM samples from a 64-wide top-K chain
+// (inworld_tts2_speechlm LM_HEAD_MAX_TOP_K = 64), so 64 is both the default
+// and the ceiling. Against an older blaze the device silently clamps it back
+// to 32; set TTS_TOP_K=32 there to keep the log honest.
+//
+// Temperature 1.0 leaves the distribution unsharpened within those top_k
+// candidates, trading more prosodic variation for more tail draws; the
+// reference standalone driver sharpens to 0.6 instead. Both have been run on
+// these weights. Set TTS_TEMPERATURE to compare without a rebuild.
+constexpr float TTS_TEMPERATURE = 1.0F;
+constexpr float TTS_TOP_P = 0.9F;
+constexpr uint32_t TTS_TOP_K = 64;
+// The widest device-side top_k (new blaze), mirrored here so an out-of-range
+// value is rejected at config-parse time with the env var's name rather than
+// silently clamped on device.
+constexpr uint32_t TTS_TOP_K_MAX = 64;
+// Repetition penalty (divisive) and frequency penalty (subtractive) over the
+// codes already generated, applied on device by blaze 1721755859 and later
+// (words 48-63 of the batch-8 wire). Defaults are the model's reference
+// sampling (temperature 1.0, top_p 0.9, repetition 1.1, frequency 0.1;
+// presence 0.0, which the wire has no field for). An older blaze ignores these
+// words, so there they are sent but have no effect. 1.0 / 0.0 turns them off.
+constexpr float TTS_REPETITION_PENALTY = 1.1F;
+constexpr float TTS_FREQUENCY_PENALTY = 0.1F;
+
 // Leading BOS for the TTS prompt. The reference compiler emits
 //   [BOS, <|bot|>, ...text..., <|speech_start|>]
 // but compilePromptString() starts at <|bot|> and Tokenizer::encode() does not
