@@ -521,6 +521,7 @@ components:
             - processing_error
             - stale_job
             - server_restart
+            - prompt_enhancement_error
           - type: string
           title: Code
           description: 'Why the job failed. More codes may be added; treat an unknown one
@@ -534,7 +535,11 @@ components:
             An infrastructure failure: safe to resubmit, preferably to another runner.
 
             - `server_restart`: the server restarted while the job was queued or running.
-            Safe to resubmit.'
+            Safe to resubmit.
+
+            - `prompt_enhancement_error`: the prompt enhancer failed or returned an unusable
+            caption (models with an enhancer, e.g. Ideogram 4 with `prompt`). Usually safe
+            to resubmit.'
         message:
           type: string
           title: Message

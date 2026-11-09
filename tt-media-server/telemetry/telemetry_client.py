@@ -724,6 +724,16 @@ video_encode_frames_per_second = Histogram(
     buckets=VIDEO_FRAMES_PER_SECOND_BUCKETS,
 )
 
+# One call to the prompt enhancer's outside service; a retry is another call.
+# outcome: ok, rejected (400/422), auth_error (401/403), rate_limited (429),
+# server_error (5xx), timeout, transport_error, other_error.
+prompt_enhancement_call_duration = Histogram(
+    "tt_media_server_prompt_enhancement_call_duration_seconds",
+    "Prompt enhancer call duration in seconds",
+    ["outcome"],
+    buckets=(0.5, 1, 2, 4, 8, 15, 30, 60),
+)
+
 video_encode_counter = Counter(
     "tt_media_server_video_encode_total",
     "Total number of mp4 encode operations",

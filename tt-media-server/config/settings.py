@@ -4,7 +4,7 @@
 
 import os
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
@@ -22,6 +22,7 @@ from config.constants import (
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 from utils.logger import TTLogger
@@ -148,6 +149,23 @@ class Settings(BaseSettings):
     # reads included. A full Ref2VA set at the caps is ~420 MB.
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
+
+    # Prompt enhancer for Ideogram 4: expands a plain `prompt` into the
+    # structured caption the model was trained on, by Ideogram's hosted
+    # magic-prompt API. "none" turns it off; a request with `prompt` is then a
+    # 422 and only `structured_prompt` is served.
+    ideogram_prompt_enhancer: Literal["ideogram-api", "none"] = "ideogram-api"
+    # Never logged or stored with a job.
+    ideogram_api_key: SecretStr = SecretStr("")
+    ideogram_magic_prompt_url: str = (
+        "https://api.ideogram.ai/v1/ideogram-v4/magic-prompt"
+    )
+    # Per call. The reference client waits up to 120 s.
+    prompt_enhancer_timeout_seconds: float = 30.0
+    # Calls in flight per server process, kept under the key's in-flight limit.
+    prompt_enhancer_max_in_flight: int = 8
+    # Retries of a timeout, 429 or 5xx, each after a backoff.
+    prompt_enhancer_max_retries: int = 2
 
     # Telemetry settings
     enable_telemetry: bool = True

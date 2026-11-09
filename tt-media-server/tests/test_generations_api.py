@@ -33,6 +33,7 @@ from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
+from utils.prompt_enhancer import UNAVAILABLE, PromptEnhancementError
 from utils.video_manager import VideoManager
 
 
@@ -1532,9 +1533,192 @@ def test_ideogram_rejects_invalid_captions(caption, message):
         Ideogram4Request(structured_prompt=caption)
 
 
-def test_ideogram_has_no_plain_prompt():
-    with pytest.raises(ValidationError, match="extra"):
-        Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
+@pytest.mark.parametrize(
+    "fields",
+    [{}, {"prompt": "a poster", "structured_prompt": _CAPTION}, {"prompt": ""}],
+    ids=["neither", "both", "empty"],
+)
+def test_ideogram_takes_exactly_one_prompt(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(**fields)
+
+
+def test_ideogram_plain_prompt_goes_to_the_enhancer():
+    request = Ideogram4Request(prompt="a poster", aspect_ratio="2:3")
+    assert request.needs_prompt_enhancement()
+    assert request.enhancer_arguments() == ("a poster", "2:3")
+    assert not Ideogram4Request(structured_prompt=_CAPTION).needs_prompt_enhancement()
+
+
+def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
+    # As the hosted enhancer may: keys out of order, an aspect ratio, bboxes.
+    request = Ideogram4Request(prompt="a cafe sign")
+    caption = request.prompt_from_enhancer(
+        {
+            "aspect_ratio": "1x1",
+            "compositional_deconstruction": {
+                "elements": [
+                    {"desc": "d", "bbox": [0, 0, 9, 9], "text": "CAFÉ", "type": "text"}
+                ],
+                "background": "b",
+            },
+            "style_description": {"medium": "m", "art_style": "s"},
+            "high_level_description": "h",
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"medium":"m","art_style":"s"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"text","text":"CAFÉ","desc":"d"}]}}'
+    )
+
+
+@pytest.mark.parametrize(
+    "caption",
+    [
+        None,
+        "not a caption",
+        {"style_description": {"photo": "p"}},
+        {
+            "style_description": {"photo": "p", "art_style": "s"},
+            "compositional_deconstruction": {"background": "b", "elements": []},
+        },
+        {
+            "compositional_deconstruction": {"background": "b", "elements": []},
+            "mood": "extra key",
+        },
+    ],
+    ids=["none", "string", "no-composition", "photo-and-art-style", "unknown-key"],
+)
+def test_enhancer_caption_follows_the_reference_rules(caption):
+    with pytest.raises(ValueError, match="enhancer"):
+        Ideogram4Request(prompt="p").prompt_from_enhancer(caption)
+
+
+class _FakeEnhancer:
+    """Returns ``captions`` in turn, or raises one that is an exception;
+    waits ``delay`` seconds before each."""
+
+    def __init__(self, *captions, delay: float = 0.0):
+        self.captions = list(captions)
+        self.delay = delay
+        self.calls = []
+
+    async def enhance(self, prompt, aspect_ratio):
+        self.calls.append((prompt, aspect_ratio))
+        await asyncio.sleep(self.delay)
+        caption = self.captions.pop(0)
+        if isinstance(caption, Exception):
+            raise caption
+        return caption
+
+
+def _use_enhancer(monkeypatch, enhancer):
+    monkeypatch.setattr(
+        "model_services.generation_service.get_prompt_enhancer",
+        lambda name: enhancer,
+    )
+
+
+_ENHANCED = {
+    "high_level_description": "A neon sign.",
+    "compositional_deconstruction": {
+        "background": "a wall",
+        "elements": [{"type": "text", "bbox": [1, 2, 3, 4], "text": "OPEN"}],
+    },
+}
+_ENHANCED_PROMPT = (
+    '{"high_level_description":"A neon sign.",'
+    '"compositional_deconstruction":{"background":"a wall",'
+    '"elements":[{"type":"text","text":"OPEN"}]}}'
+)
+
+
+async def test_ideogram_plain_prompt_is_enhanced_before_the_device(
+    generations_app, monkeypatch
+):
+    enhancer = _FakeEnhancer(_ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"prompt": "an open sign", "aspect_ratio": "9:16"},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert enhancer.calls == [("an open sign", "9:16")]
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+    (output,) = job["outputs"]
+    assert output["prompt"] == _ENHANCED_PROMPT
+
+
+async def test_an_unusable_caption_is_asked_for_once_more(generations_app, monkeypatch):
+    enhancer = _FakeEnhancer({"style_description": {}}, _ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert len(enhancer.calls) == 2
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("captions", "message"),
+    [
+        (({"style_description": {}}, None), "unusable caption"),
+        ((PromptEnhancementError(UNAVAILABLE),), "unavailable"),
+    ],
+    ids=["unusable-twice", "service-error"],
+)
+async def test_an_enhancer_failure_fails_the_job_before_the_device(
+    generations_app, monkeypatch, captions, message
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(*captions))
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "prompt_enhancement_error"
+    assert message in job["error"]["message"]
+    assert device.requests == []
+
+
+async def test_a_job_cancelled_while_its_prompt_is_enhanced_never_reaches_the_device(
+    generations_app, monkeypatch
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(_ENHANCED, delay=0.5))
+    client, device = generations_app("tt-ideogram-4")
+    job = (
+        await client.post(
+            "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+        )
+    ).json()
+    assert job["status"] == "queued"
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await asyncio.sleep(0.7)
+    assert device.requests == []
+
+
+async def test_a_plain_prompt_is_422_without_an_enhancer(generations_app, monkeypatch):
+    _use_enhancer(monkeypatch, None)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    assert response.status_code == 422
+    assert "structured_prompt" in response.text
+    ok = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"structured_prompt": _CAPTION}
+    )
+    assert ok.status_code == 202
 
 
 async def test_ideogram_gets_the_serialized_caption(generations_app):

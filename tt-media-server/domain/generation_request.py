@@ -145,6 +145,9 @@ class GenerationRequest(BaseRequest):
     # to the other ranks of a multi-host mesh: a decoded image can be a
     # hundred times its file.
     RUNNER_DECODES_IMAGES: ClassVar[bool] = False
+    # The prompt enhancer that turns the request's plain prompt into the
+    # model's prompt, by name (utils.prompt_enhancer); None for none.
+    PROMPT_ENHANCER: ClassVar[Optional[str]] = None
 
     _images: dict[str, list[Image.Image]] = PrivateAttr(default_factory=dict)
     # The input files, and the metadata probed from videos and audio clips.
@@ -187,6 +190,11 @@ class GenerationRequest(BaseRequest):
         """Every (width, height) a request can produce, as far as they can be
         listed, so the runner can compile and trace them before serving."""
         raise NotImplementedError
+
+    def needs_prompt_enhancement(self) -> bool:
+        """Whether the model's prompt comes from the prompt enhancer rather
+        than ``model_prompt``."""
+        return False
 
     def model_prompt(self) -> str:
         """The prompt as the model gets it."""

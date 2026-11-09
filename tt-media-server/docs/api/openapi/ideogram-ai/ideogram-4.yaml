@@ -441,11 +441,9 @@ components:
         the model''s order. Each output reports it as its `prompt`.
 
 
-        There is no plain-text prompt for now: Ideogram 4 needs a caption like
+        Use this to bypass the prompt enhancer, e.g. with a caption written by
 
-        this, and turning plain text into one takes an LLM ("magic prompt"),
-
-        which this API doesn''t run yet.
+        your own LLM.
 
 
         Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
@@ -510,9 +508,29 @@ components:
       maxItems: 16
       description: Dominant colors as uppercase `#RRGGBB`.
     Ideogram4Request:
+      oneOf:
+      - required:
+        - prompt
+      - required:
+        - structured_prompt
       properties:
+        prompt:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Prompt
+          description: What to generate, in plain words. Ideogram 4 only works from a structured
+            caption, so the server first rewrites the prompt into one with a prompt enhancer
+            (an LLM), adding detail on composition, style, lighting and any text, for the
+            requested `aspect_ratio`. Each output reports the caption the model received as
+            its `prompt`. The enhancer isn't seeded, so the same `prompt` and `seed` can give
+            different images; to reproduce one, send its reported caption as `structured_prompt`.
+            To skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
-          $ref: '#/components/schemas/Ideogram4Caption'
+          anyOf:
+          - $ref: '#/components/schemas/Ideogram4Caption'
+          - type: 'null'
         count:
           type: integer
           maximum: 1.0
@@ -571,9 +589,8 @@ components:
           default: default
       additionalProperties: false
       type: object
-      required:
-      - structured_prompt
       title: Ideogram4Request
+      description: Exactly one of `prompt` or `structured_prompt`.
     Ideogram4StyleDescription:
       properties:
         aesthetics:
@@ -797,6 +814,7 @@ components:
             - processing_error
             - stale_job
             - server_restart
+            - prompt_enhancement_error
           - type: string
           title: Code
           description: 'Why the job failed. More codes may be added; treat an unknown one
@@ -810,7 +828,11 @@ components:
             An infrastructure failure: safe to resubmit, preferably to another runner.
 
             - `server_restart`: the server restarted while the job was queued or running.
-            Safe to resubmit.'
+            Safe to resubmit.
+
+            - `prompt_enhancement_error`: the prompt enhancer failed or returned an unusable
+            caption (models with an enhancer, e.g. Ideogram 4 with `prompt`). Usually safe
+            to resubmit.'
         message:
           type: string
           title: Message

@@ -41,6 +41,17 @@ AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
 )
 
 
+class JobFailure(Exception):
+    """An error that fails its job with ``code`` rather than ``processing_error``.
+
+    ``str(error)`` becomes the job's error message, which clients see.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class JobStatus(str, Enum):
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
@@ -622,7 +633,8 @@ class JobManager:
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
-            job.mark_failed(error_code="processing_error", error_message=str(e))
+            code = e.code if isinstance(e, JobFailure) else "processing_error"
+            job.mark_failed(error_code=code, error_message=str(e))
             self._sync_status_to_db(job)
             if job.cancel_event:
                 self._cleanup_job(job)
