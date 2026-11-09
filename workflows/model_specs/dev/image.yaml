@@ -310,3 +310,27 @@ templates:
       max_context: 65536
       default_impl: true
   status: FUNCTIONAL
+
+# Served through the generations API (POST /v1/generations/ideogram-ai/ideogram-4). The pipeline
+# writes a dequantized bf16 copy of the fp8 checkpoint, about twice its size, under
+# TT_DIT_CACHE_DIR.
+- weights:
+    - ideogram-ai/ideogram-4
+  impl: tt_transformers
+  min_disk_gb: 110
+  min_ram_gb: 64
+  model_type: IMAGE
+  inference_engine: MEDIA
+  hf_weights_repo: ideogram-ai/ideogram-4-fp8
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL
