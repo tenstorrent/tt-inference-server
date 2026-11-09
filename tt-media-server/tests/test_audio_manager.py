@@ -5,6 +5,7 @@
 import io
 import json
 import os
+import struct
 import subprocess
 import wave
 from unittest.mock import Mock, patch
@@ -39,6 +40,74 @@ def generate_dummy_wav_bytes():
         wf.setframerate(16000)
         wf.writeframes(b"\x00" * 320)  # 160 samples
     return buffer.getvalue()
+
+
+# Samples spanning the full range, including the smallest 24-bit steps.
+WAV_SAMPLES = np.array(
+    [0.0, 0.5, -0.5, 0.25, -0.999, 1 / 8388608.0, -1 / 8388608.0], dtype=np.float32
+)
+
+# KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, as the SubFormat GUID of an extensible header.
+_IEEE_FLOAT_GUID = bytes.fromhex("0300000000001000800000aa00389b71")
+
+
+def pcm24_wav_bytes(samples, sample_rate=16000):
+    ints = np.round(samples * 8388607.0).astype(np.int32)
+    frames = b"".join(int(v).to_bytes(3, "little", signed=True) for v in ints)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(3)
+        wf.setframerate(sample_rate)
+        wf.writeframes(frames)
+    return buffer.getvalue()
+
+
+def extensible_float_wav_bytes(samples, sample_rate=16000):
+    """What ffmpeg and sox write for float WAV above 48 kHz or two channels."""
+    data = samples.astype("<f4").tobytes()
+    fmt = struct.pack("<HHIIHH", 0xFFFE, 1, sample_rate, sample_rate * 4, 4, 32)
+    fmt += struct.pack("<HHI", 22, 32, 4) + _IEEE_FLOAT_GUID
+    return (
+        b"RIFF"
+        + struct.pack("<I", 4 + 8 + len(fmt) + 8 + len(data))
+        + b"WAVEfmt "
+        + struct.pack("<I", len(fmt))
+        + fmt
+        + b"data"
+        + struct.pack("<I", len(data))
+        + data
+    )
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_decode_wav_24bit_pcm():
+    audio, sample_rate, channels = AudioManager()._decode_wav_file(
+        pcm24_wav_bytes(WAV_SAMPLES)
+    )
+    assert (sample_rate, channels) == (16000, 1)
+    np.testing.assert_allclose(audio, WAV_SAMPLES, atol=1 / 8388608.0)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_decode_wav_extensible_float32():
+    audio, sample_rate, channels = AudioManager()._decode_wav_file(
+        extensible_float_wav_bytes(WAV_SAMPLES)
+    )
+    assert (sample_rate, channels) == (16000, 1)
+    np.testing.assert_array_equal(audio, WAV_SAMPLES)
+
+
+@pytest.mark.parametrize("fmt, subtype", [("WAV", "PCM_24"), ("WAVEX", "FLOAT")])
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_decode_wav_matches_soundfile(fmt, subtype):
+    sf = pytest.importorskip("soundfile")
+    samples = np.random.default_rng(0).uniform(-1, 1, 1600).astype(np.float32)
+    buffer = io.BytesIO()
+    sf.write(buffer, samples, 16000, format=fmt, subtype=subtype)
+    expected, _ = sf.read(io.BytesIO(buffer.getvalue()), dtype="float32")
+    audio, _, _ = AudioManager()._decode_wav_file(buffer.getvalue())
+    np.testing.assert_allclose(audio, expected, atol=1 / 8388608.0)
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())
