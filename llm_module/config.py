@@ -133,7 +133,7 @@ class ServerConnection:
 
 
 # The sweep's per-run timeout scales with the point's token volume: the default (``DriverContext.per_run_timeout_s``,
-# 2 h) suits the standard points, but a long-context point such as GLM-5.3-Flash's 32 x 1 047 612-token capstone
+# 2 h) suits the standard points, but a long-context point such as GLM-5.3-Flash's 4 x 1 047 612-token point
 # prefills for hours on its Galaxy. The plan assumes these conservative aggregate rates and keeps the larger of the
 # default and the plan.
 BENCHMARK_MIN_PREFILL_TOK_S = 1000.0

@@ -7634,3 +7634,163 @@ templates:
     ibm-granite/granite-4.2-30b:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_xml
+
+# =============================================================================
+# GLM-5.3-Flash on the Blackhole Galaxy as ONE persistent megakernel stack over
+# all 32 chips (tt-metal models/autoports/zai_org_glm_5_3_flash/tt: TP32 x EP32
+# with the sequence-sharded DSA pool, tt-metal PR #64931) through its vLLM
+# adapter models/demos/glm53_flash/tt/generator_vllm_stack.py
+# (GLM53StackForCausalLM). Galaxy only: one vLLM engine per mesh, no data
+# parallelism. The engine's admission is the stack's construction width
+# (max_num_seqs == its decode slots), so every served user is resident for the
+# whole context.
+#
+# Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
+# profile pattern): glm53_flash = the 1 M-context profile (4 resident users,
+# the default), glm53_flash_128k = the 128 K-context profile (16 resident
+# users). Text only (the stack serves no image or video request). Greedy
+# requests sample on the device (the head's argmax inside the traced decode
+# step); sampled requests (temperature / top-p: the eval entries) on the host
+# from the returned logits. No prefix cache, synchronous scheduling, chunked
+# prefill on the stack's 128-row grid (2048 / 8192-token prefill buckets, one
+# chunk per engine step).
+#
+# Validated on an 8x4 (45 layers, OSL 128, tests/test_mk_e2e.py; decode as
+# tok/s per user): 1 M x 1 51.7 (TTFT 345 s), 1 M x 4 35.4 (TTFT 1,379 s),
+# 512 K x 4 34.6, 128 K x 16 14.0 (TTFT 583 s), 32 K x 4 36.7 (TTFT 35 s),
+# 32 K x 16 14.6; prefill 3.0-3.7 K tok/s at every length. A decode step runs
+# at the stack's full width, so a lone user decodes at the profile's per-user
+# rate (37 tok/s on the 1 M profile, 14 on the 128 K profile).
+#
+# The stack's validated Galaxy knobs (galaxy_defaults.KNOBS: the 1D fabric, EP
+# experts, the DSA pool, the sparse-attention ladder and the prefill buckets
+# of the served context) are applied by the adapter at construction; an
+# explicit GLM53_* value here would override them. Caches under TT_CACHE_PATH
+# (the adapter's default): glm53_tile_cache_v3 (the reference-format tile
+# cache, 174 GB, BUILT on the first boot from the HF checkpoint and read
+# afterwards) and glm53_fused_experts_cache (the permuted expert copies,
+# 109 GB, written on the first boot).
+- weights:
+    - zai-org/GLM-5.3-Flash
+  # the shield's host setup checks these (none derivable: the repo name carries no parameter count): 164 B bf16
+  # weights = 306 GB on disk + the tile cache 174 GB + the permuted expert copies 109 GB; host RAM while the stack is
+  # built from the cache
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 4  # = the stack's decode slots at 1 M (max_num_seqs below): every user resident
+      max_context: 1048576  # 1 M: the served context (the advertised one, doc/context_contract.json)
+      # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
+      # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
+      max_tokens_all_users_override: 4194304  # 4 x 1048576
+      default_impl: true
+      # The first boot builds the tile cache from the checkpoint (hours: 174 GB of reference-format tiles) and writes
+      # the permuted expert copies; a warm cache boots in ~10 min (the stack build ~6 min + the warm-up).
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): the plugin's built-in map registers
+        # the TT-prefixed names from vllm-tt-plugin's stack registration; the override selects the same class on a
+        # plugin without it (bare + TT-prefixed names: the plugin prefixes every checkpoint architecture with "TT").
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"  # the model's own view of the mesh the plugin opens (MESH_DEVICE=BH-Galaxy)
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized for a single
+        # generation step") trips on the long-context prefill chunks and the first boot's cache writes; 300 s keeps
+        # tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"
+      override_tt_config:
+        # The device is opened BEFORE the model (plugin worker.py), so the fabric, the trace region and the worker
+        # L1 budget come from here, not from the model's knobs.
+        fabric_config: FABRIC_1D  # the stack's EP all-to-all and the DSA shard's streams run on the 1D fabric
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
+        l1_small_size: 32768
+        worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
+        sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
+        prefill_chunk_alignment: 128  # the TP prefill resumes a chunked prompt only on its 128-row grid
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 4  # = the stack's construction width (the adapter refuses another)
+        block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
+        max_num_batched_tokens: 8192  # one 8192-token prefill bucket per engine step (the buckets are 2048 / 8192)
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true  # the stack declares no prefix cache
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+# The 128 K profile: 16 resident users at 128 K; otherwise the 1 M profile's configuration.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  # the shield's host setup checks these (none derivable: the repo name carries no parameter count): 164 B bf16
+  # weights = 306 GB on disk + the tile cache 174 GB + the permuted expert copies 109 GB; host RAM while the stack is
+  # built from the cache
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash_128k
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16  # = the stack's decode slots at 128 K (max_num_seqs below): every user resident
+      max_context: 131072  # 128 K: the served context (128 * 1024)
+      # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
+      # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
+      max_tokens_all_users_override: 2097152  # 16 x 131072
+      default_impl: false
+      # The first boot builds the tile cache from the checkpoint (hours: 174 GB of reference-format tiles) and writes
+      # the permuted expert copies; a warm cache boots in ~10 min (the stack build ~6 min + the warm-up).
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): the plugin's built-in map registers
+        # the TT-prefixed names from vllm-tt-plugin's stack registration; the override selects the same class on a
+        # plugin without it (bare + TT-prefixed names: the plugin prefixes every checkpoint architecture with "TT").
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"  # the model's own view of the mesh the plugin opens (MESH_DEVICE=BH-Galaxy)
+        # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized for a single
+        # generation step") trips on the long-context prefill chunks and the first boot's cache writes; 300 s keeps
+        # tt-triage on real hangs.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"
+      override_tt_config:
+        # The device is opened BEFORE the model (plugin worker.py), so the fabric, the trace region and the worker
+        # L1 budget come from here, not from the model's knobs.
+        fabric_config: FABRIC_1D  # the stack's EP all-to-all and the DSA shard's streams run on the 1D fabric
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 3221225472  # 3 GiB: the decode trace + the per-context prefill traces at 128 K (galaxy_defaults.trace_mb)
+        l1_small_size: 32768
+        worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
+        sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
+        prefill_chunk_alignment: 128  # the TP prefill resumes a chunked prompt only on its 128-row grid
+        decode_interleave_enabled: false
+      vllm_args:
+        max_num_seqs: 16  # = the stack's construction width (the adapter refuses another)
+        block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
+        max_num_batched_tokens: 8192  # one 8192-token prefill bucket per engine step (the buckets are 2048 / 8192)
+        enable_chunked_prefill: true
+        no-enable-prefix-caching: true  # the stack declares no prefix cache
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
