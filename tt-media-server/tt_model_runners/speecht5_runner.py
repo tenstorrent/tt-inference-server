@@ -133,8 +133,8 @@ def normalize_text_for_tts(text: str) -> str:
     ("nine", "one hundred and thirty-three point nine") gives the model tokens
     it can pronounce reliably.
 
-    Handles: ordinals (1st, 2nd), decimals (133.9), number+unit (250cc),
-    and plain integers (9, 122).
+    Handles: ordinals (1st, 2nd), grouped thousands (1,000), decimals (133.9),
+    decimal+unit (1.5B), number+unit (250cc), and plain integers (9, 122).
     """
 
     # Ordinals first (e.g. "1st", "23rd") — before plain integers
@@ -143,11 +143,21 @@ def normalize_text_for_tts(text: str) -> str:
 
     text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", _ordinal, text, flags=re.IGNORECASE)
 
-    # Decimals (e.g. "133.9") — before plain integers so the dot isn't stranded
-    def _decimal(m):
-        return num2words(float(m.group(0)))
+    # Grouped thousands (e.g. "1,000", "2,500,000", "1,234.5"), before the
+    # later passes read each comma-separated group as its own number
+    def _grouped(m):
+        number = m.group(0).replace(",", "")
+        return num2words(float(number) if "." in number else int(number))
 
-    text = re.sub(r"\b\d+\.\d+\b", _decimal, text)
+    text = re.sub(r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b", _grouped, text)
+
+    # Decimals with an optional unit (e.g. "133.9", "1.5B"), before plain
+    # integers so the dot isn't stranded
+    def _decimal(m):
+        words = num2words(float(m.group(1)))
+        return words + " " + m.group(2) if m.group(2) else words
+
+    text = re.sub(r"\b(\d+\.\d+)([a-zA-Z]+)?\b", _decimal, text)
 
     # Number+unit (e.g. "250cc") — split into "two hundred and fifty cc"
     def _number_unit(m):
