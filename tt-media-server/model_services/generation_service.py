@@ -57,6 +57,13 @@ IMAGE_FORMATS = {
     "jpeg": ("JPEG", "image/jpeg"),
     "webp": ("WEBP", "image/webp"),
 }
+# PIL's defaults, JPEG at quality 75 and lossy WebP at 80, are noticeably lossy
+# for a generated image. JPEG also keeps full-resolution color (4:4:4), which
+# keeps colored edges and small text sharp.
+IMAGE_SAVE_OPTIONS = {
+    "JPEG": {"quality": 95, "subsampling": 0},
+    "WEBP": {"quality": 90},
+}
 
 
 def _too_large(kind: str) -> HTTPException:
@@ -442,7 +449,8 @@ class GenerationService(BaseJobService):
             pil_format, content_type = IMAGE_FORMATS[request.format]
             path = directory / f"{index}.{request.format}"
             image = result.convert("RGB") if pil_format == "JPEG" else result
-            image.save(path, format=pil_format)
+            options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
+            image.save(path, format=pil_format, **options)
             return {
                 **output,
                 "file": path.name,
