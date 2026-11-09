@@ -4,6 +4,7 @@
 
 import asyncio
 import base64
+import inspect
 import io
 import os
 import uuid
@@ -123,6 +124,22 @@ dit_runner_log_map = {
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
+
+
+def _guidance_and_second_prompt(request: ImageGenerateRequest) -> dict:
+    """SD3.5 Large and FLUX.1 take a guidance scale and a second-encoder prompt.
+
+    ``guidance_scale`` goes through only when the client sent it: the request
+    default (5.0) is SDXL's, and each pipeline keeps its own otherwise.
+    """
+    kwargs = {}
+    if "guidance_scale" in getattr(request, "model_fields_set", ()):
+        kwargs["guidance_scale"] = request.guidance_scale
+    if request.prompt_2 is not None:
+        kwargs["prompt_2"] = request.prompt_2
+    if request.negative_prompt_2 is not None:
+        kwargs["negative_prompt_2"] = request.negative_prompt_2
+    return kwargs
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
@@ -270,17 +287,33 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 batch=1,
             )
         )
+        kwargs = self._pipeline_kwargs(request)
+        unsupported = (
+            kwargs.keys()
+            - inspect.signature(self.pipeline.run_single_prompt).parameters.keys()
+        )
+        if unsupported:
+            self.logger.warning(
+                f"Device {self.device_id}: this tt-metal pipeline API has no "
+                f"{sorted(unsupported)}; ignoring them"
+            )
+            kwargs = {k: v for k, v in kwargs.items() if k not in unsupported}
         image = self.pipeline.run_single_prompt(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
             num_inference_steps=request.num_inference_steps,
             seed=int(request.seed or 0),
             on_event=recorder,
+            **kwargs,
         )
         if recorder is not None:
             recorder.flush(image)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
+
+    def _pipeline_kwargs(self, request: ImageGenerateRequest) -> dict:
+        """Request fields beyond prompt, steps and seed that this runner's pipeline takes."""
+        return {}
 
     def _video_stage_recorder(self, resolution=None):
         """Denoise + VAE-decode recorder for one video generation, or None during warmup.
@@ -326,6 +359,9 @@ class TTSD35Runner(TTDiTRunner):
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 25000000}
 
+    def _pipeline_kwargs(self, request):
+        return _guidance_and_second_prompt(request)
+
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
@@ -352,6 +388,9 @@ class TTFlux1Runner(TTDiTRunner):
             "l1_small_size": 32768,
             "trace_region_size": self.settings.trace_region_size,
         }
+
+    def _pipeline_kwargs(self, request):
+        return _guidance_and_second_prompt(request)
 
 
 # FLUX.1-Kontext-dev: instruction-based image editing (reference image + prompt).
