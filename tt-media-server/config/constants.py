@@ -970,12 +970,8 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
-        "max_batch_size": 1,
-    },
+    # No P150X8 (BH 2x4) for now. tt_dit's pipeline fails there in warmup, as an
+    # odd matmul N block breaks the fused SwiGLU.
     (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
