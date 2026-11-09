@@ -22,8 +22,7 @@ class Ltx23DistilledRequest(GenerationRequest):
     size: Literal["1080p"] = Field(
         default="1080p",
         description=(
-            "Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 "
-            "because both sides must be multiples of 64."
+            "Size tier: `1080p` is 1920×1088 at `16:9`."
         ),
     )
     duration: Literal[6] = Field(

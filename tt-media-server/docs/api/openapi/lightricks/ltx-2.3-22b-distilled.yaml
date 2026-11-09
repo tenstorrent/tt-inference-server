@@ -547,8 +547,7 @@ components:
           type: string
           const: 1080p
           title: Size
-          description: 'Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 because
-            both sides must be multiples of 64.'
+          description: 'Size tier: `1080p` is 1920×1088 at `16:9`.'
           default: 1080p
         duration:
           type: integer
