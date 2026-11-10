@@ -34,6 +34,7 @@ QWEN_EDIT_SIZES: dict[str, tuple[int, int]] = {
 class QwenImageEdit2511Request(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1, description="The edit instruction.")
     negative_prompt: str = Field(
@@ -67,7 +68,7 @@ class QwenImageEdit2511Request(GenerationRequest):
 
     def output_size(self) -> tuple[int, int]:
         ratio = self.aspect_ratio or closest_ratio(
-            *self._images["images"][-1].size, QWEN_EDIT_SIZES
+            *self._image_sizes["images"][-1], QWEN_EDIT_SIZES
         )
         return QWEN_EDIT_SIZES[ratio]
 

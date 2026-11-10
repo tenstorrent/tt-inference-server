@@ -27,8 +27,9 @@ from .._test_common import (
     BaseTest,
     HardwareRequirement,
     TestConfig,
+    WAN_ASPECT_RATIO,
+    WAN_SIZE,
     fixture_image_data_uri,
-    wan_size_for_device,
 )
 
 if TYPE_CHECKING:
@@ -78,8 +79,8 @@ class VideoGenerationI2VTest(BaseTest):
             "negative_prompt": "blurry, low quality, distorted",
             "seed": 42,
             "first_frame": fixture_image_data_uri(),
-            "size": wan_size_for_device(self.ctx.device if self.ctx else None),
-            "aspect_ratio": "16:9",
+            "size": WAN_SIZE,
+            "aspect_ratio": WAN_ASPECT_RATIO,
         }
 
         session_timeout = aiohttp.ClientTimeout(total=self.poll_timeout)

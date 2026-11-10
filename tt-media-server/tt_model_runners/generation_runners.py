@@ -4,7 +4,7 @@
 
 """Runners of the generations API. Each consumes its model's request from
 domain/ directly, with the inputs the service resolved before queueing it:
-decoded images, output size, seed and the prompt the model gets.
+the media files, output size, seed and the prompt the model gets.
 
 The tt_dit pipelines take the output size per call, so one deployment serves
 every size its request schema allows. Warmup runs every size and input
@@ -39,7 +39,7 @@ from config.constants import (
 from config.settings import get_settings
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
-from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
+from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
@@ -47,7 +47,9 @@ from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
 )
+from models.tt_dit.pipelines.minimax_h3.policy import MINIMAX_H3_SHORT_EDGE
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
+from models.tt_dit.pipelines.wan.policy import served_resolutions
 from PIL import Image
 from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
@@ -71,6 +73,9 @@ WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
 QWEN_STEPS = 40
 QWEN_GUIDANCE_SCALE = 4.0
+# Per spatial bucket traced, each expert has one trace without DBCache and three
+# with it. tt-metal's test_pipeline_wan_resolutions.py fits a bucket's in 256 MiB.
+WAN_TRACE_REGION_BYTES_PER_BUCKET = 256 * 1024 * 1024
 
 _inference_timer = log_execution_time(
     f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -83,17 +88,48 @@ def _warmup_request(
     request: GenerationRequest,
     width: int,
     height: int,
-    images: dict[str, list[Image.Image]] | None = None,
+    files: dict[str, list[bytes]] | None = None,
 ) -> GenerationRequest:
     request._width, request._height = width, height
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = _WARMUP_PROMPT
     return request
 
 
+def _png(width: int, height: int, color: str = "black") -> bytes:
+    png = BytesIO()
+    Image.new("RGB", (width, height), color).save(png, "PNG")
+    return png.getvalue()
+
+
 class _GenerationRunner(TTDiTRunner):
-    def _steps(self, steps: int) -> int:
-        return _WARMUP_STEPS if self._warming_up else steps
+    def _steps(self, steps: int, request: GenerationRequest | None = None) -> int:
+        """``steps``, or fewer for a warmup or a deep canary request, which
+        only exercise the compiled programs."""
+        if self._warming_up or (
+            request is not None and request._task_id == CANARY_DEEP_TASK_ID
+        ):
+            return _WARMUP_STEPS
+        return steps
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the first warmup request. It
+        replaces the old video runners' builder, whose request ``run`` can't
+        take."""
+        requests = self.warmup_requests()
+        if not requests:
+            raise NotImplementedError(
+                f"{type(self).__name__} sends no warmup requests; it must build "
+                "its deep canary request itself"
+            )
+        request = requests[0]
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
+
+    @staticmethod
+    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files."""
+        return [decode_image(data) for data in request._files.get(name, [])]
 
     def _image_stage_recorder(self) -> ImageStageRecorder | None:
         if self._warming_up:
@@ -107,6 +143,9 @@ class _GenerationRunner(TTDiTRunner):
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
+    # Off on the other ranks of a multi-host mesh, whose output is discarded.
+    export_in_runner = True
+
     def create_pipeline(self):
         # The mesh's preset decides the sizes; the pipeline rejects the others
         # per call.
@@ -119,6 +158,20 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 self.logger, self.device_id, "Wan I2V pipeline creation failed", e
             )
             raise
+
+    def get_pipeline_device_params(self):
+        # Where the old runner reserved a trace region, for one size without
+        # DBCache, reserve one per bucket. Elsewhere none is reserved, and
+        # tt-metal allocates the traces in DRAM as they are captured.
+        device_params = super().get_pipeline_device_params()
+        if "trace_region_size" in device_params:
+            # Sizes with the same area share a bucket.
+            served = served_resolutions(self.settings.device_mesh_shape)
+            buckets = len({width * height for width, height in served})
+            device_params["trace_region_size"] = (
+                buckets * WAN_TRACE_REGION_BYTES_PER_BUCKET
+            )
+        return device_params
 
     def warmup_requests(self) -> list[GenerationRequest]:
         # The pipeline's own warmup is untraced and first frame only. Each size
@@ -136,7 +189,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 width,
                 height,
                 {
-                    name: [Image.new("RGB", (width, height))]
+                    name: [_png(width, height)]
                     for name in ("first_frame", "last_frame")[: 1 + last_frame]
                 },
             )
@@ -151,12 +204,12 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         # The pipeline center-crops each image to the output's aspect ratio and
         # resizes it.
         image_prompt = [
-            ImagePrompt(image=request._images["first_frame"][0], frame_pos=0)
+            ImagePrompt(image=self._images(request, "first_frame")[0], frame_pos=0)
         ]
         if request.last_frame is not None:
             image_prompt.append(
                 ImagePrompt(
-                    image=request._images["last_frame"][0],
+                    image=self._images(request, "last_frame")[0],
                     frame_pos=request.frames - 1,
                 )
             )
@@ -169,7 +222,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 prompts=[request._prompt],
                 negative_prompts=[request.negative_prompt],
                 image_prompt=image_prompt,
-                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS),
+                num_inference_steps=self._steps(WAN22_I2V_A14B_NUM_STEPS, request),
                 guidance_scale=WAN_GUIDANCE_SCALES[0],
                 guidance_scale_2=WAN_GUIDANCE_SCALES[1],
                 flow_shift=WAN_SHIFT,
@@ -182,7 +235,24 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         finally:
             if recorder is not None:
                 recorder.flush(frames)
-        return frames
+        if (
+            self._warming_up
+            or not self.export_in_runner
+            or request._task_id == CANARY_DEEP_TASK_ID
+        ):
+            return [None]
+        # The pipeline returns a batch of one video.
+        encoded = VideoManager().export_to_mp4(frames[0], fps=request.fps)
+        # Into the job's directory, so a file a cancelled or failed job leaves
+        # behind is deleted with it.
+        path = Path(generation_job_dir(request._task_id)) / "wan.mp4"
+        try:
+            shutil.move(encoded, path)
+        except FileNotFoundError:
+            # The job was deleted while it ran.
+            Path(encoded).unlink(missing_ok=True)
+            raise
+        return [str(path)]
 
 
 class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
@@ -231,7 +301,7 @@ class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
             images = self.pipeline(
                 prompts=[request._prompt],
                 negative_prompts=[request.negative_prompt],
-                image=request._images["images"],
+                image=self._images(request, "images"),
                 num_inference_steps=QWEN_STEPS,
                 cfg_scale=QWEN_GUIDANCE_SCALE,
                 seed=request._seed,
@@ -305,12 +375,14 @@ class TTLtx23DistilledRunner(_GenerationRunner):
         # Into the job's directory, so a file a cancelled or failed job leaves
         # behind is deleted with it.
         directory = Path(generation_job_dir(request._task_id))
-        directory.mkdir(parents=True, exist_ok=True)
+        if self._warming_up or request._task_id == CANARY_DEEP_TASK_ID:
+            # No job made a directory for these.
+            directory.mkdir(parents=True, exist_ok=True)
         try:
             # generate() writes an MP4 with the soundtrack and returns its path.
-            path = self.pipeline.generate(
+            raw = self.pipeline.generate(
                 request._prompt,
-                output_path=str(directory / "ltx.mp4"),
+                output_path=str(directory / "ltx.raw.mp4"),
                 num_frames=request.frames,
                 height=request._height,
                 width=request._width,
@@ -321,7 +393,16 @@ class TTLtx23DistilledRunner(_GenerationRunner):
             if self._warming_up:
                 # No job owns warmup's video.
                 shutil.rmtree(directory, ignore_errors=True)
-        return [path]
+        if self._warming_up or request._task_id == CANARY_DEEP_TASK_ID:
+            return [raw]
+        # generate() does not write a faststart MP4, and the service serves
+        # the runner's file as it is.
+        path = directory / "ltx.mp4"
+        try:
+            VideoManager.ensure_faststart(raw, str(path))
+        finally:
+            Path(raw).unlink(missing_ok=True)
+        return [str(path)]
 
 
 MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000
@@ -497,10 +578,13 @@ class _MiniMaxH3Runner(_GenerationRunner):
         )
         # Into the job's directory, so a file a cancelled or failed job leaves
         # behind is deleted with it.
-        directory = Path(generation_job_dir(request._task_id))
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / "h3.mp4"
-        shutil.move(encoded, path)
+        path = Path(generation_job_dir(request._task_id)) / "h3.mp4"
+        try:
+            shutil.move(encoded, path)
+        except FileNotFoundError:
+            # The job was deleted while it ran.
+            Path(encoded).unlink(missing_ok=True)
+            raise
         return [str(path)]
 
     def _pipeline_factory(self):
@@ -513,10 +597,6 @@ class _MiniMaxH3Runner(_GenerationRunner):
     def _inputs(self, request: GenerationRequest) -> dict:
         """The task's inputs, as ``pipeline(...)`` kwargs."""
         return {}
-
-    @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        return [decode_image(data) for data in request._files.get(name, [])]
 
 
 class _MiniMaxH3KeyframesRunner(_MiniMaxH3Runner):
@@ -548,9 +628,9 @@ class _MiniMaxH3ReferencesRunner(_MiniMaxH3Runner):
 
     def _build_warmup_video_request(self) -> GenerationRequest:
         request = super()._build_warmup_video_request()
-        png = BytesIO()
-        Image.new("RGB", (H3_SHORT_EDGE, H3_SHORT_EDGE), "gray").save(png, "PNG")
-        request._files = {"images": [png.getvalue()]}
+        request._files = {
+            "images": [_png(MINIMAX_H3_SHORT_EDGE, MINIMAX_H3_SHORT_EDGE, "gray")]
+        }
         return request
 
     def _inputs(self, request: GenerationRequest) -> dict:

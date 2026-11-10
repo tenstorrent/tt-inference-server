@@ -140,22 +140,34 @@ def _runner(class_name: str, warming_up: bool = False):
     return runner
 
 
-def _resolved(request, width, height, images=None, seed=5, prompt=None):
+def _resolved(request, width, height, files=None, seed=5, prompt=None):
     request._width, request._height, request._seed = width, height, seed
-    request._images = images or {}
+    request._files = files or {}
     request._prompt = prompt if prompt is not None else request.prompt
     return request
 
 
-def test_wan_passes_both_frames_as_they_are(monkeypatch):
-    monkeypatch.setattr(
-        runners, "ImagePrompt", lambda image, frame_pos: (image, frame_pos)
-    )
-    runner = _runner("TTWan22I2VA14BRunner")
-    # The pipeline crops and resizes them.
-    first = Image.new("RGB", (2000, 720))
-    last = Image.new("RGB", (640, 360))
-    request = _resolved(
+@pytest.fixture
+def wan_exports(monkeypatch, tmp_path):
+    """The (frames, kwargs) of each MP4 the runner exports, which it writes
+    under ``tmp_path/encoded``."""
+    monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path / "generations"))
+    exports = []
+
+    class _VideoManager:
+        def export_to_mp4(self, frames, **kwargs):
+            exports.append((frames, kwargs))
+            path = tmp_path / "encoded" / f"{len(exports)}.mp4"
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b"mp4")
+            return str(path)
+
+    monkeypatch.setattr(runners, "VideoManager", _VideoManager)
+    return exports
+
+
+def _wan_request(first, last):
+    return _resolved(
         Wan22i2vA14bRequest(
             prompt="a boat",
             first_frame="https://x/a.png",
@@ -167,9 +179,23 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
         720,
         {"first_frame": [first], "last_frame": [last]},
     )
-    assert runner.run([request]) == ["output"]
+
+
+def test_wan_passes_both_frames_as_they_are(monkeypatch, wan_exports, tmp_path):
+    monkeypatch.setattr(
+        runners, "ImagePrompt", lambda image, frame_pos: (image.size, frame_pos)
+    )
+    runner = _runner("TTWan22I2VA14BRunner")
+    # The runner decodes them; the pipeline crops and resizes them.
+    request = _wan_request(_png(2000, 720), _png(640, 360))
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
+    (path,) = runner.run([request])
+    assert path == str(tmp_path / "generations" / request._task_id / "wan.mp4")
+    assert pathlib.Path(path).read_bytes() == b"mp4"
+    # The pipeline's batch of one video.
+    assert wan_exports == [("output", {"fps": 16})]
     (call,) = runner.pipeline.calls
-    assert call.pop("image_prompt") == [(first, 0), (last, 80)]
+    assert call.pop("image_prompt") == [((2000, 720), 0), ((640, 360), 80)]
     assert call == {
         "prompts": ["a boat"],
         "negative_prompts": [WAN_NEGATIVE_PROMPT],
@@ -185,6 +211,27 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
     }
 
 
+def test_wan_does_not_bring_back_a_deleted_jobs_directory(wan_exports, tmp_path):
+    runner = _runner("TTWan22I2VA14BRunner")
+    request = _wan_request(_png(1280, 720), _png(1280, 720))
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert not (tmp_path / "generations").exists()
+    assert not any((tmp_path / "encoded").iterdir())
+
+
+def test_wan_exports_nothing_where_no_job_keeps_the_video(wan_exports):
+    runner = _runner("TTWan22I2VA14BRunner", warming_up=True)
+    assert runner.run(runner.warmup_requests()[:1]) == [None]
+    runner._warming_up = False
+    # The deep canary, and the other ranks of a multi-host mesh.
+    assert runner.run([runner._build_warmup_video_request()]) == [None]
+    runner.export_in_runner = False
+    request = _wan_request(_png(1280, 720), _png(1280, 720))
+    assert runner.run([request]) == [None]
+    assert wan_exports == []
+
+
 def test_wan_warmup_covers_every_combination():
     runner = _runner("TTWan22I2VA14BRunner", warming_up=True)
     requests = runner.warmup_requests()
@@ -196,6 +243,48 @@ def test_wan_warmup_covers_every_combination():
         (call,) = runner.pipeline.calls
         assert (call["width"], call["height"]) == (request._width, request._height)
         assert call["num_inference_steps"] == 2
+
+
+def test_wan_deep_canary_runs_a_short_warmup_request():
+    from config.constants import CANARY_DEEP_TASK_ID
+
+    # The multi-host lockstep runner and its followers run it outside warmup.
+    runner = _runner("TTWan22I2VA14BRunner")
+    request = runner._build_warmup_video_request()
+    assert isinstance(request, Wan22i2vA14bRequest)
+    assert request._task_id == CANARY_DEEP_TASK_ID
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert (call["width"], call["height"]) == (request._width, request._height)
+    assert call["num_inference_steps"] == 2
+
+
+@pytest.mark.parametrize(
+    "mesh_shape, inherited, expected",
+    [
+        ((4, 8), {"trace_region_size": 125_000_000}, 512 * 1024 * 1024),
+        ((4, 32), {"trace_region_size": 125_000_000}, 512 * 1024 * 1024),
+        # No region reserved: the traces are allocated as they are captured.
+        ((2, 2), {}, None),
+    ],
+)
+@pytest.mark.requires_tt_metal_policy
+def test_wan_trace_region_fits_every_bucket(
+    monkeypatch, mesh_shape, inherited, expected
+):
+    monkeypatch.setattr(
+        sys.modules["models.tt_dit.pipelines.wan.policy"], "_is_blackhole", lambda: True
+    )
+    runner = _runner("TTWan22I2VA14BRunner")
+    runner.settings.device_mesh_shape = mesh_shape
+    monkeypatch.setitem(
+        runners.TTWan22I2VRunner.get_pipeline_device_params.__globals__,
+        "_wan22_dit_device_params",
+        lambda shape: {"fabric_config": "ring", **inherited},
+    )
+    params = runner.get_pipeline_device_params()
+    assert params["fabric_config"] == "ring"
+    assert params.get("trace_region_size") == expected
 
 
 def test_wan_warmup_conditions_the_last_frame(monkeypatch):
@@ -215,48 +304,79 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
     assert frame_positions == {(0,), (0, 80)}
 
 
-@pytest.mark.parametrize("warming_up", [False, True])
-def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
+@pytest.fixture
+def ltx_remuxes(monkeypatch, tmp_path):
+    """The (input, output) of each faststart remux the runner makes."""
     monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path))
-    runner = _runner("TTLtx23DistilledRunner", warming_up=warming_up)
-    if warming_up:
-        (request,) = runner.warmup_requests()
-    else:
-        request = _resolved(
-            Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5
-        )
+    remuxes = []
+
+    def ensure_faststart(input_path, output_path):
+        remuxes.append((input_path, output_path))
+        pathlib.Path(output_path).write_bytes(pathlib.Path(input_path).read_bytes())
+
+    monkeypatch.setattr(runners.VideoManager, "ensure_faststart", ensure_faststart)
+    return remuxes
+
+
+def test_ltx_writes_the_served_shape_and_remuxes_it(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner")
+    request = _resolved(Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5)
+    directory = tmp_path / request._task_id
+    directory.mkdir()
     (path,) = runner.run([request])
     (call,) = runner.pipeline.calls
+    raw = str(directory / "ltx.raw.mp4")
     assert call == {
         "prompt": request._prompt,
-        "output_path": path,
+        "output_path": raw,
         "num_frames": 153,
         "height": 1088,
         "width": 1920,
         "seed": request._seed,
         "fps": 25,
     }
-    # Into the job's directory; warmup only captures the traces, and its
-    # video is not kept.
+    assert path == str(directory / "ltx.mp4")
+    assert ltx_remuxes == [(raw, path)]
+    assert pathlib.Path(path).read_bytes() == b"mp4"
+    assert not pathlib.Path(raw).exists()
+
+
+def test_ltx_does_not_remux_where_no_job_keeps_the_video(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner", warming_up=True)
+    (request,) = runner.warmup_requests()
+    (path,) = runner.run([request])
+    # Warmup only captures the traces, and its video is not kept.
     assert pathlib.Path(path).parent == tmp_path / request._task_id
-    assert pathlib.Path(path).exists() is not warming_up
-    assert pathlib.Path(path).parent.exists() is not warming_up
+    assert not pathlib.Path(path).parent.exists()
+    runner._warming_up = False
+    request._task_id = runners.CANARY_DEEP_TASK_ID
+    (path,) = runner.run([request])
+    assert path == str(tmp_path / runners.CANARY_DEEP_TASK_ID / "ltx.raw.mp4")
+    assert ltx_remuxes == []
+
+
+def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner")
+    request = _resolved(Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5)
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert list(tmp_path.iterdir()) == []
+    assert ltx_remuxes == []
 
 
 def test_qwen_passes_the_input_images():
     runner = _runner("TTQwenImageEdit2511Runner")
-    images = [Image.new("RGB", (8, 8)), Image.new("RGB", (8, 8))]
     request = _resolved(
         QwenImageEdit2511Request(
             prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
         ),
         1376,
         768,
-        {"images": images},
+        {"images": [_png(8, 16), _png(24, 12)]},
     )
     runner.run([request])
     (call,) = runner.pipeline.calls
-    assert call["image"] is images
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
     assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
     assert call["negative_prompts"] == ["blurry"]
     assert call["num_inference_steps"] == 40
@@ -271,7 +391,7 @@ def test_qwen_records_the_stages_of_a_failed_edit():
         QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
         1376,
         768,
-        {"images": [Image.new("RGB", (8, 8))]},
+        {"images": [_png(8, 8)]},
     )
     with pytest.raises(RuntimeError):
         runner.run([request])
@@ -359,6 +479,7 @@ def h3_exports(monkeypatch, tmp_path):
     return exports
 
 
+@pytest.mark.requires_tt_metal_policy
 def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_path):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(
@@ -366,6 +487,7 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
         768,
         1344,
     )
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
     (path,) = runner.run([request])
     (call,) = runner.pipeline.calls
     assert call == {
@@ -383,12 +505,25 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
     assert kwargs == {"fps": 24, "pixel_format": "yuv420p"}
 
 
-def test_h3_leaves_the_shape_of_an_adaptive_request_to_the_keyframe(h3_exports):
+@pytest.mark.requires_tt_metal_policy
+def test_h3_does_not_bring_back_a_deleted_jobs_directory(h3_exports, tmp_path):
+    runner = _h3_runner("TTMiniMaxH3Runner")
+    request = _resolved(MiniMaxH3FL2VARequest(prompt="waves", duration=6), 768, 1344)
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert not (tmp_path / "generations").exists()
+    assert not any((tmp_path / "encoded").iterdir())
+
+
+def test_h3_leaves_the_shape_of_an_adaptive_request_to_the_keyframe(
+    h3_exports, tmp_path
+):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(
         MiniMaxH3FL2VARequest(prompt="waves", first_frame="https://x/a.png"), 768, 1344
     )
     request._files = {"first_frame": [_png(32, 64)]}
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
     runner.run([request])
     (call,) = runner.pipeline.calls
     assert "aspect_ratio" not in call
@@ -489,6 +624,7 @@ def test_h3_undecodable_input_fails_only_the_request(monkeypatch, h3_exports):
         ("TTMiniMaxH3Ref2VARunner", {"images": [(768, 768)]}),
     ],
 )
+@pytest.mark.requires_tt_metal_policy
 def test_h3_deep_canary_is_the_shortest_video(class_name, inputs):
     runner = _h3_runner(class_name)
     request = runner._build_warmup_video_request()

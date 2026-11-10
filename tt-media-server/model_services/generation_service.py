@@ -17,6 +17,7 @@ from typing import Any, Optional
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
 from domain.generation_request import (
+    MAX_INLINE_MEDIA_CHARS,
     MAX_SEED,
     MEDIA_MAX_BYTES,
     GenerationRequest,
@@ -41,13 +42,14 @@ from utils.media_downloader import (
     MediaDownloadPolicyError,
     MediaDownloadTooLargeError,
     download_media_url,
+    redact_url,
 )
 from utils.media_probe import (
     decode_image,
     media_format_error,
     probe_reference_media,
 )
-from utils.video_manager import VideoManager, probe_video
+from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
@@ -66,12 +68,12 @@ IMAGE_SAVE_OPTIONS = {
 }
 
 
-def _too_large(kind: str) -> HTTPException:
+def _too_large(kind: str, max_bytes: int) -> HTTPException:
     return HTTPException(
         status_code=413,
         detail=(
             f"{'An' if kind[0] in 'aeiou' else 'A'} {kind} input is over "
-            f"{MEDIA_MAX_BYTES[kind]} bytes"
+            f"{max_bytes} bytes"
         ),
     )
 
@@ -79,24 +81,36 @@ def _too_large(kind: str) -> HTTPException:
 def _decode_data_uri(uri: str, kind: str) -> bytes:
     data = base64.b64decode(uri.split(",", 1)[1], validate=True)
     if len(data) > MEDIA_MAX_BYTES[kind]:
-        raise _too_large(kind)
+        raise _too_large(kind, MEDIA_MAX_BYTES[kind])
     return data
 
 
+def _image_size(data: bytes) -> tuple[int, int]:
+    """Fully decoded, so a corrupt image fails here, but only its size is
+    kept."""
+    return decode_image(data).size
+
+
 def _request_parameters(request: GenerationRequest) -> dict:
-    """The request as stored with its job, with data URIs replaced by their
-    SHA-256 so the record stays small."""
+    """The request as stored with its job: data URIs replaced by their SHA-256
+    so the record stays small, and URLs without their credentials and query,
+    which can hold a presigned URL's signature."""
     parameters = request.model_dump(mode="json")
     for name in request.MEDIA_FIELDS:
         value = parameters.get(name)
         if isinstance(value, list):
-            parameters[name] = [_digest_data_uri(item) for item in value]
+            parameters[name] = [_stored_media(item) for item in value]
         elif value is not None:
-            parameters[name] = _digest_data_uri(value)
+            parameters[name] = _stored_media(value)
     return parameters
 
 
-def _digest_data_uri(value: str) -> str:
+def _stored_media(value: str) -> str:
+    return redact_url(_without_data(value))
+
+
+def _without_data(value: str) -> str:
+    """A data URI's SHA-256 in its place; any other value as it is."""
     if value[:5].lower() != "data:":
         return value
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
@@ -130,20 +144,12 @@ def _first_output(result_path: str) -> Optional[dict]:
     return {**output, "bytes": size}
 
 
-def _write_video(result: Any, fps: int, path: Path) -> None:
-    """Write a runner's video to ``path`` as a faststart MP4.
+def _write_video(result: str, path: Path) -> None:
+    """Store a runner's video at ``path``.
 
-    The result is frames, or the path of an MP4 the pipeline wrote itself,
-    which is remuxed for faststart.
+    The result is the path of a finished faststart MP4 the runner wrote.
     """
-    if isinstance(result, str):
-        try:
-            VideoManager.ensure_faststart(result, str(path))
-        finally:
-            Path(result).unlink(missing_ok=True)
-        return
-    # The encoder already writes faststart MP4s.
-    shutil.move(VideoManager().export_to_mp4(result, fps=fps), path)
+    shutil.move(result, path)
 
 
 def read_manifest(result_path: str) -> list[dict]:
@@ -173,10 +179,17 @@ class GenerationService(BaseJobService):
             )
         self._job_manager.check_admission()
 
+        total = request.inline_media_chars()
+        if total > MAX_INLINE_MEDIA_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Inline media totals {total} characters, over the "
+                    f"{MAX_INLINE_MEDIA_CHARS}-character cap; send large assets by URL"
+                ),
+            )
         await self._load_media(request)
         request._width, request._height = request.output_size()
-        if request.RUNNER_DECODES_IMAGES:
-            request._images = {}
         request._seed = (
             request.seed
             if request.seed is not None
@@ -189,18 +202,27 @@ class GenerationService(BaseJobService):
         request._cancel_event = self._processManager.Event()
         request._worker_assignment = self._processManager.Namespace()
         request._worker_assignment.identity = None
-        return await self._job_manager.create_job(
-            job_id=request._task_id,
-            job_type=JobTypes.GENERATION,
-            model=model_id,
-            request=request,
-            task_function=self.process_request,
-            start_event=request._start_event,
-            cancel_event=request._cancel_event,
-            worker_assignment=request._worker_assignment,
-            request_parameters=_request_parameters(request),
-            result_path=generation_job_dir(request._task_id),
-        )
+        request_parameters = await asyncio.to_thread(_request_parameters, request)
+        # Made here and only here, so a runner that finishes after the job is
+        # deleted can't bring it back.
+        result_path = generation_job_dir(request._task_id)
+        Path(result_path).mkdir(parents=True)
+        try:
+            return await self._job_manager.create_job(
+                job_id=request._task_id,
+                job_type=JobTypes.GENERATION,
+                model=model_id,
+                request=request,
+                task_function=self.process_request,
+                start_event=request._start_event,
+                cancel_event=request._cancel_event,
+                worker_assignment=request._worker_assignment,
+                request_parameters=request_parameters,
+                result_path=result_path,
+            )
+        except BaseException:
+            shutil.rmtree(result_path, ignore_errors=True)
+            raise
 
     async def _load_media(self, request: GenerationRequest) -> None:
         """Fetch every input, decode the images and probe the clips, and
@@ -214,9 +236,9 @@ class GenerationService(BaseJobService):
         deadline = time.monotonic() + settings.media_url_timeout_seconds
         errors = []
 
-        def error(name: str, index: int, message: str) -> None:
-            is_list = isinstance(getattr(request, name), list)
-            loc = ("body", name, index) if is_list else ("body", name)
+        def error(name: str, index: int | None, message: str) -> None:
+            is_item = index is not None and isinstance(getattr(request, name), list)
+            loc = ("body", name, index) if is_item else ("body", name)
             errors.append({"loc": loc, "msg": message, "type": "value_error"})
 
         async def load(kind: str, value: str) -> tuple[bytes, Any]:
@@ -231,12 +253,17 @@ class GenerationService(BaseJobService):
                         https_only=True,
                     )
                 else:
-                    data = _decode_data_uri(value, kind)
+                    data = await asyncio.to_thread(_decode_data_uri, value, kind)
             except MediaDownloadPolicyError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except MediaDownloadTooLargeError:
-                raise _too_large(kind)
+                # The download cap is the smaller of the two.
+                raise _too_large(
+                    kind, min(MEDIA_MAX_BYTES[kind], settings.media_url_max_bytes)
+                )
             if kind == "image":
+                if request.RUNNER_DECODES_IMAGES:
+                    return data, await asyncio.to_thread(_image_size, data)
                 return data, await asyncio.to_thread(decode_image, data)
             probe = await asyncio.to_thread(probe_reference_media, data)
             if message := media_format_error(kind, probe):
@@ -290,15 +317,26 @@ class GenerationService(BaseJobService):
             if kind != "image" or request.RUNNER_DECODES_IMAGES:
                 request._files[name] = [data for data, _ in items]
             decoded = [decoded for _, decoded in items]
-            if kind == "image":
-                request._images[name] = decoded
-            else:
+            if kind != "image":
                 request._probes[name] = decoded
+            elif request.RUNNER_DECODES_IMAGES:
+                request._image_sizes[name] = decoded
+            else:
+                request._images[name] = decoded
+                request._image_sizes[name] = [image.size for image in decoded]
         if not errors:
             for name, index, message in request.media_errors():
                 error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
+        # The runner gets the loaded inputs: a data URI kept in its field would
+        # go to the device worker, and to every rank, a second time.
+        for name in request.MEDIA_FIELDS:
+            value = getattr(request, name)
+            if isinstance(value, list):
+                setattr(request, name, [_without_data(item) for item in value])
+            elif value is not None:
+                setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
         """Run one job; a video job is reported to the video metric family, as
@@ -423,7 +461,6 @@ class GenerationService(BaseJobService):
         # A runner may already have written into it.
         result_path = generation_job_dir(request._task_id)
         directory = Path(result_path)
-        directory.mkdir(parents=True, exist_ok=True)
         try:
             outputs = [
                 self._write_output(directory, index, request, result)
@@ -460,7 +497,7 @@ class GenerationService(BaseJobService):
             }
 
         path = directory / f"{index}.mp4"
-        _write_video(result, request.fps, path)
+        _write_video(result, path)
         probe = probe_video(str(path))
         num_frames = probe.num_frames or request.frames
         return {
