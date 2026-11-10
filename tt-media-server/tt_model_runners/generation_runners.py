@@ -455,7 +455,7 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
         recorder = self._image_stage_recorder()
         images = self.pipeline(
             prompts=[request._prompt],
-            images=request._images.get("images") or None,
+            images=self._images(request, "images") or None,
             num_inference_steps=self._steps(KLEIN_STEPS),
             seed=request._seed,
             width=request._width,

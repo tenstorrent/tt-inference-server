@@ -189,7 +189,7 @@ def test_ltx_rejects(fields, message):
 def test_klein_output_size(fields, images, expected):
     if images:
         fields["images"] = ["https://x/a.png"] * len(images)
-        request = _with_images(
+        request = _with_image_sizes(
             Flux2klein4bRequest(prompt="a cat", **fields), images=images
         )
     else:
@@ -1375,7 +1375,22 @@ async def test_qwen_keeps_only_the_upright_image_sizes(generations_app):
     assert (request._width, request._height) == (896, 1184)
 
 
-# --- MiniMax-H3------------------------------------------------------------------
+async def test_klein_keeps_only_the_image_sizes(generations_app):
+    client, device = generations_app("tt-flux.2-klein-4b")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux.2-klein-4b",
+        json={"prompt": "add a hat", "images": [_data_uri(1600, 900)]},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900)]}
+    assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
+
+
+# --- MiniMax-H3 ------------------------------------------------------------------
 
 
 def _clip_data_uri(seconds: float, video: bool = True, channels: int = 2) -> str:

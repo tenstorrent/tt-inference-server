@@ -310,13 +310,14 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
 @pytest.mark.parametrize("with_images", [False, True])
 def test_klein_edits_only_with_images(with_images):
     runner = _runner("TTFlux2Klein4BRunner")
-    images = {"images": [Image.new("RGB", (8, 8))]} if with_images else {}
-    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024)
-    # The service decodes FLUX.2's images: the runner gets the images themselves.
-    request._images = images
+    files = {"images": [_png(8, 16)]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, files)
     runner.run([request])
     (call,) = runner.pipeline.calls
-    assert call["images"] == (images["images"] if with_images else None)
+    if with_images:
+        assert [image.size for image in call["images"]] == [(8, 16)]
+    else:
+        assert call["images"] is None
     assert call["num_inference_steps"] == 4
 
 

@@ -29,6 +29,7 @@ KLEIN_STEPS = 4
 class Flux2klein4bRequest(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1)
     images: list[Media] = Field(
@@ -36,7 +37,8 @@ class Flux2klein4bRequest(GenerationRequest):
         max_length=1,
         description=(
             "Image to edit or draw from: 0 or 1 for now; a list so more can be "
-            "allowed later without a schema change. Omitted = text to image."
+            "allowed later without a schema change. Omitted = text to image. "
+            "Center-cropped to the output's aspect ratio and resized to about 1 MP."
         ),
     )
     count: Count = 1
