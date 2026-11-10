@@ -276,8 +276,8 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
     def media_errors(self) -> list[tuple[str, int | None, str]]:
         errors = []
         keyframe_sizes = {}
-        for name, images in self._images.items():
-            width, height = keyframe_sizes[name] = images[0].size
+        for name, sizes in self._image_sizes.items():
+            width, height = keyframe_sizes[name] = sizes[0]
             # tt-metal leaves the side limits to the server.
             if not (
                 MINIMAX_H3_KEYFRAME_MIN_SIDE <= min(width, height)
@@ -300,8 +300,10 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
 
     def output_size(self) -> tuple[int, int]:
         if self.aspect_ratio == "adaptive":
-            keyframe = self._images.get("first_frame") or self._images["last_frame"]
-            return h3_canvas(*keyframe[0].size)
+            keyframe = (
+                self._image_sizes.get("first_frame") or self._image_sizes["last_frame"]
+            )
+            return h3_canvas(*keyframe[0])
         return super().output_size()
 
 
@@ -415,8 +417,8 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
             references.append(reference)
             locs[reference.name] = (name, index)
 
-        for index, image in enumerate(self._images.get("images", [])):
-            add("images", index, size=image.size)
+        for index, size in enumerate(self._image_sizes.get("images", [])):
+            add("images", index, size=size)
         for name in ("videos", "audios"):
             for index, probe in enumerate(self._probes.get(name, [])):
                 add(

@@ -145,14 +145,27 @@ def _resolved(request, width, height, files=None, seed=5, prompt=None):
     return request
 
 
-def test_wan_passes_both_frames_as_they_are(monkeypatch):
-    monkeypatch.setattr(
-        runners, "ImagePrompt", lambda image, frame_pos: (image.size, frame_pos)
-    )
-    runner = _runner("TTWan22I2VA14BRunner")
-    # The runner decodes them; the pipeline crops and resizes them.
-    first, last = _png(2000, 720), _png(640, 360)
-    request = _resolved(
+@pytest.fixture
+def wan_exports(monkeypatch, tmp_path):
+    """The (frames, kwargs) of each MP4 the runner exports, which it writes
+    under ``tmp_path/encoded``."""
+    monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path / "generations"))
+    exports = []
+
+    class _VideoManager:
+        def export_to_mp4(self, frames, **kwargs):
+            exports.append((frames, kwargs))
+            path = tmp_path / "encoded" / f"{len(exports)}.mp4"
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b"mp4")
+            return str(path)
+
+    monkeypatch.setattr(runners, "VideoManager", _VideoManager)
+    return exports
+
+
+def _wan_request(first, last):
+    return _resolved(
         Wan22i2vA14bRequest(
             prompt="a boat",
             first_frame="https://x/a.png",
@@ -164,7 +177,21 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
         720,
         {"first_frame": [first], "last_frame": [last]},
     )
-    assert runner.run([request]) == ["output"]
+
+
+def test_wan_passes_both_frames_as_they_are(monkeypatch, wan_exports, tmp_path):
+    monkeypatch.setattr(
+        runners, "ImagePrompt", lambda image, frame_pos: (image.size, frame_pos)
+    )
+    runner = _runner("TTWan22I2VA14BRunner")
+    # The runner decodes them; the pipeline crops and resizes them.
+    request = _wan_request(_png(2000, 720), _png(640, 360))
+    (tmp_path / "generations" / request._task_id).mkdir(parents=True)
+    (path,) = runner.run([request])
+    assert path == str(tmp_path / "generations" / request._task_id / "wan.mp4")
+    assert pathlib.Path(path).read_bytes() == b"mp4"
+    # The pipeline's batch of one video.
+    assert wan_exports == [("output", {"fps": 16})]
     (call,) = runner.pipeline.calls
     assert call.pop("image_prompt") == [((2000, 720), 0), ((640, 360), 80)]
     assert call == {
@@ -180,6 +207,27 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch):
         "traced": True,
         "on_event": None,
     }
+
+
+def test_wan_does_not_bring_back_a_deleted_jobs_directory(wan_exports, tmp_path):
+    runner = _runner("TTWan22I2VA14BRunner")
+    request = _wan_request(_png(1280, 720), _png(1280, 720))
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert not (tmp_path / "generations").exists()
+    assert not any((tmp_path / "encoded").iterdir())
+
+
+def test_wan_exports_nothing_where_no_job_keeps_the_video(wan_exports):
+    runner = _runner("TTWan22I2VA14BRunner", warming_up=True)
+    assert runner.run(runner.warmup_requests()[:1]) == [None]
+    runner._warming_up = False
+    # The deep canary, and the other ranks of a multi-host mesh.
+    assert runner.run([runner._build_warmup_video_request()]) == [None]
+    runner.export_in_runner = False
+    request = _wan_request(_png(1280, 720), _png(1280, 720))
+    assert runner.run([request]) == [None]
+    assert wan_exports == []
 
 
 def test_wan_warmup_covers_every_combination():
@@ -254,33 +302,64 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
     assert frame_positions == {(0,), (0, 80)}
 
 
-@pytest.mark.parametrize("warming_up", [False, True])
-def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
+@pytest.fixture
+def ltx_remuxes(monkeypatch, tmp_path):
+    """The (input, output) of each faststart remux the runner makes."""
     monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path))
-    runner = _runner("TTLtx23DistilledRunner", warming_up=warming_up)
-    if warming_up:
-        (request,) = runner.warmup_requests()
-    else:
-        request = _resolved(
-            Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5
-        )
-        (tmp_path / request._task_id).mkdir()
+    remuxes = []
+
+    def ensure_faststart(input_path, output_path):
+        remuxes.append((input_path, output_path))
+        pathlib.Path(output_path).write_bytes(pathlib.Path(input_path).read_bytes())
+
+    monkeypatch.setattr(runners.VideoManager, "ensure_faststart", ensure_faststart)
+    return remuxes
+
+
+def test_ltx_writes_the_served_shape_and_remuxes_it(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner")
+    request = _resolved(Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5)
+    directory = tmp_path / request._task_id
+    directory.mkdir()
     (path,) = runner.run([request])
     (call,) = runner.pipeline.calls
+    raw = str(directory / "ltx.raw.mp4")
     assert call == {
         "prompt": request._prompt,
-        "output_path": path,
+        "output_path": raw,
         "num_frames": 153,
         "height": 1088,
         "width": 1920,
         "seed": request._seed,
         "fps": 25,
     }
-    # Into the job's directory; warmup only captures the traces, and its
-    # video is not kept.
+    assert path == str(directory / "ltx.mp4")
+    assert ltx_remuxes == [(raw, path)]
+    assert pathlib.Path(path).read_bytes() == b"mp4"
+    assert not pathlib.Path(raw).exists()
+
+
+def test_ltx_does_not_remux_where_no_job_keeps_the_video(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner", warming_up=True)
+    (request,) = runner.warmup_requests()
+    (path,) = runner.run([request])
+    # Warmup only captures the traces, and its video is not kept.
     assert pathlib.Path(path).parent == tmp_path / request._task_id
-    assert pathlib.Path(path).exists() is not warming_up
-    assert pathlib.Path(path).parent.exists() is not warming_up
+    assert not pathlib.Path(path).parent.exists()
+    runner._warming_up = False
+    request._task_id = runners.CANARY_DEEP_TASK_ID
+    (path,) = runner.run([request])
+    assert path == str(tmp_path / runners.CANARY_DEEP_TASK_ID / "ltx.raw.mp4")
+    assert ltx_remuxes == []
+
+
+def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path):
+    runner = _runner("TTLtx23DistilledRunner")
+    request = _resolved(Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5)
+    with pytest.raises(FileNotFoundError):
+        runner.run([request])
+    assert list(tmp_path.iterdir()) == []
+    assert ltx_remuxes == []
 
 
 class _H3Pipeline:

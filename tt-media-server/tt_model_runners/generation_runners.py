@@ -128,6 +128,9 @@ class _GenerationRunner(TTDiTRunner):
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
+    # Off on the other ranks of a multi-host mesh, whose output is discarded.
+    export_in_runner = True
+
     def create_pipeline(self):
         # The mesh's preset decides the sizes; the pipeline rejects the others
         # per call.
@@ -217,7 +220,24 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         finally:
             if recorder is not None:
                 recorder.flush(frames)
-        return frames
+        if (
+            self._warming_up
+            or not self.export_in_runner
+            or request._task_id == CANARY_DEEP_TASK_ID
+        ):
+            return [None]
+        # The pipeline returns a batch of one video.
+        encoded = VideoManager().export_to_mp4(frames[0], fps=request.fps)
+        # Into the job's directory, so a file a cancelled or failed job leaves
+        # behind is deleted with it.
+        path = Path(generation_job_dir(request._task_id)) / "wan.mp4"
+        try:
+            shutil.move(encoded, path)
+        except FileNotFoundError:
+            # The job was deleted while it ran.
+            Path(encoded).unlink(missing_ok=True)
+            raise
+        return [str(path)]
 
 
 class TTLtx23DistilledRunner(_GenerationRunner):
@@ -285,9 +305,9 @@ class TTLtx23DistilledRunner(_GenerationRunner):
             directory.mkdir(parents=True, exist_ok=True)
         try:
             # generate() writes an MP4 with the soundtrack and returns its path.
-            path = self.pipeline.generate(
+            raw = self.pipeline.generate(
                 request._prompt,
-                output_path=str(directory / "ltx.mp4"),
+                output_path=str(directory / "ltx.raw.mp4"),
                 num_frames=request.frames,
                 height=request._height,
                 width=request._width,
@@ -298,7 +318,16 @@ class TTLtx23DistilledRunner(_GenerationRunner):
             if self._warming_up:
                 # No job owns warmup's video.
                 shutil.rmtree(directory, ignore_errors=True)
-        return [path]
+        if self._warming_up or request._task_id == CANARY_DEEP_TASK_ID:
+            return [raw]
+        # generate() does not write a faststart MP4, and the service serves
+        # the runner's file as it is.
+        path = directory / "ltx.mp4"
+        try:
+            VideoManager.ensure_faststart(raw, str(path))
+        finally:
+            Path(raw).unlink(missing_ok=True)
+        return [str(path)]
 
 
 MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000

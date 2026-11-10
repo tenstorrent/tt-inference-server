@@ -122,6 +122,8 @@ class GenerationRequest(BaseRequest):
     RUNNER_DECODES_IMAGES: ClassVar[bool] = False
 
     _images: dict[str, list[Image.Image]] = PrivateAttr(default_factory=dict)
+    # (width, height) of each input image, after EXIF orientation.
+    _image_sizes: dict[str, list[tuple[int, int]]] = PrivateAttr(default_factory=dict)
     # The input files, and the metadata probed from videos and audio clips.
     _files: dict[str, list[bytes]] = PrivateAttr(default_factory=dict)
     _probes: dict[str, list[object]] = PrivateAttr(default_factory=dict)

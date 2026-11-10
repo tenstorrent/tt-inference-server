@@ -49,7 +49,7 @@ from utils.media_probe import (
     media_format_error,
     probe_reference_media,
 )
-from utils.video_manager import VideoManager, probe_video
+from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
@@ -70,6 +70,12 @@ def _decode_data_uri(uri: str, kind: str) -> bytes:
     if len(data) > MEDIA_MAX_BYTES[kind]:
         raise _too_large(kind, MEDIA_MAX_BYTES[kind])
     return data
+
+
+def _image_size(data: bytes) -> tuple[int, int]:
+    """Fully decoded, so a corrupt image fails here, but only its size is
+    kept."""
+    return decode_image(data).size
 
 
 def _request_parameters(request: GenerationRequest) -> dict:
@@ -125,20 +131,12 @@ def _first_output(result_path: str) -> Optional[dict]:
     return {**output, "bytes": size}
 
 
-def _write_video(result: Any, fps: int, path: Path) -> None:
-    """Write a runner's video to ``path`` as a faststart MP4.
+def _write_video(result: str, path: Path) -> None:
+    """Store a runner's video at ``path``.
 
-    The result is frames, or the path of an MP4 the pipeline wrote itself,
-    which is remuxed for faststart.
+    The result is the path of a finished faststart MP4 the runner wrote.
     """
-    if isinstance(result, str):
-        try:
-            VideoManager.ensure_faststart(result, str(path))
-        finally:
-            Path(result).unlink(missing_ok=True)
-        return
-    # The encoder already writes faststart MP4s.
-    shutil.move(VideoManager().export_to_mp4(result, fps=fps), path)
+    shutil.move(result, path)
 
 
 def read_manifest(result_path: str) -> list[dict]:
@@ -179,8 +177,6 @@ class GenerationService(BaseJobService):
             )
         await self._load_media(request)
         request._width, request._height = request.output_size()
-        if request.RUNNER_DECODES_IMAGES:
-            request._images = {}
         request._seed = (
             request.seed
             if request.seed is not None
@@ -193,6 +189,7 @@ class GenerationService(BaseJobService):
         request._cancel_event = self._processManager.Event()
         request._worker_assignment = self._processManager.Namespace()
         request._worker_assignment.identity = None
+        request_parameters = await asyncio.to_thread(_request_parameters, request)
         # Made here and only here, so a runner that finishes after the job is
         # deleted can't bring it back.
         result_path = generation_job_dir(request._task_id)
@@ -207,7 +204,7 @@ class GenerationService(BaseJobService):
                 start_event=request._start_event,
                 cancel_event=request._cancel_event,
                 worker_assignment=request._worker_assignment,
-                request_parameters=_request_parameters(request),
+                request_parameters=request_parameters,
                 result_path=result_path,
             )
         except BaseException:
@@ -243,7 +240,7 @@ class GenerationService(BaseJobService):
                         https_only=True,
                     )
                 else:
-                    data = _decode_data_uri(value, kind)
+                    data = await asyncio.to_thread(_decode_data_uri, value, kind)
             except MediaDownloadPolicyError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except MediaDownloadTooLargeError:
@@ -252,6 +249,8 @@ class GenerationService(BaseJobService):
                     kind, min(MEDIA_MAX_BYTES[kind], settings.media_url_max_bytes)
                 )
             if kind == "image":
+                if request.RUNNER_DECODES_IMAGES:
+                    return data, await asyncio.to_thread(_image_size, data)
                 return data, await asyncio.to_thread(decode_image, data)
             probe = await asyncio.to_thread(probe_reference_media, data)
             if message := media_format_error(kind, probe):
@@ -305,10 +304,13 @@ class GenerationService(BaseJobService):
             if kind != "image" or request.RUNNER_DECODES_IMAGES:
                 request._files[name] = [data for data, _ in items]
             decoded = [decoded for _, decoded in items]
-            if kind == "image":
-                request._images[name] = decoded
-            else:
+            if kind != "image":
                 request._probes[name] = decoded
+            elif request.RUNNER_DECODES_IMAGES:
+                request._image_sizes[name] = decoded
+            else:
+                request._images[name] = decoded
+                request._image_sizes[name] = [image.size for image in decoded]
         if not errors:
             for name, index, message in request.media_errors():
                 error(name, index, message)
@@ -467,7 +469,7 @@ class GenerationService(BaseJobService):
             "prompt": request._prompt,
         }
         path = directory / f"{index}.mp4"
-        _write_video(result, request.fps, path)
+        _write_video(result, path)
         probe = probe_video(str(path))
         num_frames = probe.num_frames or request.frames
         return {

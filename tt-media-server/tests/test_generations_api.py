@@ -49,11 +49,8 @@ def _data_uri(width: int = 64, height: int = 64, image_format: str = "PNG") -> s
     ).decode("ascii")
 
 
-def _with_images(request, **images):
-    request._images = {
-        name: [Image.new("RGB", size) for size in sizes]
-        for name, sizes in images.items()
-    }
+def _with_image_sizes(request, **sizes):
+    request._image_sizes = sizes
     return request
 
 
@@ -239,7 +236,11 @@ class _FakeDevice:
             raise self.error
         if self.video is not None:
             return self.video(request)
-        return np.zeros((request.frames, request._height, request._width, 3), np.uint8)
+        # The runner encodes its MP4 and returns the path.
+        return VideoManager().export_to_mp4(
+            np.zeros((request.frames, request._height, request._width, 3), np.uint8),
+            fps=request.fps,
+        )
 
 
 @pytest.fixture
@@ -318,7 +319,7 @@ async def _wait_final(client, job_id: str) -> dict:
 
 
 def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
-    """An MP4 with sound, not faststart, as the LTX and H3 runners write."""
+    """An MP4 with sound, as the LTX and H3 runners return."""
     return VideoManager().export_to_mp4_with_audio(
         np.zeros((frames, 64, 64, 3), np.uint8),
         np.zeros((2, sampling_rate * frames // fps), np.float32),
@@ -683,8 +684,9 @@ async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
     assert response.status_code == 202, response.text
     await _wait_final(client, response.json()["id"])
     (request,) = device.requests
-    # The runner decodes the frames: only their files go to the device.
+    # The runner decodes the frames: only their files and sizes go to the device.
     assert request._images == {}
+    assert request._image_sizes == {"first_frame": [(64, 64)], "last_frame": [(64, 64)]}
     assert set(request._files) == {"first_frame", "last_frame"}
 
 
@@ -1264,7 +1266,7 @@ def test_h3_frames_are_the_next_17n_plus_5(duration, frames):
 )
 @requires_tt_metal_policy
 def test_h3_output_size(fields, images, expected):
-    request = _with_images(MiniMaxH3FL2VARequest(prompt="x", **fields), **images)
+    request = _with_image_sizes(MiniMaxH3FL2VARequest(prompt="x", **fields), **images)
     assert request.output_size() == expected
 
 
@@ -1341,7 +1343,7 @@ def test_h3_prompt_must_not_be_blank(prompt):
 )
 @requires_tt_metal_policy
 def test_h3_keyframe_limits(images, errors):
-    request = _with_images(MiniMaxH3FL2VARequest(prompt="x"), **images)
+    request = _with_image_sizes(MiniMaxH3FL2VARequest(prompt="x"), **images)
     got = request.media_errors()
     assert [(name, index) for name, index, _ in got] == [(n, 0) for n, _ in errors]
     for (_, _, message), (_, expected) in zip(got, errors):
@@ -1410,7 +1412,7 @@ def test_h3_ref2va_rejects(fields, message):
 @requires_tt_metal_policy
 def test_h3_reference_clip_limits(probes, errors):
     request = MiniMaxH3Ref2VARequest(prompt="x", images=["https://x/a.png"])
-    request._images = {"images": [Image.new("RGB", (64, 64))]}
+    request._image_sizes = {"images": [(64, 64)]}
     request._probes = probes
     got = request.media_errors()
     assert [(name, index) for name, index, _ in got] == [(n, i) for n, i, _ in errors]
@@ -1432,7 +1434,7 @@ def test_h3_admission_errors_land_at_their_input_or_the_request(monkeypatch):
         monkeypatch, [("images[0]", "bad image"), (None, "bad request")]
     )
     request = MiniMaxH3Ref2VARequest(prompt="x", images=["https://x/a.png"])
-    request._images = {"images": [Image.new("RGB", (64, 64))]}
+    request._image_sizes = {"images": [(64, 64)]}
     assert request.media_errors() == [
         ("images", 0, "bad image"),
         ("references", None, "bad request"),
@@ -1555,12 +1557,34 @@ async def test_h3_keyframes_job(generations_app):
     # The runner decodes the keyframe: only its file goes to the device, and
     # the field holds the data URI's digest.
     assert request._images == {}
+    assert request._image_sizes == {"first_frame": [(600, 800)]}
     assert Image.open(BytesIO(request._files["first_frame"][0])).size == (600, 800)
     assert request.first_frame.startswith("sha256:")
     (output,) = job["outputs"]
     assert output["audio"] == {"codec": "aac", "sample_rate": 48000, "channels": 2}
     assert output["fps"] == 24 and output["num_frames"] == 124
     assert output["duration"] == 124 / 24
+
+
+@requires_tt_metal_policy
+async def test_h3_sees_a_keyframes_upright_size(generations_app):
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    device.video = lambda request: _sound_video(request.frames, 48000, 24)
+    # Stored landscape, shown portrait: EXIF orientation 6 is "rotate 90° CW".
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    Image.new("RGB", (800, 600)).save(buffer, format="JPEG", exif=exif)
+    keyframe = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={"prompt": "a lighthouse", "first_frame": keyframe},
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    assert request._image_sizes == {"first_frame": [(600, 800)]}
+    assert (request._width, request._height) == (768, 1024)
 
 
 @requires_tt_metal_policy
@@ -1595,6 +1619,7 @@ async def test_h3_references_are_loaded_and_checked(generations_app):
     assert job["status"] == "completed", job
     (request,) = device.requests
     assert request._images == {}
+    assert request._image_sizes == {"images": [(64, 96)]}
     assert Image.open(BytesIO(request._files["images"][0])).size == (64, 96)
     # Only the files go to the device: each field holds its data URI's digest,
     # as the stored request does.
