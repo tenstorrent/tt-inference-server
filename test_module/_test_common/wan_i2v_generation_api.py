@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from urllib.parse import urlsplit
 
 from . import generation_api
 from .generation_api import (
@@ -123,12 +122,8 @@ def video_output_problems(job: dict[str, Any], request: dict[str, Any]) -> list[
         if output.get(key) != value
     ]
 
-    url = output.get("url")
-    content_path = CONTENT_PATH.format(job_id=job.get("id"), index=0)
-    if not isinstance(url, str) or (
-        url != content_path and urlsplit(url).scheme not in ("http", "https")
-    ):
-        problems.append(f"url is {url!r}, expected {content_path!r}")
+    if problem := generation_api.output_url_problem(output.get("url"), job.get("id")):
+        problems.append(problem)
 
     seed = output.get("seed")
     if "seed" in request:

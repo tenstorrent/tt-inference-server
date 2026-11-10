@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 JOBS_PATH = "/v1/jobs"
 JOB_PATH = "/v1/jobs/{job_id}"
@@ -65,6 +66,25 @@ def data_uri(image: bytes) -> str:
 
 def is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def output_url_problem(url: Any, job_id: Any, index: int = 0) -> str | None:
+    """Why an output's ``url`` is not where the job's file is, or None.
+
+    The URL is a relative reference to the job's ``content/{index}`` path,
+    which a client resolves against the server's base URL (RFC 3986), or an
+    absolute URL if outputs ever move to storage. The server writes the
+    relative one without a leading ``/`` so a base URL with a path keeps it;
+    the design's example has one. Both resolve to the same path on a base URL
+    without one, so both are taken.
+    """
+    content_path = CONTENT_PATH.format(job_id=job_id, index=index)
+    if isinstance(url, str) and (
+        url.lstrip("/") == content_path.lstrip("/")
+        or urlsplit(url).scheme in ("http", "https")
+    ):
+        return None
+    return f"url is {url!r}, expected {content_path.lstrip('/')!r}"
 
 
 def job_problems(
