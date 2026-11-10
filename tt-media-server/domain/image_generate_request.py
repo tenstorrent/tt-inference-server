@@ -12,7 +12,11 @@ from pydantic import Field, PrivateAttr, field_validator, model_validator
 _FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell", "tt-flux.1-kontext-dev"}
 _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
-_SKIP_STEP_VALIDATION_RUNNERS = {"tt-z-image-turbo"}
+# MiniMax-H3-Image runs its fixed 6-step PDD schedule; the step count is ignored.
+_SKIP_STEP_VALIDATION_RUNNERS = {"tt-z-image-turbo", "tt-minimax-h3-image"}
+# Runners that generate above 1536 px (MiniMax-H3-Image renders 2K and 4K natively).
+_MAX_RESOLUTION_DEFAULT = 1536
+_MAX_RESOLUTION_BY_RUNNER = {"tt-minimax-h3-image": 4096}
 
 
 class BaseImageRequest(BaseRequest):
@@ -28,8 +32,9 @@ class BaseImageRequest(BaseRequest):
 
     # Optional output resolution (width/height). Runners that support per-request
     # resolution (e.g. FLUX.1-Kontext) honor these; others ignore them.
-    width: Optional[int] = Field(default=None, ge=256, le=1536)
-    height: Optional[int] = Field(default=None, ge=256, le=1536)
+    # The upper bound is per runner (see validate_resolution_pair): 1536 unless the runner allows more.
+    width: Optional[int] = Field(default=None, ge=256, le=4096)
+    height: Optional[int] = Field(default=None, ge=256, le=4096)
 
     # Private fields for internal processing
     _segments: Optional[List[int]] = PrivateAttr(default=None)
@@ -59,6 +64,11 @@ class BaseImageRequest(BaseRequest):
         # height (and vice versa), silently changing the aspect ratio.
         if (self.width is None) != (self.height is None):
             raise ValueError("width and height must be provided together")
+        limit = _MAX_RESOLUTION_BY_RUNNER.get(get_settings().model_runner, _MAX_RESOLUTION_DEFAULT)
+        for name in ("width", "height"):
+            value = getattr(self, name)
+            if value is not None and value > limit:
+                raise ValueError(f"{name} must be <= {limit} for {get_settings().model_runner}, got {value}")
         return self
 
     @field_validator("image_return_format")

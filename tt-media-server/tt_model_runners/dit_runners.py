@@ -119,6 +119,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_MINIMAX_H3_IMAGE.value: "MiniMaxH3-Image",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -1987,3 +1988,172 @@ class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VA
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+MINIMAX_H3_IMAGE_DEFAULT_SIZE = 2048
+MINIMAX_H3_IMAGE_SIZE_GRID = 32
+
+
+def _minimax_h3_image_edit_size(reference: Image.Image) -> tuple[int, int]:
+    """Default edit output: the reference's aspect ratio at about 2048^2 pixels, snapped to 32 px."""
+    w, h = reference.size
+    scale = (MINIMAX_H3_IMAGE_DEFAULT_SIZE**2 / (w * h)) ** 0.5
+    snap = lambda v: max(  # noqa: E731
+        MINIMAX_H3_IMAGE_SIZE_GRID,
+        int(round(v * scale / MINIMAX_H3_IMAGE_SIZE_GRID)) * MINIMAX_H3_IMAGE_SIZE_GRID,
+    )
+    return snap(w), snap(h)
+
+
+class TTMiniMaxH3ImageRunner(TTDiTRunner):
+    """MiniMax-H3-Image, latency mode: one pipeline on the whole mesh, one request at a time.
+
+    `/v1/images/generations` is text-to-image; `/v1/images/edits` takes the request's `image` as the
+    reference. The sampler is a fixed 6-step PDD schedule with no CFG, so `num_inference_steps`,
+    `guidance_scale` and `negative_prompt` are ignored. The DiT takes the packed length as a runtime
+    argument (dynamic length), so after the two warm-up requests no size compiles a new program.
+
+    Weights: `MINIMAX_H3_IMAGE_MODEL_PATH` (a converted snapshot: transformer/, vae/, processor/,
+    tokenizer/, pdd_config.json and text_encoder/ from MiniMax-H3), or `MODEL_WEIGHTS_DIR`.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def _weights_dir(self) -> str:
+        """A converted snapshot directory. A release snapshot as published on Hugging Face is converted once, on
+        first start, into the writable cache (`MINIMAX_H3_IMAGE_CONVERTED_DIR`, default beside the tt_dit cache),
+        with `text_encoder/` linked from the snapshot or from `MINIMAX_H3_TEXT_ENCODER_DIR`."""
+        configured = self.settings.model_weights_path
+        env = os.environ.get("MINIMAX_H3_IMAGE_MODEL_PATH")
+        source = next((p for p in (configured, env) if p and os.path.isdir(p)), None)
+        if source is None:
+            raise FileNotFoundError(
+                "MiniMax-H3-Image weights not found: set MINIMAX_H3_IMAGE_MODEL_PATH (or MODEL_WEIGHTS_DIR) to a "
+                f"release or converted snapshot directory (model_weights_path={configured!r})"
+            )
+        from models.tt_dit.pipelines.minimax_h3 import convert_h3_image as converter
+
+        if converter.is_converted(source):
+            return source
+        if not converter.is_release_snapshot(source):
+            raise FileNotFoundError(f"{source} is neither a MiniMax-H3-Image release snapshot nor a converted one")
+        cache_root = os.environ.get("TT_DIT_CACHE_DIR") or os.path.dirname(os.path.abspath(source))
+        out = os.environ.get("MINIMAX_H3_IMAGE_CONVERTED_DIR") or os.path.join(
+            os.path.dirname(os.path.abspath(cache_root)), "MiniMax-H3-Image-converted"
+        )
+        marker = os.path.join(out, ".converted")
+        if not os.path.isfile(marker):
+            import fcntl
+
+            os.makedirs(out, exist_ok=True)
+            with open(os.path.join(out, ".lock"), "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)  # one converter per host; others wait, then see the marker
+                if not os.path.isfile(marker):
+                    self.logger.info(f"Device {self.device_id}: converting {source} -> {out} (first start only)")
+                    converter.convert(source, out)
+                    open(marker, "w").close()
+        text_encoder = os.path.join(out, "text_encoder")
+        if not os.path.exists(text_encoder):
+            candidate = os.environ.get("MINIMAX_H3_TEXT_ENCODER_DIR") or os.path.join(source, "text_encoder")
+            if not os.path.isfile(os.path.join(candidate, "config.json")):
+                raise FileNotFoundError(
+                    "MiniMax-H3-Image needs MiniMax-H3's Qwen3-VL text encoder: put it at <snapshot>/text_encoder "
+                    f"or set MINIMAX_H3_TEXT_ENCODER_DIR (looked in {candidate})"
+                )
+            os.symlink(os.path.abspath(candidate), text_encoder)
+        return out
+
+    def create_pipeline(self):
+        # Imported here so a tt-metal tree without the H3-Image port still imports this module.
+        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_image import (
+            MiniMaxH3ImagePipeline,
+        )
+
+        try:
+            return MiniMaxH3ImagePipeline(
+                mesh_device=self.ttnn_device, weights_dir=self._weights_dir()
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "MiniMax-H3-Image pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        # Same fabric/L1 setup as the H3 video runner: the 4x8 Blackhole preset is a ring.
+        return _minimax_h3_device_params(self.settings.device_mesh_shape)
+
+    def _warm(self):
+        """Compile every program the serving path uses. The pipeline's own `warmup` covers every prompt-length rung of
+        the text encoder plus a 4K t2i and a 2K edit; older tt-metal trees without it get the two requests."""
+        import time
+
+        started = time.perf_counter()
+        if hasattr(self.pipeline, "warmup"):
+            self.pipeline.warmup()
+        else:
+            self.pipeline("warmup", width=4096, height=4096, seed=0)
+            reference = Image.new("RGB", (1024, 1024), (128, 128, 128))
+            self.pipeline("warmup", width=2048, height=2048, seed=0, images=[reference])
+        self.logger.info(
+            f"Device {self.device_id}: MiniMax-H3-Image warm in {time.perf_counter() - started:.1f}s"
+        )
+
+    async def warmup(self) -> bool:
+        self.logger.info(f"Device {self.device_id}: Loading MiniMax-H3-Image...")
+
+        def build_and_warm():
+            self.pipeline = self.create_pipeline()
+            self._warm()
+
+        timeout = max(
+            self.settings.weights_distribution_timeout_seconds,
+            DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS,
+        )
+        try:
+            await asyncio.wait_for(asyncio.to_thread(build_and_warm), timeout=timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Device {self.device_id}: MiniMax-H3-Image load timed out after {timeout} seconds"
+            )
+            raise
+        except Exception as e:
+            log_exception_chain(self.logger, self.device_id, "Exception during model loading", e)
+            raise
+        self.logger.info(f"Device {self.device_id}: MiniMax-H3-Image ready")
+        return True
+
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        image_b64 = getattr(request, "image", None)
+        reference = (
+            self.image_manager.base64_to_pil_image(image_b64, target_mode="RGB") if image_b64 else None
+        )
+        if request.width and request.height:
+            width, height = request.width, request.height
+        elif reference is not None:
+            width, height = _minimax_h3_image_edit_size(reference)
+        else:
+            width = height = MINIMAX_H3_IMAGE_DEFAULT_SIZE
+        mode = "edit" if reference is not None else "t2i"
+        result = self.pipeline(
+            request.prompt,
+            width=width,
+            height=height,
+            seed=int(request.seed or 0),
+            images=[reference] if reference is not None else (),
+        )
+        t = result.timings
+        misses = sum(t.program_misses.values())
+        self.logger.info(
+            f"Device {self.device_id}: MiniMax-H3-Image {mode} {width}x{height} (canvas "
+            f"{result.canvas[0]}x{result.canvas[1]}, {result.packed_length} rows) in {t.total:.2f}s = prompt "
+            f"{t.encode_prompt:.2f} + refs {t.encode_references:.2f} + denoise {t.denoise:.2f} + decode "
+            f"{t.decode:.2f}; program-cache misses {misses}"
+        )
+        return [result.image]
