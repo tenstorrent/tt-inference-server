@@ -10,7 +10,6 @@ import statistics
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import imageio.v3 as iio
 import requests
@@ -59,8 +58,6 @@ class VideoGenerationEvalsTestRequest:
     num_inference_steps: int = 40
     server_url: str | None = None
     frame_sample_rate: int = 8  # Sample every Nth frame for CLIP scoring
-    # The DeviceTypes member served on; picks the size where the model takes one.
-    device: Any = None
 
 
 class VideoGenerationEvalsTest(BaseTest):
@@ -109,7 +106,6 @@ class VideoGenerationEvalsTest(BaseTest):
             model_name=request.model_name,
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
-            device=request.device,
         )
         num_generated = len(videos_info)
 
@@ -163,7 +159,6 @@ class VideoGenerationEvalsTest(BaseTest):
         model_name: str,
         server_url: str | None,
         num_inference_steps: int,
-        device: Any = None,
     ) -> list[dict]:
         """Generate videos for all prompts.
 
@@ -172,7 +167,6 @@ class VideoGenerationEvalsTest(BaseTest):
             model_name: Model name used to select T2V vs I2V endpoint/payload
             server_url: Base server URL (e.g., http://localhost:8000)
             num_inference_steps: Number of inference steps for generation
-            device: DeviceTypes member served on, for models that take a size
 
         Returns:
             List of dicts with video information: {'prompt': str, 'video_path': str, 'job_id': str}
@@ -213,7 +207,6 @@ class VideoGenerationEvalsTest(BaseTest):
                 num_inference_steps=num_inference_steps,
                 model_name=model_name,
                 image_b64=image_b64,
-                device=device,
             )
 
             generation_start = time.time()

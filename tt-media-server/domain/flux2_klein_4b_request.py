@@ -29,6 +29,7 @@ KLEIN_STEPS = 4
 class Flux2klein4bRequest(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1)
     images: list[Media] = Field(
