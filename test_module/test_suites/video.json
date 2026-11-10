@@ -124,6 +124,42 @@
                     "description": "Video generation param test"
                 }
             ]
+        },
+        {
+            "models": [
+                "ltx_distilled",
+                "minimax_h3_fl2va_lightx2v",
+                "minimax_h3_ref2va_lightx2v"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "VideoGenerationAPIContractTest",
+                    "enabled": true,
+                    "description": "Generation API create contract: auth, request validation, media limits and URL policy, the model's own fields, and unserved-model refusals"
+                },
+                {
+                    "template": "VideoGenerationAPITest",
+                    "enabled": true,
+                    "description": "Generation API lifecycle: submit, query, list, poll, output, download, clip and container check with its audio track, cancel, delete",
+                    "targets": {
+                        "poll_timeout": 1800,
+                        "poll_interval": 1
+                    }
+                },
+                {
+                    "template": "VideoGenerationAPIParamTest",
+                    "enabled": true,
+                    "description": "Generation API parameter sweep: seed, prompt, no seed, every aspect ratio, the shortest and longest duration, keyframes or references, the model's own fields",
+                    "targets": {
+                        "poll_timeout": 1800,
+                        "poll_interval": 1
+                    }
+                }
+            ]
         }
     ]
 }

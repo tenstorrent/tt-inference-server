@@ -42,7 +42,10 @@
     "VIDEO": [
       "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
       "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-      "genmo/mochi-1-preview"
+      "genmo/mochi-1-preview",
+      "Lightricks/LTX-2.3-distilled",
+      "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V",
+      "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"
     ],
     "LLM": [
       "openai/gpt-oss-120b",
@@ -163,7 +166,10 @@
       "flux2_klein": "FLUX.2 klein 4B generation API tests",
       "flux3_klein": "FLUX 3 Image klein generation API tests",
       "qwen_image_edit": "Qwen-Image-Edit-2511 generation API tests",
-      "ideogram4": "Ideogram 4 generation API tests"
+      "ideogram4": "Ideogram 4 generation API tests",
+      "ltx_distilled": "LTX-2.3 22B distilled generation API tests",
+      "minimax_h3_fl2va_lightx2v": "MiniMax-H3 FL2VA LightX2V generation API tests",
+      "minimax_h3_ref2va_lightx2v": "MiniMax-H3 Ref2VA LightX2V generation API tests"
     }
   },
   "model_configs": {
@@ -1144,6 +1150,36 @@
       "compatible_devices": [
         "blackhole_galaxy"
       ]
+    },
+    "ltx_distilled": {
+      "id_name": "ltx-distilled",
+      "weights": [
+        "Lightricks/LTX-2.3-distilled"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "minimax_h3_fl2va_lightx2v": {
+      "id_name": "minimax-h3-fl2va-lightx2v",
+      "weights": [
+        "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "minimax_h3_ref2va_lightx2v": {
+      "id_name": "minimax-h3-ref2va-lightx2v",
+      "weights": [
+        "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
     }
   },
   "hardware_defaults": {
@@ -1726,6 +1762,52 @@
       ],
       "test_config": {
         "test_timeout": 7200,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationAPIContractTest": {
+      "module": "test_module.load_param_tests.video_generation_api_contract_test",
+      "markers": [
+        "param",
+        "e2e",
+        "fast"
+      ],
+      "test_config": {
+        "test_timeout": 300,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationAPITest": {
+      "module": "test_module.load_param_tests.video_generation_api_test",
+      "markers": [
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 5400,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationAPIParamTest": {
+      "module": "test_module.load_param_tests.video_generation_api_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 14400,
         "retry_attempts": 0,
         "retry_delay": 0,
         "break_on_failure": false,

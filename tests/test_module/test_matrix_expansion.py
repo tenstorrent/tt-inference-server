@@ -199,7 +199,16 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
+        "ltx-distilled-blackhole_galaxy",
+        "minimax-h3-fl2va-lightx2v-blackhole_galaxy",
+        "minimax-h3-ref2va-lightx2v-blackhole_galaxy",
     }
+    # The video models with sound run the generation API's video spec tests.
+    SOUND_VIDEO_SUITE_IDS = (
+        "ltx-distilled-blackhole_galaxy",
+        "minimax-h3-fl2va-lightx2v-blackhole_galaxy",
+        "minimax-h3-ref2va-lightx2v-blackhole_galaxy",
+    )
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
     # template targets merged with per-device model_targets overrides. p150x4
@@ -284,6 +293,22 @@ class TestVideoMatrixExpansion:
                 "VideoGenerationI2VTest",
                 "VideoGenerationI2VParamTest",
             ], f"{suite_id}: unexpected templates {templates}"
+
+    def test_sound_video_suites_run_the_generation_api_tests(self):
+        suite_map = self._suite_map()
+        for suite_id in self.SOUND_VIDEO_SUITE_IDS:
+            templates = [tc["template"] for tc in suite_map[suite_id]["test_cases"]]
+            assert templates == [
+                "VideoGenerationAPIContractTest",
+                "VideoGenerationAPITest",
+                "VideoGenerationAPIParamTest",
+            ], f"{suite_id}: unexpected templates {templates}"
+            # A shape the boot warmup did not cover compiles in its first job.
+            for template in templates[1:]:
+                assert self._case_targets(suite_id, template) == {
+                    "poll_timeout": 1800,
+                    "poll_interval": 1,
+                }
 
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():

@@ -34,6 +34,7 @@ GENERATIONS_API_SUBMIT_ENDPOINTS = {
     "MiniMax-H3-Ref2VA": "v1/generations/minimaxai/minimax-h3-ref2va",
     "MiniMax-H3-FL2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v",
     "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v",
+    "LTX-2.3-distilled": "v1/generations/lightricks/ltx-2.3-22b-distilled",
 }
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
@@ -77,6 +78,10 @@ def is_i2v_video_model(model_name: str) -> bool:
 
 def is_minimax_h3_model(model_name: str) -> bool:
     return model_name.split("/")[-1].startswith("MiniMax-H3")
+
+
+def is_ltx_distilled_model(model_name: str) -> bool:
+    return model_name.split("/")[-1] == "LTX-2.3-distilled"
 
 
 def uses_generations_api(model_name: str) -> bool:
@@ -214,6 +219,9 @@ def build_video_generation_payload(
             # The clip takes the keyframe's shape.
             payload["first_frame"] = fixture_image_data_uri(image_b64)
         return payload
+    if is_ltx_distilled_model(model_name):
+        # Text to video at its one shape; every other field has one value.
+        return {"prompt": prompt, "seed": DEFAULT_I2V_SEED if seed is None else seed}
     if uses_generations_api(model_name):
         if shape is not None:
             aspect_ratio, size = WAN22_I2V_SHAPES[tuple(shape)]

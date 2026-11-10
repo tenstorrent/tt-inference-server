@@ -54,3 +54,49 @@ def black_frames(count, width=64, height=48):
     import numpy as np
 
     return [np.zeros((height, width, 3), dtype=np.uint8)] * count
+
+
+def write_sound_clip(path, width, height, frames, fps, hue=0, audio=True):
+    """Encode a moving test pattern with a tone as the generation API serves video
+    with sound: H.264 High, yuv420p, faststart, an AAC track.
+
+    ``hue`` (degrees) recolours the pattern, so clips with different hues differ;
+    ``audio=False`` leaves the track out.
+    """
+    import subprocess
+
+    import imageio_ffmpeg
+
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate={fps}",
+    ]
+    if audio:
+        command += ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=32000"]
+    command += [
+        "-vf",
+        f"hue=h={hue}",
+        "-frames:v",
+        str(frames),
+        "-c:v",
+        "libx264",
+        # ultrafast would drop the stream to Constrained Baseline.
+        "-preset",
+        "superfast",
+        "-profile:v",
+        "high",
+        "-pix_fmt",
+        "yuv420p",
+    ]
+    if audio:
+        command += ["-c:a", "aac", "-shortest"]
+    command += ["-movflags", "+faststart", str(path)]
+    subprocess.run(command, check=True)
+    return path

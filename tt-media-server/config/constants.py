@@ -1320,6 +1320,16 @@ ModelConfigs = {
         # trace capture during warmup; give it a generous ceiling.
         "request_processing_timeout_seconds": 7200,
     },
+    # The same (4, 8) ring under the device's own name: run.py and Shield start
+    # a Blackhole Galaxy as DEVICE=blackhole_galaxy, and without an entry the
+    # server falls back to its default runner.
+    (ModelRunners.TT_LTX_2_3_DISTILLED, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 7200,
+    },
     # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
     # device-id group -> one worker on rank 0; tt-run assigns each rank's chips.
     (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY_QUAD): {
