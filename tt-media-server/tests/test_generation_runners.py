@@ -17,6 +17,10 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
+from domain.minimax_h3_image_request import (
+    H3_IMAGE_REFERENCE_AREA_LIMIT,
+    MiniMaxH3ImageRequest,
+)
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
@@ -660,3 +664,167 @@ def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):
     monkeypatch.setattr(runners, "_minimax_h3_device_params", fake_params)
     _h3_runner(class_name).get_pipeline_device_params()
     assert captured["l1_small_size"] == l1_small_size
+
+
+# --- MiniMax-H3-Image ------------------------------------------------------------
+
+
+class _H3ImagePipeline:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, prompt, **kwargs):
+        self.calls.append({"prompt": prompt, **kwargs})
+        timings = SimpleNamespace(
+            total=1.0,
+            encode_prompt=0.1,
+            encode_references=0.2,
+            denoise=0.5,
+            decode=0.2,
+            program_misses={"denoise": 0},
+        )
+        image = Image.new("RGB", (kwargs["width"], kwargs["height"]), "blue")
+        return SimpleNamespace(image=image, timings=timings)
+
+
+def _h3_image_runner(model_weights_path=None):
+    runner = _runner("TTMiniMaxH3ImageRunner")
+    runner.pipeline = _H3ImagePipeline()
+    runner.settings = SimpleNamespace(
+        model_runner="tt-minimax-h3-image",
+        model_weights_path=model_weights_path,
+        device_mesh_shape=(4, 8),
+    )
+    runner.ttnn_device = Mock()
+    return runner
+
+
+def test_h3_image_edit_passes_the_references_in_order():
+    runner = _h3_image_runner()
+    request = _resolved(
+        MiniMaxH3ImageRequest(
+            prompt="<Picture 2> on <Picture 1>", images=["https://x/a.png"] * 2
+        ),
+        2368,
+        1760,
+        {"images": [_png(8, 16), _png(24, 12)]},
+        seed=11,
+    )
+    (image,) = runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["prompt"] == "<Picture 2> on <Picture 1>"
+    assert [reference.size for reference in call["images"]] == [(8, 16), (24, 12)]
+    assert (call["width"], call["height"], call["seed"]) == (2368, 1760, 11)
+    assert image.size == (2368, 1760)
+
+
+def test_h3_image_text_to_image_passes_no_references():
+    runner = _h3_image_runner()
+    request = _resolved(MiniMaxH3ImageRequest(prompt="a cat"), 4096, 4096)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["images"] is None
+    assert set(call) == {"prompt", "width", "height", "seed", "images"}
+
+
+def test_h3_image_undecodable_reference_fails_only_the_request():
+    runner = _h3_image_runner()
+    request = _resolved(
+        MiniMaxH3ImageRequest(prompt="x", images=["https://x/a.png"]),
+        2048,
+        2048,
+        {"images": [b"not an image"]},
+    )
+    with pytest.raises(ValueError, match="could not be decoded"):
+        runner.run([request])
+    assert runner.pipeline.calls == []
+
+
+def test_h3_image_pipeline_is_warmed_up_on_creation(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_image",
+        module,
+    )
+    runner = _h3_image_runner()
+    runner._weights_dir = lambda: "/weights/converted"
+    pipeline = module.MiniMaxH3ImagePipeline.return_value
+    assert runner.create_pipeline() is pipeline
+    module.MiniMaxH3ImagePipeline.assert_called_once_with(
+        mesh_device=runner.ttnn_device,
+        weights_dir="/weights/converted",
+        reference_area_limit=H3_IMAGE_REFERENCE_AREA_LIMIT,
+    )
+    pipeline.warmup.assert_called_once_with()
+    # The pipeline's warmup covers every size: no warmup requests.
+    assert runner.warmup_requests() == []
+
+
+def test_h3_image_uses_the_h3_device_params(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        runners,
+        "_minimax_h3_device_params",
+        lambda mesh_shape, **kwargs: captured.append((mesh_shape, kwargs)) or {},
+    )
+    _h3_image_runner().get_pipeline_device_params()
+    assert captured == [((4, 8), {})]
+
+
+@pytest.fixture
+def h3_image_converter(monkeypatch):
+    """A fake convert_h3_image: a directory holding ``converted`` is converted,
+    one holding ``release`` is a release snapshot."""
+    converter = ModuleType("convert_h3_image")
+    converter.is_converted = lambda path: (Path(path) / "converted").exists()
+    converter.is_release_snapshot = lambda path: (Path(path) / "release").exists()
+    converter.conversions = []
+
+    def convert(source, out):
+        converter.conversions.append((source, out))
+        (Path(out) / "converted").write_text("")
+
+    converter.convert = convert
+    package = ModuleType("models.tt_dit.pipelines.minimax_h3")
+    package.convert_h3_image = converter
+    monkeypatch.setitem(sys.modules, "models.tt_dit.pipelines.minimax_h3", package)
+    monkeypatch.delenv("MINIMAX_H3_IMAGE_MODEL_PATH", raising=False)
+    monkeypatch.delenv("MINIMAX_H3_TEXT_ENCODER_DIR", raising=False)
+    return converter
+
+
+def test_h3_image_uses_a_converted_snapshot_as_is(h3_image_converter, tmp_path):
+    (tmp_path / "converted").write_text("")
+    assert _h3_image_runner(str(tmp_path))._weights_dir() == str(tmp_path)
+    assert h3_image_converter.conversions == []
+
+
+def test_h3_image_converts_a_release_snapshot_once(
+    h3_image_converter, tmp_path, monkeypatch
+):
+    source = tmp_path / "MiniMax-H3-Image"
+    (source / "text_encoder").mkdir(parents=True)
+    (source / "release").write_text("")
+    (source / "text_encoder" / "config.json").write_text("{}")
+    out = tmp_path / "converted-out"
+    monkeypatch.setenv("MINIMAX_H3_IMAGE_MODEL_PATH", str(source))
+    monkeypatch.setenv("MINIMAX_H3_IMAGE_CONVERTED_DIR", str(out))
+    runner = _h3_image_runner("MiniMaxAI/MiniMax-H3-Image")  # a repo id, not a dir
+    assert runner._weights_dir() == str(out)
+    assert runner._weights_dir() == str(out)
+    assert h3_image_converter.conversions == [(str(source), str(out))]
+    assert (out / ".converted").is_file()
+    assert (out / "text_encoder").resolve() == (source / "text_encoder").resolve()
+
+
+def test_h3_image_needs_the_text_encoder(h3_image_converter, tmp_path, monkeypatch):
+    (tmp_path / "release").write_text("")
+    monkeypatch.setenv("MINIMAX_H3_IMAGE_CONVERTED_DIR", str(tmp_path / "out"))
+    with pytest.raises(FileNotFoundError, match="text encoder"):
+        _h3_image_runner(str(tmp_path))._weights_dir()
+
+
+def test_h3_image_without_weights_fails_to_start(h3_image_converter):
+    with pytest.raises(FileNotFoundError, match="MINIMAX_H3_IMAGE_MODEL_PATH"):
+        _h3_image_runner("MiniMaxAI/MiniMax-H3-Image")._weights_dir()

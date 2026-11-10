@@ -28,6 +28,11 @@ from config.constants import JobTypes
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
+from domain.minimax_h3_image_request import (
+    H3_IMAGE_SIZES,
+    MiniMaxH3ImageRequest,
+    effective_area,
+)
 from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
@@ -1229,6 +1234,260 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
     assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
     assert not (tmp_path / job["id"]).exists()
+
+
+# --- MiniMax-H3-Image ------------------------------------------------------------
+
+_H3_IMAGE = "/v1/generations/minimaxai/minimax-h3-image"
+
+
+def test_h3_image_defaults_to_a_4k_square_jpeg():
+    request = _with_image_sizes(MiniMaxH3ImageRequest(prompt="a cat"), images=[])
+    assert (request.resolution, request.format, request.count) == ("4k", "jpeg", 1)
+    assert request.images == [] and request.aspect_ratio is None
+    assert request.output_size() == (4096, 4096)
+
+
+@pytest.mark.parametrize(
+    ("aspect_ratio", "resolution", "size"),
+    [
+        ("1:1", "4k", (4096, 4096)),
+        ("4:3", "4k", (4736, 3552)),
+        ("3:4", "4k", (3552, 4736)),
+        ("3:2", "4k", (5024, 3360)),
+        ("16:9", "4k", (5472, 3072)),
+        ("21:9", "4k", (6272, 2688)),
+        ("9:21", "4k", (2688, 6272)),
+        ("1:1", "2k", (2048, 2048)),
+        ("2:3", "2k", (1664, 2496)),
+        ("9:16", "2k", (1536, 2720)),
+        ("9:21", "2k", (1344, 3136)),
+    ],
+)
+def test_h3_image_sizes(aspect_ratio, resolution, size):
+    request = MiniMaxH3ImageRequest(
+        prompt="x", aspect_ratio=aspect_ratio, resolution=resolution
+    )
+    assert _with_image_sizes(request, images=[]).output_size() == size
+
+
+def test_h3_image_warms_up_18_sizes_on_the_32_px_grid():
+    sizes = MiniMaxH3ImageRequest.warmup_sizes()
+    assert len(sizes) == len(set(sizes)) == 18
+    assert all(w % 32 == 0 and h % 32 == 0 for w, h in sizes)
+    # Equal area within a tier, to within the grid's rounding.
+    for tier, area in (("4k", 4096 * 4096), ("2k", 2048 * 2048)):
+        for w, h in H3_IMAGE_SIZES[tier].values():
+            assert abs(w * h - area) / area < 0.03
+
+
+def test_h3_image_edit_size_follows_the_first_image():
+    request = MiniMaxH3ImageRequest(prompt="x", images=["https://x/a.png"] * 2)
+    _with_image_sizes(request, images=[(4032, 3024), (1000, 3000)])
+    assert request.output_size() == (4736, 3552)
+    request.resolution = "2k"
+    assert request.output_size() == (2368, 1760)
+    request.aspect_ratio = "9:16"
+    assert request.output_size() == (1536, 2720)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"num_inference_steps": 8},
+        {"negative_prompt": "blurry"},
+        {"aspect_ratio": "5:4"},
+        {"aspect_ratio": "adaptive"},
+        {"resolution": "1k"},
+        {"format": "webp"},
+        {"count": 2},
+        {"images": ["https://x/a.png"] * 17},
+        {"images": ["not media"]},
+        {"prompt": ""},
+        {"prompt": "x" * 32_001},
+        {"seed": -1},
+    ],
+)
+def test_h3_image_rejects(fields):
+    with pytest.raises(ValidationError):
+        MiniMaxH3ImageRequest(**{"prompt": "x", **fields})
+
+
+def test_h3_image_takes_16_references_and_a_long_prompt():
+    request = MiniMaxH3ImageRequest(
+        prompt="x" * 32_000, images=["https://x/a.png"] * 16
+    )
+    assert len(request.images) == 16
+
+
+@pytest.mark.parametrize(
+    ("size", "area"),
+    [
+        ((4032, 3024), 2720 * 2048),  # short side down to 2048
+        ((1024, 1024), 1024 * 1024),
+        ((1500, 2000), 1500 * 2000),  # short side within 1024-2048: as is
+        ((128, 512), 1024 * 4096),  # short side up to 1024
+        ((300, 200), 1536 * 1024),
+    ],
+)
+def test_h3_image_effective_area(size, area):
+    assert effective_area(*size) == area
+
+
+def _h3_image_errors(*sizes):
+    request = MiniMaxH3ImageRequest(prompt="x", images=["https://x/a.png"] * len(sizes))
+    return _with_image_sizes(request, images=list(sizes)).media_errors()
+
+
+def test_h3_image_reference_limits():
+    assert _h3_image_errors() == []
+    assert _h3_image_errors(*[(1024, 1024)] * 16) == []
+    # 8 phone photos are 44.6 MP of effective area, 9 are 50.1.
+    assert _h3_image_errors(*[(4032, 3024)] * 8) == []
+    ((field, index, message),) = _h3_image_errors(*[(4032, 3024)] * 9)
+    assert (field, index) == ("images", None)
+    assert "together 50.1 MP" in message and "at most 48 MP" in message
+    assert _h3_image_errors((128, 128), (8192, 2048), (128, 8192)) == [
+        ("images", 2, "is 128×8192; the ratio must be from 1:4 to 4:1")
+    ]
+    assert _h3_image_errors((100, 200), (2048, 512), (9000, 3000), (1000, 4100)) == [
+        ("images", 0, "is 100×200; each side must be from 128 to 8192 px"),
+        ("images", 2, "is 9000×3000; each side must be from 128 to 8192 px"),
+        ("images", 3, "is 1000×4100; the ratio must be from 1:4 to 4:1"),
+    ]
+
+
+def test_h3_image_area_limit_is_one_constant(monkeypatch):
+    import domain.minimax_h3_image_request as h3_image
+
+    monkeypatch.setattr(h3_image, "H3_IMAGE_REFERENCE_AREA_LIMIT", 40_000_000)
+    ((_, index, message),) = _h3_image_errors(*[(4032, 3024)] * 8)
+    assert index is None and "at most 40 MP" in message
+
+
+def test_h3_image_docs_quote_the_area_limit():
+    from domain.minimax_h3_image_request import H3_IMAGE_REFERENCE_AREA_LIMIT
+
+    limit = f"at most {H3_IMAGE_REFERENCE_AREA_LIMIT / 1e6:g} MP"
+    schema = MiniMaxH3ImageRequest.model_json_schema()
+    assert limit in schema["properties"]["images"]["description"]
+    assert limit in " ".join(schema["description"].split())
+
+
+def test_h3_image_is_served_by_the_generations_api_only():
+    from config.constants import MODEL_SERVICE_RUNNER_MAP, ModelRunners, ModelServices
+
+    services = {
+        service
+        for service, runners in MODEL_SERVICE_RUNNER_MAP.items()
+        if ModelRunners.TT_MINIMAX_H3_IMAGE in runners
+    }
+    assert services == {ModelServices.GENERATION}
+    model = GENERATION_MODELS["tt-minimax-h3-image"]
+    assert model.id == "minimaxai/minimax-h3-image"
+    assert model.request is MiniMaxH3ImageRequest
+
+
+def test_h3_image_route_is_the_only_one_mounted(monkeypatch):
+    module = _router_module(monkeypatch, "tt-minimax-h3-image")
+    app = FastAPI()
+    app.include_router(module.router)
+    paths = set(app.openapi()["paths"])
+    assert _H3_IMAGE in paths
+    assert not any(path.startswith("/v1/images") for path in paths)
+    assert {path for path in paths if path.startswith("/v1/generations/")} == {
+        _H3_IMAGE
+    }
+
+
+async def test_h3_image_text_to_image_job(generations_app):
+    client, device = generations_app("tt-minimax-h3-image")
+    response = await client.post(
+        _H3_IMAGE,
+        json={
+            "prompt": "a red fox",
+            "aspect_ratio": "16:9",
+            "resolution": "2k",
+            "format": "png",
+            "seed": 3,
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    assert request._prompt == "a red fox"
+    assert request._files.get("images", []) == []
+    (output,) = job["outputs"]
+    assert output == {
+        "type": "image",
+        "url": f"v1/jobs/{job['id']}/content/0",
+        "content_type": "image/png",
+        "seed": 3,
+        "prompt": "a red fox",
+        "width": 2720,
+        "height": 1536,
+    }
+    content = await client.get(output["url"])
+    assert content.headers["content-type"] == "image/png"
+    assert Image.open(BytesIO(content.content)).size == (2720, 1536)
+
+
+async def test_h3_image_edit_job(generations_app):
+    client, device = generations_app("tt-minimax-h3-image")
+    response = await client.post(
+        _H3_IMAGE,
+        json={
+            "prompt": "put <Picture 1> on <Picture 2>",
+            "images": [_data_uri(1600, 900), _data_uri(300, 400)],
+            "resolution": "2k",
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    # The runner decodes the references: only their files and sizes go to the
+    # device.
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900), (300, 400)]}
+    assert len(request._files["images"]) == 2
+    # Closest to the first image's ratio.
+    assert (request._width, request._height) == (2720, 1536)
+    (output,) = job["outputs"]
+    assert output["content_type"] == "image/jpeg"
+    assert (output["width"], output["height"]) == (2720, 1536)
+
+
+async def test_h3_image_references_over_the_area_limit_are_422(generations_app):
+    client, device = generations_app("tt-minimax-h3-image")
+    # 128×512 counts as 1024×4096 = 4.2 MP: 12 of them are 50.3 MP.
+    response = await client.post(
+        _H3_IMAGE, json={"prompt": "x", "images": [_data_uri(128, 512)] * 12}
+    )
+    assert response.status_code == 422, response.text
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "images"]
+    assert "together 50.3 MP" in error["msg"] and "at most 48 MP" in error["msg"]
+    assert device.requests == []
+
+    response = await client.post(
+        _H3_IMAGE, json={"prompt": "x", "images": [_data_uri(128, 512)] * 11}
+    )
+    assert response.status_code == 202, response.text
+
+
+async def test_h3_image_reference_out_of_limits_is_422(generations_app):
+    client, device = generations_app("tt-minimax-h3-image")
+    response = await client.post(
+        _H3_IMAGE,
+        json={"prompt": "x", "images": [_data_uri(128, 128), _data_uri(100, 200)]},
+    )
+    assert response.status_code == 422, response.text
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "images", 1]
+    assert "128 to 8192 px" in error["msg"]
+    assert device.requests == []
 
 
 # --- MiniMax-H3 ------------------------------------------------------------------

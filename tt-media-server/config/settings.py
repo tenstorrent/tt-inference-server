@@ -362,6 +362,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_REF2VA.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value,
+            ModelRunners.TT_MINIMAX_H3_IMAGE.value,
         ]:
             self.default_throttle_level = None
 

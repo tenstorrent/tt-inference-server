@@ -18,6 +18,7 @@ models' reference defaults.
 import os
 import shutil
 import tempfile
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -39,6 +40,10 @@ from config.constants import (
 from config.settings import get_settings
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
+from domain.minimax_h3_image_request import (
+    H3_IMAGE_REFERENCE_AREA_LIMIT,
+    MiniMaxH3ImageRequest,
+)
 from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
@@ -655,3 +660,146 @@ class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+class TTMiniMaxH3ImageRunner(_GenerationRunner):
+    """MiniMax-H3-Image: one pipeline on the whole mesh, one request at a time.
+
+    Text to image without ``images``, else an edit of them, in ``<Picture N>``
+    order. The sampler is the release's fixed 6-step schedule without CFG. The
+    DiT takes the packed length as a runtime argument, so once the pipeline's
+    own warmup has run no size or reference layout compiles a new program.
+
+    Weights: ``MODEL_WEIGHTS_DIR`` or ``MINIMAX_H3_IMAGE_MODEL_PATH``, a
+    converted snapshot or the release snapshot as published on Hugging Face,
+    which is converted once on first start (see ``_weights_dir``).
+    """
+
+    def _weights_dir(self) -> str:
+        """A converted snapshot directory. A release snapshot is converted once,
+        on first start, into the writable cache (``MINIMAX_H3_IMAGE_CONVERTED_DIR``,
+        default beside the tt_dit cache), with ``text_encoder/`` linked from the
+        snapshot or from ``MINIMAX_H3_TEXT_ENCODER_DIR``."""
+        configured = self.settings.model_weights_path
+        env = os.environ.get("MINIMAX_H3_IMAGE_MODEL_PATH")
+        source = next((p for p in (configured, env) if p and os.path.isdir(p)), None)
+        if source is None:
+            raise FileNotFoundError(
+                "MiniMax-H3-Image weights not found: set MINIMAX_H3_IMAGE_MODEL_PATH "
+                "(or MODEL_WEIGHTS_DIR) to a release or converted snapshot directory "
+                f"(model_weights_path={configured!r})"
+            )
+        from models.tt_dit.pipelines.minimax_h3 import convert_h3_image as converter
+
+        if converter.is_converted(source):
+            return source
+        if not converter.is_release_snapshot(source):
+            raise FileNotFoundError(
+                f"{source} is neither a MiniMax-H3-Image release snapshot nor a "
+                "converted one"
+            )
+        cache_root = os.environ.get("TT_DIT_CACHE_DIR") or os.path.dirname(
+            os.path.abspath(source)
+        )
+        out = os.environ.get("MINIMAX_H3_IMAGE_CONVERTED_DIR") or os.path.join(
+            os.path.dirname(os.path.abspath(cache_root)), "MiniMax-H3-Image-converted"
+        )
+        marker = os.path.join(out, ".converted")
+        if not os.path.isfile(marker):
+            import fcntl
+
+            os.makedirs(out, exist_ok=True)
+            with open(os.path.join(out, ".lock"), "w") as lock:
+                # One converter per host; the others wait, then see the marker.
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                if not os.path.isfile(marker):
+                    self.logger.info(
+                        f"Device {self.device_id}: converting {source} -> {out} "
+                        "(first start only)"
+                    )
+                    converter.convert(source, out)
+                    open(marker, "w").close()
+        text_encoder = os.path.join(out, "text_encoder")
+        if not os.path.exists(text_encoder):
+            candidate = os.environ.get("MINIMAX_H3_TEXT_ENCODER_DIR") or os.path.join(
+                source, "text_encoder"
+            )
+            if not os.path.isfile(os.path.join(candidate, "config.json")):
+                raise FileNotFoundError(
+                    "MiniMax-H3-Image needs MiniMax-H3's Qwen3-VL text encoder: put "
+                    "it at <snapshot>/text_encoder or set MINIMAX_H3_TEXT_ENCODER_DIR "
+                    f"(looked in {candidate})"
+                )
+            os.symlink(os.path.abspath(candidate), text_encoder)
+        return out
+
+    def create_pipeline(self):
+        """The pipeline, warmed up: its ``warmup()`` compiles every program the
+        serving path uses (each prompt-length rung of the text encoder, the
+        output sizes and the reference layouts up to the area limit). It runs
+        here, within the load's timeout, so no request compiles."""
+        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_image import (
+            MiniMaxH3ImagePipeline,
+        )
+
+        try:
+            pipeline = MiniMaxH3ImagePipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self._weights_dir(),
+                # The schema's limit: the pipeline sizes its arenas, and warms
+                # up, for exactly the references the API admits.
+                reference_area_limit=H3_IMAGE_REFERENCE_AREA_LIMIT,
+            )
+            started = time.perf_counter()
+            pipeline.warmup()
+            self.logger.info(
+                f"Device {self.device_id}: MiniMax-H3-Image warm in "
+                f"{time.perf_counter() - started:.1f}s"
+            )
+            return pipeline
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "MiniMax-H3-Image pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # The H3 video runners' fabric and L1 setup: the 4x8 Blackhole preset
+        # is a ring.
+        return _minimax_h3_device_params(self.settings.device_mesh_shape)
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # create_pipeline ran the pipeline's own warmup.
+        return []
+
+    @_inference_timer
+    def run(self, requests: list[MiniMaxH3ImageRequest]):
+        request = requests[0]
+        try:
+            references = self._images(request, "images")
+        except Exception as e:
+            raise ValueError(f"an input image could not be decoded: {e}") from e
+        # The service checked the references against the same limits
+        # (media_errors); the pipeline's ReferenceLimitError, a ValueError,
+        # would fail only this request.
+        result = self.pipeline(
+            request._prompt,
+            width=request._width,
+            height=request._height,
+            seed=request._seed,
+            images=references or None,
+        )
+        timings = result.timings
+        mode = f"edit ({len(references)} refs)" if references else "t2i"
+        self.logger.info(
+            f"Device {self.device_id}: MiniMax-H3-Image {mode} "
+            f"{request._width}x{request._height} in {timings.total:.2f}s = prompt "
+            f"{timings.encode_prompt:.2f} + refs {timings.encode_references:.2f} + "
+            f"denoise {timings.denoise:.2f} + decode {timings.decode:.2f}; "
+            f"program-cache misses {sum(timings.program_misses.values())}"
+        )
+        # The service writes it in the request's format.
+        return [result.image]
