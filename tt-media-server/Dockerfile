@@ -134,10 +134,10 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && rm -rf ${TT_METAL_HOME}/dockerfile \
     && rm -rf ${TT_METAL_HOME}/infra/tests \
     && rm -rf ${TT_METAL_HOME}/tt-train \
-    # Parenthesized so `|| true` only forgives the .git cleanup: unscoped, it
-    # would swallow a failure anywhere in this && chain and let the build
-    # continue without a venv or a tt-metal build.
-    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
+    # Submodule worktrees use .git files pointing into the superproject's
+    # .git/modules, while some dependencies may use nested .git directories.
+    # Remove both forms recursively before this layer is committed.
+    && find "${TT_METAL_HOME}" -name .git -prune -exec rm -rf {} +
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -153,7 +153,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
+    && find "${HOME_DIR}" -name .git -prune -exec rm -rf {} +"
 
 WORKDIR ${HOME_DIR}
 
