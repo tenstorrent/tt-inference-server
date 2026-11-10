@@ -7660,12 +7660,12 @@ templates:
 # 512 K x 4 34.6, 128 K x 16 14.0 (TTFT 583 s), 32 K x 4 36.7 (TTFT 35 s),
 # 32 K x 16 14.6; prefill 3.0-3.7 K tok/s at every length. A decode step runs
 # at the stack's full width, so a lone user decodes at the profile's per-user
-# rate (~41 tok/s at a short context on the 1 M profile, 14 on the 128 K one).
-# Served from the 1 M profile (vLLM 0.31, the benchmark argv, sampled): 128 /
-# 128 x 1 TPOT 24.2 ms = 41.3 tok/s per user (the e2e 24.4 ms); median ITL
-# 25.2 ms at 128 x 4 (e2e 24.3), 27.7 ms at 8 K x 4 (e2e 26.9); texts identical
-# to the e2e at ISL 128 and 32 K x 4. The 128 K profile: 128 / 128 x 1 TPOT
-# 53.1 ms, x 16 median ITL 57.7 ms (15.6 tok/s per user, 135 tok/s).
+# rate (~46 tok/s at a short context on the 1 M profile, ~24 on the 128 K one).
+# Served (vLLM 0.31, the benchmark argv, sampled; the decode step = the e2e's
+# within 1 ms): 1 M profile 128 / 128 x 1 TPOT 21.7 ms = 46.1 tok/s per user,
+# median ITL 22.7 ms at 128 x 4 (e2e 21.8), 23.9 ms at 8 K x 4; 128 K profile
+# median ITL 42.3 ms at 128 x 16 (e2e 42.0; 154 tok/s), 43.1 ms at 8 K x 16.
+# Texts identical to the e2e at ISL 128 and 32 K x 4.
 #
 # The stack's validated Galaxy knobs (galaxy_defaults.KNOBS: the 1D fabric, EP
 # experts, the DSA pool, the sparse-attention ladder and the prefill buckets
