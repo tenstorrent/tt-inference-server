@@ -29,6 +29,8 @@ connection goes to another engine (the refusing one is skipped for ``down_s`` se
 The same proxy serves tt-metal's MiMo-V2.6-Flash row engines (models/experimental/mimo_v2_6_flash/serving/lb.py).
 """
 
+import asyncio
+import errno
 import hashlib
 import itertools
 import json
@@ -39,6 +41,7 @@ from collections import OrderedDict
 
 from aiohttp import (
     ClientConnectorError,
+    ClientOSError,
     ClientSession,
     ClientTimeout,
     ServerDisconnectedError,
@@ -67,6 +70,42 @@ PROBE_TIMEOUT_S = (
 # keep-alive is 5 s): a request written into a connection the engine is closing gets "Server disconnected" and no reply.
 UPSTREAM_KEEPALIVE_S = 2.0
 STRUCTURED_PATHS = ("/v1/chat/completions", "/v1/completions")
+# The proxy's AppRunner arguments (run_vllm_api_server.serve_engine_proxy and the tests): handler_cancellation cancels
+# a request's handler when its client disconnects, which closes the upstream connection, so the engine aborts the
+# request (and its in-flight count drops) instead of generating for nobody until the end of a long agentic prefill.
+RUNNER_KWARGS = {"access_log": None, "handler_cancellation": True}
+# Content parts whose payload (a base64 data URL, audio bytes) is keyed by its digest: hashing megabytes of base64 as
+# prompt text costs ~200 ms of the proxy's event loop per 16 MB body and floods the prefix index with media chunks.
+MEDIA_PART_TYPES = (
+    "image_url",
+    "video_url",
+    "input_audio",
+    "input_image",
+    "input_file",
+    "image",
+    "video",
+    "audio",
+    "file",
+)
+MEDIA_INLINE_CHARS = 1024  # a media string longer than this is replaced by its digest
+
+
+def _digest_media(obj, in_media=False):
+    """``obj`` with every long string inside a media content part replaced by its blake2b digest (same media, same
+    key; text parts unchanged)."""
+    if isinstance(obj, dict):
+        media = in_media or obj.get("type") in MEDIA_PART_TYPES
+        return {k: _digest_media(v, media) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_digest_media(v, in_media) for v in obj]
+    if in_media and isinstance(obj, str) and len(obj) > MEDIA_INLINE_CHARS:
+        return (
+            "blake2b:"
+            + hashlib.blake2b(
+                obj.encode("utf-8", "surrogatepass"), digest_size=16
+            ).hexdigest()
+        )
+    return obj
 
 
 def normalize_structured_outputs(body):
@@ -125,7 +164,8 @@ def prefix_text(path, body):
         if not isinstance(messages, list):
             return None
         return head + "".join(
-            json.dumps(m, sort_keys=True, ensure_ascii=False) for m in messages
+            json.dumps(_digest_media(m), sort_keys=True, ensure_ascii=False)
+            for m in messages
         )
     if path == "/v1/completions":
         prompt = req.get("prompt")
@@ -141,7 +181,7 @@ def prefix_text(path, body):
         text = (
             inp
             if isinstance(inp, str)
-            else json.dumps(inp, sort_keys=True, ensure_ascii=False)
+            else json.dumps(_digest_media(inp), sort_keys=True, ensure_ascii=False)
         )
         return head + json.dumps(req.get("instructions")) + text
     return None
@@ -357,14 +397,6 @@ def make_app(router, session_factory=None):
                         await resp.write(chunk)
                     await resp.write_eof()
                     return resp
-            except ServerDisconnectedError:
-                # The engine closed the connection before answering: almost always a pooled keep-alive connection it
-                # was closing as we wrote into it (the engine never read the request). Resend once on a new
-                # connection; a disconnect after the reply started cannot be retried.
-                if started or not stale_retry:
-                    raise
-                stale_retry = False
-                router.stats["stale_retried"] += 1
             except ClientConnectorError:
                 # Nothing reached the client yet: try another engine.
                 router.mark_down(b)
@@ -374,39 +406,53 @@ def make_app(router, session_factory=None):
                     return web.json_response(
                         {"error": "every backend refused the connection"}, status=503
                     )
+            except (ServerDisconnectedError, ClientOSError) as exc:
+                # The engine closed (or reset) the connection before any reply: almost always a pooled keep-alive
+                # connection it was closing as we wrote into it. Resend once on a new connection. An engine that read
+                # the request and then dropped it is exiting (the launcher then stops the server within a second), so
+                # the resend could run it twice only on its way down. A disconnect after the reply started is not
+                # retried, nor another socket error (a connect failure goes to another engine above).
+                stale = (
+                    isinstance(exc, ServerDisconnectedError)
+                    or exc.errno == errno.ECONNRESET
+                )
+                if started or not stale_retry or not stale:
+                    raise
+                stale_retry = False
+                router.stats["stale_retried"] += 1
             finally:
                 router.inflight[b] -= 1
 
     async def stats(_):
         return web.json_response(router.snapshot())
 
+    async def probe(backend, path):
+        """(status, text) of one engine's GET, or None when it fails or does not answer within PROBE_TIMEOUT_S."""
+        try:
+            async with state["session"].get(
+                backend + path, timeout=ClientTimeout(total=PROBE_TIMEOUT_S)
+            ) as up:
+                return up.status, await up.text()
+        except Exception:  # noqa: BLE001 - any failure means no answer from this engine
+            return None
+
     async def all_metrics(_):
-        # An engine that fails or hangs leaves out only its own samples (its index keeps its place).
-        texts, missing = [], []
-        for i, b in enumerate(router.backends):
-            try:
-                async with state["session"].get(
-                    b + "/metrics", timeout=ClientTimeout(total=PROBE_TIMEOUT_S)
-                ) as up:
-                    texts.append(await up.text())
-            except Exception:  # noqa: BLE001 - any failure means no metrics from this engine
-                texts.append("")
-                missing.append(f"# engine {i} ({b}) did not answer\n")
+        # The engines are probed together; one that fails or hangs leaves out only its own samples (its index keeps
+        # its place) and costs the scrape one PROBE_TIMEOUT_S, not one per engine.
+        answers = await asyncio.gather(*(probe(b, "/metrics") for b in router.backends))
+        texts = [a[1] if a else "" for a in answers]
+        missing = [
+            f"# engine {i} ({b}) did not answer\n"
+            for i, (b, a) in enumerate(zip(router.backends, answers))
+            if a is None
+        ]
         return web.Response(
             text="".join(missing) + merge_metrics(texts), content_type="text/plain"
         )
 
     async def health(_):
-        bad = []
-        for b in router.backends:
-            try:
-                async with state["session"].get(
-                    b + "/health", timeout=ClientTimeout(total=PROBE_TIMEOUT_S)
-                ) as up:
-                    if up.status != 200:
-                        bad.append(b)
-            except Exception:  # noqa: BLE001 - any failure means not healthy
-                bad.append(b)
+        answers = await asyncio.gather(*(probe(b, "/health") for b in router.backends))
+        bad = [b for b, a in zip(router.backends, answers) if a is None or a[0] != 200]
         if bad:
             return web.json_response({"unhealthy": bad}, status=503)
         return web.Response(status=200)

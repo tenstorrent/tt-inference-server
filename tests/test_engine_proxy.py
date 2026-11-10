@@ -122,7 +122,10 @@ async def with_proxy(engines, fn, dead=0):
     ]
     router = lb.Router(backends)
     proxy = TestServer(lb.make_app(router), host="127.0.0.1")
-    await proxy.start_server()
+    # TestServer itself runs with handler_cancellation=True, as lb.RUNNER_KWARGS makes the served proxy run
+    await proxy.start_server(
+        **{k: v for k, v in lb.RUNNER_KWARGS.items() if k != "handler_cancellation"}
+    )
     try:
         async with ClientSession() as session:
             return await fn(session, f"http://127.0.0.1:{proxy.port}", router)
@@ -368,3 +371,109 @@ def test_proxy_resends_once_after_an_unanswered_disconnect(close_first, want_sta
     assert status == want_status
     assert requests == 2  # one resend, never more
     assert snap["prefix"]["stale_retried"] == 1
+
+
+def streaming_engine(events, chunks=200, delay_s=0.02):
+    """An engine streaming ``chunks`` SSE events; records "finished", or "aborted" when its client goes away."""
+
+    async def completions(request):
+        await request.read()
+        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await resp.prepare(request)
+        try:
+            for i in range(chunks):
+                await resp.write(f"data: {i}\n\n".encode())
+                await asyncio.sleep(delay_s)
+            await resp.write_eof()
+        except (ConnectionResetError, asyncio.CancelledError):
+            events.append("aborted")
+            raise
+        events.append("finished")
+        return resp
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", completions)
+    return app
+
+
+def test_proxy_streams_the_engine_reply_through():
+    events = []
+
+    async def run(session, url, router):
+        async with session.post(url + "/v1/chat/completions", data=chat(DOC, "q")) as r:
+            return r.status, (await r.read()).decode(), dict(router.inflight)
+
+    status, text, inflight = asyncio.run(
+        with_proxy([streaming_engine(events, chunks=5, delay_s=0.01)], run)
+    )
+    assert status == 200 and text == "".join(f"data: {i}\n\n" for i in range(5))
+    assert events == ["finished"] and set(inflight.values()) == {0}
+
+
+def test_a_client_disconnect_aborts_the_engine_request():
+    """The proxy cancels the request's handler when its client goes away (RUNNER_KWARGS), which closes the upstream
+    connection: the engine stops streaming and the request leaves the in-flight count."""
+    events = []
+
+    async def run(session, url, router):
+        async with session.post(url + "/v1/chat/completions", data=chat(DOC, "q")) as r:
+            assert r.status == 200
+            await (
+                r.content.readany()
+            )  # the first event, then the client leaves mid-stream
+            busy = dict(router.inflight)
+        for _ in range(100):
+            if events and not any(router.inflight.values()):
+                break
+            await asyncio.sleep(0.05)
+        return busy, dict(router.inflight)
+
+    assert (
+        lb.RUNNER_KWARGS["handler_cancellation"] is True
+    )  # what the served proxy runs with (aiohttp default: off)
+    busy, after = asyncio.run(with_proxy([streaming_engine(events)], run))
+    assert set(busy.values()) == {1}
+    assert events == ["aborted"] and set(after.values()) == {0}
+
+
+def test_every_engine_refusing_is_a_503_and_leaves_nothing_in_flight():
+    async def run(session, url, router):
+        async with session.post(url + "/v1/chat/completions", data=chat(DOC, "q")) as r:
+            return r.status, await r.json(), dict(router.inflight)
+
+    status, body, inflight = asyncio.run(with_proxy([], run, dead=2))
+    assert status == 503 and "refused" in body["error"]
+    assert set(inflight.values()) == {0}
+
+
+def image_chat(data, question):
+    return json.dumps(
+        {
+            "model": "m",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64," + data},
+                        },
+                        {"type": "text", "text": DOC + question},
+                    ],
+                }
+            ],
+        }
+    ).encode()
+
+
+def test_media_payloads_are_keyed_by_their_digest():
+    """A base64 image is keyed by its digest, not hashed as megabytes of prompt text: the same image routes like the
+    same prefix, another image does not, and the chunk count follows the text only."""
+    big = "A" * (4 << 20)
+    one, two = hashes_of(image_chat(big, "a")), hashes_of(image_chat(big, "b"))
+    other = hashes_of(image_chat("B" * (4 << 20), "a"))
+    assert len(one) < 2 * len(DOC) // 256
+    assert (
+        one[: len(one) - 1] == two[: len(one) - 1]
+    )  # the image and the document share their chunks
+    assert one[0] != other[0]

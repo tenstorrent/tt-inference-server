@@ -1655,3 +1655,101 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+# --- submesh engines (DeviceModelSpec.submesh_engines) ---------------------------------------------------------------
+
+
+def test_submesh_engine_command_serves_its_own_port_on_loopback(
+    run_vllm_api_server_module,
+):
+    module = run_vllm_api_server_module
+    argv = [
+        "--model",
+        "m",
+        "--port",
+        "8000",
+        "--service-port=8071",
+        "--host",
+        "0.0.0.0",
+        "--host=::",
+        "--x",
+        "1",
+    ]
+    assert module._engine_argv(argv) == ["--model", "m", "--x", "1"]
+    command = module.submesh_engine_command(argv, 8071, 2)
+    assert command[-4:] == ["--service-port", "8074", "--host", "127.0.0.1"]
+    assert "8000" not in command and "0.0.0.0" not in command
+
+
+def test_submesh_engine_count_and_engine_configuration(
+    run_vllm_api_server_module, monkeypatch
+):
+    module = run_vllm_api_server_module
+    spec = {"device_model_spec": {"vllm_args": {"data_parallel_size": 4}}}
+    assert module.submesh_engine_count(spec) is None
+    spec["device_model_spec"]["submesh_engines"] = True
+    assert module.submesh_engine_count(spec) == 4
+    spec["device_model_spec"]["vllm_args"] = {"data-parallel-size": 1}
+    with pytest.raises(ValueError, match="at least 2"):
+        module.submesh_engine_count(spec)
+
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "4,5,6,7,31,30,29,28")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 8)")
+    monkeypatch.setenv(
+        "MESH_DEVICE", "BH-Galaxy"
+    )  # the spec's whole-machine mesh, replaced per engine
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.setenv("TT_VISIBLE_DEVICES", "")
+    args = {"data-parallel-size": 4, "data_parallel_size": 4, "max_num_seqs": 32}
+    module.configure_submesh_engine(4, args)
+    assert args == {"data_parallel_size": 1, "max_num_seqs": 32}
+    assert (
+        os.environ["TT_VISIBLE_DEVICES"] == "4,5,6,7,31,30,29,28"
+        and os.environ["MESH_DEVICE"] == "(1, 8)"
+    )
+    assert int(os.environ["OMP_NUM_THREADS"]) >= 1
+
+
+def test_stop_submesh_engines_kills_an_engine_that_ignores_sigterm(
+    run_vllm_api_server_module,
+):
+    import subprocess
+
+    module = run_vllm_api_server_module
+    code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code], start_new_session=True, stdout=subprocess.PIPE
+    )
+    assert proc.stdout.readline().strip() == b"up"
+    module.stop_submesh_engines([proc], timeout_s=0.5)
+    assert proc.returncode == -9
+
+
+def test_the_proxy_stops_when_an_engine_exits(run_vllm_api_server_module, monkeypatch):
+    import asyncio
+    import socket
+
+    pytest.importorskip("aiohttp")
+    module = run_vllm_api_server_module
+    monkeypatch.syspath_prepend(str(get_repo_root_path() / "vllm-tt-metal" / "src"))
+
+    class Engine:
+        returncode, polls = None, 0
+
+        def poll(self):
+            self.polls += 1
+            if self.polls > 3:
+                self.returncode = 7
+            return self.returncode
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    code = asyncio.run(
+        module.serve_engine_proxy(
+            [Engine()], ["http://127.0.0.1:1"], "127.0.0.1", port, poll_s=0.05
+        )
+    )
+    assert code == 7

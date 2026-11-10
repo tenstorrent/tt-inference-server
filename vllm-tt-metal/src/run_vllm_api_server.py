@@ -1518,14 +1518,16 @@ def submesh_engine_port(service_port: int, index: int) -> int:
     return service_port + 1 + index
 
 
-def _without_port_args(argv: List[str]) -> List[str]:
+def _engine_argv(argv: List[str]) -> List[str]:
+    """The launcher's arguments without its port and host: an engine serves its own port on loopback only (the proxy
+    reaches it on 127.0.0.1; the service port and host are the proxy's)."""
     out, skip_value = [], False
     for token in argv:
         if skip_value:
             skip_value = False
             continue
         name, separator, _ = token.partition("=")
-        if name in ("--port", "--service-port"):
+        if name in ("--port", "--service-port", "--host"):
             skip_value = not separator
             continue
         out.append(token)
@@ -1539,9 +1541,11 @@ def submesh_engine_command(
     return [
         sys.executable,
         os.path.abspath(__file__),
-        *_without_port_args(launcher_argv),
+        *_engine_argv(launcher_argv),
         "--service-port",
         str(submesh_engine_port(service_port, index)),
+        "--host",
+        "127.0.0.1",
     ]
 
 
@@ -1571,9 +1575,9 @@ async def serve_engine_proxy(
     """Serve engine_proxy on host:port until SIGINT / SIGTERM or an engine exits. Returns the exit code."""
     from aiohttp import web
 
-    from engine_proxy import Router, make_app
+    from engine_proxy import RUNNER_KWARGS, Router, make_app
 
-    runner = web.AppRunner(make_app(Router(backends)), access_log=None)
+    runner = web.AppRunner(make_app(Router(backends)), **RUNNER_KWARGS)
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
     logger.info(f"Engine proxy on {host}:{port} for {', '.join(backends)}")
@@ -1603,6 +1607,26 @@ async def serve_engine_proxy(
     finally:
         await runner.cleanup()
     return exit_code
+
+
+def _engine_preexec(launcher_pid: int):
+    """Popen preexec_fn of an engine: SIGTERM it when the launcher dies (Linux PR_SET_PDEATHSIG). The engines run in
+    their own sessions (stop_submesh_engines signals each one's group), so a killpg of the launcher's group, e.g. the
+    local server's SIGKILL fallback, does not reach them; without this an engine left running would keep its chips."""
+
+    def preexec() -> None:
+        try:
+            import ctypes
+
+            ctypes.CDLL(None, use_errno=True).prctl(
+                1, signal.SIGTERM
+            )  # 1 = PR_SET_PDEATHSIG
+        except (OSError, AttributeError):  # not Linux
+            return
+        if os.getppid() != launcher_pid:  # the launcher died before the prctl
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    return preexec
 
 
 def _signal_engine(proc, sig) -> None:
@@ -1661,6 +1685,9 @@ def run_submesh_engines(
                     command,
                     env=env,
                     start_new_session=True,  # its own process group: stop_submesh_engines signals all of it
+                    preexec_fn=_engine_preexec(
+                        os.getpid()
+                    ),  # and it dies with this launcher
                 )
             )
         backends = [
