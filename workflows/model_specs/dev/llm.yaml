@@ -216,6 +216,7 @@ templates:
       default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b (2K prose gate on the 31B 1x4 neutral): QB2 block decode step 30.5 -> 29.6 ms at 128, 33.2 -> 32.5 at 32K
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
         # speculative contract class.
@@ -1178,6 +1179,7 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers prefill SDPA (narrow chips) on the whole grid at q = k = 128 (2K prose gate neutral on the 12B): QB2 block prefill 4K..32K -7..-12 %, Galaxy row -1..-5 %
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (the shared policy); warmed at boot. Measured 2026-10-31 on this block (plain class, same prefill path): c1 TTFT 150 -> 85 ms, c8 1.03 -> 0.64 s, c32 4.0 -> 2.45 s, decode / extremes / prose unchanged, coherent at 256K/128K/short
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
         # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
@@ -1266,6 +1268,7 @@ templates:
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       submesh_engines: true  # one vLLM engine per (1, 8) row behind the prefix-aware engine_proxy, as the 31B Galaxy entry
       env_vars:
+        GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers prefill SDPA (narrow chips) on the whole grid at q = k = 128 (2K prose gate neutral on the 12B): QB2 block prefill 4K..32K -7..-12 %, Galaxy row -1..-5 %
         TT_PROXY_SLACK: "4"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 4 requests in flight above the least-loaded one
         GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b, as the 12B P300X2 entry
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
