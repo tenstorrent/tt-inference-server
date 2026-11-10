@@ -158,7 +158,6 @@ def _generate_video(
         num_inference_steps=num_inference_steps,
         model_name=model_name,
         image_b64=image_b64,
-        device=ctx.device,
     )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")

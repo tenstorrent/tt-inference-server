@@ -4,6 +4,7 @@
 
 from typing import Literal, Optional
 
+from config.settings import get_settings
 from domain.generation_request import (
     EXAMPLE_IMAGE_URL,
     EXAMPLE_PNG,
@@ -12,6 +13,11 @@ from domain.generation_request import (
     Media,
     Seed,
 )
+from models.tt_dit.pipelines.wan.policy import (
+    WAN_RESOLUTIONS_480P,
+    WAN_RESOLUTIONS_720P,
+    validate_request,
+)
 from pydantic import Field
 
 WanRatio = Literal["16:9", "9:16"]
@@ -19,9 +25,25 @@ WanSize = Literal["480p", "720p"]
 
 # (width, height) per size tier and ratio: Wan2.2's reference sizes.
 WAN_SIZES: dict[str, dict[str, tuple[int, int]]] = {
-    "480p": {"16:9": (832, 480), "9:16": (480, 832)},
-    "720p": {"16:9": (1280, 720), "9:16": (720, 1280)},
+    "480p": {"16:9": WAN_RESOLUTIONS_480P[0], "9:16": WAN_RESOLUTIONS_480P[1]},
+    "720p": {"16:9": WAN_RESOLUTIONS_720P[0], "9:16": WAN_RESOLUTIONS_720P[1]},
 }
+
+
+def _size_table() -> str:
+    def line(ratio: str, small: str, large: str) -> str:
+        return f"| {ratio:<14} | {small:<7} | {large:<8} |"
+
+    rows = [
+        line("`aspect_ratio`", "`480p`", "`720p`"),
+        line("-" * 14, "-" * 7, "-" * 8),
+    ]
+    for ratio in WAN_SIZES["480p"]:
+        (w1, h1), (w2, h2) = WAN_SIZES["480p"][ratio], WAN_SIZES["720p"][ratio]
+        rows.append(line(f"`{ratio}`", f"{w1}×{h1}", f"{w2}×{h2}"))
+    return "\n".join(rows)
+
+
 WAN_FPS = 16
 # sample_neg_prompt in Wan2.2's wan/configs/shared_config.py.
 WAN_NEGATIVE_PROMPT = (
@@ -71,10 +93,7 @@ class Wan22i2vA14bRequest(GenerationRequest):
     size: WanSize = Field(
         description=(
             "Size tier. With `aspect_ratio`, it fixes the output size:\n\n"
-            "| `aspect_ratio` | `480p`  | `720p`   |\n"
-            "| -------------- | ------- | -------- |\n"
-            "| `16:9`         | 832×480 | 1280×720 |\n"
-            "| `9:16`         | 480×832 | 720×1280 |\n\n"
+            f"{_size_table()}\n\n"
             "These are Wan2.2's reference sizes."
         )
     )
@@ -97,6 +116,16 @@ class Wan22i2vA14bRequest(GenerationRequest):
     def output_size(self) -> tuple[int, int]:
         return WAN_SIZES[self.size][self.aspect_ratio]
 
+    def media_errors(self) -> list[tuple[str, int | None, str]]:
+        width, height = self.output_size()
+        try:
+            validate_request(
+                mesh_shape=get_settings().device_mesh_shape, width=width, height=height
+            )
+        except ValueError as e:
+            return [("size", None, str(e))]
+        return []
+
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return [size for sizes in WAN_SIZES.values() for size in sizes.values()]
@@ -115,7 +144,7 @@ WAN22_I2V_A14B = GenerationModel(
         "first_frame": EXAMPLE_IMAGE_URL,
         "last_frame": EXAMPLE_PNG,
         "aspect_ratio": "16:9",
-        "size": "720p",
+        "size": "480p",
         "frames": 81,
         "seed": 1234,
     },

@@ -23,9 +23,10 @@ from .video_generation_routing import (
     get_video_job_endpoint,
     is_i2v_video_model,
     is_minimax_h3_model,
-    wan_size_for_device,
     VIDEO_GENERATION_ENDPOINT,
     VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
+    WAN_ASPECT_RATIO,
+    WAN_SIZE,
 )
 
 __all__ = [
@@ -43,6 +44,8 @@ __all__ = [
     "TestTarget",
     "VIDEO_GENERATION_ENDPOINT",
     "VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT",
+    "WAN_ASPECT_RATIO",
+    "WAN_SIZE",
     "_load_fixture_image_base64",
     "block_id",
     "build_video_generation_payload",
@@ -52,7 +55,6 @@ __all__ = [
     "get_video_job_endpoint",
     "is_i2v_video_model",
     "is_minimax_h3_model",
-    "wan_size_for_device",
     "load_targets",
     "report_model_fields",
     "run_tiered_check",
