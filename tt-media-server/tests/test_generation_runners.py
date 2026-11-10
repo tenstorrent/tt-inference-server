@@ -124,6 +124,9 @@ class _Pipeline:
         self.calls.append(kwargs)
         return ["output"]
 
+    def count_text_tokens(self, prompt):
+        return 1
+
     def generate(self, prompt, **kwargs):
         self.calls.append({"prompt": prompt, **kwargs})
         pathlib.Path(kwargs["output_path"]).write_bytes(b"mp4")
@@ -862,6 +865,34 @@ def test_ideogram_gets_the_caption_and_preset():
         '{"compositional_deconstruction":{"background":"b","elements":[]}}'
     ]
     assert call["preset"] == "V4_QUALITY_48"
+
+
+def _ideogram_runner_and_request(tokens):
+    runner = _runner("TTIdeogram4Runner")
+    runner.pipeline.count_text_tokens = lambda prompt: tokens
+    request = Ideogram4Request(
+        structured_prompt={
+            "compositional_deconstruction": {"background": "b", "elements": []}
+        }
+    )
+    return runner, _resolved(request, 2048, 2048, prompt=request.model_prompt())
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_runs_a_caption_at_the_token_limit():
+    runner, request = _ideogram_runner_and_request(2048)
+    runner.run([request])
+    assert len(runner.pipeline.calls) == 1
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_fails_an_over_long_caption():
+    runner, request = _ideogram_runner_and_request(2049)
+    with pytest.raises(
+        ValueError, match="prompt is 2049 tokens, over the 2048-token limit"
+    ):
+        runner.run([request])
+    assert runner.pipeline.calls == []
 
 
 def test_ideogram_warmup_covers_every_size():

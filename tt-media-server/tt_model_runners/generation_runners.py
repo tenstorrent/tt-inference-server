@@ -49,6 +49,7 @@ from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
+from models.tt_dit.pipelines.ideogram4.policy import validate_prompt
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -911,6 +912,7 @@ class TTIdeogram4Runner(_GenerationRunner):
     @_inference_timer
     def run(self, requests: list[Ideogram4Request]):
         request = requests[0]
+        validate_prompt(request._prompt, self.pipeline.count_text_tokens)
         recorder = self._image_stage_recorder()
         images = self.pipeline(
             prompts=[request._prompt],

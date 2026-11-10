@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import httpx
 import numpy as np
+import domain.ideogram4_request as ideogram_request
 import domain.wan22_i2v_a14b_request as wan_request
 import pytest
 import yaml
@@ -40,7 +41,7 @@ from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
 from utils.video_manager import VideoManager
 
-from tests.fake_tt_metal_policy import H3_POLICY, WAN_POLICY
+from tests.fake_tt_metal_policy import H3_POLICY, IDEOGRAM_POLICY, WAN_POLICY
 
 requires_tt_metal_policy = pytest.mark.requires_tt_metal_policy
 
@@ -91,7 +92,12 @@ def _spec_param(runner, model):
     # Their documents quote tt-metal's policy values.
     quotes_tt_metal = issubclass(
         model.request,
-        (Wan22i2vA14bRequest, MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest),
+        (
+            Wan22i2vA14bRequest,
+            MiniMaxH3FL2VARequest,
+            MiniMaxH3Ref2VARequest,
+            Ideogram4Request,
+        ),
     )
     marks = [requires_tt_metal_policy] if quotes_tt_metal else []
     return pytest.param(runner, model, id=model.id, marks=marks)
@@ -1941,6 +1947,17 @@ _CAPTION = {
 }
 
 
+@pytest.fixture
+def ideogram_serving(monkeypatch):
+    """Serve Ideogram 4 on a 4x8 mesh."""
+    monkeypatch.setattr(
+        ideogram_request,
+        "get_settings",
+        lambda: SimpleNamespace(device_mesh_shape=(4, 8)),
+    )
+
+
+@requires_tt_metal_policy
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
@@ -2009,7 +2026,7 @@ def test_ideogram_caption_is_written_in_the_model_key_order():
         ),
         (
             {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "color_palette": ["#ff0000"]}
+                {"type": "obj", "desc": "d", "color_palette": ["#ff000"]}
             ]}},
             "pattern",
         ),
@@ -2026,7 +2043,19 @@ def test_ideogram_has_no_plain_prompt():
         Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
 
 
-async def test_ideogram_gets_the_serialized_caption(generations_app):
+def test_ideogram_accepts_lowercase_colors():
+    caption = {
+        "compositional_deconstruction": {
+            "background": "b",
+            "elements": [{"type": "obj", "desc": "d", "color_palette": ["#ff2e88"]}],
+        }
+    }
+    request = Ideogram4Request(structured_prompt=caption)
+    assert '"color_palette":["#FF2E88"]' in request.model_prompt()
+
+
+@requires_tt_metal_policy
+async def test_ideogram_gets_the_serialized_caption(generations_app, ideogram_serving):
     client, device = generations_app("tt-ideogram-4")
     response = await client.post(
         "/v1/generations/ideogram-ai/ideogram-4",
@@ -2041,6 +2070,29 @@ async def test_ideogram_gets_the_serialized_caption(generations_app):
     (output,) = job["outputs"]
     assert output["prompt"] == caption
     assert (output["width"], output["height"]) == (2048, 1152)
+
+
+@requires_tt_metal_policy
+async def test_ideogram_rejects_an_unserved_size(
+    generations_app, ideogram_serving, monkeypatch
+):
+    monkeypatch.setattr(
+        importlib.import_module(IDEOGRAM_POLICY),
+        "served_resolutions",
+        lambda mesh_shape: ((2048, 2048),),
+    )
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9"},
+    )
+    assert response.status_code == 422, response.text
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "size"]
+    assert error["msg"] == (
+        "unsupported size 2048x1152; this deployment serves [(2048, 2048)]"
+    )
+    assert device.requests == [] and (await client.get("/v1/jobs")).json() == []
 
 
 # --- FLUX.3 Image klein ----------------------------------------------------------

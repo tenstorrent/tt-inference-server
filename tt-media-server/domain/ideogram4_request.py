@@ -5,6 +5,7 @@
 import json
 from typing import Annotated, Literal, Optional, Union
 
+from config.settings import get_settings
 from domain.generation_request import (
     Count,
     GenerationModel,
@@ -13,7 +14,19 @@ from domain.generation_request import (
     SchemaComponent,
     Seed,
 )
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from models.tt_dit.pipelines.ideogram4.policy import (
+    IDEOGRAM4_MAX_TEXT_TOKENS,
+    IDEOGRAM4_SERVING_SIZES,
+    validate_size,
+)
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 IdeogramRatio = Literal["1:1", "16:9", "9:16", "2:3"]
 IdeogramSize = Literal["2K"]
@@ -22,10 +35,10 @@ IdeogramSize = Literal["2K"]
 # model's maximum. The initial release serves these four.
 IDEOGRAM_SIZES: dict[str, dict[str, tuple[int, int]]] = {
     "2K": {
-        "1:1": (2048, 2048),
-        "16:9": (2048, 1152),
-        "9:16": (1152, 2048),
-        "2:3": (1360, 2048),
+        "1:1": IDEOGRAM4_SERVING_SIZES[0],
+        "16:9": IDEOGRAM4_SERVING_SIZES[1],
+        "9:16": IDEOGRAM4_SERVING_SIZES[2],
+        "2:3": IDEOGRAM4_SERVING_SIZES[3],
     },
 }
 
@@ -40,7 +53,8 @@ IDEOGRAM_PRESETS = {
 # The caption models declare their fields in the model's key order, which
 # model_dump keeps whatever order the client sent.
 
-Color = Annotated[str, Field(pattern=r"^#[0-9A-F]{6}$")]
+
+Color = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$"), AfterValidator(str.upper)]
 Bbox = Annotated[
     list[Annotated[int, Field(ge=0, le=1000)]],
     Field(min_length=4, max_length=4),
@@ -53,13 +67,18 @@ Bbox = Annotated[
 Palette = Annotated[
     list[Color],
     Field(max_length=16),
-    SchemaComponent("Ideogram4Palette", "Dominant colors as uppercase `#RRGGBB`."),
+    SchemaComponent(
+        "Ideogram4Palette",
+        "Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.",
+    ),
 ]
 ElementPalette = Annotated[
     list[Color],
     Field(max_length=5),
     SchemaComponent(
-        "Ideogram4ElementPalette", "The element's colors as uppercase `#RRGGBB`."
+        "Ideogram4ElementPalette",
+        "The element's colors as `#RRGGBB`, either case; sent to the model in "
+        "uppercase.",
     ),
 ]
 
@@ -159,7 +178,12 @@ class Ideogram4Caption(_Strict):
 class Ideogram4Request(GenerationRequest):
     OUTPUT_TYPE = "image"
 
-    structured_prompt: Ideogram4Caption
+    structured_prompt: Ideogram4Caption = Field(
+        description=(
+            f"At most {IDEOGRAM4_MAX_TEXT_TOKENS} tokens as the model reads it, "
+            "chat template included; a longer caption fails the job."
+        )
+    )
     count: Count = 1
     aspect_ratio: IdeogramRatio = Field(
         default="1:1",
@@ -193,6 +217,16 @@ class Ideogram4Request(GenerationRequest):
 
     def output_size(self) -> tuple[int, int]:
         return IDEOGRAM_SIZES[self.size][self.aspect_ratio]
+
+    def media_errors(self) -> list[tuple[str, int | None, str]]:
+        width, height = self.output_size()
+        try:
+            validate_size(
+                mesh_shape=get_settings().device_mesh_shape, width=width, height=height
+            )
+        except ValueError as e:
+            return [("size", None, str(e))]
+        return []
 
     @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:

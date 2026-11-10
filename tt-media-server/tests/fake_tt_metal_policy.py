@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Placeholders for tt-metal's Wan and MiniMax-H3 policy modules, so the
-request modules load where tt-metal isn't installed.
+"""Placeholders for tt-metal's Wan, MiniMax-H3 and Ideogram 4 policy modules,
+so the request modules load where tt-metal isn't installed.
 
 These are not tt-metal's values: they only have to be valid. Every check
 accepts everything. No test may assert on them; tests that depend on the
@@ -15,6 +15,7 @@ from types import ModuleType
 
 WAN_POLICY = "models.tt_dit.pipelines.wan.policy"
 H3_POLICY = "models.tt_dit.pipelines.minimax_h3.policy"
+IDEOGRAM_POLICY = "models.tt_dit.pipelines.ideogram4.policy"
 
 
 def _wan_policy() -> ModuleType:
@@ -77,5 +78,19 @@ def _h3_policy() -> ModuleType:
     return module
 
 
+def _ideogram_policy() -> ModuleType:
+    module = ModuleType(IDEOGRAM_POLICY)
+    module.IDEOGRAM4_SERVING_SIZES = ((64, 64), (64, 32), (32, 64), (48, 64))
+    module.IDEOGRAM4_MAX_TEXT_TOKENS = 64
+    module.served_resolutions = lambda mesh_shape: module.IDEOGRAM4_SERVING_SIZES
+    module.validate_size = lambda *, mesh_shape, width, height: None
+    module.validate_prompt = lambda prompt, count_text_tokens: None
+    return module
+
+
 def placeholder_policies() -> dict[str, ModuleType]:
-    return {WAN_POLICY: _wan_policy(), H3_POLICY: _h3_policy()}
+    return {
+        WAN_POLICY: _wan_policy(),
+        H3_POLICY: _h3_policy(),
+        IDEOGRAM_POLICY: _ideogram_policy(),
+    }
