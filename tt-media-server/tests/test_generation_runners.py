@@ -262,6 +262,22 @@ def test_qwen_passes_the_input_images():
     assert call["num_inference_steps"] == 40
 
 
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [Image.new("RGB", (8, 8))]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
+
+
 def test_qwen_pipeline_warms_itself_up():
     assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
 

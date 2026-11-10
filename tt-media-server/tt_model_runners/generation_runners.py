@@ -226,19 +226,22 @@ class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
     def run(self, requests: list[QwenImageEdit2511Request]):
         request = requests[0]
         recorder = self._image_stage_recorder()
-        images = self.pipeline(
-            prompts=[request._prompt],
-            negative_prompts=[request.negative_prompt],
-            image=request._images["images"],
-            num_inference_steps=QWEN_STEPS,
-            cfg_scale=QWEN_GUIDANCE_SCALE,
-            seed=request._seed,
-            width=request._width,
-            height=request._height,
-            on_event=recorder,
-        )
-        if recorder is not None:
-            recorder.flush(images)
+        images = None
+        try:
+            images = self.pipeline(
+                prompts=[request._prompt],
+                negative_prompts=[request.negative_prompt],
+                image=request._images["images"],
+                num_inference_steps=QWEN_STEPS,
+                cfg_scale=QWEN_GUIDANCE_SCALE,
+                seed=request._seed,
+                width=request._width,
+                height=request._height,
+                on_event=recorder,
+            )
+        finally:
+            if recorder is not None:
+                recorder.flush(images)
         return images
 
 
