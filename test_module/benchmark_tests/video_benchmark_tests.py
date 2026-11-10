@@ -51,6 +51,9 @@ VIDEO_INFERENCE_STEPS = {
     # Fixed by the runner; labels the rows only.
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
     "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
+    # LTX-2.3 distilled fixes its own schedule: 8 forwards at half resolution,
+    # then 3 at full (tt-media-server LTX23_DISTILLED_NUM_FORWARDS).
+    "Lightricks/LTX-2.3-distilled": 11,
 }
 # A shape the boot warmup did not cover compiles inside its first request.
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
