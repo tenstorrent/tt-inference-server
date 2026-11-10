@@ -7648,19 +7648,23 @@ templates:
 # Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
 # profile pattern): glm53_flash = the 1 M-context profile (4 resident users,
 # the default), glm53_flash_128k = the 128 K-context profile (16 resident
-# users). Text only (the stack serves no image or video request). Greedy
-# requests sample on the device (the head's argmax inside the traced decode
-# step); sampled requests (temperature / top-p: the eval entries) on the host
-# from the returned logits. No prefix cache, synchronous scheduling, chunked
-# prefill on the stack's 128-row grid (2048 / 8192-token prefill buckets, one
-# chunk per engine step).
+# users). Text only (the stack serves no image or video request). Every
+# request samples on the device (the head's top-10 sampler inside the traced
+# decode step: greedy, temperature / top-p, top-k <= 10). No prefix cache;
+# chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
+# step. The 1 M profile schedules asynchronously (the adapter's resident-input
+# chain) and runs one prefill chunk per 8 decode steps while users decode.
 #
 # Validated on an 8x4 (45 layers, OSL 128, tests/test_mk_e2e.py; decode as
 # tok/s per user): 1 M x 1 51.7 (TTFT 345 s), 1 M x 4 35.4 (TTFT 1,379 s),
 # 512 K x 4 34.6, 128 K x 16 14.0 (TTFT 583 s), 32 K x 4 36.7 (TTFT 35 s),
 # 32 K x 16 14.6; prefill 3.0-3.7 K tok/s at every length. A decode step runs
 # at the stack's full width, so a lone user decodes at the profile's per-user
-# rate (37 tok/s on the 1 M profile, 14 on the 128 K profile).
+# rate (~41 tok/s at a short context on the 1 M profile, 14 on the 128 K one).
+# Served from the 1 M profile (vLLM 0.31, the benchmark argv, sampled): 128 /
+# 128 x 1 TPOT 24.2 ms = 41.3 tok/s per user (the e2e 24.4 ms); median ITL
+# 25.2 ms at 128 x 4 (e2e 24.3), 27.7 ms at 8 K x 4 (e2e 26.9); texts identical
+# to the e2e at ISL 128 and 32 K x 4.
 #
 # The stack's validated Galaxy knobs (galaxy_defaults.KNOBS: the 1D fabric, EP
 # experts, the DSA pool, the sparse-attention ladder and the prefill buckets
@@ -7712,14 +7716,20 @@ templates:
         trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
+        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
         prefill_chunk_alignment: 8192
-        decode_interleave_enabled: false
+        # a prefill chunk (~2.7 s at 1 M) stalls every decoding user: one chunk per 8 decode steps keeps their median
+        # ITL at the decode step (128 K x 4: mean TPOT 498 -> 249 ms, the prefill rate ~9 % lower)
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
       vllm_args:
         max_num_seqs: 4  # = the stack's construction width (the adapter refuses another)
+        # the adapter declares supports_async_decode (the resident-input chain): 128 x 4 median ITL 29.4 -> 25.2 ms
+        async_scheduling: true
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
         # one 8192-token prefill bucket per engine step plus one decode token per slot: a prefill chunk beside decoding
         # users still fills a whole bucket (an offer short of the bucket would wait for a step that never comes)
@@ -7781,7 +7791,7 @@ templates:
         trace_region_size: 3221225472  # 3 GiB: the decode trace + the per-context prefill traces at 128 K (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # greedy rows on the head's argmax (max_device_top_k 1); sampled rows on the host
+        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
