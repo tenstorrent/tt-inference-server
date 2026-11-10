@@ -1264,7 +1264,10 @@ templates:
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      submesh_engines: true  # one vLLM engine per (1, 8) row behind the prefix-aware engine_proxy, as the 31B Galaxy entry
       env_vars:
+        TT_PROXY_SLACK: "4"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 4 requests in flight above the least-loaded one
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b, as the 12B P300X2 entry
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the Galaxy DP=4 entry vs the knob off (same tree): 128/128 c1 TTFT 137 -> 87 ms, c8 214 -> 173 ms, c128 2.82 -> 1.60 s with 38.2 -> 42.6 tok/s/user; 128K/256K TTFT and decode unchanged.
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
