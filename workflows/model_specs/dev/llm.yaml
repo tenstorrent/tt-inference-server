@@ -1825,6 +1825,43 @@ templates:
         tool-call-parser: muse_glimmer
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
+    # Blackhole Galaxy (32x P150): DP=4 x TP=8 through the plugin's standard multi-process DP. Four EngineCores each open a
+    # disjoint (1, 8) rank mesh and run DFlash2 locally (K by live rows: 15 / 7 / 3, at most 8 sequences per rank, so 32 in
+    # total). Needs vllm-tt-plugin main (vLLM 0.31): the older plugin branches lack the speculative K-by-rows contract.
+    # Bring-up validation (2026-11-10, 32 prompts, greedy): output identical to the tt-metal text demo at TP=8 DP=4.
+    # Decode tok/s/user: 115 at c1, 110 at c8, 76 at c32 (2.4k tok/s aggregate); mean accepted length ~4.0 light load,
+    # ~2.8 at 8 sequences per rank. Context was exercised only up to 8192 tokens, so max_context is 8192, not 131056.
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # 8 per engine x 4 engines (vllm_args are per engine)
+      max_context: 8192
+      default_impl: false
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerDFlash2ForCausalLM"
+        # The adapter takes the full (8, 4) system mesh and carves one (1, 8) TP8 replica per engine process.
+        MESH_DEVICE: "(8, 4)"
+        MUSE_DFLASH_MODEL: "z-lab/Muse-Glimmer-30B-DFlash2"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 256000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        # vLLM 0.31 starts several API-server workers under DP, and they fail on the plugin's disable_any_whitespace flag.
+        api-server-count: "1"
+        block_size: "32"
+        max_num_seqs: "8"
+        max_model_len: "8192"
+        max_num_batched_tokens: "8192"
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+        no-async-scheduling: true
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: muse_glimmer
+        enable-auto-tool-choice: true
+        tool-call-parser: muse_glimmer
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
   status: EXPERIMENTAL
   metadata:
     meta-models/Muse-Glimmer-30B:
