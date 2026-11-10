@@ -29,7 +29,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Job'
         '400':
-          description: 'An image URL violates this deployment''s fetch policy: not `https`,
+          description: 'A media URL violates this deployment''s fetch policy: not `https`,
             a host outside the allowlist, or an address that isn''t public.'
           content:
             application/json:
@@ -49,7 +49,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '413':
           description: 'An input, inline or fetched, is over its limit: 30 MB per image, 50
-            MB per video, 15 MB per audio clip.'
+            MB per video, 15 MB per audio clip; or the request''s inline (data URI) media
+            total more than 64,000,000 characters (about 48 MB).'
           content:
             application/json:
               schema:
@@ -391,18 +392,19 @@ components:
           format: uri-reference
           title: Url
           description: 'Where to download the file. Today it is a path relative to this server''s
-            base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with the same API key;
-            the runner does not know the host the console reaches it by, so it never returns
-            one. If outputs later move to shared storage, it becomes an absolute URL. Clients
-            handle both: an absolute URL is used as given, a relative one is resolved against
-            the runner''s base URL (RFC 3986). Otherwise opaque.
+            base URL, `v1/jobs/{job_id}/content/{index}`, fetched with the same API key; the
+            runner does not know the host the console reaches it by, so it never returns one.
+            If outputs later move to shared storage, it becomes an absolute URL. Clients handle
+            both: an absolute URL is used as given, a relative one is resolved against the
+            runner''s base URL with a trailing `/` (RFC 3986), so a base URL with a path keeps
+            it. Otherwise opaque.
 
 
             Internal only. The console''s public API returns its own signed storage URLs and
             never exposes, proxies or rewrites this one, so customers never come to depend
             on a runner path.'
           examples:
-          - /v1/jobs/j_8f2c1d/content/0
+          - v1/jobs/j_8f2c1d/content/0
         content_type:
           type: string
           title: Content Type
@@ -559,8 +561,7 @@ components:
           type: string
           const: 1080p
           title: Size
-          description: 'Size tier: `1080p` is 1920×1088 at `16:9`, 8 rows more than 1080 because
-            both sides must be multiples of 64.'
+          description: 'Size tier: `1080p` is 1920×1088 at `16:9`.'
           default: 1080p
         duration:
           type: integer
@@ -626,18 +627,19 @@ components:
           format: uri-reference
           title: Url
           description: 'Where to download the file. Today it is a path relative to this server''s
-            base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with the same API key;
-            the runner does not know the host the console reaches it by, so it never returns
-            one. If outputs later move to shared storage, it becomes an absolute URL. Clients
-            handle both: an absolute URL is used as given, a relative one is resolved against
-            the runner''s base URL (RFC 3986). Otherwise opaque.
+            base URL, `v1/jobs/{job_id}/content/{index}`, fetched with the same API key; the
+            runner does not know the host the console reaches it by, so it never returns one.
+            If outputs later move to shared storage, it becomes an absolute URL. Clients handle
+            both: an absolute URL is used as given, a relative one is resolved against the
+            runner''s base URL with a trailing `/` (RFC 3986), so a base URL with a path keeps
+            it. Otherwise opaque.
 
 
             Internal only. The console''s public API returns its own signed storage URLs and
             never exposes, proxies or rewrites this one, so customers never come to depend
             on a runner path.'
           examples:
-          - /v1/jobs/j_8f2c1d/content/0
+          - v1/jobs/j_8f2c1d/content/0
         content_type:
           type: string
           title: Content Type

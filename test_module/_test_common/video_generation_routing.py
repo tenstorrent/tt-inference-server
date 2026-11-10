@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -39,6 +38,9 @@ FIXTURE_IMAGE_PATH = (
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 MINIMAX_H3_DURATION_SECONDS = 5
+# Every mesh serves Wan2.2's 480p 16:9; the tt_dit pipeline tests cover 720p.
+WAN_SIZE = "480p"
+WAN_ASPECT_RATIO = "16:9"
 
 
 def is_i2v_video_model(model_name: str) -> bool:
@@ -52,15 +54,6 @@ def is_minimax_h3_model(model_name: str) -> bool:
 
 def uses_generations_api(model_name: str) -> bool:
     return model_name.split("/")[-1] in GENERATIONS_API_SUBMIT_ENDPOINTS
-
-
-def wan_size_for_device(device: Any) -> str:
-    """Wan2.2's size tier on ``device``: 720p on a Blackhole Galaxy, the only
-    mesh whose tt_dit preset serves it, and 480p elsewhere. The tests send
-    16:9, the one aspect ratio every preset serves."""
-    return (
-        "720p" if device is not None and device.name == "BLACKHOLE_GALAXY" else "480p"
-    )
 
 
 def _load_fixture_image_base64() -> str:
@@ -84,7 +77,6 @@ def build_video_generation_payload(
     num_inference_steps: int,
     model_name: str,
     image_b64: str | None = None,
-    device: Any = None,
 ) -> dict:
     """Build a T2V or I2V submit payload for ``model_name``. The generations
     API takes no step count: it runs the model's reference default."""
@@ -109,8 +101,8 @@ def build_video_generation_payload(
             "negative_prompt": DEFAULT_I2V_NEGATIVE_PROMPT,
             "seed": DEFAULT_I2V_SEED,
             "first_frame": fixture_image_data_uri(image_b64),
-            "size": wan_size_for_device(device),
-            "aspect_ratio": "16:9",
+            "size": WAN_SIZE,
+            "aspect_ratio": WAN_ASPECT_RATIO,
         }
 
     payload = {

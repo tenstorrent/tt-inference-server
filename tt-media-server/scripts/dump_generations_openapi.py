@@ -9,6 +9,10 @@ checks that the server still serves exactly them. Run this after an intended
 API change and review the diff:
 
     python scripts/dump_generations_openapi.py
+
+Run it with tt-metal on PYTHONPATH: the Wan and MiniMax-H3 documents quote
+tt-metal's policy values. Without it the documents are built against
+placeholders (tests/fake_tt_metal_policy.py) and must not be written.
 """
 
 import ast
@@ -44,7 +48,8 @@ _SETTINGS_ENV = (
 # Imports the app as main.py builds it for the runner and writes its document.
 # The routes don't use the runners' libraries, which CI doesn't install, so
 # those that are missing are stubbed, with their submodules, as
-# tests/conftest.py does.
+# tests/conftest.py does. Without tt-metal, its Wan and MiniMax-H3 policies,
+# which the requests import, are the tests' placeholders.
 _DUMP = """
 import importlib.abc, importlib.machinery, importlib.util, json, sys
 from unittest.mock import MagicMock
@@ -74,6 +79,14 @@ class Stubs(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 
 sys.meta_path.insert(0, Stubs())
+try:
+    import models.tt_dit.pipelines.ideogram4.policy
+    import models.tt_dit.pipelines.minimax_h3.policy
+    import models.tt_dit.pipelines.wan.policy
+except ImportError:
+    from tests.fake_tt_metal_policy import placeholder_policies
+
+    sys.modules.update(placeholder_policies())
 import main
 with open(sys.argv[1], "w") as f:
     json.dump(main.app.openapi(), f)
