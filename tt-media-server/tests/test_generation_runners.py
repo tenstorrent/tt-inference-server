@@ -332,17 +332,26 @@ def flux3_runner(monkeypatch):
 
 @pytest.mark.parametrize("with_image", [False, True])
 def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
-    images = {"images": [Image.new("RGB", (3000, 1000))]} if with_image else {}
     request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048)
-    # The service decodes FLUX.3's reference: the runner gets the image itself.
-    request._images = images
+    # The runner decodes FLUX.3's reference from its file, at its own size.
+    request._files = {"images": [_png(3000, 1000)]} if with_image else {}
     (image,) = flux3_runner.run([request])
     (call,) = flux3_runner.pipeline.calls
     assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
     assert call.steps == 16
-    assert call.images == tuple(images.get("images", []))
+    assert [reference.size for reference in call.images] == (
+        [(3000, 1000)] if with_image else []
+    )
     assert image.size == (2048, 2048)
     assert image.info["prompt"] == "a detailed caption of a cat"
+
+
+def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [_png(64, 64)[:40]]}
+    with pytest.raises(ValueError, match="an input could not be decoded: "):
+        flux3_runner.run([request])
+    assert flux3_runner.pipeline.calls == []
 
 
 def test_flux3_warmup_covers_every_size_with_and_without_a_reference(flux3_runner):

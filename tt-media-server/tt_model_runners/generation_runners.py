@@ -392,20 +392,17 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:
-        reference = Image.new("RGB", (1024, 1024))
-        requests = []
-        for width, height in Flux3ImageKleinRequest.warmup_sizes():
-            for images in ({}, {"images": [reference]}):
-                request = _warmup_request(
-                    Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
-                    width,
-                    height,
-                )
-                # The service decodes FLUX.3's reference (RUNNER_DECODES_IMAGES
-                # is off), so run() reads the decoded image, not a file.
-                request._images = images
-                requests.append(request)
-        return requests
+        reference = _png(1024, 1024)
+        return [
+            _warmup_request(
+                Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
+                width,
+                height,
+                files,
+            )
+            for width, height in Flux3ImageKleinRequest.warmup_sizes()
+            for files in ({}, {"images": [reference]})
+        ]
 
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
@@ -414,6 +411,14 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         )
 
         request = requests[0]
+        try:
+            images = tuple(self._images(request, "images"))
+        except ValueError:
+            raise
+        except Exception as e:
+            # Submit decoded the same bytes and refused a corrupt file with 422;
+            # whatever still fails here fails the job, not the worker.
+            raise ValueError(f"an input could not be decoded: {e}") from e
         result = self.pipeline.generate(
             Flux3KleinRequest(
                 prompt=request._prompt,
@@ -421,7 +426,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                 height=request._height,
                 seed=request._seed,
                 steps=self._steps(FLUX3_KLEIN_STEPS),
-                images=tuple(request._images.get("images", [])),
+                images=images,
             )
         )
         # the upsampled caption, which the output reports as its prompt

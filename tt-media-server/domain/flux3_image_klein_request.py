@@ -31,6 +31,7 @@ FLUX3_KLEIN_STEPS = 16
 class Flux3ImageKleinRequest(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1, description="What to generate or how to edit.")
     images: list[Media] = Field(

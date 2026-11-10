@@ -1796,6 +1796,29 @@ def test_flux3_serves_one_square_shape_per_size(fields):
         Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
+def test_flux3_has_3_sizes():
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (1024, 1024),
+        (2048, 2048),
+        (4096, 4096),
+    ]
+
+
+async def test_flux3_keeps_only_the_image_sizes(generations_app):
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "make it night", "images": [_data_uri(1600, 900)]},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900)]}
+    assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
+
+
 async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
     process = _FakeDevice.process
 
