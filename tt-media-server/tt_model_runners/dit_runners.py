@@ -2089,14 +2089,17 @@ class TTMiniMaxH3ImageRunner(TTDiTRunner):
         return _minimax_h3_device_params(self.settings.device_mesh_shape)
 
     def _warm(self):
-        """Compile every program the serving path uses: a 4K t2i (the default size; its VAE decode runs the most
-        waves) and a 2K edit (the vision tower and the VAE encoder)."""
+        """Compile every program the serving path uses. The pipeline's own `warmup` covers every prompt-length rung of
+        the text encoder plus a 4K t2i and a 2K edit; older tt-metal trees without it get the two requests."""
         import time
 
         started = time.perf_counter()
-        self.pipeline("warmup", width=4096, height=4096, seed=0)
-        reference = Image.new("RGB", (1024, 1024), (128, 128, 128))
-        self.pipeline("warmup", width=2048, height=2048, seed=0, images=[reference])
+        if hasattr(self.pipeline, "warmup"):
+            self.pipeline.warmup()
+        else:
+            self.pipeline("warmup", width=4096, height=4096, seed=0)
+            reference = Image.new("RGB", (1024, 1024), (128, 128, 128))
+            self.pipeline("warmup", width=2048, height=2048, seed=0, images=[reference])
         self.logger.info(
             f"Device {self.device_id}: MiniMax-H3-Image warm in {time.perf_counter() - started:.1f}s"
         )
