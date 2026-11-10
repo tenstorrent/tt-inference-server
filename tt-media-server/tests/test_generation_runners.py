@@ -490,22 +490,36 @@ def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path)
 
 def test_qwen_passes_the_input_images():
     runner = _runner("TTQwenImageEdit2511Runner")
-    images = [Image.new("RGB", (8, 8)), Image.new("RGB", (8, 8))]
     request = _resolved(
         QwenImageEdit2511Request(
             prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
         ),
         1376,
         768,
+        {"images": [_png(8, 16), _png(24, 12)]},
     )
-    # The service decodes Qwen's images: the runner gets the images themselves.
-    request._images = {"images": images}
     runner.run([request])
     (call,) = runner.pipeline.calls
-    assert call["image"] is images
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
     assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
     assert call["negative_prompts"] == ["blurry"]
     assert call["num_inference_steps"] == 40
+
+
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [_png(8, 8)]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
 
 
 def test_qwen_pipeline_warms_itself_up():

@@ -283,13 +283,15 @@ class _FakeDevice:
             raise self.error
         if request.OUTPUT_TYPE == "video" and self.video is not None:
             return self.video(request)
-        if request.OUTPUT_TYPE != "video":
-            return Image.new("RGB", (request._width, request._height), "blue")
-        # The runner encodes its MP4 and returns the path.
-        return VideoManager().export_to_mp4(
-            np.zeros((request.frames, request._height, request._width, 3), np.uint8),
-            fps=request.fps,
-        )
+        if request.OUTPUT_TYPE == "video":
+            # The runner encodes its MP4 and returns the path.
+            return VideoManager().export_to_mp4(
+                np.zeros(
+                    (request.frames, request._height, request._width, 3), np.uint8
+                ),
+                fps=request.fps,
+            )
+        return Image.new("RGB", (request._width, request._height), "blue")
 
 
 @pytest.fixture
@@ -689,6 +691,24 @@ async def test_a_bad_data_uri_payload_is_422(generations_app, payload):
     (detail,) = response.json()["detail"]
     assert detail["loc"] == ["body", "first_frame"]
     assert device.requests == []
+
+
+@pytest.mark.parametrize(
+    "output_format, options",
+    [("jpeg", {"quality": 95, "subsampling": 0}), ("webp", {"quality": 90})],
+)
+def test_lossy_outputs_are_saved_at_high_quality(tmp_path, output_format, options):
+    from model_services.generation_service import GenerationService
+
+    pixels = np.random.default_rng(0).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    image = Image.fromarray(pixels)
+    request = SimpleNamespace(
+        OUTPUT_TYPE="image", format=output_format, _seed=0, _prompt="x"
+    )
+    output = GenerationService._write_output(tmp_path, 0, request, image)
+    expected = BytesIO()
+    image.save(expected, format=output_format.upper(), **options)
+    assert (tmp_path / output["file"]).read_bytes() == expected.getvalue()
 
 
 async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkeypatch):
@@ -1285,7 +1305,7 @@ def test_qwen_size_follows_last_image():
         prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
     )
     assert request.negative_prompt == " "
-    _with_images(request, images=[(1000, 1000), (1600, 900)])
+    _with_image_sizes(request, images=[(1000, 1000), (1600, 900)])
     assert request.output_size() == (1376, 768)
     request.aspect_ratio = "3:4"
     assert request.output_size() == (896, 1184)
@@ -1321,7 +1341,7 @@ async def test_image_job(generations_app):
     (output,) = job["outputs"]
     assert output == {
         "type": "image",
-        "url": f"/v1/jobs/{job['id']}/content/0",
+        "url": f"v1/jobs/{job['id']}/content/0",
         "content_type": "image/jpeg",
         "seed": 7,
         "prompt": "add a hat",
@@ -1333,7 +1353,29 @@ async def test_image_job(generations_app):
     assert Image.open(BytesIO(content.content)).size == (1376, 768)
 
 
-# --- MiniMax-H3 ------------------------------------------------------------------
+async def test_qwen_keeps_only_the_upright_image_sizes(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    # Stored landscape, shown portrait: EXIF orientation 6 is "rotate 90° CW".
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    Image.new("RGB", (800, 600)).save(buffer, format="JPEG", exif=exif)
+    rotated = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={"prompt": "add a hat", "images": [_data_uri(1600, 900), rotated]},
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    # The runner decodes the images: only their files and sizes go to the device.
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900), (600, 800)]}
+    assert len(request._files["images"]) == 2
+    assert (request._width, request._height) == (896, 1184)
+
+
+# --- MiniMax-H3------------------------------------------------------------------
 
 
 def _clip_data_uri(seconds: float, video: bool = True, channels: int = 2) -> str:

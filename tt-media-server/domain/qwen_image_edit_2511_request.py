@@ -34,6 +34,7 @@ QWEN_EDIT_SIZES: dict[str, tuple[int, int]] = {
 class QwenImageEdit2511Request(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
+    RUNNER_DECODES_IMAGES = True
 
     prompt: str = Field(min_length=1, description="The edit instruction.")
     negative_prompt: str = Field(
@@ -47,9 +48,9 @@ class QwenImageEdit2511Request(GenerationRequest):
         min_length=1,
         max_length=3,
         description=(
-            "The image(s) to edit or combine. Each is resized to the supported "
-            "size closest to its aspect ratio. At most 3, as in tt_dit's "
-            "Qwen-Image-Edit-2511 pipeline."
+            "The image(s) to edit or combine, referred to in the prompt by order "
+            '("the first image"). Each is resized to the supported size (see '
+            "`aspect_ratio`) closest to its own aspect ratio, without cropping."
         ),
     )
     count: Count = 1
@@ -58,9 +59,8 @@ class QwenImageEdit2511Request(GenerationRequest):
         description=(
             "Output shape, at about 1 MP: `1:1` 1024×1024, `16:9` 1376×768, "
             "`9:16` 768×1376, `4:3` 1184×896, `3:4` 896×1184, `3:2` 1248×832, "
-            "`2:3` 832×1248 (diffusers' edit sizes, as in tt_dit's pipeline). "
-            "Omitted = the ratio closest to the last image's, as in diffusers' "
-            "reference pipeline. Each output reports its exact size."
+            "`2:3` 832×1248. Omitted = the ratio here closest to the last input "
+            "image's. Each output reports its exact size."
         ),
     )
     format: ImageFormat = "png"
@@ -68,7 +68,7 @@ class QwenImageEdit2511Request(GenerationRequest):
 
     def output_size(self) -> tuple[int, int]:
         ratio = self.aspect_ratio or closest_ratio(
-            *self._images["images"][-1].size, QWEN_EDIT_SIZES
+            *self._image_sizes["images"][-1], QWEN_EDIT_SIZES
         )
         return QWEN_EDIT_SIZES[ratio]
 
