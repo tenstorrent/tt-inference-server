@@ -29,15 +29,16 @@ class JobError(BaseModel):
 class _OutputBase(BaseModel):
     url: str = Field(
         json_schema_extra={"format": "uri-reference"},
-        examples=["/v1/jobs/j_8f2c1d/content/0"],
+        examples=["v1/jobs/j_8f2c1d/content/0"],
         description=(
             "Where to download the file. Today it is a path relative to this "
-            "server's base URL, `/v1/jobs/{job_id}/content/{index}`, fetched with "
+            "server's base URL, `v1/jobs/{job_id}/content/{index}`, fetched with "
             "the same API key; the runner does not know the host the console "
             "reaches it by, so it never returns one. If outputs later move to "
             "shared storage, it becomes an absolute URL. Clients handle both: an "
             "absolute URL is used as given, a relative one is resolved against the "
-            "runner's base URL (RFC 3986). Otherwise opaque.\n\n"
+            "runner's base URL with a trailing `/` (RFC 3986), so a base URL with "
+            "a path keeps it. Otherwise opaque.\n\n"
             "Internal only. The console's public API returns its own signed "
             "storage URLs and never exposes, proxies or rewrites this one, so "
             "customers never come to depend on a runner path."

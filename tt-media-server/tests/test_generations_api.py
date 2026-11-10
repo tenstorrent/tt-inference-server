@@ -9,6 +9,7 @@ here."""
 
 import asyncio
 import base64
+import importlib
 import importlib.util
 import json
 import pathlib
@@ -20,6 +21,7 @@ from types import SimpleNamespace
 
 import httpx
 import numpy as np
+import domain.wan22_i2v_a14b_request as wan_request
 import pytest
 import yaml
 from config.constants import JobTypes
@@ -38,6 +40,10 @@ from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
 from utils.video_manager import VideoManager
 
+from tests.fake_tt_metal_policy import H3_POLICY, WAN_POLICY
+
+requires_tt_metal_policy = pytest.mark.requires_tt_metal_policy
+
 _CAPTION = {
     "compositional_deconstruction": {
         "background": "a brick wall",
@@ -54,11 +60,8 @@ def _data_uri(width: int = 64, height: int = 64, image_format: str = "PNG") -> s
     ).decode("ascii")
 
 
-def _with_images(request, **images):
-    request._images = {
-        name: [Image.new("RGB", size) for size in sizes]
-        for name, sizes in images.items()
-    }
+def _with_image_sizes(request, **sizes):
+    request._image_sizes = sizes
     return request
 
 
@@ -84,11 +87,20 @@ def served_generations_api():
     return _dump_script.served_generations_api_by_runner(list(GENERATION_MODELS))
 
 
+def _spec_param(runner, model):
+    # Their documents quote tt-metal's policy values.
+    quotes_tt_metal = issubclass(
+        model.request,
+        (Wan22i2vA14bRequest, MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest),
+    )
+    marks = [requires_tt_metal_policy] if quotes_tt_metal else []
+    return pytest.param(runner, model, id=model.id, marks=marks)
+
+
 # After an intended API change: python scripts/dump_generations_openapi.py
 @pytest.mark.parametrize(
     ("runner", "model"),
-    GENERATION_MODELS.items(),
-    ids=[model.id for model in GENERATION_MODELS.values()],
+    [_spec_param(runner, model) for runner, model in GENERATION_MODELS.items()],
 )
 def test_openapi_is_the_spec(served_generations_api, runner, model):
     expected = yaml.safe_load(_dump_script.spec_path(model.id).read_text())
@@ -118,6 +130,7 @@ def test_media_must_be_a_url_or_image_data_uri(media):
         )
 
 
+@requires_tt_metal_policy
 def test_wan_fields():
     request = Wan22i2vA14bRequest(
         prompt="a boat", first_frame="https://x/a.png", aspect_ratio="9:16", size="720p"
@@ -270,11 +283,13 @@ class _FakeDevice:
             raise self.error
         if request.OUTPUT_TYPE == "video" and self.video is not None:
             return self.video(request)
-        if request.OUTPUT_TYPE == "video":
-            return np.zeros(
-                (request.frames, request._height, request._width, 3), np.uint8
-            )
-        return Image.new("RGB", (request._width, request._height), "blue")
+        if request.OUTPUT_TYPE != "video":
+            return Image.new("RGB", (request._width, request._height), "blue")
+        # The runner encodes its MP4 and returns the path.
+        return VideoManager().export_to_mp4(
+            np.zeros((request.frames, request._height, request._width, 3), np.uint8),
+            fps=request.fps,
+        )
 
 
 @pytest.fixture
@@ -353,7 +368,7 @@ async def _wait_final(client, job_id: str) -> dict:
 
 
 def _sound_video(frames: int, sampling_rate: int, fps: int) -> str:
-    """An MP4 with sound, not faststart, as the LTX and H3 runners write."""
+    """An MP4 with sound, as the LTX and H3 runners return."""
     return VideoManager().export_to_mp4_with_audio(
         np.zeros((frames, 64, 64, 3), np.uint8),
         np.zeros((2, sampling_rate * frames // fps), np.float32),
@@ -404,7 +419,7 @@ async def test_job_lifecycle(generations_app, tmp_path):
     # The fake device's clip: 9 frames of 64x64 at 25 fps, stereo at 16 kHz.
     assert output == {
         "type": "video",
-        "url": f"/v1/jobs/{job['id']}/content/0",
+        "url": f"v1/jobs/{job['id']}/content/0",
         "content_type": "video/mp4",
         "seed": 7,
         "prompt": "a violinist",
@@ -428,7 +443,50 @@ async def test_job_lifecycle(generations_app, tmp_path):
     assert (await client.get(f"/v1/jobs/{job['id']}")).status_code == 404
 
 
-async def test_video_job(generations_app):
+@pytest.fixture
+def wan_mesh(monkeypatch):
+    """Serve Wan as on a Blackhole mesh of the given shape."""
+
+    wan_policy = importlib.import_module(WAN_POLICY)
+
+    def serve_on(mesh_shape):
+        monkeypatch.setattr(wan_policy, "_is_blackhole", lambda: True)
+        monkeypatch.setattr(
+            wan_request,
+            "get_settings",
+            lambda: SimpleNamespace(device_mesh_shape=mesh_shape),
+        )
+
+    return serve_on
+
+
+@requires_tt_metal_policy
+@pytest.mark.parametrize(
+    ("size", "aspect_ratio", "status"),
+    [("480p", "16:9", 202), ("480p", "9:16", 202), ("720p", "16:9", 422)],
+)
+async def test_wan_takes_only_the_sizes_the_mesh_serves(
+    generations_app, wan_mesh, size, aspect_ratio, status
+):
+    wan_mesh((2, 2))
+    client, device = _wan_app(generations_app)
+    response = await client.post(
+        _WAN,
+        json=_wan_body(first_frame=_data_uri(), size=size, aspect_ratio=aspect_ratio),
+    )
+    assert response.status_code == status, response.text
+    if status == 422:
+        (error,) = response.json()["detail"]
+        assert error["loc"] == ["body", "size"]
+        assert error["msg"] == (
+            "unsupported size 1280x720; this deployment serves [(832, 480), (480, 832)]"
+        )
+        assert device.requests == [] and (await client.get("/v1/jobs")).json() == []
+
+
+@requires_tt_metal_policy
+async def test_video_job(generations_app, wan_mesh):
+    wan_mesh((4, 8))
     client, device = generations_app("tt-wan2.2-i2v")
     response = await client.post(
         "/v1/generations/wan-ai/wan2.2-i2v-a14b",
@@ -558,6 +616,25 @@ async def test_a_failed_or_oversized_fetch(
     assert device.requests == []
 
 
+async def test_an_oversized_fetch_names_the_deployments_url_cap(
+    generations_app, monkeypatch
+):
+    import utils.media_downloader
+    from model_services import generation_service
+
+    async def fetch(url, **kwargs):
+        raise utils.media_downloader.MediaDownloadTooLargeError("too big")
+
+    monkeypatch.setattr(generation_service, "download_media_url", fetch)
+    monkeypatch.setattr(generation_service.settings, "media_url_max_bytes", 1000)
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "An image input is over 1000 bytes"
+
+
 def _encoded(image_format: str) -> bytes:
     buffer = BytesIO()
     Image.new("RGB", (64, 64), "red").save(buffer, format=image_format)
@@ -656,8 +733,9 @@ async def test_inputs_are_fetched_concurrently(generations_app, monkeypatch):
     assert response.status_code == 202, response.text
     await _wait_final(client, response.json()["id"])
     (request,) = device.requests
-    # The runner decodes the frames: only their files go to the device.
+    # The runner decodes the frames: only their files and sizes go to the device.
     assert request._images == {}
+    assert request._image_sizes == {"first_frame": [(64, 64)], "last_frame": [(64, 64)]}
     assert set(request._files) == {"first_frame", "last_frame"}
 
 
@@ -883,7 +961,9 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert job["error"] == {"code": "processing_error", "message": "device fell over"}
     assert job["expires_at"] > job["completed_at"]
     assert (await client.get(f"/v1/jobs/{job['id']}/content/0")).status_code == 409
-    assert list(tmp_path.iterdir()) == []
+    # Made at submit, empty, and deleted with the job.
+    assert list(tmp_path.iterdir()) == [tmp_path / job["id"]]
+    assert list((tmp_path / job["id"]).iterdir()) == []
 
 
 @pytest.fixture
@@ -954,6 +1034,7 @@ async def test_a_completed_job_reports_its_video(
     assert _sample(_DURATION, **labels) == durations + 6
 
 
+@requires_tt_metal_policy
 async def test_failed_jobs_report_their_status(
     generations_app, video_stats, runner_label
 ):
@@ -1071,7 +1152,6 @@ async def test_what_a_runner_leaves_in_a_failed_jobs_directory_goes_with_it(
     client, device = generations_app("tt-ltx-2.3-distilled")
 
     def video(request):
-        (tmp_path / request._task_id).mkdir()
         (tmp_path / request._task_id / "ltx.mp4").write_bytes(b"mp4")
         raise RuntimeError("device fell over")
 
@@ -1119,6 +1199,7 @@ async def test_an_earlier_output_is_not_an_input(generations_app):
     assert response.json()["detail"][0]["loc"] == ["body", "first_frame"]
 
 
+@requires_tt_metal_policy
 def test_stored_request_digests_data_uris():
     from model_services.generation_service import _request_parameters
 
@@ -1286,6 +1367,7 @@ def _probe(duration_s=5.0, size=(64, 64), fps=25.0, audio_channels=2):
 @pytest.mark.parametrize(
     ("duration", "frames"), [(4, 107), (5, 124), (6, 158), (15, 362)]
 )
+@requires_tt_metal_policy
 def test_h3_frames_are_the_next_17n_plus_5(duration, frames):
     assert MiniMaxH3FL2VARequest(prompt="x", duration=duration).frames == frames
 
@@ -1306,8 +1388,9 @@ def test_h3_frames_are_the_next_17n_plus_5(duration, frames):
         ),
     ],
 )
+@requires_tt_metal_policy
 def test_h3_output_size(fields, images, expected):
-    request = _with_images(MiniMaxH3FL2VARequest(prompt="x", **fields), **images)
+    request = _with_image_sizes(MiniMaxH3FL2VARequest(prompt="x", **fields), **images)
     assert request.output_size() == expected
 
 
@@ -1323,16 +1406,18 @@ def test_h3_output_size(fields, images, expected):
         ({"width": 832, "height": 480}, "extra"),
         ({"duration": 3}, "greater than or equal to 4"),
         ({"duration": 5.5}, "integer"),
-        ({"aspect_ratio": "2:1"}, "'21:9'"),
-        ({"aspect_ratio": "16:9:1"}, "'21:9'"),
+        ({"aspect_ratio": "2:1"}, "2:1 is not served; supported: 21:9"),
+        ({"aspect_ratio": "16:9:1"}, "must look like 'W:H'"),
         ({"negative_prompt": "blur"}, "extra"),
     ],
 )
+@requires_tt_metal_policy
 def test_h3_rejects(fields, message):
     with pytest.raises(ValidationError, match=message):
         MiniMaxH3FL2VARequest(prompt="x", **fields)
 
 
+@requires_tt_metal_policy
 def test_h3_aspect_ratio_defaults_to_adaptive_with_a_frame():
     assert MiniMaxH3FL2VARequest(prompt="x").aspect_ratio == "16:9"
     with_frame = MiniMaxH3FL2VARequest(prompt="x", last_frame="https://x/a.png")
@@ -1340,8 +1425,29 @@ def test_h3_aspect_ratio_defaults_to_adaptive_with_a_frame():
 
 
 @pytest.mark.parametrize("ratio", ["16x9", "16/9", " 16 : 9 ", "016:9"])
+@requires_tt_metal_policy
 def test_h3_ratio_spellings_of_the_earlier_api(ratio):
     assert MiniMaxH3FL2VARequest(prompt="x", aspect_ratio=ratio).aspect_ratio == "16:9"
+
+
+@pytest.mark.parametrize("ratio", ["17:9", "17x9"])
+@requires_tt_metal_policy
+def test_h3_unserved_ratio_gets_tt_metals_message(ratio):
+    with pytest.raises(ValidationError, match="17:9 is not served; supported: 21:9"):
+        MiniMaxH3FL2VARequest(prompt="x", aspect_ratio=ratio)
+
+
+@requires_tt_metal_policy
+def test_h3_output_size_and_frames_are_tt_metals():
+    policy = importlib.import_module(H3_POLICY)
+    for ratio in policy.MINIMAX_H3_ASPECT_RATIOS:
+        # tt-metal's canvas is (height, width).
+        height, width = policy.resolve_canvas_size(*ratio)
+        request = MiniMaxH3FL2VARequest(prompt="x", aspect_ratio="{}:{}".format(*ratio))
+        assert request.output_size() == (width, height)
+    for duration in policy.MINIMAX_H3_DURATIONS_S:
+        request = MiniMaxH3FL2VARequest(prompt="x", duration=duration)
+        assert request.frames == policy.get_num_frames(duration)
 
 
 @pytest.mark.parametrize("prompt", ["", "   "])
@@ -1359,8 +1465,9 @@ def test_h3_prompt_must_not_be_blank(prompt):
         ({"first_frame": [(300, 1500)]}, [("first_frame", "1:4 to 4:1")]),
     ],
 )
+@requires_tt_metal_policy
 def test_h3_keyframe_limits(images, errors):
-    request = _with_images(MiniMaxH3FL2VARequest(prompt="x"), **images)
+    request = _with_image_sizes(MiniMaxH3FL2VARequest(prompt="x"), **images)
     got = request.media_errors()
     assert [(name, index) for name, index, _ in got] == [(n, 0) for n, _ in errors]
     for (_, _, message), (_, expected) in zip(got, errors):
@@ -1370,8 +1477,8 @@ def test_h3_keyframe_limits(images, errors):
 @pytest.mark.parametrize(
     ("fields", "message"),
     [
-        ({"audios": ["https://x/a.wav"]}, "at least one reference image or video"),
-        ({}, "at least one reference image or video"),
+        ({"audios": ["https://x/a.wav"]}, "paired with at least one image or video"),
+        ({}, "needs at least one reference"),
         (
             {
                 "images": ["https://x/a.png"] * 9,
@@ -1388,6 +1495,7 @@ def test_h3_keyframe_limits(images, errors):
         ({"images": ["https://x/a.png"], "audios": ["/v1/jobs/j/content/0"]}, "audio"),
     ],
 )
+@requires_tt_metal_policy
 def test_h3_ref2va_rejects(fields, message):
     with pytest.raises(ValidationError, match=message):
         MiniMaxH3Ref2VARequest(prompt="x", **fields)
@@ -1406,33 +1514,114 @@ def test_h3_ref2va_rejects(fields, message):
         ({"videos": [_probe(1.5)]}, [("videos", 0, "2 to 15 s")]),
         (
             {"audios": [_probe(16.0, None, None)]},
-            [("audios", 0, "2 to 15 s"), ("audios", 0, "16 s of audio together")],
+            [("audios", 0, "2 to 15 s"), ("audios", None, "16 s of audio together")],
         ),
         # A video's soundtrack counts toward the audio limits.
         (
             {"videos": [_probe(5.0)], "audios": [_probe(11.0, None, None)]},
-            [("audios", 0, "16 s of audio together")],
+            [("audios", None, "16 s of audio together")],
         ),
         (
             {"videos": [_probe(3.0)] * 3, "audios": [_probe(3.0, None, None)]},
-            [("audios", 0, "4 audio references")],
+            [("audios", None, "4 audio references")],
         ),
-        ({"videos": [_probe(8.0), _probe(8.0)]}, [("videos", 1, "16 s together")]),
+        ({"videos": [_probe(8.0), _probe(8.0)]}, [("videos", None, "16 s together")]),
         ({"videos": [_probe(size=None)]}, [("videos", 0, "no video stream")]),
-        ({"videos": [_probe(size=(64, 300))]}, [("videos", 0, "1:4 to 4:1")]),
+        ({"videos": [_probe(size=(64, 300))]}, [("videos", 0, "within 1:4 and 4:1")]),
         ({"videos": [_probe(fps=None)]}, [("videos", 0, "no frame rate")]),
         ({"audios": [_probe(audio_channels=None)]}, [("audios", 0, "no audio stream")]),
         ({"audios": [_probe(audio_channels=6)]}, [("audios", 0, "mono or stereo")]),
     ],
 )
+@requires_tt_metal_policy
 def test_h3_reference_clip_limits(probes, errors):
     request = MiniMaxH3Ref2VARequest(prompt="x", images=["https://x/a.png"])
-    request._images = {"images": [Image.new("RGB", (64, 64))]}
+    request._image_sizes = {"images": [(64, 64)]}
     request._probes = probes
     got = request.media_errors()
     assert [(name, index) for name, index, _ in got] == [(n, i) for n, i, _ in errors]
     for (_, _, message), (_, _, expected) in zip(got, errors):
         assert expected in message
+
+
+def _admission_failing_with(monkeypatch, errors):
+    import domain.minimax_h3_request as h3
+
+    def admit_request(**kwargs):
+        raise h3.MiniMaxH3AdmissionError(errors)
+
+    monkeypatch.setattr(h3, "admit_request", admit_request)
+
+
+def test_h3_admission_errors_land_at_their_input_or_the_request(monkeypatch):
+    _admission_failing_with(
+        monkeypatch, [("images[0]", "bad image"), (None, "bad request")]
+    )
+    request = MiniMaxH3Ref2VARequest(prompt="x", images=["https://x/a.png"])
+    request._image_sizes = {"images": [(64, 64)]}
+    assert request.media_errors() == [
+        ("images", 0, "bad image"),
+        ("references", None, "bad request"),
+    ]
+
+
+async def test_a_request_level_error_is_at_the_field_alone(
+    generations_app, monkeypatch
+):
+    _admission_failing_with(
+        monkeypatch, [("images[0]", "bad image"), (None, "bad request")]
+    )
+    client, device = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={"prompt": "x", "images": [_data_uri()]},
+    )
+    assert response.status_code == 422
+    assert [(error["loc"], error["msg"]) for error in response.json()["detail"]] == [
+        (["body", "images", 0], "bad image"),
+        (["body", "references"], "bad request"),
+    ]
+    assert device.requests == []
+
+
+@requires_tt_metal_policy
+async def test_h3_ref2va_reports_every_bad_input_in_one_422(generations_app):
+    client, device = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={
+            "prompt": "x",
+            "images": [_data_uri(64, 300), _data_uri(), _data_uri(300, 64)],
+            "videos": [_clip_data_uri(8), _clip_data_uri(8)],
+        },
+    )
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert [error["loc"] for error in errors] == [
+        ["body", "images", 0],
+        ["body", "images", 2],
+        ["body", "videos"],
+    ]
+    assert errors[0]["msg"] == "images[0] must be within 1:4 and 4:1, got 64x300"
+    assert errors[1]["msg"] == "images[2] must be within 1:4 and 4:1, got 300x64"
+    assert "the clips are 16 s together" in errors[2]["msg"]
+    assert device.requests == []
+
+
+@requires_tt_metal_policy
+async def test_h3_keyframe_ratio_is_checked_by_tt_metal(generations_app):
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={"prompt": "x", "first_frame": _data_uri(300, 1500)},
+    )
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "first_frame"]
+    assert error["msg"] == (
+        "first_frame is 300x1500; its aspect ratio must be from 1:4 to 4:1"
+    )
+    assert device.requests == []
 
 
 _MP4 = "mov,mp4,m4a,3gp,3g2,mj2"
@@ -1476,6 +1665,7 @@ async def test_a_clip_in_another_format_is_422(generations_app):
     assert device.requests == []
 
 
+@requires_tt_metal_policy
 async def test_h3_keyframes_job(generations_app):
     client, device = generations_app("tt-minimax-h3-fl2va")
     device.video = lambda request: _sound_video(request.frames, 48000, 24)
@@ -1491,6 +1681,7 @@ async def test_h3_keyframes_job(generations_app):
     # The runner decodes the keyframe: only its file goes to the device, and
     # the field holds the data URI's digest.
     assert request._images == {}
+    assert request._image_sizes == {"first_frame": [(600, 800)]}
     assert Image.open(BytesIO(request._files["first_frame"][0])).size == (600, 800)
     assert request.first_frame.startswith("sha256:")
     (output,) = job["outputs"]
@@ -1499,6 +1690,28 @@ async def test_h3_keyframes_job(generations_app):
     assert output["duration"] == 124 / 24
 
 
+@requires_tt_metal_policy
+async def test_h3_sees_a_keyframes_upright_size(generations_app):
+    client, device = generations_app("tt-minimax-h3-fl2va")
+    device.video = lambda request: _sound_video(request.frames, 48000, 24)
+    # Stored landscape, shown portrait: EXIF orientation 6 is "rotate 90° CW".
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    Image.new("RGB", (800, 600)).save(buffer, format="JPEG", exif=exif)
+    keyframe = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
+        json={"prompt": "a lighthouse", "first_frame": keyframe},
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    assert request._image_sizes == {"first_frame": [(600, 800)]}
+    assert (request._width, request._height) == (768, 1024)
+
+
+@requires_tt_metal_policy
 async def test_h3_keyframe_out_of_limits_is_422(generations_app):
     client, device = generations_app("tt-minimax-h3-fl2va-lightx2v")
     response = await client.post(
@@ -1512,6 +1725,7 @@ async def test_h3_keyframe_out_of_limits_is_422(generations_app):
     assert device.requests == []
 
 
+@requires_tt_metal_policy
 async def test_h3_references_are_loaded_and_checked(generations_app):
     client, device = generations_app("tt-minimax-h3-ref2va")
     video, audio = _clip_data_uri(3), _clip_data_uri(2.5, video=False, channels=1)
@@ -1529,6 +1743,7 @@ async def test_h3_references_are_loaded_and_checked(generations_app):
     assert job["status"] == "completed", job
     (request,) = device.requests
     assert request._images == {}
+    assert request._image_sizes == {"images": [(64, 96)]}
     assert Image.open(BytesIO(request._files["images"][0])).size == (64, 96)
     # Only the files go to the device: each field holds its data URI's digest,
     # as the stored request does.
@@ -1566,6 +1781,80 @@ async def test_a_too_large_clip_is_413_naming_its_kind(generations_app, monkeypa
     )
     assert response.status_code == 413
     assert response.json()["detail"] == "A video input is over 10 bytes"
+
+
+_INLINE_CAP = "model_services.generation_service.MAX_INLINE_MEDIA_CHARS"
+
+
+async def test_inline_media_over_the_total_cap_is_413(generations_app, monkeypatch):
+    image, video = _data_uri(), _clip_data_uri(3)
+    total = len(image) + len(video)
+    monkeypatch.setattr(_INLINE_CAP, total - 1)
+    client, device = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={"prompt": "x", "images": [image], "videos": [video]},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        f"Inline media totals {total} characters, over the {total - 1}-character "
+        "cap; send large assets by URL"
+    )
+    assert device.requests == [] and (await client.get("/v1/jobs")).json() == []
+
+
+async def test_the_inline_cap_is_checked_before_any_fetch(generations_app, monkeypatch):
+    async def fetch(url, **kwargs):
+        raise AssertionError("fetched")
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    monkeypatch.setattr(_INLINE_CAP, 1)
+    client, _ = generations_app("tt-minimax-h3-ref2va")
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={
+            "prompt": "x",
+            "images": [_data_uri()],
+            "videos": ["https://example.com/a.mp4"],
+        },
+    )
+    assert response.status_code == 413
+
+
+async def test_media_urls_do_not_count_toward_the_inline_cap(
+    generations_app, monkeypatch
+):
+    png = base64.b64decode(_data_uri().split(",")[1])
+
+    async def fetch(url, **kwargs):
+        return png
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    monkeypatch.setattr(_INLINE_CAP, 0)
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN, json=_wan_body(first_frame="https://example.com/a.png")
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+
+
+async def test_inline_media_at_the_cap_is_accepted(generations_app, monkeypatch):
+    png = base64.b64decode(_data_uri().split(",")[1])
+
+    async def fetch(url, **kwargs):
+        return png
+
+    monkeypatch.setattr("model_services.generation_service.download_media_url", fetch)
+    image = _data_uri()
+    monkeypatch.setattr(_INLINE_CAP, len(image))
+    client, _ = _wan_app(generations_app)
+    response = await client.post(
+        _WAN,
+        json=_wan_body(first_frame=image, last_frame="https://example.com/b.png"),
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
 
 
 def test_the_service_downloads_no_weights(monkeypatch):
