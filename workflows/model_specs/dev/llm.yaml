@@ -7652,8 +7652,8 @@ templates:
 # request samples on the device (the head's top-10 sampler inside the traced
 # decode step: greedy, temperature / top-p, top-k <= 10). No prefix cache;
 # chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
-# step. The 1 M profile schedules asynchronously (the adapter's resident-input
-# chain) and runs one prefill chunk per 8 decode steps while users decode.
+# step. Both profiles schedule asynchronously (the adapter's resident-input
+# chain) and run one prefill chunk per 8 decode steps while users decode.
 #
 # Validated on an 8x4 (45 layers, OSL 128, tests/test_mk_e2e.py; decode as
 # tok/s per user): 1 M x 1 51.7 (TTFT 345 s), 1 M x 4 35.4 (TTFT 1,379 s),
@@ -7664,7 +7664,8 @@ templates:
 # Served from the 1 M profile (vLLM 0.31, the benchmark argv, sampled): 128 /
 # 128 x 1 TPOT 24.2 ms = 41.3 tok/s per user (the e2e 24.4 ms); median ITL
 # 25.2 ms at 128 x 4 (e2e 24.3), 27.7 ms at 8 K x 4 (e2e 26.9); texts identical
-# to the e2e at ISL 128 and 32 K x 4.
+# to the e2e at ISL 128 and 32 K x 4. The 128 K profile: 128 / 128 x 1 TPOT
+# 53.1 ms, x 16 median ITL 57.7 ms (15.6 tok/s per user, 135 tok/s).
 #
 # The stack's validated Galaxy knobs (galaxy_defaults.KNOBS: the 1D fabric, EP
 # experts, the DSA pool, the sparse-attention ladder and the prefill buckets
@@ -7796,9 +7797,13 @@ templates:
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
         prefill_chunk_alignment: 8192
-        decode_interleave_enabled: false
+        # one prefill chunk per 8 decode steps (see the 1 M profile): 8 K x 16 concurrent, median ITL 65.3 ms
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
       vllm_args:
         max_num_seqs: 16  # = the stack's construction width (the adapter refuses another)
+        async_scheduling: true  # the adapter's resident-input chain (see the 1 M profile)
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
         # one 8192-token prefill bucket per engine step plus one decode token per slot (see the 1 M profile)
         max_num_batched_tokens: 8208  # 8192 + 16
