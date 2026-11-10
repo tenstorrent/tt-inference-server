@@ -99,8 +99,9 @@ class VideoManager:
         """Export frames plus a soundtrack to a single muxed MP4.
 
         `audio` is `(channels, samples)` float in [-1, 1]. It goes to a temp WAV rather than a
-        pipe because ffmpeg reads only one stream from stdin. `-shortest` trims the two streams
-        to the common length; they round independently and differ slightly.
+        pipe because ffmpeg reads only one stream from stdin. Both streams are kept whole: they
+        round independently and differ slightly, and trimming to the shorter would drop video
+        frames whenever the audio rounds down.
         """
         if hasattr(frames, "frames"):
             pixel_format = getattr(frames, "pixel_format", pixel_format)
@@ -144,7 +145,6 @@ class VideoManager:
                     "aac",
                     "-b:a",
                     "192k",
-                    "-shortest",
                     "-movflags",
                     "+faststart",
                     output_path,
