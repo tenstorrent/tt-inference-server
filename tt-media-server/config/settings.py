@@ -80,14 +80,6 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
-    # SHM response deadline in SPRunner (server-side proxy to video_runner).
-    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
-    video_request_timeout_seconds: float = 300.0
-    # Deadline for SPRunner's warmup round-trip against the video pipeline.
-    # The ping is only sent when SP_REQUIRE_WARMUP_PING=true; default is a full
-    # hour because cold-start WAN with weight load + first compile across a
-    # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
-    sp_warmup_timeout_seconds: float = 6000.0
 
     # Canary monitor settings (see health_monitoring/).
     canary_enabled: bool = True
@@ -102,7 +94,6 @@ class Settings(BaseSettings):
     # Consecutive misses before the model is declared Dead.
     canary_dead_misses: int = 3
     # Startup grace period after is_ready before the first probe fires.
-    # For multihost pipelines set this >= sp_warmup_timeout_seconds.
     canary_startup_grace_seconds: float = 30.0
     # When True, every Nth probe replays the compiled warmup forward to certify device liveness.
     # Off by default: consumes device cycles and requires the warmup shape to avoid recompiles.
@@ -367,10 +358,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
             ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
-            ModelRunners.TT_MINIMAX_H3_T2VA.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-            ModelRunners.TT_MINIMAX_H3_FASTH3.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value,
         ]:
@@ -381,7 +370,6 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
-            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)
