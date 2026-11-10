@@ -343,6 +343,10 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    # Scan every trial's trajectory for commands that reach for the reference
+    # solution (code-host fetches, git history beyond the base commit) and
+    # report the flagged trials (see llm_module/agentic/leak_scan.py).
+    leak_scan: bool = False
     # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
     # environment is docker and the image is not already local, e.g. the base
     # image every trial's environment build starts FROM: concurrent trials

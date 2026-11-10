@@ -45,6 +45,10 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 from llm_module.agentic.deepswe import DEEPSWE_DATASET, generate_deepswe
+from llm_module.agentic.swebench_pro import (
+    SWEBENCH_PRO_DATASET,
+    generate_swebench_pro,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -222,8 +226,10 @@ def _move_into_place(tmp: Path, dest: Path) -> None:
 # Eval-config dataset name -> generator. A generator receives the EVALS_AGENTIC
 # interpreter, whose editable Harbor install carries the adapters, and returns
 # the directory of generated tasks. A dataset that is not in the registry at
-# all (DeepSWE) is checked out here too.
+# all (DeepSWE) is checked out here too, and SWE-bench Pro is rebuilt without
+# the upstream fix in the agent's reach.
 _GENERATORS: Dict[str, Callable[[Path], Path]] = {
     TAU3_BENCH_DATASET: _generate_tau3_bench,
     DEEPSWE_DATASET: generate_deepswe,
+    SWEBENCH_PRO_DATASET: generate_swebench_pro,
 }

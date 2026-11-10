@@ -22,6 +22,7 @@ from llm_module.request_overrides import (
     resolve_request_body,
 )
 from ..agentic.harbor import HarborRunConfig, harbor_python, run as run_harbor
+from ..agentic.leak_scan import write_leak_scan
 from ..agentic.local_datasets import prepare_local_dataset
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
@@ -163,7 +164,10 @@ class HarborAgenticDriver(AgenticEvalDriver):
             )
             run_config = replace(run_config, dataset_path=dataset_path)
         rc = run_harbor(run_config)
-        return self._load_result(rc, self.result_path(server, context))
+        result_path = self.result_path(server, context)
+        if rc == 0 and getattr(_cfg, "leak_scan", False) and result_path.exists():
+            write_leak_scan(result_path.parent, result_path, dataset_path)
+        return self._load_result(rc, result_path)
 
 
 def _agentic_venv_python() -> Optional[Path]:

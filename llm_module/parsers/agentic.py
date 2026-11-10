@@ -61,6 +61,9 @@ class AgenticEvalParser(LLMResultParser):
         if self.result_path is not None:
             targets["job_result_path"] = str(self.result_path)
         _attach_harbor_targets(targets, metrics)
+        if isinstance(raw.get("leak_scan"), Mapping):
+            # Written by the driver when the task enables leak_scan.
+            targets["leak_scan"] = dict(raw["leak_scan"])
 
         return Block(
             kind=self.kind,
