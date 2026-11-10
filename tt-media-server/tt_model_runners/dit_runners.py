@@ -2022,16 +2022,48 @@ class TTMiniMaxH3ImageRunner(TTDiTRunner):
         self.image_manager = ImageManager("img")
 
     def _weights_dir(self) -> str:
+        """A converted snapshot directory. A release snapshot as published on Hugging Face is converted once, on
+        first start, into the writable cache (`MINIMAX_H3_IMAGE_CONVERTED_DIR`, default beside the tt_dit cache),
+        with `text_encoder/` linked from the snapshot or from `MINIMAX_H3_TEXT_ENCODER_DIR`."""
         configured = self.settings.model_weights_path
-        if configured and os.path.isdir(configured):
-            return configured
         env = os.environ.get("MINIMAX_H3_IMAGE_MODEL_PATH")
-        if env and os.path.isdir(env):
-            return env
-        raise FileNotFoundError(
-            "MiniMax-H3-Image weights not found: set MINIMAX_H3_IMAGE_MODEL_PATH (or MODEL_WEIGHTS_DIR) to a "
-            f"converted snapshot directory (model_weights_path={configured!r})"
+        source = next((p for p in (configured, env) if p and os.path.isdir(p)), None)
+        if source is None:
+            raise FileNotFoundError(
+                "MiniMax-H3-Image weights not found: set MINIMAX_H3_IMAGE_MODEL_PATH (or MODEL_WEIGHTS_DIR) to a "
+                f"release or converted snapshot directory (model_weights_path={configured!r})"
+            )
+        from models.tt_dit.pipelines.minimax_h3 import convert_h3_image as converter
+
+        if converter.is_converted(source):
+            return source
+        if not converter.is_release_snapshot(source):
+            raise FileNotFoundError(f"{source} is neither a MiniMax-H3-Image release snapshot nor a converted one")
+        cache_root = os.environ.get("TT_DIT_CACHE_DIR") or os.path.dirname(os.path.abspath(source))
+        out = os.environ.get("MINIMAX_H3_IMAGE_CONVERTED_DIR") or os.path.join(
+            os.path.dirname(os.path.abspath(cache_root)), "MiniMax-H3-Image-converted"
         )
+        marker = os.path.join(out, ".converted")
+        if not os.path.isfile(marker):
+            import fcntl
+
+            os.makedirs(out, exist_ok=True)
+            with open(os.path.join(out, ".lock"), "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)  # one converter per host; others wait, then see the marker
+                if not os.path.isfile(marker):
+                    self.logger.info(f"Device {self.device_id}: converting {source} -> {out} (first start only)")
+                    converter.convert(source, out)
+                    open(marker, "w").close()
+        text_encoder = os.path.join(out, "text_encoder")
+        if not os.path.exists(text_encoder):
+            candidate = os.environ.get("MINIMAX_H3_TEXT_ENCODER_DIR") or os.path.join(source, "text_encoder")
+            if not os.path.isfile(os.path.join(candidate, "config.json")):
+                raise FileNotFoundError(
+                    "MiniMax-H3-Image needs MiniMax-H3's Qwen3-VL text encoder: put it at <snapshot>/text_encoder "
+                    f"or set MINIMAX_H3_TEXT_ENCODER_DIR (looked in {candidate})"
+                )
+            os.symlink(os.path.abspath(candidate), text_encoder)
+        return out
 
     def create_pipeline(self):
         # Imported here so a tt-metal tree without the H3-Image port still imports this module.
@@ -2057,11 +2089,12 @@ class TTMiniMaxH3ImageRunner(TTDiTRunner):
         return _minimax_h3_device_params(self.settings.device_mesh_shape)
 
     def _warm(self):
-        """Compile every program the serving path uses: one t2i and one edit at 2K."""
+        """Compile every program the serving path uses: a 4K t2i (the default size; its VAE decode runs the most
+        waves) and a 2K edit (the vision tower and the VAE encoder)."""
         import time
 
         started = time.perf_counter()
-        self.pipeline("warmup", width=2048, height=2048, seed=0)
+        self.pipeline("warmup", width=4096, height=4096, seed=0)
         reference = Image.new("RGB", (1024, 1024), (128, 128, 128))
         self.pipeline("warmup", width=2048, height=2048, seed=0, images=[reference])
         self.logger.info(
