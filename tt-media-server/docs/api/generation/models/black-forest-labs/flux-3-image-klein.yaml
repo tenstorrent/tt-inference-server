@@ -97,9 +97,13 @@ components:
           items:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
-            Reference to edit: 0 or 1 for now; a list so more can be allowed
-            later without a schema change. Omitted = text to image. Resized and
-            center-cropped to the output size.
+            Image to edit: 0 or 1 for now; a list so more can be allowed later
+            without a schema change. Omitted = text to image. Turned upright (EXIF
+            orientation) and kept at its aspect ratio: scaled down, never up, to a
+            canvas of at most 4 MP with sides of 64–4096 px (rounded up to 16 px,
+            the border padded with the image's mirrored edge), never cropped. Any
+            size up to 89,478,485 pixels (PIL's decompression-bomb limit) and 30 MB
+            is accepted.
         count:
           type: integer
           minimum: 1
