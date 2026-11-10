@@ -11,9 +11,10 @@ resolution and batch size — so a shift in the timing metrics can be attributed
 to a change in the incoming workload rather than to the engine.
 
 Recorded once per client request in :meth:`ImageService.pre_process`, before
-segmentation. ``create_segment_request`` fans a multi-image request out into
-one request per image, so recording in a runner would count one client request
-several times and misreport the arrival rate.
+segmentation, and for the generations API's image jobs in
+:meth:`GenerationService.process_request`. ``create_segment_request`` fans a
+multi-image request out into one request per image, so recording in a runner
+would count one client request several times and misreport the arrival rate.
 
 Batch size in particular is ONLY observable here. The `batch` label on the
 stage metrics is the device-side batch — ``max(self.batch_size -
@@ -37,6 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover
     # and importing it at runtime here would bind this module to that Mock for
     # the rest of the session. `from __future__ import annotations` makes the
     # annotations below strings, so nothing is needed at runtime.
+    from domain.generation_request import GenerationRequest
     from domain.image_generate_request import ImageGenerateRequest
 
 logger = TTLogger()
@@ -76,10 +78,17 @@ _BUCKET_RESOLUTIONS = (
     (1024, 1024),
     (1024, 1536),
     (1536, 1536),
+    (2048, 2048),
 )
 _MEGAPIXEL_BUCKETS = tuple(
-    width * height / _PIXELS_PER_MEGAPIXEL for width, height in _BUCKET_RESOLUTIONS
-) + (4.0, 8.0, float("inf"))
+    sorted(
+        [
+            width * height / _PIXELS_PER_MEGAPIXEL
+            for width, height in _BUCKET_RESOLUTIONS
+        ]
+        + [4.0, 8.0]
+    )
+) + (float("inf"),)
 
 # guidance_scale is validated to 1.0..20.0. Values cluster low, so the ladder
 # is denser there; the tail past 20 exists only to make an out-of-range request
@@ -202,4 +211,34 @@ def observe_image_request(request: ImageGenerateRequest, model_type: str) -> Non
             )
 
     except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"image request metrics: failed to record request shape: {e}")
+
+
+def observe_generation_image_request(
+    request: GenerationRequest, model_type: str
+) -> None:
+    """Record the shape of one image job of the generations API.
+
+    An edit if the request has input images, else text to image. The output
+    size is the one the service resolved at submit, so it is recorded even
+    when the size follows from an input image. None of these models take steps
+    or a guidance scale, so those are not observed.
+
+    Never raises: a telemetry fault must not fail a generation.
+    """
+    try:
+        has_images = any(
+            values and request.media_kind(name) == "image"
+            for name, values in request.media().items()
+        )
+        conditioning = CONDITIONING_EDIT if has_images else CONDITIONING_TEXT_TO_IMAGE
+        labels = (model_type, conditioning)
+
+        requests_by_shape_total.labels(*labels).inc()
+        requested_images.labels(*labels).observe(getattr(request, "count", 1))
+        if request._width and request._height:
+            requested_megapixels.labels(*labels).observe(
+                request._width * request._height / _PIXELS_PER_MEGAPIXEL
+            )
+    except Exception as e:
         logger.warning(f"image request metrics: failed to record request shape: {e}")
