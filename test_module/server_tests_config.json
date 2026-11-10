@@ -45,7 +45,9 @@
       "genmo/mochi-1-preview",
       "Lightricks/LTX-2.3-distilled",
       "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V",
-      "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"
+      "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V",
+      "MiniMaxAI/MiniMax-H3-FL2VA",
+      "MiniMaxAI/MiniMax-H3-Ref2VA"
     ],
     "LLM": [
       "openai/gpt-oss-120b",
@@ -169,7 +171,9 @@
       "ideogram4": "Ideogram 4 generation API tests",
       "ltx_distilled": "LTX-2.3 22B distilled generation API tests",
       "minimax_h3_fl2va_lightx2v": "MiniMax-H3 FL2VA LightX2V generation API tests",
-      "minimax_h3_ref2va_lightx2v": "MiniMax-H3 Ref2VA LightX2V generation API tests"
+      "minimax_h3_ref2va_lightx2v": "MiniMax-H3 Ref2VA LightX2V generation API tests",
+      "minimax_h3_fl2va": "MiniMax-H3 FL2VA generation API tests",
+      "minimax_h3_ref2va": "MiniMax-H3 Ref2VA generation API tests"
     }
   },
   "model_configs": {
@@ -1175,6 +1179,26 @@
       "id_name": "minimax-h3-ref2va-lightx2v",
       "weights": [
         "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "minimax_h3_fl2va": {
+      "id_name": "minimax-h3-fl2va",
+      "weights": [
+        "MiniMaxAI/MiniMax-H3-FL2VA"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "minimax_h3_ref2va": {
+      "id_name": "minimax-h3-ref2va",
+      "weights": [
+        "MiniMaxAI/MiniMax-H3-Ref2VA"
       ],
       "category": "VIDEO",
       "compatible_devices": [

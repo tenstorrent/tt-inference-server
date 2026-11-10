@@ -70,6 +70,8 @@ VIDEO_INFERENCE_STEPS = {
     "Wan-AI/Wan2.2-I2V-Lightning": 4,
     "Wan-AI/Wan2.2-I2V-LoRA": 40,
     # Pinned by the runner and refused in the request; labels the rows only.
+    "MiniMaxAI/MiniMax-H3-FL2VA": 49,
+    "MiniMaxAI/MiniMax-H3-Ref2VA": 49,
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
     "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
     # LTX-2.3 distilled fixes its own schedule: 8 forwards at half resolution,

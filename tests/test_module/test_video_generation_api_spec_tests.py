@@ -43,7 +43,10 @@ MEDIA_SERVER = Path(__file__).resolve().parents[2] / "tt-media-server"
 LTX = "Lightricks/LTX-2.3-distilled"
 FL2VA = "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V"
 REF2VA = "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V"
-DEPLOYMENTS = (LTX, FL2VA, REF2VA)
+# The base MiniMax-H3 models take the same requests at their own 50 steps.
+BASE_FL2VA = "MiniMaxAI/MiniMax-H3-FL2VA"
+BASE_REF2VA = "MiniMaxAI/MiniMax-H3-Ref2VA"
+DEPLOYMENTS = (LTX, BASE_FL2VA, BASE_REF2VA, FL2VA, REF2VA)
 
 
 @pytest.fixture(autouse=True)
@@ -603,4 +606,5 @@ def test_ltx_is_benchmarked_and_evaluated_through_the_generations_api():
     )
     # Text to video at its one shape: no step count, no image.
     assert payload == {"prompt": "a boat", "seed": 42}
-    assert LTX in VIDEO_INFERENCE_STEPS
+    # The benchmark skips a model it has no step count for.
+    assert set(DEPLOYMENTS) <= set(VIDEO_INFERENCE_STEPS)

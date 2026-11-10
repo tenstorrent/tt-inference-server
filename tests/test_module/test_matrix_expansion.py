@@ -200,12 +200,16 @@ class TestVideoMatrixExpansion:
         "mochi-p150x8",
         "mochi-p300x2",
         "ltx-distilled-blackhole_galaxy",
+        "minimax-h3-fl2va-blackhole_galaxy",
+        "minimax-h3-ref2va-blackhole_galaxy",
         "minimax-h3-fl2va-lightx2v-blackhole_galaxy",
         "minimax-h3-ref2va-lightx2v-blackhole_galaxy",
     }
     # The video models with sound run the generation API's video spec tests.
     SOUND_VIDEO_SUITE_IDS = (
         "ltx-distilled-blackhole_galaxy",
+        "minimax-h3-fl2va-blackhole_galaxy",
+        "minimax-h3-ref2va-blackhole_galaxy",
         "minimax-h3-fl2va-lightx2v-blackhole_galaxy",
         "minimax-h3-ref2va-lightx2v-blackhole_galaxy",
     )

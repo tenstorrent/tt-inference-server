@@ -10842,6 +10842,44 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-H3-FL2VA",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-H3-Ref2VA",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-H3-FL2VA-LightX2V",
         tasks=[
             EvalTask(
