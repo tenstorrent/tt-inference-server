@@ -26,6 +26,7 @@ from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
 from PIL import UnidentifiedImageError
+from telemetry.image_request_metrics import observe_generation_image_request
 from telemetry.telemetry_client import (
     VIDEO_REQUEST_TYPE_I2V,
     VIDEO_REQUEST_TYPE_T2V,
@@ -339,13 +340,15 @@ class GenerationService(BaseJobService):
                 setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
-        """Run one job; a video job is reported to the video metric family, as
-        VideoService does on /v1/videos.
+        """Run one job. An image job records its request shape, as ImageService
+        does on /v1/images. A video job is reported to the video metric family,
+        as VideoService does on /v1/videos.
 
         Timing uses ``monotonic``: the wall clock can step during a generation
         that runs for minutes.
         """
         if input_request.OUTPUT_TYPE != "video":
+            observe_generation_image_request(input_request, settings.model_runner)
             return await super().process_request(input_request)
         model_type = settings.model_runner
         request_type = _video_request_type(input_request)
