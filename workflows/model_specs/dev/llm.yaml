@@ -1830,10 +1830,12 @@ templates:
     # total). Needs vllm-tt-plugin main (vLLM 0.31): the older plugin branches lack the speculative K-by-rows contract.
     # Bring-up validation (2026-11-10, 32 prompts, greedy): output identical to the tt-metal text demo at TP=8 DP=4.
     # Decode tok/s/user: 115 at c1, 110 at c8, 76 at c32 (2.4k tok/s aggregate); mean accepted length ~4.0 light load,
-    # ~2.8 at 8 sequences per rank. Context was exercised only up to 8192 tokens, so max_context is 8192, not 131056.
+    # ~2.8 at 8 sequences per rank. Context runs to the model limit, 131056 (131072 less the 16 rows the engine writes
+    # past the last position): needle prompts of 30K x8, 61K x4, 95K x4, 121K x4 and 130K x4 tokens, concurrent across
+    # the four replicas, all answered with their passphrase; no prefill chunking, so max_num_batched_tokens covers one.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # 8 per engine x 4 engines (vllm_args are per engine)
-      max_context: 8192
+      max_context: 131056
       default_impl: false
       env_vars:
         TT_MODEL_CLASS_OVERRIDES: "TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerDFlash2ForCausalLM"
@@ -1852,8 +1854,8 @@ templates:
         api-server-count: "1"
         block_size: "32"
         max_num_seqs: "8"
-        max_model_len: "8192"
-        max_num_batched_tokens: "8192"
+        max_model_len: "131056"
+        max_num_batched_tokens: "131072"
         no-enable-prefix-caching: true
         no-enable-chunked-prefill: true
         no-async-scheduling: true
