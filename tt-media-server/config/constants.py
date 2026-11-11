@@ -964,6 +964,8 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    # The whole Galaxy: the DiT sequence- and tensor-parallel over the 4x8
+    # ring, its prompt upsampler on the first chip. No smaller mesh has run.
     (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,

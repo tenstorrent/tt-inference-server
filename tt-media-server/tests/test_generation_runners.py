@@ -317,7 +317,22 @@ class _Flux3Pipeline:
         return SimpleNamespace(
             image=Image.new("RGB", (request.width, request.height)),
             prompt=f"a detailed caption of {request.prompt}",
+            timings={
+                "upsample": 1.0,
+                "encode": 0.5,
+                "encode_reference": 0.25,
+                "denoise": 2.0,
+                "decode": 0.5,
+                "to_host": 0.1,
+            },
         )
+
+
+class _StageRecorder:
+    flushed = "never"
+
+    def flush(self, images=None, resolution=None):
+        self.flushed = images
 
 
 @pytest.fixture
@@ -348,6 +363,27 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     )
     assert image.size == (2048, 2048)
     assert image.info["prompt"] == "a detailed caption of a cat"
+
+
+def test_flux3_records_the_pipeline_stage_times(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert recorder.flushed == [image]
+    assert recorder.engine_seconds == pytest.approx(4.35)
+    assert (recorder.denoise_seconds, recorder.vae_seconds) == (2.0, 0.5)
+    assert recorder.conditioning_seconds == {"all": 1.75}
+
+
+def test_flux3_records_a_failed_run_too(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    flux3_runner.pipeline.generate = Mock(side_effect=RuntimeError("device"))
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    with pytest.raises(RuntimeError):
+        flux3_runner.run([request])
+    assert recorder.flushed is None
 
 
 def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner):

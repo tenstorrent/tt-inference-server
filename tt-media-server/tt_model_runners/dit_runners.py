@@ -81,7 +81,7 @@ dit_runner_log_map = {
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
     ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
-    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: "FLUX.3-image-klein",
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: "FLUX.3 Image klein",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",

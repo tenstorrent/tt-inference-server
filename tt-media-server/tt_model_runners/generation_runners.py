@@ -462,19 +462,41 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             # Submit decoded the same bytes and refused a corrupt file with 422;
             # whatever still fails here fails the job, not the worker.
             raise ValueError(f"an input could not be decoded: {e}") from e
-        result = self.pipeline.generate(
-            Flux3KleinRequest(
-                prompt=request._prompt,
-                width=request._width,
-                height=request._height,
-                seed=request._seed,
-                steps=self._steps(FLUX3_KLEIN_STEPS, request),
-                images=images,
+        recorder = self._image_stage_recorder()
+        output = None
+        try:
+            result = self.pipeline.generate(
+                Flux3KleinRequest(
+                    prompt=request._prompt,
+                    width=request._width,
+                    height=request._height,
+                    seed=request._seed,
+                    steps=self._steps(FLUX3_KLEIN_STEPS, request),
+                    images=images,
+                )
             )
-        )
-        # the upsampled caption, which the output reports as its prompt
-        result.image.info["prompt"] = result.prompt
-        return [result.image]
+            # the upsampled caption, which the output reports as its prompt
+            result.image.info["prompt"] = result.prompt
+            output = [result.image]
+            if recorder is not None:
+                # The pipeline sends no events; its result carries the stage
+                # times (upsample, encode, encode_reference, denoise, decode,
+                # to_host).
+                timings = result.timings
+                recorder.engine_seconds = sum(timings.values())
+                recorder.denoise_seconds = timings.get("denoise")
+                recorder.vae_seconds = timings.get("decode")
+                recorder.conditioning_seconds = {
+                    "all": sum(
+                        timings.get(stage, 0.0)
+                        for stage in ("upsample", "encode", "encode_reference")
+                    )
+                }
+        finally:
+            # A failed run is recorded too, as a run with no output.
+            if recorder is not None:
+                recorder.flush(output)
+        return output
 
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
