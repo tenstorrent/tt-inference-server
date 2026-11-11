@@ -20,6 +20,8 @@ on:
     types:
       - completed
 
+permissions: {}
+
 jobs:
   produce-cicd-data:
     runs-on: ubuntu-latest
