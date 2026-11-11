@@ -2,26 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""LoRA fine-tuning runner backed by tt-blacksmith's ``CrankLLMTrainer``."""
+"""LoRA fine-tuning runner backed by ttml's ``SFTTrainer`` (tt-metal's tt-train)."""
 
 import contextlib
 import math
 from typing import Optional
 
-import torch
-from blacksmith.configs import (
-    CheckpointConfig,
-    CustomDatasetConfig,
-    LLMTrainerConfig,
-    LoggingConfig,
-    LoraConfig,
-    MetricsConfig,
-)
-from blacksmith.models.hf_models import TORCH_DTYPES
-from blacksmith.tools.trainer.strategies.crank_llm_trainer import (
-    IGNORED_INDEX,
-    CrankLLMTrainer,
-)
 from config.constants import (
     DatasetLoaders,
     ModelNames,
@@ -30,12 +16,22 @@ from config.constants import (
 )
 from domain.training_request import TrainingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+from tt_model_runners.training_runners.callbacks import (
     AdapterCheckpointCallback,
     JobControlCallback,
     JobMetricsCallback,
     StopTraining,
 )
+from ttml.unified_trainer import (
+    CheckpointConfig,
+    CustomDatasetConfig,
+    LoggingConfig,
+    LoraConfig,
+    MetricsConfig,
+    SFTTrainer,
+    SFTTrainerConfig,
+)
+from ttml.unified_trainer.data import IGNORED_INDEX
 from utils.decorators import log_execution_time
 
 DATASET_IDS = {
@@ -45,7 +41,7 @@ DATASET_IDS = {
 }
 
 
-class TrainerTrainingLoraRunner(BaseDeviceRunner):
+class TtmlTrainingLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
         if not self.settings.training_model:
@@ -63,13 +59,12 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
     def _is_multichip(self) -> bool:
         return math.prod(self.settings.device_mesh_shape) > 1
 
-    @log_execution_time("Setting up trainer-backed LoRA training")
+    @log_execution_time("Setting up ttml LoRA training")
     async def warmup(self) -> bool:
         if self._is_multichip:
             raise NotImplementedError(
                 f"{type(self).__name__} supports single-chip training only, but "
-                f"device_mesh_shape is {self.settings.device_mesh_shape}. See the "
-                "MULTICHIP TODO at the top of this module."
+                f"device_mesh_shape is {self.settings.device_mesh_shape}."
             )
 
         self._metrics_callback = JobMetricsCallback(self.logger)
@@ -79,7 +74,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         self._control_callback = JobControlCallback(self.logger)
         # Order matters: the control callback stops the loop by raising, so the
         # metrics and checkpoint callbacks have to see the final step first.
-        self._trainer = CrankLLMTrainer(
+        self._trainer = SFTTrainer(
             callbacks=[
                 self._metrics_callback,
                 self._checkpoint_callback,
@@ -88,7 +83,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         )
         return True
 
-    @log_execution_time("Trainer-backed LoRA training")
+    @log_execution_time("ttml LoRA training")
     def run(self, training_requests: list) -> list:
         if len(training_requests) > 1:
             self.logger.warning(
@@ -123,19 +118,12 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             with contextlib.suppress(StopTraining):
                 trainer.train()
         finally:
+            # Closes the device the job opened, so the next job opens it afresh.
             try:
                 trainer.cleanup()
             except Exception as cleanup_error:
                 self.logger.error(
                     f"Device {self.device_id}: trainer cleanup failed: {cleanup_error}"
-                )
-            # Each job compiles the loss afresh; drop the previous job's graphs so
-            # they neither hold memory nor count toward dynamo's recompile limit.
-            try:
-                torch._dynamo.reset()
-            except Exception as reset_error:
-                self.logger.error(
-                    f"Device {self.device_id}: dynamo reset failed: {reset_error}"
                 )
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
@@ -146,7 +134,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         return [request._output_model_path]
 
     def _setup_trainer(self, trainer, request: TrainingRequest) -> None:
-        # TODO(mmilosevicTT): Log from a trainer callback once setup() has one before the model loads.
         self.logger.info(
             "Downloading and preparing model weights for training.",
             extra={"log_type": "info", "step": 0},
@@ -165,22 +152,19 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             raise ValueError(error)
 
     def _validation_error(self, request: TrainingRequest) -> Optional[str]:
+        # The dtype and LoRA targets are the model's to check: `setup` rejects
+        # them before it opens the device or downloads weights.
         if request.device_type != self.settings.device:
             return (
                 f"Request device '{request.device_type}' does not match "
                 f"server device '{self.settings.device}'"
-            )
-        if request.dtype not in TORCH_DTYPES:
-            return (
-                f"Unsupported dtype '{request.dtype}'; "
-                f"expected one of {sorted(TORCH_DTYPES)}"
             )
         if request.dataset_loader not in DATASET_IDS:
             return (
                 f"Unsupported dataset_loader '{request.dataset_loader}'; "
                 f"expected one of {sorted(DATASET_IDS)}"
             )
-        # CrankLLMTrainer always builds AdamW and masks labels with a fixed index.
+        # SFTTrainer always builds AdamW and masks labels with a fixed index.
         if request.optimizer != TrainingOptimizers.ADAMW.value:
             return (
                 f"Unsupported optimizer '{request.optimizer}'; "
@@ -192,18 +176,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 f"expected {IGNORED_INDEX}"
             )
         return None
-
-    def _logging_config(self) -> LoggingConfig:
-        return LoggingConfig(
-            log_level="INFO",
-            use_wandb=False,
-            wandb_project="",
-            wandb_run_name=f"tt-media-server-{self.device_id}",
-            wandb_tags=[],
-            wandb_watch_mode="gradients",
-            wandb_log_freq=0,
-            model_to_wandb=False,
-        )
 
     def _custom_dataset_config(
         self, request: TrainingRequest
@@ -218,8 +190,10 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             column_mapping=request.column_mapping,
         )
 
-    def _job_config(self, request: TrainingRequest) -> LLMTrainerConfig:
-        return LLMTrainerConfig(
+    def _job_config(self, request: TrainingRequest) -> SFTTrainerConfig:
+        # No max_steps: JobControlCallback enforces the request's, so the run
+        # still ends through StopTraining like a cancellation.
+        return SFTTrainerConfig(
             dataset_id=DATASET_IDS[request.dataset_loader],
             custom_dataset=self._custom_dataset_config(request),
             model_name=self.model_name,
@@ -230,29 +204,21 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             weight_decay=request.weight_decay,
             gradient_accumulation_steps=request.gradient_accumulation_steps,
             val_steps_freq=request.val_steps_freq,
-            logging=self._logging_config(),
+            logging=LoggingConfig(
+                log_level="INFO",
+                use_wandb=False,
+                wandb_run_name=f"tt-media-server-{self.device_id}",
+            ),
             metrics=MetricsConfig(
                 steps_freq=request.steps_freq,
                 train_metrics=["loss"],
                 val_metrics=["loss"],
             ),
-            # Only AdapterCheckpointCallback saves, so the rotation and
-            # init-from-checkpoint settings below are never acted on.
+            # Only AdapterCheckpointCallback saves, and these are all it reads.
             checkpoint=CheckpointConfig(
                 steps_freq=max(request.save_interval, 1),
-                epoch_freq=1,
                 save_strategy="step" if request.save_interval > 0 else "none",
                 project_dir=request._output_model_path or "",
-                final_checkpoint_name="adapter",
-                save_optim=False,
-                keep_last_n=1,
-                keep_best_n=0,
-                keep_all_checkpoints=True,
-                checkpoint_metric="val/loss",
-                checkpoint_metric_mode="min",
-                init_from_checkpoint=False,
-                init_option="last",
-                checkpoint_path="",
             ),
             lora=LoraConfig(
                 r=request.lora_r,
@@ -261,11 +227,5 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 task_type=request.lora_task_type,
             ),
             seed=request.seed,
-            deterministic=False,
-            use_tt=True,
-            mesh_shape=None,
-            mesh_axis_names=None,
-            input_sharding_dim=None,
-            model_sharding_patterns=None,
             max_length=request.dataset_max_sequence_length,
         )

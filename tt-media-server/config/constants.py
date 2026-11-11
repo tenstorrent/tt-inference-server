@@ -173,9 +173,7 @@ class ModelRunners(Enum):
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
     TT_XLA_YOLOX_NANO = "tt-xla-yolox-nano"
-    TRAINING_LORA = "training-lora"
-    TRAINER_TRAINING_LORA = "trainer-training-lora"
-    TRAINING_GEMMA_LORA = "training-gemma-lora"
+    TTML_TRAINING_LORA = "ttml-training-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
@@ -264,9 +262,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
-        ModelRunners.TRAINING_GEMMA_LORA,
-        ModelRunners.TRAINING_LORA,
-        ModelRunners.TRAINER_TRAINING_LORA,
+        ModelRunners.TTML_TRAINING_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -1937,37 +1933,9 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
-    # Training runners download their own weights: from_pretrained(repo_id) fetches into
+    # The training runner downloads its own weights: ttml fetches them into
     # $HF_HOME/hub on first load, so a startup download would only add an unused copy.
-    (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.TRAINING_LORA, DeviceTypes.P300): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
+    (ModelRunners.TTML_TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,

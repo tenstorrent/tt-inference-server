@@ -385,20 +385,22 @@ diffusion_gemma_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/diffusion_gemma",
 )
-training_lora_impl = ImplSpec(
-    impl_id="training_lora",
-    impl_name="training-lora",
-    repo_url="https://github.com/tenstorrent/tt-inference-server",
-    code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
-)
-# tt-blacksmith-backed LoRA runner (CrankLLMTrainer). Distinct impl_id so it does
-# not collide with the legacy `training_lora` on the same (model_name, device);
-# selectable via --impl trainer-training-lora.
+# The tt-blacksmith LoRA runner of the released prod training spec, which runs it
+# from its pinned forge image. The runner is no longer in this tree, so code_path
+# only resolves at the spec's pinned commit.
 trainer_training_lora_impl = ImplSpec(
     impl_id="trainer_training_lora",
     impl_name="trainer-training-lora",
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
+)
+# ttml-backed LoRA runner (tt-metal's tt-train SFTTrainer), on the tt-metal media
+# server image rather than the forge one; selectable via --impl ttml-training-lora.
+ttml_training_lora_impl = ImplSpec(
+    impl_id="ttml_training_lora",
+    impl_name="ttml-training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/training_runners/ttml_training_lora_runner.py",
 )
 
 quetzal_impl = ImplSpec(
@@ -507,8 +509,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
-    "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
+    "ttml_training_lora": ttml_training_lora_impl,
     "blaze": blaze_impl,
 }
 

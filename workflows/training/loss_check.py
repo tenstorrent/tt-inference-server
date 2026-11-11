@@ -4,7 +4,7 @@
 
 """Pure loss-trajectory checking for the training workflow.
 
-The forge server exposes per-step LoRA training loss via
+The media server exposes per-step LoRA training loss via
 ``GET /v1/jobs/{id}/metrics`` as a list of records shaped like::
 
     {"global_step": 5, "metric_name": "train_loss", "value": 5.71, ...}
@@ -15,10 +15,8 @@ produces ``spec_tests``-shaped report records (consumed by
 
 It is deliberately free of any HTTP / server / torch dependency so the whole
 grading logic is unit-testable on a laptop. The expectation is intentionally
-LOOSE ("did it converge?"), mirroring tt-blacksmith's own golden checks
-(``rtol=0.5, atol=0.1``): the forge runner trains non-deterministically
-(``seed=0`` but ``deterministic=False``), so exact per-step equality is not a
-usable gate.
+LOOSE ("did it converge?"): the trajectory moves with the tt-metal build the
+server image carries, so exact per-step equality is not a usable gate.
 """
 
 from __future__ import annotations

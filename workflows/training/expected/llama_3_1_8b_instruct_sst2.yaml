@@ -3,27 +3,19 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 #
 # Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B-Instruct on
-# SST-2, run through the forge server's `trainer-training-lora` runner
-# (tt-blacksmith CrankLLMTrainer). Shared as the reference curve for the P150,
-# P300, and P300x2 devices (see workflows/training/registry.py).
+# SST-2, run through the media server's `ttml-training-lora` runner (tt-metal's
+# tt-train SFTTrainer) on P150 (see workflows/training/registry.py).
 #
-# IMPORTANT: these values are NOT tt-blacksmith's golden CSVs. The forge runner
-# builds its LLMTrainerConfig directly from the TrainingRequest below (seed=0,
-# deterministic=False) rather than through tt-blacksmith's pytest test-mode, so
-# the trajectory differs. Regenerate from a known-good P150 run whenever the
-# blacksmith pin (tt-media-server/.../forge_training_runners/requirements.txt)
-# or the tt-crank wheel changes.
-#
-# Regenerated from a single-chip P150 run on 2026-09-28 (blacksmith pin
-# 0a3c097). Because the runner is non-deterministic (deterministic=False),
-# treat these as a reference trajectory, not exact goldens — re-regenerate if the
-# blacksmith/forge pins move.
+# expected_losses is empty until a P150 run on an image built with
+# BUILD_TT_TRAIN=true records the trajectory; until then the gate grades only
+# the checks below. Regenerate whenever the tt-metal commit of the image moves.
 
 # Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
 # small so a nightly P150 job stays bounded while still exercising the full
 # submit -> train -> metrics path. Checkpointing is intentionally disabled
 # (save_interval: 0 -> save_strategy "none"), so no adapter is written; this
 # test only grades the loss trajectory from GET /v1/jobs/{id}/metrics.
+# ttml fuses q/k/v into one projection, so LoRA targets all of them or none.
 request:
   dataset_loader: SST2
   dataset_max_sequence_length: 64
@@ -36,15 +28,12 @@ request:
   save_interval: 0
   lora_r: 4
   lora_alpha: 8
-  lora_target_modules: ["q_proj", "v_proj"]
+  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
   lora_task_type: CAUSAL_LM
   dtype: torch.bfloat16
   optimizer: adamw
 
-# Tolerances around the observed trajectory. Tightened from the initial
-# placeholder run (rtol 0.5 / atol 0.1) now that the values are real, but kept
-# generous enough to absorb run-to-run noise from deterministic=False. Loosen
-# again if the nightly P150 gate flakes.
+# Tolerances around the recorded trajectory; revisit them once it is recorded.
 tolerances:
   rtol: 0.15
   atol: 0.2
@@ -57,10 +46,4 @@ checks:
   final_train_loss_max: 5.0
 
 # Per-checkpoint expectations (steps must line up with steps_freq / val_steps_freq).
-expected_losses:
-  - {global_step: 5,  metric_name: train_loss, value: 6.21}
-  - {global_step: 10, metric_name: train_loss, value: 4.71}
-  - {global_step: 15, metric_name: train_loss, value: 3.03}
-  - {global_step: 5,  metric_name: val_loss,   value: 5.40}
-  - {global_step: 10, metric_name: val_loss,   value: 3.46}
-  - {global_step: 15, metric_name: val_loss,   value: 2.31}
+expected_losses: []

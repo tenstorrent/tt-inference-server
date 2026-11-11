@@ -5,8 +5,8 @@
 
 """Training-workflow driver.
 
-Runs in run.py's interpreter (NOT inside the container): the forge inference
-server is already up as a sibling ``ServerCommand``; this launcher acts as the
+Runs in run.py's interpreter (NOT inside the container): the media server is
+already up as a sibling ``ServerCommand``; this launcher acts as the
 HTTP client that submits one LoRA fine-tuning job, waits for it to finish,
 pulls its per-step loss from ``GET /v1/jobs/{id}/metrics``, grades the loss
 trajectory against a checked-in expectation and writes a ``report_data_*.json``

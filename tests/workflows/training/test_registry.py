@@ -30,4 +30,12 @@ def test_shipped_expectation_parses():
     cfg = parse_config(yaml.safe_load(path.read_text()))
     # The request block is what the launcher POSTs; it must carry the dataset.
     assert cfg.request.get("dataset_loader") == "SST2"
-    assert cfg.expectations, "expected_losses must not be empty"
+    # ttml fuses q/k/v, so the LoRA targets cover all of them.
+    assert cfg.request.get("lora_target_modules") == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    ]
+    assert cfg.require_decreasing
+    assert cfg.final_train_loss_max is not None

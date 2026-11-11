@@ -54,9 +54,9 @@
                     }
                 },
                 {
-                    "inference_engine": "FORGE",
+                    "inference_engine": "MEDIA",
                     "model_type": "TRAINING",
-                    "impl": "trainer-training-lora",
+                    "impl": "ttml-training-lora",
                     "ci": {
                         "nightly": {
                             "devices": [

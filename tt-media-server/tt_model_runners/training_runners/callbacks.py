@@ -2,14 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Callbacks bridging tt-blacksmith's ``Trainer`` to the fine-tuning job API."""
+"""Callbacks bridging ttml's ``Trainer`` to the fine-tuning job API."""
 
 import os
 import time
 import traceback
 from datetime import timedelta
 
-from blacksmith.tools.trainer.callback import Callback
+from ttml.unified_trainer import Callback
 
 
 class StopTraining(Exception):
@@ -45,12 +45,13 @@ class JobMetricsCallback(JobCallback):
     """Feeds train/validation losses to the job's metrics and logs.
 
     Progress (epoch/step, validation batch index) is logged every step so the
-    job stream moves while tqdm stays on process stdout. Each graph a job
-    compiles (train forward, train backward, validation) is announced right
-    before its first run, since compiling it takes minutes, and the end of the
-    loop is logged with its duration since ``on_train_start``. Loss itself is
-    only logged every ``metrics.steps_freq`` steps, plus once at the end of
-    validation.
+    job stream moves while tqdm stays on process stdout. A job's first train
+    forward, train backward, optimizer and validation passes are announced
+    before they run, since compiling the kernels they use for the first time
+    takes minutes, and the end of the loop is logged with its duration since
+    ``on_train_start``.
+    Loss itself is only logged every ``metrics.steps_freq`` steps, plus once at
+    the end of validation.
     """
 
     def _reset(self) -> None:
@@ -62,9 +63,8 @@ class JobMetricsCallback(JobCallback):
         self.last_val_loss = None
 
     def on_optimizer_step_end(self, trainer, window_loss, *args, **kwargs):
-        # window_loss is the device-side sum of scaled micro-batch losses for this
-        # accumulation window (the per-step mean). Summing on the device keeps the
-        # host readback to once per logging window.
+        # window_loss is the mean loss of the step's micro-batches. The logging
+        # window's sum is read with `loss_to_float` once, when it is logged.
         if self._running_loss is None:
             self._running_loss = window_loss
         else:
@@ -83,11 +83,13 @@ class JobMetricsCallback(JobCallback):
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 
     def on_forward_start(self, trainer, batch, *args, **kwargs):
-        self._announce_compile(trainer, "train forward", phase="train")
+        self._announce_compile(trainer, "train forward")
 
     def on_backward_start(self, trainer, loss, *args, **kwargs):
-        # The backward graph compiles lazily, on the first backward call.
-        self._announce_compile(trainer, "train backward", phase="train")
+        self._announce_compile(trainer, "train backward")
+
+    def on_optimizer_step_start(self, trainer, *args, **kwargs):
+        self._announce_compile(trainer, "optimizer")
 
     def on_validation_start(self, trainer, *args, **kwargs):
         self._val_batch = 0
@@ -103,7 +105,7 @@ class JobMetricsCallback(JobCallback):
 
     def on_validation_batch_start(self, trainer, batch, *args, **kwargs):
         # Validation has no forward hook; its forward runs right after this one.
-        self._announce_compile(trainer, "validation", phase="validation")
+        self._announce_compile(trainer, "validation")
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
         self._val_batch += 1
@@ -154,13 +156,13 @@ class JobMetricsCallback(JobCallback):
         epoch_part = f"Epoch {epoch}/{num_epochs}" if num_epochs else f"Epoch {epoch}"
         return f"{epoch_part} | Step {trainer.global_step}"
 
-    def _announce_compile(self, trainer, graph: str, phase: str) -> None:
-        if graph in self._compile_announced:
+    def _announce_compile(self, trainer, pass_name: str) -> None:
+        if pass_name in self._compile_announced:
             return
-        self._compile_announced.add(graph)
+        self._compile_announced.add(pass_name)
         self._logger.info(
-            f"{self._epoch_step_label(trainer)} | Compiling {graph} graph on first "
-            f"{phase} step; this can take several minutes...",
+            f"{self._epoch_step_label(trainer)} | First {pass_name} pass; compiling "
+            "its kernels on first use can take several minutes...",
             extra={"log_type": "info", "step": trainer.global_step},
         )
 
@@ -190,7 +192,7 @@ class JobMetricsCallback(JobCallback):
                 "epoch": trainer.epoch,
                 "metric_name": name,
                 "value": round(value, 6),
-                "learning_rate": trainer.optimizer.param_groups[0]["lr"],
+                "learning_rate": trainer.current_learning_rate(),
                 "timestamp": time.time(),
             }
         )
@@ -217,12 +219,14 @@ class AdapterCheckpointCallback(JobCallback):
             trainer.config.checkpoint.project_dir, checkpoint_id
         )
         try:
-            state_dict = {
-                key: value.cpu()
-                for key, value in trainer.model.state_dict().items()
-                if "lora_" in key
-            }
-            trainer.model.save_pretrained(checkpoint_path, state_dict=state_dict)
+            trainer.save_checkpoint(
+                checkpoint_path,
+                {
+                    "step": trainer.global_step,
+                    "epoch": trainer.epoch,
+                    "metrics": self._checkpoint_metrics(),
+                },
+            )
         except Exception as exception:
             self._logger.error(
                 f"Failed to save checkpoint at step {trainer.global_step}: {exception}"

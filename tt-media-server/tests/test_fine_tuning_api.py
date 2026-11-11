@@ -99,7 +99,7 @@ class TestSubmitCustomDatasetJob:
 class TestGetCatalog:
     def test_returns_catalog_json(self, client):
         mock_settings = MagicMock()
-        mock_settings.model_runner = "training-gemma-lora"
+        mock_settings.model_runner = "ttml-training-lora"
         with patch("open_ai_api.fine_tuning.get_settings", return_value=mock_settings):
             response = client.get("/catalog")
         assert response.status_code == 200

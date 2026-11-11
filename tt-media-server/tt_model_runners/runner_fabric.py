@@ -162,22 +162,14 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_YOLOX_NANO: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeYoloxNanoRunner"]
     ).ForgeYoloxNanoRunner(wid),
-    ModelRunners.TRAINING_GEMMA_LORA: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
-        fromlist=["TrainingGemmaLoraRunner"],
-    ).TrainingGemmaLoraRunner(wid),
     ModelRunners.LORA_SINGLE_CHIP: lambda wid: __import__(
         "tt_model_runners.forge_runners.lora_single_chip_runner",
         fromlist=["LoraSingleChipRunner"],
     ).LoraSingleChipRunner(wid),
-    ModelRunners.TRAINING_LORA: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.training_lora_runner",
-        fromlist=["TrainingLoraRunner"],
-    ).TrainingLoraRunner(wid),
-    ModelRunners.TRAINER_TRAINING_LORA: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.trainer_training_lora_runner",
-        fromlist=["TrainerTrainingLoraRunner"],
-    ).TrainerTrainingLoraRunner(wid),
+    ModelRunners.TTML_TRAINING_LORA: lambda wid: __import__(
+        "tt_model_runners.training_runners.ttml_training_lora_runner",
+        fromlist=["TtmlTrainingLoraRunner"],
+    ).TtmlTrainingLoraRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),

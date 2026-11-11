@@ -18,6 +18,9 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+# --build-arg BUILD_TT_TRAIN=true also builds tt-train (ttml) for the
+# ttml-training-lora runner, which needs a tt-metal commit with ttml.unified_trainer.
+ARG BUILD_TT_TRAIN=false
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -120,7 +123,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
-    && bash ./build_metal.sh --release -e \
+    && bash ./build_metal.sh --release -e $(if [ "${BUILD_TT_TRAIN}" = "true" ]; then echo --build-tt-train; fi) \
+    # Leaves BUILD_TT_TRAIN as the build above set it: build_metal.sh only passes it when asked to.
     && bash ./build_metal.sh --release -e --build-metal-tests -c --configure-only \
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
@@ -133,7 +137,17 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && rm -rf ${TT_METAL_HOME}/releases \
     && rm -rf ${TT_METAL_HOME}/dockerfile \
     && rm -rf ${TT_METAL_HOME}/infra/tests \
-    && rm -rf ${TT_METAL_HOME}/tt-train \
+    # ttml is its Python package in tt-train/sources/ttml plus the _ttml extension in
+    # the build tree. create_venv.sh ran before the build, so it could not add the
+    # extension's path; the find_spec check fails the build if either is missing.
+    && if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
+         site_packages=$(${PYTHON_ENV_DIR}/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])') \
+         && echo "${TT_METAL_HOME}/tt-train/sources/ttml" > "${site_packages}/ttml.pth" \
+         && echo "${TT_METAL_HOME}/build/tt-train/sources/ttml" > "${site_packages}/_ttml.pth" \
+         && ${PYTHON_ENV_DIR}/bin/python -c 'import importlib.util as u; assert u.find_spec("ttml") and u.find_spec("_ttml")'; \
+       else \
+         rm -rf ${TT_METAL_HOME}/tt-train; \
+       fi \
     # Parenthesized so `|| true` only forgives the .git cleanup: unscoped, it
     # would swallow a failure anywhere in this && chain and let the build
     # continue without a venv or a tt-metal build.
