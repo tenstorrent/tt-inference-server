@@ -1068,6 +1068,12 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 
+## Image Generation Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `FLUX3_WARMUP_REFERENCE_SHAPES` | _unset_ | FLUX.3 Image klein: extra reference shapes to warm up, `WxH` separated by commas (e.g. `4032x3024,3024x4032` for phone photos). The pipeline warms its own shapes (every size, with no reference and with a 1 MP and a 4 MP one); a reference of any other shape compiles the VAE encoder when first seen, 30-50 s and about 150 programs per shape on a Galaxy. Each listed shape moves that into warm-up |
+
 ## Operational TT Settings
 
 These environment variables are typically set automatically by the worker bootstrap (`utils/runner_utils.py`) but can be overridden when needed:

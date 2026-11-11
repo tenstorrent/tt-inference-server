@@ -9,7 +9,8 @@ the media files, output size, seed and the prompt the model gets.
 The tt_dit pipelines take the output size per call, so one deployment serves
 every size its request schema allows. Warmup runs every size and input
 combination the pipeline does not warm up itself, so none compiles after the
-server reports ready.
+server reports ready (FLUX.3's VAE encoder still compiles for a reference
+shape nobody warmed; see TTFlux3ImageKleinRunner).
 
 The parameters the API leaves out (steps, guidance, sampler shift) are the
 models' reference defaults.
@@ -352,6 +353,28 @@ MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
 
 
+FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
+
+
+def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
+    """Reference shapes (``WxH,WxH``) to warm up besides the pipeline's own.
+    Each compiles the VAE encoder for its canvas, 30-50 s and about 150
+    programs apiece (job 193924), so a deployment lists the shapes its users
+    send."""
+    raw = os.environ.get(FLUX3_WARMUP_REFERENCE_SHAPES, "")
+    shapes = []
+    for item in filter(None, (item.strip() for item in raw.split(","))):
+        try:
+            width, height = (int(v) for v in item.lower().split("x"))
+        except ValueError:
+            raise ValueError(
+                f"{FLUX3_WARMUP_REFERENCE_SHAPES}={raw!r} must be WxH shapes "
+                "separated by commas"
+            ) from None
+        shapes.append((width, height))
+    return shapes
+
+
 class TTFlux3ImageKleinRunner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
@@ -368,9 +391,17 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
-            return Flux3KleinPipeline(
+            pipeline = Flux3KleinPipeline(
                 self.ttnn_device, snapshots={"distilled": snapshot}, upsample=True
             )
+            # Every served shape, from tt-metal's own constants: each size
+            # without a reference and with one per reference token bucket, at
+            # the model's steps. The DiT's programs then serve a reference of
+            # any shape; the VAE encoder's compile once per new reference
+            # shape (job 193924: 48 s for a 4096x832 canvas), hence
+            # warmup_requests.
+            pipeline.warmup()
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger, self.device_id, "FLUX.3 pipeline creation failed", e
@@ -378,31 +409,43 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             raise
 
     def get_pipeline_device_params(self):
-        # From tt-metal's models/tt_dit/tests/models/flux3_klein: a ring with 8 KB
-        # packets and L1_SMALL for the VAE conv2d, plus the prompt upsampler's two
-        # command queues and trace region (it shares the first chip).
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            SHARED_MESH_PARAMS,
+        )
+
+        # tt-metal's test_serving_flux3_klein: a ring with 8 KB packets and
+        # L1_SMALL for the VAE conv2d; SHARED_MESH_PARAMS (two command queues,
+        # a trace region) for the prompt upsampler, which shares the first chip.
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
         return {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
-            "num_command_queues": 2,
-            "trace_region_size": 256 * 1024 * 1024,
+            **SHARED_MESH_PARAMS,
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:
-        reference = _png(1024, 1024)
+        # The pipeline warmed its served shapes when it was created; only the
+        # deployment's extra reference shapes compile more (the VAE encoder,
+        # once per shape, whatever the output size).
         return [
             _warmup_request(
                 Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
-                width,
-                height,
-                files,
+                1024,
+                1024,
+                {"images": [_png(width, height)]},
             )
-            for width, height in Flux3ImageKleinRequest.warmup_sizes()
-            for files in ({}, {"images": [reference]})
+            for width, height in _flux3_warmup_reference_shapes()
         ]
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the smallest text-to-image."""
+        request = _warmup_request(
+            Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT), 1024, 1024
+        )
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
 
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
@@ -425,7 +468,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                 width=request._width,
                 height=request._height,
                 seed=request._seed,
-                steps=self._steps(FLUX3_KLEIN_STEPS),
+                steps=self._steps(FLUX3_KLEIN_STEPS, request),
                 images=images,
             )
         )

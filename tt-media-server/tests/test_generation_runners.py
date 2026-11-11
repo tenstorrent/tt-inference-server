@@ -307,6 +307,10 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
 class _Flux3Pipeline:
     def __init__(self):
         self.calls = []
+        self.warmed = 0
+
+    def warmup(self):
+        self.warmed += 1
 
     def generate(self, request):
         self.calls.append(request)
@@ -354,15 +358,97 @@ def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner)
     assert flux3_runner.pipeline.calls == []
 
 
-def test_flux3_warmup_covers_every_size_with_and_without_a_reference(flux3_runner):
+def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler(
+    flux3_runner, monkeypatch
+):
+    pipeline, built = _Flux3Pipeline(), {}
+
+    def create(device, **kwargs):
+        built.update(device=device, **kwargs)
+        return pipeline
+
+    monkeypatch.setattr(
+        sys.modules["models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"],
+        "Flux3KleinPipeline",
+        create,
+        raising=False,
+    )
+    weights = ModuleType("weights_flux3_klein")
+    weights.resolve_weights_dir = lambda model: f"/weights/{model}"
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.weights_flux3_klein", weights
+    )
+    flux3_runner.ttnn_device = "mesh"
+    flux3_runner.settings = SimpleNamespace(model_weights_path="not-a-dir")
+    assert flux3_runner.create_pipeline() is pipeline
+    assert built == {
+        "device": "mesh",
+        "snapshots": {"distilled": "/weights/distilled"},
+        "upsample": True,
+    }
+    assert pipeline.warmed == 1
+
+
+def _flux3_upsampler_module(monkeypatch, shared_mesh_params):
+    module = ModuleType("upsampler_flux3_klein")
+    module.SHARED_MESH_PARAMS = shared_mesh_params
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein", module
+    )
+
+
+def test_flux3_opens_the_mesh_as_its_upsampler_needs(flux3_runner, monkeypatch):
+    shared = {"num_command_queues": 2, "trace_region_size": 7}
+    _flux3_upsampler_module(monkeypatch, shared)
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert {name: params[name] for name in shared} == shared
+
+
+def test_flux3_warms_only_the_extra_reference_shapes_it_is_given(
+    flux3_runner, monkeypatch
+):
+    monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
+    assert flux3_runner.warmup_requests() == []
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912, 3000x2000")
     flux3_runner._warming_up = True
     for request in flux3_runner.warmup_requests():
         flux3_runner.run([request])
-    calls = flux3_runner.pipeline.calls
-    assert {(call.width, call.height, len(call.images)) for call in calls} == {
-        (side, side, refs) for side in (1024, 2048, 4096) for refs in (0, 1)
-    }
-    assert {call.steps for call in calls} == {2}
+    assert [
+        (call.width, call.height, call.steps, [image.size for image in call.images])
+        for call in flux3_runner.pipeline.calls
+    ] == [(1024, 1024, 2, [(1600, 912)]), (1024, 1024, 2, [(3000, 2000)])]
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600")
+    with pytest.raises(ValueError, match="FLUX3_WARMUP_REFERENCE_SHAPES"):
+        flux3_runner.warmup_requests()
+
+
+def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
+    flux3_runner.run([flux3_runner._build_warmup_video_request()])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.width, call.height, call.steps, call.images) == (1024, 1024, 2, ())
+
+
+def test_flux3_serves_the_shapes_the_pipeline_warms(
+    tt_metal_flux3, flux3_runner, monkeypatch
+):
+    """The server's copies of tt-metal's constants, against tt-metal."""
+    pipeline = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    upsampler = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
+    ]
+    # Every size the schema accepts is one the pipeline serves and warms.
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES
+    ]
+    assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
+    _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
+    params = flux3_runner.get_pipeline_device_params()
+    assert {
+        name: params[name] for name in upsampler.SHARED_MESH_PARAMS
+    } == upsampler.SHARED_MESH_PARAMS
 
 
 @pytest.fixture
