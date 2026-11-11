@@ -74,7 +74,9 @@ components:
             What to generate or how to edit, in plain words. The model's prompt
             upsampler always rewrites it into the detailed caption the model
             was trained on, and each output reports that caption as its
-            `prompt`.
+            `prompt`. At most 20,000 characters; the upsampler's input (prompt,
+            reference and template) is at most 8,191 tokens, a longer one fails
+            the job, and its caption is encoded, truncated past 4096 tokens.
 
             Refer to `images` by tag: `<ref_image_0>` is the first.
 

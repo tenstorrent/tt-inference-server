@@ -6,7 +6,8 @@ paths:
       - Generations
       - FLUX.3 Image klein
       summary: Submit a FLUX.3 Image klein job
-      description: Text to image, or editing when `images` is given.
+      description: Text to image, or editing a reference when `images` is given. Every prompt
+        is rewritten by the model's prompt upsampler first.
       operationId: submit_v1_generations_black_forest_labs_flux_3_image_klein_post
       requestBody:
         content:
@@ -17,6 +18,7 @@ paths:
               example:
                 value:
                   prompt: a lighthouse on a cliff, golden hour
+                  aspect_ratio: '1:1'
                   size: 2K
                   format: webp
         required: true
@@ -379,9 +381,31 @@ components:
       properties:
         prompt:
           type: string
+          maxLength: 20000
           minLength: 1
           title: Prompt
-          description: What to generate or how to edit.
+          description: 'What to generate or how to edit, in plain words. The model''s prompt
+            upsampler always rewrites it into the detailed caption the model was trained on,
+            and each output reports that caption as its `prompt`. At most 20,000 characters;
+            the upsampler''s input (prompt, reference and template) is at most 8,191 tokens,
+            a longer one fails the job, and its caption is encoded, truncated past 4096 tokens.
+
+
+            Refer to `images` by tag: `<ref_image_0>` is the first.
+
+
+            Bounding boxes go at the end of the prompt: tag each element in the text (`<balloon_1>`),
+            then add one space and a JSON list with a row per tag. Coordinates are `[top,
+            left, bottom, right]` on a 0–1000 grid with (0, 0) at the top left, whatever the
+            output shape.
+
+
+            - New element: `{"id": "balloon_1", "bbox": [80, 60, 480, 380], "desc": "…"}`.
+
+            - Element of a reference (edits): `{"id": "knight_1", "from": "ref_image_0", "src_bbox":
+            […], "tgt_bbox": […], "desc": "…"}`. The same box in both keeps it; different
+            boxes move or resize it; `"tgt_bbox": null` removes it; `"from": null, "src_bbox":
+            null` adds a new element.'
         images:
           items:
             $ref: '#/components/schemas/Media'
@@ -407,7 +431,9 @@ components:
           enum:
           - '1:1'
           title: Aspect Ratio
-          description: Output shape. Only `1:1` for now.
+          description: Output shape. Only `1:1` for now; more can be allowed later without
+            a schema change. Each output reports its exact size. Boxes are placed on the output's
+            grid.
           default: '1:1'
         size:
           type: string
@@ -416,7 +442,14 @@ components:
           - 2K
           - 4K
           title: Size
-          description: 'Size tier: `1K` 1024×1024, `2K` 2048×2048, `4K` 4096×4096.'
+          description: 'Size tier. With `aspect_ratio`, it fixes the output size:
+
+
+            | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
+
+            | -------------- | --------- | --------- | --------- |
+
+            | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |'
           default: 2K
         format:
           $ref: '#/components/schemas/ImageFormat'

@@ -1796,6 +1796,12 @@ def test_flux3_serves_one_square_shape_per_size(fields):
         Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
+def test_flux3_bounds_the_prompt():
+    assert Flux3ImageKleinRequest(prompt="a" * 20_000).prompt
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a" * 20_001)
+
+
 def test_flux3_has_3_sizes():
     assert Flux3ImageKleinRequest.warmup_sizes() == [
         (1024, 1024),
