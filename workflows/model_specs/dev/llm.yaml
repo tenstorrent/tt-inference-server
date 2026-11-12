@@ -1663,7 +1663,7 @@ templates:
 
 # Qwen3.8-27B with MTP speculative decoding (Qwen36MTPContractForCausalLM) and the GDN state in vLLM's KV cache blocks.
 # P150X8: TP=8, one engine. BLACKHOLE_GALAXY: TP=8 x DP=4, one engine per (1, 8) submesh of the (4, 8) mesh.
-# Text only: the class rejects image and video requests.
+# Text, one image and one video per request. Verify steps of sampled requests draw their tokens on the device.
 # A verify holds max_num_seqs x (K + 1) rows and the class verifies at most 32, so an engine serves 8 requests at K = 3.
 - weights:
     - Qwen/Qwen3.8-27B
@@ -1672,6 +1672,8 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
+    - image
+    - video
   env_vars:
     TT_QWEN35_TEXT_VER: qwen36_blackhole
     TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
@@ -1702,8 +1704,10 @@ templates:
         max_num_batched_tokens: "525312"
         long_prefill_token_threshold: "16384"  # bounds each prefill chunk so that running decodes keep stepping
         no-async-scheduling: true  # the class verifies synchronously
-        # A launch with the vision encoder would also turn prefix caching and chunked prefill off.
-        language-model-only: true
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+        # The model warms the vision tower for inputs up to this size and refuses a larger image or video.
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
@@ -1712,6 +1716,7 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 1073741824
         l1_small_size: 24576
+        sample_on_device_mode: decode_only
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # 4 engines x 8 requests
       max_context: 262144
@@ -1727,7 +1732,9 @@ templates:
         max_num_batched_tokens: "525312"
         long_prefill_token_threshold: "16384"
         no-async-scheduling: true
-        language-model-only: true
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
@@ -1737,6 +1744,7 @@ templates:
         fabric_config: FABRIC_1D_RING
         trace_region_size: 1073741824
         l1_small_size: 24576
+        sample_on_device_mode: decode_only
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:

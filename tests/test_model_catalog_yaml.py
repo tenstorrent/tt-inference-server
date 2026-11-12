@@ -500,12 +500,17 @@ def test_qwen38_mtp_dev_spec_keeps_k_and_verify_rows_consistent():
         args = spec.device_model_spec.vllm_args
         k = json.loads(args["speculative_config"])["num_speculative_tokens"]
         # Qwen36MTPContractForCausalLM takes K from QWEN36_SPEC_K, verifies at most
-        # 32 rows of max_num_seqs x (K + 1), synchronously, and serves text only.
+        # 32 rows of max_num_seqs x (K + 1), synchronously, serves one image and one
+        # video per request up to the warmed vision size, and samples on the device.
         assert int(spec.env_vars["QWEN36_SPEC_K"]) == k
         assert int(args["max_num_seqs"]) * (k + 1) <= 32
         assert args["no-async-scheduling"] is True
-        assert args["language-model-only"] is True
-        assert spec.supported_modalities == ["text"]
+        assert "language-model-only" not in args
+        assert json.loads(args["limit-mm-per-prompt"]) == {"image": 1, "video": 1}
+        assert json.loads(args["mm-processor-kwargs"]) == {"max_pixels": 1048576}
+        assert spec.supported_modalities == ["text", "image", "video"]
+        tt_config = json.loads(args["additional_config"])["tt"]
+        assert tt_config["sample_on_device_mode"] == "decode_only"
     galaxy = mtp[DeviceTypes.BLACKHOLE_GALAXY].device_model_spec
     assert galaxy.vllm_args["data_parallel_size"] == 4
     assert galaxy.max_tokens_all_users == 4 * int(

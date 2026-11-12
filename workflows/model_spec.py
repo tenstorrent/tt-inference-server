@@ -365,7 +365,8 @@ sdxl_forge_impl = ImplSpec(
 #   qwen36_blackhole_vlm   -> native vision (VLM); model_type=VLM, modalities
 #                             text+image+video, larger trace_region for the vision tower.
 #   qwen36_blackhole_mtp   -> MTP speculative decoding (Qwen36MTPContractForCausalLM)
-#                             with the GDN state in vLLM's KV cache blocks; text-only.
+#                             with the GDN state in vLLM's KV cache blocks; text,
+#                             image and video, device sampling for sampled verifies.
 qwen36_blackhole_impl = ImplSpec(
     impl_id="qwen36_blackhole",
     impl_name="qwen36-blackhole",
