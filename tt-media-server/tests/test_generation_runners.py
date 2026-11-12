@@ -344,6 +344,9 @@ def flux3_runner(monkeypatch):
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
         pipeline_module,
     )
+    # the deployment's own settings do not reach the tests
+    monkeypatch.delenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", raising=False)
+    monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
     runner = _runner("TTFlux3ImageKleinRunner")
     runner.pipeline = _Flux3Pipeline()
     return runner
@@ -394,9 +397,12 @@ def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner)
     assert flux3_runner.pipeline.calls == []
 
 
-def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler(
-    flux3_runner, monkeypatch
+@pytest.mark.parametrize("frozen", [None, "0", "1"])
+def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
+    flux3_runner, monkeypatch, frozen
 ):
+    if frozen is not None:
+        monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", frozen)
     pipeline, built = _Flux3Pipeline(), {}
 
     def create(device, **kwargs):
@@ -420,7 +426,7 @@ def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler(
     assert built == {
         "device": "mesh",
         "snapshots": {"distilled": "/weights/distilled"},
-        "upsample": True,
+        "upsample": frozen != "1",
     }
     assert pipeline.warmed == 1
 
@@ -439,12 +445,37 @@ def test_flux3_opens_the_mesh_as_its_upsampler_needs(flux3_runner, monkeypatch):
     params = flux3_runner.get_pipeline_device_params()
     assert params["l1_small_size"] == 65536
     assert {name: params[name] for name in shared} == shared
+    # frozen: the upsampler's command queue and trace region are not reserved
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "true")
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert not shared.keys() & params.keys()
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "maybe")
+    with pytest.raises(ValueError, match="FLUX3_PROMPT_UPSAMPLER_FROZEN"):
+        flux3_runner.get_pipeline_device_params()
+
+
+def test_flux3_frozen_prompt_is_rendered_and_reported_as_sent(
+    flux3_runner, monkeypatch
+):
+    """Without its upsampler the pipeline renders the prompt as sent and
+    reports it; the runner passes it through unchanged and reports what the
+    pipeline rendered from."""
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    caption = "A long caption, upsampled ahead of the deployment."
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=Image.new("RGB", (request.width, request.height)),
+        prompt=request.prompt,
+        timings={},
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt=caption), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert image.info["prompt"] == caption
 
 
 def test_flux3_warms_only_the_extra_reference_shapes_it_is_given(
     flux3_runner, monkeypatch
 ):
-    monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
     assert flux3_runner.warmup_requests() == []
     monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912, 3000x2000")
     flux3_runner._warming_up = True

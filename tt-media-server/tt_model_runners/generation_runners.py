@@ -354,6 +354,16 @@ MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
 
 
 FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
+FLUX3_PROMPT_UPSAMPLER_FROZEN = "FLUX3_PROMPT_UPSAMPLER_FROZEN"
+
+
+def _flux3_upsampler_frozen() -> bool:
+    """Whether the prompt upsampler runs ahead of the deployment
+    (``FLUX3_PROMPT_UPSAMPLER_FROZEN=1``): every prompt then reaches the model
+    as sent and the pipeline is built without the upsampler, so no VL model is
+    loaded and the mesh needs no second command queue or trace region. Default
+    off: the upsampler runs on the first chip."""
+    return _minimax_h3_env_bool(FLUX3_PROMPT_UPSAMPLER_FROZEN) or False
 
 
 def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
@@ -392,7 +402,9 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         )
         try:
             pipeline = Flux3KleinPipeline(
-                self.ttnn_device, snapshots={"distilled": snapshot}, upsample=True
+                self.ttnn_device,
+                snapshots={"distilled": snapshot},
+                upsample=not _flux3_upsampler_frozen(),
             )
             # Every served shape, from tt-metal's own constants: each size
             # without a reference and with one per reference token bucket, at
@@ -422,7 +434,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
-            **SHARED_MESH_PARAMS,
+            **({} if _flux3_upsampler_frozen() else SHARED_MESH_PARAMS),
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:
@@ -475,7 +487,8 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                     images=images,
                 )
             )
-            # the upsampled caption, which the output reports as its prompt
+            # the caption the image was rendered from (the prompt as sent when
+            # the upsampler is frozen), which the output reports as its prompt
             result.image.info["prompt"] = result.prompt
             output = [result.image]
             if recorder is not None:

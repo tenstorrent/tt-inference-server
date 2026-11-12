@@ -16,7 +16,7 @@ paths:
       summary: Submit a FLUX.3 Image klein job
       description: |
         Text to image, or editing a reference when `images` is given. Every prompt is rewritten by the model's prompt
-        upsampler first.
+        upsampler, which runs in the deployment or ahead of it; with it ahead, prompts reach the model as sent.
       requestBody:
         required: true
         content:
@@ -72,11 +72,14 @@ components:
           minLength: 1
           description: |
             What to generate or how to edit, in plain words. The model's prompt
-            upsampler always rewrites it into the detailed caption the model
-            was trained on, and each output reports that caption as its
-            `prompt`. At most 20,000 characters; the upsampler's input (prompt,
-            reference and template) is at most 8,191 tokens, a longer one fails
-            the job, and its caption is encoded, truncated past 4096 tokens.
+            upsampler rewrites it into the detailed caption the model was
+            trained on; it runs in the deployment or ahead of it
+            (`FLUX3_PROMPT_UPSAMPLER_FROZEN`), and with it ahead the prompt
+            reaches the model as sent. Each output reports the caption it was
+            rendered from as its `prompt`. At most 20,000 characters; the
+            upsampler's input (prompt, reference and template) is at most 8,191
+            tokens, a longer one fails the job, and the caption is encoded,
+            truncated past 4096 tokens.
 
             Refer to `images` by tag: `<ref_image_0>` is the first.
 
