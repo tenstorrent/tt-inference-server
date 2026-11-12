@@ -590,6 +590,19 @@ def media_type(content_type, url):
 # again.
 MAX_MEDIA_REDIRECTS = 3
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+# Hosts whose URLs are a page around a video, not the video: OpenRouter hands a
+# YouTube link to the provider as it is, and only a provider that resolves such links
+# itself can take one. Refused by name, before any download.
+PAGE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+# A 200 answer of these types is a web page, which no media decoder opens (the engine
+# would answer "Could not open video stream" for it).
+PAGE_TYPES = ("text/html", "application/xhtml+xml")
+
+
+def page_host(host):
+    """The PAGE_HOSTS entry ``host`` is or is a subdomain of, else None."""
+    host = (host or "").lower().rstrip(".")
+    return next((h for h in PAGE_HOSTS if host == h or host.endswith("." + h)), None)
 
 
 def blocked_reason(ip):
@@ -699,6 +712,12 @@ async def _download(url, timeout_s, max_bytes, max_redirects, policy):
                 f"{fail}only http(s) URLs are fetched, not {current[:80]!r} ({where})"
             )
         host = parts.hostname
+        if page_host(host):
+            raise ShimError(
+                f"{fail}{page_host(host)} links are not supported, they are a web page "
+                f"and not a media file; send a link to the file itself or a base64 "
+                f"data URI ({where})"
+            )
         try:
             addresses = await resolve_host(
                 host, port or (443 if scheme == "https" else 80)
@@ -728,6 +747,18 @@ async def _download(url, timeout_s, max_bytes, max_redirects, policy):
                     continue
                 if resp.status != 200:
                     raise ShimError(f"{fail}HTTP {resp.status} error ({where})")
+                declared = (
+                    (resp.headers.get("Content-Type") or "")
+                    .split(";", 1)[0]
+                    .strip()
+                    .lower()
+                )
+                if declared in PAGE_TYPES:
+                    raise ShimError(
+                        f"{fail}the URL answered a web page ({declared}), not a media "
+                        f"file; send a link to the file itself or a base64 data URI "
+                        f"({where})"
+                    )
                 if resp.content_length is not None and resp.content_length > max_bytes:
                     raise ShimError(f"{fail}larger than {max_bytes} bytes ({where})")
                 data = bytearray()
@@ -751,8 +782,8 @@ async def fetch_media(
     ``max_bytes``. ``address_policy(ip)`` returns why an address is refused (default
     ``blocked_reason``). Raises
     ShimError (answered 400) naming the first URL that failed: refused address or
-    scheme, too many redirects, non-200,
-    too large, timeout, connection error."""
+    scheme, a page host (YouTube) or a web page for an answer, too many redirects,
+    non-200, too large, timeout, connection error."""
     policy = address_policy or blocked_reason
 
     async def one(url):
