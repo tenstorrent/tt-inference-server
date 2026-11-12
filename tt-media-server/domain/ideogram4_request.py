@@ -48,7 +48,7 @@ IDEOGRAM_PRESETS = {
 # The caption models declare their fields in the model's key order, which
 # model_dump keeps whatever order the client sent.
 
-Color = Annotated[str, Field(pattern=r"^#[0-9A-F]{6}$")]
+Color = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$"), AfterValidator(str.upper)]
 Bbox = Annotated[
     list[Annotated[int, Field(ge=0, le=1000)]],
     Field(min_length=4, max_length=4),
@@ -60,14 +60,17 @@ Bbox = Annotated[
 ]
 Palette = Annotated[
     list[Color],
-    Field(max_length=16),
-    SchemaComponent("Ideogram4Palette", "Dominant colors as uppercase `#RRGGBB`."),
+    SchemaComponent(
+        "Ideogram4Palette",
+        "Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.",
+    ),
 ]
 ElementPalette = Annotated[
     list[Color],
-    Field(max_length=5),
     SchemaComponent(
-        "Ideogram4ElementPalette", "The element's colors as uppercase `#RRGGBB`."
+        "Ideogram4ElementPalette",
+        "The element's colors as `#RRGGBB`, either case; sent to the model in "
+        "uppercase.",
     ),
 ]
 
@@ -77,24 +80,30 @@ class _Strict(BaseModel):
 
 
 class Ideogram4StyleDescription(_Strict):
-    """Visual style. Exactly one of `photo` (photographs) or `art_style`
-    (everything else)."""
+    """Visual style. Every field is optional. The open model's prompting
+    guide gives `aesthetics`, `lighting` and `medium`, with `photo` for
+    photographs or `art_style` for everything else."""
 
-    aesthetics: str = Field(examples=["moody, cinematic, desaturated"])
-    lighting: str = Field(examples=["golden hour, rim light, dramatic shadows"])
+    aesthetics: Optional[str] = Field(
+        default=None, examples=["moody, cinematic, desaturated"]
+    )
+    lighting: Optional[str] = Field(
+        default=None, examples=["golden hour, rim light, dramatic shadows"]
+    )
     photo: Optional[str] = Field(
         default=None,
         description="Camera and lens, for photographs.",
         examples=["35mm, f/1.4, bokeh"],
     )
-    medium: str = Field(
+    medium: Optional[str] = Field(
+        default=None,
         examples=[
             "photograph",
             "illustration",
             "3d_render",
             "painting",
             "graphic_design",
-        ]
+        ],
     )
     art_style: Optional[str] = Field(
         default=None,
@@ -102,12 +111,6 @@ class Ideogram4StyleDescription(_Strict):
         examples=["flat vector illustration, bold outlines"],
     )
     color_palette: Optional[Palette] = None
-
-    @model_validator(mode="after")
-    def _photo_or_art_style(self):
-        if (self.photo is None) == (self.art_style is None):
-            raise ValueError("exactly one of photo and art_style is required")
-        return self
 
 
 class _Element(_Strict):
@@ -131,7 +134,7 @@ class Ideogram4TextElement(_Element):
     type: Literal["text"]
     bbox: Optional[Bbox] = None
     text: str = Field(description="The literal text to render.")
-    desc: Optional[str] = None
+    desc: str
     color_palette: Optional[ElementPalette] = None
 
 
@@ -153,11 +156,13 @@ class Ideogram4Caption(_Strict):
     Use this to bypass the prompt enhancer, e.g. with a caption written by
     your own LLM.
 
-    Format: `docs/prompting.md` in `ideogram-oss/ideogram4`."""
+    Schema: `V4JsonPrompt` of Ideogram's hosted API, so a caption from that
+    API is accepted, with stricter rules: unknown keys are rejected, and a
+    `bbox` has exactly four values with `ymin <= ymax` and `xmin <= xmax`.
+    Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`."""
 
-    high_level_description: Optional[str] = Field(
-        default=None,
-        description="One or two sentences summing up the image. Recommended.",
+    high_level_description: str = Field(
+        description="One or two sentences summing up the image."
     )
     style_description: Optional[Ideogram4StyleDescription] = None
     compositional_deconstruction: Ideogram4CompositionalDeconstruction

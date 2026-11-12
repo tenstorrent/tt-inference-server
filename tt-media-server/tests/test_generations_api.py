@@ -1446,10 +1446,13 @@ def test_the_service_downloads_no_weights(monkeypatch):
 # --- Ideogram 4 ------------------------------------------------------------------
 
 _CAPTION = {
+    "high_level_description": "An open sign.",
     "compositional_deconstruction": {
         "background": "a brick wall",
-        "elements": [{"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40]}],
-    }
+        "elements": [
+            {"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40], "desc": "neon"}
+        ],
+    },
 }
 
 
@@ -1497,40 +1500,113 @@ def test_ideogram_caption_is_written_in_the_model_key_order():
     )
 
 
+def _caption_with(element: dict) -> dict:
+    return {
+        "high_level_description": "h",
+        "compositional_deconstruction": {"background": "b", "elements": [element]},
+    }
+
+
 @pytest.mark.parametrize(
     ("caption", "message"),
     [
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}
-            ]}},
-            "ymin <= ymax",
-        ),
-        (
-            {
-                "style_description": {
-                    "aesthetics": "a",
-                    "lighting": "l",
-                    "medium": "m",
-                    "photo": "p",
-                    "art_style": "s",
-                },
-                **_CAPTION,
-            },
-            "exactly one of photo and art_style",
-        ),
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "color_palette": ["#ff0000"]}
-            ]}},
-            "pattern",
-        ),
-        ({"caption": "plain"}, "extra"),
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}), "ymin <= ymax"),
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [0, 0, 10]}), "at least 4"),
+        (_caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}), "pattern"),
+        (_caption_with({"type": "text", "text": "t"}), "desc"),
+        ({"compositional_deconstruction": {"background": "b", "elements": []}}, "high_level_description"),
+        ({**_CAPTION, "caption": "plain"}, "extra"),
     ],
 )  # fmt: skip
 def test_ideogram_rejects_invalid_captions(caption, message):
     with pytest.raises(ValidationError, match=message):
         Ideogram4Request(structured_prompt=caption)
+
+
+def test_ideogram_takes_a_caption_the_hosted_api_documents():
+    # The example response on Ideogram's magic-prompt reference page.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "A photorealistic ginger cat perched on a "
+            "vintage wooden chair by a sunlit window.",
+            "compositional_deconstruction": {
+                "background": "A dim room with a bright window casting warm light.",
+                "elements": [
+                    {
+                        "type": "obj",
+                        "desc": "ginger cat with green eyes sitting upright on a "
+                        "vintage wooden chair",
+                    }
+                ],
+            },
+            "style_description": {
+                "aesthetics": "warm, cozy, nostalgic",
+                "lighting": "soft natural window light",
+                "medium": "photograph",
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"A photorealistic ginger cat perched on a '
+        'vintage wooden chair by a sunlit window.",'
+        '"style_description":{"aesthetics":"warm, cozy, nostalgic",'
+        '"lighting":"soft natural window light","medium":"photograph"},'
+        '"compositional_deconstruction":{"background":"A dim room with a bright '
+        'window casting warm light.",'
+        '"elements":[{"type":"obj","desc":"ginger cat with green eyes sitting '
+        'upright on a vintage wooden chair"}]}}'
+    )
+
+
+def test_ideogram_takes_what_the_hosted_schema_allows():
+    # photo with art_style, lowercase hex, more colors than the open model's caps.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"] * 17,
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "desc": "d", "color_palette": ["#00ff00"] * 6}
+                ],
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","art_style":"s",'
+        '"color_palette":[' + ",".join(['"#FF2E88"'] * 17) + "]},"
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d",'
+        '"color_palette":[' + ",".join(['"#00FF00"'] * 6) + "]}]}}"
+    )
+
+
+def test_a_reported_enhancer_caption_is_a_valid_structured_prompt():
+    reported = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "text", "bbox": [5], "text": "T", "desc": "d"},
+                    {"type": "obj", "desc": "d"},
+                ],
+            },
+        }
+    )
+    request = Ideogram4Request(structured_prompt=json.loads(reported))
+    assert request.model_prompt() == reported
 
 
 @pytest.mark.parametrize(
@@ -1574,13 +1650,6 @@ def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
     )
 
 
-def _enhanced_with(element: dict) -> dict:
-    return {
-        "high_level_description": "h",
-        "compositional_deconstruction": {"background": "b", "elements": [element]},
-    }
-
-
 @pytest.mark.parametrize(
     "caption",
     [
@@ -1588,11 +1657,11 @@ def _enhanced_with(element: dict) -> dict:
         "not a caption",
         {"high_level_description": "h", "style_description": {"photo": "p"}},
         {"compositional_deconstruction": {"background": "b", "elements": []}},
-        _enhanced_with({"type": "obj"}),
-        _enhanced_with({"type": "text", "desc": "d"}),
-        _enhanced_with({"type": "text", "text": "t"}),
-        _enhanced_with({"type": "obj", "bbox": [0, 0, 9, 1001], "desc": "d"}),
-        _enhanced_with({"type": "obj", "desc": "d", "color_palette": ["red"]}),
+        _caption_with({"type": "obj"}),
+        _caption_with({"type": "text", "desc": "d"}),
+        _caption_with({"type": "text", "text": "t"}),
+        _caption_with({"type": "obj", "bbox": [0, 0, 9, 1001], "desc": "d"}),
+        _caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}),
     ],
     ids=[
         "none",
@@ -1780,8 +1849,9 @@ async def test_ideogram_gets_the_serialized_caption(generations_app):
     )
     job = await _wait_final(client, response.json()["id"])
     caption = (
-        '{"compositional_deconstruction":{"background":"a brick wall",'
-        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN"}]}}'
+        '{"high_level_description":"An open sign.",'
+        '"compositional_deconstruction":{"background":"a brick wall",'
+        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN","desc":"neon"}]}}'
     )
     assert device.requests[0]._prompt == caption
     (output,) = job["outputs"]

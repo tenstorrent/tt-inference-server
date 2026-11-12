@@ -418,11 +418,9 @@ components:
     Ideogram4Caption:
       properties:
         high_level_description:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: High Level Description
-          description: One or two sentences summing up the image. Recommended.
+          description: One or two sentences summing up the image.
         style_description:
           anyOf:
           - $ref: '#/components/schemas/Ideogram4StyleDescription'
@@ -432,6 +430,7 @@ components:
       additionalProperties: false
       type: object
       required:
+      - high_level_description
       - compositional_deconstruction
       title: Ideogram4Caption
       description: 'A structured caption in the format Ideogram 4 was trained on, sent to
@@ -446,7 +445,13 @@ components:
         your own LLM.
 
 
-        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
+        Schema: `V4JsonPrompt` of Ideogram''s hosted API, so a caption from that
+
+        API is accepted, with stricter rules: unknown keys are rejected, and a
+
+        `bbox` has exactly four values with `ymin <= ymax` and `xmin <= xmax`.
+
+        Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
     Ideogram4CompositionalDeconstruction:
       properties:
         background:
@@ -473,10 +478,9 @@ components:
     Ideogram4ElementPalette:
       items:
         type: string
-        pattern: ^#[0-9A-F]{6}$
+        pattern: ^#[0-9A-Fa-f]{6}$
       type: array
-      maxItems: 5
-      description: The element's colors as uppercase `#RRGGBB`.
+      description: The element's colors as `#RRGGBB`, either case; sent to the model in uppercase.
     Ideogram4ObjectElement:
       properties:
         type:
@@ -503,10 +507,9 @@ components:
     Ideogram4Palette:
       items:
         type: string
-        pattern: ^#[0-9A-F]{6}$
+        pattern: ^#[0-9A-Fa-f]{6}$
       type: array
-      maxItems: 16
-      description: Dominant colors as uppercase `#RRGGBB`.
+      description: Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.
     Ideogram4Request:
       oneOf:
       - required:
@@ -594,12 +597,16 @@ components:
     Ideogram4StyleDescription:
       properties:
         aesthetics:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Aesthetics
           examples:
           - moody, cinematic, desaturated
         lighting:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Lighting
           examples:
           - golden hour, rim light, dramatic shadows
@@ -612,7 +619,9 @@ components:
           examples:
           - 35mm, f/1.4, bokeh
         medium:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Medium
           examples:
           - photograph
@@ -634,14 +643,12 @@ components:
           - type: 'null'
       additionalProperties: false
       type: object
-      required:
-      - aesthetics
-      - lighting
-      - medium
       title: Ideogram4StyleDescription
-      description: 'Visual style. Exactly one of `photo` (photographs) or `art_style`
+      description: 'Visual style. Every field is optional. The open model''s prompting
 
-        (everything else).'
+        guide gives `aesthetics`, `lighting` and `medium`, with `photo` for
+
+        photographs or `art_style` for everything else.'
     Ideogram4TextElement:
       properties:
         type:
@@ -657,9 +664,7 @@ components:
           title: Text
           description: The literal text to render.
         desc:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Desc
         color_palette:
           anyOf:
@@ -670,6 +675,7 @@ components:
       required:
       - type
       - text
+      - desc
       title: Ideogram4TextElement
     ImageFormat:
       type: string
