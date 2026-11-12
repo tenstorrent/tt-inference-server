@@ -1611,8 +1611,24 @@ def test_a_reported_enhancer_caption_is_a_valid_structured_prompt():
 
 @pytest.mark.parametrize(
     "fields",
-    [{}, {"prompt": "a poster", "structured_prompt": _CAPTION}, {"prompt": ""}],
-    ids=["neither", "both", "empty"],
+    [
+        {},
+        {"prompt": "a poster", "structured_prompt": _CAPTION},
+        {"prompt": ""},
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+        {"prompt": "a poster", "structured_prompt": None},
+    ],
+    ids=[
+        "neither",
+        "both",
+        "empty",
+        "null",
+        "null-caption",
+        "null-prompt",
+        "null-structured",
+    ],
 )
 def test_ideogram_takes_exactly_one_prompt(fields):
     with pytest.raises(ValidationError):
@@ -1839,6 +1855,22 @@ async def test_a_plain_prompt_is_422_without_an_enhancer(generations_app, monkey
         "/v1/generations/ideogram-ai/ideogram-4", json={"structured_prompt": _CAPTION}
     )
     assert ok.status_code == 202
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+    ],
+    ids=["prompt", "structured-prompt", "beside-a-caption"],
+)
+async def test_an_explicit_null_is_422(generations_app, body):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post("/v1/generations/ideogram-ai/ideogram-4", json=body)
+    assert response.status_code == 422, response.text
+    assert not device.requests
 
 
 async def test_ideogram_gets_the_serialized_caption(generations_app):

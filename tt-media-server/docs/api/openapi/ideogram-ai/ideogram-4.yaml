@@ -518,10 +518,8 @@ components:
         - structured_prompt
       properties:
         prompt:
-          anyOf:
-          - type: string
-            minLength: 1
-          - type: 'null'
+          type: string
+          minLength: 1
           title: Prompt
           description: What to generate, in plain words. Ideogram 4 only works from a structured
             caption, so the server first rewrites the prompt into one with a prompt enhancer
@@ -531,9 +529,8 @@ components:
             different images; to reproduce one, send its reported caption as `structured_prompt`.
             To skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
-          anyOf:
-          - $ref: '#/components/schemas/Ideogram4Caption'
-          - type: 'null'
+          $ref: '#/components/schemas/Ideogram4Caption'
+          title: Structured Prompt
         count:
           type: integer
           maximum: 1.0
