@@ -16,7 +16,6 @@ The parameters the API leaves out (steps, guidance, sampler shift) are the
 models' reference defaults.
 """
 
-import math
 import os
 import shutil
 import tempfile
@@ -40,7 +39,6 @@ from config.constants import (
 )
 from config.settings import get_settings
 from domain.flux3_image_klein_request import (
-    FLUX3_KLEIN_SIZES,
     FLUX3_KLEIN_STEPS,
     Flux3ImageKleinRequest,
 )
@@ -368,35 +366,6 @@ def _flux3_upsampler_frozen() -> bool:
     return _minimax_h3_env_bool(FLUX3_PROMPT_UPSAMPLER_FROZEN) or False
 
 
-# The pipeline fits a reference to a canvas of whole patches, and warms a
-# reference token bucket per size: 1 MP (4096 tokens) and 4 MP. With the
-# upsampler resident, the largest size cannot hold the 4 MP bucket beside it
-# (a Galaxy runs out of DRAM: jobs 192950, 194825), so a reference for that
-# size is fitted to the 1 MP bucket and that shape is not warmed.
-FLUX3_REFERENCE_PATCH = 16
-FLUX3_RESIDENT_REFERENCE_PIXELS = 4096 * FLUX3_REFERENCE_PATCH**2
-
-
-def _fit_pixels(image: Image.Image, max_pixels: int) -> Image.Image:
-    """``image`` scaled down, never up, so that its canvas (sides rounded up
-    to a patch) holds at most ``max_pixels``, as the pipeline fits to 4 MP."""
-    scale = min(1.0, math.sqrt(max_pixels / (image.width * image.height)))
-    while True:
-        fit = tuple(max(1, round(side * scale)) for side in image.size)
-        if (
-            math.prod(
-                math.ceil(side / FLUX3_REFERENCE_PATCH) * FLUX3_REFERENCE_PATCH
-                for side in fit
-            )
-            <= max_pixels
-        ):
-            break
-        scale *= 0.995
-    if fit == image.size:
-        return image
-    return image.resize(fit, Image.Resampling.LANCZOS)
-
-
 def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
     """Reference shapes (``WxH,WxH``) to warm up besides the pipeline's own.
     Each compiles the VAE encoder for its canvas, 30-50 s and about 150
@@ -442,10 +411,8 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             # the model's steps. The DiT's programs then serve a reference of
             # any shape; the VAE encoder's compile once per new reference
             # shape (job 193924: 48 s for a 4096x832 canvas), hence
-            # warmup_requests, which also warms the largest size when the
-            # upsampler is resident (without its 4 MP bucket).
-            sizes = tuple(width for width, _ in FLUX3_KLEIN_SIZES.values())
-            pipeline.warmup(sizes=sizes if _flux3_upsampler_frozen() else sizes[:-1])
+            # warmup_requests.
+            pipeline.warmup()
             return pipeline
         except Exception as e:
             log_exception_chain(
@@ -474,24 +441,15 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         # The pipeline warmed its served shapes when it was created; only the
         # deployment's extra reference shapes compile more (the VAE encoder,
         # once per shape, whatever the output size).
-        def warm(width, height, reference=None):
-            return _warmup_request(
+        return [
+            _warmup_request(
                 Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
-                width,
-                height,
-                {"images": [_png(*reference)]} if reference else None,
+                1024,
+                1024,
+                {"images": [_png(width, height)]},
             )
-
-        requests = []
-        if not _flux3_upsampler_frozen():
-            # the largest size without a reference and with its 1 MP bucket
-            largest = max(FLUX3_KLEIN_SIZES.values())
-            bucket = (math.isqrt(FLUX3_RESIDENT_REFERENCE_PIXELS),) * 2
-            requests += [warm(*largest), warm(*largest, bucket)]
-        requests += [
-            warm(1024, 1024, shape) for shape in _flux3_warmup_reference_shapes()
+            for width, height in _flux3_warmup_reference_shapes()
         ]
-        return requests
 
     def _build_warmup_video_request(self) -> GenerationRequest:
         """A multi-host deep canary's request: the smallest text-to-image."""
@@ -516,14 +474,6 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             # Submit decoded the same bytes and refused a corrupt file with 422;
             # whatever still fails here fails the job, not the worker.
             raise ValueError(f"an input could not be decoded: {e}") from e
-        if (
-            images
-            and not _flux3_upsampler_frozen()
-            and (request._width, request._height) == max(FLUX3_KLEIN_SIZES.values())
-        ):
-            images = tuple(
-                _fit_pixels(image, FLUX3_RESIDENT_REFERENCE_PIXELS) for image in images
-            )
         recorder = self._image_stage_recorder()
         output = None
         try:

@@ -309,9 +309,8 @@ class _Flux3Pipeline:
         self.calls = []
         self.warmed = 0
 
-    def warmup(self, sizes=None):
+    def warmup(self):
         self.warmed += 1
-        self.warmed_sizes = sizes
 
     def generate(self, request):
         self.calls.append(request)
@@ -430,10 +429,6 @@ def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
         "upsample": frozen != "1",
     }
     assert pipeline.warmed == 1
-    # resident, the largest size is warmed by warmup_requests without its 4 MP bucket
-    assert pipeline.warmed_sizes == (
-        (1024, 2048, 4096) if frozen == "1" else (1024, 2048)
-    )
 
 
 def _flux3_upsampler_module(monkeypatch, shared_mesh_params):
@@ -478,75 +473,21 @@ def test_flux3_frozen_prompt_is_rendered_and_reported_as_sent(
     assert image.info["prompt"] == caption
 
 
-def _warmed(runner):
-    runner._warming_up = True
-    for request in runner.warmup_requests():
-        runner.run([request])
-    return [
-        (call.width, call.height, call.steps, [image.size for image in call.images])
-        for call in runner.pipeline.calls
-    ]
-
-
 def test_flux3_warms_only_the_extra_reference_shapes_it_is_given(
     flux3_runner, monkeypatch
 ):
-    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
     assert flux3_runner.warmup_requests() == []
     monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912, 3000x2000")
-    assert _warmed(flux3_runner) == [
-        (1024, 1024, 2, [(1600, 912)]),
-        (1024, 1024, 2, [(3000, 2000)]),
-    ]
+    flux3_runner._warming_up = True
+    for request in flux3_runner.warmup_requests():
+        flux3_runner.run([request])
+    assert [
+        (call.width, call.height, call.steps, [image.size for image in call.images])
+        for call in flux3_runner.pipeline.calls
+    ] == [(1024, 1024, 2, [(1600, 912)]), (1024, 1024, 2, [(3000, 2000)])]
     monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600")
     with pytest.raises(ValueError, match="FLUX3_WARMUP_REFERENCE_SHAPES"):
         flux3_runner.warmup_requests()
-
-
-def test_flux3_warms_the_largest_size_itself_when_the_upsampler_is_resident(
-    flux3_runner, monkeypatch
-):
-    """Without the 4 MP reference bucket, which does not fit beside the
-    upsampler; the extra shapes follow."""
-    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912")
-    assert _warmed(flux3_runner) == [
-        (4096, 4096, 2, []),
-        (4096, 4096, 2, [(1024, 1024)]),
-        (1024, 1024, 2, [(1600, 912)]),
-    ]
-
-
-@pytest.mark.parametrize(
-    "frozen, size, reference, fitted",
-    [
-        (None, 4096, (3000, 1000), (1756, 585)),
-        (None, 4096, (5000, 1000), (2256, 451)),
-        (None, 4096, (1000, 1000), (1000, 1000)),
-        (None, 2048, (3000, 1000), (3000, 1000)),
-        ("1", 4096, (3000, 1000), (3000, 1000)),
-    ],
-)
-def test_flux3_fits_a_4k_reference_to_1_mp_when_the_upsampler_is_resident(
-    flux3_runner, monkeypatch, frozen, size, reference, fitted
-):
-    if frozen:
-        monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", frozen)
-    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), size, size)
-    request._files = {"images": [_png(*reference)]}
-    flux3_runner.run([request])
-    (call,) = flux3_runner.pipeline.calls
-    (image,) = call.images
-    assert image.size == fitted
-    # scaled down, never up, at its aspect ratio, to a canvas of whole 16 px
-    # patches within 1 MP
-    assert fitted <= reference
-    assert image.width / image.height == pytest.approx(
-        reference[0] / reference[1], rel=0.01
-    )
-    if fitted != reference:
-        canvas = [-(-side // 16) * 16 for side in fitted]
-        assert canvas[0] * canvas[1] <= 1024 * 1024
-        assert (canvas[0] + 16) * canvas[1] > 1024 * 1024 * 0.97
 
 
 def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
@@ -570,22 +511,6 @@ def test_flux3_serves_the_shapes_the_pipeline_warms(
         (side, side) for side in pipeline.SIZES
     ]
     assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
-    # The resident cap is the pipeline's first reference bucket: a reference
-    # fitted to it lands in that bucket by the pipeline's own canvas rule.
-    assert runners.FLUX3_REFERENCE_PATCH == pipeline.DOWNSAMPLING_RATIO
-    assert (
-        runners.FLUX3_RESIDENT_REFERENCE_PIXELS
-        == pipeline.REFERENCE_TOKEN_BUCKETS[0] * pipeline.DOWNSAMPLING_RATIO**2
-    )
-    for shape in ((3000, 1000), (5000, 1000), (4032, 3024), (100, 5000)):
-        fitted = runners._fit_pixels(
-            Image.new("RGB", shape), runners.FLUX3_RESIDENT_REFERENCE_PIXELS
-        )
-        fit, canvas = pipeline.reference_canvas(*fitted.size)
-        # the pipeline resizes it no further, unless a side still exceeds its own limit
-        assert fit == fitted.size or max(fitted.size) > pipeline.MAX_SIDE
-        tokens = canvas[0] * canvas[1] // pipeline.DOWNSAMPLING_RATIO**2
-        assert pipeline.reference_bucket(tokens) == pipeline.REFERENCE_TOKEN_BUCKETS[0]
     _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
     params = flux3_runner.get_pipeline_device_params()
     assert {
@@ -815,7 +740,7 @@ def test_h3_ref2va_packs_images_then_videos_then_audio(monkeypatch):
         "videos": [b"v0", b"v1"],
         "audios": [b"a0"],
     }
-    image, *clips = runner._inputs(request)["references"]
+    (image, *clips) = runner._inputs(request)["references"]
     assert image["image"].size == (48, 64)
     assert clips == [
         {"video": b"v0"},

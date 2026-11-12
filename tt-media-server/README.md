@@ -1072,7 +1072,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `FLUX3_PROMPT_UPSAMPLER_FROZEN` | `false` | FLUX.3 Image klein: the prompt upsampler runs ahead of the deployment (evals, a front end with its own upsampler), so every prompt reaches the model as sent and each output reports it as sent. The pipeline is built without the upsampler: no VL model loaded, no second command queue or trace region reserved, and a `4K` output takes a reference at the full 4 MP canvas (resident, it is scaled down to 1 MP: the 4 MP canvas beside the upsampler ran a Galaxy out of DRAM, jobs 192950 and 194825). `1`/`true` or `0`/`false` |
+| `FLUX3_PROMPT_UPSAMPLER_FROZEN` | `false` | FLUX.3 Image klein: the prompt upsampler runs ahead of the deployment (evals, a front end with its own upsampler), so every prompt reaches the model as sent and each output reports it as sent. The pipeline is built without the upsampler: no VL model loaded, no second command queue or trace region reserved. `1`/`true` or `0`/`false` |
 | `FLUX3_WARMUP_REFERENCE_SHAPES` | _unset_ | FLUX.3 Image klein: extra reference shapes to warm up, `WxH` separated by commas (e.g. `4032x3024,3024x4032` for phone photos). The pipeline warms its own shapes (every size, with no reference and with a 1 MP and a 4 MP one); a reference of any other shape compiles the VAE encoder when first seen, 30-50 s and about 150 programs per shape on a Galaxy. Each listed shape moves that into warm-up |
 
 ## Operational TT Settings
