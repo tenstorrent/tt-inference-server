@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 from config.constants import ModelServices
 from device_workers.encode_stage import EncodeStage
-from utils.video_manager import VideoAudioResult
 
 _TIMEOUT_S = 5.0
 
@@ -50,19 +49,6 @@ class TestEncodeStage:
             ("w0", "t3", "/tmp/3.mp4"),
         ]
         assert errors.empty()
-
-    def test_audio_result_is_muxed(self, video_manager):
-        results = queue.Queue()
-        stage = EncodeStage("w0", results, queue.Queue())
-        audio_result = VideoAudioResult(
-            _frames(0), np.zeros(10), 48000, fps=24, pixel_format="yuv420p"
-        )
-        stage.submit("t", audio_result)
-        stage.close()
-        assert results.get(timeout=_TIMEOUT_S) == ("w0", "t", "/tmp/av.mp4")
-        args, kwargs = video_manager.export_to_mp4_with_audio.call_args
-        assert args[2] == 48000
-        assert kwargs == {"fps": 24, "pixel_format": "yuv420p"}
 
     def test_existing_path_passes_through(self, video_manager):
         results = queue.Queue()
@@ -151,7 +137,42 @@ class TestForRunner:
         assert EncodeStage.for_runner(runner, settings, "w0", None, None) is None
         assert runner.export_in_runner is True
 
-    def test_normalize_single_audio_result(self):
-        audio_result = VideoAudioResult(_frames(0), np.zeros(1), 16000)
-        assert EncodeStage.normalize_responses(audio_result) == [audio_result]
-        assert EncodeStage.normalize_responses(["/a.mp4"]) == ["/a.mp4"]
+
+class TestImages:
+    def test_image_runner_gets_stage_and_defers_its_finish(self):
+        runner = SimpleNamespace(encodes_images_off_thread=True, defer_image_finish=False)
+        settings = SimpleNamespace(model_service=ModelServices.IMAGE.value, video_async_encode=False)
+        stage = EncodeStage.for_runner(runner, settings, "w0", queue.Queue(), queue.Queue())
+        assert stage is not None
+        assert runner.defer_image_finish is True
+        stage.close()
+
+    def test_pending_image_is_finished_and_encoded_in_order(self):
+        from domain.image_output import EncodedImage, PendingImage
+        from PIL import Image
+
+        results, errors = queue.Queue(), queue.Queue()
+        stage = EncodeStage("w0", results, errors)
+        finished = []
+
+        def finish(color):
+            def run():
+                finished.append(color)
+                return Image.new("RGB", (64, 32), color)
+
+            return run
+
+        stage.submit("a", PendingImage(finish("red"), "jpeg"))
+        stage.submit("b", PendingImage(Image.new("RGB", (8, 8), "blue"), "png"))
+        stage.close()
+        (_, task_a, a), (_, task_b, b) = results.get_nowait(), results.get_nowait()
+        assert (task_a, task_b) == ("a", "b") and errors.empty()
+        assert finished == ["red"]
+        assert isinstance(a, EncodedImage) and (a.format, a.width, a.height) == ("jpeg", 64, 32)
+        assert a.data[:2] == b"\xff\xd8"  # JPEG
+        assert b.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_not_an_image_runner(self):
+        runner = SimpleNamespace(encodes_images_off_thread=None)
+        settings = SimpleNamespace(model_service=ModelServices.IMAGE.value, video_async_encode=False)
+        assert EncodeStage.for_runner(runner, settings, "w0", None, None) is None

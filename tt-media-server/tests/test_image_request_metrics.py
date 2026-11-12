@@ -249,3 +249,88 @@ def test_observe_records_explicitly_sent_default_values():
     assert sample("tt_media_server_image_requested_steps_sum", **labels) == 20
     assert sample("tt_media_server_image_requested_guidance_scale_count", **labels) == 1
     assert sample("tt_media_server_image_requested_guidance_scale_sum", **labels) == 5.0
+
+
+# --- The generations API's image jobs ---------------------------------------
+
+
+def _image_job(width: int, height: int, **fields):
+    """An image job of the generations API, as the service has it after submit.
+    Defined here rather than taken from a model, so it holds on every branch."""
+    from domain.generation_request import GenerationRequest
+
+    class ImageJob(GenerationRequest):
+        OUTPUT_TYPE = "image"
+        MEDIA_FIELDS = ("images",)
+
+        prompt: str
+        # Empty when omitted, as on FLUX.2 klein. An empty list is no edit.
+        images: list[str] = []
+        count: int = 1
+
+    request = ImageJob(prompt="x", **fields)
+    request._width, request._height = width, height
+    return request
+
+
+def test_a_generation_records_its_shape():
+    from telemetry.image_request_metrics import observe_generation_image_request
+
+    model = "test-generation-shape"
+    observe_generation_image_request(_image_job(2048, 2048), model)
+    observe_generation_image_request(
+        _image_job(1376, 768, images=["https://x/a.png"]), model
+    )
+
+    t2i = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+    edit = {"model_type": model, "conditioning": CONDITIONING_EDIT}
+    for labels, megapixels in ((t2i, 4.194304), (edit, 1.056768)):
+        assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
+        assert sample("tt_media_server_image_requested_images_sum", **labels) == 1
+        assert (
+            sample("tt_media_server_image_requested_megapixels_sum", **labels)
+            == megapixels
+        )
+        # The generations API has no steps or guidance scale.
+        assert sample("tt_media_server_image_requested_steps_count", **labels) is None
+    # 2048x2048 has its own bucket, not the coarse one above it.
+    assert (
+        sample(
+            "tt_media_server_image_requested_megapixels_bucket", le="4.194304", **t2i
+        )
+        == 1
+    )
+    assert (
+        sample(
+            "tt_media_server_image_requested_megapixels_bucket", le="2.359296", **t2i
+        )
+        == 0
+    )
+
+
+def test_a_generation_never_raises():
+    from telemetry.image_request_metrics import observe_generation_image_request
+
+    observe_generation_image_request(object(), "test-generation-malformed")
+
+
+async def test_a_generations_image_job_records_its_shape(monkeypatch):
+    """process_request records an image job before running it."""
+    from model_services import generation_service
+    from model_services.base_job_service import BaseJobService
+
+    async def run(self, request):
+        return "done"
+
+    monkeypatch.setattr(BaseJobService, "process_request", run)
+    monkeypatch.setattr(
+        generation_service.settings, "model_runner", "test-generation-wiring"
+    )
+    service = object.__new__(generation_service.GenerationService)
+
+    assert await service.process_request(_image_job(1024, 1024)) == "done"
+    labels = {
+        "model_type": "test-generation-wiring",
+        "conditioning": CONDITIONING_TEXT_TO_IMAGE,
+    }
+    assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
