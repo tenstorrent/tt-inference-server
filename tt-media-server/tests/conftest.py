@@ -357,12 +357,16 @@ def _install_ttml_stubs():
             self.epoch = 0
 
         def setup(self, config):
-            if self.config is not None:
-                self.cleanup()
-            self.config = config
-            self.train_dataloader, self.val_dataloader = self._load_dataloaders()
-            self.model = self._load_model()
-            self.optimizer = self._load_optimizer()
+            try:
+                if self.config is not None:
+                    self.cleanup()
+                self.config = config
+                self.train_dataloader, self.val_dataloader = self._load_dataloaders()
+                self.model = self._load_model()
+                self.optimizer = self._load_optimizer()
+            except Exception as exception:
+                self.callback_handler("on_setup_error", exception)
+                raise
 
         def _load_dataloaders(self):
             return MagicMock(), MagicMock()
@@ -383,7 +387,7 @@ def _install_ttml_stubs():
             return float(loss)
 
         def current_learning_rate(self):
-            return self.config.learning_rate
+            return [optimizer.lr for optimizer in self.config.optimizer]
 
         def save_checkpoint(self, path, metadata=None):
             pass
@@ -412,6 +416,7 @@ def _install_ttml_stubs():
         **{
             name: type(name, (StubConfig,), {})
             for name in (
+                "AdamWConfig",
                 "CheckpointConfig",
                 "CustomDatasetConfig",
                 "LoggingConfig",

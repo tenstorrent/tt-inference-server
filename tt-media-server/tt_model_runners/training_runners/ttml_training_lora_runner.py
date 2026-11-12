@@ -23,6 +23,7 @@ from tt_model_runners.training_runners.callbacks import (
     StopTraining,
 )
 from ttml.unified_trainer import (
+    AdamWConfig,
     CheckpointConfig,
     CustomDatasetConfig,
     LoggingConfig,
@@ -38,6 +39,11 @@ DATASET_IDS = {
     DatasetLoaders.SST2.value: "sst2",
     DatasetLoaders.ALPACA.value: "alpaca",
     DatasetLoaders.CUSTOM.value: "custom",
+}
+
+# Each is built from the request's learning_rate and weight_decay.
+OPTIMIZER_CONFIGS = {
+    TrainingOptimizers.ADAMW.value: AdamWConfig,
 }
 
 
@@ -138,12 +144,7 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             "Downloading and preparing model weights for training.",
             extra={"log_type": "info", "step": 0},
         )
-        try:
-            trainer.setup(self._job_config(request))
-        except Exception as exception:
-            # `train()` reports its own failures to the callbacks; setup's never reach them.
-            trainer.callback_handler("on_error", exception)
-            raise
+        trainer.setup(self._job_config(request))
 
     def _validate(self, request: TrainingRequest) -> None:
         error = self._validation_error(request)
@@ -164,12 +165,12 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 f"Unsupported dataset_loader '{request.dataset_loader}'; "
                 f"expected one of {sorted(DATASET_IDS)}"
             )
-        # SFTTrainer always builds AdamW and masks labels with a fixed index.
-        if request.optimizer != TrainingOptimizers.ADAMW.value:
+        if request.optimizer not in OPTIMIZER_CONFIGS:
             return (
                 f"Unsupported optimizer '{request.optimizer}'; "
-                f"expected '{TrainingOptimizers.ADAMW.value}'"
+                f"expected one of {sorted(OPTIMIZER_CONFIGS)}"
             )
+        # SFTTrainer masks labels with a fixed index.
         if request.ignored_index != IGNORED_INDEX:
             return (
                 f"Unsupported ignored_index {request.ignored_index}; "
@@ -198,10 +199,8 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             custom_dataset=self._custom_dataset_config(request),
             model_name=self.model_name,
             dtype=request.dtype,
-            learning_rate=request.learning_rate,
             batch_size=request.batch_size,
             num_epochs=request.num_epochs,
-            weight_decay=request.weight_decay,
             gradient_accumulation_steps=request.gradient_accumulation_steps,
             val_steps_freq=request.val_steps_freq,
             logging=LoggingConfig(
@@ -220,6 +219,13 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 save_strategy="step" if request.save_interval > 0 else "none",
                 project_dir=request._output_model_path or "",
             ),
+            # One optimizer over every trainable weight (the adapters).
+            optimizer=[
+                OPTIMIZER_CONFIGS[request.optimizer](
+                    lr=request.learning_rate,
+                    weight_decay=request.weight_decay,
+                )
+            ],
             lora=LoraConfig(
                 r=request.lora_r,
                 alpha=request.lora_alpha,

@@ -14,6 +14,7 @@ from config.constants import (
     SupportedModels,
 )
 from domain.training_request import TrainingRequest
+from ttml.unified_trainer import AdamWConfig
 
 MODEL_ID = ModelNames.LLAMA_3_1_8B_INSTRUCT.value
 HF_REPO_ID = SupportedModels.LLAMA_3_1_8B_INSTRUCT.value
@@ -70,7 +71,7 @@ def _fake_trainer(
     trainer.config.num_epochs = num_epochs
     trainer.global_step = 0
     trainer.epoch = 0
-    trainer.current_learning_rate.return_value = 0.001
+    trainer.current_learning_rate.return_value = [0.001]
     # The callbacks read losses only through `loss_to_float`.
     trainer.loss_to_float.side_effect = float
     if train_batches is None:
@@ -94,7 +95,7 @@ def _train_raising(exception):
     """What `Trainer.train` does when the loop raises: notify, then re-raise."""
 
     def train(trainer):
-        trainer.callback_handler("on_error", exception)
+        trainer.callback_handler("on_train_error", exception)
         raise exception
 
     return train
@@ -181,9 +182,13 @@ class TestJobConfig:
         assert config.model_name == HF_REPO_ID
         assert config.dtype == "torch.bfloat16"
         assert config.batch_size == 8
-        assert config.learning_rate == 1e-4
+        [optimizer] = config.optimizer
+        assert isinstance(optimizer, AdamWConfig)
+        assert optimizer.lr == 1e-4
+        assert optimizer.weight_decay == 0.0
+        # No modules: it trains every adapter weight.
+        assert not hasattr(optimizer, "modules")
         assert config.num_epochs == 3
-        assert config.weight_decay == 0.0
         assert config.gradient_accumulation_steps == 4
         assert config.val_steps_freq == 20
         assert config.max_length == 256
@@ -197,11 +202,15 @@ class TestJobConfig:
         assert config.checkpoint.steps_freq == 25
         assert config.checkpoint.project_dir == "/tmp/job"
 
+    def test_optimizer_defaults_to_adamw(self, runner):
+        [optimizer] = runner._job_config(_request()).optimizer
+        assert isinstance(optimizer, AdamWConfig)
+
     def test_seed_defaults_to_zero(self, runner):
         assert runner._job_config(_request()).seed == 0
 
     def test_weight_decay_defaults_to_adamws_own(self, runner):
-        assert runner._job_config(_request()).weight_decay == 0.01
+        assert runner._job_config(_request()).optimizer[0].weight_decay == 0.01
 
     def test_save_interval_zero_disables_step_saves(self, runner):
         config = runner._job_config(_request(save_interval=0))
@@ -415,7 +424,7 @@ class TestRun:
             with pytest.raises(RuntimeError, match="dataset missing"):
                 runner.run([_request()])
 
-        assert _job_failures(runner) == ["Job failed at step 0: dataset missing"]
+        assert _job_failures(runner) == ["Job failed during setup: dataset missing"]
 
     @pytest.mark.asyncio
     async def test_announces_the_weight_download_before_the_model_loads(self, runner):
@@ -581,7 +590,7 @@ class TestJobControlCallback:
         request._cancel_event = None
         callback = self._callback(request)
 
-        callback.on_error(_fake_trainer(), StopTraining("max steps"))
+        callback.on_train_error(_fake_trainer(), StopTraining("max steps"))
         callback._logger.error.assert_not_called()
 
     def test_real_failure_is_logged(self):
@@ -590,7 +599,7 @@ class TestJobControlCallback:
         callback = self._callback(request)
         boom = RuntimeError("boom")
 
-        callback.on_error(_fake_trainer(), boom)
+        callback.on_train_error(_fake_trainer(), boom)
         error_messages = [
             call.args[0] for call in callback._logger.error.call_args_list
         ]
@@ -598,6 +607,18 @@ class TestJobControlCallback:
             msg.startswith("Job failed at step 0: boom") for msg in error_messages
         )
         assert any("Full traceback:" in msg for msg in error_messages)
+
+    def test_setup_failure_is_logged(self):
+        request = _request()
+        request._cancel_event = None
+        callback = self._callback(request)
+
+        callback.on_setup_error(_fake_trainer(), RuntimeError("no weights"))
+        error_messages = [
+            call.args[0] for call in callback._logger.error.call_args_list
+        ]
+        assert error_messages[0] == "Job failed during setup: no weights"
+        assert "Full traceback:" in error_messages[1]
 
 
 class TestJobMetricsCallback:
@@ -779,7 +800,7 @@ class TestJobMetricsCallback:
         from tt_model_runners.training_runners.callbacks import StopTraining
 
         stop = StopTraining("Reached max_steps=3")
-        assert self._end_training(_request(), "on_error", stop) == [
+        assert self._end_training(_request(), "on_train_error", stop) == [
             "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
         ]
 
@@ -790,12 +811,14 @@ class TestJobMetricsCallback:
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         stop = StopTraining("Job cancelled at step 3")
-        assert self._end_training(request, "on_error", stop) == [
+        assert self._end_training(request, "on_train_error", stop) == [
             "Epoch 1/2 | Step 3 | Training cancelled after 0:01:05"
         ]
 
     def test_a_failure_does_not_end_training_with_a_time(self):
-        assert self._end_training(_request(), "on_error", RuntimeError("boom")) == []
+        assert (
+            self._end_training(_request(), "on_train_error", RuntimeError("boom")) == []
+        )
 
 
 class TestAdapterCheckpointCallback:

@@ -15,9 +15,9 @@ from ttml.unified_trainer import Callback
 class StopTraining(Exception):
     """Raised from a callback to end the training loop early.
 
-    Like any exception, it goes through ``on_error`` and propagates out of
+    Like any exception, it goes through ``on_train_error`` and propagates out of
     ``Trainer.train()``. The runner treats it as a successful end of the job, and
-    the job callbacks' ``on_error`` tell it apart from a real failure.
+    the job callbacks' ``on_train_error`` tell it apart from a real failure.
     """
 
 
@@ -141,7 +141,7 @@ class JobMetricsCallback(JobCallback):
     def on_train_end(self, trainer, *args, **kwargs):
         self._log_training_end(trainer, cancelled=False)
 
-    def on_error(self, trainer, exception, *args, **kwargs):
+    def on_train_error(self, trainer, exception, *args, **kwargs):
         # max_steps and cancellation end the loop with StopTraining, so on_train_end never fires.
         if not isinstance(exception, StopTraining):
             return
@@ -167,7 +167,7 @@ class JobMetricsCallback(JobCallback):
         )
 
     def _log_training_end(self, trainer, cancelled: bool) -> None:
-        # Raising from on_error would replace StopTraining and fail the job.
+        # Raising from on_train_error would replace StopTraining and fail the job.
         if self._train_started_at is None:
             return
         elapsed = timedelta(seconds=round(time.monotonic() - self._train_started_at))
@@ -192,7 +192,9 @@ class JobMetricsCallback(JobCallback):
                 "epoch": trainer.epoch,
                 "metric_name": name,
                 "value": round(value, 6),
-                "learning_rate": trainer.current_learning_rate(),
+                # TODO: record every optimizer's learning rate once the metrics
+                # store has a column for several; jobs train with one optimizer.
+                "learning_rate": trainer.current_learning_rate()[0],
                 "timestamp": time.time(),
             }
         )
@@ -313,12 +315,19 @@ class JobControlCallback(JobCallback):
         )
         raise StopTraining(reason)
 
-    def on_error(self, trainer, exception, *args, **kwargs):
+    def on_setup_error(self, trainer, exception, *args, **kwargs):
+        self._log_failure(trainer, f"Job failed during setup: {exception}")
+
+    def on_train_error(self, trainer, exception, *args, **kwargs):
         if isinstance(exception, StopTraining):
             return
+        self._log_failure(
+            trainer, f"Job failed at step {trainer.global_step}: {exception}"
+        )
+
+    def _log_failure(self, trainer, message: str) -> None:
         self._logger.error(
-            f"Job failed at step {trainer.global_step}: {exception}",
-            extra={"log_type": "error", "step": trainer.global_step},
+            message, extra={"log_type": "error", "step": trainer.global_step}
         )
         self._logger.error(
             f"Full traceback: {traceback.format_exc()}",
