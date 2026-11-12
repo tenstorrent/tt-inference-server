@@ -2,11 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Encode video results to MP4 on a background thread so the device moves on to the next request.
-
-Ported from ``video_runner``'s encoder thread (``_encoder_loop``/``_EncodeJob``)
-so single-host and multi-host workers both overlap ffmpeg with inference.
-"""
+"""Encode video results to MP4 on a background thread so the device moves on to the next request."""
 
 from __future__ import annotations
 

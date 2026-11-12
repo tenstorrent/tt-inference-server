@@ -178,7 +178,6 @@ class ModelRunners(Enum):
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
-    SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
@@ -261,7 +260,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MINIMAX_H3_FASTH3,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
-        ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
@@ -286,39 +284,11 @@ I2V_MODEL_RUNNERS = frozenset(
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
     }
 )
-# SP_RUNNER proxies to a multihost peer and serves either T2V or I2V weights,
-# so the runner alone cannot identify it — fall back to the model name.
-I2V_MODEL_NAMES = frozenset(
-    {
-        ModelNames.WAN_2_2_I2V,
-        ModelNames.WAN_2_2_I2V_PRODIA,
-        ModelNames.WAN_2_2_I2V_ANISORA,
-        ModelNames.WAN_2_2_I2V_DISTILL,
-        ModelNames.WAN_2_2_I2V_LORA,
-        ModelNames.WAN_2_2_I2V_LIGHTNING,
-    }
-)
 
 # MiniMax-H3 ref2va-only deployments: text-only and I2V endpoints must not
 # reach a worker that loaded ``transformer_ref/``.
 REF2VA_MODEL_RUNNERS = frozenset(
     {ModelRunners.TT_MINIMAX_H3_REF2VA, ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V}
-)
-REF2VA_MODEL_NAMES = frozenset(
-    {ModelNames.MINIMAX_H3_REF2VA, ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V}
-)
-# The MiniMax-H3 tasks that are known NOT to serve Ref2VA. An SP frontend loads
-# no weights, so MODEL is its only signal about the peer's task; only these
-# names prove the peer would drop a ``references`` payload. Any other value —
-# a Wan model, an unset MODEL, an unrecognised string — says nothing, and the
-# frontend must stay permissive rather than refuse a working deployment.
-NON_REF2VA_H3_MODEL_NAMES = frozenset(
-    {
-        ModelNames.MINIMAX_H3,
-        ModelNames.MINIMAX_H3_FL2VA,
-        ModelNames.MINIMAX_H3_FASTH3,
-        ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
-    }
 )
 
 # Client-facing video API bounds
@@ -345,39 +315,21 @@ VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
-VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
-    ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
-    ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
-    ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
-    ModelNames.MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
-    ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
-    ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
-}
 
 
 def video_executed_inference_steps(
     requested: Optional[int],
     model_runner: Optional[str] = None,
-    model_name: Optional[str] = None,
 ) -> Optional[int]:
     """Return the denoise steps the pipeline actually runs.
 
-    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``;
-    SP_RUNNER serving those weights is identified by ``MODEL``, not by the
-    runner name.
+    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``.
     """
     if model_runner:
         try:
             forced = VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER.get(
                 ModelRunners(model_runner)
             )
-        except ValueError:
-            forced = None
-        if forced is not None:
-            return forced
-    if model_name:
-        try:
-            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL.get(ModelNames(model_name))
         except ValueError:
             forced = None
         if forced is not None:
@@ -406,14 +358,6 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
     ModelRunners.TT_LTX_2_3_DISTILLED: {ModelNames.LTX_2_3_DISTILLED},
-    ModelRunners.SP_RUNNER: {
-        ModelNames.WAN_2_2,
-        ModelNames.WAN_2_2_T2V_PRODIA,
-        ModelNames.WAN_2_2_I2V,
-        ModelNames.WAN_2_2_I2V_PRODIA,
-        ModelNames.WAN_2_2_I2V_LIGHTNING,
-        ModelNames.MOCHI_1,
-    },
     ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
     ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
     ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
@@ -1439,20 +1383,6 @@ ModelConfigs = {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.SP_RUNNER, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
