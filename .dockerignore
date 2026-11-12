@@ -3,7 +3,15 @@ tt-media-server/Dockerfile
 tt-media-server/Dockerfile.*
 
 # Common exclusions
+# Git metadata and local credentials (same list as tenstorrent/tt-inference-server#5560).
 **/.git
+**/.git-credentials
+**/.gitconfig
+**/.netrc
+**/.ssh
+**/.config/git/credentials
+**/.config/gh/hosts.yml
+**/.docker/config.json
 **/.gitignore
 **/__pycache__
 **/*.pyc
