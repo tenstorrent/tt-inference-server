@@ -7650,7 +7650,9 @@ templates:
 # the default), glm53_flash_128k = the 128 K-context profile (16 resident
 # users). Text only (the stack serves no image or video request). Every
 # request samples on the device (the head's top-10 sampler inside the traced
-# decode step: greedy, temperature / top-p, top-k <= 10). No prefix cache;
+# decode step: greedy, temperature / top-p, top-k <= 10). vLLM's prefix cache
+# (GLM53_STACK_PREFIX: a hit resumes from the stack's device snapshot at the
+# longest shared 8192-token chunk boundary; usage reports cached_tokens);
 # chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
 # step. Both profiles schedule asynchronously (the adapter's resident-input
 # chain) and run one prefill chunk per 8 decode steps while users decode.
@@ -7705,6 +7707,9 @@ templates:
         # plugin without it (bare + TT-prefixed names: the plugin prefixes every checkpoint architecture with "TT").
         TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
         GLM53_MESH_SHAPE: "8,4"  # the model's own view of the mesh the plugin opens (MESH_DEVICE=BH-Galaxy)
+        # vLLM's prefix cache from the stack's device snapshot pool (generator_vllm_stack.StackPrefixCache): a prompt
+        # snapshots its state at every 8192-token chunk end, a later prompt sharing that prefix resumes there
+        GLM53_STACK_PREFIX: "1"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized for a single
         # generation step") trips on the long-context prefill chunks and the first boot's cache writes; 300 s keeps
         # tt-triage on real hangs.
@@ -7736,7 +7741,8 @@ templates:
         # users still fills a whole bucket (an offer short of the bucket would wait for a step that never comes)
         max_num_batched_tokens: 8196  # 8192 + 4
         enable_chunked_prefill: true
-        no-enable-prefix-caching: true  # the stack declares no prefix cache
+        enable-prefix-caching: true  # GLM53_STACK_PREFIX: the stack confirms vLLM's hits against its device snapshots
+        enable-prompt-tokens-details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
@@ -7780,6 +7786,9 @@ templates:
         # plugin without it (bare + TT-prefixed names: the plugin prefixes every checkpoint architecture with "TT").
         TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
         GLM53_MESH_SHAPE: "8,4"  # the model's own view of the mesh the plugin opens (MESH_DEVICE=BH-Galaxy)
+        # vLLM's prefix cache from the stack's device snapshot pool (generator_vllm_stack.StackPrefixCache): a prompt
+        # snapshots its state at every 8192-token chunk end, a later prompt sharing that prefix resumes there
+        GLM53_STACK_PREFIX: "1"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized for a single
         # generation step") trips on the long-context prefill chunks and the first boot's cache writes; 300 s keeps
         # tt-triage on real hangs.
@@ -7808,7 +7817,8 @@ templates:
         # one 8192-token prefill bucket per engine step plus one decode token per slot (see the 1 M profile)
         max_num_batched_tokens: 8208  # 8192 + 16
         enable_chunked_prefill: true
-        no-enable-prefix-caching: true  # the stack declares no prefix cache
+        enable-prefix-caching: true  # GLM53_STACK_PREFIX: the stack confirms vLLM's hits against its device snapshots
+        enable-prompt-tokens-details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
