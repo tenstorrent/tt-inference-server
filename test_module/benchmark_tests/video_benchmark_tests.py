@@ -25,13 +25,14 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     SkipTest,
-    VIDEO_GENERATION_ENDPOINT,
-    VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
     _load_fixture_image_base64,
     block_id,
     build_video_generation_payload,
+    get_video_download_url,
     get_video_generation_submit_endpoint,
+    get_video_job_endpoint,
     is_i2v_video_model,
+    is_minimax_h3_model,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -47,43 +48,12 @@ VIDEO_INFERENCE_STEPS = {
     "genmo/mochi-1-preview": 50,
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 40,
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
-    # Pinned by the runner and refused in the request; labels the rows only.
+    # Fixed by the runner; labels the rows only.
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
     "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
 }
-# MiniMax-H3 rejects num_inference_steps and negative_prompt (422), and each deployment serves
-# one route, so H3 gets its own request shape. Keyed by the served model name (the MODEL env).
-MINIMAX_H3_SUBMIT_ENDPOINTS = {
-    "MiniMax-H3-FL2VA-LightX2V": VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
-    "MiniMax-H3-Ref2VA-LightX2V": "v1/videos/generations/ref2va",
-}
-MINIMAX_H3_DURATION_SECONDS = 5
-# 16:9; an explicit canvas keeps the clip shape independent of the keyframe's aspect ratio.
-MINIMAX_H3_HEIGHT, MINIMAX_H3_WIDTH = 768, 1344
 # A shape the boot warmup did not cover compiles inside its first request.
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
-
-
-def is_minimax_h3_model(model_name: str) -> bool:
-    return model_name in MINIMAX_H3_SUBMIT_ENDPOINTS
-
-
-def _minimax_h3_payload(model_name: str, prompt: str, image_b64: str) -> dict:
-    payload = {
-        "prompt": prompt,
-        "duration": MINIMAX_H3_DURATION_SECONDS,
-        "seed": 0,
-    }
-    if MINIMAX_H3_SUBMIT_ENDPOINTS[model_name] == VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT:
-        payload.update(
-            height=MINIMAX_H3_HEIGHT,
-            width=MINIMAX_H3_WIDTH,
-            image_prompts=[{"image": image_b64, "frame_pos": 0}],
-        )
-    else:
-        # Let the server pick the canvas for 16:9.
-        payload.update(aspect_ratio="16:9", references={"images": [{"b64": image_b64}]})
-    return payload
 
 
 VIDEO_JOB_STATUS_COMPLETED = "completed"
@@ -99,7 +69,9 @@ def _download_video(ctx: MediaContext, job_id: str, headers: dict) -> str:
         video_path = output_dir / f"{job_id}.mp4"
 
         response = requests.get(
-            f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}/download",
+            get_video_download_url(
+                ctx.base_url, ctx.model_spec.model_name, job_id, headers
+            ),
             headers=headers,
             timeout=300,
             stream=True,
@@ -134,7 +106,8 @@ def _poll_video_completion(
     while time.time() - start_time < timeout:
         try:
             response = requests.get(
-                f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}",
+                f"{ctx.base_url}/"
+                f"{get_video_job_endpoint(ctx.model_spec.model_name, job_id)}",
                 headers=headers,
                 timeout=30,
             )
@@ -174,27 +147,18 @@ def _generate_video(
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
     h3 = is_minimax_h3_model(model_name)
-    submit_endpoint = (
-        MINIMAX_H3_SUBMIT_ENDPOINTS[model_name]
-        if h3
-        else get_video_generation_submit_endpoint(model_name)
-    )
+    submit_endpoint = get_video_generation_submit_endpoint(model_name)
     headers = {
         "accept": "application/json",
         "Authorization": "Bearer your-secret-key",
         "Content-Type": "application/json",
     }
-    if h3:
-        payload = _minimax_h3_payload(
-            model_name, prompt, image_b64 or _load_fixture_image_base64()
-        )
-    else:
-        payload = build_video_generation_payload(
-            prompt=prompt,
-            num_inference_steps=num_inference_steps,
-            model_name=model_name,
-            image_b64=image_b64,
-        )
+    payload = build_video_generation_payload(
+        prompt=prompt,
+        num_inference_steps=num_inference_steps,
+        model_name=model_name,
+        image_b64=image_b64,
+    )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 

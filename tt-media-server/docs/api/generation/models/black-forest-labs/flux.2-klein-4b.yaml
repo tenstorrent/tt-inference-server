@@ -73,7 +73,7 @@ components:
           description: |
             Image to edit or draw from: 0 or 1 for now; a list so more can be
             allowed later without a schema change. Omitted = text to image.
-            Resized and center-cropped to the output size.
+            Center-cropped to the output's aspect ratio and resized to about 1 MP.
         count:
           type: integer
           minimum: 1
