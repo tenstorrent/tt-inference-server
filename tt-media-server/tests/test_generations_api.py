@@ -1574,26 +1574,70 @@ def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
     )
 
 
+def _enhanced_with(element: dict) -> dict:
+    return {
+        "high_level_description": "h",
+        "compositional_deconstruction": {"background": "b", "elements": [element]},
+    }
+
+
 @pytest.mark.parametrize(
     "caption",
     [
         None,
         "not a caption",
-        {"style_description": {"photo": "p"}},
-        {
-            "style_description": {"photo": "p", "art_style": "s"},
-            "compositional_deconstruction": {"background": "b", "elements": []},
-        },
-        {
-            "compositional_deconstruction": {"background": "b", "elements": []},
-            "mood": "extra key",
-        },
+        {"high_level_description": "h", "style_description": {"photo": "p"}},
+        {"compositional_deconstruction": {"background": "b", "elements": []}},
+        _enhanced_with({"type": "obj"}),
+        _enhanced_with({"type": "text", "desc": "d"}),
+        _enhanced_with({"type": "text", "text": "t"}),
+        _enhanced_with({"type": "obj", "bbox": [0, 0, 9, 1001], "desc": "d"}),
+        _enhanced_with({"type": "obj", "desc": "d", "color_palette": ["red"]}),
     ],
-    ids=["none", "string", "no-composition", "photo-and-art-style", "unknown-key"],
+    ids=[
+        "none",
+        "string",
+        "no-composition",
+        "no-high-level-description",
+        "obj-without-desc",
+        "text-without-text",
+        "text-without-desc",
+        "bbox-over-1000",
+        "color-not-hex",
+    ],
 )
-def test_enhancer_caption_follows_the_reference_rules(caption):
+def test_enhancer_caption_follows_the_hosted_schema(caption):
     with pytest.raises(ValueError, match="enhancer"):
         Ideogram4Request(prompt="p").prompt_from_enhancer(caption)
+
+
+def test_enhancer_caption_takes_what_the_hosted_schema_allows():
+    # Unnamed keys, photo with art_style, lowercase hex, a bbox of any length.
+    caption = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "medium": "m",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "bbox": [5], "desc": "d", "text": "unnamed"}
+                ],
+            },
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","medium":"m","art_style":"s",'
+        '"color_palette":["#FF2E88"]},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d"}]}}'
+    )
 
 
 class _FakeEnhancer:
@@ -1625,13 +1669,20 @@ _ENHANCED = {
     "high_level_description": "A neon sign.",
     "compositional_deconstruction": {
         "background": "a wall",
-        "elements": [{"type": "text", "bbox": [1, 2, 3, 4], "text": "OPEN"}],
+        "elements": [
+            {
+                "type": "text",
+                "bbox": [1, 2, 3, 4],
+                "text": "OPEN",
+                "desc": "a neon sign",
+            }
+        ],
     },
 }
 _ENHANCED_PROMPT = (
     '{"high_level_description":"A neon sign.",'
     '"compositional_deconstruction":{"background":"a wall",'
-    '"elements":[{"type":"text","text":"OPEN"}]}}'
+    '"elements":[{"type":"text","text":"OPEN","desc":"a neon sign"}]}}'
 )
 
 

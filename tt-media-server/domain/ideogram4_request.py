@@ -14,6 +14,7 @@ from domain.generation_request import (
     Seed,
 )
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -162,52 +163,54 @@ class Ideogram4Caption(_Strict):
     compositional_deconstruction: Ideogram4CompositionalDeconstruction
 
 
-# The prompt enhancer's caption is checked by the rules of the reference
-# pipeline's CaptionVerifier (ideogram-oss/ideogram4), which rejects a caption
-# with issues by default: looser than Ideogram4Caption above, which also
-# requires aesthetics, lighting and medium, an object's desc and a text
-# element's text. Fields are declared in the model's key order, as above.
+# The prompt enhancer's caption is checked against the hosted API's published
+# schema (V4JsonPrompt, developer.ideogram.ai/openapi/ideogram-api-v1.json).
+# That schema allows keys it doesn't name; they are dropped. Fields are
+# declared in the model's key order, as above.
+
+_EnhancedColor = Annotated[
+    str, Field(pattern=r"^#[0-9a-fA-F]{6}$"), AfterValidator(str.upper)
+]
+# Checked, then left out of the model's caption.
+_EnhancedBbox = Annotated[
+    Optional[list[Annotated[int, Field(ge=0, le=1000)]]],
+    Field(default=None, exclude=True),
+]
 
 
-class _EnhancedStyle(_Strict):
+class _EnhancedStyle(BaseModel):
     aesthetics: Optional[str] = None
     lighting: Optional[str] = None
     photo: Optional[str] = None
     medium: Optional[str] = None
     art_style: Optional[str] = None
-    color_palette: Optional[Palette] = None
-
-    @model_validator(mode="after")
-    def _photo_or_art_style(self):
-        if (self.photo is None) == (self.art_style is None):
-            raise ValueError("exactly one of photo and art_style is required")
-        return self
+    color_palette: Optional[list[_EnhancedColor]] = None
 
 
-class _EnhancedObject(_Element):
+class _EnhancedObject(BaseModel):
     type: Literal["obj"]
-    bbox: Optional[Bbox] = None
-    desc: Optional[str] = None
-    color_palette: Optional[ElementPalette] = None
+    bbox: _EnhancedBbox
+    desc: str
+    color_palette: Optional[list[_EnhancedColor]] = None
 
 
-class _EnhancedText(_Element):
+class _EnhancedText(BaseModel):
     type: Literal["text"]
-    bbox: Optional[Bbox] = None
-    text: Optional[str] = None
-    desc: Optional[str] = None
-    color_palette: Optional[ElementPalette] = None
+    bbox: _EnhancedBbox
+    text: str
+    desc: str
+    color_palette: Optional[list[_EnhancedColor]] = None
 
 
-class _EnhancedComposition(_Strict):
+class _EnhancedComposition(BaseModel):
     background: str
     elements: list[
         Annotated[Union[_EnhancedObject, _EnhancedText], Field(discriminator="type")]
     ]
 
 
-class _EnhancedCaption(_Strict):
-    high_level_description: Optional[str] = None
+class _EnhancedCaption(BaseModel):
+    high_level_description: str
     style_description: Optional[_EnhancedStyle] = None
     compositional_deconstruction: _EnhancedComposition
 
@@ -222,25 +225,12 @@ def serialize_caption(caption: BaseModel) -> str:
 def caption_from_enhancer(caption: Any) -> str:
     """The prompt enhancer's caption as the model gets it.
 
-    As the reference's magic-prompt client does by default, drops the
-    caption's aspect ratio and every element's bbox (the enhancer gets the
-    requested aspect ratio separately). Raises ValueError when what is left
-    breaks the reference pipeline's caption rules.
+    Checks the caption against the hosted API's schema, then drops the keys
+    that schema doesn't name and every element's bbox. Raises ValueError when
+    the caption breaks the schema.
     """
     if not isinstance(caption, dict):
         raise ValueError("the prompt enhancer returned no caption")
-    caption = {k: v for k, v in caption.items() if k != "aspect_ratio"}
-    composition = caption.get("compositional_deconstruction")
-    if isinstance(composition, dict) and isinstance(composition.get("elements"), list):
-        caption["compositional_deconstruction"] = {
-            **composition,
-            "elements": [
-                {k: v for k, v in e.items() if k != "bbox"}
-                if isinstance(e, dict)
-                else e
-                for e in composition["elements"]
-            ],
-        }
     try:
         return serialize_caption(_EnhancedCaption.model_validate(caption))
     except ValidationError as e:
