@@ -770,15 +770,22 @@ templates:
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
 # models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
 # Shield sweep is directly comparable with the existing autoport benchmark run.
+# Dedicated Gemma 4 31B QB2 implementation, one entry per decode-slot profile (the decode trace holds 32 rows, so a
+# speculative profile needs slots * (1 + K) <= 32). Profile table (slots -> speculative decoding):
+#   1 slot:  n-gram speculation, K = 5      (replay of recorded SWE-bench agent trajectories, 1 user: +30% tok/s/user)
+#   4, 8, 16, 32 slots: off                 (the verify step costs a full plain step and real agent text accepts ~1.3
+#                                            tokens per step: slower than plain decode at 4+ users; measured 2026-11-12)
+# The 32-slot entry comes first because it holds the YAML anchors the other profiles reuse.
 - weights:
     - google/gemma-4-31B-it
-  impl: gemma4_31b_qb2
+  impl: gemma4_31b_qb2_c32
   inference_engine: VLLM
   device_model_specs:
-    - device: P300X2
-      max_concurrency: 1
+    - &gemma4_31b_qb2_device
+      device: P300X2
+      max_concurrency: 32
       max_context: 262144
-      default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
+      default_impl: false  # selectable with --impl gemma4_31b_qb2_c32; needs tt-metal with the Gemma 4 31B QB2 prefix-cache and decode-step changes
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
@@ -787,12 +794,12 @@ templates:
         sample_on_device_mode: all
         trace_region_size: 536870912
         l1_small_size: 16384
-      vllm_args:
+      vllm_args: &gemma4_31b_qb2_vllm_args
         block_size: '128'
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
         # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
         # prefill and rejects budgets above 8192 batched tokens. Requests that
         # omit top_k need a default inside the device sampler's 1..32 range.
@@ -805,12 +812,75 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
-  env_vars:
+  env_vars: &gemma4_31b_qb2_env_vars
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
+  metadata: &gemma4_31b_qb2_metadata
     google/gemma-4-31B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - <<: *gemma4_31b_qb2_device
+      max_concurrency: 1
+      default_impl: false  # selectable with --impl gemma4_31b_qb2
+      vllm_args:
+        <<: *gemma4_31b_qb2_vllm_args
+        # Host n-gram drafter, K = 5. The model's verify call needs synchronous scheduling.
+        async-scheduling: false
+        speculative_config: '{"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4,"prompt_lookup_min":2}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars: *gemma4_31b_qb2_env_vars
+  metadata: *gemma4_31b_qb2_metadata
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2_c4
+  inference_engine: VLLM
+  device_model_specs:
+    - <<: *gemma4_31b_qb2_device
+      max_concurrency: 4
+      default_impl: false  # selectable with --impl gemma4_31b_qb2_c4
+      vllm_args:
+        <<: *gemma4_31b_qb2_vllm_args
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars: *gemma4_31b_qb2_env_vars
+  metadata: *gemma4_31b_qb2_metadata
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2_c8
+  inference_engine: VLLM
+  device_model_specs:
+    - <<: *gemma4_31b_qb2_device
+      max_concurrency: 8
+      default_impl: false  # selectable with --impl gemma4_31b_qb2_c8
+      vllm_args:
+        <<: *gemma4_31b_qb2_vllm_args
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars: *gemma4_31b_qb2_env_vars
+  metadata: *gemma4_31b_qb2_metadata
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2_c16
+  inference_engine: VLLM
+  device_model_specs:
+    - <<: *gemma4_31b_qb2_device
+      max_concurrency: 16
+      default_impl: false  # selectable with --impl gemma4_31b_qb2_c16
+      vllm_args:
+        <<: *gemma4_31b_qb2_vllm_args
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars: *gemma4_31b_qb2_env_vars
+  metadata: *gemma4_31b_qb2_metadata
 
 # Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
 # is the tt_transformers entry below (32 users, the MTP speculative contract).

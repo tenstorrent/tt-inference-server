@@ -428,6 +428,16 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+# The same implementation as one entry per decode-slot count above one (see the profile table in dev/llm.yaml).
+gemma4_31b_qb2_slot_impls = {
+    f"gemma4_31b_qb2_c{slots}": ImplSpec(
+        impl_id=f"gemma4_31b_qb2_c{slots}",
+        impl_name=f"gemma4-31b-qb2-c{slots}",
+        repo_url=gemma4_31b_qb2_impl.repo_url,
+        code_path=gemma4_31b_qb2_impl.code_path,
+    )
+    for slots in (4, 8, 16, 32)
+}
 gemma4_26b_a4b_qb2_impl = ImplSpec(
     impl_id="gemma4_26b_a4b_qb2",
     impl_name="gemma4-26b-a4b-qb2",
@@ -487,6 +497,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    **gemma4_31b_qb2_slot_impls,
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
