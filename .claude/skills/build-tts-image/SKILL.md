@@ -34,16 +34,28 @@ recommended option:
 | Input | Default when not given |
 |---|---|
 | Engine commit (nanicic fork) | latest commit of `nanicicTT/TTS_Scheduler` |
+| Engine source | GitHub; or a local engine clone (`--engine-dir`), see below |
 | Server commit (tt-inference-server) | latest commit of `ljovanovic/tts_stable_branch` (local tip if it is ahead of origin) |
 | Image tag | chosen from the changes, see step 3 |
 
 A commit can be a SHA or a branch name. If the user answers "latest" or picks
 the default, pass nothing for that input.
 
+**Local engine clone (`--engine-dir <dir>`).** Use it when the user says to
+build from a local engine folder, or when the host has no GitHub token. The
+user prepares that clone first: check out the wanted commit and run
+`git submodule update --init --recursive`. The engine commit then defaults to
+that clone's HEAD (a ref given with `--engine` is resolved inside it). No
+GitHub token is needed. Only committed content is copied, at the submodule
+commits the engine commit records; uncommitted edits and build folders are
+left out. On bgd-lab-19 the clone is
+`tt-media-server/cpp_server/nanicic-TTS-llm-engine`. Pass `--engine-dir` to
+both `resolve` and `build`.
+
 ## 2. Resolve
 
 ```bash
-$S resolve [--engine <ref>] [--server <ref>] [--tag <tag>]
+$S resolve [--engine <ref>] [--server <ref>] [--tag <tag>] [--engine-dir <dir>]
 ```
 
 It changes nothing. It prints `ENGINE=`, `SERVER=` (full SHAs) with their
@@ -52,7 +64,10 @@ subjects, the previous recorded build, `TAG_EXISTS=` when a tag was given,
 build.
 
 - A failed fetch means the host has no GitHub access. Stop and tell the user;
-  do not build from stale state.
+  do not build from stale state. (Offer `--engine-dir` if a local engine
+  clone exists.)
+- With `--engine-dir`, if `UNCOMMITTED_ENGINE_FILES` is not 0, tell the user
+  those engine edits will NOT be in the image and ask whether to continue.
 - If `UNCOMMITTED_SERVER_FILES` is not 0, tell the user those edits will NOT
   be in the image (it builds from a clean checkout of the server commit) and
   ask whether to continue or commit them first.
@@ -85,7 +100,7 @@ starting; do not wait for confirmation unless something above needed it.
 The build takes 20-60 min. Start it detached and poll the log:
 
 ```bash
-nohup $S build --engine <ENGINE> --server <SERVER> --tag <TAG> \
+nohup $S build --engine <ENGINE> --server <SERVER> --tag <TAG> [--engine-dir <dir>] \
   > /tmp/build-tts-image-<TAG>.out 2>&1 &
 ```
 
