@@ -486,6 +486,33 @@ def test_llama_qb2_catalog_preserves_default_and_shared_pool():
     assert spec.has_builtin_warmup
 
 
+def test_qwen38_mtp_dev_spec_keeps_k_and_verify_rows_consistent():
+    specs = get_model_spec_map(
+        load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    )
+    mtp = {
+        s.device_type: s
+        for s in specs.values()
+        if s.impl.impl_id == "qwen36_blackhole_mtp"
+    }
+    assert set(mtp) == {DeviceTypes.P150X8, DeviceTypes.BLACKHOLE_GALAXY}
+    for spec in mtp.values():
+        args = spec.device_model_spec.vllm_args
+        k = json.loads(args["speculative_config"])["num_speculative_tokens"]
+        # Qwen36MTPContractForCausalLM takes K from QWEN36_SPEC_K, verifies at most
+        # 32 rows of max_num_seqs x (K + 1), synchronously, and serves text only.
+        assert int(spec.env_vars["QWEN36_SPEC_K"]) == k
+        assert int(args["max_num_seqs"]) * (k + 1) <= 32
+        assert args["no-async-scheduling"] is True
+        assert args["language-model-only"] is True
+        assert spec.supported_modalities == ["text"]
+    galaxy = mtp[DeviceTypes.BLACKHOLE_GALAXY].device_model_spec
+    assert galaxy.vllm_args["data_parallel_size"] == 4
+    assert galaxy.max_tokens_all_users == 4 * int(
+        mtp[DeviceTypes.BLACKHOLE_GALAXY].env_vars["QWEN36_MAX_TOKENS_ALL_USERS"]
+    )
+
+
 def test_performance_references_are_scoped_to_implementation(monkeypatch):
     from workflows import model_spec
 
