@@ -491,6 +491,15 @@ muse_glimmer_30b_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b",
 )
 
+# meta-models/Muse-Glimmer-30B on QB2 with DFlash2 speculative decoding (batch 1) under
+# models/demos/muse_glimmer_30b, on the vllm-tt-plugin speculative contract rail.
+muse_glimmer_30b_dflash2_impl = ImplSpec(
+    impl_id="muse_glimmer_30b_dflash2",
+    impl_name="muse-glimmer-30b-dflash2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/muse_glimmer_30b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -502,6 +511,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
+    "muse_glimmer_30b_dflash2": muse_glimmer_30b_dflash2_impl,
     "muse_glimmer_30b": muse_glimmer_30b_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
