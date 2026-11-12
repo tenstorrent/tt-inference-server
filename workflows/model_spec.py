@@ -502,6 +502,13 @@ glm53_flash_128k_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/glm53_flash",
 )
+# the 128 K profile with image input (the adapter's multimodal class): --impl glm53-flash-128k-mm
+glm53_flash_128k_mm_impl = ImplSpec(
+    impl_id="glm53_flash_128k_mm",
+    impl_name="glm53-flash-128k-mm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -516,6 +523,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "glm53_flash": glm53_flash_impl,
     "glm53_flash_128k": glm53_flash_128k_impl,
+    "glm53_flash_128k_mm": glm53_flash_128k_mm_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
