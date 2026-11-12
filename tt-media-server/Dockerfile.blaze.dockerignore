@@ -1,0 +1,66 @@
+# Build context for tt-media-server/Dockerfile.blaze, as an allowlist.
+# BuildKit reads this file instead of the root .dockerignore when building
+# with -f tt-media-server/Dockerfile.blaze. Everything is excluded, and only
+# what the build or the running image uses is added back. The engine
+# (tt-llm-engine) is not in this context: it comes in through the named
+# build context of the same name.
+*
+
+# Copied by the Dockerfile from the repo root.
+!VERSION
+!docker-entrypoint.sh
+
+# Python app. The default CMD runs run_uvicorn.sh (SERVER_MODE=uvicorn);
+# these are main.py and every top-level package it imports.
+!tt-media-server/main.py
+!tt-media-server/run_uvicorn.sh
+!tt-media-server/run_cpp.sh
+!tt-media-server/config
+!tt-media-server/device_workers
+!tt-media-server/domain
+!tt-media-server/health_monitoring
+!tt-media-server/ipc
+!tt-media-server/model_services
+!tt-media-server/monitoring
+!tt-media-server/open_ai_api
+!tt-media-server/resolver
+!tt-media-server/scripts
+!tt-media-server/security
+!tt-media-server/static
+!tt-media-server/telemetry
+!tt-media-server/tt_model_runners
+!tt-media-server/utils
+
+# C++ server: install_dependencies.sh and build.sh run in the image, and
+# CMakeLists.txt also builds tests/ and benchmarks/ unconditionally.
+!tt-media-server/cpp_server/CMakeLists.txt
+!tt-media-server/cpp_server/build.sh
+!tt-media-server/cpp_server/install_dependencies.sh
+!tt-media-server/cpp_server/cmake
+!tt-media-server/cpp_server/include
+!tt-media-server/cpp_server/src
+!tt-media-server/cpp_server/tests
+!tt-media-server/cpp_server/benchmarks
+!tt-media-server/cpp_server/scripts
+!tt-media-server/cpp_server/resources
+!tt-media-server/cpp_server/third_party
+
+# Never, even inside the directories above: git metadata, local
+# credentials, caches and build output.
+**/.git
+**/.git-credentials
+**/.gitconfig
+**/.netrc
+**/.ssh
+**/.config/git/credentials
+**/.config/gh/hosts.yml
+**/.docker/config.json
+**/.env
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/*.log
+tt-media-server/cpp_server/build
+tt-media-server/cpp_server/build-*
+tt-media-server/cpp_server/tt-llm-engine
+tt-media-server/cpp_server/_deps
