@@ -461,6 +461,18 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # The same profile with the stack's MTP speculative step (glm53_flash_mtp, EXPERIMENTAL): same dataset and lanes.
+    AgenticTracesConfig(
+        model_id="id_glm53-flash-mtp_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
     # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only; no SwarmOne scenario is recorded for this model. Same InferenceX
     # pin as Kimi above so numbers stay comparable across the two models.
