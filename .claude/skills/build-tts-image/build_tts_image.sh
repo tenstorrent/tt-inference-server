@@ -23,6 +23,7 @@ cd "$REPO_ROOT" || exit 1
 
 IMAGE=ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze
 ENGINE_SLUG=nanicicTT/nanicic-TTS-llm-engine
+ENGINE_URL=https://github.com/${ENGINE_SLUG}.git
 ENGINE_DEFAULT_REF=nanicicTT/TTS_Scheduler
 SERVER_DEFAULT_REF=ljovanovic/tts_stable_branch
 RECORD=tt-media-server/docs/tts_image_builds.md
@@ -32,22 +33,36 @@ ENGINE_CACHE=${WORK}/engine.git
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 token() {
-  if [ -n "$GITHUB_TOKEN" ]; then echo "$GITHUB_TOKEN"; return; fi
+  if [ -n "${GITHUB_TOKEN:-}" ]; then echo "$GITHUB_TOKEN"; return; fi
   awk '/oauth_token:/{print $2; exit}' ~/.config/gh/hosts.yml 2>/dev/null
 }
 
 # Never let the token reach the terminal or a log.
 redact() { local t; t=$(token); if [ -n "$t" ]; then sed "s/${t}/***/g"; else cat; fi; }
 
-# Fetch into the engine cache. The remote URL is a placeholder that only this
-# one-shot rewrite turns into a token URL: the token is never stored in the
-# cache's config, and a global `url.git@github.com:.insteadOf=https://github.com/`
-# (common on these hosts) cannot reroute the fetch to ssh. Blobless (partial clone): history for
-# the change log without the file contents.
+# Run git against GitHub. The token comes from a credential helper that reads
+# it from the environment, so it is never in a URL, on a command line (ps), or
+# saved in any config. HOME is an empty dir so a global
+# `url.git@github.com:.insteadOf=https://github.com/` (common on these hosts,
+# and needing an ssh key the host may not have) cannot reroute to ssh; ssh
+# submodule URLs (tt-metal) are fetched over https instead. -c settings and
+# the environment carry over into submodule fetches.
+gitnet() {
+  local h rc; h=$(mktemp -d)
+  HOME=$h GIT_TERMINAL_PROMPT=0 TTS_GH_TOKEN=$(token) timeout "${GITNET_TIMEOUT:-1800}" git \
+    -c credential.helper= \
+    -c 'credential.helper=!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$TTS_GH_TOKEN"; }; f' \
+    -c url.https://github.com/.insteadOf=git@github.com: \
+    -c url.https://github.com/.insteadOf=ssh://git@github.com/ \
+    "$@"
+  rc=$?; rm -rf "$h"; return $rc
+}
+
+# Fetch into the engine cache. Blobless (partial clone): history for the
+# change log without the file contents.
 efetch() {
-  timeout 600 git -C "$ENGINE_CACHE" \
-    -c "url.https://x-access-token:$(token)@github.com/.insteadOf=tts-engine-gh:" \
-    fetch -q --filter=blob:none origin "$@" 2>&1 | redact >&2
+  GITNET_TIMEOUT=600 gitnet -C "$ENGINE_CACHE" fetch -q --filter=blob:none origin "$@" 2>&1 | redact >&2
+  return "${PIPESTATUS[0]}"
 }
 
 ENGINE_REF="" SERVER_REF="" TAG="" PUSH=1
@@ -78,12 +93,14 @@ resolve_engine() {
   mkdir -p "$WORK"
   if [ ! -d "$ENGINE_CACHE" ]; then
     git init -q --bare "$ENGINE_CACHE"
-    git -C "$ENGINE_CACHE" remote add origin "tts-engine-gh:${ENGINE_SLUG}.git"
+    git -C "$ENGINE_CACHE" remote add origin "$ENGINE_URL"
     # git 2.25 only accepts --filter on a fetch from a remote marked as a
     # partial-clone promisor.
     git -C "$ENGINE_CACHE" config core.repositoryformatversion 1
     git -C "$ENGINE_CACHE" config extensions.partialClone origin
   fi
+  # Caches made by older versions of this script use a placeholder URL.
+  git -C "$ENGINE_CACHE" remote set-url origin "$ENGINE_URL"
   local ref=${ENGINE_REF:-$ENGINE_DEFAULT_REF}
   # Blobless: history for the change log, without downloading file contents.
   if is_sha "$ref"; then
@@ -215,13 +232,36 @@ cmd_build() {
   # uncommitted there.
   git worktree remove --force "$src" 2>/dev/null; rm -rf "$src"
   git worktree add -q --detach "$src" "$server" 2>&1 | tee -a "$log" || die "worktree add failed"
-  trap 'git -C "$REPO_ROOT" worktree remove --force "$src" 2>/dev/null' EXIT
+  local eng="${WORK}/engine-${TAG}"
+  trap 'git -C "$REPO_ROOT" worktree remove --force "$src" 2>/dev/null; rm -rf "$eng"' EXIT
+
+  # Engine checkout with submodules, made here on the host and handed to
+  # docker as the `tt-llm-engine` build context. The token is used only by
+  # these host-side fetches; docker build never sees it.
+  local erc=1 eattempt
+  for eattempt in 1 2 3; do
+    echo "=== engine checkout attempt ${eattempt} $(date -Is) ===" | tee -a "$log"
+    rm -rf "$eng"
+    { git init -q "$eng" \
+      && git -C "$eng" remote add origin "$ENGINE_URL" \
+      && gitnet -C "$eng" fetch -q --depth 1 origin "$ENGINE_REF" \
+      && git -C "$eng" -c advice.detachedHead=false checkout -q FETCH_HEAD \
+      && gitnet -C "$eng" submodule update -q --init --recursive --depth 1 --jobs 4; } 2>&1 | redact | tee -a "$log"
+    erc=${PIPESTATUS[0]}
+    [ "$erc" -eq 0 ] && break
+    sleep 60
+  done
+  [ "$erc" -eq 0 ] || die "engine checkout of ${ENGINE_REF} failed (see $log)"
+  [ "$(git -C "$eng" rev-parse HEAD)" = "$ENGINE_REF" ] || die "engine checkout is not at ${ENGINE_REF}"
+  if grep -rIlE 'x-access-token|gh[opsu]_[A-Za-z0-9]{30,}|github_pat_' "$eng/.git" 2>/dev/null | head -1 | grep -q .; then
+    die "a GitHub credential ended up in the engine checkout's git config; refusing to build"
+  fi
 
   local rc=1 attempt
   for attempt in 1 2 3; do
     echo "=== docker build attempt ${attempt} $(date -Is) ===" | tee -a "$log"
-    (cd "$src" && GITHUB_TOKEN=$(token) DOCKER_BUILDKIT=1 docker build --progress=plain \
-        --secret id=github_token,env=GITHUB_TOKEN \
+    (cd "$src" && DOCKER_BUILDKIT=1 docker build --progress=plain \
+        --build-context tt-llm-engine="$eng" \
         --build-arg TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG="$short" \
         --build-arg TT_LLM_ENGINE_COMMIT="$ENGINE_REF" \
         -f tt-media-server/Dockerfile.blaze -t "$full" .) 2>&1 | redact | tee -a "$log" >/dev/null

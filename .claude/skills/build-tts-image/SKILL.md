@@ -13,8 +13,14 @@ from two commits, pushes it, verifies the registry digest, and commits a row to
 
 All commands run **on the build host, in the tt-inference-server repo root**.
 If this session runs on a Mac that drives the host over herdr, wrap each one in
-`herdr-ssh '...'`. The host needs GitHub access (gh token in
-`~/.config/gh/hosts.yml` or `GITHUB_TOKEN`) and `docker login ghcr.io`.
+`herdr-ssh '...'`. The host needs GitHub read access to the nanicic engine
+repo (`GITHUB_TOKEN`, preferably a fine-grained read-only token for that repo,
+or else the gh login token in `~/.config/gh/hosts.yml`) and `docker login ghcr.io`.
+
+The token is used only on the host, to check out the engine and its
+submodules. That checkout goes to `docker build` as the `tt-llm-engine` build
+context, so no credential is passed into the build or stored in the image
+(the Dockerfile also fails the build if it finds one).
 
 The script is `.claude/skills/build-tts-image/build_tts_image.sh`
 (call it `$S` below).
