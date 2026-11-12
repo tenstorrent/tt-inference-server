@@ -41,6 +41,7 @@ from config.settings import get_settings
 from domain.flux3_image_klein_request import (
     FLUX3_KLEIN_STEPS,
     Flux3ImageKleinRequest,
+    upsampler_frozen,
 )
 from domain.generation_request import GenerationRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -354,16 +355,6 @@ MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
 
 
 FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
-FLUX3_PROMPT_UPSAMPLER_FROZEN = "FLUX3_PROMPT_UPSAMPLER_FROZEN"
-
-
-def _flux3_upsampler_frozen() -> bool:
-    """Whether the prompt upsampler runs ahead of the deployment
-    (``FLUX3_PROMPT_UPSAMPLER_FROZEN=1``): every prompt then reaches the model
-    as sent and the pipeline is built without the upsampler, so no VL model is
-    loaded and the mesh needs no second command queue or trace region. Default
-    off: the upsampler runs on the first chip."""
-    return _minimax_h3_env_bool(FLUX3_PROMPT_UPSAMPLER_FROZEN) or False
 
 
 def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
@@ -401,18 +392,23 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
+            # With the upsampler ahead of the deployment (upsampler_frozen),
+            # the pipeline is built without it: no VL model loaded, no second
+            # command queue or trace region, and every size is served.
             pipeline = Flux3KleinPipeline(
                 self.ttnn_device,
                 snapshots={"distilled": snapshot},
-                upsample=not _flux3_upsampler_frozen(),
+                upsample=not upsampler_frozen(),
             )
-            # Every served shape, from tt-metal's own constants: each size
-            # without a reference and with one per reference token bucket, at
-            # the model's steps. The DiT's programs then serve a reference of
-            # any shape; the VAE encoder's compile once per new reference
-            # shape (job 193924: 48 s for a 4096x832 canvas), hence
+            # Every served size (tt-metal's own, minus 4K with the upsampler
+            # resident): without a reference and with one per reference token
+            # bucket, at the model's steps. The DiT's programs then serve a
+            # reference of any shape; the VAE encoder's compile once per new
+            # reference shape (job 193924: 48 s for a 4096x832 canvas), hence
             # warmup_requests.
-            pipeline.warmup()
+            pipeline.warmup(
+                sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
+            )
             return pipeline
         except Exception as e:
             log_exception_chain(
@@ -434,7 +430,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
-            **({} if _flux3_upsampler_frozen() else SHARED_MESH_PARAMS),
+            **({} if upsampler_frozen() else SHARED_MESH_PARAMS),
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:

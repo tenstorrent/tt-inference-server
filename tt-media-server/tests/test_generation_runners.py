@@ -309,8 +309,9 @@ class _Flux3Pipeline:
         self.calls = []
         self.warmed = 0
 
-    def warmup(self):
+    def warmup(self, sizes=None):
         self.warmed += 1
+        self.warmed_sizes = sizes
 
     def generate(self, request):
         self.calls.append(request)
@@ -429,6 +430,10 @@ def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
         "upsample": frozen != "1",
     }
     assert pipeline.warmed == 1
+    # resident, 4K is not served, so not warmed
+    assert pipeline.warmed_sizes == (
+        (1024, 2048, 4096) if frozen == "1" else (1024, 2048)
+    )
 
 
 def _flux3_upsampler_module(monkeypatch, shared_mesh_params):
@@ -506,9 +511,15 @@ def test_flux3_serves_the_shapes_the_pipeline_warms(
     upsampler = tt_metal_flux3[
         "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
     ]
-    # Every size the schema accepts is one the pipeline serves and warms.
+    # Every size the schema accepts is one the pipeline serves and warms; with
+    # the upsampler resident, all but the largest.
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
     assert Flux3ImageKleinRequest.warmup_sizes() == [
         (side, side) for side in pipeline.SIZES
+    ]
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES if side < max(pipeline.SIZES)
     ]
     assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
     _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
@@ -740,7 +751,7 @@ def test_h3_ref2va_packs_images_then_videos_then_audio(monkeypatch):
         "videos": [b"v0", b"v1"],
         "audios": [b"a0"],
     }
-    (image, *clips) = runner._inputs(request)["references"]
+    image, *clips = runner._inputs(request)["references"]
     assert image["image"].size == (48, 64)
     assert clips == [
         {"video": b"v0"},

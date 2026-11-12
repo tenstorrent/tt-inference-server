@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import os
 from typing import Annotated, Literal, Optional
 
 from domain.generation_request import (
@@ -12,7 +13,7 @@ from domain.generation_request import (
     Media,
     Seed,
 )
-from pydantic import Field, WithJsonSchema
+from pydantic import Field, WithJsonSchema, model_validator
 
 # An enum, not a const, so more ratios can be added without a schema change.
 Flux3KleinRatio = Annotated[
@@ -26,6 +27,26 @@ FLUX3_KLEIN_SIZES: dict[str, tuple[int, int]] = {
     "4K": (4096, 4096),
 }
 FLUX3_KLEIN_STEPS = 16
+
+# The prompt upsampler runs in the deployment (default: on the first chip) or
+# ahead of it (FLUX3_PROMPT_UPSAMPLER_FROZEN=1: prompts reach the model as
+# sent, the pipeline is built without it). Resident, its reserved DRAM is held
+# on every chip of the mesh and the DiT's 4096 activations no longer fit (jobs
+# 192950, 194825, 194959), so 4K is served only with the upsampler ahead.
+FLUX3_PROMPT_UPSAMPLER_FROZEN = "FLUX3_PROMPT_UPSAMPLER_FROZEN"
+FLUX3_RESIDENT_UNSERVED_SIZES = ("4K",)
+
+
+def upsampler_frozen() -> bool:
+    raw = os.environ.get(FLUX3_PROMPT_UPSAMPLER_FROZEN, "0")
+    key = raw.strip().lower()
+    if key in ("1", "true"):
+        return True
+    if key in ("0", "false"):
+        return False
+    raise ValueError(
+        f"{FLUX3_PROMPT_UPSAMPLER_FROZEN}={raw!r} must be 1/true or 0/false"
+    )
 
 
 class Flux3ImageKleinRequest(GenerationRequest):
@@ -88,18 +109,41 @@ class Flux3ImageKleinRequest(GenerationRequest):
             "Size tier. With `aspect_ratio`, it fixes the output size:\n\n"
             "| `aspect_ratio` | `1K`      | `2K`      | `4K`      |\n"
             "| -------------- | --------- | --------- | --------- |\n"
-            "| `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |"
+            "| `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |\n\n"
+            "`4K` is served with the prompt upsampler ahead of the deployment "
+            "(`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`); with it in the deployment, a `4K` "
+            "request is refused with 422."
         ),
     )
     format: ImageFormat = "png"
     seed: Optional[Seed] = None
 
+    @model_validator(mode="after")
+    def _size_is_served(self):
+        if self.size not in self.served_sizes():
+            raise ValueError(
+                f"{self.size} is served with the prompt upsampler ahead of the "
+                f"deployment ({FLUX3_PROMPT_UPSAMPLER_FROZEN}=1)"
+            )
+        return self
+
     def output_size(self) -> tuple[int, int]:
         return FLUX3_KLEIN_SIZES[self.size]
 
     @classmethod
+    def served_sizes(cls) -> dict[str, tuple[int, int]]:
+        """The size tiers this deployment serves."""
+        if upsampler_frozen():
+            return FLUX3_KLEIN_SIZES
+        return {
+            size: shape
+            for size, shape in FLUX3_KLEIN_SIZES.items()
+            if size not in FLUX3_RESIDENT_UNSERVED_SIZES
+        }
+
+    @classmethod
     def warmup_sizes(cls) -> list[tuple[int, int]]:
-        return list(FLUX3_KLEIN_SIZES.values())
+        return list(cls.served_sizes().values())
 
 
 FLUX3_IMAGE_KLEIN = GenerationModel(

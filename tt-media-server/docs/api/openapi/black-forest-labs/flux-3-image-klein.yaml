@@ -452,7 +452,11 @@ components:
 
             | -------------- | --------- | --------- | --------- |
 
-            | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |'
+            | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
+
+
+            `4K` is served with the prompt upsampler ahead of the deployment (`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`);
+            with it in the deployment, a `4K` request is refused with 422.'
           default: 2K
         format:
           $ref: '#/components/schemas/ImageFormat'

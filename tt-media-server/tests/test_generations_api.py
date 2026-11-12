@@ -1776,6 +1776,20 @@ def test_the_service_downloads_no_weights(monkeypatch):
 # --- FLUX.3 Image klein ----------------------------------------------------------
 
 
+@pytest.fixture
+def flux3_upsampler(monkeypatch):
+    """Where FLUX.3's prompt upsampler runs: "resident" (the default) or
+    "ahead" of the deployment."""
+
+    def place(where: str):
+        monkeypatch.setenv(
+            "FLUX3_PROMPT_UPSAMPLER_FROZEN", {"resident": "0", "ahead": "1"}[where]
+        )
+
+    place("resident")
+    return place
+
+
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
@@ -1784,8 +1798,49 @@ def test_the_service_downloads_no_weights(monkeypatch):
         ({"size": "4K"}, (4096, 4096)),
     ],
 )
-def test_flux3_output_size(fields, expected):
+def test_flux3_output_size(flux3_upsampler, fields, expected):
+    flux3_upsampler("ahead")
     assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+def test_flux3_serves_4k_only_with_the_upsampler_ahead(flux3_upsampler):
+    with pytest.raises(ValidationError, match="4K is served with the prompt upsampler"):
+        Flux3ImageKleinRequest(prompt="a cat", size="4K")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [(1024, 1024), (2048, 2048)]
+    flux3_upsampler("ahead")
+    assert Flux3ImageKleinRequest(prompt="a cat", size="4K").output_size() == (
+        4096,
+        4096,
+    )
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (1024, 1024),
+        (2048, 2048),
+        (4096, 4096),
+    ]
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+async def test_flux3_refuses_4k_at_submit_with_the_upsampler_resident(
+    generations_app, flux3_upsampler, with_image
+):
+    client, device = generations_app("tt-flux-3-image-klein")
+    body = {"prompt": "a cat", "size": "4K"}
+    if with_image:
+        body["images"] = [_data_uri(1600, 900)]
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein", json=body
+    )
+    assert response.status_code == 422, response.text
+    assert "4K is served with the prompt upsampler ahead" in response.text
+    assert device.requests == []
+    # 2K is served
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={**body, "size": "2K"},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
 
 
 @pytest.mark.parametrize(
@@ -1802,7 +1857,8 @@ def test_flux3_bounds_the_prompt():
         Flux3ImageKleinRequest(prompt="a" * 20_001)
 
 
-def test_flux3_has_3_sizes():
+def test_flux3_has_3_sizes(flux3_upsampler):
+    flux3_upsampler("ahead")
     assert Flux3ImageKleinRequest.warmup_sizes() == [
         (1024, 1024),
         (2048, 2048),

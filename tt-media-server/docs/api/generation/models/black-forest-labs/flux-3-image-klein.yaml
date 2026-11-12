@@ -135,6 +135,10 @@ components:
             | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
             | -------------- | --------- | --------- | --------- |
             | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
+
+            `4K` is served with the prompt upsampler ahead of the deployment
+            (`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`); with it in the deployment, a `4K`
+            request is refused with 422.
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:
