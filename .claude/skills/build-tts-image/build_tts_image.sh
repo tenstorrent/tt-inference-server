@@ -2,20 +2,29 @@
 # Build + push the TTS blaze media-server image (tt-media-server/Dockerfile.blaze)
 # from a tt-inference-server commit and a nanicicTT/nanicic-TTS-llm-engine commit.
 #
-#   build_tts_image.sh resolve [--engine REF] [--server REF] [--tag TAG]
+#   build_tts_image.sh resolve [--engine REF] [--server REF] [--tag TAG] [--engine-dir DIR]
 #       Fetches both repos, resolves REFs to full SHAs (defaults: latest
 #       commit of nanicicTT/TTS_Scheduler and of ljovanovic/tts_stable_branch),
 #       prints KEY=VALUE lines plus the commits since the previous recorded
 #       build, and whether TAG already exists in the registry. Changes nothing.
 #
-#   build_tts_image.sh build --engine SHA --server SHA --tag TAG [--no-push]
+#   build_tts_image.sh build --engine SHA --server SHA --tag TAG [--engine-dir DIR] [--no-push]
 #       Builds from a clean worktree of the server commit (never the live
 #       working tree, so uncommitted edits cannot leak into the image), retries
 #       transient clone failures, pushes, and verifies the registry digest.
 #       Long-running: start it with nohup and poll the log it names.
 #
-# Needs GitHub access from this host (gh token in ~/.config/gh/hosts.yml, or
-# GITHUB_TOKEN) and docker logged in to ghcr.io.
+#   --engine-dir DIR
+#       Take the engine from a local clone instead of GitHub; no GitHub token
+#       is needed. Check out (and `git submodule update --init --recursive`)
+#       the commit you want there first: REF defaults to that clone's HEAD.
+#       Only committed content is used, at the submodule commits the engine
+#       commit records; uncommitted edits and build folders are left out.
+#
+# Without --engine-dir it needs a GitHub token on this host (GITHUB_TOKEN, or
+# the gh login in ~/.config/gh/hosts.yml) to fetch the private engine repo.
+# The token is used only for host-side fetches, never passed to docker build.
+# The docker build itself still needs internet, and docker logged in to ghcr.io.
 set -o pipefail
 
 REPO_ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) || exit 1
@@ -65,17 +74,52 @@ efetch() {
   return "${PIPESTATUS[0]}"
 }
 
-ENGINE_REF="" SERVER_REF="" TAG="" PUSH=1
+ENGINE_REF="" SERVER_REF="" TAG="" PUSH=1 ENGINE_DIR=""
 MODE=$1; shift || true
 while [ $# -gt 0 ]; do
   case "$1" in
     --engine) ENGINE_REF=$2; shift 2 ;;
     --server) SERVER_REF=$2; shift 2 ;;
     --tag)    TAG=$2; shift 2 ;;
+    --engine-dir) ENGINE_DIR=$(cd "$2" 2>/dev/null && pwd) || die "no such directory: $2"; shift 2 ;;
     --no-push) PUSH=0; shift ;;
     *) die "unknown argument: $1" ;;
   esac
 done
+if [ -n "$ENGINE_DIR" ]; then
+  git -C "$ENGINE_DIR" rev-parse --git-dir >/dev/null 2>&1 || die "$ENGINE_DIR is not a git repo"
+  ENGINE_CACHE=$ENGINE_DIR
+fi
+
+# Copy commit SHA of local repo SRC into new dir DST: a shallow fetch over
+# file://, so no network, no build artefacts, no uncommitted edits, and only
+# one commit of history. Then the same for each submodule, at the commit the
+# parent records, from the submodule checked out under SRC. Recursive.
+copy_local() {
+  local src=$1 dst=$2 sha=$3 url=$4 key name path subsha
+  git init -q "$dst" || return 1
+  # allowAnySHA1InWant: the commit need not be a branch or tag tip in SRC.
+  git -C "$dst" fetch -q --depth 1 \
+      --upload-pack="git -c uploadpack.allowAnySHA1InWant=true upload-pack" "file://$src" "$sha" \
+    || { echo "ERROR: commit $sha not found in $src" >&2; return 1; }
+  git -C "$dst" -c advice.detachedHead=false checkout -q "$sha" || return 1
+  # The reflog holds the host user's name and email, FETCH_HEAD the local path.
+  rm -rf "$dst/.git/logs" "$dst/.git/FETCH_HEAD"
+  [ -n "$url" ] && git -C "$dst" remote add origin "$url"
+  [ -f "$dst/.gitmodules" ] || return 0
+  while read -r key path; do
+    subsha=$(git -C "$dst" ls-tree HEAD -- "$path" | awk '$2=="commit"{print $3}')
+    [ -n "$subsha" ] || continue
+    name=${key#submodule.}; name=${name%.path}
+    if [ ! -e "$src/$path/.git" ]; then
+      echo "ERROR: submodule $path is not checked out in $src (run git submodule update --init --recursive there)" >&2
+      return 1
+    fi
+    rmdir "$dst/$path" 2>/dev/null
+    copy_local "$(cd "$src/$path" && pwd)" "$dst/$path" "$subsha" \
+      "$(git -C "$dst" config -f .gitmodules "submodule.${name}.url")" || return 1
+  done < <(git -C "$dst" config -f .gitmodules --get-regexp '^submodule\..*\.path$')
+}
 
 is_sha() { [[ "$1" =~ ^[0-9a-f]{7,40}$ ]]; }
 
@@ -88,6 +132,11 @@ need_github() {
 }
 
 resolve_engine() {
+  if [ -n "$ENGINE_DIR" ]; then
+    git -C "$ENGINE_DIR" rev-parse --verify -q "${ENGINE_REF:-HEAD}^{commit}" \
+      || die "engine ref ${ENGINE_REF:-HEAD} not found in $ENGINE_DIR"
+    return
+  fi
   [ -n "$(token)" ] || die "no GitHub token (gh auth login on this host, or export GITHUB_TOKEN)"
   need_github
   mkdir -p "$WORK"
@@ -164,7 +213,14 @@ cmd_resolve() {
   prev_engine=$(prev_build_field 4)
   prev_server=$(prev_build_field 5)
   echo "ENGINE=$engine"
-  echo "ENGINE_REF=${ENGINE_REF:-$ENGINE_DEFAULT_REF}"
+  if [ -n "$ENGINE_DIR" ]; then
+    echo "ENGINE_DIR=$ENGINE_DIR"
+    echo "ENGINE_REF=${ENGINE_REF:-HEAD}"
+    # Uncommitted engine edits (including in submodules) are NOT built.
+    echo "UNCOMMITTED_ENGINE_FILES=$(git -C "$ENGINE_DIR" status --porcelain --untracked-files=no --ignore-submodules=none | wc -l)"
+  else
+    echo "ENGINE_REF=${ENGINE_REF:-$ENGINE_DEFAULT_REF}"
+  fi
   echo "ENGINE_SUBJECT=$(git -C "$ENGINE_CACHE" log -1 --format='%h %cs %s' "$engine")"
   echo "SERVER=$server"
   echo "SERVER_REF=${SERVER_REF:-$SERVER_DEFAULT_REF}"
@@ -181,7 +237,7 @@ cmd_resolve() {
   echo "UNCOMMITTED_SERVER_FILES=$dirty"
   echo
   echo "=== engine commits since previous build (${prev_engine:-none recorded}) ==="
-  if [ -n "$prev_engine" ] && ! git -C "$ENGINE_CACHE" cat-file -e "${prev_engine}^{commit}" 2>/dev/null; then
+  if [ -z "$ENGINE_DIR" ] && [ -n "$prev_engine" ] && ! git -C "$ENGINE_CACHE" cat-file -e "${prev_engine}^{commit}" 2>/dev/null; then
     # The previous engine may live on another branch; fetch it to compare.
     efetch "$prev_engine" >/dev/null 2>&1 || true
   fi
@@ -214,7 +270,7 @@ cmd_build() {
   [ ${#ENGINE_REF} -eq 40 ] || die "build needs the full engine SHA (run resolve first)"
   valid_tag "$TAG" || die "invalid tag '$TAG'"
   local server; server=$(git rev-parse --verify -q "${SERVER_REF}^{commit}") || die "server commit not found"
-  [ -n "$(token)" ] || die "no GitHub token"
+  [ -n "$ENGINE_DIR" ] || [ -n "$(token)" ] || die "no GitHub token (or pass --engine-dir with a local engine clone)"
   need_github
   mkdir -p "$WORK"
   local log="${WORK}/${TAG}.log" src="${WORK}/src-${TAG}"
@@ -239,7 +295,14 @@ cmd_build() {
   # docker as the `tt-llm-engine` build context. The token is used only by
   # these host-side fetches; docker build never sees it.
   local erc=1 eattempt
+  if [ -n "$ENGINE_DIR" ]; then
+    echo "=== engine: local copy of ${ENGINE_REF} from ${ENGINE_DIR} ===" | tee -a "$log"
+    rm -rf "$eng"
+    copy_local "$ENGINE_DIR" "$eng" "$ENGINE_REF" "$ENGINE_URL" 2>&1 | tee -a "$log"
+    erc=${PIPESTATUS[0]}
+  fi
   for eattempt in 1 2 3; do
+    [ -n "$ENGINE_DIR" ] && break
     echo "=== engine checkout attempt ${eattempt} $(date -Is) ===" | tee -a "$log"
     rm -rf "$eng"
     { git init -q "$eng" \
