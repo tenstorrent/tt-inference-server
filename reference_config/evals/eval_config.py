@@ -13588,6 +13588,165 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # GLM-5.3-Flash on the Blackhole Galaxy (the persistent stack of tt-metal
+    # models/demos/glm53_flash): GPQA Diamond, Terminal-Bench 2 and LiveCodeBench
+    # on the chat endpoint with GLM's sampling (model card: temperature 1.0 /
+    # top_p 0.95, no top_k). The stack serves text only (no MMMU entry) and
+    # samples such requests on the host from the returned logits. The chat
+    # template thinks by default ("Reasoning Effort: Max" + <think>), so no
+    # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
+    # the thought channel into reasoning_content. Concurrency 16: the 128 K
+    # profile serves all 16 at once; the DEFAULT 1 M profile (a release run's)
+    # admits 4 and queues the other 12 in vLLM, so an eval there runs at 4
+    # live users. max_length = the 128 K context (both profiles serve it).
+    # Published
+    # scores are the model card's (.eval_results/GLM-5.3-Flash.yaml):
+    # Terminal-Bench 2.1 84.3 (Claude Code harness, not terminus-2), DeepSWE
+    # 63.4 (not SWE-bench Verified), no GPQA / LiveCodeBench number; GPU
+    # references are not measured yet. No swe_bench_verified entry: the card
+    # reports DeepSWE, so the run would have no reference to grade against.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3-Flash",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint: the server applies the chat template (thinking on
+                # by default) and the reasoning parser.
+                use_chat_api=True,
+                max_concurrent=16,  # the 128 K profile's admission; the default 1 M profile serves 4 at a time
+                model_kwargs={
+                    "max_length": 131072,
+                    # Long thinking generations exceed lm-eval's 1800 s default.
+                    "timeout": 7200,
+                },
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Model card: Terminal-Bench 2.1 in Claude Code 2.1.207 (temp
+                    # 1.0, top_p 1, 64 K new tokens, 6 h) -- a different harness
+                    # than this terminus-2 TB2 run; kept as the published number.
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    # four trials in flight on the task budgets (TB2 tasks ask for 1-4 CPUs and 2-8 GB; the
+                    # model card states no resource setting, so none is overridden)
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # The eval profile's context is 128 K; the agent sends
+                            # about max_input + max_output per request.
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench (coding) on the chat endpoint with server-side thinking, GLM's sampling
+                # (temperature 1.0 / top_p 0.95, no top_k) and the 128 K eval context; scored on the "v6" window
+                # via doc_ids (LIVECODEBENCH_V6_DOC_IDS) as the Gemma 4 entries are. The model card publishes no
+                # LiveCodeBench number (.eval_results/GLM-5.3-Flash.yaml holds Terminal-Bench 2.1, DeepSWE and
+                # HLE only); GPU references are not measured yet.
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=16,  # = the 128 K profile's admission
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 

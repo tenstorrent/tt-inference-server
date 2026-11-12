@@ -132,6 +132,27 @@ class ServerConnection:
         return host
 
 
+# The sweep's per-run timeout scales with the point's token volume: the default (``DriverContext.per_run_timeout_s``,
+# 2 h) suits the standard points, but a long-context point such as GLM-5.3-Flash's 4 x 1 047 612-token point
+# prefills for hours on its Galaxy. The plan assumes these conservative aggregate rates and keeps the larger of the
+# default and the plan.
+BENCHMARK_MIN_PREFILL_TOK_S = 1000.0
+BENCHMARK_MIN_DECODE_TOK_S_PER_USER = 4.0
+BENCHMARK_TIMEOUT_HEADROOM_S = 600.0
+
+
+def sweep_point_timeout_s(cfg: LLMRunConfig, base: Optional[float]) -> Optional[float]:
+    """The per-run timeout for sweep point ``cfg``: the larger of ``base`` (None = no timeout) and the point's
+    planned duration at the conservative rates above."""
+    if base is None:
+        return None
+    users = max(1, cfg.max_concurrency)
+    planned = cfg.isl * cfg.num_prompts / BENCHMARK_MIN_PREFILL_TOK_S
+    planned += cfg.osl * cfg.num_prompts / (BENCHMARK_MIN_DECODE_TOK_S_PER_USER * users)
+    planned += BENCHMARK_TIMEOUT_HEADROOM_S
+    return max(float(base), planned)
+
+
 @dataclass(frozen=True)
 class DriverContext:
     """Per-run context that's stable across the sweep.

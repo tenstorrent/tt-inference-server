@@ -997,6 +997,29 @@ class TestDeadlineReachesRunCommand:
         assert rc == 0
         assert seen.get("timeout_seconds") == 3600
 
+    def test_subprocess_always_carries_an_api_key(self):
+        """A --no-auth server hands the harness no token; the OpenAI SDK client
+        lmms-eval builds still needs a key, so the subprocess gets a placeholder,
+        and a real token is passed through unchanged."""
+        _, seen = self._invoke(EvalTask(task_name="mmmu_val"))
+        assert seen["env"]["OPENAI_API_KEY"] == "no-auth"
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
+            mod._run_eval_task(
+                _ctx(),
+                EvalTask(task_name="mmmu_val"),
+                "jwt-token",
+                output_path=tmp_output_path(),
+            )
+        assert seen["env"]["OPENAI_API_KEY"] == "jwt-token"
+
     def _ctx_in_mode(self, mode):
         ctx = _ctx()
         ctx.runtime_config = SimpleNamespace(limit_samples_mode=mode)
