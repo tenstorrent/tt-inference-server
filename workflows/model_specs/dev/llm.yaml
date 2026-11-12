@@ -7888,6 +7888,14 @@ templates:
         # vLLM's prefix cache from the stack's device snapshot pool (generator_vllm_stack.StackPrefixCache): a prompt
         # snapshots its state at every 8192-token chunk end, a later prompt sharing that prefix resumes there
         GLM53_STACK_PREFIX: "1"
+        # Short prompts (<= 2,048 tokens) admitted together prefill as ONE packed program, up to 8 per replay
+        # (prefill_tp.forward_packed; needs the fused mHC mix, an 8x4 default since tt-metal #64931 a9c70873134):
+        # 16 x 128-token prompts: mean TTFT 4.5 -> 1.2 s, output 178 -> 326 tok/s on this profile; longer prompts are
+        # unchanged. A packed prompt's greedy text can move at a near-tie with its pack slot (16 identical prompts are
+        # not bit-identical across slots; the identical-prompt gate runs unpacked). 2048:16 exceeds the 3 GiB trace
+        # region.
+        GLM53_PF_PACKED: "2048:8"
+        GLM53_PF_PACKED_DEVMASK: "1"
         # The runner's default device watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS 5 s, "sized for a single
         # generation step") trips on the long-context prefill chunks and the first boot's cache writes; 300 s keeps
         # tt-triage on real hangs.
