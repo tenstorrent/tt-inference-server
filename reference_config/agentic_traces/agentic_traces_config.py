@@ -475,6 +475,44 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # DeepSeek-V4.1-Flash on BLACKHOLE_GALAXY: one InferenceX AgentX run per
+    # entry, replayed at concurrency = the entry's batch size (one session per
+    # user slot; AGENTX_CONCURRENCY overrides). The 1M entries use the full
+    # trace corpus, the 262,144-token B=16 entry the 256k corpus (every request
+    # fits in 256,000 tokens). Same InferenceX pin as the entries above.
+    *[
+        AgenticTracesConfig(
+            model_id=f"id_deepseek-v41-flash{variant}_DeepSeek-V4.1-Flash_blackhole_galaxy",
+            inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.INFERENCEX_AGENTX,
+                    public_dataset=dataset,
+                    concurrency=_agentx_concurrency(batch),
+                ),
+            ),
+        )
+        for variant, batch, dataset in (
+            # B=8, 1M per user (deepseek-v41-flash-b8-1m and its bfp4 / nobfp4 variants)
+            ("-b8-1m", 8, "semianalysis_cc_traces_weka_062126"),
+            ("-b8-1m-bfp4", 8, "semianalysis_cc_traces_weka_062126"),
+            ("-b8-1m-nobfp4", 8, "semianalysis_cc_traces_weka_062126"),
+            ("-vlm-b8-1m", 8, "semianalysis_cc_traces_weka_062126"),
+            # B=16, 1M per user (deepseek-v41-flash-b16-1m: the catalog's model_id carries "vlm")
+            ("-vlm-b16-1m", 16, "semianalysis_cc_traces_weka_062126"),
+            ("-vlm-b16-1m-bfp4", 16, "semianalysis_cc_traces_weka_062126"),
+            ("-vlm-b16-1m-nobfp4", 16, "semianalysis_cc_traces_weka_062126"),
+            ("-vlm-b16-1m-bfp4-lt35", 16, "semianalysis_cc_traces_weka_062126"),
+            ("-vlm-b16-1m-bfp4-halo", 16, "semianalysis_cc_traces_weka_062126"),
+            # B=4, 1M per user
+            ("-1m", 4, "semianalysis_cc_traces_weka_062126"),
+            ("-b4-1m", 4, "semianalysis_cc_traces_weka_062126"),
+            ("-b4-1m-bfp4", 4, "semianalysis_cc_traces_weka_062126"),
+            ("-b4-1m-nobfp4", 4, "semianalysis_cc_traces_weka_062126"),
+            # B=16, 262,144 tokens per user
+            ("", 16, "semianalysis_cc_traces_weka_062126_256k"),
+        )
+    ],
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(

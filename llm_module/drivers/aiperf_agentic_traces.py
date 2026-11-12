@@ -343,6 +343,9 @@ def build_aiperf_cmd(
         )
     if auth_token:
         cmd.extend(["--api-key", auth_token])
+    if os.environ.get("AGENTX_CACHE_SALT"):
+        # per-run prefix-cache salt (A/B legs of one server boot must not see each other's cached prefixes); sessions of one run still share it
+        cmd.extend(["--extra-inputs", f"cache_salt:{os.environ['AGENTX_CACHE_SALT']}"])
     return cmd
 
 

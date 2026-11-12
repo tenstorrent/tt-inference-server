@@ -970,10 +970,11 @@ def handle_secrets(runtime_config):
     # HF_TOKEN is optional for client-side scripts workflows. These run
     # against an inference server (local, docker, or external via
     # --server-url) and don't need to load HF weights/tokenizers themselves.
-    # AGENTIC_TRACES is deliberately absent despite being client-side: its
-    # SemiAnalysis Weka trace datasets are gated on the Hub, so the client
-    # itself needs a token to fetch them.
+    # AGENTIC_TRACES is client-side too. Its SemiAnalysis Weka trace datasets are
+    # public (apache-2.0, not gated) at the time of writing, so a token is
+    # optional: set HF_TOKEN only if the Hub rate-limits anonymous downloads.
     client_side_workflows = {
+        WorkflowType.AGENTIC_TRACES,
         WorkflowType.BENCHMARKS,
         WorkflowType.EVALS,
         WorkflowType.STRESS_TESTS,
@@ -1029,11 +1030,22 @@ def handle_secrets(runtime_config):
 
 def get_current_commit_sha() -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    return (
-        subprocess.check_output(["git", "-C", script_dir, "rev-parse", "HEAD"])
-        .decode()
-        .strip()
-    )
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "-C", script_dir, "rev-parse", "HEAD"],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except (subprocess.CalledProcessError, OSError):
+        # Release images ship the tree with an empty .git marker (no commits):
+        # fall back to the GIT_SHA file baked next to run.py.
+        sha_file = Path(script_dir) / "GIT_SHA"
+        if sha_file.is_file():
+            return sha_file.read_text().strip()
+        return "unknown"
 
 
 def format_cli_args_summary(runtime_config):
