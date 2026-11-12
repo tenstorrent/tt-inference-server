@@ -28,6 +28,8 @@ MESSAGE_TAG = 0x7E57
 # The rank that sends every message: the one serving HTTP.
 ROOT_RANK = 0
 _LENGTH_HEADER = struct.Struct("!Q")
+# A request's Manager proxies, which stay on rank 0.
+_SERVER_LOCAL = frozenset({"_start_event", "_cancel_event", "_worker_assignment"})
 
 
 @dataclass(frozen=True)
@@ -58,15 +60,15 @@ class ShutdownMessage:
 def to_request_data(request: BaseModel) -> RequestData:
     """Plain-data form of ``request`` that any rank can unpickle.
 
-    Every field (prompts, ``image_prompts``, ``references``, ``aspect_ratio``,
-    ...) and ``_task_id`` travel unchanged. ``_start_event`` is left out: it is
-    a Manager Event proxy rank 0's job manager waits on, and another host can't
-    unpickle it.
+    Every field and private attribute (``_task_id``, a generation request's
+    decoded images and clips, ...) travels unchanged, except the Manager
+    proxies rank 0's job manager signals through, which another host can't
+    unpickle.
     """
     private = {
         name: value
         for name, value in (request.__pydantic_private__ or {}).items()
-        if name != "_start_event"
+        if name not in _SERVER_LOCAL
     }
     cls = type(request)
     return RequestData(

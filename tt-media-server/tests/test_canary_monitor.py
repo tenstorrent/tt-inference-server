@@ -28,7 +28,7 @@ PAST = -10_000.0
 
 def _settings(**overrides):
     base = dict(
-        model_runner="sp_runner",
+        model_runner="tt-wan2.2",
         canary_enabled=True,
         canary_gate_readiness=False,
         canary_wait_seconds=5.0,

@@ -9,31 +9,17 @@ import time as _time
 from typing import Annotated, Optional
 
 from config.constants import (
-    I2V_MODEL_NAMES,
     I2V_MODEL_RUNNERS,
     JobTypes,
-    ModelNames,
     ModelRunners,
-    NON_REF2VA_H3_MODEL_NAMES,
-    REF2VA_MODEL_NAMES,
-    REF2VA_MODEL_RUNNERS,
 )
 from config.settings import settings
-from domain.video_generate_request import (
-    _H3_UNREAD_FIELDS,
-    VideoGenerateRequest,
-    _is_minimax_h3,
-)
+from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     MAX_BASE64_IMAGE_LEN,
     MAX_IMAGE_BYTES,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
-)
-from domain.video_ref2va_generate_request import (
-    MAX_BASE64_AUDIO_LEN,
-    MAX_BASE64_MEDIA_LEN,
-    VideoRef2VAGenerateRequest,
 )
 from fastapi import (
     APIRouter,
@@ -125,8 +111,7 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
-# "basic" omits steps and shape fields so it is valid on every model
-# (LTX rejects a step count).
+# "basic" omits steps and shape fields so it is valid on every model.
 _T2V_EXAMPLES = {
     "basic": {
         "summary": "Text-to-video (server defaults)",
@@ -182,23 +167,6 @@ _I2V_EXAMPLES = {
 }
 
 
-_REF2VA_EXAMPLES = {
-    "images_and_video": {
-        "summary": "Ref2VA with reference images and a video URL",
-        "value": {
-            "prompt": "a slow push-in through a quiet room",
-            "aspect_ratio": "16:9",
-            "duration": 5,
-            "seed": 0,
-            "references": {
-                "images": [{"b64": _OPENAPI_IMAGE_PLACEHOLDER}],
-                "videos": [{"url": "https://example.s3.amazonaws.com/clip.mp4"}],
-            },
-        },
-    },
-}
-
-
 def _is_i2v_only_deployment() -> bool:
     """True when this process serves I2V weights (image conditioning required)."""
     try:
@@ -206,88 +174,7 @@ def _is_i2v_only_deployment() -> bool:
     except ValueError:
         return False
 
-    if runner in I2V_MODEL_RUNNERS:
-        return True
-
-    # Every video runner except SP_RUNNER maps 1:1 to its model, so the check
-    # above is already conclusive for them and MODEL must not override it —
-    # a stale env var should never make a T2V deployment reject text prompts.
-    # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V, so it
-    # is the one case where MODEL carries information the runner does not.
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in I2V_MODEL_NAMES
-    except ValueError:
-        return False
-
-
-def _is_ref2va_deployment() -> bool:
-    """True when this process loaded MiniMax-H3 ``transformer_ref/``."""
-    try:
-        runner = ModelRunners(settings.model_runner)
-    except ValueError:
-        return False
-    if runner in REF2VA_MODEL_RUNNERS:
-        return True
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in REF2VA_MODEL_NAMES
-    except ValueError:
-        return False
-
-
-def _is_h3_t2va_deployment() -> bool:
-    """True when this process serves plain MiniMax-H3 T2VA (no conditioning).
-
-    Same resolution order as the two checks above: an in-process runner is
-    conclusive; the SP frontend only knows the peer's task through MODEL.
-    """
-    try:
-        runner = ModelRunners(settings.model_runner)
-    except ValueError:
-        return False
-    if runner is ModelRunners.TT_MINIMAX_H3_T2VA:
-        return True
-    if runner is ModelRunners.TT_MINIMAX_H3_FASTH3:
-        return True
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3,
-            ModelNames.MINIMAX_H3_FASTH3,
-        }
-    except ValueError:
-        return False
-
-
-def _sp_peer_is_known_non_ref2va() -> bool:
-    """True only when MODEL names an H3 task that provably is not Ref2VA.
-
-    The SP frontend proxies to a peer whose ``MODEL_RUNNER`` it cannot see, so
-    ``MODEL`` is its only evidence. Recognising *any* model name is not enough:
-    MODEL is advisory on an SP frontend and may name something unrelated to the
-    peer's H3 task, so only the T2VA/FL2VA names are conclusive here.
-    """
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in NON_REF2VA_H3_MODEL_NAMES
-    except ValueError:
-        return False
+    return runner in I2V_MODEL_RUNNERS
 
 
 def reject_text_to_video_on_i2v_deployment() -> None:
@@ -298,14 +185,6 @@ def reject_text_to_video_on_i2v_deployment() -> None:
     for a request the deployment was never meant to serve, and one that counts
     against worker error accounting.
     """
-    if _is_ref2va_deployment():
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "This deployment requires multimodal references. Use POST "
-                "/generations/ref2va with a references object."
-            ),
-        )
     if not _is_i2v_only_deployment():
         return
 
@@ -315,64 +194,6 @@ def reject_text_to_video_on_i2v_deployment() -> None:
             "This deployment requires image conditioning. Use POST "
             "/generations/i2v with at least one image_prompts entry, or POST "
             "/generations/i2v/upload to send the image as a file."
-        ),
-    )
-
-
-def reject_i2v_on_ref2va_deployment() -> None:
-    if not _is_ref2va_deployment():
-        return
-    raise HTTPException(
-        status_code=422,
-        detail=(
-            "This deployment is MiniMax-H3 Ref2VA. Use POST /generations/ref2va "
-            "with a references object (images, videos, audios)."
-        ),
-    )
-
-
-def reject_i2v_on_t2va_deployment() -> None:
-    """Block /i2v on a MiniMax-H3 T2VA deployment.
-
-    ``TTMiniMaxH3Runner`` never reads ``image_prompts``: the request would be
-    accepted, run as plain text-to-video and return a video that ignores the
-    keyframes, after a full generation. Fail fast instead.
-    """
-    if not _is_h3_t2va_deployment():
-        return
-    raise HTTPException(
-        status_code=422,
-        detail=(
-            "This deployment is MiniMax-H3 T2VA and ignores image_prompts. Use "
-            "POST /generations, or deploy MODEL_RUNNER=tt-minimax-h3-fl2va for "
-            "first/last-frame conditioning."
-        ),
-    )
-
-
-def reject_ref2va_on_wrong_deployment() -> None:
-    """Block /ref2va on a deployment known to serve T2VA or FL2VA.
-
-    An in-process runner is conclusive. ``sp_runner`` is a SHM proxy that does
-    not load weights; the peer ``video_runner`` owns ``MODEL_RUNNER``, so the
-    frontend only refuses when MODEL names a T2VA/FL2VA model, i.e. when the
-    peer would silently drop the references. Any other MODEL — unset, a Wan
-    model, an unrecognised string — leaves it permissive.
-    """
-    if _is_ref2va_deployment():
-        return
-    try:
-        runner = ModelRunners(settings.model_runner)
-    except ValueError:
-        runner = None
-    if runner is ModelRunners.SP_RUNNER and not _sp_peer_is_known_non_ref2va():
-        return
-    raise HTTPException(
-        status_code=422,
-        detail=(
-            "This deployment does not serve Ref2VA. Set MODEL_RUNNER="
-            "tt-minimax-h3-ref2va, or use POST /generations (t2va) / "
-            "/generations/i2v (fl2va)."
         ),
     )
 
@@ -417,28 +238,7 @@ async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
         entry.image = image_b64
 
 
-async def _download_to_b64(url: str, deadline: float, *, max_b64_len: int) -> str:
-    try:
-        media_bytes = await download_media_url(url, deadline=deadline)
-    except MediaDownloadPolicyError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except MediaDownloadTooLargeError as e:
-        raise HTTPException(status_code=413, detail=str(e))
-    except MediaDownloadFetchError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    encoded = base64.b64encode(media_bytes).decode("ascii")
-    if len(encoded) > max_b64_len:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Downloaded media base64-encodes to {len(encoded)} "
-                f"chars, over the {max_b64_len}-char cap"
-            ),
-        )
-    return encoded
-
-
-# MiniMax request body cap. URL assets do not count: they are not in the body.
+# Request body cap for inline images. URL assets do not count: they are not in the body.
 MAX_INLINE_MEDIA_LEN = 64_000_000
 
 
@@ -448,14 +248,6 @@ def _enforce_inline_media_total(request: VideoGenerateRequest) -> None:
         for entry in getattr(request, "image_prompts", None) or []
         if not is_media_url(entry.image)
     ]
-    references = getattr(request, "references", None)
-    if references is not None:
-        lengths += [
-            len(source.b64)
-            for group in (references.images, references.videos, references.audios)
-            for source in group
-            if source.b64 is not None
-        ]
     total = sum(lengths)
     if total > MAX_INLINE_MEDIA_LEN:
         raise HTTPException(
@@ -465,40 +257,6 @@ def _enforce_inline_media_total(request: VideoGenerateRequest) -> None:
                 f"{MAX_INLINE_MEDIA_LEN}-char cap; send large assets by URL"
             ),
         )
-
-
-def _check_reference_counts(request: VideoGenerateRequest) -> None:
-    references = getattr(request, "references", None)
-    if references is None:
-        return
-    from tt_model_runners.minimax_h3_policy import check_reference_kinds
-
-    try:
-        check_reference_kinds(
-            ["image"] * len(references.images)
-            + ["video"] * len(references.videos)
-            + ["audio"] * len(references.audios)
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-async def _resolve_media_source_urls(request: VideoGenerateRequest) -> None:
-    """Download ``references`` URL sources to b64 before the job is enqueued."""
-    references = getattr(request, "references", None)
-    if references is None:
-        return
-    deadline = _time.monotonic() + settings.media_url_timeout_seconds
-    for group, cap in (
-        (references.images, MAX_BASE64_IMAGE_LEN),
-        (references.videos, MAX_BASE64_MEDIA_LEN),
-        (references.audios, MAX_BASE64_AUDIO_LEN),
-    ):
-        for source in group:
-            if source.url is None:
-                continue
-            source.b64 = await _download_to_b64(source.url, deadline, max_b64_len=cap)
-            source.url = None
 
 
 def _decoded_image_size(b64: str, name: str) -> tuple[int, int]:
@@ -514,114 +272,11 @@ def _decoded_image_size(b64: str, name: str) -> tuple[int, int]:
         ) from exc
 
 
-def _probe_reference_clips(sources, group: str) -> list:
-    from tt_model_runners.minimax_h3_policy import probe_reference_media
-
-    probes = []
-    for index, source in enumerate(sources):
-        try:
-            probes.append(probe_reference_media(base64.b64decode(source.b64)))
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"references.{group}[{index}] could not be read ({exc})",
-            ) from exc
-    return probes
-
-
 def _check_request_media(request: VideoGenerateRequest) -> None:
-    """Decode and probe the request's media once, after URL downloads, and admit it.
-
-    Every image is decoded and every reference clip probed here, so an
-    unreadable asset is a 422 at submit rather than a failed job. On
-    MiniMax-H3 the request is then admitted against the model's served
-    envelope from that metadata.
-    """
-    keyframe_sizes = {
-        f"image_prompts[{index}]": _decoded_image_size(
-            entry.image, f"image_prompts[{index}]"
-        )
-        for index, entry in enumerate(getattr(request, "image_prompts", None) or [])
-    }
-    references = getattr(request, "references", None)
-    reference_infos = None
-    if references is not None:
-        from tt_model_runners.minimax_h3_policy import check_reference_clip_durations
-
-        image_sizes = [
-            _decoded_image_size(source.b64, f"references.images[{index}]")
-            for index, source in enumerate(references.images)
-        ]
-        videos = _probe_reference_clips(references.videos, "videos")
-        audios = _probe_reference_clips(references.audios, "audios")
-        try:
-            check_reference_clip_durations(
-                video_durations=[probe.duration_s for probe in videos],
-                audio_durations=[probe.duration_s for probe in audios],
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    if not _is_minimax_h3():
-        return
-    from tt_model_runners.minimax_h3_policy import (
-        MINIMAX_H3_KEYFRAME_MAX_SIDE,
-        MINIMAX_H3_KEYFRAME_MIN_SIDE,
-        MiniMaxH3ReferenceInfo,
-        admit_request,
-    )
-
-    for name, (width, height) in keyframe_sizes.items():
-        if not (
-            MINIMAX_H3_KEYFRAME_MIN_SIDE <= min(width, height)
-            and max(width, height) <= MINIMAX_H3_KEYFRAME_MAX_SIDE
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"{name} is {width}x{height}; each side must be from "
-                    f"{MINIMAX_H3_KEYFRAME_MIN_SIDE} to "
-                    f"{MINIMAX_H3_KEYFRAME_MAX_SIDE} pixels"
-                ),
-            )
-    if references is not None:
-        reference_infos = (
-            [
-                MiniMaxH3ReferenceInfo(
-                    name=f"references.images[{index}]", kind="image", size=size
-                )
-                for index, size in enumerate(image_sizes)
-            ]
-            + [
-                MiniMaxH3ReferenceInfo(
-                    name=f"references.videos[{index}]",
-                    kind="video",
-                    size=probe.size,
-                    fps=probe.fps,
-                    audio_channels=probe.audio_channels,
-                )
-                for index, probe in enumerate(videos)
-            ]
-            + [
-                MiniMaxH3ReferenceInfo(
-                    name=f"references.audios[{index}]",
-                    kind="audio",
-                    audio_channels=probe.audio_channels,
-                )
-                for index, probe in enumerate(audios)
-            ]
-        )
-    try:
-        admit_request(
-            aspect_ratio=request.aspect_ratio,
-            duration_s=request.duration,
-            height=request.height,
-            width=request.width,
-            keyframe_sizes=keyframe_sizes,
-            references=reference_infos,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    """Decode every image once, after URL downloads, so an unreadable image is
+    a 422 at submit rather than a failed job."""
+    for index, entry in enumerate(getattr(request, "image_prompts", None) or []):
+        _decoded_image_size(entry.image, f"image_prompts[{index}]")
 
 
 def _redact_media_urls(parameters: dict) -> None:
@@ -629,18 +284,13 @@ def _redact_media_urls(parameters: dict) -> None:
     for entry in parameters.get("image_prompts") or []:
         if is_media_url(entry["image"]):
             entry["image"] = redact_url(entry["image"])
-    references = parameters.get("references") or {}
-    for kind in ("images", "videos", "audios"):
-        for source in references.get(kind) or []:
-            if source.get("url"):
-                source["url"] = redact_url(source["url"])
 
 
 async def _submit_video_request(
     request: VideoGenerateRequest,
     service: BaseJobService,
 ):
-    """Shared submit logic for T2V, I2V, and Ref2VA generation endpoints."""
+    """Shared submit logic for the T2V and I2V generation endpoints."""
     try:
         service.scheduler.check_is_model_ready()
     except Exception:
@@ -652,15 +302,11 @@ async def _submit_video_request(
         )
 
     _enforce_inline_media_total(request)
-    _check_reference_counts(request)
     # Echo the request as the client sent it: resolution below swaps URLs for
     # their downloaded base64, which must not be returned on every job poll.
-    client_parameters = request.model_dump(
-        mode="json", exclude=_H3_UNREAD_FIELDS if _is_minimax_h3() else None
-    )
+    client_parameters = request.model_dump(mode="json")
     _redact_media_urls(client_parameters)
     await _resolve_image_prompt_urls(request)
-    await _resolve_media_source_urls(request)
     _check_request_media(request)
 
     try:
@@ -736,23 +382,16 @@ async def submit_generate_video_request(
     return await _submit_video_request(request, service)
 
 
-@router.post(
-    "/generations/i2v",
-    dependencies=[
-        Depends(reject_i2v_on_ref2va_deployment),
-        Depends(reject_i2v_on_t2va_deployment),
-    ],
-)
+@router.post("/generations/i2v")
 async def submit_generate_video_i2v_request(
     request: Annotated[VideoI2VGenerateRequest, Body(openapi_examples=_I2V_EXAMPLES)],
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
-    Create a new image-to-video generation job (Wan2.2 I2V or MiniMax-H3 FL2VA).
+    Create a new image-to-video generation job (Wan2.2 I2V).
 
-    The request must carry at least one ``image_prompts`` entry. MiniMax-H3
-    FL2VA accepts only ``frame_pos`` 0 (first keyframe) and -1 (last).
+    The request must carry at least one ``image_prompts`` entry.
 
     Returns:
         JSONResponse: Video job object with job ID and initial metadata (async mode)
@@ -764,13 +403,7 @@ async def submit_generate_video_i2v_request(
     return await _submit_video_request(request, service)
 
 
-@router.post(
-    "/generations/i2v/upload",
-    dependencies=[
-        Depends(reject_i2v_on_ref2va_deployment),
-        Depends(reject_i2v_on_t2va_deployment),
-    ],
-)
+@router.post("/generations/i2v/upload")
 async def submit_generate_video_i2v_upload(
     prompt: str = Form(...),
     image: UploadFile = File(...),
@@ -799,15 +432,13 @@ async def submit_generate_video_i2v_upload(
     # a validation error in this manual construction would surface as an
     # unhandled 500 — so translate it to a 422.
     try:
-        request_kwargs = dict(
+        request = VideoI2VGenerateRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
             seed=seed,
+            num_inference_steps=num_inference_steps,
             image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
         )
-        if not _is_minimax_h3():
-            request_kwargs["num_inference_steps"] = num_inference_steps
-        request = VideoI2VGenerateRequest(**request_kwargs)
     except ValidationError as e:
         # e.errors() embeds the original ValueError in each entry's ``ctx``, which
         # HTTPException's plain JSONResponse can't serialize (it would 500 while
@@ -815,26 +446,6 @@ async def submit_generate_video_i2v_upload(
         raise HTTPException(
             status_code=422, detail=e.errors(include_url=False, include_context=False)
         )
-    return await _submit_video_request(request, service)
-
-
-@router.post(
-    "/generations/ref2va",
-    dependencies=[Depends(reject_ref2va_on_wrong_deployment)],
-)
-async def submit_generate_video_ref2va_request(
-    request: Annotated[
-        VideoRef2VAGenerateRequest, Body(openapi_examples=_REF2VA_EXAMPLES)
-    ],
-    service: BaseJobService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-):
-    """Create a Ref2VA job: prompt plus reference images, videos, and/or audio.
-
-    ``references.images`` / ``videos`` / ``audios`` are lists of ``{b64}`` or
-    ``{url}`` objects. Counts: 9 / 3 / 3, 12 total. Each video/audio clip must be 2–15 s
-    with combined duration ≤ 15 s. Audio cannot stand alone.
-    """
     return await _submit_video_request(request, service)
 
 

@@ -636,7 +636,6 @@ class TestDeviceWorkerShutdownAndEncode:
         stage = Mock()
         with patch("device_workers.device_worker.EncodeStage") as encode_stage_cls:
             encode_stage_cls.for_runner.return_value = stage
-            encode_stage_cls.normalize_responses.side_effect = lambda r: r
             self._run_worker(
                 runner,
                 [[MockImageGenerateRequest("t1"), MockImageGenerateRequest("t2")]],
