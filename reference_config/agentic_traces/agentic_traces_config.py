@@ -475,6 +475,22 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # Muse-Glimmer-30B on one 4-chip Blackhole ring (dev catalog, impl muse-glimmer-30b). The checkpoint
+    # stops at 131072 positions (HF max_position_embeddings, no rope scaling), so the 256k dataset is not used:
+    # traces longer than the served 131072 window are dropped by the driver. Start at 8 lanes; the run ladder
+    # is 8 / 16 / 24 via AGENTX_CONCURRENCY (the 24-user pool at 128K bounds it). Needs
+    # enable-prefix-caching and enable_prompt_tokens_details in the server spec. Same InferenceX pin as above.
+    *for_model_ids(
+        ["id_muse-glimmer-30b_Muse-Glimmer-30B_p300x2", "id_muse-glimmer-30b_Muse-Glimmer-30B_p150x4"],
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(

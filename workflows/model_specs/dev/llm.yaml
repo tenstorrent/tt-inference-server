@@ -1808,10 +1808,13 @@ templates:
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         MUSE_VLLM_KV_TOKENS: "3145728"
+        MUSE_PREFIX_CACHE: "1"
       vllm_args:
         block_size: "64"
         max_num_seqs: "32"
-        no-enable-prefix-caching: true
+        # AgentX: APC on. The adapter honours it only with MUSE_PREFIX_CACHE=1 (env above).
+        enable-prefix-caching: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (AgentX hit-rate column)
         no-enable-chunked-prefill: true
         max_num_batched_tokens: "131072"
         # The device sampler covers top_k 1..32; larger top_k samples on the host.
@@ -1834,10 +1837,13 @@ templates:
         TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
         MESH_DEVICE: "P150x4"
         MUSE_VLLM_KV_TOKENS: "3145728"
+        MUSE_PREFIX_CACHE: "1"
       vllm_args:
         block_size: "64"
         max_num_seqs: "32"
-        no-enable-prefix-caching: true
+        # AgentX: APC on. The adapter honours it only with MUSE_PREFIX_CACHE=1 (env above).
+        enable-prefix-caching: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (AgentX hit-rate column)
         no-enable-chunked-prefill: true
         max_num_batched_tokens: "131072"
         override_generation_config: '{"top_k": 32}'
