@@ -478,8 +478,7 @@ class TestInitializeDeviceWorker:
                     mock_loop.close.assert_called_once()
 
     def test_warmup_returning_false_raises_and_closes_device(self):
-        """``warmup()`` returning ``False`` (the contract for SPRunner when
-        the pipeline ping fails) must abort worker init so the scheduler does
+        """``warmup()`` returning ``False`` must abort worker init so the scheduler does
         not flip the worker to ``is_ready=True`` and /health stays red.
 
         This is the missing link in the eventually-consistent readiness

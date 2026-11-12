@@ -163,7 +163,7 @@
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "p50/p95/p99 of total request duration, grouped by model_type. Filter via the $model_type variable to focus on a single runner (e.g. sp_runner for video gen).",
+      "description": "p50/p95/p99 of total request duration, grouped by model_type. Filter via the $model_type variable to focus on a single runner.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -774,7 +774,7 @@
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "ffmpeg encode latency and frames/sec, recorded where the encode runs (in-process runners and CPU postprocessing workers). A multihost SP_RUNNER deployment encodes inside its external peer, which serves no /metrics, so these series are absent there by design.",
+      "description": "ffmpeg encode latency and frames/sec, recorded where the encode runs (in-process runners and CPU postprocessing workers).",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1466,7 +1466,7 @@
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Model inference p95 broken down by device_id. For sp_runner (multihost video) each host emits its own time series via TT_VISIBLE_DEVICES. Diverging lines = a slow host (straggler).",
+      "description": "Model inference p95 broken down by device_id. Diverging lines = a slow host (straggler).",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },

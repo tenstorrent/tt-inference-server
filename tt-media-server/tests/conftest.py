@@ -19,8 +19,7 @@ if hasattr(np, "_core"):
     sys.modules["numpy._core"] = np._core
 
 # Prefer the real PIL when it's installed. Tests that exercise actual image
-# decoding (e.g. tests/test_image_manager.py, _tiny_png_b64 in
-# tests/test_video_runner.py) would otherwise see a MagicMock for Image.new
+# decoding (e.g. tests/test_image_manager.py) would otherwise see a MagicMock for Image.new
 # and silently produce empty payloads that fail downstream validation.
 # The mock_modules loop below preserves the legacy mock fallback for envs
 # without Pillow installed, since `if module not in sys.modules` skips it.
@@ -32,6 +31,33 @@ except ImportError:
 
 # Only then import pytest
 import pytest
+
+# tt-metal's Wan, MiniMax-H3 and Ideogram 4 policies, for real where tt-metal is
+# importable. They load before the mocks below; the torch, ttnn and `models`
+# modules they import are then dropped again, so the other tests see the same
+# mocks as without tt-metal.
+_TT_METAL_POLICY_MODULES = (
+    "models.tt_dit.pipelines.wan.policy",
+    "models.tt_dit.pipelines.minimax_h3.policy",
+    "models.tt_dit.pipelines.minimax_h3.packing",
+    "models.tt_dit.pipelines.minimax_h3.packing_ref2va",
+    "models.tt_dit.pipelines.ideogram4.policy",
+)
+_modules_before_tt_metal = set(sys.modules)
+try:
+    import models.tt_dit.pipelines.ideogram4.policy  # noqa: F401
+    import models.tt_dit.pipelines.minimax_h3.policy  # noqa: F401
+    import models.tt_dit.pipelines.wan.policy  # noqa: F401
+
+    TT_METAL_POLICY_IS_REAL = True
+except ImportError:
+    TT_METAL_POLICY_IS_REAL = False
+if TT_METAL_POLICY_IS_REAL:
+    _tt_metal_policies = {name: sys.modules[name] for name in _TT_METAL_POLICY_MODULES}
+else:
+    from tests.fake_tt_metal_policy import placeholder_policies
+
+    _tt_metal_policies = placeholder_policies()
 
 # Mock modules that are not available in test environment
 mock_modules = [
@@ -50,6 +76,10 @@ mock_modules = [
     "pytorchcv",
     "peft",
 ]
+
+for _name in set(sys.modules) - _modules_before_tt_metal:
+    if _name.partition(".")[0] in {*mock_modules, "models"}:
+        del sys.modules[_name]
 
 # Add mocks to sys.modules before any imports
 for module in mock_modules:
@@ -622,6 +652,12 @@ if "models" not in sys.modules:
     sys.modules["models.demos.yolov4.reference.yolov4"] = yolov4_reference_mock.yolov4
     sys.modules["models.demos.yolov4.post_processing"] = yolov4_mock.post_processing
 
+for _name, _module in _tt_metal_policies.items():
+    sys.modules[_name] = _module
+    _parent, _, _child = _name.rpartition(".")
+    if _parent in sys.modules:
+        setattr(sys.modules[_parent], _child, _module)
+
 
 # Mock logger - BEFORE anything else
 class MockLogger:
@@ -772,6 +808,23 @@ forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
 
 # Don't import AVAILABLE_RUNNERS here - let test files import it when needed
 # The mocks are already in sys.modules, so imports will work correctly
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "requires_tt_metal_policy: needs tt-metal's Wan/H3/Ideogram 4 policy; skipped "
+        "where only the placeholder loads",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if TT_METAL_POLICY_IS_REAL:
+        return
+    skip = pytest.mark.skip(reason="needs tt-metal's Wan/H3/Ideogram 4 policy")
+    for item in items:
+        if "requires_tt_metal_policy" in item.keywords:
+            item.add_marker(skip)
 
 
 def pytest_addoption(parser):

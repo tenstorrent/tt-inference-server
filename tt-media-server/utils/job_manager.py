@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Optional
 from config.constants import (
     JobTypes,
     adapters_root,
+    generations_root,
     job_database_path,
     merged_models_root,
 )
@@ -276,6 +277,12 @@ class JobManager:
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
         return job.to_public_dict()
+
+    def check_admission(self) -> None:
+        """Raise the 429 or 503 that ``create_job`` would, before costly
+        request preparation. ``create_job`` checks again."""
+        with self._jobs_lock:
+            self._enforceAdmissionLimits()
 
     def _enforceAdmissionLimits(self) -> None:
         """Reject new work when outstanding jobs or stored records are full."""
@@ -734,6 +741,7 @@ class JobManager:
         result_roots = {
             JobTypes.TRAINING.value: adapters_root,
             JobTypes.ADAPTER_MERGE.value: merged_models_root,
+            JobTypes.GENERATION.value: generations_root,
         }
         root_factory = result_roots.get(job.job_type)
         if root_factory is not None:
