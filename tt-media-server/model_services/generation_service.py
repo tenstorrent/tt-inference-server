@@ -22,6 +22,13 @@ from domain.generation_request import (
     MEDIA_MAX_BYTES,
     GenerationRequest,
 )
+from domain.image_output import (  # noqa: F401  (IMAGE_SAVE_OPTIONS: re-exported)
+    IMAGE_FORMATS,
+    IMAGE_SAVE_OPTIONS,
+    EncodedImage,
+    PendingImage,
+    encode_image,
+)
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
@@ -55,18 +62,6 @@ from utils.video_manager import probe_video
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
 
-IMAGE_FORMATS = {
-    "png": ("PNG", "image/png"),
-    "jpeg": ("JPEG", "image/jpeg"),
-    "webp": ("WEBP", "image/webp"),
-}
-# PIL's defaults, JPEG at quality 75 and lossy WebP at 80, are noticeably lossy
-# for a generated image. JPEG also keeps full-resolution color (4:4:4), which
-# keeps colored edges and small text sharp.
-IMAGE_SAVE_OPTIONS = {
-    "JPEG": {"quality": 95, "subsampling": 0},
-    "WEBP": {"quality": 90},
-}
 
 
 def _too_large(kind: str, max_bytes: int) -> HTTPException:
@@ -486,17 +481,21 @@ class GenerationService(BaseJobService):
             "prompt": request._prompt,
         }
         if request.OUTPUT_TYPE == "image":
-            pil_format, content_type = IMAGE_FORMATS[request.format]
-            path = directory / f"{index}.{request.format}"
-            image = result.convert("RGB") if pil_format == "JPEG" else result
-            options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
-            image.save(path, format=pil_format, **options)
+            # Encoded by the worker's encode stage, or (a bare or pending image)
+            # here; either way in the request's format.
+            if isinstance(result, PendingImage):
+                result = result.resolve()
+            if not isinstance(result, EncodedImage):
+                result = encode_image(result, request.format)
+            _, content_type = IMAGE_FORMATS[result.format]
+            path = directory / f"{index}.{result.format}"
+            path.write_bytes(result.data)
             return {
                 **output,
                 "file": path.name,
                 "content_type": content_type,
-                "width": image.width,
-                "height": image.height,
+                "width": result.width,
+                "height": result.height,
             }
 
         path = directory / f"{index}.mp4"

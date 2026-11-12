@@ -39,6 +39,7 @@ from config.constants import (
 )
 from config.settings import get_settings
 from domain.generation_request import GenerationRequest
+from domain.image_output import PendingImage
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_image_request import (
     H3_IMAGE_REFERENCE_AREA_LIMIT,
@@ -673,7 +674,17 @@ class TTMiniMaxH3ImageRunner(_GenerationRunner):
     Weights: ``MODEL_WEIGHTS_DIR`` or ``MINIMAX_H3_IMAGE_MODEL_PATH``, a
     converted snapshot or the release snapshot as published on Hugging Face,
     which is converted once on first start (see ``_weights_dir``).
+
+    Outputs are ``PendingImage``s: the worker's encode stage encodes them on a
+    background thread while the device starts the next request, and only the
+    encoded file (~5 MB) crosses to the API process, not 50 MB of 4K pixels.
     """
+
+    encodes_images_off_thread = True
+    # Set by the worker's encode stage: the pipeline then returns once the
+    # device is done and leaves its host tail (tile stitch, uint8; ~0.25 s at
+    # 4K) to that stage, overlapped with the next request.
+    defer_image_finish = False
 
     def _weights_dir(self) -> str:
         """A converted snapshot directory. A release snapshot is converted once,
@@ -791,6 +802,7 @@ class TTMiniMaxH3ImageRunner(_GenerationRunner):
             height=request._height,
             seed=request._seed,
             images=references or None,
+            defer_finish=self.defer_image_finish,
         )
         timings = result.timings
         mode = f"edit ({len(references)} refs)" if references else "t2i"
@@ -801,5 +813,7 @@ class TTMiniMaxH3ImageRunner(_GenerationRunner):
             f"denoise {timings.denoise:.2f} + decode {timings.decode:.2f}; "
             f"program-cache misses {sum(timings.program_misses.values())}"
         )
-        # The service writes it in the request's format.
-        return [result.image]
+        # Finished (if deferred) and encoded in the request's format by the
+        # worker's encode stage, or by the service without one.
+        finish = getattr(result, "finish", None)  # set only with defer_finish
+        return [PendingImage(finish or result.image, request.format)]

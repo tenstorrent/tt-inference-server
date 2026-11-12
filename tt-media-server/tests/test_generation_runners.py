@@ -15,7 +15,11 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
+import queue
+
 import pytest
+from device_workers.encode_stage import EncodeStage
+from domain.image_output import PendingImage
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_image_request import (
     H3_IMAGE_REFERENCE_AREA_LIMIT,
@@ -684,7 +688,9 @@ class _H3ImagePipeline:
             program_misses={"denoise": 0},
         )
         image = Image.new("RGB", (kwargs["width"], kwargs["height"]), "blue")
-        return SimpleNamespace(image=image, timings=timings)
+        if kwargs.get("defer_finish"):
+            return SimpleNamespace(image=None, finish=lambda: image, timings=timings)
+        return SimpleNamespace(image=image, finish=None, timings=timings)
 
 
 def _h3_image_runner(model_weights_path=None):
@@ -710,12 +716,13 @@ def test_h3_image_edit_passes_the_references_in_order():
         {"images": [_png(8, 16), _png(24, 12)]},
         seed=11,
     )
-    (image,) = runner.run([request])
+    (output,) = runner.run([request])
     (call,) = runner.pipeline.calls
     assert call["prompt"] == "<Picture 2> on <Picture 1>"
     assert [reference.size for reference in call["images"]] == [(8, 16), (24, 12)]
     assert (call["width"], call["height"], call["seed"]) == (2368, 1760, 11)
-    assert image.size == (2368, 1760)
+    assert isinstance(output, PendingImage) and output.format == "jpeg"
+    assert output.resolve().size == (2368, 1760)
 
 
 def test_h3_image_text_to_image_passes_no_references():
@@ -724,7 +731,26 @@ def test_h3_image_text_to_image_passes_no_references():
     runner.run([request])
     (call,) = runner.pipeline.calls
     assert call["images"] is None
-    assert set(call) == {"prompt", "width", "height", "seed", "images"}
+    assert set(call) == {"prompt", "width", "height", "seed", "images", "defer_finish"}
+    # Without an encode stage the image comes back finished: a deferred finish
+    # (a callable) could not cross to the API process.
+    assert call["defer_finish"] is False
+
+
+def test_h3_image_defers_the_host_tail_when_its_encode_stage_asks():
+    runner = _h3_image_runner()
+    stage = EncodeStage.for_runner(
+        runner, SimpleNamespace(model_service="image"), "w0", queue.Queue(), queue.Queue()
+    )
+    try:
+        request = _resolved(MiniMaxH3ImageRequest(prompt="a cat", format="png"), 2048, 2048)
+        (output,) = runner.run([request])
+        (call,) = runner.pipeline.calls
+        assert call["defer_finish"] is True
+        assert callable(output.image) and output.format == "png"
+        assert output.resolve().size == (2048, 2048)
+    finally:
+        stage.close()
 
 
 def test_h3_image_undecodable_reference_fails_only_the_request():

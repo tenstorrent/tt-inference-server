@@ -136,3 +136,43 @@ class TestForRunner:
         settings = self._settings(service=ModelServices.IMAGE.value)
         assert EncodeStage.for_runner(runner, settings, "w0", None, None) is None
         assert runner.export_in_runner is True
+
+
+class TestImages:
+    def test_image_runner_gets_stage_and_defers_its_finish(self):
+        runner = SimpleNamespace(encodes_images_off_thread=True, defer_image_finish=False)
+        settings = SimpleNamespace(model_service=ModelServices.IMAGE.value, video_async_encode=False)
+        stage = EncodeStage.for_runner(runner, settings, "w0", queue.Queue(), queue.Queue())
+        assert stage is not None
+        assert runner.defer_image_finish is True
+        stage.close()
+
+    def test_pending_image_is_finished_and_encoded_in_order(self):
+        from domain.image_output import EncodedImage, PendingImage
+        from PIL import Image
+
+        results, errors = queue.Queue(), queue.Queue()
+        stage = EncodeStage("w0", results, errors)
+        finished = []
+
+        def finish(color):
+            def run():
+                finished.append(color)
+                return Image.new("RGB", (64, 32), color)
+
+            return run
+
+        stage.submit("a", PendingImage(finish("red"), "jpeg"))
+        stage.submit("b", PendingImage(Image.new("RGB", (8, 8), "blue"), "png"))
+        stage.close()
+        (_, task_a, a), (_, task_b, b) = results.get_nowait(), results.get_nowait()
+        assert (task_a, task_b) == ("a", "b") and errors.empty()
+        assert finished == ["red"]
+        assert isinstance(a, EncodedImage) and (a.format, a.width, a.height) == ("jpeg", 64, 32)
+        assert a.data[:2] == b"\xff\xd8"  # JPEG
+        assert b.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_not_an_image_runner(self):
+        runner = SimpleNamespace(encodes_images_off_thread=None)
+        settings = SimpleNamespace(model_service=ModelServices.IMAGE.value, video_async_encode=False)
+        assert EncodeStage.for_runner(runner, settings, "w0", None, None) is None
