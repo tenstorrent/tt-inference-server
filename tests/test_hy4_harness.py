@@ -361,3 +361,10 @@ def test_harbor_local_dataset_and_extra_compose(tmp_path):
     assert loc["datasets"] == [{"path": "/data/tau3-airline"}]
     assert loc["environment"]["extra_docker_compose"] == ["/x/ov.yaml"]
     assert (REPO / "reference_config/evals/harbor_overlays/tau3_build_network_host.yaml").is_file()
+
+
+def test_bake_client_env_dry_run():
+    r = subprocess.run([sys.executable, str(H / "bake_client_env.py"), str(CATALOG), "4", "--dry-run"], capture_output=True, text=True, cwd=REPO)
+    assert r.returncode == 0, r.stderr[-1500:]
+    assert "model_id id_hy4-preview-b4_Hy4-preview_blackhole_galaxy inferencex_git_ref 8f12037728d6fc118422318d5472f147dcc2a291" in r.stdout
+    assert "('semianalysis_cc_traces_weka_062126', 4)" in r.stdout

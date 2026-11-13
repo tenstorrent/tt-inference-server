@@ -4,6 +4,8 @@
 # concurrency 1 and B. ONE run.py call per grid (the first cell compiles), server never restarted by this script. Run from the tt-inference-server tree
 # (in the image: /home/container_app_user/tt-inference-server) with the client venv. Cells come from grid_cells.py (the same list the unit tests check).
 # Env: MAXISL=<n> drops cells above n (default: all up to max_ctx - 4352; intermediate screens use 131072), GRIDS="A B" (default both).
+# The benchmark client loads the tokenizer of the model id offline (HF_HUB_OFFLINE=1): the baked checkpoint tokenizer is copied into $HF_HOME/hub on first use
+# (HF_HOME default /agentx_hf, like run_agentx.sh; bind-mount a directory there to keep it).
 # --dry-run prints the cell table and the exact run.py commands and writes nothing.
 set -u
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,6 +15,14 @@ IP=${1:-}; B=${2:-}; OUT=${3:-}; SPEC=${4:-}; DRY=0; [ "${5:-}" = "--dry-run" ] 
 python3 "$HERE/harness_model.py" key "$B" > /dev/null || exit 2
 MAXISL=${MAXISL:-0}; GRIDS=${GRIDS:-"A B"}
 TT=${TT_INFERENCE_SERVER_DIR:-$(cd "$HERE/../.." && pwd)}
+HFH=${HF_HOME:-/agentx_hf}; TOKNAME=$(python3 "$HERE/harness_model.py" tokdir)
+if [ $DRY = 0 ]; then
+  mkdir -p "$HFH" 2>/dev/null; [ -w "$HFH" ] || { HFH=/tmp/agentx_hf; mkdir -p $HFH; }
+  [ -e "$HFH/hub/$TOKNAME/snapshots/local/tokenizer.json" ] || { mkdir -p "$HFH/hub" && cp -a "$HERE/hf_tokenizer/$TOKNAME" "$HFH/hub/"; }
+  export HF_HOME=$HFH
+else
+  echo "[dry-run] tokenizer seed: $HERE/hf_tokenizer/$TOKNAME -> $HFH/hub/ (HF_HOME=$HFH)"
+fi
 for G in $GRIDS; do
   P=$(python3 "$HERE/grid_cells.py" pairs $G --maxisl $MAXISL)
   CMD="python3 run.py --model $HARNESS_MODEL_ID --workflow benchmarks --tools vllm --tt-device $HARNESS_DEVICE --dev-mode --no-auth --skip-system-sw-validation --server-url http://$IP:8000 --service-port 8000 --runtime-model-spec-json $SPEC"
