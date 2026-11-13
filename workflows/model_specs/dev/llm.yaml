@@ -1703,7 +1703,9 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: "525312"
         long_prefill_token_threshold: "16384"  # bounds each prefill chunk so that running decodes keep stepping
-        no-async-scheduling: true  # the class verifies synchronously
+        # The class chains each greedy verify on the unread one before it (supports_chained_spec_verify), which needs
+        # asynchronous scheduling.
+        async-scheduling: true
         limit-mm-per-prompt: '{"image": 1, "video": 1}'
         mm-processor-cache-gb: 0
         # The model warms the vision tower for inputs up to this size and refuses a larger image or video.
@@ -1731,7 +1733,7 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: "525312"
         long_prefill_token_threshold: "16384"
-        no-async-scheduling: true
+        no-async-scheduling: true  # chained verifies with DP are not run yet
         limit-mm-per-prompt: '{"image": 1, "video": 1}'
         mm-processor-cache-gb: 0
         mm-processor-kwargs: '{"max_pixels": 1048576}'
