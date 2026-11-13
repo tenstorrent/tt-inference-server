@@ -369,8 +369,11 @@ templates:
         GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 1.2 GB trace region (trace_region_size below)
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        # 7 x 256K users per engine (28 per Galaxy); bfloat8_b KV halves pool bytes. Sized to the DRAM a served
+        # engine leaves free (GEMMA4_LOG_DRAM after the warmup: 5.0 GiB/chip at 6 x 256K, ~1.9 GiB kept for the
+        # prefill transients). AgentX c32, 6 -> 7 x 256K (2026-11-12): prefix hit 85.7 -> 91.9 %, TTFT p90 24.4 -> 10.0 s,
+        # TPOT 100 -> 79 ms, total 37.2K -> 44.9K tok/s; 131K / 248K needles pass.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1835008"
         GEMMA4_KV_BFP8: "1"
         # Decode graphs for 1, 4, 8 and 32 residents: the fastest set measured (2-8 residents per
         # engine decode up to 2x faster than in the 32-row graph alone). RoPE is held identical
