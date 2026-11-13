@@ -18,6 +18,7 @@ from domain.base_request import BaseRequest
 from domain.worker_replacement import WorkerReplacementOutcome
 from utils.job_manager import (
     Job,
+    JobFailure,
     JobManager,
     JobStatus,
     get_job_manager,
@@ -873,6 +874,34 @@ class TestJobManager:
             assert db_job is not None
             assert db_job["status"] == "failed"
             assert db_job["error_message"]["code"] == "processing_error"
+
+    @pytest.mark.asyncio
+    async def test_job_failure_sets_its_own_error_code(self, job_manager, mock_request):
+        """A JobFailure fails the job with its code and message"""
+
+        async def task_func(req):
+            raise JobFailure("prompt_enhancement_error", "The enhancer is down")
+
+        await job_manager.create_job(
+            job_id="job-123",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        await asyncio.sleep(0.3)
+
+        metadata = job_manager.get_job_metadata("job-123")
+        assert metadata["status"] == "failed"
+        assert metadata["error"] == {
+            "code": "prompt_enhancement_error",
+            "message": "The enhancer is down",
+        }
+
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job["error_message"]["code"] == "prompt_enhancement_error"
 
     @pytest.mark.asyncio
     async def test_job_processing_failure_invalid_result_path(
