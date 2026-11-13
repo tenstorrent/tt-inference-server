@@ -369,6 +369,19 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     assert image.info["prompt"] == "a detailed caption of a cat"
 
 
+def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
+    # The prompt upsampler composites it over white, not over its hidden pixels.
+    buffer = BytesIO()
+    Image.new("RGBA", (64, 64), (0, 0, 0, 0)).save(buffer, "PNG")
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [buffer.getvalue()]}
+    flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    (reference,) = call.images
+    assert reference.mode == "RGBA"
+    assert reference.getpixel((0, 0)) == (0, 0, 0, 0)
+
+
 def test_flux3_records_the_pipeline_stage_times(flux3_runner):
     recorder = _StageRecorder()
     flux3_runner._image_stage_recorder = lambda: recorder

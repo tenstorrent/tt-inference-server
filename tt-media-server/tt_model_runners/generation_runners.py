@@ -129,9 +129,12 @@ class _GenerationRunner(TTDiTRunner):
         return request
 
     @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        """The images of the media field ``name``, decoded from their files."""
-        return [decode_image(data) for data in request._files.get(name, [])]
+    def _images(
+        request: GenerationRequest, name: str, *, rgb: bool = True
+    ) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files, in
+        RGB unless ``rgb`` is false."""
+        return [decode_image(data, rgb=rgb) for data in request._files.get(name, [])]
 
     def _image_stage_recorder(self) -> ImageStageRecorder | None:
         if self._warming_up:
@@ -463,7 +466,9 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
 
         request = requests[0]
         try:
-            images = tuple(self._images(request, "images"))
+            # In their own mode: the prompt upsampler composites a transparent
+            # reference over white, and the reference encoder drops its alpha.
+            images = tuple(self._images(request, "images", rgb=False))
         except ValueError:
             raise
         except Exception as e:
