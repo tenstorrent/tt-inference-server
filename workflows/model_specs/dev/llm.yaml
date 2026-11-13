@@ -3542,7 +3542,9 @@ templates:
         # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each,
         # public addresses only, every redirect checked, the connection pinned to the checked address)
         # and inline them; a failed or refused download answers 400 (vLLM answers 500 for a media
-        # host's 5xx / timeout / DNS failure, which OpenRouter counts against uptime).
+        # host's 5xx / timeout / DNS failure, which OpenRouter counts against uptime). Defaults that
+        # bound it: 32 URLs and 150 MB per request, 8 downloads at a time over all requests
+        # (TT_PROXY_FETCH_MAX_URLS, TT_PROXY_FETCH_MAX_TOTAL_MB, TT_PROXY_FETCH_CONCURRENCY).
         TT_PROXY_FETCH_MEDIA: 1
         # Not set: TT_PROXY_THINKING_GREEDY=1.0,0.95 samples temperature-0 requests that think (as
         # MiMo's GPU providers on OpenRouter do); greedy reasoning can loop to the token limit on long

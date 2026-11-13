@@ -81,7 +81,11 @@ turns it off):
   ``MAX_MEDIA_REDIRECTS``) and connects only to the addresses it checked
   (``PinnedResolver``). Serve vLLM with
   ``--allowed-media-domains`` naming no real host so the engines never fetch a URL
-  themselves.
+  themselves. One request may link at most ``TT_PROXY_FETCH_MAX_URLS`` (32) distinct
+  URLs and ``TT_PROXY_FETCH_MAX_TOTAL_MB`` (150) of downloads in total, and at most
+  ``TT_PROXY_FETCH_CONCURRENCY`` (8) downloads run at a time over all requests (the
+  rest wait). A refused or unreachable host is answered with one message that names no
+  address and no resolver or socket error; those go to the proxy's log.
 
 Settings come from ``TT_PROXY_*`` env vars (``Shim.from_env``), which a model spec's
 ``env_vars`` set.
@@ -101,6 +105,7 @@ import io
 import ipaddress
 import itertools
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -118,9 +123,12 @@ from aiohttp import (
     ClientTimeout,
     ServerDisconnectedError,
     TCPConnector,
+    TraceConfig,
     web,
 )
 from aiohttp.abc import AbstractResolver
+
+log = logging.getLogger("engine_proxy")
 
 HOP = {
     "connection",
@@ -136,6 +144,10 @@ PREFIX_PATHS = ("/v1/chat/completions", "/v1/completions", "/v1/responses")
 # closes them (uvicorn's default keep-alive is 5 s): a request written into a
 # connection the engine is closing gets "Server disconnected" and no reply.
 UPSTREAM_KEEPALIVE_S = 2.0
+# An engine that closes a pooled connection as the proxy writes into it does so at
+# once. A disconnect later than this after the request went out is an engine that took
+# the request and then died: resending would run it a second time.
+STALE_DISCONNECT_S = 1.0
 SAMPLE = re.compile(
     r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?(\s.*)$"
 )  # name, labels, value [timestamp]
@@ -173,7 +185,9 @@ def normalize_structured_outputs(body):
         return body
     try:
         req = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # Not JSON, or nested past the recursion limit: left as it is (``prepare``
+        # answers the latter with 400).
         return body
     if not isinstance(req, dict):
         return body
@@ -209,8 +223,14 @@ def media_key_view(obj):
     ``media_key``. Returns ``obj`` itself
     when it holds no media, so a text-only request keys exactly as before."""
     if isinstance(obj, list):
-        out = [media_key_view(x) for x in obj]
-        return obj if all(a is b for a, b in zip(out, obj)) else out
+        out = None
+        for i, value in enumerate(obj):
+            new = media_key_view(value) if isinstance(value, (list, dict)) else value
+            if new is not value:
+                if out is None:
+                    out = list(obj)
+                out[i] = new
+        return obj if out is None else out
     if not isinstance(obj, dict):
         return obj
     out = None
@@ -242,6 +262,16 @@ def parse_json(body):
     except (ValueError, UnicodeDecodeError):
         return None
     return req if isinstance(req, dict) else None
+
+
+def dump_json(obj):
+    """``obj`` as UTF-8 JSON bytes. A string with a lone surrogate (``"\\ud800"`` in the
+    client's JSON) has no UTF-8 form: such a body is written with every non-ASCII
+    character escaped, the form it arrived in."""
+    try:
+        return json.dumps(obj, ensure_ascii=False).encode()
+    except UnicodeEncodeError:
+        return json.dumps(obj).encode()
 
 
 def prefix_text(path, body):
@@ -418,11 +448,12 @@ def map_reasoning(req):
     template read, or ``req`` itself.
 
     - ``enabled: false``, ``effort: "none"`` or ``max_tokens: 0`` ->
-      ``chat_template_kwargs.enable_thinking = false``;
-      ``enabled: true`` or any other effort -> true. Never over an explicit
-      ``chat_template_kwargs.enable_thinking``,
-      and not when the top-level ``reasoning_effort`` is set (vLLM already maps that
-      one).
+      ``chat_template_kwargs.enable_thinking = false``, whatever the other two say (a
+      switch-off wins); otherwise ``enabled: true``, any other effort or a positive
+      ``max_tokens`` -> true. Never over an explicit
+      ``chat_template_kwargs.enable_thinking``, and not when the top-level
+      ``reasoning_effort`` is set: vLLM 0.30 / 0.31 map that one themselves
+      (``build_chat_params``: ``enable_thinking = reasoning_effort != "none"``).
     - ``exclude: true`` -> ``include_reasoning: false`` (OpenRouter: the model reasons,
       the reasoning is not returned;
       vLLM implements that field natively), unless the request sets
@@ -436,13 +467,22 @@ def map_reasoning(req):
     kwargs = req.get("chat_template_kwargs")
     explicit = isinstance(kwargs, dict) and "enable_thinking" in kwargs
     if not explicit and req.get("reasoning_effort") is None:
+        enabled, effort, budget = (
+            reasoning.get("enabled"),
+            reasoning.get("effort"),
+            reasoning.get("max_tokens"),
+        )
+        if isinstance(budget, bool) or not isinstance(budget, (int, float)):
+            budget = None
         on = None
-        if reasoning.get("enabled") is not None:
-            on = bool(reasoning["enabled"])
-        if reasoning.get("effort") is not None:
-            on = reasoning["effort"] != "none"
-        if reasoning.get("max_tokens") == 0:
+        if (enabled is not None and not enabled) or effort == "none" or budget == 0:
             on = False
+        elif (
+            enabled is not None
+            or effort is not None
+            or (budget is not None and budget > 0)
+        ):
+            on = True
         if on is not None:
             out = dict(out, chat_template_kwargs=dict(kwargs or {}, enable_thinking=on))
     if reasoning.get("exclude") is True and "include_reasoning" not in req:
@@ -450,11 +490,21 @@ def map_reasoning(req):
     return out
 
 
+def thinking_off(req):
+    """Whether a chat request (after ``map_reasoning``) switches thinking off. MiMo's
+    chat template thinks unless ``enable_thinking`` is false: an explicit
+    ``chat_template_kwargs.enable_thinking``, else vLLM's own mapping of the top-level
+    ``reasoning_effort`` ("none" -> false)."""
+    kwargs = req.get("chat_template_kwargs")
+    if isinstance(kwargs, dict) and "enable_thinking" in kwargs:
+        return kwargs["enable_thinking"] is False
+    return req.get("reasoning_effort") == "none"
+
+
 def map_greedy_thinking(req, sampling):
     """``req`` with ``sampling`` = (temperature, top_p) in place of a requested
-    temperature 0 when thinking is on, or ``req`` itself. MiMo's chat template thinks
-    unless ``chat_template_kwargs.enable_thinking`` is false, so this runs after
-    ``map_reasoning``. ``sampling`` None (the default) never changes a request.
+    temperature 0 when thinking is on (``thinking_off``; run after ``map_reasoning``),
+    or ``req`` itself. ``sampling`` None (the default) never changes a request.
 
     Why: MiMo's greedy reasoning on a question it cannot settle (VGI-Bench's
     false-premise questions over a 130K-token video) re-checks the same evidence until
@@ -472,8 +522,7 @@ def map_greedy_thinking(req, sampling):
         or temperature != 0
     ):
         return req
-    kwargs = req.get("chat_template_kwargs")
-    if isinstance(kwargs, dict) and kwargs.get("enable_thinking") is False:
+    if thinking_off(req):
         return req
     return dict(req, temperature=sampling[0], top_p=sampling[1])
 
@@ -540,21 +589,20 @@ def _part_url(value):
 def remote_media_urls(req):
     """The distinct http(s) URLs of a chat request's image / video / audio parts, in
     prompt order."""
-    urls = []
-    for message in req.get("messages") or []:
+    # insertion ordered; a list would make the "seen before" test quadratic in the
+    # number of parts
+    urls = {}
+    messages = req.get("messages")
+    for message in messages if isinstance(messages, list) else []:
         content = message.get("content") if isinstance(message, dict) else None
         for part in content if isinstance(content, list) else []:
             if not isinstance(part, dict):
                 continue
             for key in REMOTE_MEDIA_KEYS:
                 url = _part_url(part.get(key))
-                if (
-                    url
-                    and url.lower().startswith(("http://", "https://"))
-                    and url not in urls
-                ):
-                    urls.append(url)
-    return urls
+                if url and url[:8].lower().startswith(("http://", "https://")):
+                    urls.setdefault(url)
+    return list(urls)
 
 
 def inline_media(req, data_uris):
@@ -699,11 +747,33 @@ class PinnedResolver(AbstractResolver):
         pass
 
 
-async def _download(url, timeout_s, max_bytes, max_redirects, policy):
+class FetchBudget:
+    """The bytes one request's downloads may still take, shared by its concurrent
+    downloads."""
+
+    def __init__(self, total):
+        self.total = self.left = total
+
+    def take(self, size):
+        """Count ``size`` more bytes; False once the request is over its total."""
+        self.left -= size
+        return self.left >= 0
+
+
+# What a client is told when a media host is refused, does not resolve or cannot be
+# reached: one message for all of them. Which of them it was, the address a name
+# resolved to and the resolver's / socket's error text describe the network the proxy
+# runs in (a request for http://db.internal/x.png would read them back), so they only
+# go to the log.
+UNREACHABLE = "the host is not reachable from the public internet"
+
+
+async def _download(url, timeout_s, max_bytes, max_redirects, policy, budget=None):
     """(bytes, MIME type) of one URL, following up to ``max_redirects`` redirects; every
     hop is checked (scheme, then
     every address its host resolves to) before anything connects to it, and connects
-    only to those addresses."""
+    only to those addresses. ``budget`` (FetchBudget) is the request's total over all
+    its URLs."""
     where = url if len(url) <= 200 else url[:200] + "..."
     fail = "Failed to fetch media from URL: "
     current = url
@@ -732,13 +802,19 @@ async def _download(url, timeout_s, max_bytes, max_redirects, policy):
                 host, port or (443 if scheme == "https" else 80)
             )
         except OSError as exc:
-            raise ShimError(f"{fail}cannot resolve {host}: {exc} ({where})") from None
+            log.warning("media fetch: cannot resolve %s: %s (%s)", host, exc, where)
+            raise ShimError(f"{fail}{UNREACHABLE} ({where})") from None
         for address in addresses:
             reason = policy(address)
             if reason:
-                raise ShimError(
-                    f"{fail}{host} resolves to {address} ({reason}); refused ({where})"
+                log.warning(
+                    "media fetch: %s resolves to %s (%s); refused (%s)",
+                    host,
+                    address,
+                    reason,
+                    where,
                 )
+                raise ShimError(f"{fail}{UNREACHABLE} ({where})")
         connector = TCPConnector(
             resolver=PinnedResolver(host, addresses), use_dns_cache=False, limit=0
         )
@@ -777,49 +853,74 @@ async def _download(url, timeout_s, max_bytes, max_redirects, policy):
                         raise ShimError(
                             f"{fail}larger than {max_bytes} bytes ({where})"
                         )
-                return bytes(data), media_type(
-                    resp.headers.get("Content-Type"), current
-                )
+                    if budget is not None and not budget.take(len(chunk)):
+                        raise ShimError(
+                            f"{fail}the request's media URLs hold more than "
+                            f"{budget.total} bytes in total ({where})"
+                        )
+                return data, media_type(resp.headers.get("Content-Type"), current)
     raise ShimError(f"{fail}more than {max_redirects} redirects ({where})")
 
 
 async def fetch_media(
-    urls, timeout_s, max_bytes, max_redirects=MAX_MEDIA_REDIRECTS, address_policy=None
+    urls,
+    timeout_s,
+    max_bytes,
+    max_redirects=MAX_MEDIA_REDIRECTS,
+    address_policy=None,
+    max_total_bytes=None,
+    limiter=None,
 ):
     """{url: data URI} for every URL, downloaded concurrently, each within ``timeout_s``
-    (all its hops) and
-    ``max_bytes``. ``address_policy(ip)`` returns why an address is refused (default
-    ``blocked_reason``). Raises
-    ShimError (answered 400) naming the first URL that failed: refused address or
-    scheme, a page host (YouTube) or a web page for an answer, too many redirects,
-    non-200, too large, timeout, connection error."""
+    (all its hops) and ``max_bytes``, all of them together within ``max_total_bytes``
+    (None: no total). ``limiter`` (an asyncio.Semaphore shared by every request of the
+    proxy) bounds the downloads in flight; a download waits for its turn before its
+    ``timeout_s`` starts. ``address_policy(ip)`` returns why an address is refused
+    (default ``blocked_reason``).
+
+    Raises ShimError (answered 400) naming the first URL to fail, and cancels the
+    request's other downloads: refused address or scheme, a page host (YouTube) or a
+    web page for an answer, too many redirects, non-200, too large, timeout, connection
+    error."""
     policy = address_policy or blocked_reason
+    budget = None if max_total_bytes is None else FetchBudget(max_total_bytes)
 
     async def one(url):
         where = url if len(url) <= 200 else url[:200] + "..."
+        if limiter is not None:
+            await limiter.acquire()
         try:
-            data, mime = await asyncio.wait_for(
-                _download(url, timeout_s, max_bytes, max_redirects, policy), timeout_s
+            download = _download(
+                url, timeout_s, max_bytes, max_redirects, policy, budget
             )
+            data, mime = await asyncio.wait_for(download, timeout_s)
         except asyncio.TimeoutError:
             raise ShimError(
                 "Failed to fetch media from URL: "
                 f"no answer within {timeout_s:g} s ({where})"
             ) from None
         except ClientError as exc:
+            log.warning("media fetch: %s: %s (%s)", type(exc).__name__, exc, where)
             raise ShimError(
-                f"Failed to fetch media from URL: {type(exc).__name__}: {exc} ({where})"
+                f"Failed to fetch media from URL: {UNREACHABLE} ({where})"
             ) from None
+        finally:
+            if limiter is not None:
+                limiter.release()
         encoded = await asyncio.get_running_loop().run_in_executor(
             None, base64.b64encode, data
         )
         return url, f"data:{mime};base64," + encoded.decode("ascii")
 
-    results = await asyncio.gather(*(one(url) for url in urls), return_exceptions=True)
-    for result in results:
-        if isinstance(result, BaseException):
-            raise result
-    return dict(results)
+    tasks = [asyncio.ensure_future(one(url)) for url in urls]
+    try:
+        return dict(await asyncio.gather(*tasks))
+    finally:
+        # The first failure ends the request: its other downloads stop here instead of
+        # running to their limits.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 REASONING_KEYS = ("reasoning", "reasoning_content")  # vLLM's field and its older name
@@ -857,11 +958,7 @@ def answer_from_reasoning(body):
         if text.strip():
             message["content"] = text
             changed += 1
-    return (
-        (json.dumps(payload, ensure_ascii=False).encode(), changed)
-        if changed
-        else (body, 0)
-    )
+    return (dump_json(payload), changed) if changed else (body, 0)
 
 
 class AnswerFromReasoning:
@@ -951,11 +1048,7 @@ class AnswerFromReasoning:
         head = {
             k: payload[k] for k in ("id", "object", "created", "model") if k in payload
         }
-        return (
-            b"data: "
-            + json.dumps(dict(head, choices=answers), ensure_ascii=False).encode()
-            + b"\n\n"
-        )
+        return b"data: " + dump_json(dict(head, choices=answers)) + b"\n\n"
 
 
 def _env_flag(name, default):
@@ -985,6 +1078,14 @@ class Shim:
     fetch_media: bool = False
     fetch_timeout_s: float = 30.0
     fetch_max_bytes: int = 100 << 20
+    # Per request: distinct URLs it may link, and the bytes they may hold together (150
+    # MiB of media is a 200 MiB request once inlined as base64, under
+    # max_request_bytes). Over the whole proxy: downloads in flight, so the bodies being
+    # downloaded hold at most fetch_concurrency * fetch_max_bytes, however many requests
+    # ask.
+    fetch_max_urls: int = 32
+    fetch_max_total_bytes: int = 150 << 20
+    fetch_concurrency: int = 8
     # Also fetch from non-public addresses (loopback, private, link-local...): only for
     # a deployment that is itself
     # private and fetches from an internal store. Never on a public endpoint.
@@ -1028,6 +1129,13 @@ class Shim:
             fetch_max_bytes=int(
                 float(os.environ.get("TT_PROXY_FETCH_MAX_MB") or 100) * 2**20
             ),
+            fetch_max_urls=int(os.environ.get("TT_PROXY_FETCH_MAX_URLS") or 32),
+            fetch_max_total_bytes=int(
+                float(os.environ.get("TT_PROXY_FETCH_MAX_TOTAL_MB") or 150) * 2**20
+            ),
+            fetch_concurrency=max(
+                1, int(os.environ.get("TT_PROXY_FETCH_CONCURRENCY") or 8)
+            ),
             fetch_allow_private=_env_flag("TT_PROXY_FETCH_ALLOW_PRIVATE", False),
             answer_from_reasoning=_env_flag("TT_PROXY_ANSWER_FROM_REASONING", True),
             thinking_greedy=cls.parse_sampling(
@@ -1036,6 +1144,12 @@ class Shim:
         )
         env.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**env)
+
+
+# A body nested deeper than Python's recursion limit allows (about 1000 levels for json
+# itself; the shim's walks take a frame per level too) is refused instead of raising
+# RecursionError out of the handler, a 500.
+TOO_DEEP = "request JSON is nested too deeply"
 
 
 def rewrite(path, body, shim):
@@ -1056,7 +1170,7 @@ def finish(path, body, req, new, chunk_chars):
     if req is None:
         return body, []
     if new is not req:
-        body = json.dumps(new, ensure_ascii=False).encode()
+        body = dump_json(new)
     text = prefix_text_of(path, new)
     return body, ([] if text is None else chunk_hashes(text, chunk_chars))
 
@@ -1066,14 +1180,18 @@ def prepare(path, body, shim, chunk_chars):
     rewrite of a chat request (the
     original bytes when nothing changed) and its prefix keys. Raises ShimError (answered
     400)."""
-    req, new = rewrite(path, body, shim)
-    return finish(path, body, req, new, chunk_chars)
+    try:
+        req, new = rewrite(path, body, shim)
+        return finish(path, body, req, new, chunk_chars)
+    except RecursionError:
+        raise ShimError(TOO_DEEP) from None
 
 
-async def prepare_async(path, body, shim, chunk_chars):
+async def prepare_async(path, body, shim, chunk_chars, limiter=None):
     """``prepare`` in the proxy: large bodies off the event loop, and with
     ``shim.fetch_media`` the chat request's
-    http(s) media downloaded and inlined. Raises ShimError (answered 400)."""
+    http(s) media downloaded and inlined (``limiter``: the proxy's semaphore over
+    downloads, see ``fetch_media``). Raises ShimError (answered 400)."""
     loop = asyncio.get_running_loop()
 
     async def run(big, fn, *args):
@@ -1084,22 +1202,38 @@ async def prepare_async(path, body, shim, chunk_chars):
     big = (
         len(body) > OFFLOAD_BYTES
     )  # parsing / hashing a media body inline would stall every stream
-    req, new = await run(big, rewrite, path, body, shim)
-    if (
-        new is not None
-        and shim.enabled
-        and shim.fetch_media
-        and path == "/v1/chat/completions"
-    ):
-        urls = remote_media_urls(new)
-        if urls:
-            policy = (lambda _ip: None) if shim.fetch_allow_private else blocked_reason
-            fetched = await fetch_media(
-                urls, shim.fetch_timeout_s, shim.fetch_max_bytes, address_policy=policy
-            )
-            new = inline_media(new, fetched)
-            big = True
-    return await run(big, finish, path, body, req, new, chunk_chars)
+    try:
+        req, new = await run(big, rewrite, path, body, shim)
+        if (
+            new is not None
+            and shim.enabled
+            and shim.fetch_media
+            and path == "/v1/chat/completions"
+        ):
+            urls = remote_media_urls(new)
+            if len(urls) > shim.fetch_max_urls:
+                raise ShimError(
+                    f"Failed to fetch media from URL: the request links {len(urls)} "
+                    f"media URLs, more than the {shim.fetch_max_urls} one request may "
+                    "have downloaded; send the others as base64 data URIs"
+                )
+            if urls:
+                policy = (
+                    (lambda _ip: None) if shim.fetch_allow_private else blocked_reason
+                )
+                fetched = await fetch_media(
+                    urls,
+                    shim.fetch_timeout_s,
+                    shim.fetch_max_bytes,
+                    address_policy=policy,
+                    max_total_bytes=shim.fetch_max_total_bytes,
+                    limiter=limiter,
+                )
+                new = inline_media(new, fetched)
+                big = True
+        return await run(big, finish, path, body, req, new, chunk_chars)
+    except RecursionError:
+        raise ShimError(TOO_DEEP) from None
 
 
 def chunk_hashes(text, chunk_chars):
@@ -1304,7 +1438,11 @@ def make_app(router, session_factory=None, shim=None):
         if request.method == "POST" and request.path in PREFIX_PATHS:
             try:
                 body, hashes = await prepare_async(
-                    request.path, body, shim, router.chunk_chars
+                    request.path,
+                    body,
+                    shim,
+                    router.chunk_chars,
+                    limiter=state.get("fetch_limiter"),
                 )
             except ShimError as exc:
                 router.stats["shim_rejected"] += 1
@@ -1330,12 +1468,17 @@ def make_app(router, session_factory=None, shim=None):
                 # being computed.
                 router.index.record(hashes, b)
             started = False
+            # "reused": set by the session's trace when the request goes out on a pooled
+            # connection
+            conn = {"reused": False}
+            sent = time.monotonic()
             try:
                 async with state["session"].request(
                     request.method,
                     b + request.path_qs,
                     data=body or None,
                     headers=headers,
+                    trace_request_ctx=conn,
                 ) as up:
                     router.served[b] += 1
                     if up.status == 422 and shim.enabled:
@@ -1378,11 +1521,15 @@ def make_app(router, session_factory=None, shim=None):
                     await resp.write_eof()
                     return resp
             except ServerDisconnectedError:
-                # The engine closed the connection before answering: almost always a
-                # pooled keep-alive connection it was closing as we wrote into it (the
-                # engine never read the request). Resend once on a new connection; a
-                # disconnect after the reply started cannot be retried.
-                if started or not stale_retry:
+                # The engine closed the connection before answering. Resent once, on a
+                # new connection, only when it looks like a pooled keep-alive connection
+                # the engine was closing as we wrote into it (it never read the
+                # request): a reused connection, closed at once. A non-streaming request
+                # has no reply until its end, so an engine that dies in the middle of
+                # one also lands here with nothing sent to the client; it took the
+                # request, and a resend would run it a second time.
+                stale = conn["reused"] and time.monotonic() - sent < STALE_DISCONNECT_S
+                if started or not stale_retry or not stale:
                     raise
                 stale_retry = False
                 router.stats["stale_retried"] += 1
@@ -1442,11 +1589,19 @@ def make_app(router, session_factory=None, shim=None):
             return web.json_response({"unhealthy": bad}, status=503)
         return web.Response(status=200)
 
+    async def on_reuse(_session, ctx, _params):
+        if isinstance(ctx.trace_request_ctx, dict):
+            ctx.trace_request_ctx["reused"] = True
+
     async def on_start(app):
+        trace = TraceConfig()
+        trace.on_connection_reuseconn.append(on_reuse)
         state["session"] = (session_factory or ClientSession)(
             timeout=ClientTimeout(total=None),
             connector=TCPConnector(limit=0, keepalive_timeout=UPSTREAM_KEEPALIVE_S),
+            trace_configs=[trace],
         )
+        state["fetch_limiter"] = asyncio.Semaphore(shim.fetch_concurrency)
 
     async def on_stop(app):
         await state["session"].close()
