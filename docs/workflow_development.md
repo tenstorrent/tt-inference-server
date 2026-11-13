@@ -735,11 +735,13 @@ e2e normalized interactivity (`mean_e2e_norm_intvty`) divides by whole-request
 wall clock and is the honest user-visible speed for a long-prefill agentic turn —
 the two differ by roughly 3x in practice. Its `p75`/`p90`/`p95` companions are
 read off the bottom of the distribution, since for a rate the slow tail is the
-low end. The same per-request rate is also exported as **speed**
-(`mean_speed_tps`, `median_speed_tps`, `p90_speed_tps`, `p99_speed_tps`) and
-rendered as the first table in the report, because it is the number Artificial
+low end. The same per-request rate is also exported under AIPerf's own name,
+**E2E Output Token Throughput** (`mean_e2e_output_token_throughput`,
+`median_e2e_output_token_throughput`, `p90_e2e_output_token_throughput`,
+`p99_e2e_output_token_throughput`), and rendered as the first table in the
+report, because it is the number Artificial
 Analysis ("speed", average) and OpenRouter ("throughput", P50) publish for a
-deployment. `p90`/`p99` follow the same worse-tail convention: `p99_speed_tps`
+deployment. `p90`/`p99` follow the same worse-tail convention: `p99_e2e_output_token_throughput`
 is the rate only 1% of requests fell below (AIPerf's `p1`).
 
 Several of the fork's tags come in pairs that only mean something together, and

@@ -78,15 +78,16 @@ LATENCY_COLUMNS: List[Tuple[str, str]] = [
     ("p90_adj_e2el_ms", "Err-Adj E2EL P90"),
 ]
 
-# The headline table: per-request output tokens over whole-request wall clock
-# (TTFT included), which is what Artificial Analysis ("speed", average) and
-# OpenRouter ("throughput", P50) publish. P90/P99 are the slow tail -- the rate
-# 90% / 99% of requests met or beat.
-SPEED_COLUMNS: List[Tuple[str, str]] = [
-    ("mean_speed_tps", "Speed Avg (AA)"),
-    ("median_speed_tps", "Speed P50 (OR)"),
-    ("p90_speed_tps", "Speed P90"),
-    ("p99_speed_tps", "Speed P99"),
+# The headline table: AIPerf's E2E Output Token Throughput, i.e. per-request
+# output tokens over whole-request wall clock (TTFT included). It is what
+# Artificial Analysis ("speed", average) and OpenRouter ("throughput", P50)
+# publish. P90/P99 are the slow tail -- the rate 90% / 99% of requests met or
+# beat.
+E2E_OUTPUT_THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
+    ("mean_e2e_output_token_throughput", "E2E Output Token Throughput Avg (AA)"),
+    ("median_e2e_output_token_throughput", "E2E Output Token Throughput P50 (OR)"),
+    ("p90_e2e_output_token_throughput", "E2E Output Token Throughput P90"),
+    ("p99_e2e_output_token_throughput", "E2E Output Token Throughput P99"),
 ]
 
 THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
@@ -191,10 +192,10 @@ _THROUGHPUT_KEYS = frozenset(
         "output_token_throughput",
         "output_token_throughput_per_user",
         "median_output_token_throughput_per_user",
-        "mean_speed_tps",
-        "median_speed_tps",
-        "p90_speed_tps",
-        "p99_speed_tps",
+        "mean_e2e_output_token_throughput",
+        "median_e2e_output_token_throughput",
+        "p90_e2e_output_token_throughput",
+        "p99_e2e_output_token_throughput",
         "total_token_throughput",
         "active_throughput_tok_per_s",
         "effective_prefill_throughput",
@@ -295,11 +296,11 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "**Err-Adj TTFT / E2EL**: percentiles with failed requests folded in, so a "
     "run that got fast by erroring out cannot look good. Omitted when a run "
     "had no errors.",
-    "**Speed**: output tokens divided by whole-request wall clock, TTFT "
-    "included, per request -- the user-visible speed of an agentic turn and "
-    "the number Artificial Analysis (**Avg**) and OpenRouter (**P50**) "
-    "publish. **P90 / P99** are the slow tail: the speed 90% / 99% of "
-    "requests met or beat. Prefill time is part of it, so expect it to be "
+    "**E2E Output Token Throughput**: AIPerf's per-request output tokens "
+    "divided by whole-request wall clock, TTFT included -- the user-visible "
+    'speed of an agentic turn, and the number Artificial Analysis ("speed", '
+    '**Avg**) and OpenRouter ("throughput", **P50**) publish. **P90 / P99** '
+    "are the slow tail: the rate 90% / 99% of requests met or beat. Prefill time is part of it, so expect it to be "
     "several times lower than **Out Tok/s/User**, and to move less than "
     "decode speed does when only decode improves.",
     "**Prefill / Decode Tok/s**: the phase split of serving throughput, "
@@ -614,13 +615,13 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
     parts.append("**Benchmarking Tools:**")
     parts.extend(_tool_paragraphs(rows))
 
-    speed = _table(rows, SPEED_COLUMNS)
-    if speed:
+    e2e_throughput = _table(rows, E2E_OUTPUT_THROUGHPUT_COLUMNS)
+    if e2e_throughput:
         parts.append(
-            "#### Per-run Speed (tok/s per request)\n\n"
+            "#### Per-run E2E Output Token Throughput (tok/s per request)\n\n"
             "Output tokens over whole-request time, TTFT included: the metric "
             "Artificial Analysis and OpenRouter publish. P90 / P99 are the "
-            f"slow tail.\n\n{speed}"
+            f"slow tail.\n\n{e2e_throughput}"
         )
 
     latency = _table(rows, LATENCY_COLUMNS)
