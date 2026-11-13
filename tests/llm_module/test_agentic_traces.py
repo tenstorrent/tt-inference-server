@@ -662,6 +662,12 @@ class TestOutputParsing:
         assert metrics["p75_e2e_norm_intvty"] == 3019.83
         assert metrics["p90_e2e_norm_intvty"] == 2215.77
         assert metrics["p95_e2e_norm_intvty"] == 1813.5
+        # Speed is the same rate under the AA/OR name, with P50 added and the
+        # tail on the worse-tail convention: P99 reads AIPerf's p1.
+        assert metrics["mean_speed_tps"] == 40.41
+        assert metrics["median_speed_tps"] == 4808.69
+        assert metrics["p90_speed_tps"] == 2215.77
+        assert metrics["p99_speed_tps"] == 831.94
         assert metrics["measured_benchmark_duration"] == 3605.47
 
     def test_distinguishes_successful_from_completed_counts(self, tmp_path):
