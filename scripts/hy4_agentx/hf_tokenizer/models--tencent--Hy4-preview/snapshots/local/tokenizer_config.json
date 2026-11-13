@@ -1,0 +1,11 @@
+{
+  "backend": "tokenizers",
+  "bos_token": "<｜hy_start:opensource｜>",
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "<｜hy_end:opensource｜>",
+  "is_local": true,
+  "local_files_only": false,
+  "model_max_length": 1000000000000000019884624838656,
+  "pad_token": "<｜hy_pad:opensource｜>",
+  "tokenizer_class": "TokenizersBackend"
+}

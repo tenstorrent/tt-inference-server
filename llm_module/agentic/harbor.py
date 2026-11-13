@@ -85,6 +85,9 @@ class HarborRunConfig:
     # ... for the ``kubernetes`` environment). Only expressible through the
     # config file, so a non-empty value forces that path.
     environment_kwargs: dict[str, Any] = field(default_factory=dict)
+    # Extra docker compose files appended to each trial's compose stack
+    # (Harbor ``environment.extra_docker_compose``), e.g. build-time overrides.
+    extra_docker_compose: list[str] = field(default_factory=list)
     # Per-request LLM read timeout, injected into a mini-swe-agent run as
     # ``model.model_kwargs.timeout`` (see ``_apply_mini_swe_agent_defaults``).
     # litellm's OpenAI-compatible path otherwise defaults to an infinite read
@@ -203,7 +206,13 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    # An absolute path is a local dataset directory (Harbor's ``path`` source);
+    # anything else is a registry / package name.
+    dataset_config: dict[str, Any] = (
+        {"path": config.dataset}
+        if _is_local_dataset(config.dataset)
+        else {"name": config.dataset}
+    )
     if config.dataset_ref:
         dataset_config["ref"] = config.dataset_ref
     if config.n_tasks is not None:
@@ -230,6 +239,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
             encoding="utf-8",
         )
         environment_config["extra_docker_compose"] = [str(overlay_path)]
+    if config.extra_docker_compose:
+        environment_config["extra_docker_compose"] = environment_config.get(
+            "extra_docker_compose", []
+        ) + [str(p) for p in config.extra_docker_compose]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -286,9 +299,15 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     return config_path
 
 
+def _is_local_dataset(dataset: str) -> bool:
+    return Path(dataset).is_absolute()
+
+
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        _is_local_dataset(config.dataset)
+        or bool(config.extra_docker_compose)
+        or _mini_swe_needs_host_gateway(config)
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None

@@ -57,13 +57,18 @@ def resolve_request_body(task: Any) -> Dict[str, Any]:
     if thinking is None:
         return body
     key = getattr(task, "thinking_kwarg", None) or "enable_thinking"
+    values = getattr(task, "thinking_values", None)
+    # String-valued switch (``thinking_values`` = (on, off)); default: boolean.
+    value = (values[0] if thinking else values[1]) if values else bool(thinking)
     kwargs = dict(body.get("chat_template_kwargs") or {})
-    if key in kwargs and bool(kwargs[key]) != bool(thinking):
+    if key in kwargs and (
+        kwargs[key] != value if values else bool(kwargs[key]) != bool(thinking)
+    ):
         raise ValueError(
             f"{getattr(task, 'task_name', task)!r}: thinking={thinking} conflicts "
             f"with request_body.chat_template_kwargs[{key!r}]={kwargs[key]!r}"
         )
-    kwargs[key] = bool(thinking)
+    kwargs[key] = value
     body["chat_template_kwargs"] = kwargs
     return body
 

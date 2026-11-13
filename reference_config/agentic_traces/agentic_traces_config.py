@@ -513,6 +513,22 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ("", 16, "semianalysis_cc_traces_weka_062126_256k"),
         )
     ],
+    # Hy4-Preview on BLACKHOLE_GALAXY: B=4 (primary) and B=8 (secondary), 1M per user, full trace corpus, sessions = batch size (AGENTX_CONCURRENCY overrides).
+    # model_id = id_<impl_name>_<model_name>_<device> of the catalog entry (impl hy4_preview_b4 / hy4_preview_b8, models/demos/blackhole/hy4_preview).
+    *[
+        AgenticTracesConfig(
+            model_id=f"id_hy4-preview-b{batch}_Hy4-preview_blackhole_galaxy",
+            inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.INFERENCEX_AGENTX,
+                    public_dataset="semianalysis_cc_traces_weka_062126",
+                    concurrency=_agentx_concurrency(batch),
+                ),
+            ),
+        )
+        for batch in (4, 8)
+    ],
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(

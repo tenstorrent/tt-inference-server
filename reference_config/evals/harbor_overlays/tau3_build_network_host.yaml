@@ -1,0 +1,11 @@
+# Compose overlay for the tau3-bench task images (main + tau3-runtime sidecar): build on the host network.
+# The DSV4.1 Galaxy hosts' system dockerd has no docker0 bridge, so RUN steps on the default build network fail
+# ("adding interface veth... to bridge docker0 failed: Device does not exist"); the trial containers still run on
+# their compose project networks.
+services:
+  main:
+    build:
+      network: host
+  tau3-runtime:
+    build:
+      network: host

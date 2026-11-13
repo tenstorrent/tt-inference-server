@@ -8,7 +8,7 @@ import math
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from reference_config.evals.eval_utils import (
     score_multilevel_keys_mean,
@@ -299,6 +299,9 @@ class HarborEvalConfig:
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
     environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
+    # Extra docker compose files layered over each trial's compose (Harbor
+    # ``environment.extra_docker_compose``; docker environment only).
+    extra_docker_compose: List[str] = field(default_factory=list)
     harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
     # Per-request LLM read timeout for the mini-swe-agent backend, injected into
     # the generated mini config as ``model.model_kwargs.timeout``. Brings a
@@ -377,6 +380,10 @@ class EvalTask:
     # The chat-template switch the model's template reads ("enable_thinking"
     # for Gemma 4 / Qwen3 / GLM; some templates use "thinking").
     thinking_kwarg: str = "enable_thinking"
+    # (on, off) values of ``thinking_kwarg`` for templates whose switch is a string,
+    # not a boolean (Hy4-Preview: reasoning_effort in {"high", "no_think"}). None
+    # (default) keeps the boolean rendering of ``thinking`` unchanged.
+    thinking_values: Optional[Tuple[Any, Any]] = None
     # Execution policy only; does not reduce samples, context, or output tokens.
     wall_clock_timeout_seconds: Optional[int] = None
     # Per-mode wall-clock bounds, keyed like limit_samples_map. A run in a
@@ -654,6 +661,74 @@ def _dsv41_longbench2_task(task_name: str, max_context: int, max_isl: int, concu
             "tokenizer_num_proc": 16,
         },
         limit_samples_map={EvalLimitMode.SMOKE_TEST: 2, EvalLimitMode.CI_NIGHTLY: 8},
+    )
+
+
+_HY4_SERVED_MODEL = "openai/tencent/Hy4-preview"
+# The 50 airline tasks written by the Harbor tau3-bench adapter (tau2-bench pinned in the task images; the registry dataset sierra-research/tau3-bench has the same
+# tasks but unpinned images). HY4_TAU3_DATASET overrides (an absolute local directory or a registry name), as the DSV4 evals branch did for DSV4.
+_HY4_TAU3_LOCAL_DATASET = "/mnt/tt-data/ssinghal/datasets/tau3-bench-airline"
+
+
+def _hy4_tau3_airline_task():
+    """tau3-bench airline (50 tasks) for Hy4-Preview, run with --workflow agentic --agentic-benchmark tau3_bench_airline. The served model is the agent, the
+    simulated user and the judge. Agent turns send chat_template_kwargs {"reasoning_effort": HY4_TAU3_EFFORT} (default "high" = the served default; "no_think"
+    for a non-thinking run); the user simulator's own effort is HY4_TAU3_USER_EFFORT (default "none", as the DSV4 task: UNVERIFIED for the Hy4 template, which
+    accepts only high / no_think and raises on anything else when it reaches the template). Server prerequisite: OpenAI tool calling (tool-call-parser hy_v4).
+    HY4_EVAL_CONCURRENCY = concurrent trials (default 4). Sampling: card temperature 0.9, top_p 1.0; max_tokens 4096 per turn is a DSV4 value (UNVERIFIED for
+    high effort: raise it when finish_reason=length shows up in the trial logs)."""
+    return EvalTask(
+        task_name="tau3_bench_airline",
+        workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        score=EvalTaskScore(
+            published_score=None,
+            published_score_ref=None,
+            score_func=score_task_single_key,
+            score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+            tolerance=0.10,
+        ),
+        agentic_eval_config=TerminalBenchEvalConfig(
+            dataset=os.getenv("HY4_TAU3_DATASET")
+            or (_HY4_TAU3_LOCAL_DATASET if os.path.isdir(_HY4_TAU3_LOCAL_DATASET) else "sierra-research/tau3-bench"),
+            agent="tau3_llm_agent",
+            agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+            task_names=["*tau3-airline-*"],
+            n_concurrent_trials=int(os.getenv("HY4_EVAL_CONCURRENCY", "4")),
+            n_attempts=1,
+            n_tasks=50,
+            override_cpus=4,
+            override_memory_mb=8 * 1024,
+            # The Galaxy hosts' system dockerd has no docker0 bridge: build task images on the host network (HY4_TAU3_BUILD_NETWORK_HOST=0 drops the overlay).
+            extra_docker_compose=(
+                [str(Path(__file__).resolve().parent / "harbor_overlays" / "tau3_build_network_host.yaml")]
+                if os.getenv("HY4_TAU3_BUILD_NETWORK_HOST", "1") != "0"
+                else []
+            ),
+            agent_timeout_sec=float(os.getenv("HY4_TAU3_AGENT_TIMEOUT_SEC", "3600")),
+            agent_kwargs={
+                "tau2_trial_index": 0,
+                "temperature": 0.9,
+                "llm_args_json": json.dumps(
+                    {
+                        "top_p": 1.0,
+                        "max_tokens": 4096,
+                        "extra_body": {"chat_template_kwargs": {"reasoning_effort": os.getenv("HY4_TAU3_EFFORT", "high")}},
+                    }
+                ),
+                "max_steps": 200,
+                "tool_timeout_sec": 900,
+                "read_timeout_sec": 120,
+            },
+            environment_env={
+                "TAU2_USER_MODEL": _HY4_SERVED_MODEL,
+                "TAU2_USER_REASONING_EFFORT": os.getenv("HY4_TAU3_USER_EFFORT", "none"),
+            },
+            verifier_env={"TAU2_NL_ASSERTIONS_MODEL": _HY4_SERVED_MODEL},
+            task_names_map={
+                EvalLimitMode.CI_NIGHTLY: ["*tau3-airline-0", "*tau3-airline-1", "*tau3-airline-2", "*tau3-airline-3"],
+            },
+        ),
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 2},
     )
 
 
@@ -13457,6 +13532,79 @@ _eval_config_list = [
             + _DSV41_OPT_IN_TASKS
             if (not os.getenv("DSV41_EVAL_TASKS") and t.task_name not in _DSV41_OPT_IN_TASK_NAMES)
             or t.task_name in os.getenv("DSV41_EVAL_TASKS", "").split(",")
+        ],
+    ),
+    # Hy4-Preview (tencent/Hy4-preview) on Blackhole Galaxy, B=4 / B=8 x 1M (harness: scripts/hy4_agentx, frozen suite = $PROGRAM/harness-hy4/BENCH_SUITE.md).
+    # The thinking switch is the chat-template variable reasoning_effort in {"high", "no_think"} (default "high"), a STRING, hence thinking_kwarg +
+    # thinking_values. GPQA diamond runs thinking ON (high); GSM8K 8-shot runs thinking OFF (no_think: a 2048-token cap cannot hold high-effort reasoning);
+    # tau3 airline follows the served default (high). Sampling = the model card (temperature 0.9, top_p 1.0). The card publishes no GPQA/GSM8K/tau3 number:
+    # the gates are the model's OWN baseline (mean - 2 x stderr, tt-bench-harness), passed as percent in HY4_GATE_GPQA / HY4_GATE_GSM8K (0 = no gate yet;
+    # tolerance 0). HY4_EVAL_TASKS (comma list of task_name) selects tasks; HY4_EVAL_CONCURRENCY = concurrent requests (default 4 = B of the primary entry).
+    EvalConfig(
+        hf_model_repo="tencent/Hy4-preview",
+        tasks=[
+            _t
+            for _t in (
+                EvalTask(
+                    task_name="gpqa_diamond_cot_zeroshot",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    num_fewshot=0,
+                    use_chat_api=True,
+                    max_concurrent=int(os.getenv("HY4_EVAL_CONCURRENCY", "4")),
+                    thinking=True,
+                    thinking_kwarg="reasoning_effort",
+                    thinking_values=("high", "no_think"),
+                    capture_reasoning=True,
+                    score=EvalTaskScore(
+                        published_score=float(os.getenv("HY4_GATE_GPQA", "0")),
+                        published_score_ref="none published: own baseline (BASELINES.md); HY4_GATE_GPQA = mean - 2 x stderr",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={"result_keys": ["exact_match,flexible-extract"], "unit": "percent"},
+                        tolerance=0.0,
+                    ),
+                    model_kwargs={"tokenizer": "/mnt/tt-data/Hy4-Preview", "max_length": 67584, "timeout": 14400},
+                    gen_kwargs={
+                        "max_gen_toks": 64500,
+                        "until": [],
+                        "do_sample": "true",
+                        "temperature": 0.9,
+                        "top_p": 1.0,
+                        "stream": "true",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
+                ),
+                EvalTask(
+                    task_name="dsv41_gsm8k_cot",  # the task name is historical; the lm-eval gsm8k-cot copy is model agnostic
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    include_path=str(Path(__file__).resolve().parent / "lm_eval_tasks"),
+                    num_fewshot=8,
+                    use_chat_api=True,
+                    apply_chat_template=True,
+                    max_concurrent=int(os.getenv("HY4_EVAL_CONCURRENCY", "4")),
+                    thinking=False,
+                    thinking_kwarg="reasoning_effort",
+                    thinking_values=("high", "no_think"),
+                    score=EvalTaskScore(
+                        published_score=float(os.getenv("HY4_GATE_GSM8K", "0")),
+                        published_score_ref="none published: own baseline (BASELINES.md); HY4_GATE_GSM8K = mean - 2 x stderr",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={"result_keys": ["exact_match,flexible-extract"], "unit": "percent"},
+                        tolerance=0.0,
+                    ),
+                    model_kwargs={"tokenizer": "/mnt/tt-data/Hy4-Preview", "max_length": 40000, "timeout": 14400},
+                    gen_kwargs={
+                        "max_gen_toks": 2048,
+                        "until": ["Q:"],
+                        "do_sample": "true",
+                        "temperature": 0.9,
+                        "top_p": 1.0,
+                        "stream": "true",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
+                ),
+                _hy4_tau3_airline_task(),
+            )
+            if not os.getenv("HY4_EVAL_TASKS") or _t.task_name in os.getenv("HY4_EVAL_TASKS", "").split(",")
         ],
     ),
 ]
