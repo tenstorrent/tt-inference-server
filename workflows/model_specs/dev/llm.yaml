@@ -7854,12 +7854,16 @@ templates:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
 
-# The 1 M profile on the B 16 build with the multi-user MTP step (impl glm53_flash_mtp_mu, EXPERIMENTAL): G = 4 users
+# The 1 M profile on the B 16 build with the multi-user MTP steps (impl glm53_flash_mtp_mu, EXPERIMENTAL): G = 4 users
 # x (K 3 + 1) verify rows in one launch on the group bases 0 / 4 / 8 / 12 (the 8x4 e2e B 16 x 1 M, ISL 128, tt-metal
-# 782ac745e7d: plain 35.6 -> 71.6 tok/s per user, tau 3.37, every user's ids identical to plain greedy). The step
-# speculates while exactly 4 greedy requests are live on the bases (new requests take free bases first); any other
-# step decodes plainly, as do sampled requests (the verify head is greedy) and requests that resume from a prefix-cache
-# snapshot. Synchronous scheduling. 16 resident slots at 1 M.
+# 782ac745e7d: plain 35.6 -> 71.6 tok/s per user, tau 3.37, every user's ids identical to plain greedy), and an
+# alternate step of 8 users x (K 1 + 1) rows on the bases 0 / 2 / .. / 14 for 5 to 8 live users (the 4-user step
+# declined every step there). The MTP layer attends sparsely through its own DSA indexer (GLM53_SPEC_MTP_SPARSE), so a
+# speculative step costs the same at 32 K and at 1 M and every user speculates up to the served context. Any non-empty
+# subset of a step's bases speculates (GLM53_SPEC_PARTIAL); sampled requests speculate too (GLM53_SPEC_SAMPLED: the
+# verify draws on device, exact rejection sampling against the greedy drafts). New requests take the 4-user step's free
+# bases first, then the alternate's; requests that resume from a prefix-cache snapshot decode plainly. Synchronous
+# scheduling. 16 resident slots at 1 M.
 - weights:
     - zai-org/GLM-5.3-Flash
   # the shield's host setup checks these (none derivable: the repo name carries no parameter count): 164 B bf16
@@ -7898,19 +7902,27 @@ templates:
         # tt-triage on real hangs.
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"
         # The MTP speculative step (tt-metal models/autoports/zai_org_glm_5_3_flash/tt/spec_mtp.py): K = 3 drafts of the
-        # model's MTP layer for a lone greedy request, verified on device in one trace replay (the adapter's
-        # model-owned drafter: generator_vllm_stack.py "Stage 17: speculation"); on the sequence-sharded pool.
+        # model's MTP layer per user, verified on device in one trace replay (the adapter's model-owned drafter:
+        # generator_vllm_stack.py "Stage 17: speculation"); on the sequence-sharded pool.
         GLM53_SPEC_K: "3"
         GLM53_SPEC_ON_SHARD: "1"
         GLM53_STACK_VLLM_SPEC: "1"
         # The multi-user step (tt-metal spec_mtp.py groups, doc/perf/mtp_multi_user_design.md): G = 4 users on the B 16
-        # build's group bases; the private MTP page tables at one user's cap (GLM53_SPEC_MTP_PT_CAP, the multi-user
-        # default) keep the catch-up program inside L1 at 1 M
+        # build's group bases
         GLM53_SPEC_MULTI: "1"
         GLM53_SPEC_MULTI_USERS: "4"
-        # Each user's MTP cache covers 32 K positions (the validated multi-user geometry): a user decodes plainly past
-        # 32768 positions
-        GLM53_SPEC_MAX_CTX: "32768"
+        # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (tt-metal
+        # doc/perf/mtp_sparse_design.md): its latent pool and pooled keys per chip and slot, like a main sparse_dsa
+        # layer's, so no GLM53_SPEC_MAX_CTX cap -- every user speculates up to 1 M positions
+        GLM53_SPEC_MTP_SPARSE: "1"
+        # The alternate step: 8 users x 1 draft for 5 to 8 live users (the plugin's k_by_rows: 3 drafts up to 4 live
+        # rows, 1 draft up to 16), sharing the sparse MTP layer
+        GLM53_SPEC_MULTI_ALT: "8:1"
+        # Any non-empty subset of a step's group bases speculates (an inactive group's rows are skipped on device), and
+        # sampled requests speculate through the device sampler's verify (the checkpoint's generation_config samples:
+        # temperature 1.0, top_p 0.95)
+        GLM53_SPEC_PARTIAL: "1"
+        GLM53_SPEC_SAMPLED: "1"
       override_tt_config:
         # The device is opened BEFORE the model (plugin worker.py), so the fabric, the trace region and the worker
         # L1 budget come from here, not from the model's knobs.
@@ -7935,8 +7947,8 @@ templates:
         # is needed because False booleans are dropped.
         no-async-scheduling: true
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device. The adapter
-        # drafts for a lone live greedy request only (DraftOutput.num_valid 0 otherwise: those steps are ordinary
-        # decodes); num_speculative_tokens = GLM53_SPEC_K.
+        # drafts for the users of one step (DraftOutput.num_valid 0 for every row otherwise: those steps are ordinary
+        # decodes); num_speculative_tokens = GLM53_SPEC_K (the alternate step offers 1 of them).
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
         # one 8192-token prefill bucket per engine step plus every slot's verify block (1 + K tokens): a prefill chunk
