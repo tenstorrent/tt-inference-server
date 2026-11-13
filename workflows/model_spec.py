@@ -517,6 +517,14 @@ glm53_flash_mtp_impl = ImplSpec(
     code_path="models/demos/glm53_flash",
 )
 
+# the B 16 1 M build with the multi-user MTP step (G users x (K + 1) verify rows in one launch; synchronous)
+glm53_flash_mtp_mu_impl = ImplSpec(
+    impl_id="glm53_flash_mtp_mu",
+    impl_name="glm53-flash-mtp-mu",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -532,6 +540,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "glm53_flash_128k": glm53_flash_128k_impl,
     "glm53_flash_128k_mm": glm53_flash_128k_mm_impl,
     "glm53_flash_mtp": glm53_flash_mtp_impl,
+    "glm53_flash_mtp_mu": glm53_flash_mtp_mu_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
