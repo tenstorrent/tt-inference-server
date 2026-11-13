@@ -345,7 +345,7 @@ templates:
     # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery
     # (TT_VISIBLE_DEVICES per rank, no descriptor override).
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
+      max_concurrency: 32  # whole box (8 per engine): AgentX 2026-11-13 c64 total 40.3K tok/s < c32 46.4K (prefill-bound, MTP off above 8 rows per engine)
       max_context: 262144
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
