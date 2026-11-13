@@ -150,11 +150,10 @@ class Settings(BaseSettings):
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
 
-    # Prompt enhancer for Ideogram 4: "ideogram-api" expands a plain `prompt`
-    # into the structured caption the model was trained on, by Ideogram's
-    # hosted magic-prompt API, which gets every such prompt and needs a key.
-    # "none" turns it off; a request with `prompt` is then a 422 and only
-    # `structured_prompt` is served.
+    # Prompt enhancer for Ideogram 4. "ideogram-api" sends each plain `prompt` to
+    # Ideogram's hosted magic-prompt API, which needs a key, and gets back a
+    # structured caption. "none" serves `structured_prompt` only; a request
+    # with `prompt` is then a 422.
     ideogram_prompt_enhancer: Literal["ideogram-api", "none"] = "none"
     # Never logged or stored with a job.
     ideogram_api_key: SecretStr = SecretStr("")
@@ -163,7 +162,7 @@ class Settings(BaseSettings):
     )
     # Per call. The reference client waits up to 120 s.
     prompt_enhancer_timeout_seconds: float = 30.0
-    # Calls in flight per server process, kept under the key's in-flight limit.
+    # Calls in flight per server process.
     prompt_enhancer_max_in_flight: int = 8
     # Retries of a timeout, 429 or 5xx, each after a backoff.
     prompt_enhancer_max_retries: int = 2

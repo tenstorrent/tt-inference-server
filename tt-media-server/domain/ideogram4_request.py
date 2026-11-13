@@ -150,16 +150,17 @@ class Ideogram4CompositionalDeconstruction(_Strict):
 
 
 class Ideogram4Caption(_Strict):
-    """A structured caption in the format Ideogram 4 was trained on, sent to
-    the model as is. Key order does not matter: the server writes it out in
-    the model's order. Each output reports it as its `prompt`.
+    """A structured caption in the format Ideogram 4 was trained on. The server
+    writes it out in the model's key order, with colors in uppercase; key
+    order in the request does not matter. Each output reports it as its
+    `prompt`.
 
     Use this to bypass the prompt enhancer, e.g. with a caption written by
     your own LLM.
 
-    Schema: `V4JsonPrompt` of Ideogram's hosted API, so a caption from that
-    API is accepted, with stricter rules: unknown keys are rejected, and a
-    `bbox` has exactly four values with `ymin <= ymax` and `xmin <= xmax`.
+    Schema: `V4JsonPrompt` of Ideogram's hosted API, with two stricter rules:
+    unknown keys are rejected, and a `bbox` needs exactly four values with
+    `ymin <= ymax` and `xmin <= xmax`.
     Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`."""
 
     high_level_description: str = Field(
@@ -177,7 +178,8 @@ class Ideogram4Caption(_Strict):
 _EnhancedColor = Annotated[
     str, Field(pattern=r"^#[0-9a-fA-F]{6}$"), AfterValidator(str.upper)
 ]
-# Checked, then left out of the model's caption.
+# Validated, then excluded from the model's caption: the reference magic-prompt
+# client (ideogram-oss/ideogram4) strips bboxes by default.
 _EnhancedBbox = Annotated[
     Optional[list[Annotated[int, Field(ge=0, le=1000)]]],
     Field(default=None, exclude=True),

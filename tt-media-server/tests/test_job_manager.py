@@ -877,8 +877,6 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_job_failure_sets_its_own_error_code(self, job_manager, mock_request):
-        """A JobFailure fails the job with its code and message"""
-
         async def task_func(req):
             raise JobFailure("prompt_enhancement_error", "The enhancer is down")
 

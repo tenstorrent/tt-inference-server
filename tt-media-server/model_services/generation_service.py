@@ -436,8 +436,9 @@ class GenerationService(BaseJobService):
         return request
 
     async def _enhanced_prompt(self, request: GenerationRequest) -> str:
-        """The model's prompt from the prompt enhancer. A caption that breaks
-        the model's rules is asked for once more before the job fails."""
+        """The model's prompt from the prompt enhancer. A caption that fails
+        the request's check is asked for again, up to
+        _ENHANCER_CAPTION_ATTEMPTS in all."""
         enhancer = get_prompt_enhancer(request.PROMPT_ENHANCER)
         if enhancer is None:
             raise PromptEnhancementError(UNAVAILABLE)

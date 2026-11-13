@@ -1559,7 +1559,8 @@ def test_ideogram_takes_a_caption_the_hosted_api_documents():
 
 
 def test_ideogram_takes_what_the_hosted_schema_allows():
-    # photo with art_style, lowercase hex, more colors than the open model's caps.
+    # photo with art_style, lowercase hex, and palettes over the 16 and 5 colors
+    # that ideogram-oss/ideogram4's CaptionVerifier allows.
     request = Ideogram4Request(
         structured_prompt={
             "high_level_description": "h",
@@ -1643,7 +1644,7 @@ def test_ideogram_plain_prompt_goes_to_the_enhancer():
 
 
 def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
-    # As the hosted enhancer may: keys out of order, an aspect ratio, bboxes.
+    # Keys out of order, an unnamed key (aspect_ratio), a bbox.
     request = Ideogram4Request(prompt="a cafe sign")
     caption = request.prompt_from_enhancer(
         {

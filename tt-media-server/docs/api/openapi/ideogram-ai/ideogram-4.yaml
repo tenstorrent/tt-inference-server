@@ -433,11 +433,13 @@ components:
       - high_level_description
       - compositional_deconstruction
       title: Ideogram4Caption
-      description: 'A structured caption in the format Ideogram 4 was trained on, sent to
+      description: 'A structured caption in the format Ideogram 4 was trained on. The server
 
-        the model as is. Key order does not matter: the server writes it out in
+        writes it out in the model''s key order, with colors in uppercase; key
 
-        the model''s order. Each output reports it as its `prompt`.
+        order in the request does not matter. Each output reports it as its
+
+        `prompt`.
 
 
         Use this to bypass the prompt enhancer, e.g. with a caption written by
@@ -445,11 +447,11 @@ components:
         your own LLM.
 
 
-        Schema: `V4JsonPrompt` of Ideogram''s hosted API, so a caption from that
+        Schema: `V4JsonPrompt` of Ideogram''s hosted API, with two stricter rules:
 
-        API is accepted, with stricter rules: unknown keys are rejected, and a
+        unknown keys are rejected, and a `bbox` needs exactly four values with
 
-        `bbox` has exactly four values with `ymin <= ymax` and `xmin <= xmax`.
+        `ymin <= ymax` and `xmin <= xmax`.
 
         Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
     Ideogram4CompositionalDeconstruction:
