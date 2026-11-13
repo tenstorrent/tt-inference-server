@@ -524,10 +524,11 @@ components:
           description: What to generate, in plain words. Ideogram 4 only works from a structured
             caption, so the server first rewrites the prompt into one with a prompt enhancer
             (an LLM), adding detail on composition, style, lighting and any text, for the
-            requested `aspect_ratio`. Each output reports the caption the model received as
-            its `prompt`. The enhancer isn't seeded, so the same `prompt` and `seed` can give
-            different images; to reproduce one, send its reported caption as `structured_prompt`.
-            To skip the enhancer, send `structured_prompt` instead.
+            requested `aspect_ratio`. A deployment with the prompt enhancer off answers a
+            `prompt` with 422. Each output reports the caption the model received as its `prompt`.
+            The enhancer isn't seeded, so the same `prompt` and `seed` can give different
+            images; to reproduce one, send its reported caption as `structured_prompt`. To
+            skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
           $ref: '#/components/schemas/Ideogram4Caption'
           title: Structured Prompt

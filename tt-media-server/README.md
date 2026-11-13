@@ -1099,11 +1099,11 @@ These environment variables are typically set automatically by the worker bootst
 
 ## Prompt Enhancer (Ideogram 4)
 
-An Ideogram 4 request with a plain `prompt` is expanded into a structured caption by Ideogram's hosted magic-prompt API while the job is queued, before it reaches the device. A request with `structured_prompt` skips it. If the enhancer fails, the job fails with `prompt_enhancement_error`.
+Off by default: an Ideogram 4 deployment serves `structured_prompt` only, and a request with a plain `prompt` is a 422. With `IDEOGRAM_PROMPT_ENHANCER=ideogram-api`, a plain `prompt` is expanded into a structured caption by Ideogram's hosted magic-prompt API while the job is queued, before it reaches the device. A request with `structured_prompt` skips it. If the enhancer fails, the job fails with `prompt_enhancement_error`.
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `IDEOGRAM_PROMPT_ENHANCER` | `"ideogram-api"` | `ideogram-api`, or `none` to serve `structured_prompt` only (a `prompt` request is then a 422) |
+| `IDEOGRAM_PROMPT_ENHANCER` | `"none"` | `none` to serve `structured_prompt` only (a `prompt` request is then a 422), or `ideogram-api` to expand a `prompt` with Ideogram's hosted API |
 | `IDEOGRAM_API_KEY` | _required with `ideogram-api`_ | Ideogram API key. An Ideogram 4 deployment with the enhancer on and no key fails at startup. Never logged |
 | `IDEOGRAM_MAGIC_PROMPT_URL` | `"https://api.ideogram.ai/v1/ideogram-v4/magic-prompt"` | The magic-prompt endpoint |
 | `PROMPT_ENHANCER_TIMEOUT_SECONDS` | `30.0` | Timeout of one call |

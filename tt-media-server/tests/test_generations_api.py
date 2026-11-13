@@ -1873,6 +1873,37 @@ async def test_an_explicit_null_is_422(generations_app, body):
     assert not device.requests
 
 
+def _ideogram_service_at_startup(monkeypatch, enhancer: str):
+    """GenerationService() for Ideogram 4 with no API key, up to the point
+    its workers would start."""
+    from config.settings import Settings
+    from model_services import generation_service
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(generation_service.BaseJobService, "__init__", lambda _: None)
+    monkeypatch.setattr(generation_service.settings, "model_runner", "tt-ideogram-4")
+    monkeypatch.setattr("utils.prompt_enhancer._enhancer", None)
+    monkeypatch.setattr(
+        "utils.prompt_enhancer.get_settings",
+        lambda: Settings.model_construct(
+            ideogram_prompt_enhancer=enhancer, ideogram_api_key=SecretStr("")
+        ),
+    )
+    return generation_service.GenerationService()
+
+
+def test_ideogram_starts_without_a_key_by_default(monkeypatch):
+    from config.settings import Settings
+
+    default = Settings.model_fields["ideogram_prompt_enhancer"].default
+    assert _ideogram_service_at_startup(monkeypatch, default)
+
+
+def test_ideogram_with_the_enhancer_on_refuses_to_start_without_a_key(monkeypatch):
+    with pytest.raises(ValueError, match="IDEOGRAM_API_KEY"):
+        _ideogram_service_at_startup(monkeypatch, "ideogram-api")
+
+
 async def test_ideogram_gets_the_serialized_caption(generations_app):
     client, device = generations_app("tt-ideogram-4")
     response = await client.post(

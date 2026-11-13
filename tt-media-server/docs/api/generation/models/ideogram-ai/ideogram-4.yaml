@@ -98,7 +98,8 @@ components:
             structured caption, so the server first rewrites the prompt into
             one with a prompt enhancer (an LLM), adding detail on composition,
             style, lighting and any text, for the requested `aspect_ratio`.
-            Each output reports the caption the model received as its
+            A deployment with the prompt enhancer off answers a `prompt` with
+            422. Each output reports the caption the model received as its
             `prompt`. To skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
           $ref: "#/components/schemas/Ideogram4Caption"

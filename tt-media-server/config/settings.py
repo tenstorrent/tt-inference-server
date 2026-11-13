@@ -150,11 +150,12 @@ class Settings(BaseSettings):
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
 
-    # Prompt enhancer for Ideogram 4: expands a plain `prompt` into the
-    # structured caption the model was trained on, by Ideogram's hosted
-    # magic-prompt API. "none" turns it off; a request with `prompt` is then a
-    # 422 and only `structured_prompt` is served.
-    ideogram_prompt_enhancer: Literal["ideogram-api", "none"] = "ideogram-api"
+    # Prompt enhancer for Ideogram 4: "ideogram-api" expands a plain `prompt`
+    # into the structured caption the model was trained on, by Ideogram's
+    # hosted magic-prompt API, which gets every such prompt and needs a key.
+    # "none" turns it off; a request with `prompt` is then a 422 and only
+    # `structured_prompt` is served.
+    ideogram_prompt_enhancer: Literal["ideogram-api", "none"] = "none"
     # Never logged or stored with a job.
     ideogram_api_key: SecretStr = SecretStr("")
     ideogram_magic_prompt_url: str = (
