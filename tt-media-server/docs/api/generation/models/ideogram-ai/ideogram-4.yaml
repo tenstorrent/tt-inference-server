@@ -22,14 +22,14 @@ paths:
               $ref: "#/components/schemas/Ideogram4Request"
             examples:
               plain:
-                summary: Plain prompt, expanded by the prompt enhancer
+                summary: Plain prompt; needs the prompt enhancer, which is off by default
                 value:
                   prompt: >-
                     A neon sign reading "OPEN LATE" on a rainy brick wall at
                     night
                   aspect_ratio: "2:3"
               structured:
-                summary: Structured caption, sent to the model as is
+                summary: Structured caption, served with the prompt enhancer on or off
                 value:
                   structured_prompt:
                     high_level_description: A neon sign reading "OPEN LATE" on a 
