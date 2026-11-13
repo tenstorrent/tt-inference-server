@@ -58,6 +58,10 @@ def _record(**overrides):
         "p99_effective_latency_ms": 137522.2,
         "output_token_throughput_per_user": 110.8,
         "mean_e2e_norm_intvty": 31.3,
+        "mean_speed_tps": 31.3,
+        "median_speed_tps": 76.42,
+        "p90_speed_tps": 12.05,
+        "p99_speed_tps": 3.117,
         "total_token_throughput": 4856.63,
         "output_token_throughput": 41.99,
         "request_throughput": 0.042,
@@ -229,6 +233,35 @@ class TestTableSplit:
         out = _render(_record(p50_adj_ttft_ms=8123.4, p90_adj_ttft_ms=15987.6))
         assert "Err-Adj TTFT P50" in out
         assert "8,123.4" in out
+
+
+class TestSpeedTable:
+    """Speed is what Artificial Analysis and OpenRouter publish, so it leads."""
+
+    def test_speed_is_the_first_metric_table(self):
+        out = _render(_record())
+        assert "#### Per-run Speed (tok/s per request)" in out
+        assert out.index("#### Per-run Speed") < out.index("#### Per-run Latency")
+
+    def test_reports_avg_p50_p90_p99(self):
+        speed = _render(_record()).split("#### Per-run Speed")[1].split("####")[0]
+        for header in ("Speed Avg (AA)", "Speed P50 (OR)", "Speed P90", "Speed P99"):
+            assert header in speed
+        for cell in ("31.30", "76.42", "12.05", "3.12"):
+            assert cell in speed
+
+    def test_speed_is_not_duplicated_in_the_throughput_table(self):
+        out = _render(_record())
+        throughput = out.split("#### Per-run Throughput")[1].split("####")[0]
+        assert "Speed" not in throughput
+        assert "Norm Intvty" not in throughput
+
+    def test_speed_is_defined(self):
+        out = _render(_record())
+        assert "**Speed**: output tokens divided by whole-request wall clock" in out
+
+    def test_a_source_without_speed_gets_no_speed_table(self):
+        assert "#### Per-run Speed" not in _render(_swo_record())
 
 
 class TestConfigTable:
