@@ -428,13 +428,6 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
-# The same implementation as the 32-slot agent profile (see the profile notes in dev/llm.yaml).
-gemma4_31b_qb2_c32_impl = ImplSpec(
-    impl_id="gemma4_31b_qb2_c32",
-    impl_name="gemma4-31b-qb2-c32",
-    repo_url=gemma4_31b_qb2_impl.repo_url,
-    code_path=gemma4_31b_qb2_impl.code_path,
-)
 gemma4_26b_a4b_qb2_impl = ImplSpec(
     impl_id="gemma4_26b_a4b_qb2",
     impl_name="gemma4-26b-a4b-qb2",
@@ -494,7 +487,6 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
-    "gemma4_31b_qb2_c32": gemma4_31b_qb2_c32_impl,
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,

@@ -770,39 +770,38 @@ templates:
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
 # models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
 # Shield sweep is directly comparable with the existing autoport benchmark run.
-# Dedicated Gemma 4 31B QB2 implementation, two profiles of one model:
-#   gemma4_31b_qb2      single user (1 decode slot): n-gram speculation, K = 5 (replay of recorded SWE-bench agent
-#                       trajectories, BF8: 35.3 -> 49.1 tok/s/user); the dedicated one-slot server the weekly
-#                       performance coverage runs.
-#   gemma4_31b_qb2_c32  agents (32 decode slots, 262144 context, prefix caching), speculation off: the decode trace holds
-#                       32 rows and slots * (1 + K) must fit them, and real agent text accepts about 1.3-1.7 tokens per
-#                       step, so many users gain nothing from drafts. The 4/8/16-slot profiles are gone: they differ
-#                       from this one only in the number of rows the server may batch, which the model adapts to.
-# The 32-slot entry comes first because it holds the YAML anchors the single-user profile reuses.
+# Dedicated Gemma 4 31B QB2 implementation, one profile: 32 decode slots, 262144 context, prefix caching, adaptive decode
+# rows (the model decodes with the smallest trace that covers the live rows, so a lone user runs at the one-slot speed)
+# and n-gram speculation chosen by the number of live requests (K = 5 for one, K = 3 up to four, none beyond: the plugin
+# plan caps larger batches at zero drafts). Replay of recorded SWE-bench agent trajectories, 1 user: 49.0 tok/s/user
+# (plain 35.3). The host n-gram proposer needs a single numba thread (NUMBA_NUM_THREADS=1): its default pool of 16
+# threads steals the cores of the serving loop on a speculative server with several users.
 - weights:
     - google/gemma-4-31B-it
-  impl: gemma4_31b_qb2_c32
+  impl: gemma4_31b_qb2
   inference_engine: VLLM
   device_model_specs:
-    - &gemma4_31b_qb2_device
-      device: P300X2
+    - device: P300X2
       max_concurrency: 32
       max_context: 262144
-      default_impl: false  # selectable with --impl gemma4_31b_qb2_c32; needs tt-metal with the Gemma 4 31B QB2 prefix-cache and decode-step changes
-      env_vars: &gemma4_31b_qb2_device_env
+      default_impl: false  # selectable with --impl gemma4_31b_qb2; needs the tt-metal Gemma 4 31B QB2 stack and the vllm-tt-plugin speculative cap-zero change
+      env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+        NUMBA_NUM_THREADS: "1"
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 536870912
         l1_small_size: 16384
-      vllm_args: &gemma4_31b_qb2_vllm_args
+      vllm_args:
         block_size: '128'
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
-        async-scheduling: true
+        # The model's verify call needs synchronous scheduling.
+        async-scheduling: false
         enable-prefix-caching: true
+        speculative_config: '{"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4,"prompt_lookup_min":2}'
         # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
         # prefill and rejects budgets above 8192 batched tokens. Requests that
         # omit top_k need a default inside the device sampler's 1..32 range.
@@ -815,35 +814,12 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
-  env_vars: &gemma4_31b_qb2_env_vars
+  env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata: &gemma4_31b_qb2_metadata
+  metadata:
     google/gemma-4-31B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
-
-- weights:
-    - google/gemma-4-31B-it
-  impl: gemma4_31b_qb2
-  inference_engine: VLLM
-  device_model_specs:
-    - <<: *gemma4_31b_qb2_device
-      max_concurrency: 1
-      default_impl: false  # selectable with --impl gemma4_31b_qb2
-      env_vars:
-        <<: *gemma4_31b_qb2_device_env
-        # The host n-gram proposer's numba pool (16 threads by default) steals the cores of the serving loop on a
-        # speculative server with several users; one thread removes it (4 slots K=3: 27.6 -> 43.9 tok/s/user).
-        NUMBA_NUM_THREADS: "1"
-      vllm_args:
-        <<: *gemma4_31b_qb2_vllm_args
-        # Host n-gram drafter, K = 5. The model's verify call needs synchronous scheduling.
-        async-scheduling: false
-        speculative_config: '{"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4,"prompt_lookup_min":2}'
-  status: COMPLETE
-  has_builtin_warmup: true
-  env_vars: *gemma4_31b_qb2_env_vars
-  metadata: *gemma4_31b_qb2_metadata
 
 # Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
 # is the tt_transformers entry below (32 users, the MTP speculative contract).
