@@ -16,8 +16,13 @@ ap.add_argument("--gpus", type=int, default=32, help="chips, only for the per-ch
 ap.add_argument("--json-out", default=None)
 a = ap.parse_args()
 sys.path.insert(0, a.repo)
-from infx.results.agentic.artifacts import load_records_with_accounting  # noqa: E402
-from infx.results.agentic.request_metrics import compute_latency_stats, compute_throughput_stats  # noqa: E402
+sys.path.insert(0, str(Path(a.repo) / "utils"))  # 'agentic' package (name 'utils' collides with tt-inference-server's)
+try:  # InferenceX layout at the pinned ref (utils/agentic/aggregation); older refs had infx.results.agentic
+    from agentic.aggregation.request_metrics import (  # noqa: E402
+        compute_latency_stats, compute_throughput_stats, load_records_with_accounting)
+except ImportError:
+    from infx.results.agentic.artifacts import load_records_with_accounting  # noqa: E402
+    from infx.results.agentic.request_metrics import compute_latency_stats, compute_throughput_stats  # noqa: E402
 
 d = Path(a.artifact_dir)
 if not (d / "profile_export.jsonl").is_file():
