@@ -5,12 +5,11 @@
 """Request-shape metrics for video generation: output shape as asked for.
 
 Sibling of :mod:`telemetry.image_request_metrics`. The video family in
-``telemetry.telemetry_client`` already covers conditioning (``request_type``),
-requested steps (``video_requested_inference_steps``) and produced output
-(``video_content_seconds_total``, ``video_output_frames``). The two things it
-does not record are the requested *output shape*: aspect ratio and duration.
-Without them a shift in generation time cannot be separated from callers asking
-for longer or differently-shaped clips.
+``telemetry.telemetry_client`` already covers conditioning (``request_type``)
+and produced output (``video_content_seconds_total``, ``video_output_frames``).
+The two things it does not record are the requested *output shape*: aspect
+ratio and duration. Without them a shift in generation time cannot be
+separated from callers asking for longer or differently-shaped clips.
 
 Labels mirror the existing video family — ``{model_type, request_type}`` — so
 these join cleanly against the stage and outcome metrics.
@@ -19,18 +18,16 @@ these join cleanly against the stage and outcome metrics.
 from __future__ import annotations
 
 from prometheus_client import Counter, Histogram
+from pydantic import BaseModel
 from utils.logger import TTLogger
 
 logger = TTLogger()
 
 _LABELS = ["model_type", "request_type"]
 
-# Only MiniMax-H3 requests are recorded, and H3 serves the integers 4..15
-# (MINIMAX_H3_DURATIONS_S), so the ladder resolves every one of those
-# individually — a coarser ladder would collapse its working points into four
-# buckets and make the distribution useless as the capacity input it is
-# described as. Above 15 the steps widen, so a wider served range degrades to
-# coarse rather than clipping into +Inf.
+# MiniMax-H3 serves the integers 4..15 and LTX 6, so the ladder resolves each
+# of those individually. Above 15 the steps widen, so a wider served range
+# degrades to coarse rather than clipping into +Inf.
 _DURATION_BUCKETS = (
     1,
     2,
@@ -55,30 +52,12 @@ _DURATION_BUCKETS = (
     float("inf"),
 )
 
-# Aspect ratios published as their own label value. Everything else collapses
-# to ASPECT_RATIO_OTHER.
-#
-# This allow-list exists because ``aspect_ratio`` is deliberately free-form on
-# VideoGenerateRequest — the field comment explains why: a per-model validator
-# can then reject with a message naming what that model does serve, which a
-# pydantic enum on a shared field cannot. Only MiniMax-H3 validates it today,
-# so an arbitrary string genuinely reaches this code on other runners. Used raw
-# as a Prometheus label it would let any caller mint unbounded time series.
-#
-# Values match the field's own examples plus the other common photographic
-# ratios. Adding one is a deliberate act; a new ratio reads as "other" until
-# someone does it, which is the safe direction to fail.
-_KNOWN_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"})
-
-# Kept distinct: "the caller omitted it and the model's own default shape
-# applies" is a different fact from "the caller asked for a shape we do not
-# name", and only the second is a product signal worth chasing.
+# The caller omitted the ratio and the model's own default shape applies.
 ASPECT_RATIO_UNSET = "unset"
-ASPECT_RATIO_OTHER = "other"
 
 requested_aspect_ratio_total = Counter(
     "tt_media_server_video_requested_aspect_ratio_total",
-    "Video generation requests by requested aspect ratio (bucketed)",
+    "Video generation requests by requested aspect ratio",
     _LABELS + ["aspect_ratio"],
 )
 
@@ -90,58 +69,28 @@ requested_duration = Histogram(
 )
 
 
-def bucket_aspect_ratio(raw: object) -> str:
-    """Map a caller-supplied aspect ratio onto a bounded label value.
+def observe_video_request(
+    request: BaseModel, model_type: str, request_type: str
+) -> None:
+    """Record the output shape the caller asked for in one video generation.
 
-    Parses like ``minimax_h3_parse_aspect_ratio`` (strip, ``x``/``/`` to ``:``,
-    ``int()`` each part) so everything the server serves as 16:9 — ``"16x9"``,
-    ``" 16 : 9 "``, ``"016:9"`` — is counted as 16:9 rather than as "other".
+    Only fields the caller sent count (``model_fields_set``): an omitted
+    ``aspect_ratio`` is ``unset``, an omitted ``duration`` records nothing,
+    whatever defaults the model fills in. The request's schema limits
+    ``aspect_ratio`` to the ratios its model serves, so the value is a bounded
+    label as it is. A model without a ``duration`` field (Wan sets ``frames``)
+    records no duration.
 
-    Never raises: ``isdigit()`` admits strings ``int()`` rejects (``"²"``, over
-    4300 digits); those bucket as "other".
-    """
-    if raw is None or raw == "":
-        return ASPECT_RATIO_UNSET
-    if not isinstance(raw, str):
-        return ASPECT_RATIO_OTHER
-    parts = raw.strip().replace("x", ":").replace("/", ":").split(":")
-    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
-        return ASPECT_RATIO_OTHER
-    try:
-        normalised = f"{int(parts[0])}:{int(parts[1])}"
-    except ValueError:
-        return ASPECT_RATIO_OTHER
-    if normalised in _KNOWN_ASPECT_RATIOS:
-        return normalised
-    return ASPECT_RATIO_OTHER
-
-
-def observe_video_request(request: object, model_type: str, request_type: str) -> None:
-    """Record the requested output shape for one video generation.
-
-    Called from :meth:`VideoService.process_request`, which is where the sync
-    ``/generations`` path and the async ``JobManager`` path converge — the same
-    reason the existing video metrics report from there rather than from the
-    endpoints.
-
-    Never raises: a telemetry fault must not fail a generation. An unset
-    duration is skipped rather than recorded as zero, because unset means the
-    model's own default clip length applies and observing 0 would pull the
-    distribution toward a value no model produces.
+    Never raises: a telemetry fault must not fail a generation.
     """
     try:
         labels = (model_type, request_type)
-
-        requested_aspect_ratio_total.labels(
-            *labels, bucket_aspect_ratio(getattr(request, "aspect_ratio", None))
-        ).inc()
-
-        # H3 only: LTX writes its served duration back onto every request, so
-        # recording it there would count a value no client asked for.
-        from domain.video_generate_request import _is_minimax_h3
-
-        duration = getattr(request, "duration", None) if _is_minimax_h3() else None
-        if duration:
-            requested_duration.labels(*labels).observe(duration)
+        sent = request.model_fields_set
+        aspect_ratio = ASPECT_RATIO_UNSET
+        if "aspect_ratio" in sent and request.aspect_ratio:
+            aspect_ratio = request.aspect_ratio
+        requested_aspect_ratio_total.labels(*labels, aspect_ratio).inc()
+        if "duration" in sent and request.duration:
+            requested_duration.labels(*labels).observe(request.duration)
     except Exception as e:  # pragma: no cover - defensive
         logger.warning(f"video request metrics: failed to record request shape: {e}")
