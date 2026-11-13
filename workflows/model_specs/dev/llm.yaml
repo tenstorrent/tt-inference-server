@@ -1661,6 +1661,99 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen3.8-27B with MTP speculative decoding (Qwen36MTPContractForCausalLM) and the GDN state in vLLM's KV cache blocks.
+# P150X8: TP=8, one engine. BLACKHOLE_GALAXY: TP=8 x DP=4, one engine per (1, 8) submesh of the (4, 8) mesh.
+# Text, one image and one video per request. Verify steps of sampled requests draw their tokens on the device.
+# A verify holds max_num_seqs x (K + 1) rows and the class verifies at most 32, so an engine serves 8 requests at K = 3.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36_blackhole_mtp
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+    - image
+    - video
+  env_vars:
+    TT_QWEN35_TEXT_VER: qwen36_blackhole
+    TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36MTPContractForCausalLM"
+    QWEN36_SPEC_K: "3"  # must equal num_speculative_tokens in speculative_config
+    HF_MODEL: Qwen/Qwen3.8-27B
+    # Attention tokens per engine; the plugin adds the GDN state blocks of max_num_seqs requests on top.
+    QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+    QWEN_SDPA_BF8: "1"  # bfloat8_b K and V caches
+    TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # a warm TT weight-cache load hangs otherwise
+    # vLLM runs EngineCore in the server process, so torch keeps one OpenMP worker per core; spinning workers slow the
+    # host side of each step and make step times depend on earlier traffic.
+    OMP_NUM_THREADS: "8"
+    OMP_WAIT_POLICY: PASSIVE
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 8
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      vllm_args:
+        # The model raises a smaller block size to the smallest block whose K and V hold one GDN state (1024 at TP=8
+        # with bfloat8_b K and V). Prefix hits land on block boundaries.
+        block_size: "1024"
+        enable_prefix_caching: true
+        prefix_cache_retention_interval: "0"  # vLLM keeps no GDN state written by decode steps
+        enable_prompt_tokens_details: true
+        enable_chunked_prefill: true
+        max_num_batched_tokens: "525312"
+        long_prefill_token_threshold: "16384"  # bounds each prefill chunk so that running decodes keep stepping
+        # The class chains each greedy verify on the unread one before it (supports_chained_spec_verify), which needs
+        # asynchronous scheduling.
+        async-scheduling: true
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+        # The model warms the vision tower for inputs up to this size and refuses a larger image or video.
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # 4 engines x 8 requests
+      max_context: 262144
+      max_tokens_all_users_override: 2101248  # 4 engines x 525312 attention tokens
+      default_impl: true
+      vllm_args:
+        data_parallel_size: 4
+        block_size: "1024"
+        enable_prefix_caching: true
+        prefix_cache_retention_interval: "0"
+        enable_prompt_tokens_details: true
+        enable_chunked_prefill: true
+        max_num_batched_tokens: "525312"
+        long_prefill_token_threshold: "16384"
+        no-async-scheduling: true  # chained verifies with DP are not run yet
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        # The model's 8-device CCLs use the Ring topology, which needs the wrap-around link of each (1, 8) submesh.
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 # IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
 # the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
 # TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the
