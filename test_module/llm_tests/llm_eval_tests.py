@@ -765,18 +765,41 @@ def _apply_samples_subset_count(task, runtime_config, sample_counts: dict) -> di
 # as this response text, which the task then scores as an (always wrong)
 # answer.
 INFERENCE_ERROR_MARKER = "__INFERENCE_ERROR__"
+# The same for every harness: lm-eval's adapters, lmms-eval >= 0.5's OpenAI
+# backends, and tt-metal's MiMo lmms-eval model (mimo_openrouter). lmms-eval
+# v0.4.1's openai_compatible returns "" instead, which no scan can tell apart.
+INFERENCE_ERROR_MARKERS = (
+    INFERENCE_ERROR_MARKER,
+    "[LMMS_EVAL_REQUEST_FAILED",
+    "[MIMO_REQUEST_FAILED",
+)
+
+
+def _sample_files(result_file: Path) -> List[Path]:
+    """The per-sample logs written with ``result_file``.
+
+    lm-eval writes ``results_<date>.json`` beside ``samples_<task>_<date>.jsonl``;
+    lmms-eval writes ``<stamp>_results.json`` beside
+    ``<stamp>_samples_<task>.jsonl``, so only that attempt's stamp is read (an
+    earlier attempt's logs in the same directory are not this score's).
+    """
+    if result_file.name.endswith("_results.json"):
+        stamp = result_file.name[: -len("_results.json")]
+        return sorted(result_file.parent.glob(f"{stamp}_samples_*.jsonl"))
+    return sorted(result_file.parent.glob("samples_*.jsonl"))
 
 
 def count_inference_errors(result_files: List[str]) -> tuple[int, int]:
     """(errored, logged) per-sample rows beside ``result_files``.
 
-    A row is errored when any of its responses is the adapter's inference-error
-    text. Only ``resps``/``filtered_resps`` are read, never the prompt.
+    A row is errored when any of its responses is a harness's inference-error
+    text (``INFERENCE_ERROR_MARKERS``). Only ``resps``/``filtered_resps`` are
+    read, never the prompt.
     """
     errored = logged = 0
     seen: set = set()
     for result_file in result_files:
-        for sample_file in sorted(Path(result_file).parent.glob("samples_*.jsonl")):
+        for sample_file in _sample_files(Path(result_file)):
             if sample_file in seen:
                 continue
             seen.add(sample_file)
@@ -790,7 +813,7 @@ def count_inference_errors(result_files: List[str]) -> tuple[int, int]:
                         continue
                     logged += 1
                     answers = json.dumps([row.get("resps"), row.get("filtered_resps")])
-                    if INFERENCE_ERROR_MARKER in answers:
+                    if any(marker in answers for marker in INFERENCE_ERROR_MARKERS):
                         errored += 1
     return errored, logged
 

@@ -849,6 +849,54 @@ def setup_evals_common(
     )
 
 
+# Where setup_evals_openbench stages tau2's data inside the EVALS_OPENBENCH venv;
+# llm_module/openbench_eval.py passes it to tau2 as TAU2_DATA_DIR.
+TAU2_DATA_SUBDIR = "tau2-data"
+TAU2_REPO = "https://github.com/sierra-research/tau2-bench.git"
+
+
+def setup_evals_openbench(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Stage tau2's data assets at the commit of the installed tau2 code.
+
+    openbench's own downloader clones tau2-bench main, whose data layout has
+    moved on from the commit openbench pins (no tau2/user_simulator/), which
+    breaks the tau_bench_* user simulator.
+    """
+    target = venv_config.venv_path / TAU2_DATA_SUBDIR
+    probe = (
+        "import importlib.metadata as m, json; "
+        "print(json.loads(m.distribution('tau2').read_text('direct_url.json'))"
+        "['vcs_info']['commit_id'])"
+    )
+    result = subprocess.run(
+        [str(venv_config.venv_python), "-c", probe], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        logger.error(f"tau2 is not installed from git: {result.stderr.strip()}")
+        return False
+    commit = result.stdout.strip()
+    stamp = target / ".tau2_commit"
+    if stamp.exists() and stamp.read_text().strip() == commit:
+        return True
+    clone = venv_config.venv_path / "tau2-bench-src"
+    shutil.rmtree(clone, ignore_errors=True)
+    shutil.rmtree(target, ignore_errors=True)
+    clone_cmd = ["git", "clone", "-q", "--filter=blob:none", "--no-checkout"]
+    for cmd in (
+        clone_cmd + [TAU2_REPO, str(clone)],
+        ["git", "-C", str(clone), "checkout", "-q", commit],
+    ):
+        if run_command(cmd, logger=logger) != 0:
+            return False
+    shutil.copytree(clone / "data", target)
+    shutil.rmtree(clone, ignore_errors=True)
+    stamp.write_text(commit)
+    return True
+
+
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
 # pin in its requirements file (structured-output scripts are fetched from
 # vllm-project/vllm@v<pin>/benchmarks at setup time):
@@ -986,6 +1034,17 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_AUDIO,
         requirements_file="evals-audio.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_MULTIMODAL,
+        requirements_file="evals-multimodal.txt",
+        python_version="3.12",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_OPENBENCH,
+        requirements_file="evals-openbench.txt",
+        setup_function=setup_evals_openbench,
+        python_version="3.12",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_EMBEDDING,

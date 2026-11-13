@@ -3494,6 +3494,116 @@ templates:
       model_path_env: MIMO_MODEL_PATH
       tt_cache_env: MIMO_TT_CACHE
 
+# MiMo-V2.6-Flash-MOPD with image, video and audio input (--impl mimo-v2.6-flash-mm): the MTP entry
+# below plus the multimodal class, so text requests run exactly as they do there. vLLM resolves the
+# checkpoint (it carries a vision_config) to MiMoV2OmniForCausalLM; TT_MODEL_CLASS_OVERRIDES serves that
+# with the TT multimodal class, which runs vLLM's upstream MiMo-V2-Omni processor, encodes on the engine's
+# row (ViT, audio tokenizer and audio patch encoder on device; tt-metal MIMO_MM_ENCODER) and merges the
+# items' embeddings into the prefill. Needs an image built from tt-metal mimo-v2.6/multimodal and
+# vllm-tt-plugin mimo-v2.6-flash/multimodal (the plugin's mm_items contract; it keeps vLLM's chunked
+# multimodal input, so an item can straddle the 4096-token prefill chunks) with torchaudio installed (the
+# vllm-tt-metal Dockerfile installs the one matching torch): without it every audio request answers 500.
+# MTP drafts see placeholder embeddings at multimodal positions, which costs acceptance only, never output.
+# The proxy downloads http(s) media itself (TT_PROXY_FETCH_MEDIA), so an unreachable media host answers 400
+# instead of vLLM's 500. Accuracy of this entry's container (image from tt-metal 6312ef6d4dc and vllm-tt-plugin
+# b4acf686, bhg4, 2026-11-08, no failed request): OCRBench 83.6, MMAU test-mini 61.6, LibriSpeech test-clean WER
+# 1.73, Video-MME short 81.6; MiMo's OpenRouter providers through the same client and the longer sets (MMMU-Pro,
+# VGI-Bench) are in tt-metal mimo-v2.6/multimodal doc/multimodal_evals.md "Results". It uses the MTP
+# entry's persistent volume and TT cache (impl volume_impl_id: same weights), so it converts nothing on its
+# first start.
+- weights:
+    - XiaomiMiMo/MiMo-V2.6-Flash-MOPD
+  impl: mimo_v2_6_flash_mm
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+    - audio
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16
+      max_context: 1048576  # 1024 * 1024
+      default_impl: false  # the MTP text entry stays the default
+      tensor_cache_timeout: 10800.0
+      submesh_engines: true
+      # /dev/shm of the container: the shared KV store's pools (kv-transfer-config below: 96 + 24 GiB).
+      docker_shm_size: 128g
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # the machine; the launcher gives each engine its row as (1, 8)
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        MIMO_SPEC_DECODE: mtp
+        MIMO_SPEC_SLOTS: 8
+        MIMO_SPEC_GROUPS: adaptive
+        MIMO_SDPA_FULL_GRID: 1
+        TT_PROXY_SLACK: 4
+        TT_MODEL_CLASS_OVERRIDES: "TTMiMoV2OmniForCausalLM=models.experimental.mimo_v2_6_flash.tt.generator_vllm:MiMoV2OmniForCausalLM"
+        # engine_proxy: download a request's http(s) image / video / audio URLs (30 s, 100 MB each,
+        # public addresses only, every redirect checked, the connection pinned to the checked address)
+        # and inline them; a failed or refused download answers 400 (vLLM answers 500 for a media
+        # host's 5xx / timeout / DNS failure, which OpenRouter counts against uptime). Defaults that
+        # bound it: 32 URLs and 150 MB per request, 8 downloads at a time over all requests
+        # (TT_PROXY_FETCH_MAX_URLS, TT_PROXY_FETCH_MAX_TOTAL_MB, TT_PROXY_FETCH_CONCURRENCY).
+        TT_PROXY_FETCH_MEDIA: 1
+        # Not set: TT_PROXY_THINKING_GREEDY=1.0,0.95 samples temperature-0 requests that think (as
+        # MiMo's GPU providers on OpenRouter do); greedy reasoning can loop to the token limit on long
+        # videos (VGI-Bench).
+      override_tt_config:
+        trace_mode: decode_only
+        trace_region_size: 1200000000  # as the MTP entry and the measured multimodal runs
+        l1_small_size: 65536
+        dispatch_core_axis: col
+        sample_on_device_mode: decode_only
+        prefill_chunk_alignment: 256
+      vllm_args:
+        data_parallel_size: 4  # the four engines
+        max_num_seqs: 8
+        block_size: 64
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        enable-prefix-caching: true
+        prefix-cache-retention-interval: 4096
+        trust-remote-code: true
+        reasoning-parser: mimo
+        enable-auto-tool-choice: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility, e.g. on OpenRouter)
+        tool-call-parser: mimo
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        override_generation_config: '{"max_new_tokens": null}'
+        # Per request: up to 8 images (MMMU-Pro sends up to 7), 1 video, 4 audio clips.
+        limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 4}'
+        # Frames at 2 per second, as MiMo's own endpoint (Xiaomi on OpenRouter) samples them: the same
+        # video then costs the same prompt tokens there and here (vLLM's default of 32 frames sees far
+        # less of a long video; Video-MME short 60.6 -> 80.8 with this and the video's audio track).
+        media-io-kwargs: '{"video": {"num_frames": -1, "fps": 2}}'
+        # The engines accept no media URL (.invalid never resolves; vLLM answers 400): only the proxy
+        # downloads callers' URLs (TT_PROXY_FETCH_MEDIA, public addresses only) and passes data: URIs on.
+        allowed-media-domains: ["fetched-by-the-proxy.invalid"]
+        # Shared KV store: the four engines keep the KV of prompt prefixes in one host-memory store
+        # (ttserve-kvstore, started by run_vllm_api_server.py when the image ships it; vllm-tt-plugin's
+        # TTKVStoreConnector), so a prefix one engine computed (a long system prompt, a conversation the
+        # proxy moved to a less loaded engine, a video already asked about) is loaded by the others in
+        # ~0.1 s per 128K tokens instead of prefilled again. Block keys carry the media items' content
+        # hashes, so two requests share KV only for the same tokens and the same media. Text AgentX at
+        # concurrency 32 on bhg2 (2026-11-09): 2,975 vs 2,516 requests an hour, TTFT P90 4.8 vs 13.3 s,
+        # prefilled tokens -34%. TT_KVSTORE=0 serves without it.
+        kv-transfer-config: '{"kv_connector": "TTKVStoreConnector", "kv_connector_module_path": "vllm_tt_plugin.kv_connector", "kv_role": "kv_both", "kv_connector_extra_config": {"socket": "/tmp/ttserve-kvstore.sock", "global_gib": 96, "swa_gib": 24, "min_tokens": 1024}}'
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  min_disk_gb: 450
+  min_ram_gb: 128
+  metadata:
+    XiaomiMiMo/MiMo-V2.6-Flash-MOPD:
+      reasoning_parser_name: mimo
+      tool_call_parser_name: mimo
+      model_path_env: MIMO_MODEL_PATH
+      tt_cache_env: MIMO_TT_CACHE
+      # The device ViT's converted weights (~180 MB per chip) in <TT cache>/vision, inside the
+      # volume this impl shares with the MTP entry (model_spec.py volume_impl_id).
+      cache_subdir_envs:
+        MIMO_VISION_CACHE: vision
+
 # MiMo-V2.6-Flash-MOPD with MTP speculative decoding, the default on Blackhole Galaxy (--impl
 # mimo-v2.6-flash serves without it). The MTP layers draft for each of an engine's requests in its
 # own draft group of a verify (MIMO_SPEC_SLOTS=8: 3 drafts each in groups of 4 slots for up to 2

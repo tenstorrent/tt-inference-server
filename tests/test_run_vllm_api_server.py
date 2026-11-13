@@ -70,6 +70,7 @@ _MOCK_VLLM_SERVE_FLAGS = (
     ("served_model_name", "+"),
     ("cudagraph_capture_sizes", "+"),
     ("lora_modules", "+"),
+    ("allowed_media_domains", "+"),
     ("allowed_origins", None),
     ("default_chat_template_kwargs", None),
     ("hf_overrides", None),
@@ -1491,6 +1492,47 @@ def test_tt_cache_env_points_at_tt_cache_path(
     assert os.environ["CUSTOM_TT_CACHE"] == str(tmp_path / "tt-cache")
 
 
+def test_cache_subdir_envs_live_inside_the_tt_cache_dir(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.delenv("MIMO_VISION_CACHE", raising=False)
+    spec = _weights_spec()
+    spec.update(metadata={"cache_subdir_envs": {"MIMO_VISION_CACHE": "vision"}})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    module.model_setup(spec)
+    assert os.environ["MIMO_VISION_CACHE"] == str(tmp_path / "tt-cache" / "vision")
+    for bad in ({"lower": "vision"}, {"MIMO_VISION_CACHE": "../escape"}):
+        spec.update(metadata={"cache_subdir_envs": bad})
+        with pytest.raises(ValueError, match="cache_subdir_envs"):
+            module.model_setup(spec)
+
+
+def test_mimo_mm_engines_get_allowed_media_domains_as_one_token_per_domain(
+    monkeypatch, run_vllm_api_server_module
+):
+    """The mm spec's list renders as vLLM's nargs='+' flag: the engines refuse every
+    media URL, so only the proxy (with its address checks) downloads."""
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash_mm"
+    )
+    (spec,) = template.expand_to_specs()
+    domains = spec.device_model_spec.vllm_args["allowed-media-domains"]
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), [], {"allowed-media-domains": domains}
+    )
+    assert sys.argv[1:] == ["--allowed-media-domains", "fetched-by-the-proxy.invalid"]
+
+
 def test_tt_cache_env_rejects_non_env_var_names(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
@@ -1517,7 +1559,9 @@ def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
     (spec,) = template.expand_to_specs()
     vllm_args = spec.device_model_spec.vllm_args
     assert spec.device_type.name == "BLACKHOLE_GALAXY"
-    assert not spec.device_model_spec.default_impl  # MTP is the default (--impl mimo-v2.6-flash)
+    assert (
+        not spec.device_model_spec.default_impl
+    )  # MTP is the default (--impl mimo-v2.6-flash)
     assert vllm_args["data_parallel_size"] == 4
     assert vllm_args["max_num_seqs"] == 4
     assert vllm_args["max_num_batched_tokens"] == 4096
@@ -1947,7 +1991,7 @@ def test_main_serves_submesh_engines_behind_the_proxy(
     assert stop.value.code == 0
     discover.assert_called_once_with(2)
     run_engines.assert_called_once_with(
-        groups, ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0"
+        groups, ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0", None
     )
     run_module.assert_not_called()
 
@@ -2073,3 +2117,126 @@ def test_stop_submesh_engines_reaches_the_whole_process_group(
         module.time.sleep(0.05)
     else:
         pytest.fail(f"process {child} of the engine's group survived")
+
+
+# ---------------------------------------------------------------- shared KV store (ttserve-kvstore)
+
+KV_TRANSFER = json.dumps(
+    {
+        "kv_connector": "TTKVStoreConnector",
+        "kv_connector_module_path": "vllm_tt_plugin.kv_connector",
+        "kv_role": "kv_both",
+        "kv_connector_extra_config": {
+            "socket": "/tmp/unused.sock",
+            "global_gib": 2,
+            "swa_gib": 1,
+        },
+    }
+)
+
+
+def test_kvstore_settings_reads_only_the_tt_store_connector(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    assert module.kvstore_settings({}) is None
+    assert module.kvstore_settings({"kv-transfer-config": KV_TRANSFER}) == {
+        "socket": "/tmp/unused.sock",
+        "global_gib": 2,
+        "swa_gib": 1,
+    }
+    other = json.dumps({"kv_connector": "NixlConnector"})
+    assert module.kvstore_settings({"kv-transfer-config": other}) is None
+    assert module.kvstore_settings({"kv-transfer-config": "{not json"}) is None
+    args = {"kv-transfer-config": KV_TRANSFER, "max_num_seqs": 8}
+    module.drop_kv_transfer_config(args)
+    assert args == {"max_num_seqs": 8}
+
+
+def test_an_engine_drops_the_connector_when_no_store_runs(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "4,5")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 2)")
+    args = {"kv-transfer-config": KV_TRANSFER}
+    module.configure_submesh_engine(4, args)
+    assert "kv-transfer-config" in args  # a store runs: the engine keeps its connector
+    monkeypatch.setenv(module.KVSTORE_DISABLED_ENV, "1")
+    module.configure_submesh_engine(4, args)
+    assert "kv-transfer-config" not in args
+
+
+def test_start_kvstore_serves_without_a_store_it_cannot_run(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    settings = {"socket": str(tmp_path / "kv.sock"), "global_gib": 2, "swa_gib": 1}
+    monkeypatch.setenv(module.KVSTORE_SHM_DIR_ENV, str(tmp_path))
+    # no binary in the image
+    monkeypatch.delenv(module.KVSTORE_BIN_ENV, raising=False)
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+    assert module.start_kvstore(settings) is None
+    # turned off
+    binary = tmp_path / "ttserve-kvstore"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv(module.KVSTORE_BIN_ENV, str(binary))
+    monkeypatch.setenv(module.KVSTORE_ENV, "0")
+    assert module.start_kvstore(settings) is None
+    monkeypatch.delenv(module.KVSTORE_ENV)
+    # too little room for the pools
+    usage = types.SimpleNamespace(free=1 << 30)
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda path: usage)
+    assert module.start_kvstore(settings) is None
+    # the store exits before its socket appears
+    usage.free = 100 << 30
+    assert module.start_kvstore(settings) is None
+
+
+def test_start_and_stop_kvstore(monkeypatch, tmp_path, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    sock = tmp_path / "kv.sock"
+    args_file = tmp_path / "args"
+    # A stand-in store: records its arguments, creates the socket path, runs until SIGTERM.
+    binary = tmp_path / "ttserve-kvstore"
+    binary.write_text(
+        f'#!/bin/sh\necho "$@" > {args_file}\ntouch {sock}\ntrap "exit 0" TERM\n'
+        "while :; do sleep 0.1; done\n"
+    )
+    binary.chmod(0o755)
+    monkeypatch.setenv(module.KVSTORE_BIN_ENV, str(binary))
+    monkeypatch.setenv(module.KVSTORE_SHM_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(
+        module.shutil, "disk_usage", lambda path: types.SimpleNamespace(free=100 << 30)
+    )
+    sock.write_text("stale")  # a previous store's socket is removed first
+    proc = module.start_kvstore({"socket": str(sock), "global_gib": 2, "swa_gib": 1.5})
+    try:
+        assert proc is not None and proc.poll() is None
+        assert args_file.read_text().split() == [
+            "--socket",
+            str(sock),
+            "--shm-dir",
+            str(tmp_path),
+            "--max-gib",
+            "4",
+        ]
+    finally:
+        module.stop_kvstore(proc)
+    assert proc.poll() is not None
+    module.stop_kvstore(None)  # nothing to stop
+
+
+def test_mimo_multimodal_entry_configures_the_shared_kv_store():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    (entry,) = [t for t in templates if t.impl.impl_id == "mimo_v2_6_flash_mm"]
+    (device,) = entry.device_model_specs
+    config = json.loads(device.vllm_args["kv-transfer-config"])
+    assert config["kv_connector"] == "TTKVStoreConnector"
+    extra = config["kv_connector_extra_config"]
+    # the container's /dev/shm holds the store's pools
+    assert device.docker_shm_size == "128g"
+    assert extra["global_gib"] + extra["swa_gib"] < 128
+    assert device.submesh_engines is True  # the connector serves one lane per engine
