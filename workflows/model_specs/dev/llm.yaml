@@ -1784,7 +1784,7 @@ templates:
 # The adapter is selected only through TT_MODEL_CLASS_OVERRIDES; it ships no
 # vllm_metadata.json, so the muse_glimmer_30b_qb2 bundle keeps the EXTRA_MODELS_DIR path.
 # Prefix caching is on (agentx branch): the adapter honours it only with MUSE_PREFIX_CACHE=1 and resumes a hit from a
-# ring snapshot (tt-metal nkira/muse-agentx); chunked prefill stays off. Prompts are padded to
+# ring snapshot; chunked prefill stays off. Prompts are padded to
 # fixed buckets that warmup compiles; MUSE_VLLM_PREFILL_WARMUP_MAX caps that warmup.
 # MUSE_VLLM_KV_TOKENS is the KV budget of the 13 full-attention layers (the 39 sliding layers keep 2304-token rings per
 # slot): 24 x 128K tokens is ~11 GB per chip in the default BFP8, so 24 users fit at the full 131072 context.

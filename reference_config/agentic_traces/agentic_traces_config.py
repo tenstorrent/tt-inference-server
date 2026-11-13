@@ -493,8 +493,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     ),
     # Muse-Glimmer-30B with DFlash2 speculative decode (impl muse-glimmer-30b-dflash2, P300X2 ring). The spec rail serves at
     # most 8 sequences (K drafts 15 / 7 / 3 by live rows) and has no prefix caching, so the lane count is capped at 8
-    # (AGENTX_CONCURRENCY above 8 only queues behind vLLM). Served from the local image
-    # local/muse-glimmer-30b-server:sc-6c2fd2caaac with MUSE_SPEC=1 (the default). Context 131056.
+    # (AGENTX_CONCURRENCY above 8 only queues behind vLLM). Context 131056.
     AgenticTracesConfig(
         model_id="id_muse-glimmer-30b-dflash2_Muse-Glimmer-30B_p300x2",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,

@@ -3214,6 +3214,149 @@ templates:
   #
   # TTIS status is EXPERIMENTAL by policy and is NOT derived from the
   # qualification state. Promotion is a separate human decision.
+  # meta-models/Muse-Glimmer-30B, models/demos/muse_glimmer_30b (1 x TP mesh, BFP8 weights, bf16 KV) with prefix caching.
+  # Not the default on P300X2: select it with --impl muse-glimmer-30b. The prefix cache is on (MUSE_PREFIX_CACHE=1;
+  # 16384-row segment snapshots and 96 snapshots are the adapter defaults when the cache is enabled).
+- weights:
+    - meta-models/Muse-Glimmer-30B
+  impl: muse_glimmer_30b
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  version: "0.26.1"
+  tt_metal_commit: "06b3568"
+  vllm_commit: "042a948"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      # The vLLM KV pool (MUSE_VLLM_KV_TOKENS), not max_context: the benchmark sweep sizes concurrency from it.
+      max_tokens_all_users_override: 3145728
+      default_impl: false
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
+        # Mesh setup copied from muse_glimmer_30b_qb2 (proven on QB2); FABRIC_1D_RING below turns on the
+        # model's ring all-reduce.
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        MUSE_VLLM_KV_TOKENS: "3145728"
+        MUSE_PREFIX_CACHE: "1"
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "32"
+        # AgentX: APC on. The adapter honours it only with MUSE_PREFIX_CACHE=1 (env above).
+        enable-prefix-caching: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (AgentX hit-rate column)
+        no-enable-chunked-prefill: true
+        max_num_batched_tokens: "131072"
+        # The device sampler covers top_k 1..32; larger top_k samples on the host.
+        override_generation_config: '{"top_k": 32}'
+        # Validated checkpoint; the downloader and vLLM both honor this pin.
+        revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        tokenizer_revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        reasoning-parser: muse_glimmer
+        enable-auto-tool-choice: true
+        tool-call-parser: muse_glimmer
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 24576
+        fabric_config: FABRIC_1D_RING
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 131072
+      # The vLLM KV pool (MUSE_VLLM_KV_TOKENS), not max_context: the benchmark sweep sizes concurrency from it.
+      max_tokens_all_users_override: 3145728
+      default_impl: true
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "MuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration,TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration"
+        MESH_DEVICE: "P150x4"
+        MUSE_VLLM_KV_TOKENS: "3145728"
+        MUSE_PREFIX_CACHE: "1"
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "32"
+        # AgentX: APC on. The adapter honours it only with MUSE_PREFIX_CACHE=1 (env above).
+        enable-prefix-caching: true
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (AgentX hit-rate column)
+        no-enable-chunked-prefill: true
+        max_num_batched_tokens: "131072"
+        override_generation_config: '{"top_k": 32}'
+        # Validated checkpoint; the downloader and vLLM both honor this pin.
+        revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        tokenizer_revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        reasoning-parser: muse_glimmer
+        enable-auto-tool-choice: true
+        tool-call-parser: muse_glimmer
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 24576
+        fabric_config: FABRIC_1D
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    meta-models/Muse-Glimmer-30B:
+      reasoning_parser_name: muse_glimmer
+      tool_call_parser_name: muse_glimmer
+
+  # Not a default: select it with --impl muse-glimmer-30b-dflash2 (DFlash2 speculative decoding, up to 8 sequences,
+  # prefix caching off). The model code fetches the drafter z-lab/Muse-Glimmer-30B-DFlash2 from the HF cache or Hub.
+- weights:
+    - meta-models/Muse-Glimmer-30B
+  impl: muse_glimmer_30b_dflash2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  version: "0.26.1"
+  tt_metal_commit: "06b3568"
+  vllm_commit: "042a948"
+  has_builtin_warmup: false
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 8
+      max_context: 131056
+      default_impl: false
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "TTMuseGlimmerForConditionalGeneration=models.demos.muse_glimmer_30b.tt.generator_vllm:MuseGlimmerDFlash2ForCausalLM"
+        # MESH_DEVICE (P300x2) and ARCH_NAME (blackhole) are inferred from the device. The model's ring
+        # fabric selection reads MESH_DEVICE == P300x2; "(1, 4)" would fall back to FABRIC_1D.
+        # DFlash2 drafter checkpoint as an HF repo id (TIS passes only the target weights path): the model code
+        # finds it in the HF cache or downloads it. A local folder path also works.
+        MUSE_DFLASH_MODEL: "z-lab/Muse-Glimmer-30B-DFlash2"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 256000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "8"
+        max_model_len: "131056"
+        max_num_batched_tokens: "131072"
+        no-enable-prefix-caching: true
+        # False booleans are dropped, so the negative flags are explicit.
+        no-enable-chunked-prefill: true
+        no-async-scheduling: true
+        # The adapter draws sampled tokens from the top 32 candidates of every row (max_device_top_k 32), so requests
+        # that omit top_k use 32; a request with a larger top_k samples on the host (slower).
+        override_generation_config: '{"top_k": 32}'
+        # Validated checkpoint; the downloader and vLLM both honor this pin.
+        revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        tokenizer_revision: cec94fcfd6512f2cfe708138c32533b346ea4f69
+        reasoning-parser: muse_glimmer
+        enable-auto-tool-choice: true
+        tool-call-parser: muse_glimmer
+        # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
+  status: EXPERIMENTAL
+  metadata:
+    meta-models/Muse-Glimmer-30B:
+      reasoning_parser_name: muse_glimmer
+      tool_call_parser_name: muse_glimmer
 - weights:
     - Aleph-Alpha/Kolibri-1-BF16
   impl: kolibri_1_qb2
