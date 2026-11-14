@@ -8053,6 +8053,10 @@ templates:
         # sampler's verify (the checkpoint's generation_config samples: temperature 1.0, top_p 0.95)
         GLM53_SPEC_PARTIAL: "1"
         GLM53_SPEC_SAMPLED: "1"
+        # Device spec steps per served verify: M > 1 chains up to M steps on device and returns all their committed
+        # tokens at once (the plugin's fused_sample accept mode: one vLLM step per M device steps). The plugin's draft
+        # length is then M (K + 1) - 1, which num_speculative_tokens below must reach. 1: one step per verify.
+        GLM53_SPEC_STEPS_PER_CALL: "1"
       override_tt_config:
         # The device is opened BEFORE the model (plugin worker.py), so the fabric, the trace region and the worker
         # L1 budget come from here, not from the model's knobs.
@@ -8076,9 +8080,11 @@ templates:
         # is needed because False booleans are dropped.
         no-async-scheduling: true
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device; the current step's
-        # users get drafts (DraftOutput.num_valid 0 for every other row: ordinary decodes); num_speculative_tokens =
-        # GLM53_SPEC_K (the alternate step offers 1 of them).
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        # users get drafts (DraftOutput.num_valid 0 for every other row: ordinary decodes). num_speculative_tokens is
+        # the ceiling the adapter's plan may use: 15 = 4 x (GLM53_SPEC_K + 1) - 1, GLM53_SPEC_STEPS_PER_CALL up to 4;
+        # the plan publishes its own draft length back (GLM53_SPEC_K = 3 at one step per verify; the alternate step
+        # offers 1 of them), so the scheduler's lookahead follows the knob.
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
         # one 8192-token prefill bucket per engine step plus every slot's verify block (1 + K tokens)
         max_num_batched_tokens: 8256  # 8192 + 16 x (1 + 3)
