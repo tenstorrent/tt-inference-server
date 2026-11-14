@@ -473,6 +473,20 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # The 1 M agentic-loop profile (glm53_flash_1m, EXPERIMENTAL: 16 resident 1 M slots, narrow width 4, exact snapshots +
+    # host spill, sparse multi-user MTP with the lone / 4 x 3 / 8 x 1 steps): same dataset; AGENTX_CONCURRENCY sweeps 4 / 8 /
+    # 16 / 32 (32 is above the 16 resident slots: half the lanes queue).
+    AgenticTracesConfig(
+        model_id="id_glm53-flash-1m_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
     # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only; no SwarmOne scenario is recorded for this model. Same InferenceX
     # pin as Kimi above so numbers stay comparable across the two models.
