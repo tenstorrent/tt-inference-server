@@ -13574,7 +13574,7 @@ _eval_config_list = [
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
                 ),
                 EvalTask(
-                    task_name="dsv41_gsm8k_cot",  # the task name is historical; the lm-eval gsm8k-cot copy is model agnostic
+                    task_name="hy4_gsm8k_cot",  # dsv41_gsm8k_cot + boxed-aware filter (lm_eval_tasks/hy4_gsm8k); the boxed-aware filter is the GATE metric
                     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                     include_path=str(Path(__file__).resolve().parent / "lm_eval_tasks"),
                     num_fewshot=8,
@@ -13588,7 +13588,7 @@ _eval_config_list = [
                         published_score=float(os.getenv("HY4_GATE_GSM8K", "0")),
                         published_score_ref="none published: own baseline (BASELINES.md); HY4_GATE_GSM8K = mean - 2 x stderr",
                         score_func=score_task_single_key,
-                        score_func_kwargs={"result_keys": ["exact_match,flexible-extract"], "unit": "percent"},
+                        score_func_kwargs={"result_keys": ["exact_match,boxed-aware"], "unit": "percent"},
                         tolerance=0.0,
                     ),
                     model_kwargs={"tokenizer": "/mnt/tt-data/Hy4-Preview", "max_length": 40000, "timeout": 14400},

@@ -116,11 +116,11 @@ def test_eval_config_hy4_tasks(monkeypatch):
     from llm_module.request_overrides import resolve_request_body
 
     tasks = {t.task_name: t for t in ec.ALL_EVAL_CONFIGS["tencent/Hy4-preview"].tasks}
-    assert list(tasks) == ["gpqa_diamond_cot_zeroshot", "dsv41_gsm8k_cot", "tau3_bench_airline"]
+    assert list(tasks) == ["gpqa_diamond_cot_zeroshot", "hy4_gsm8k_cot", "tau3_bench_airline"]
     g = tasks["gpqa_diamond_cot_zeroshot"]
     assert resolve_request_body(g) == {"chat_template_kwargs": {"reasoning_effort": "high"}}  # GPQA thinking ON
     assert g.capture_reasoning and g.gen_kwargs["temperature"] == 0.9 and g.gen_kwargs["top_p"] == 1.0
-    assert resolve_request_body(tasks["dsv41_gsm8k_cot"]) == {"chat_template_kwargs": {"reasoning_effort": "no_think"}}
+    assert resolve_request_body(tasks["hy4_gsm8k_cot"]) == {"chat_template_kwargs": {"reasoning_effort": "no_think"}}
     cfg = tasks["tau3_bench_airline"].agentic_eval_config
     assert json.loads(cfg.agent_kwargs["llm_args_json"])["extra_body"] == {"chat_template_kwargs": {"reasoning_effort": "high"}}
     assert cfg.n_tasks == 50 and cfg.n_concurrent_trials == 4 and cfg.extra_docker_compose
@@ -308,7 +308,7 @@ def test_gpqa_dry_run():
 def test_gsm8k_dry_run():
     r = sh("bash", H / "gsm8k_remote.sh", "10.0.0.1", "/tmp/o", "--dry-run")
     assert r.returncode == 0, r.stderr
-    assert '"reasoning_effort": "no_think"' in r.stdout and "--tasks dsv41_gsm8k_cot" in r.stdout and "--num_fewshot 8" in r.stdout
+    assert '"reasoning_effort": "no_think"' in r.stdout and "--tasks hy4_gsm8k_cot" in r.stdout and "--num_fewshot 8" in r.stdout
     assert "max_gen_toks=2048" in r.stdout and "temperature=0.9,top_p=1.0" in r.stdout and "reference_config/evals/lm_eval_tasks" in r.stdout
 
 
@@ -368,3 +368,82 @@ def test_bake_client_env_dry_run():
     assert r.returncode == 0, r.stderr[-1500:]
     assert "model_id id_hy4-preview-b4_Hy4-preview_blackhole_galaxy inferencex_git_ref 8f12037728d6fc118422318d5472f147dcc2a291" in r.stdout
     assert "('semianalysis_cc_traces_weka_062126', 4)" in r.stdout
+
+
+# ---- GSM8K boxed-aware metric (the gate) ---------------------------------------------------------------------------------
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("hy4_gsm8k_utils", REPO / "reference_config" / "evals" / "lm_eval_tasks" / "hy4_gsm8k" / "utils.py")
+g8 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(g8)  # not `import utils`: it would shadow the repo's utils package
+
+
+def _samples():
+    import gzip
+
+    return [json.loads(x) for x in gzip.open(FIX / "gsm8k_hy4_samples.jsonl.gz", "rt")]
+
+
+def test_gsm8k_boxed_aware_reproduces_serve_hy4_run():
+    rows = _samples()
+    assert len(rows) == 1319
+    boxed = sum(g8.same(g8.extract_number(r["resp"]), r["target"]) for r in rows)
+    assert boxed == 1272  # 0.9644 (serve-hy4 analyze.py)
+    assert sum(r["flex_ok"] for r in rows) == 866  # lm-eval flexible-extract as logged, 0.6566
+    assert sum(r["strict_ok"] for r in rows) == 549
+    # the flexible-extract failure mode: closing '$$' taken as the answer
+    assert sum(1 for r in rows if not r["flex_ok"] and r["flex_extracted"].strip() == "$$") == 405
+    # the lm-eval filter output is the canonical string of the same extraction
+    assert [g8.canon(g8.extract_number(r["resp"])) for r in rows[:50]] == [x[0] for x in g8.boxed_filter([[r["resp"]] for r in rows[:50]])]
+
+
+@pytest.mark.parametrize("resp,want", [
+    ("so $$ \\boxed{99077} $$", 99077),
+    ("\\boxed{1,234}", 1234),
+    ("\\boxed{\\$18.50}", 18.5),
+    ("\\boxed{42 \\text{ dollars}}", 42),
+    ("\\boxed{\\frac{1}{2}} then \\boxed{7}", 7),  # last boxed wins
+    ("\\boxed{\\text{twelve}} so the answer is 12.", 12),  # boxed without a number falls through
+    ("... The answer is 35.", 35),
+    ("The answer is: $1,000.", 1000),
+    ("#### 72", 72),
+    ("**Answer:** 77", 77),
+    ("total $15 + $20 = $35$ and then 8 apples $$x=3$$", 8),  # last number OUTSIDE math
+    ("only math $x = 5$", 5),  # nothing outside: last number anywhere
+    ("It costs 12 dollars.", 12),
+    ("-3 degrees. Final answer is -3.", -3),
+])
+def test_gsm8k_extractor_edge_cases(resp, want):
+    assert g8.extract_number(resp) == want
+
+
+def test_gsm8k_extractor_none_and_compare():
+    assert g8.extract_number("no digits here") is None and g8.canon(None) == ""
+    assert g8.last_boxed("\\boxed{\\frac{1}{2}}") == "\\frac{1}{2}" and g8.last_boxed("\\boxed{1") is None
+    assert g8.canon(18.0) == "18" and g8.canon(18.5) == "18.5"
+    assert g8.same(1000.0, "1,000") and g8.same(18.0, "18") and not g8.same(None, "18") and not g8.same(19.0, "18")
+
+
+def test_gsm8k_task_config_and_gate_metric():
+    y = (REPO / "reference_config/evals/lm_eval_tasks/hy4_gsm8k/hy4_gsm8k_cot.yaml").read_text()
+    for name in ("strict-match", "flexible-extract", "boxed-aware"):  # original filters stay, boxed-aware added
+        assert f"name: {name}" in y
+    assert "task: hy4_gsm8k_cot" in y and "utils.boxed_filter" in y
+    import reference_config.evals.eval_config as ec
+
+    t = {x.task_name: x for x in ec.ALL_EVAL_CONFIGS["tencent/Hy4-preview"].tasks}["hy4_gsm8k_cot"]
+    assert t.score.score_func_kwargs["result_keys"] == ["exact_match,boxed-aware"]
+
+
+def test_gsm8k_rescore_cli(tmp_path):
+    import gzip
+
+    rows = _samples()[:40]
+    f = tmp_path / "samples_x.jsonl"
+    with open(f, "w") as o:
+        for r in rows:
+            base = dict(doc_id=r["doc_id"], target=r["target"], resps=[[r["resp"]]])
+            o.write(json.dumps({**base, "filter": "flexible-extract", "exact_match": r["flex_ok"], "filtered_resps": [r["flex_extracted"]]}) + "\n")
+            o.write(json.dumps({**base, "filter": "strict-match", "exact_match": r["strict_ok"], "filtered_resps": [""]}) + "\n")
+    r = sh("python3", H / "gsm8k_rescore.py", f, env={"HY4_GATE_GSM8K": "95.77"})
+    assert r.returncode == 0 and "boxed-aware:" in r.stdout and "flexible-extract:" in r.stdout and "strict-match:" in r.stdout and "GATE (boxed-aware >= 95.77%)" in r.stdout
