@@ -766,34 +766,50 @@ templates:
               (encode_messages): bos, an optional leading system message under the System token, User / Assistant turns,
               the assistant header followed by </think> (chat mode) or <think> (thinking mode, with the reasoning-effort
               prefix at the start of the conversation). Set thinking with chat_template_kwargs {"thinking": true,
-              "reasoning_effort": "high"|"low"|"max"|1-100}; past reasoning is dropped as the encoder does. -#}
+              "reasoning_effort": "high"|"low"|"max"|1-100}; past reasoning is dropped as the encoder does.
+              Consecutive user messages and text content parts are joined with a blank line. Assistant headers precede
+              assistant replies and generation, not intermediate consecutive user messages. -#}
           {%- set thinking = thinking | default(false) -%}
           {%- set effort = reasoning_effort | default("high") -%}
           {%- set efforts = {"low": 50, "high": 75, "max": 100} -%}
           {%- if effort in efforts %}{% set effort = efforts[effort] %}{% endif -%}
-          {%- set ns = namespace(last_user=-1) -%}
-          {%- for m in messages %}{% if m.role == "user" or (m.role == "system" and loop.index0 > 0) %}{% set ns.last_user = loop.index0 %}{% endif %}{% endfor -%}
-          {{- "<｜begin▁of▁sentence｜>" -}}
+          {%- set ns = namespace(msgs=[], last_user=-1) -%}
           {%- for m in messages -%}
-            {%- if loop.index0 == 0 and (thinking or m.role == "system") -%}
+            {%- if m.content is string -%}
+              {%- set text = m.content -%}
+            {%- elif m.content -%}
+              {%- set text = m.content | selectattr("type", "equalto", "text") | map(attribute="text") | join("\n\n") -%}
+            {%- else -%}
+              {%- set text = "" -%}
+            {%- endif -%}
+            {%- if m.role == "user" and ns.msgs and ns.msgs[-1].role == "user" -%}
+              {%- set ns.msgs = ns.msgs[:-1] + [{"role": "user", "content": ns.msgs[-1].content ~ "\n\n" ~ text, "reasoning_content": ""}] -%}
+            {%- else -%}
+              {%- set ns.msgs = ns.msgs + [{"role": m.role, "content": text, "reasoning_content": m.reasoning_content or ""}] -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- for m in ns.msgs %}{% if m.role == "user" or (m.role == "system" and loop.index0 > 0) %}{% set ns.last_user = loop.index0 %}{% endif %}{% endfor -%}
+          {{- "<｜begin▁of▁sentence｜>" -}}
+          {%- for m in ns.msgs -%}
+            {%- set i = loop.index0 -%}
+            {%- if i == 0 and (thinking or m.role == "system") -%}
               {{- "<｜System｜>" -}}
               {%- if thinking -%}
                 {{- "Reasoning Effort: " ~ effort ~ " (range 1-100, the higher the value, the more thorough the reasoning)\n\n" -}}
               {%- endif -%}
             {%- endif -%}
             {%- if m.role == "system" -%}
-              {%- if loop.index0 > 0 %}{{ "<｜System｜>" }}{% endif -%}
-              {{- m.content if m.content is string else "" -}}
+              {%- if i > 0 %}{{ "<｜System｜>" }}{% endif -%}
+              {{- m.content -}}
             {%- elif m.role == "user" -%}
-              {{- "<｜User｜>" -}}
-              {%- if m.content is string %}{{ m.content }}{% else %}{% for c in m.content %}{% if c.type == "text" %}{{ c.text }}{% endif %}{% endfor %}{% endif -%}
+              {{- "<｜User｜>" ~ m.content -}}
             {%- elif m.role == "assistant" -%}
-              {%- if thinking and loop.index0 > ns.last_user %}{{ (m.reasoning_content | default("")) ~ "</think>" }}{% endif -%}
-              {{- (m.content if m.content is string else "") ~ "<｜end▁of▁sentence｜>" -}}
+              {%- if thinking and i > ns.last_user %}{{ m.reasoning_content ~ "</think>" }}{% endif -%}
+              {{- m.content ~ "<｜end▁of▁sentence｜>" -}}
             {%- endif -%}
-            {%- if (m.role == "user" or (m.role == "system" and loop.index0 > 0)) and (loop.last or messages[loop.index0 + 1].role != "assistant") -%}
+            {%- if (loop.last or ns.msgs[i + 1].role == "assistant") and (m.role == "user" or (m.role == "system" and i > 0)) -%}
               {{- "<｜Assistant｜>" -}}
-              {%- if thinking and loop.index0 >= ns.last_user %}{{ "<think>" }}{% else %}{{ "</think>" }}{% endif -%}
+              {%- if thinking and i >= ns.last_user %}{{ "<think>" }}{% else %}{{ "</think>" }}{% endif -%}
             {%- endif -%}
           {%- endfor -%}
   # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
