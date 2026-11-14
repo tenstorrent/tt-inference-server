@@ -672,6 +672,10 @@ def _selected_eval_tasks(tasks, runtime_config):
     only the venvs the run will actually use (--eval-samples / smoke-test).
     Falls back to all tasks when nothing narrows them (over-provision is safe;
     under-provision would break a task the run still tries to execute)."""
+    if getattr(runtime_config, "eval_tasks", None) is not None:
+        from workflows.eval_selection import select_full_eval_tasks
+
+        return select_full_eval_tasks(tasks, runtime_config)
     names = _eval_samples_task_names(runtime_config)
     if names:
         sel = [t for t in tasks if t.task_name in names]

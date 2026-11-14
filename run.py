@@ -279,6 +279,14 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--eval-tasks",
+        type=str,
+        default=None,
+        help="Comma-separated complete task names for --workflow evals or agentic. "
+        "Does not limit samples, repeats or token budgets. Mutually exclusive "
+        "with --eval-samples, --limit-samples-mode and --ci-mode.",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -708,6 +716,14 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
+    if args.eval_tasks is not None:
+        if args.workflow not in ("evals", "agentic"):
+            parser.error("--eval-tasks requires --workflow evals or agentic.")
+        if args.eval_samples or args.limit_samples_mode or args.ci_mode:
+            parser.error(
+                "--eval-tasks selects full tasks; sample-limit flags are incompatible."
+            )
+
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks or release "
@@ -898,6 +914,7 @@ def format_cli_args_summary(runtime_config):
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
+        f"  eval_tasks:                 {runtime_config.eval_tasks}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",

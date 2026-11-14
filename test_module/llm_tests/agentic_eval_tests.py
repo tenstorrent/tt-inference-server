@@ -21,6 +21,7 @@ from llm_module import (
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
 from workflows.workflow_types import WorkflowVenvType
+from workflows.eval_selection import select_full_eval_tasks
 from workflow_module import accept_blocks
 
 from .._test_common import sweep_envelope
@@ -54,7 +55,7 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
             len(non_agentic),
             [t.task_name for t in non_agentic],
         )
-    return agentic
+    return select_full_eval_tasks(agentic, getattr(ctx, "runtime_config", None))
 
 
 def _server_connection(ctx: MediaContext) -> ServerConnection:

@@ -10,6 +10,7 @@ import logging
 from typing import List
 
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+from workflows.eval_selection import select_full_eval_tasks
 
 from .eval_command import _get_limit_mode, _parse_eval_samples_mapping
 
@@ -29,6 +30,8 @@ _STANDARD_EVAL_VENVS = frozenset(
 def _select_tasks(tasks: list, runtime_config) -> list:
     """Apply --eval-samples / smoke-test task selection (real copy of
     ``run_evals._select_eval_config``, minus the EvalConfig wrapper)."""
+    if getattr(runtime_config, "eval_tasks", None) is not None:
+        return select_full_eval_tasks(tasks, runtime_config)
     eval_samples = getattr(runtime_config, "eval_samples", None)
     if eval_samples and tasks:
         mapping = _parse_eval_samples_mapping(eval_samples)

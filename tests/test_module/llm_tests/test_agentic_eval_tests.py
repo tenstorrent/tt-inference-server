@@ -691,6 +691,7 @@ class TestSelectAgenticTasks:
         ctx = MagicMock()
         ctx.all_params.tasks = tasks
         ctx.model_spec.model_name = "test-llm"
+        ctx.runtime_config = None
         return ctx
 
     def test_returns_only_agentic_tasks(self):

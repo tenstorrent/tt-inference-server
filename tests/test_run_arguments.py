@@ -137,6 +137,38 @@ def mock_setup_config():
 class TestArgumentParsing:
     """Compact tests for argument parsing and validation."""
 
+    @pytest.mark.parametrize("workflow", ["evals", "agentic"])
+    def test_full_eval_task_selection(self, base_args, workflow):
+        argv = base_args.copy()
+        argv[argv.index("--workflow") + 1] = workflow
+        with patch("sys.argv", ["run.py", *argv, "--eval-tasks", "task_a,task_b"]):
+            args = parse_arguments()
+        assert args.eval_tasks == "task_a,task_b"
+        assert args.eval_samples is None
+        assert args.limit_samples_mode is None
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--eval-samples", "{}"],
+            ["--limit-samples-mode", "smoke-test"],
+            ["--ci-mode"],
+        ],
+    )
+    def test_full_eval_selection_rejects_limit_flags(self, base_args, extra):
+        argv = base_args.copy()
+        argv[argv.index("--workflow") + 1] = "evals"
+        with patch("sys.argv", ["run.py", *argv, "--eval-tasks", "task", *extra]):
+            with pytest.raises(SystemExit) as exc:
+                parse_arguments()
+        assert exc.value.code == 2
+
+    def test_full_eval_selection_rejects_other_workflows(self, base_args):
+        with patch("sys.argv", ["run.py", *base_args, "--eval-tasks", "task"]):
+            with pytest.raises(SystemExit) as exc:
+                parse_arguments()
+        assert exc.value.code == 2
+
     def test_required_args_success(self, base_args):
         """Test successful parsing of required arguments."""
         with patch("sys.argv", ["run.py"] + base_args):
