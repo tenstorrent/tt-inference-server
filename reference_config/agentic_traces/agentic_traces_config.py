@@ -461,6 +461,19 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # Gemma-4 31B tt-transformers on BLACKHOLE_GALAXY (dev catalog). 256k dataset variant to match the spec's 262144
+    # max_context; concurrency 16 (the entry is served with 4 engines). Same InferenceX pin as the entries above.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(16),
+            ),
+        ),
+    ),
     # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only. Full (1M) dataset to match the spec's 1048576 max_context, and
     # concurrency at the spec's max_concurrency of 62.
