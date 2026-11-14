@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import signal
@@ -206,6 +207,19 @@ def assess_task(task, directory, workflow_exit):
                     errors.append(str(sample["error"]))
         if errors:
             problems.append(f"Inference errors in {len(errors)} samples")
+        failed_requests = Counter()
+        for server_log in directory.glob("workflow_logs/local_server/*.log"):
+            with server_log.open(errors="replace") as stream:
+                for line in stream:
+                    plain = re.sub(r"\x1b\[[0-9;]*m", "", line)
+                    match = re.search(
+                        r'"POST /v1/chat/completions [^"]+"\s+([45]\d\d)\b', plain
+                    )
+                    if match:
+                        failed_requests[match.group(1)] += 1
+        if failed_requests:
+            errors.append({"http_failures": dict(failed_requests)})
+            problems.append(f"Failed inference HTTP requests: {dict(failed_requests)}")
     else:
         summaries = list(
             directory.glob(f"workflow_logs/reports_output/**/{name}/result.json")

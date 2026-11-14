@@ -56,6 +56,22 @@ def test_partial_or_duplicate_samples_are_not_reportable(tmp_path, ids):
     assert result["accuracy_pass"] is None
 
 
+def test_http_inference_failures_are_not_just_accuracy_misses(tmp_path):
+    task = {"name": "test", "workflow": "evals", "samples": 1}
+    write_report(tmp_path, task, 100.0)
+    samples = tmp_path / "workflow_logs/reports_output/evals/samples_test_2026-11.jsonl"
+    samples.write_text(json.dumps({"doc_id": 0}) + "\n")
+    server = tmp_path / "workflow_logs/local_server"
+    server.mkdir()
+    (server / "server.log").write_text(
+        'INFO: "POST /v1/chat/completions HTTP/1.1" 500 Internal Server Error\n'
+    )
+    result = assess_task(task, tmp_path, 1)
+    assert not result["operationally_complete"]
+    assert result["accuracy_pass"] is None
+    assert result["harness_errors"] == [{"http_failures": {"500": 1}}]
+
+
 def test_agentic_exact_repeats(tmp_path):
     task = {"name": "terminal_bench_2_1", "workflow": "agentic", "samples": 6}
     write_report(tmp_path, task, 90.0)
