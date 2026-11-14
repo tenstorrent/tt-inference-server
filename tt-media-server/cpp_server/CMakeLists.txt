@@ -1234,6 +1234,17 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(video_generate_request_test
+    tests/unit/api/video_generate_request_test.cpp
+    tests/unit/api/video_job_store_test.cpp)
+target_link_libraries(video_generate_request_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(video_generate_request_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
 target_link_libraries(embedding_ipc_test PRIVATE
     llm_runner_lib
@@ -1375,6 +1386,11 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1516,6 +1532,11 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1709,6 +1730,7 @@ set_tests_properties(EmbeddingServiceIntegrationTest PROPERTIES
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
+gtest_discover_tests(video_generate_request_test)
 gtest_discover_tests(embedding_ipc_test)
 gtest_discover_tests(embedding_json_test)
 gtest_discover_tests(mock_embedding_runner_test)
@@ -2028,6 +2050,7 @@ set(SOURCES
     src/runtime/runners/embedding_ipc_runner.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
+    src/api/video_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -2040,6 +2063,11 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
