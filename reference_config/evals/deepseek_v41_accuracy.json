@@ -4,6 +4,7 @@
   "device": "blackhole_galaxy",
   "vllm_args": {
     "tokenizer-mode": "deepseek_v41",
+    "tokenizer-revision": "dba1be0a40aa45a94ad051997016db3960a90277",
     "chat-template-content-format": "string",
     "default-chat-template-kwargs": "{\"thinking\": true, \"reasoning_effort\": \"max\"}",
     "reasoning-parser": "deepseek_v4",
