@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -120,3 +123,11 @@ def test_digest_on_supported_python_versions(tmp_path):
         digest(path)
         == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
+
+
+def test_campaign_dotenv_can_be_isolated_without_changing_shared_file(tmp_path):
+    private = tmp_path / "private.env"
+    env = dict(os.environ, INFERENCE_SERVER_DOTENV_PATH=str(private))
+    code = "from workflows.utils import default_dotenv_path; print(default_dotenv_path)"
+    result = subprocess.check_output([sys.executable, "-c", code], env=env, text=True)
+    assert result.strip() == str(private)

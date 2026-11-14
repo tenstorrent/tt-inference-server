@@ -458,6 +458,7 @@ def campaign(args):
                 "PYTHONNOUSERSITE": "1",
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "LM_EVAL_PRESERVE_REASONING": "1",
                 "OMP_NUM_THREADS": "16",
                 "TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES": "0",
                 "UV_CACHE_DIR": str(root / ".uv-cache"),
@@ -469,6 +470,14 @@ def campaign(args):
             }
         )
         env["HF_TOKEN"] = read_hf_token()
+        # run.py's dotenv loader deliberately overwrites environment values.
+        # Use an owned private file, not another workflow's credentials or knobs.
+        private_env = output / "private.env"
+        private_env.write_text(
+            "JWT_SECRET=" + env["JWT_SECRET"] + "\nHF_TOKEN=" + env["HF_TOKEN"] + "\n"
+        )
+        os.chmod(private_env, 0o600)
+        env["INFERENCE_SERVER_DOTENV_PATH"] = str(private_env)
         for task in profile["tasks"]:
             if (
                 stopped

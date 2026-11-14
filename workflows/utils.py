@@ -331,7 +331,9 @@ def run_command(
     return return_code
 
 
-default_dotenv_path = get_repo_root_path() / ".env"
+default_dotenv_path = Path(
+    os.environ.get("INFERENCE_SERVER_DOTENV_PATH", str(get_repo_root_path() / ".env"))
+)
 
 
 def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
