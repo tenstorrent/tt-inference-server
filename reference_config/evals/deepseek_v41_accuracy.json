@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "model": "DeepSeek-V4.1-Flash",
+  "device": "blackhole_galaxy",
+  "vllm_args": {
+    "tokenizer-mode": "deepseek_v41",
+    "chat-template-content-format": "string",
+    "default-chat-template-kwargs": "{\"thinking\": true, \"reasoning_effort\": \"max\"}",
+    "reasoning-parser": "deepseek_v4",
+    "tool-call-parser": "deepseek_v41",
+    "enable-auto-tool-choice": true
+  },
+  "tasks": [
+    {"name": "longbench2_generate", "workflow": "evals", "samples": 63},
+    {"name": "tau3_bench_banking", "workflow": "agentic", "samples": 97},
+    {"name": "r1_gpqa_diamond", "workflow": "evals", "samples": 198},
+    {"name": "terminal_bench_2_1", "workflow": "agentic", "samples": 267},
+    {"name": "mmlu_pro", "workflow": "evals", "samples": 12032}
+  ]
+}

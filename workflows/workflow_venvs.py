@@ -181,6 +181,7 @@ def setup_evals_agentic(
 
     harbor_dir = venv_config.venv_path / "harbor"
     harbor_tag = "v0.6.5"
+    harbor_commit = "ceb0a05ac16510ff97290a58e7dae63f89f1967e"
     if not harbor_dir.exists():
         clone_return_code = run_command(
             "git clone --depth 1 --branch "
@@ -189,6 +190,18 @@ def setup_evals_agentic(
         )
         if clone_return_code != 0:
             return False
+
+    # Tags can move and an existing checkout may have been edited. Do not run
+    # a different agent/verifier implementation under the same reference.
+    import subprocess
+
+    actual_commit = subprocess.check_output(
+        ["git", "-C", str(harbor_dir), "rev-parse", "HEAD"], text=True
+    ).strip()
+    if actual_commit != harbor_commit:
+        raise RuntimeError(
+            f"Harbor reference mismatch: expected {harbor_commit}, got {actual_commit}"
+        )
 
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
