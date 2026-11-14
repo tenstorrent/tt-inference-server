@@ -48,9 +48,13 @@ option(CLANG_TIDY "Run clang-tidy during build" OFF)
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Find Drogon and JsonCpp (tokenizer_config parsing)
+# Find Drogon and JsonCpp (tokenizer_config parsing).
+# Drogon's own config already imports JsonCpp::JsonCpp. A second find_package
+# hits Ubuntu's jsoncpp file, which creates that target again and fails.
 find_package(Drogon REQUIRED)
-find_package(jsoncpp REQUIRED)
+if(NOT TARGET JsonCpp::JsonCpp)
+    find_package(jsoncpp REQUIRED)
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Try to find cereal, or fetch it if not available
