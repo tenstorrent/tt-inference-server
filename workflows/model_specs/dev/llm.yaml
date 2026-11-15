@@ -8053,6 +8053,9 @@ templates:
         # sampler's verify (the checkpoint's generation_config samples: temperature 1.0, top_p 0.95)
         GLM53_SPEC_PARTIAL: "1"
         GLM53_SPEC_SAMPLED: "1"
+        # The sparse prefill's heads all-to-all reshard (no 16x head pad in sparse_sdpa): -13 % per 2,048 chunk and -20 % per 8,192
+        # chunk at the 1 M window, a cold 1 M prefill 281.5 -> 217.3 s; exact (1 M warm-turn ids equal).
+        GLM53_PF_SPARSE_RESHARD: "a2a"
         # Device spec steps per served verify: M > 1 chains up to M steps on device and returns all their committed
         # tokens at once (the plugin's fused_sample accept mode: one vLLM step per M device steps). The plugin's draft
         # length is then M (K + 1) - 1, which num_speculative_tokens below must reach. 1: one step per verify.
