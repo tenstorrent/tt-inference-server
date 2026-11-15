@@ -482,14 +482,21 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b_qb2",
 )
 
-# --- GLM-5.3-Flash on the Blackhole Galaxy: two serving profiles, one code path ---
+# --- GLM-5.3-Flash on the Blackhole Galaxy: six serving profiles, one code path ---
 #
-# Same profile pattern as above: both point at models/demos/glm53_flash
-# (tt-metal PR #63440). The profiles differ only in the served
-# context (1 M vs 128 K), which fixes the slot geometry the mesh model is built
-# with (users per row x context per slot) and cannot be expressed by one
-# (model_name, device) spec. Selectable via --impl glm53-flash (default) /
-# glm53-flash-128k.
+# Same profile pattern as above: every profile points at models/demos/glm53_flash
+# (the persistent stack, tt-metal PR #64931). Each fixes the stack's slot
+# geometry (decode slots x context per slot) and its decode features, which one
+# (model_name, device) spec cannot express (dev/llm.yaml has the details):
+#   glm53-flash (default)  1 M x 8 users on the B 16 build, plain decode
+#   glm53-flash-mtp        1 M x 4 users, the lone-user MTP speculative step
+#   glm53-flash-mtp-mu     1 M x 16 users, the multi-user MTP steps
+#   glm53-flash-1m         1 M x 8 users on the B 16 build: narrow width 4, exact
+#                          prefix snapshots + host tier, the multi-user MTP
+#                          steps, 4 device steps per verify
+#   glm53-flash-128k       128 K x 16 users, plain decode, packed short prefills
+#   glm53-flash-128k-mm    glm53-flash-128k with image input
+# Selectable via --impl <impl_name>.
 glm53_flash_impl = ImplSpec(
     impl_id="glm53_flash",
     impl_name="glm53-flash",

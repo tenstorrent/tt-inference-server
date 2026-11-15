@@ -133,9 +133,10 @@ class ServerConnection:
 
 
 # The sweep's per-run timeout scales with the point's token volume: the default (``DriverContext.per_run_timeout_s``,
-# 2 h) suits the standard points, but a long-context point such as GLM-5.3-Flash's 4 x 1 047 612-token point
-# prefills for hours on its Galaxy. The plan assumes these conservative aggregate rates and keeps the larger of the
-# default and the plan.
+# 2 h) suits the standard points, but a long-context point can approach it: GLM-5.3-Flash's 16 x 1 047 612-token
+# point (glm53_flash_mtp_mu, 16.8 M prompt tokens) prefills one prompt at a time for ~61-92 min on its Galaxy (a cold
+# 1 M prefill: 229.5 s served, 345 s in the e2e), and a slower build or a larger point passes it. The plan assumes
+# these conservative aggregate rates and keeps the larger of the default and the plan.
 BENCHMARK_MIN_PREFILL_TOK_S = 1000.0
 BENCHMARK_MIN_DECODE_TOK_S_PER_USER = 4.0
 BENCHMARK_TIMEOUT_HEADROOM_S = 600.0

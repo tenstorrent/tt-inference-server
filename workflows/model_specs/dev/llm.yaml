@@ -7641,33 +7641,50 @@ templates:
 # with the sequence-sharded DSA pool, tt-metal PR #64931) through its vLLM
 # adapter models/demos/glm53_flash/tt/generator_vllm_stack.py
 # (GLM53StackForCausalLM). Galaxy only: one vLLM engine per mesh, no data
-# parallelism. The engine's admission is the stack's construction width
-# (max_num_seqs == its decode slots), so every served user is resident for the
-# whole context.
+# parallelism. The engine admits at most the stack's decode slots
+# (max_num_seqs <= GLM53_STACK_BUILD_B, the rows the stack is built with), so
+# every served user is resident for the whole context.
 #
-# Two serving profiles (distinct impl ids, same code path; the qwen36 / gemma4
-# profile pattern): glm53_flash = the 1 M-context profile (4 resident users,
-# the default), glm53_flash_128k = the 128 K-context profile (16 resident
-# users). Text only (the stack serves no image or video request). Every
-# request samples on the device (the head's top-10 sampler inside the traced
-# decode step: greedy, temperature / top-p, top-k <= 10). vLLM's prefix cache
-# (GLM53_STACK_PREFIX: a hit resumes from the stack's device snapshot at the
-# longest shared 8192-token chunk boundary; usage reports cached_tokens);
+# Six serving profiles (distinct impl ids, one code path; the qwen36 / gemma4
+# profile pattern), each a slot geometry (decode slots x context per slot) and
+# a set of decode features:
+#   glm53_flash (default)  1 M x 8 users on the B 16 build; plain decode;
+#                          asynchronous scheduling
+#   glm53_flash_mtp        1 M x 4 users on the B 4 build; the MTP speculative
+#                          step for a lone greedy request (up to 256 K
+#                          positions); synchronous
+#   glm53_flash_mtp_mu     1 M x 16 users on the B 16 build; the multi-user MTP
+#                          steps (4 users x 3 drafts, 8 x 1); synchronous
+#   glm53_flash_1m         1 M x 8 users on the B 16 build; narrow width 4,
+#                          exact-position prefix snapshots + their host tier,
+#                          the lone / 4-user / 8-user MTP steps, 4 device steps
+#                          per verify; synchronous
+#   glm53_flash_128k       128 K x 16 users on the B 16 build; plain decode;
+#                          packed short prefills; asynchronous
+#   glm53_flash_128k_mm    glm53_flash_128k with image input (the vision tower
+#                          on the same mesh; no video)
+# The others are text only. Every request samples on the device (the head's
+# top-10 sampler inside the traced decode step: greedy, temperature / top-p,
+# top-k <= 10). vLLM's prefix cache (GLM53_STACK_PREFIX: a hit resumes from the
+# stack's device snapshot at the longest shared 8192-token chunk boundary,
+# glm53_flash_1m's at the previous prompt's end; usage reports cached_tokens);
 # chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
-# step. Both profiles schedule asynchronously (the adapter's resident-input
-# chain) and run one prefill chunk per 8 decode steps while users decode.
+# step and, while users decode, one per 8 decode steps.
 #
 # Validated on an 8x4 (45 layers, OSL 128, tests/test_mk_e2e.py; decode as
 # tok/s per user): 1 M x 1 51.7 (TTFT 345 s), 1 M x 4 35.4 (TTFT 1,379 s),
 # 512 K x 4 34.6, 128 K x 16 14.0 (TTFT 583 s), 32 K x 4 36.7 (TTFT 35 s),
-# 32 K x 16 14.6; prefill 3.0-3.7 K tok/s at every length. A decode step runs
-# at the stack's full width, so a lone user decodes at the profile's per-user
-# rate (~48 tok/s at a short context on the 1 M profile, ~27 on the 128 K one).
+# 32 K x 16 14.6; prefill 3.0-3.7 K tok/s at every length; the B 16 x 1 M
+# build plain at ISL 128 35.6 (tt-metal 782ac745e7d). Without narrow widths a
+# decode step runs at the build's full width, so a lone user decodes at the
+# build's per-user rate (~48 tok/s at a short context on a B 4 build, ~27 on
+# the 128 K profile's B 16).
 # Served (vLLM 0.31, the benchmark argv, sampled; the decode step = the e2e's
-# within 1 ms): 1 M profile 128 / 128 x 1 TPOT 20.6 ms = 48.4 tok/s per user,
-# median ITL 21.7 ms at 128 x 4, 22.9 ms at 8 K x 4; 128 K profile median ITL
-# 37.5 ms at 128 x 16 (162 tok/s), 38.3 ms at 8 K x 16.
-# Texts identical to the e2e at ISL 128 and 32 K x 4.
+# within 1 ms): the 1 M profile on its earlier B 4 build (4 users) 128 / 128
+# x 1 TPOT 20.6 ms = 48.4 tok/s per user, median ITL 21.7 ms at 128 x 4,
+# 22.9 ms at 8 K x 4; the 128 K profile median ITL 37.5 ms at 128 x 16
+# (162 tok/s), 38.3 ms at 8 K x 16. Texts identical to the e2e at ISL 128 and
+# 32 K x 4. glm53_flash_1m's served 1 M rows: in its entry.
 #
 # The stack's validated Galaxy knobs (galaxy_defaults.KNOBS: the 1D fabric, EP
 # experts, the DSA pool, the sparse-attention ladder and the prefill buckets
@@ -7691,11 +7708,11 @@ templates:
     - text
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 4  # = the stack's decode slots at 1 M (max_num_seqs below): every user resident
+      max_concurrency: 8  # = max_num_seqs below (8 users for now): every admitted user resident on the B 16 build
       max_context: 1048576  # 1 M: the served context (the advertised one, doc/context_contract.json)
       # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
-      max_tokens_all_users_override: 4194304  # 4 x 1048576
+      max_tokens_all_users_override: 8388608  # 8 x 1048576
       default_impl: true
       # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
       # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
@@ -7707,6 +7724,10 @@ templates:
         # plugin without it (bare + TT-prefixed names: the plugin prefixes every checkpoint architecture with "TT").
         TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
         GLM53_MESH_SHAPE: "8,4"  # the model's own view of the mesh the plugin opens (MESH_DEVICE=BH-Galaxy)
+        # The stack's build width (the adapter's GLM53_STACK_BUILD_B: >= max_num_seqs, default max_num_seqs): the
+        # B 16 x 1 M build (glm53_flash_mtp_mu's and glm53_flash_1m's) admitting 8 users; no B 8 x 1 M build has a
+        # validation run
+        GLM53_STACK_BUILD_B: "16"
         # vLLM's prefix cache from the stack's device snapshot pool (generator_vllm_stack.StackPrefixCache): a prompt
         # snapshots its state at every 8192-token chunk end, a later prompt sharing that prefix resumes there
         GLM53_STACK_PREFIX: "1"
@@ -7733,13 +7754,13 @@ templates:
         decode_interleave_prefill_steps: 1
         decode_interleave_decode_steps: 8
       vllm_args:
-        max_num_seqs: 4  # = the stack's construction width (the adapter refuses another)
+        max_num_seqs: 8  # the admitted users (8 for now); the stack builds GLM53_STACK_BUILD_B rows (>= max_num_seqs)
         # the adapter declares supports_async_decode (the resident-input chain): 128 x 4 median ITL 29.4 -> 25.2 ms
         async_scheduling: true
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
-        # one 8192-token prefill bucket per engine step plus one decode token per slot: a prefill chunk beside decoding
-        # users still fills a whole bucket (an offer short of the bucket would wait for a step that never comes)
-        max_num_batched_tokens: 8196  # 8192 + 4
+        # one 8192-token prefill bucket per engine step plus one decode token per admitted user: a prefill chunk beside
+        # decoding users still fills a whole bucket (an offer short of the bucket would wait for a step that never comes)
+        max_num_batched_tokens: 8200  # 8192 + 8
         enable_chunked_prefill: true
         enable-prefix-caching: true  # GLM53_STACK_PREFIX: the stack confirms vLLM's hits against its device snapshots
         enable-prompt-tokens-details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
@@ -7757,7 +7778,8 @@ templates:
 
 # The 1 M profile with the MTP speculative step (impl glm53_flash_mtp, EXPERIMENTAL): K = 3 MTP drafts verified on
 # the device for a lone greedy request (the 8x4 e2e, B 4 / 1 live: tau 3.17-3.23, 2.3-2.4x decode at ISL 128 .. 32 K,
-# ids identical to plain greedy); every other step decodes plainly. Synchronous scheduling. Otherwise the 1 M profile,
+# ids identical to plain greedy); every other step decodes plainly. Synchronous scheduling. 4 users on a B 4 build (the
+# lone-user step needs max_num_seqs <= 4: the adapter's SPEC_MAX_ROWS). Otherwise the 1 M profile,
 # its prefix cache included: a request that resumes from a device snapshot (a prefix-cache hit) decodes plainly (the
 # MTP layer's cache never saw the cached positions), and a prefill leaves a running speculation before its snapshot.
 - weights:
@@ -7971,7 +7993,7 @@ templates:
       tool_call_parser_name: glm47
 
 # The 1 M agentic-loop profile (impl glm53_flash_1m, EXPERIMENTAL; the target: ~1 M contexts at 1, 2, 4, 8 and 16 users):
-# 16 resident 1 M slots on the B 16 build with every 1 M optimization of the stack in one place -- narrow decode width 4
+# 8 resident 1 M users for now on the B 16 build with every 1 M optimization of the stack in one place -- narrow decode width 4
 # (a lone user decodes at width 4), exact-position prefix snapshots (a warm turn resumes at the previous prompt's end,
 # not at an 8192 boundary), the snapshot pool's host tier (an idle conversation's snapshot spills to host RAM instead of
 # being dropped), and the multi-user MTP speculation with the MTP layer attending sparsely (its own DSA indexer: the
@@ -7979,6 +8001,9 @@ templates:
 # lone-user step (1 x 3 drafts, 4 verify rows) for a single live user; any subset of a step's users speculates, sampled
 # requests too, and a request that resumes from a prefix snapshot keeps speculating (the snapshot carries the MTP
 # layer's state). Synchronous scheduling.
+# Served (tt-metal arg/glm53_stack_rs1 33279e5bbfa + this profile, ISL 1,040,000 / OSL 896 per user, greedy, speculation
+# on; 2026-11-15): decode 113.5 / 76.0 / 69.8 / 51.1 tok/s per user at 1 / 2 / 4 / 8 users; warm-turn TTFT (a prefix
+# hit) 3.81 s at 1 user, 3.86 / 5.84 s at 2, 4.15 / 8.99 s at 4, 4.9 / 15.5 s at 8; a cold 1 M prefill 229.5 s per user.
 - weights:
     - zai-org/GLM-5.3-Flash
   # the shield's host setup checks these (none derivable: the repo name carries no parameter count): 164 B bf16
@@ -7993,11 +8018,11 @@ templates:
     - text
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 16  # = the stack's decode slots at 1 M (max_num_seqs below): every user resident
+      max_concurrency: 8  # = max_num_seqs below (8 users for now): every admitted user resident on the B 16 build
       max_context: 1048576  # 1 M: the served context (the advertised one, doc/context_contract.json)
       # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
-      max_tokens_all_users_override: 16777216  # 16 x 1048576
+      max_tokens_all_users_override: 8388608  # 8 x 1048576
       default_impl: false
       # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
       # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
@@ -8045,6 +8070,10 @@ templates:
         GLM53_SPEC_MULTI_USERS: "4"
         GLM53_SPEC_MULTI_ALT: "8:1"
         GLM53_SPEC_MULTI_LONE: "1"
+        # The stack's build width (the adapter's GLM53_STACK_BUILD_B: >= max_num_seqs, default max_num_seqs): the
+        # multi-user steps verify G (K + 1) = 4 x 4 = 16 rows (the alternate 8 x 2), which must fit the build's rows
+        # (tt-metal spec_mtp.py), so the 8 admitted users run on the B 16 build
+        GLM53_STACK_BUILD_B: "16"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
         # speculates up to 1 M), and its per-slot state in the prefix snapshots (a warm turn keeps speculating)
         GLM53_SPEC_MTP_SPARSE: "1"
@@ -8057,10 +8086,9 @@ templates:
         # chunk at the 1 M window, a cold 1 M prefill 281.5 -> 217.3 s; exact (1 M warm-turn ids equal).
         GLM53_PF_SPARSE_RESHARD: "a2a"
         # The exact block-pruned DSA top-k merge prefilter (MLA rev 75; the metal tree must carry it -- arg/glm53_stack_cons):
-        # 1 M plain step -2.0 % at 8 distinct users, -3.4 % at 16; 32 K x 4 spec ids identical with / without it.
+        # the 45-layer 1 M plain step 32.38 -> 31.72 ms at 8 distinct users (width 16) and 37.34 -> 36.07 ms at 16
+        # (backend probe, tt-metal 65ee95a6db4, 1 run each); 32 K x 4 spec ids identical with / without it.
         GLM53_DSA_SHARD_PREFILTER: "1"
-        # The sparse_kda layers' first-item KDA state prefetch (per kind): -11 us per sparse_kda layer at 16 distinct users
-        # (-0.33 ms per 1 M step); 32 K x 4 spec ids identical.
         # Device spec steps per served verify: M > 1 chains up to M steps on device and returns all their committed
         # tokens at once (the plugin's fused_sample accept mode: one vLLM step per M device steps). The plugin's draft
         # length is then M (K + 1) - 1, which num_speculative_tokens below must reach. 1: one step per verify.
@@ -8083,7 +8111,7 @@ templates:
         decode_interleave_prefill_steps: 1
         decode_interleave_decode_steps: 8
       vllm_args:
-        max_num_seqs: 16  # = the stack's construction width (the adapter refuses another)
+        max_num_seqs: 8  # the admitted users (8 for now); the stack builds GLM53_STACK_BUILD_B rows (>= max_num_seqs)
         # Speculation is synchronous (the adapter declares no supports_async_spec_decode); the explicit negative flag
         # is needed because False booleans are dropped.
         no-async-scheduling: true
@@ -8094,8 +8122,10 @@ templates:
         # offers 1 of them), so the scheduler's lookahead follows the knob.
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
         block_size: 64  # = the stack's latent page (the adapter rejects other sizes)
-        # one 8192-token prefill bucket per engine step plus every slot's verify block (1 + K tokens)
-        max_num_batched_tokens: 8256  # 8192 + 16 x (1 + 3)
+        # one 8192-token prefill bucket per engine step plus the largest verify block of one engine step: the max over
+        # the steps of G users x M (K + 1) tokens, M = GLM53_SPEC_STEPS_PER_CALL = 4 -- the 4-user step 4 x 4 x (3 + 1)
+        # = 64, the alternate 8 x 4 x (1 + 1) = 64, the lone user 1 x 4 x (3 + 1) = 16 (no step drafts for more users)
+        max_num_batched_tokens: 8256  # 8192 + 64
         enable_chunked_prefill: true
         enable-prefix-caching: true  # GLM53_STACK_PREFIX: the stack confirms vLLM's hits against its device snapshots
         enable-prompt-tokens-details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)

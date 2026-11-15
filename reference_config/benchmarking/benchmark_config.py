@@ -127,7 +127,7 @@ SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 # long-context specs keep their existing sweeps.
 MODEL_EXTRA_ISL_OSL_PAIRS = {
     # 1 M-context GLM-5.3-Flash on the Blackhole Galaxy (the persistent stack of models/demos/glm53_flash): the
-    # advertised point, 1 047 612 + 160 <= 1 048 576, at 1 and at the 1 M profile's 4 resident users.
+    # advertised point, 1 047 612 + 160 <= 1 048 576, at 1 and at the default 1 M profile's 8 resident users.
     "GLM-5.3-Flash": [
         (1047612, 160),
     ],

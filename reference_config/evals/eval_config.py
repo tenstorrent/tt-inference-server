@@ -13592,14 +13592,17 @@ _eval_config_list = [
     # GLM-5.3-Flash on the Blackhole Galaxy (the persistent stack of tt-metal
     # models/demos/glm53_flash): GPQA Diamond, Terminal-Bench 2 and LiveCodeBench
     # on the chat endpoint with GLM's sampling (model card: temperature 1.0 /
-    # top_p 0.95, no top_k). The stack serves text only (no MMMU entry) and
-    # samples such requests on the host from the returned logits. The chat
+    # top_p 0.95, no top_k). No MMMU entry: the release profile is text only
+    # (glm53_flash_128k_mm alone takes images). Sampled requests draw on the
+    # device (sample_on_device_mode: all: the head's top-10 sampler applies
+    # temperature / top_p to the 10 most likely tokens). The chat
     # template thinks by default ("Reasoning Effort: Max" + <think>), so no
     # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
-    # the thought channel into reasoning_content. Concurrency 16: the 128 K
-    # profile serves all 16 at once; the DEFAULT 1 M profile (a release run's)
-    # admits 4 and queues the other 12 in vLLM, so an eval there runs at 4
-    # live users. max_length = the 128 K context (both profiles serve it).
+    # the thought channel into reasoning_content. Concurrency 8: the DEFAULT 1 M
+    # profile (a release run's) and glm53_flash_1m admit 8 users, all resident.
+    # The client is clamped to a profile's max_concurrency
+    # (llm_module/eval_command.py), so glm53_flash_mtp runs 4 and the 16-user
+    # profiles run 8. max_length = the 128 K context (every profile serves it).
     # Published
     # scores are the model card's (.eval_results/GLM-5.3-Flash.yaml):
     # Terminal-Bench 2.1 84.3 (Claude Code harness, not terminus-2), DeepSWE
@@ -13629,7 +13632,7 @@ _eval_config_list = [
                 # Chat endpoint: the server applies the chat template (thinking on
                 # by default) and the reasoning parser.
                 use_chat_api=True,
-                max_concurrent=16,  # the 128 K profile's admission; the default 1 M profile serves 4 at a time
+                max_concurrent=8,  # = the default 1 M profile's admission (8 resident users)
                 model_kwargs={
                     "max_length": 131072,
                     # Long thinking generations exceed lm-eval's 1800 s default.
@@ -13670,9 +13673,10 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    # four trials in flight on the task budgets (TB2 tasks ask for 1-4 CPUs and 2-8 GB; the
-                    # model card states no resource setting, so none is overridden)
-                    n_concurrent_trials=4,
+                    # eight trials in flight = the default 1 M profile's 8 resident users, on the task budgets
+                    # (TB2 tasks ask for 1-4 CPUs and 2-8 GB; the model card states no resource setting, so none
+                    # is overridden)
+                    n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     agent_timeout_sec=3 * 60 * 60,
@@ -13725,7 +13729,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,  # = the 128 K profile's admission
+                max_concurrent=8,  # = the default 1 M profile's admission
                 allow_code_execution=True,
                 model_kwargs={
                     "max_length": 131072,
