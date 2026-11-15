@@ -8065,7 +8065,7 @@ templates:
         # Device spec steps per served verify: M > 1 chains up to M steps on device and returns all their committed
         # tokens at once (the plugin's fused_sample accept mode: one vLLM step per M device steps). The plugin's draft
         # length is then M (K + 1) - 1, which num_speculative_tokens below must reach. 1: one step per verify.
-        GLM53_SPEC_STEPS_PER_CALL: "1"
+        GLM53_SPEC_STEPS_PER_CALL: "4"
       override_tt_config:
         # The device is opened BEFORE the model (plugin worker.py), so the fabric, the trace region and the worker
         # L1 budget come from here, not from the model's knobs.
