@@ -8061,7 +8061,6 @@ templates:
         GLM53_DSA_SHARD_PREFILTER: "1"
         # The sparse_kda layers' first-item KDA state prefetch (per kind): -11 us per sparse_kda layer at 16 distinct users
         # (-0.33 ms per 1 M step); 32 K x 4 spec ids identical.
-        GLM53_STACK_KNOB_SET: "s:GLM53_KDA_PREFETCH=1"
         # Device spec steps per served verify: M > 1 chains up to M steps on device and returns all their committed
         # tokens at once (the plugin's fused_sample accept mode: one vLLM step per M device steps). The plugin's draft
         # length is then M (K + 1) - 1, which num_speculative_tokens below must reach. 1: one step per verify.
