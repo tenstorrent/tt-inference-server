@@ -1949,22 +1949,23 @@ def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
 def test_image_output_is_png_level_1_with_alpha_only_when_it_is_real(
     tmp_path, monkeypatch, mode, alpha, saved
 ):
+    import model_services.generation_service as service
     from model_services.generation_service import GenerationService
 
-    saves = []
-    real_save = Image.Image.save
+    writes = []
+    real_write = service.write_png
 
-    def save(image, path, format=None, **options):
-        saves.append(options)
-        return real_save(image, path, format=format, **options)
+    def write_png(image, path, **options):
+        writes.append(options)
+        return real_write(image, path, **options)
 
-    monkeypatch.setattr(Image.Image, "save", save)
+    monkeypatch.setattr(service, "write_png", write_png)
     color = (10, 20, 30) if alpha is None else (10, 20, 30, alpha)
     request = SimpleNamespace(OUTPUT_TYPE="image", _seed=1, _prompt="p", format="png")
     output = GenerationService._write_output(
         tmp_path, 0, request, Image.new(mode, (8, 8), color)
     )
-    assert saves == [{"compress_level": 1}]
+    assert writes == [{"compress_level": 1}]
     with Image.open(tmp_path / output["file"]) as written:
         assert written.mode == saved
         assert written.getpixel((0, 0))[:3] == (10, 20, 30)
@@ -1997,6 +1998,45 @@ async def test_flux3_keeps_only_the_image_sizes(generations_app):
     assert request._images == {}
     assert request._image_sizes == {"images": [(1600, 900)]}
     assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "status"),
+    [(4096, 4096, 202), (4097, 4096, 422), (2048, 8193, 422)],
+)
+async def test_flux3_refuses_a_reference_over_16_mp_from_its_header(
+    generations_app, monkeypatch, width, height, status
+):
+    import model_services.generation_service as service
+
+    decoded = []
+    monkeypatch.setattr(
+        service, "decode_image", lambda data, **kw: decoded.append(1) or _decode(data)
+    )
+    client, device = generations_app("tt-flux-3-image-klein")
+    image = Image.new("L", (width, height))
+    buffer = BytesIO()
+    image.save(buffer, "PNG", compress_level=1)
+    uri = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "make it night", "images": [uri]},
+    )
+    assert response.status_code == status, response.text
+    if status == 422:
+        (error,) = response.json()["detail"]
+        assert error["loc"] == ["body", "images", 0]
+        assert error["msg"] == (
+            f"image is {width}x{height} ({width * height / 2**20:.1f} MP); at most "
+            "16 MP (16,777,216 pixels) is accepted"
+        )
+        assert decoded == [] and device.requests == []
+
+
+def _decode(data):
+    from utils.media_probe import decode_image
+
+    return decode_image(data, rgb=False)
 
 
 async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):

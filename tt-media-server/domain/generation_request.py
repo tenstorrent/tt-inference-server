@@ -149,6 +149,9 @@ class GenerationRequest(BaseRequest):
     # to the other ranks of a multi-host mesh: a decoded image can be a
     # hundred times its file.
     RUNNER_DECODES_IMAGES: ClassVar[bool] = False
+    # The most pixels an input image may have; refused at submit from its
+    # header, before it is decoded. None: PIL's decompression-bomb limit only.
+    MAX_IMAGE_PIXELS: ClassVar[int | None] = None
 
     _images: dict[str, list[Image.Image]] = PrivateAttr(default_factory=dict)
     # (width, height) of each input image, after EXIF orientation.

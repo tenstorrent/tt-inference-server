@@ -65,6 +65,8 @@ class Flux3ImageKleinRequest(GenerationRequest):
     OUTPUT_TYPE = "image"
     MEDIA_FIELDS = ("images",)
     RUNNER_DECODES_IMAGES = True
+    # BFL's limit for an input image.
+    MAX_IMAGE_PIXELS = 16 * 1024 * 1024
 
     prompt: str = Field(
         min_length=1,
@@ -102,8 +104,8 @@ class Flux3ImageKleinRequest(GenerationRequest):
             "orientation) and kept at its aspect ratio: scaled down, never up, to a "
             "canvas of at most 4 MP with sides of 64–4096 px (rounded up to 16 px, "
             "the border padded with the image's mirrored edge), never cropped. Any "
-            "size up to 89,478,485 pixels (PIL's decompression-bomb limit) and 30 MB "
-            "is accepted."
+            "size up to 16 MP (16,777,216 pixels) and 30 MB is accepted; a larger "
+            "image is refused with 422, as BFL's API does."
         ),
     )
     count: Count = 1

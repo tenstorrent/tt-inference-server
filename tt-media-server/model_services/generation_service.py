@@ -7,6 +7,7 @@ import base64
 import binascii
 import contextlib
 import hashlib
+import io
 import json
 import secrets
 import shutil
@@ -49,6 +50,7 @@ from utils.media_probe import (
     media_format_error,
     probe_reference_media,
 )
+from utils.png_writer import write_png
 from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
@@ -66,7 +68,8 @@ IMAGE_SAVE_OPTIONS = {
     "JPEG": {"quality": 95, "subsampling": 0},
     "WEBP": {"quality": 90},
     # zlib level 1 instead of 6: as lossless, about 3x faster to write (4096x4096:
-    # 4.0 -> 1.4 s on one core), files 2-14 % larger.
+    # 4.0 -> 1.4 s on one core), files 2-14 % larger; write_png splits it over
+    # threads.
     "PNG": {"compress_level": 1},
 }
 
@@ -101,7 +104,25 @@ def _decode_data_uri(uri: str, kind: str) -> bytes:
 def _image_size(data: bytes) -> tuple[int, int]:
     """Fully decoded, so a corrupt image fails here, but only its size is
     kept."""
-    return decode_image(data).size
+    return decode_image(data, rgb=False).size
+
+
+def _check_image_pixels(data: bytes, max_pixels: int) -> None:
+    """Refuse an image over ``max_pixels`` from its header alone. The EXIF
+    turn swaps the sides, so the count is the same upright."""
+    limit = f"at most {max_pixels / 2**20:g} MP ({max_pixels:,} pixels)"
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+    except Image.DecompressionBombError:
+        raise ValueError(f"image is over {limit}")
+    except (UnidentifiedImageError, OSError):
+        return  # the full decode reports it
+    if width * height > max_pixels:
+        raise ValueError(
+            f"image is {width}x{height} ({width * height / 2**20:.1f} MP); {limit} "
+            "is accepted"
+        )
 
 
 def _request_parameters(request: GenerationRequest) -> dict:
@@ -288,6 +309,8 @@ class GenerationService(BaseJobService):
                     kind, min(MEDIA_MAX_BYTES[kind], settings.media_url_max_bytes)
                 )
             if kind == "image":
+                if request.MAX_IMAGE_PIXELS:
+                    _check_image_pixels(data, request.MAX_IMAGE_PIXELS)
                 if request.RUNNER_DECODES_IMAGES:
                     return data, await asyncio.to_thread(_image_size, data)
                 return data, await asyncio.to_thread(decode_image, data)
@@ -514,8 +537,10 @@ class GenerationService(BaseJobService):
             path = directory / f"{index}.{request.format}"
             image = _without_opaque_alpha(result)
             image = image.convert("RGB") if pil_format == "JPEG" else image
-            options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
-            image.save(path, format=pil_format, **options)
+            if pil_format == "PNG":
+                write_png(image, path, **IMAGE_SAVE_OPTIONS["PNG"])
+            else:
+                image.save(path, format=pil_format, **IMAGE_SAVE_OPTIONS[pil_format])
             return {
                 **output,
                 "file": path.name,
