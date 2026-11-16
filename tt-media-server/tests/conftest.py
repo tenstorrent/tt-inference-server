@@ -59,13 +59,9 @@ else:
 
 # tt-metal's FLUX.3 pipeline, for real where importable: the drift test
 # compares the server's copies of its constants with it; skipped elsewhere.
-_TT_METAL_FLUX3_MODULES = (
-    "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
-    "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein",
-)
+_TT_METAL_FLUX3_MODULES = ("models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",)
 try:
     import models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein  # noqa: F401
-    import models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein  # noqa: F401
 
     _tt_metal_flux3 = {name: sys.modules[name] for name in _TT_METAL_FLUX3_MODULES}
 except ImportError:
@@ -909,7 +905,7 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture
 def tt_metal_flux3() -> dict:
-    """tt-metal's FLUX.3 pipeline and upsampler modules, by name."""
+    """tt-metal's FLUX.3 pipeline module, by name."""
     if _tt_metal_flux3 is None:
         pytest.skip("needs tt-metal's FLUX.3 pipeline")
     return _tt_metal_flux3

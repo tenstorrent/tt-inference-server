@@ -41,6 +41,7 @@ from config.settings import get_settings
 from domain.flux3_image_klein_request import (
     FLUX3_KLEIN_STEPS,
     Flux3ImageKleinRequest,
+    on_galaxy_quad,
     upsampler_frozen,
 )
 from domain.generation_request import GenerationRequest
@@ -379,7 +380,46 @@ def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
     return shapes
 
 
+def _flux3_reference_size(
+    images: tuple, served: tuple[int, ...], megapixels: int | None = None
+) -> int | None:
+    """The square side a reference is resized to: the one of ``megapixels``,
+    else the largest the output shape takes that the image's shorter side
+    reaches, else the smallest."""
+    if not images:
+        return None
+    if megapixels is not None:
+        side = {1: 1024, 4: 2048}[megapixels]
+        if side not in served:
+            raise ValueError(f"this size takes references of {served} px, not {side}")
+        return side
+    side = min(images[0].size)
+    return max((s for s in served if s <= side), default=min(served))
+
+
+# tt-metal runtime settings a Galaxy quad's ranks need before the mesh opens
+# (read when the device opens); values already in the environment win.
+FLUX3_QUAD_ENV = {
+    "TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES": "0",
+    "TT_METAL_OPERATION_TIMEOUT_SECONDS": "300",
+    "TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS": "120000",
+    "TT_METAL_TDP_LIMIT_WATTS": "160",
+    "TT_DIT_RMSNORM_HEAD_SPLIT": "1",
+}
+FLUX3_MAX_TDP_WATTS = 160
+
+
 class TTFlux3ImageKleinRunner(_GenerationRunner):
+    def set_device(self):
+        if on_galaxy_quad():
+            for name, value in FLUX3_QUAD_ENV.items():
+                os.environ.setdefault(name, value)
+            if int(os.environ["TT_METAL_TDP_LIMIT_WATTS"]) > FLUX3_MAX_TDP_WATTS:
+                raise RuntimeError(
+                    f"TT_METAL_TDP_LIMIT_WATTS above {FLUX3_MAX_TDP_WATTS} W"
+                )
+        return super().set_device()
+
     def create_pipeline(self):
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
             Flux3KleinPipeline,
@@ -401,17 +441,12 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             pipeline = Flux3KleinPipeline(
                 self.ttnn_device,
                 snapshots={"distilled": snapshot},
-                upsample=not upsampler_frozen(),
+                num_links=2,
+                **({} if upsampler_frozen() else {"upsample": True}),
             )
-            # Every served size (tt-metal's own, minus 4K with the upsampler
-            # resident): without a reference and with one per reference token
-            # bucket, at the model's steps. The DiT's programs then serve a
-            # reference of any shape; the VAE encoder's compile once per new
-            # reference shape (job 193924: 48 s for a 4096x832 canvas), hence
-            # warmup_requests.
-            pipeline.warmup(
-                sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
-            )
+            # Every served (width, height): without a reference and with each
+            # reference size it takes, at every text bucket.
+            pipeline.warmup(sizes=tuple(Flux3ImageKleinRequest.warmup_sizes()))
             return pipeline
         except Exception as e:
             log_exception_chain(
@@ -420,20 +455,27 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             raise
 
     def get_pipeline_device_params(self):
-        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
-            SHARED_MESH_PARAMS,
-        )
-
         # tt-metal's test_serving_flux3_klein: a ring with 8 KB packets and
         # L1_SMALL for the VAE conv2d; SHARED_MESH_PARAMS (two command queues,
         # a trace region) for the prompt upsampler, which shares the first chip.
+        shared = {}
+        if not upsampler_frozen():
+            try:
+                from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+                    SHARED_MESH_PARAMS as shared,
+                )
+            except ImportError as e:
+                raise RuntimeError(
+                    "this tt-metal tree has no FLUX.3 prompt upsampler; serve "
+                    "with FLUX3_PROMPT_UPSAMPLER_FROZEN=1"
+                ) from e
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
         return {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
-            **({} if upsampler_frozen() else SHARED_MESH_PARAMS),
+            **shared,
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:
@@ -461,6 +503,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            REFERENCE_SIZES,
             Flux3KleinRequest,
         )
 
@@ -486,8 +529,17 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                     seed=request._seed,
                     steps=self._steps(FLUX3_KLEIN_STEPS, request),
                     images=images,
+                    reference_size=_flux3_reference_size(
+                        images,
+                        REFERENCE_SIZES[(request._width, request._height)],
+                        request.reference_megapixels,
+                    ),
                 )
             )
+            if result.image is None:
+                # another rank of a multi-host mesh: rank 0 keeps the image
+                recorder = None
+                return None
             # the caption the image was rendered from (the prompt as sent when
             # the upsampler is frozen), which the output reports as its prompt
             result.image.info["prompt"] = result.prompt

@@ -25,6 +25,7 @@ import domain.wan22_i2v_a14b_request as wan_request
 import pytest
 import yaml
 from config.constants import JobTypes
+from config.settings import get_settings
 from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
@@ -1798,12 +1799,12 @@ def flux3_upsampler(monkeypatch):
         ({"size": "4K"}, (4096, 4096)),
     ],
 )
-def test_flux3_output_size(flux3_upsampler, fields, expected):
+def test_flux3_output_size(flux3_upsampler, flux3_on_quad, fields, expected):
     flux3_upsampler("ahead")
     assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
 
 
-def test_flux3_serves_4k_only_with_the_upsampler_ahead(flux3_upsampler):
+def test_flux3_serves_4k_only_with_the_upsampler_ahead(flux3_upsampler, flux3_on_quad):
     with pytest.raises(ValidationError, match="4K is served with the prompt upsampler"):
         Flux3ImageKleinRequest(prompt="a cat", size="4K")
     assert Flux3ImageKleinRequest.warmup_sizes() == [(1024, 1024), (2048, 2048)]
@@ -1821,7 +1822,7 @@ def test_flux3_serves_4k_only_with_the_upsampler_ahead(flux3_upsampler):
 
 @pytest.mark.parametrize("with_image", [False, True])
 async def test_flux3_refuses_4k_at_submit_with_the_upsampler_resident(
-    generations_app, flux3_upsampler, with_image
+    generations_app, flux3_upsampler, flux3_on_quad, with_image
 ):
     client, device = generations_app("tt-flux-3-image-klein")
     body = {"prompt": "a cat", "size": "4K"}
@@ -1843,12 +1844,65 @@ async def test_flux3_refuses_4k_at_submit_with_the_upsampler_resident(
     assert job["status"] == "completed", job
 
 
+@pytest.fixture
+def flux3_on_quad(monkeypatch):
+    """The deployment's device: a Galaxy quad, or a single Galaxy (False)."""
+
+    def on_quad(quad: bool = True):
+        monkeypatch.setattr(
+            get_settings(), "device", "galaxy_quad" if quad else "bh-galaxy"
+        )
+
+    on_quad(False)
+    return on_quad
+
+
 @pytest.mark.parametrize(
-    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+    ("fields", "message"),
+    [
+        (
+            {"aspect_ratio": "16:9", "size": "4K"},
+            "16:9 is served on a Galaxy quad only",
+        ),
+        (
+            {"aspect_ratio": "9:16", "size": "4K"},
+            "9:16 is served on a Galaxy quad only",
+        ),
+        ({"images": ["https://x/a.png"] * 2}, "at most 1 item"),
+    ],
 )
-def test_flux3_serves_one_square_shape_per_size(fields):
-    with pytest.raises(ValidationError):
+def test_flux3_serves_one_square_shape_per_size(
+    flux3_upsampler, flux3_on_quad, fields, message
+):
+    flux3_upsampler("ahead")
+    with pytest.raises(ValidationError, match=message):
         Flux3ImageKleinRequest(prompt="a cat", **fields)
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"aspect_ratio": "16:9", "size": "4K"}, (4096, 2304)),
+        ({"aspect_ratio": "9:16", "size": "4K"}, (2304, 4096)),
+        ({"size": "4K"}, (4096, 4096)),
+        ({"size": "1K"}, (1024, 1024)),
+    ],
+)
+def test_flux3_serves_16_9_and_9_16_at_4k_on_a_galaxy_quad(
+    flux3_upsampler, flux3_on_quad, fields, expected
+):
+    flux3_upsampler("ahead")
+    flux3_on_quad()
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (1024, 1024),
+        (2048, 2048),
+        (4096, 4096),
+        (4096, 2304),
+        (2304, 4096),
+    ]
+    with pytest.raises(ValidationError, match="16:9 is served at 4K only"):
+        Flux3ImageKleinRequest(prompt="a cat", aspect_ratio="16:9", size="2K")
 
 
 def test_flux3_bounds_the_prompt():
@@ -1857,13 +1911,28 @@ def test_flux3_bounds_the_prompt():
         Flux3ImageKleinRequest(prompt="a" * 20_001)
 
 
-def test_flux3_has_3_sizes(flux3_upsampler):
+def test_flux3_has_3_sizes(flux3_upsampler, flux3_on_quad):
     flux3_upsampler("ahead")
     assert Flux3ImageKleinRequest.warmup_sizes() == [
         (1024, 1024),
         (2048, 2048),
         (4096, 4096),
     ]
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({"reference_megapixels": 4}, "needs a reference"),
+        (
+            {"reference_megapixels": 4, "size": "2K", "images": ["https://x/a.png"]},
+            "4 MP reference is served at 4K only",
+        ),
+    ],
+)
+def test_flux3_reference_megapixels(fields, message):
+    with pytest.raises(ValidationError, match=message):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
 
 
 def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
@@ -1883,6 +1952,20 @@ def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
         "jobs_in_progress": 1,
         "jobs_queued": 2,
     }
+
+
+async def test_flux3_refuses_16_9_at_submit_off_a_galaxy_quad(
+    generations_app, flux3_upsampler, flux3_on_quad
+):
+    flux3_upsampler("ahead")
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "a cat", "aspect_ratio": "16:9", "size": "4K"},
+    )
+    assert response.status_code == 422, response.text
+    assert "16:9 is served on a Galaxy quad only" in response.text
+    assert device.requests == []
 
 
 async def test_flux3_keeps_only_the_image_sizes(generations_app):

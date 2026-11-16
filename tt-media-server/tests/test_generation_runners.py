@@ -7,6 +7,7 @@ warmup requests they build. The pipelines are stubs; the runner module is
 loaded against fake tt-metal modules, as in test_video_stage_metrics_wiring."""
 
 import importlib.util
+import os
 import pathlib
 import sys
 from io import BytesIO
@@ -16,6 +17,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from config.settings import get_settings
 from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
@@ -340,6 +342,11 @@ class _StageRecorder:
 def flux3_runner(monkeypatch):
     pipeline_module = ModuleType("pipeline_flux3_klein")
     pipeline_module.Flux3KleinRequest = SimpleNamespace
+    # tt-metal klein-demo-quad's: 1 MP references, and 4 MP too at the 4K shapes
+    pipeline_module.REFERENCE_SIZES = {
+        **{(side, side): (1024,) for side in (1024, 2048)},
+        **{shape: (1024, 2048) for shape in ((4096, 4096), (4096, 2304), (2304, 4096))},
+    }
     monkeypatch.setitem(
         sys.modules,
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
@@ -348,6 +355,7 @@ def flux3_runner(monkeypatch):
     # the deployment's own settings do not reach the tests
     monkeypatch.delenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", raising=False)
     monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
+    monkeypatch.setattr(get_settings(), "device", "bh-galaxy")
     runner = _runner("TTFlux3ImageKleinRunner")
     runner.pipeline = _Flux3Pipeline()
     return runner
@@ -365,6 +373,7 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     assert [reference.size for reference in call.images] == (
         [(3000, 1000)] if with_image else []
     )
+    assert call.reference_size == (1024 if with_image else None)
     assert image.size == (2048, 2048)
     assert image.info["prompt"] == "a detailed caption of a cat"
 
@@ -380,6 +389,82 @@ def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
     (reference,) = call.images
     assert reference.mode == "RGBA"
     assert reference.getpixel((0, 0)) == (0, 0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("shape", "reference", "side"),
+    [
+        ((4096, 2304), (2048, 3000), 2048),
+        ((4096, 4096), (4000, 2047), 1024),
+        ((2048, 2048), (4000, 4000), 1024),
+        ((1024, 1024), (64, 64), 1024),
+    ],
+)
+def test_flux3_resizes_a_reference_to_the_largest_side_it_reaches(
+    flux3_runner, shape, reference, side
+):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), *shape)
+    request._files = {"images": [_png(*reference)]}
+    flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    assert call.reference_size == side
+
+
+@pytest.mark.parametrize(("megapixels", "side"), [(1, 1024), (4, 2048)])
+def test_flux3_resizes_a_reference_to_the_megapixels_asked(
+    flux3_runner, monkeypatch, megapixels, side
+):
+    # the driver's cases: the same reference at 1 MP and at 4 MP
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    request = _resolved(
+        Flux3ImageKleinRequest(
+            prompt="a cat",
+            aspect_ratio="1:1",
+            size="4K",
+            images=["https://x/a.png"],
+            reference_megapixels=megapixels,
+        ),
+        4096,
+        4096,
+    )
+    request._files = {"images": [_png(1500, 1500)]}
+    flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    assert call.reference_size == side
+
+
+def test_flux3_sets_the_quad_runtime_env_before_the_mesh_opens(
+    flux3_runner, monkeypatch
+):
+    for name in runners.FLUX3_QUAD_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TT_METAL_OPERATION_TIMEOUT_SECONDS", "600")
+    opened = []
+    monkeypatch.setattr(
+        runners.TTDiTRunner, "set_device", lambda self: opened.append(dict(os.environ))
+    )
+    monkeypatch.setattr(get_settings(), "device", "galaxy_quad")
+    flux3_runner.set_device()
+    (env,) = opened
+    assert {name: env[name] for name in runners.FLUX3_QUAD_ENV} == {
+        **runners.FLUX3_QUAD_ENV,
+        "TT_METAL_OPERATION_TIMEOUT_SECONDS": "600",
+    }
+    monkeypatch.setenv("TT_METAL_TDP_LIMIT_WATTS", "190")
+    with pytest.raises(RuntimeError, match="above 160 W"):
+        flux3_runner.set_device()
+
+
+def test_flux3_returns_nothing_on_the_other_ranks(flux3_runner):
+    # A multi-host mesh: only rank 0's pipeline result carries the image.
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=None, prompt=request.prompt, timings={}
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    assert flux3_runner.run([request]) is None
+    assert recorder.flushed == "never"
 
 
 def test_flux3_records_the_pipeline_stage_times(flux3_runner):
@@ -437,15 +522,19 @@ def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
     flux3_runner.ttnn_device = "mesh"
     flux3_runner.settings = SimpleNamespace(model_weights_path="not-a-dir")
     assert flux3_runner.create_pipeline() is pipeline
+    # frozen: no upsample argument, which a tree without the upsampler lacks
     assert built == {
         "device": "mesh",
         "snapshots": {"distilled": "/weights/distilled"},
-        "upsample": frozen != "1",
+        "num_links": 2,
+        **({} if frozen == "1" else {"upsample": True}),
     }
     assert pipeline.warmed == 1
     # resident, 4K is not served, so not warmed
     assert pipeline.warmed_sizes == (
-        (1024, 2048, 4096) if frozen == "1" else (1024, 2048)
+        ((1024, 1024), (2048, 2048), (4096, 4096))
+        if frozen == "1"
+        else ((1024, 1024), (2048, 2048))
     )
 
 
@@ -471,6 +560,18 @@ def test_flux3_opens_the_mesh_as_its_upsampler_needs(flux3_runner, monkeypatch):
     monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "maybe")
     with pytest.raises(ValueError, match="FLUX3_PROMPT_UPSAMPLER_FROZEN"):
         flux3_runner.get_pipeline_device_params()
+
+
+def test_flux3_without_an_upsampler_in_tt_metal_must_be_frozen(
+    flux3_runner, monkeypatch
+):
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein", None
+    )
+    with pytest.raises(RuntimeError, match="FLUX3_PROMPT_UPSAMPLER_FROZEN=1"):
+        flux3_runner.get_pipeline_device_params()
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    assert flux3_runner.get_pipeline_device_params()["l1_small_size"] == 65536
 
 
 def test_flux3_frozen_prompt_is_rendered_and_reported_as_sent(
@@ -517,29 +618,18 @@ def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
 def test_flux3_serves_the_shapes_the_pipeline_warms(
     tt_metal_flux3, flux3_runner, monkeypatch
 ):
-    """The server's copies of tt-metal's constants, against tt-metal."""
+    """The server's copies of tt-metal's constants, against tt-metal
+    (klein-demo-quad: no upsampler, so frozen)."""
     pipeline = tt_metal_flux3[
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
     ]
-    upsampler = tt_metal_flux3[
-        "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
-    ]
-    # Every size the schema accepts is one the pipeline serves and warms; with
-    # the upsampler resident, all but the largest.
+    # On a Galaxy quad, every shape the schema accepts is one the pipeline
+    # serves and warms, each with the reference sizes it takes.
     monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
-    assert Flux3ImageKleinRequest.warmup_sizes() == [
-        (side, side) for side in pipeline.SIZES
-    ]
-    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
-    assert Flux3ImageKleinRequest.warmup_sizes() == [
-        (side, side) for side in pipeline.SIZES if side < max(pipeline.SIZES)
-    ]
+    monkeypatch.setattr(get_settings(), "device", "galaxy_quad")
+    assert Flux3ImageKleinRequest.warmup_sizes() == list(pipeline.SHAPES)
+    assert set(pipeline.REFERENCE_SIZES) == set(pipeline.SHAPES)
     assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
-    _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
-    params = flux3_runner.get_pipeline_device_params()
-    assert {
-        name: params[name] for name in upsampler.SHARED_MESH_PARAMS
-    } == upsampler.SHARED_MESH_PARAMS
 
 
 @pytest.fixture
