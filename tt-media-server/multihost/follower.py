@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import threading
 import traceback
 from typing import Any, Callable
 
@@ -32,9 +33,22 @@ def _default_runner_factory() -> Any:
     return get_device_runner(worker_id)
 
 
+# Held while this rank runs a request; set once a stop signal arrived.
+_RUNNING = threading.Lock()
+_STOPPING = threading.Event()
+
+
 def _exit_on_signal(signum, _frame) -> None:
     # mpirun forwards SIGTERM/SIGINT to every rank. Rank 0 may be stopped
-    # mid-request and never send ShutdownMessage, so don't wait for it.
+    # mid-request and never send ShutdownMessage, so don't wait for it; but a
+    # rank that leaves in the middle of a request leaves the mesh unusable
+    # until it is reset, so one that is running a request exits after it.
+    _STOPPING.set()
+    if _RUNNING.locked():
+        TTLogger().info(
+            f"Follower rank: received signal {signum}, exiting after the current request"
+        )
+        return
     TTLogger().info(f"Follower rank: received signal {signum}, exiting")
     os._exit(0)
 
@@ -130,10 +144,19 @@ class MultiHostLockstepFollower:
                 raise TypeError(f"unknown message from rank 0: {message!r}")
 
     def _run(self, runner: Any, requests: list[Any], label: str) -> None:
-        try:
-            discard_outputs(runner.run(requests))
-        except ValueError as e:
-            self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
+        with _RUNNING:
+            if _STOPPING.is_set():
+                self._exit_stopped(label)
+            try:
+                discard_outputs(runner.run(requests))
+            except ValueError as e:
+                self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
+        if _STOPPING.is_set():
+            self._exit_stopped(label)
+
+    def _exit_stopped(self, label: str) -> None:
+        self._logger.info(f"Rank {self.rank}: stopped (after or instead of {label})")
+        os._exit(0)
 
 
 def _task_ids(requests: list[Any]) -> str:

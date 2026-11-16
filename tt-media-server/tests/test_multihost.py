@@ -27,6 +27,7 @@ from multihost.comm import (
     from_request_data,
     to_request_data,
 )
+from multihost import follower as follower_module
 from multihost.follower import MultiHostLockstepFollower
 from multihost import lockstep_runner
 from multihost.lockstep_runner import MultiHostLockstepRunner, wrap_if_multihost
@@ -467,6 +468,56 @@ class TestCanary:
 # --------------------------------------------------------------------------- wrapping
 
 
+class TestStopSignal:
+    """A stopped follower never leaves in the middle of a request: that leaves
+    the mesh unusable until it is reset."""
+
+    @pytest.fixture
+    def exits(self, monkeypatch):
+        exits = []
+        monkeypatch.setattr(follower_module.os, "_exit", exits.append)
+        monkeypatch.setattr(follower_module, "_STOPPING", threading.Event())
+        return exits
+
+    def _follower(self):
+        return MultiHostLockstepFollower(
+            1, runner_factory=MagicMock(), comm=MagicMock()
+        )
+
+    def test_idle_follower_exits_at_once(self, exits):
+        follower_module._exit_on_signal(15, None)
+        assert exits == [0]
+
+    def test_follower_exits_after_the_request_it_is_running(self, exits):
+        ran = []
+
+        class Runner:
+            def run(self, requests):
+                follower_module._exit_on_signal(15, None)
+                assert exits == []
+                ran.append(requests)
+
+        self._follower()._run(Runner(), ["r"], "task")
+        assert (ran, exits) == ([["r"]], [0])
+
+    def test_stopped_follower_starts_no_request(self, exits):
+        follower_module._STOPPING.set()
+        runner = MagicMock()
+        with patch.object(follower_module.os, "_exit", side_effect=SystemExit):
+            with pytest.raises(SystemExit):
+                self._follower()._run(runner, ["r"], "task")
+        runner.run.assert_not_called()
+
+    def test_stopping_rank_zero_drops_its_queued_requests(self):
+        from model_services.scheduler import Scheduler
+
+        scheduler = types.SimpleNamespace(task_queue=queue.Queue(), logger=MagicMock())
+        for request in ("a", "b"):
+            scheduler.task_queue.put(request)
+        Scheduler._drop_queued_requests(scheduler)
+        assert scheduler.task_queue.empty()
+
+
 class TestWrapIfMultihost:
     def _runner(self, mesh="mesh"):
         runner = _FakeRunner()
@@ -525,6 +576,16 @@ class TestGalaxyQuadDevice:
         assert settings.max_batch_size == 1
         assert settings.is_galaxy is False
         assert settings.request_processing_timeout_seconds == 5000
+
+    def test_flux3_on_galaxy_quad_is_4x32_and_lets_a_render_finish(self, monkeypatch):
+        settings = self._settings(
+            monkeypatch, "galaxy_quad", model="flux-3-image-klein"
+        )
+        assert settings.model_runner == "tt-flux-3-image-klein"
+        assert settings.device_mesh_shape == (4, 32)
+        assert settings.max_batch_size == 1
+        # stopping the server waits out a render instead of killing it mid-mesh
+        assert settings.worker_shutdown_timeout_seconds == 300
 
     def test_galaxy_is_still_4x8(self, monkeypatch):
         assert self._settings(monkeypatch, "galaxy").device_mesh_shape == (4, 8)

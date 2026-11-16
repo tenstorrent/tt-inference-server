@@ -163,6 +163,18 @@ class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
 
+    def check_is_model_ready(self) -> dict:
+        """The base status, plus whether a job is rendering: stop or reset the
+        devices only when ``rendering`` is false."""
+        status = super().check_is_model_ready()
+        active = self._job_manager.count_active_jobs(JobTypes.GENERATION)
+        status.update(
+            rendering=active["in_progress"] > 0,
+            jobs_in_progress=active["in_progress"],
+            jobs_queued=active["queued"],
+        )
+        return status
+
     async def submit(self, request: GenerationRequest, model_id: str) -> dict:
         """Validate what the request schema can't, fetch its media, and queue it
         as a job of the model `model_id`.

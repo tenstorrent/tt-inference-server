@@ -321,6 +321,19 @@ class JobManager:
                 and (org_id is None or job.org_id == org_id)
             ]
 
+    def count_active_jobs(self, job_type: JobTypes = None) -> dict[str, int]:
+        """How many jobs are queued and how many are running."""
+        with self._jobs_lock:
+            jobs = [
+                job
+                for job in self._jobs.values()
+                if job_type is None or job.job_type == job_type.value
+            ]
+            return {
+                "queued": sum(job.status == JobStatus.QUEUED for job in jobs),
+                "in_progress": sum(job.is_in_progress() for job in jobs),
+            }
+
     def get_job_metadata(
         self, job_id: str, org_id: Optional[str] = None
     ) -> Optional[dict]:

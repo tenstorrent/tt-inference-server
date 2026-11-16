@@ -618,6 +618,11 @@ class Scheduler:
 
             self.is_ready = False
 
+            if self.is_multihost:
+                # The other ranks exit after their current request when
+                # stopped: a queued request would start on rank 0 alone.
+                self._drop_queued_requests()
+
             for _ in self.worker_info:
                 try:
                     self.task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
@@ -628,7 +633,7 @@ class Scheduler:
                 worker = worker_element["process"]
                 worker_pid = worker.pid
                 if worker.is_alive():
-                    worker.join(timeout=10.0)
+                    worker.join(timeout=self.settings.worker_shutdown_timeout_seconds)
                     if worker.is_alive():
                         self.logger.warning(f"Worker {i} did not shutdown gracefully")
                         worker.terminate()
@@ -847,6 +852,17 @@ class Scheduler:
             except Exception as e:
                 self.logger.error(f"Failed to kill worker during exit: {e}")
         os._exit(1)
+
+    def _drop_queued_requests(self) -> None:
+        dropped = 0
+        while True:
+            try:
+                self.task_queue.get_nowait()
+            except Exception:
+                break
+            dropped += 1
+        if dropped:
+            self.logger.warning(f"Stopping: dropped {dropped} queued request(s)")
 
     async def deep_restart_workers(self):
         """Restart all workers"""

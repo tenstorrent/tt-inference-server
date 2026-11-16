@@ -1866,6 +1866,25 @@ def test_flux3_has_3_sizes(flux3_upsampler):
     ]
 
 
+def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
+    from model_services.base_service import BaseService
+    from model_services.generation_service import GenerationService
+
+    monkeypatch.setattr(
+        BaseService, "check_is_model_ready", lambda self: {"model_ready": True}
+    )
+    service = object.__new__(GenerationService)
+    service._job_manager = SimpleNamespace(
+        count_active_jobs=lambda job_type: {"queued": 2, "in_progress": 1}
+    )
+    assert service.check_is_model_ready() == {
+        "model_ready": True,
+        "rendering": True,
+        "jobs_in_progress": 1,
+        "jobs_queued": 2,
+    }
+
+
 async def test_flux3_keeps_only_the_image_sizes(generations_app):
     client, device = generations_app("tt-flux-3-image-klein")
     response = await client.post(

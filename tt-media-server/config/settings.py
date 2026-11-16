@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
+    # How long stopping the server waits for a worker to finish its current
+    # request before terminating it.
+    worker_shutdown_timeout_seconds: float = 10.0
     default_throttle_level: str = "5"
 
     # Timeout settings

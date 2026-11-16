@@ -971,6 +971,8 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
+        # a render stopped part way leaves the mesh unusable until a reset
+        "worker_shutdown_timeout_seconds": 300,
     },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -1339,6 +1341,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "worker_shutdown_timeout_seconds": 300,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
