@@ -28,6 +28,10 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
   SERVICE_PORT (8000), SERVED_MODEL_NAME ($MODEL), QWEN_TT_MAX_TOKENS (32768),
   QWEN_TT_USERS (8), QWEN_TT_CONTEXT (131072), QWEN_TT_HOST (0.0.0.0),
   QWEN_TT_EXTRA_ARGS (appended to serve's arguments, split on spaces).
+  QWEN_TT_DFLASH2    fast mode: the DFlash 2 drafter .ttq (a path, or a name in the weights
+                     directory, e.g. dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq). Serve then runs one
+                     context with speculative decode instead of QWEN_TT_USERS users;
+                     QWEN_TT_USERS and QWEN_TT_CONTEXT are ignored.
 The vLLM image's arguments ``--model M --tt-device D --service-port P --no-auth`` are
 accepted too, and ``tt-lab ARGS...`` runs the binary.
 
@@ -278,6 +282,24 @@ def serve_command(env, usage, chips_present):
     model = env.get("MODEL") or "Qwen3.8-27B"
     if "/" not in model:
         model = f"Qwen/{model}"
+    # Fast mode: one context per group, decoded with the DFlash 2 drafter; every turn stays on
+    # speculative decode (TT_LAB_DFLASH2_IMAGE=batch), as tt-lab's cost model is fit on LoudBoxes.
+    if env.get("QWEN_TT_DFLASH2"):
+        drafter = find_weight(env["QWEN_TT_DFLASH2"], env)
+        if not drafter:
+            raise SetupError(
+                f"weights: {env['QWEN_TT_DFLASH2']} not found (in {where}); set QWEN_TT_DFLASH2"
+            )
+        if "--dflash2" not in usage:
+            raise SetupError("QWEN_TT_DFLASH2 set but this tt-lab has no --dflash2")
+        log(f"fast mode: one context, DFlash 2 drafter {drafter}")
+        context = ["--dflash2", drafter]
+        updates["TT_LAB_DFLASH2_IMAGE"] = env.get("TT_LAB_DFLASH2_IMAGE") or "batch"
+    else:
+        context = [
+            "--users", env.get("QWEN_TT_USERS") or "8",
+            "--context", env.get("QWEN_TT_CONTEXT") or "131072",
+        ]  # fmt: skip
     serve = [
         "serve",
         "-m", vocab,
@@ -285,8 +307,7 @@ def serve_command(env, usage, chips_present):
         "--device",
         "--tiles", "64",
         "--prefill-chunk", "2048",
-        "--users", env.get("QWEN_TT_USERS") or "8",
-        "--context", env.get("QWEN_TT_CONTEXT") or "131072",
+        *context,
         "-n", env.get("QWEN_TT_MAX_TOKENS") or "32768",
         "--port", env.get("SERVICE_PORT") or "8000",
         "--served-model-name", env.get("SERVED_MODEL_NAME") or model,

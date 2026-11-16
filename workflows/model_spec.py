@@ -480,6 +480,15 @@ tt_lab_qwen27b_impl = ImplSpec(
     code_path="src/serve.cpp",
 )
 
+# The same engine in fast mode: one context per 8-chip group, decoded with the DFlash 2 drafter
+# (serve --dflash2), launched by run_qwen_tt.py with QWEN_TT_DFLASH2.
+tt_lab_qwen27b_fast_impl = ImplSpec(
+    impl_id="tt_lab_qwen27b_fast",
+    impl_name="tt-lab-qwen27b-fast",
+    repo_url="https://github.com/tenstorrent/tt-lab",
+    code_path="src/serve.cpp",
+)
+
 # IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
 # models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
 # the tt-model-bringup pipeline.
@@ -518,6 +527,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "blaze": blaze_impl,
     "tt_lab_glm": tt_lab_glm_impl,
     "tt_lab_qwen27b": tt_lab_qwen27b_impl,
+    "tt_lab_qwen27b_fast": tt_lab_qwen27b_fast_impl,
 }
 
 

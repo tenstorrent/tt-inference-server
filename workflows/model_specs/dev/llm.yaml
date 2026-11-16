@@ -7358,3 +7358,58 @@ templates:
         - tt-lab-d338d604/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
+
+# Qwen3.8-27B fast mode on tt-lab (impl tt_lab_qwen27b_fast): the row above with QWEN_TT_DFLASH2 set,
+# so serve runs one context per 8-chip group with DFlash 2 speculative decoding (greedy output
+# equals plain decode's; sampling stays exact). One request at a time; a Galaxy runs four of these
+# containers. On dc16-bg-0102-u19-5 (tt-lab 89f0a0bf): code 375 and math 379 tok/s per user, AIME 2025 93.33%, prose
+# 166-247, TTFT 2.5 s at 6.5K prompt tokens.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: tt_lab_qwen27b_fast
+  inference_engine: MEDIA
+  model_type: LLM
+  supported_modalities:
+    - text
+  hf_weights_repo: Tenstorrent/Qwen3.8-27B-TTQ-Fast
+  min_disk_gb: 25  # 18.4 GB TTQ, 1.3 GB drafter, 11 MB vocabulary GGUF, the package
+  min_ram_gb: 64  # TODO: measure
+  uses_tensor_model_cache: false
+  has_builtin_warmup: true
+  system_requirements:
+    firmware:
+      specifier: ">=19.8.1"  # TODO: copied from the GLM row; confirm for Qwen
+      mode: STRICT
+    kmd:
+      specifier: ">=2.8.0"  # TODO: copied from the GLM row; confirm for Qwen
+      mode: STRICT
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # One 8-chip group of the Galaxy, one context.
+      max_concurrency: 1
+      max_context: 131072  # 128 * 1024
+      default_impl: false
+      docker_stop_timeout: 30  # TODO: measure on a Galaxy
+      docker_host_state_dir: /var/lib/tenstorrent
+      docker_entrypoint:
+        - python3
+        - /home/container_app_user/app/src/run_qwen_tt.py
+  env_vars:
+    QWEN_TT_PACKAGE: tt-lab-89f0a0bf
+    QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
+    QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
+    QWEN_TT_DFLASH2: dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
+    QWEN_TT_MAX_TOKENS: "131072"
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+      checkpoint_files:
+        - Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
+        - Qwen3.8-27B-vocab.gguf
+        - dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
+        - tt-lab-89f0a0bf/SHA256SUMS
+        - tt-lab-89f0a0bf/bin/tt-lab
+        - tt-lab-89f0a0bf/runtime/ld-linux-x86-64.so.2
+  status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
