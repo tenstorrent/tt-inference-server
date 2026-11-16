@@ -1766,6 +1766,9 @@ def closing_engine(close_at, delay_s=0.0):
             try:
                 head = await reader.readuntil(b"\r\n\r\n")
             except asyncio.IncompleteReadError:
+                # The proxy hung up. Close this side too: since Python 3.12.1
+                # Server.wait_closed() waits for every connection to be closed.
+                writer.close()
                 return
             length = 0
             for line in head.decode().split("\r\n"):
@@ -1853,6 +1856,7 @@ def test_proxy_resends_a_stale_request_once():
                 try:
                     head = await reader.readuntil(b"\r\n\r\n")
                 except asyncio.IncompleteReadError:
+                    writer.close()  # as in closing_engine
                     return
                 length = max(
                     [
