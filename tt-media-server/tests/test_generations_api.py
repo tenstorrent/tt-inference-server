@@ -36,6 +36,7 @@ from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
+from utils.prompt_enhancer import UNAVAILABLE, PromptEnhancementError
 from utils.video_manager import VideoManager
 
 from tests.fake_tt_metal_policy import H3_POLICY, IDEOGRAM_POLICY, WAN_POLICY
@@ -1793,10 +1794,13 @@ def test_the_service_downloads_no_weights(monkeypatch):
 # --- Ideogram 4 ------------------------------------------------------------------
 
 _CAPTION = {
+    "high_level_description": "An open sign.",
     "compositional_deconstruction": {
         "background": "a brick wall",
-        "elements": [{"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40]}],
-    }
+        "elements": [
+            {"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40], "desc": "neon"}
+        ],
+    },
 }
 
 
@@ -1855,35 +1859,22 @@ def test_ideogram_caption_is_written_in_the_model_key_order():
     )
 
 
+def _caption_with(element: dict) -> dict:
+    return {
+        "high_level_description": "h",
+        "compositional_deconstruction": {"background": "b", "elements": [element]},
+    }
+
+
 @pytest.mark.parametrize(
     ("caption", "message"),
     [
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}
-            ]}},
-            "ymin <= ymax",
-        ),
-        (
-            {
-                "style_description": {
-                    "aesthetics": "a",
-                    "lighting": "l",
-                    "medium": "m",
-                    "photo": "p",
-                    "art_style": "s",
-                },
-                **_CAPTION,
-            },
-            "exactly one of photo and art_style",
-        ),
-        (
-            {"compositional_deconstruction": {"background": "b", "elements": [
-                {"type": "obj", "desc": "d", "color_palette": ["#ff000"]}
-            ]}},
-            "pattern",
-        ),
-        ({"caption": "plain"}, "extra"),
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}), "ymin <= ymax"),
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [0, 0, 10]}), "at least 4"),
+        (_caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}), "pattern"),
+        (_caption_with({"type": "text", "text": "t"}), "desc"),
+        ({"compositional_deconstruction": {"background": "b", "elements": []}}, "high_level_description"),
+        ({**_CAPTION, "caption": "plain"}, "extra"),
     ],
 )  # fmt: skip
 def test_ideogram_rejects_invalid_captions(caption, message):
@@ -1891,20 +1882,398 @@ def test_ideogram_rejects_invalid_captions(caption, message):
         Ideogram4Request(structured_prompt=caption)
 
 
-def test_ideogram_has_no_plain_prompt():
-    with pytest.raises(ValidationError, match="extra"):
-        Ideogram4Request(prompt="a poster", structured_prompt=_CAPTION)
+def test_ideogram_takes_a_caption_the_hosted_api_documents():
+    # The example response on Ideogram's magic-prompt reference page.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "A photorealistic ginger cat perched on a "
+            "vintage wooden chair by a sunlit window.",
+            "compositional_deconstruction": {
+                "background": "A dim room with a bright window casting warm light.",
+                "elements": [
+                    {
+                        "type": "obj",
+                        "desc": "ginger cat with green eyes sitting upright on a "
+                        "vintage wooden chair",
+                    }
+                ],
+            },
+            "style_description": {
+                "aesthetics": "warm, cozy, nostalgic",
+                "lighting": "soft natural window light",
+                "medium": "photograph",
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"A photorealistic ginger cat perched on a '
+        'vintage wooden chair by a sunlit window.",'
+        '"style_description":{"aesthetics":"warm, cozy, nostalgic",'
+        '"lighting":"soft natural window light","medium":"photograph"},'
+        '"compositional_deconstruction":{"background":"A dim room with a bright '
+        'window casting warm light.",'
+        '"elements":[{"type":"obj","desc":"ginger cat with green eyes sitting '
+        'upright on a vintage wooden chair"}]}}'
+    )
+
+
+def test_ideogram_takes_what_the_hosted_schema_allows():
+    # photo with art_style, lowercase hex, and palettes over the 16 and 5 colors
+    # that ideogram-oss/ideogram4's CaptionVerifier allows.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"] * 17,
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "desc": "d", "color_palette": ["#00ff00"] * 6}
+                ],
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","art_style":"s",'
+        '"color_palette":[' + ",".join(['"#FF2E88"'] * 17) + "]},"
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d",'
+        '"color_palette":[' + ",".join(['"#00FF00"'] * 6) + "]}]}}"
+    )
+
+
+def test_a_reported_enhancer_caption_is_a_valid_structured_prompt():
+    reported = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "text", "bbox": [5], "text": "T", "desc": "d"},
+                    {"type": "obj", "desc": "d"},
+                ],
+            },
+        }
+    )
+    request = Ideogram4Request(structured_prompt=json.loads(reported))
+    assert request.model_prompt() == reported
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"prompt": "a poster", "structured_prompt": _CAPTION},
+        {"prompt": ""},
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+        {"prompt": "a poster", "structured_prompt": None},
+    ],
+    ids=[
+        "neither",
+        "both",
+        "empty",
+        "null",
+        "null-caption",
+        "null-prompt",
+        "null-structured",
+    ],
+)
+def test_ideogram_takes_exactly_one_prompt(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(**fields)
+
+
+def test_ideogram_plain_prompt_goes_to_the_enhancer():
+    request = Ideogram4Request(prompt="a poster", aspect_ratio="2:3")
+    assert request.needs_prompt_enhancement()
+    assert request.enhancer_arguments() == ("a poster", "2:3")
+    assert not Ideogram4Request(structured_prompt=_CAPTION).needs_prompt_enhancement()
+
+
+def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
+    # Keys out of order, an unnamed key (aspect_ratio), a bbox.
+    request = Ideogram4Request(prompt="a cafe sign")
+    caption = request.prompt_from_enhancer(
+        {
+            "aspect_ratio": "1x1",
+            "compositional_deconstruction": {
+                "elements": [
+                    {"desc": "d", "bbox": [0, 0, 9, 9], "text": "CAFÉ", "type": "text"}
+                ],
+                "background": "b",
+            },
+            "style_description": {"medium": "m", "art_style": "s"},
+            "high_level_description": "h",
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"medium":"m","art_style":"s"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"text","text":"CAFÉ","desc":"d"}]}}'
+    )
+
+
+@pytest.mark.parametrize(
+    "caption",
+    [
+        None,
+        "not a caption",
+        {"high_level_description": "h", "style_description": {"photo": "p"}},
+        {"compositional_deconstruction": {"background": "b", "elements": []}},
+        _caption_with({"type": "obj"}),
+        _caption_with({"type": "text", "desc": "d"}),
+        _caption_with({"type": "text", "text": "t"}),
+        _caption_with({"type": "obj", "bbox": [0, 0, 9, 1001], "desc": "d"}),
+        _caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}),
+    ],
+    ids=[
+        "none",
+        "string",
+        "no-composition",
+        "no-high-level-description",
+        "obj-without-desc",
+        "text-without-text",
+        "text-without-desc",
+        "bbox-over-1000",
+        "color-not-hex",
+    ],
+)
+def test_enhancer_caption_follows_the_hosted_schema(caption):
+    with pytest.raises(ValueError, match="enhancer"):
+        Ideogram4Request(prompt="p").prompt_from_enhancer(caption)
+
+
+def test_enhancer_caption_takes_what_the_hosted_schema_allows():
+    # Unnamed keys, photo with art_style, lowercase hex, a bbox of any length.
+    caption = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "medium": "m",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "bbox": [5], "desc": "d", "text": "unnamed"}
+                ],
+            },
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","medium":"m","art_style":"s",'
+        '"color_palette":["#FF2E88"]},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d"}]}}'
+    )
+
+
+class _FakeEnhancer:
+    """Returns ``captions`` in turn, or raises one that is an exception;
+    waits ``delay`` seconds before each."""
+
+    def __init__(self, *captions, delay: float = 0.0):
+        self.captions = list(captions)
+        self.delay = delay
+        self.calls = []
+
+    async def enhance(self, prompt, aspect_ratio):
+        self.calls.append((prompt, aspect_ratio))
+        await asyncio.sleep(self.delay)
+        caption = self.captions.pop(0)
+        if isinstance(caption, Exception):
+            raise caption
+        return caption
+
+
+def _use_enhancer(monkeypatch, enhancer):
+    monkeypatch.setattr(
+        "model_services.generation_service.get_prompt_enhancer",
+        lambda name: enhancer,
+    )
+
+
+_ENHANCED = {
+    "high_level_description": "A neon sign.",
+    "compositional_deconstruction": {
+        "background": "a wall",
+        "elements": [
+            {
+                "type": "text",
+                "bbox": [1, 2, 3, 4],
+                "text": "OPEN",
+                "desc": "a neon sign",
+            }
+        ],
+    },
+}
+_ENHANCED_PROMPT = (
+    '{"high_level_description":"A neon sign.",'
+    '"compositional_deconstruction":{"background":"a wall",'
+    '"elements":[{"type":"text","text":"OPEN","desc":"a neon sign"}]}}'
+)
+
+
+async def test_ideogram_plain_prompt_is_enhanced_before_the_device(
+    generations_app, monkeypatch
+):
+    enhancer = _FakeEnhancer(_ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"prompt": "an open sign", "aspect_ratio": "9:16"},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert enhancer.calls == [("an open sign", "9:16")]
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+    (output,) = job["outputs"]
+    assert output["prompt"] == _ENHANCED_PROMPT
+
+
+async def test_an_unusable_caption_is_asked_for_once_more(generations_app, monkeypatch):
+    enhancer = _FakeEnhancer({"style_description": {}}, _ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert len(enhancer.calls) == 2
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("captions", "message"),
+    [
+        (({"style_description": {}}, None), "unusable caption"),
+        ((PromptEnhancementError(UNAVAILABLE),), "unavailable"),
+    ],
+    ids=["unusable-twice", "service-error"],
+)
+async def test_an_enhancer_failure_fails_the_job_before_the_device(
+    generations_app, monkeypatch, captions, message
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(*captions))
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "prompt_enhancement_error"
+    assert message in job["error"]["message"]
+    assert device.requests == []
+
+
+async def test_a_job_cancelled_while_its_prompt_is_enhanced_never_reaches_the_device(
+    generations_app, monkeypatch
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(_ENHANCED, delay=0.5))
+    client, device = generations_app("tt-ideogram-4")
+    job = (
+        await client.post(
+            "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+        )
+    ).json()
+    assert job["status"] == "queued"
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await asyncio.sleep(0.7)
+    assert device.requests == []
+
+
+async def test_a_plain_prompt_is_422_without_an_enhancer(generations_app, monkeypatch):
+    _use_enhancer(monkeypatch, None)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    assert response.status_code == 422
+    assert "structured_prompt" in response.text
+    ok = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"structured_prompt": _CAPTION}
+    )
+    assert ok.status_code == 202
 
 
 def test_ideogram_accepts_lowercase_colors():
     caption = {
+        "high_level_description": "h",
         "compositional_deconstruction": {
             "background": "b",
             "elements": [{"type": "obj", "desc": "d", "color_palette": ["#ff2e88"]}],
-        }
+        },
     }
     request = Ideogram4Request(structured_prompt=caption)
     assert '"color_palette":["#FF2E88"]' in request.model_prompt()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+    ],
+    ids=["prompt", "structured-prompt", "beside-a-caption"],
+)
+async def test_an_explicit_null_is_422(generations_app, body):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post("/v1/generations/ideogram-ai/ideogram-4", json=body)
+    assert response.status_code == 422, response.text
+    assert not device.requests
+
+
+def _ideogram_service_at_startup(monkeypatch, enhancer: str):
+    """GenerationService() for Ideogram 4 with no API key, up to the point
+    its workers would start."""
+    from config.settings import Settings
+    from model_services import generation_service
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(generation_service.BaseJobService, "__init__", lambda _: None)
+    monkeypatch.setattr(generation_service.settings, "model_runner", "tt-ideogram-4")
+    monkeypatch.setattr("utils.prompt_enhancer._enhancer", None)
+    monkeypatch.setattr(
+        "utils.prompt_enhancer.get_settings",
+        lambda: Settings.model_construct(
+            ideogram_prompt_enhancer=enhancer, ideogram_api_key=SecretStr("")
+        ),
+    )
+    return generation_service.GenerationService()
+
+
+def test_ideogram_starts_without_a_key_by_default(monkeypatch):
+    from config.settings import Settings
+
+    default = Settings.model_fields["ideogram_prompt_enhancer"].default
+    assert _ideogram_service_at_startup(monkeypatch, default)
+
+
+def test_ideogram_with_the_enhancer_on_refuses_to_start_without_a_key(monkeypatch):
+    with pytest.raises(ValueError, match="IDEOGRAM_API_KEY"):
+        _ideogram_service_at_startup(monkeypatch, "ideogram-api")
 
 
 @requires_tt_metal_policy
@@ -1916,8 +2285,9 @@ async def test_ideogram_gets_the_serialized_caption(generations_app, ideogram_se
     )
     job = await _wait_final(client, response.json()["id"])
     caption = (
-        '{"compositional_deconstruction":{"background":"a brick wall",'
-        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN"}]}}'
+        '{"high_level_description":"An open sign.",'
+        '"compositional_deconstruction":{"background":"a brick wall",'
+        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN","desc":"neon"}]}}'
     )
     assert device.requests[0]._prompt == caption
     (output,) = job["outputs"]

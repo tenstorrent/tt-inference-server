@@ -672,7 +672,8 @@ def test_ideogram_gets_the_caption_and_preset():
     runner = _runner("TTIdeogram4Runner")
     request = Ideogram4Request(
         structured_prompt={
-            "compositional_deconstruction": {"background": "b", "elements": []}
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
         },
         rendering_speed="quality",
     )
@@ -680,7 +681,8 @@ def test_ideogram_gets_the_caption_and_preset():
     runner.run([request])
     (call,) = runner.pipeline.calls
     assert call["prompts"] == [
-        '{"compositional_deconstruction":{"background":"b","elements":[]}}'
+        '{"high_level_description":"h",'
+        '"compositional_deconstruction":{"background":"b","elements":[]}}'
     ]
     assert call["preset"] == "V4_QUALITY_48"
 
