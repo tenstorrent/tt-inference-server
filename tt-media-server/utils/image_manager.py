@@ -57,6 +57,8 @@ class ImageManager:
             quality=quality,
             optimize=False,
             progressive=False,
+            # PNG: zlib level 1, as lossless as the default 6 and about 3x faster
+            **({"compress_level": 1} if format.upper() == "PNG" else {}),
         )
         # Use base64.encodebytes which is faster than b64encode for larger data
         encoded_bytes = base64.encodebytes(buffered.getvalue())

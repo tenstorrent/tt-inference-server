@@ -25,7 +25,7 @@ from domain.generation_request import (
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from telemetry.telemetry_client import (
     VIDEO_REQUEST_TYPE_I2V,
     VIDEO_REQUEST_TYPE_T2V,
@@ -65,7 +65,20 @@ IMAGE_FORMATS = {
 IMAGE_SAVE_OPTIONS = {
     "JPEG": {"quality": 95, "subsampling": 0},
     "WEBP": {"quality": 90},
+    # zlib level 1 instead of 6: as lossless, about 3x faster to write (4096x4096:
+    # 4.0 -> 1.4 s on one core), files 2-14 % larger.
+    "PNG": {"compress_level": 1},
 }
+
+
+def _without_opaque_alpha(image: Image.Image) -> Image.Image:
+    """``image`` without its alpha channel when that is opaque everywhere."""
+    if image.mode in ("RGBA", "LA") and image.getchannel("A").getextrema() == (
+        255,
+        255,
+    ):
+        return image.convert(image.mode[:-1])
+    return image
 
 
 def _too_large(kind: str, max_bytes: int) -> HTTPException:
@@ -169,8 +182,9 @@ class GenerationService(BaseJobService):
         status = super().check_is_model_ready()
         active = self._job_manager.count_active_jobs(JobTypes.GENERATION)
         status.update(
-            rendering=active["in_progress"] > 0,
+            rendering=active["rendering"] > 0,
             jobs_in_progress=active["in_progress"],
+            jobs_cancelling=active["cancelling"],
             jobs_queued=active["queued"],
         )
         return status
@@ -498,7 +512,8 @@ class GenerationService(BaseJobService):
         if request.OUTPUT_TYPE == "image":
             pil_format, content_type = IMAGE_FORMATS[request.format]
             path = directory / f"{index}.{request.format}"
-            image = result.convert("RGB") if pil_format == "JPEG" else result
+            image = _without_opaque_alpha(result)
+            image = image.convert("RGB") if pil_format == "JPEG" else image
             options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
             image.save(path, format=pil_format, **options)
             return {

@@ -159,6 +159,15 @@ class Job:
         return data
 
 
+def _held_by_a_worker(job: Job) -> bool:
+    """Whether a worker has claimed ``job`` and not yet finished running it.
+    Unknown (the shared assignment can't be read) counts as held."""
+    try:
+        return job.assigned_worker_identity() is not None
+    except Exception:
+        return True
+
+
 class JobManager:
     def __init__(self):
         self._logger = TTLogger()
@@ -322,17 +331,21 @@ class JobManager:
             ]
 
     def count_active_jobs(self, job_type: JobTypes = None) -> dict[str, int]:
-        """How many jobs are queued and how many are running."""
+        """How many jobs are queued, running and cancelling, and how many a
+        worker holds: ``rendering`` counts a cancelled job until its run ends."""
         with self._jobs_lock:
             jobs = [
                 job
                 for job in self._jobs.values()
-                if job_type is None or job.job_type == job_type.value
+                if (job_type is None or job.job_type == job_type.value)
+                and not job.is_terminal()
             ]
-            return {
-                "queued": sum(job.status == JobStatus.QUEUED for job in jobs),
-                "in_progress": sum(job.is_in_progress() for job in jobs),
-            }
+        return {
+            "queued": sum(job.status == JobStatus.QUEUED for job in jobs),
+            "in_progress": sum(job.is_in_progress() for job in jobs),
+            "cancelling": sum(job.is_cancelling() for job in jobs),
+            "rendering": sum(_held_by_a_worker(job) for job in jobs),
+        }
 
     def get_job_metadata(
         self, job_id: str, org_id: Optional[str] = None

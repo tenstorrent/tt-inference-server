@@ -3011,3 +3011,32 @@ class TestJobManager:
         )
         with job_manager._jobs_lock:
             assert job_manager._jobs["job-coop-none"].result_path is None
+
+
+def test_count_active_jobs_counts_a_cancelled_job_as_rendering_until_its_run_ends():
+    """A cancelled job keeps rendering to the end; stopping or resetting the
+    devices is safe only once no worker holds a job."""
+    manager = object.__new__(JobManager)
+    manager._jobs_lock = threading.Lock()
+    held = SimpleNamespace(identity=("worker-0", 1234))
+    jobs = {
+        "queued": Job(id="queued", job_type=JobTypes.GENERATION.value, model="m"),
+        "rendering": Job(
+            id="rendering",
+            job_type=JobTypes.GENERATION.value,
+            model="m",
+            _worker_assignment=held,
+        ),
+        "done": Job(id="done", job_type=JobTypes.GENERATION.value, model="m"),
+    }
+    jobs["done"].status = JobStatus.COMPLETED
+    manager._jobs = jobs
+    jobs["rendering"].mark_cancelling()
+    assert manager.count_active_jobs(JobTypes.GENERATION) == {
+        "queued": 1,
+        "in_progress": 0,
+        "cancelling": 1,
+        "rendering": 1,
+    }
+    held.identity = None  # the worker's run ended
+    assert manager.count_active_jobs(JobTypes.GENERATION)["rendering"] == 0

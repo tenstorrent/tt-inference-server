@@ -1943,15 +1943,46 @@ def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
         BaseService, "check_is_model_ready", lambda self: {"model_ready": True}
     )
     service = object.__new__(GenerationService)
-    service._job_manager = SimpleNamespace(
-        count_active_jobs=lambda job_type: {"queued": 2, "in_progress": 1}
-    )
+    counts = {"queued": 2, "in_progress": 0, "cancelling": 1, "rendering": 1}
+    service._job_manager = SimpleNamespace(count_active_jobs=lambda job_type: counts)
+    # a cancelled job whose render has not ended yet is still rendering
     assert service.check_is_model_ready() == {
         "model_ready": True,
         "rendering": True,
-        "jobs_in_progress": 1,
+        "jobs_in_progress": 0,
+        "jobs_cancelling": 1,
         "jobs_queued": 2,
     }
+    counts["rendering"] = 0
+    assert service.check_is_model_ready()["rendering"] is False
+
+
+@pytest.mark.parametrize(
+    ("mode", "alpha", "saved"),
+    [("RGB", None, "RGB"), ("RGBA", 255, "RGB"), ("RGBA", 128, "RGBA")],
+)
+def test_image_output_is_png_level_1_with_alpha_only_when_it_is_real(
+    tmp_path, monkeypatch, mode, alpha, saved
+):
+    from model_services.generation_service import GenerationService
+
+    saves = []
+    real_save = Image.Image.save
+
+    def save(image, path, format=None, **options):
+        saves.append(options)
+        return real_save(image, path, format=format, **options)
+
+    monkeypatch.setattr(Image.Image, "save", save)
+    color = (10, 20, 30) if alpha is None else (10, 20, 30, alpha)
+    request = SimpleNamespace(OUTPUT_TYPE="image", _seed=1, _prompt="p", format="png")
+    output = GenerationService._write_output(
+        tmp_path, 0, request, Image.new(mode, (8, 8), color)
+    )
+    assert saves == [{"compress_level": 1}]
+    with Image.open(tmp_path / output["file"]) as written:
+        assert written.mode == saved
+        assert written.getpixel((0, 0))[:3] == (10, 20, 30)
 
 
 async def test_flux3_refuses_16_9_at_submit_off_a_galaxy_quad(
