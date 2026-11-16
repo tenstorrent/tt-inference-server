@@ -1920,21 +1920,6 @@ def test_flux3_has_3_sizes(flux3_upsampler, flux3_on_quad):
     ]
 
 
-@pytest.mark.parametrize(
-    ("fields", "message"),
-    [
-        ({"reference_megapixels": 4}, "needs a reference"),
-        (
-            {"reference_megapixels": 4, "size": "2K", "images": ["https://x/a.png"]},
-            "4 MP reference is served at 4K only",
-        ),
-    ],
-)
-def test_flux3_reference_megapixels(fields, message):
-    with pytest.raises(ValidationError, match=message):
-        Flux3ImageKleinRequest(prompt="a cat", **fields)
-
-
 def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
     from model_services.base_service import BaseService
     from model_services.generation_service import GenerationService

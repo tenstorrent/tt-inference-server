@@ -342,11 +342,6 @@ class _StageRecorder:
 def flux3_runner(monkeypatch):
     pipeline_module = ModuleType("pipeline_flux3_klein")
     pipeline_module.Flux3KleinRequest = SimpleNamespace
-    # tt-metal klein-demo-quad's: 1 MP references, and 4 MP too at the 4K shapes
-    pipeline_module.REFERENCE_SIZES = {
-        **{(side, side): (1024,) for side in (1024, 2048)},
-        **{shape: (1024, 2048) for shape in ((4096, 4096), (4096, 2304), (2304, 4096))},
-    }
     monkeypatch.setitem(
         sys.modules,
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
@@ -373,7 +368,8 @@ def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
     assert [reference.size for reference in call.images] == (
         [(3000, 1000)] if with_image else []
     )
-    assert call.reference_size == (1024 if with_image else None)
+    # the pipeline fits the reference itself (BFL's rule): no size from the server
+    assert not hasattr(call, "reference_size")
     assert image.size == (2048, 2048)
     assert image.info["prompt"] == "a detailed caption of a cat"
 
@@ -389,48 +385,6 @@ def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
     (reference,) = call.images
     assert reference.mode == "RGBA"
     assert reference.getpixel((0, 0)) == (0, 0, 0, 0)
-
-
-@pytest.mark.parametrize(
-    ("shape", "reference", "side"),
-    [
-        ((4096, 2304), (2048, 3000), 2048),
-        ((4096, 4096), (4000, 2047), 1024),
-        ((2048, 2048), (4000, 4000), 1024),
-        ((1024, 1024), (64, 64), 1024),
-    ],
-)
-def test_flux3_resizes_a_reference_to_the_largest_side_it_reaches(
-    flux3_runner, shape, reference, side
-):
-    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), *shape)
-    request._files = {"images": [_png(*reference)]}
-    flux3_runner.run([request])
-    (call,) = flux3_runner.pipeline.calls
-    assert call.reference_size == side
-
-
-@pytest.mark.parametrize(("megapixels", "side"), [(1, 1024), (4, 2048)])
-def test_flux3_resizes_a_reference_to_the_megapixels_asked(
-    flux3_runner, monkeypatch, megapixels, side
-):
-    # the driver's cases: the same reference at 1 MP and at 4 MP
-    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
-    request = _resolved(
-        Flux3ImageKleinRequest(
-            prompt="a cat",
-            aspect_ratio="1:1",
-            size="4K",
-            images=["https://x/a.png"],
-            reference_megapixels=megapixels,
-        ),
-        4096,
-        4096,
-    )
-    request._files = {"images": [_png(1500, 1500)]}
-    flux3_runner.run([request])
-    (call,) = flux3_runner.pipeline.calls
-    assert call.reference_size == side
 
 
 def test_flux3_sets_the_quad_runtime_env_before_the_mesh_opens(
@@ -624,11 +578,10 @@ def test_flux3_serves_the_shapes_the_pipeline_warms(
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
     ]
     # On a Galaxy quad, every shape the schema accepts is one the pipeline
-    # serves and warms, each with the reference sizes it takes.
+    # serves and warms.
     monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
     monkeypatch.setattr(get_settings(), "device", "galaxy_quad")
     assert Flux3ImageKleinRequest.warmup_sizes() == list(pipeline.SHAPES)
-    assert set(pipeline.REFERENCE_SIZES) == set(pipeline.SHAPES)
     assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
 
 

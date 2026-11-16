@@ -99,19 +99,11 @@ class Flux3ImageKleinRequest(GenerationRequest):
         description=(
             "Image to edit: 0 or 1 for now; a list so more can be allowed later "
             "without a schema change. Omitted = text to image. Turned upright (EXIF "
-            "orientation), center-cropped to a square and resized to 1024×1024 "
-            "(1 MP); at a `4K` size, an image whose shorter side is at least 2048 px "
-            "is resized to 2048×2048 (4 MP) instead (`reference_megapixels` "
-            "chooses). Any size up to 89,478,485 pixels (PIL's decompression-bomb "
-            "limit) and 30 MB is accepted."
-        ),
-    )
-    reference_megapixels: Optional[Literal[1, 4]] = Field(
-        default=None,
-        description=(
-            "The size the reference is resized to: `1` (1024×1024) or `4` "
-            "(2048×2048, at a `4K` size only). Omitted: 4 when the size is `4K` "
-            "and the image's shorter side is at least 2048 px, else 1."
+            "orientation) and kept at its aspect ratio: scaled down, never up, to a "
+            "canvas of at most 4 MP with sides of 64–4096 px (rounded up to 16 px, "
+            "the border padded with the image's mirrored edge), never cropped. Any "
+            "size up to 89,478,485 pixels (PIL's decompression-bomb limit) and 30 MB "
+            "is accepted."
         ),
     )
     count: Count = 1
@@ -154,10 +146,6 @@ class Flux3ImageKleinRequest(GenerationRequest):
                 f"{self.size} is served with the prompt upsampler ahead of the "
                 f"deployment ({FLUX3_PROMPT_UPSAMPLER_FROZEN}=1)"
             )
-        if self.reference_megapixels is not None and not self.images:
-            raise ValueError("reference_megapixels needs a reference in images")
-        if self.reference_megapixels == 4 and self.size != "4K":
-            raise ValueError("a 4 MP reference is served at 4K only")
         return self
 
     def output_size(self) -> tuple[int, int]:

@@ -380,23 +380,6 @@ def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
     return shapes
 
 
-def _flux3_reference_size(
-    images: tuple, served: tuple[int, ...], megapixels: int | None = None
-) -> int | None:
-    """The square side a reference is resized to: the one of ``megapixels``,
-    else the largest the output shape takes that the image's shorter side
-    reaches, else the smallest."""
-    if not images:
-        return None
-    if megapixels is not None:
-        side = {1: 1024, 4: 2048}[megapixels]
-        if side not in served:
-            raise ValueError(f"this size takes references of {served} px, not {side}")
-        return side
-    side = min(images[0].size)
-    return max((s for s in served if s <= side), default=min(served))
-
-
 # tt-metal runtime settings a Galaxy quad's ranks need before the mesh opens
 # (read when the device opens); values already in the environment win.
 FLUX3_QUAD_ENV = {
@@ -503,7 +486,6 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
-            REFERENCE_SIZES,
             Flux3KleinRequest,
         )
 
@@ -529,11 +511,6 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                     seed=request._seed,
                     steps=self._steps(FLUX3_KLEIN_STEPS, request),
                     images=images,
-                    reference_size=_flux3_reference_size(
-                        images,
-                        REFERENCE_SIZES[(request._width, request._height)],
-                        request.reference_megapixels,
-                    ),
                 )
             )
             if result.image is None:
