@@ -8074,6 +8074,13 @@ templates:
         # multi-user steps verify G (K + 1) = 4 x 4 = 16 rows (the alternate 8 x 2), which must fit the build's rows
         # (tt-metal spec_mtp.py), so the 8 admitted users run on the B 16 build
         GLM53_STACK_BUILD_B: "16"
+        # AgentX c8 best config (tt-metal #64931 ab6a627a6c5, 2026-11-16: 22,363 tok/s, 34.2 tok/s/u decode, 703 requests / h, TTFT p50
+        # 2.52 s; x1.12 total vs the previous defaults): keep the snapshot a commit supersedes for a turn that rewrites the previous
+        # prompt's tail (prefix-hit gap to theoretical 2.3 -> ~1 pt), export host-tier snapshots off the engine thread, and keep
+        # vLLM's HTTP keep-alive above aiohttp's (5 s default: aiperf reuses a pooled connection the server is closing -> RST)
+        GLM53_STACK_PREFIX_KEEP_PREV: "1"
+        GLM53_PREFIX_ASYNC_EXPORT: "1"
+        VLLM_HTTP_TIMEOUT_KEEP_ALIVE: "600"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
         # speculates up to 1 M), and its per-slot state in the prefix snapshots (a warm turn keeps speculating)
         GLM53_SPEC_MTP_SPARSE: "1"
@@ -8109,7 +8116,7 @@ templates:
         # ITL at the decode step
         decode_interleave_enabled: true
         decode_interleave_prefill_steps: 1
-        decode_interleave_decode_steps: 8
+        decode_interleave_decode_steps: 4  # AgentX c8: 1:4 shortens the prefill queue (TTFT p50 3.6 -> 2.5 s) at the same decode rate
       vllm_args:
         max_num_seqs: 8  # the admitted users (8 for now); the stack builds GLM53_STACK_BUILD_B rows (>= max_num_seqs)
         # Speculation is synchronous (the adapter declares no supports_async_spec_decode); the explicit negative flag
