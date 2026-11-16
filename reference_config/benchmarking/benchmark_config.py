@@ -598,6 +598,33 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     ``device_model_spec`` fields needed to generate benchmark tasks.
     """
 
+    # Ornith-1.5-9B: the owner's local sweep matrix (ISL/OSL x concurrency 1/8/16/32),
+    # same prompt counts as the local run (2x concurrency, min 4; 4x for 128/128, min 8).
+    if model_spec.impl.impl_id == "ornith_autoport":
+        rows = []
+        for isl, osl in ((128, 128), (1024, 1024), (4096, 512), (32768, 512)):
+            for clients in (1, 8, 16, 32):
+                count = max(8, 4 * clients) if isl == 128 else max(4, 2 * clients)
+                rows.append((isl, osl, clients, count))
+        return BenchmarkConfig(
+            model_id=model_spec.model_id,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        model_spec.device_type: [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=clients,
+                                num_prompts=count,
+                            )
+                            for isl, osl, clients, count in rows
+                        ]
+                    }
+                )
+            ],
+        )
+
     # Frozen stage-11 matrix for this generated implementation. It deliberately
     # excludes unsupported decode concurrencies and unrelated structured-output tests.
     if model_spec.impl.impl_id == "qwen38_autoport":

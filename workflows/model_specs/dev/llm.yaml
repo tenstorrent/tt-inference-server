@@ -7694,3 +7694,54 @@ templates:
       benchmark_tokenizer_sha256:
         tokenizer.json: 0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3
         tokenizer_config.json: b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27
+
+# ornith-ai/Ornith-1.5-9B stage-11 serving config (tt-model-bringup autoport, QB2 1x4 mesh).
+# Same as the local eval server: 32 slots, 256K context, 4096-token prefill budget,
+# responsive 1:2 prefill/decode interleave, device sampling, bfp8_all_lofi precision,
+# omitted top_k -> 20 (owner-approved), thinking off by default (evals enable it per request).
+# Select explicitly with --impl ornith-autoport.
+- weights:
+    - ornith-ai/Ornith-1.5-9B
+  impl: ornith_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities: [text]
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false
+      tensor_cache_timeout: 7200
+      env_vars:
+        MESH_DEVICE: P300x2
+        VLLM_RPC_TIMEOUT: "7200000"
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.autoports.ornith_ai_ornith_1_5_9b.tt.generator_vllm:OrnithForCausalLM"
+        TT_METAL_TRACE_ALLOC_TRACKING: "0"
+        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
+      vllm_args:
+        revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
+        tokenizer_revision: 489cb97981b8654bcfcf30ce1f94ed1b62e07b53
+        block_size: 32
+        max_num_seqs: 32
+        max_model_len: 262144
+        max_num_batched_tokens: 4096
+        async_scheduling: true
+        language_model_only: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
+        default_chat_template_kwargs: '{"enable_thinking": false}'
+        override_generation_config: '{"top_k": 20}'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 200000000
+        fabric_config: FABRIC_1D
+        trace_mode: decode_only
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 2
+  status: EXPERIMENTAL
+  metadata:
+    ornith-ai/Ornith-1.5-9B:
+      model_path_env: ORNITH_CHECKPOINT
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder

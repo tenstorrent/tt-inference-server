@@ -489,7 +489,16 @@ qwen38_autoport_impl = ImplSpec(
     code_path="models/autoports/qwen_qwen3_8_27b",
 )
 
+# ornith-ai/Ornith-1.5-9B TP4 on QB2 (4x p300c, 1x4 mesh), tt-model-bringup autoport.
+ornith_autoport_impl = ImplSpec(
+    impl_id="ornith_autoport",
+    impl_name="ornith-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/ornith_ai_ornith_1_5_9b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "ornith_autoport": ornith_autoport_impl,
     "qwen38_autoport": qwen38_autoport_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,

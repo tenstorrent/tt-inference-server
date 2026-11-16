@@ -11674,6 +11674,171 @@ _eval_config_list = [
             ),
         ],
     ),
+    # ornith-ai/Ornith-1.5-9B (impl ornith-autoport, QB2 P300X2) - mirrors the owner's local
+    # evals. GPQA: model-card general sampling (T 1.0, top_p 0.95, top_k 20, presence 1.5),
+    # thinking on, 32K generation cap, all 198 in full mode. Agentic: model-card coding
+    # sampling (T 0.6, top_p 0.95, top_k 20, presence 0), thinking on, exactly five tasks in
+    # every mode. The server defaults enable_thinking=false, so every task turns it on.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-9B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=86.4,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B (GPQA Diamond, avg of 5 runs)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=32,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    "presence_penalty": 1.5,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 32,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="Five-task subset; no comparable published score",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=[
+                        "terminal-bench/openssl-selfsigned-cert",
+                        "terminal-bench/sqlite-db-truncate",
+                        "terminal-bench/fix-git",
+                        "terminal-bench/nginx-request-logging",
+                        "terminal-bench/overfull-hbox",
+                    ],
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.6,
+                        "model_info": {
+                            "max_input_tokens": 224 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "presence_penalty": 0.0,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/openssl-selfsigned-cert",
+                            "terminal-bench/sqlite-db-truncate",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="Five-instance subset; no comparable published score",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=[
+                        "django__django-11099",
+                        "astropy__astropy-14995",
+                        "pytest-dev__pytest-7432",
+                        "scikit-learn__scikit-learn-14141",
+                        "pydata__xarray-4629",
+                    ],
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.6,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11099",
+                            "astropy__astropy-14995",
+                            "pytest-dev__pytest-7432",
+                            "scikit-learn__scikit-learn-14141",
+                            "pydata__xarray-4629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-27B",
         tasks=[
