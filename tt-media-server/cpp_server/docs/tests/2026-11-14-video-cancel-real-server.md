@@ -68,7 +68,7 @@ Without check 2, case B would turn into case C and the device would be spent on 
 
 The worker sends `CLAIMED` as an ordinary message on the result queue. The service's consumer thread waits in `blockingPop`, so `onTaskClaimed` runs `jobs.markInProgress(...)` immediately. There is no separate event channel.
 
-The Python server does the same with `multiprocessing.Event` (`start_event`, `cancel_event`) and polling every 0.5 s, so `in_progress` can lag by up to half a second there.
+The Python server marks a video job `in_progress` in a similar way: the device worker sets `start_event` when it really starts the task, and the service polls it every 0.5 s, so `in_progress` can lag by up to half a second there. Python has no `cancel_event` for video jobs (it exists only for training jobs); see "Difference from Python" in section 5.
 
 ## 2. Setup: what had to be fixed before the test could run
 
@@ -187,6 +187,7 @@ E works normally, so cancelling in the middle of generation did not break the de
   - The line is logged only when the cancel succeeds; for an unknown or already finished job (404) there is none (not tested, follows from the code).
   - The line carries the internal `task_id` (a number), not the public job UUID, like the other worker lines (`skipping cancelled task 2`).
 - `download` of a job that is not finished returns **409**, while the Python server returns 404. A known difference.
+- **Difference from Python in cancelling a running job** (from reading the Python code; the Python server was not tried on a device for this case). In Python, `cancel_job` marks a running video job `cancelling` and cancels its asyncio task, and the cancellation handler marks it `cancelled` straight away, so `cancelling` is almost instantaneous and the status says `cancelled` while the device is still generating. There is no cancel event or marker for video jobs. The service does put the task id into the scheduler's `cancel_queue` when the waiting coroutine is cancelled, but the worker used for Wan (`device_worker`, the default; the dynamic-batch worker that reads `cancel_queue` is used only when `use_dynamic_batcher` is on, for LLMs) does not read it (the code says "unused here"). So a video request that is already in the worker queue stays there and the worker runs it, although the job is shown as `cancelled`. This is read from the code. The log of one Python run on the T3K is consistent with it (a 78 s generation started right after the previous job finished, when the only request waiting was the job that had been cancelled in the queue), but it was not a controlled test. In the C++ service the job stays `cancelling` until the generation really ends and only then becomes `cancelled`, and a job cancelled while queued is skipped by the worker without touching the device. The C++ behaviour is more honest about the state of the device, and it saves device time for jobs cancelled in the queue; the price is that a client waits longer to see `cancelled` for a running job.
 - Leftovers after runs that did not shut down cleanly: a stale `/tmp/tt-video-ipc-<pid>` directory from the dead process, and possibly an empty `~/.cache/tt_dit_cache`. They are harmless.
 
 ## Repeated with the new log line
