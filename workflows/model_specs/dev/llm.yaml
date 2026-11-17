@@ -8086,6 +8086,11 @@ templates:
         # (abd539b80fc): total 23,237 -> 23,749 tok/s, decode 38.1 -> 38.9 tok/s/u, TTFT p50 / p90 2.45 / 15.44 -> 2.07 / 11.25 s;
         # served 1 M x 1 / 2 / 4 / 8 errors 0 (re-chunked prefill tails: coherent near-tie text changes, not bitwise)
         GLM53_PREFILL_BUCKETS: "1024,2048,8192"
+        # Kept previous snapshots spill to the host tier from 32,768 tokens (tt-metal's default 262,144 drops a shorter one): AgentX
+        # turns that rewrite the tail of a 33-262 K prompt resumed at the 16 K head and re-prefilled the rest. tt-metal #64931
+        # d5dc6459aeb, AgentX c8: prefix hit 95.93 -> 96.58 %, total 23,636 -> 24,001 tok/s, decode 39.5 -> 39.8 tok/s/u, TTFT p90
+        # 13.37 -> 10.63 s; c16: total 22,634 -> 24,085 tok/s, decode 31.8 -> 32.9 tok/s/u, host-tier restores max 2.4 s
+        GLM53_STACK_PREFIX_KEEP_PREV_MIN: "32768"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
         # speculates up to 1 M), and its per-slot state in the prefix snapshots (a warm turn keeps speculating)
         GLM53_SPEC_MTP_SPARSE: "1"
