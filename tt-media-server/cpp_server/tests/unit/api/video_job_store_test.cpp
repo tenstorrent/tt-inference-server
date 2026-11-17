@@ -598,6 +598,42 @@ TEST(VideoOutputDir, StoreRefusesToDeleteOutsideRoot) {
   fs::remove_all(root);
 }
 
+TEST(VideoOutputDir, CheckDirWritableCreatesMissingDirAndLeavesNoProbe) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-test";
+  fs::remove_all(root);
+  const fs::path dir = root / "a" / "b";
+  EXPECT_EQ(tt::utils::checkDirWritable(dir), "");
+  EXPECT_TRUE(fs::is_directory(dir));
+  EXPECT_TRUE(fs::is_empty(dir));
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsNotADirectory) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-file";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path file = root / "plain";
+  std::ofstream(file) << "x";
+  EXPECT_NE(tt::utils::checkDirWritable(file), "");
+  EXPECT_NE(tt::utils::checkDirWritable(file / "sub"), "");
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsReadOnlyDirectory) {
+  namespace fs = std::filesystem;
+  if (::geteuid() == 0) GTEST_SKIP() << "root ignores directory permissions";
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-ro";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  fs::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+  EXPECT_NE(tt::utils::checkDirWritable(root), "");
+  fs::permissions(root, fs::perms::owner_all);
+  EXPECT_EQ(tt::utils::checkDirWritable(root), "");
+  fs::remove_all(root);
+}
+
 TEST(VideoOutputDir, PurgeRemovesOnlyTopLevelMp4) {
   namespace fs = std::filesystem;
   const fs::path root = "/tmp/tt-outdir-purge";

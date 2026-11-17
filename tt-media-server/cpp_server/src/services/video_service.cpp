@@ -102,6 +102,15 @@ VideoService::VideoService(
     // shares this directory.
     const auto outDir = utils::resolveVideoOutputDir();
     jobs.setOutputRoot(outDir);
+    outputDir_ = outDir;
+    if (const std::string err = utils::checkDirWritable(outDir); !err.empty()) {
+      // Not fatal: the problem may be fixed while the server runs, and every
+      // request is checked again (503 until then).
+      TT_LOG_ERROR(
+          "[VideoService] Video output directory is not usable: {}. Requests "
+          "get 503 until it is fixed.",
+          err);
+    }
     const char* purge = std::getenv("TT_VIDEO_PURGE_ON_START");
     if (purge == nullptr || std::string(purge) != "0") {
       const size_t removed = utils::purgeOrphanMp4(outDir);
@@ -222,6 +231,11 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
     throw;
   }
   return metadata;
+}
+
+std::string VideoService::outputDirError() const {
+  if (outputDir_.empty()) return {};
+  return utils::checkDirWritable(outputDir_);
 }
 
 std::optional<uint32_t> VideoService::resolveJobId(

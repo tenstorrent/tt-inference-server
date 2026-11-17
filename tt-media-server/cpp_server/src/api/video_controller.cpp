@@ -129,6 +129,17 @@ void VideoController::generate(const drogon::HttpRequestPtr& req,
     return;
   }
 
+  // The mp4 is written only after the whole generation: refuse now instead of
+  // spending a full run on a job that cannot save its result.
+  if (const std::string dirError = service->outputDirError();
+      !dirError.empty()) {
+    TT_LOG_ERROR("[VideoController] generations refused: {}", dirError);
+    callback(videoError(drogon::k503ServiceUnavailable,
+                        "Video output directory is not writable: " + dirError,
+                        "service_unavailable"));
+    return;
+  }
+
   std::optional<domain::VideoGenerateRequest> request;
   try {
     request = domain::VideoGenerateRequest::fromJson(

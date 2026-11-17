@@ -416,21 +416,39 @@ def main():
         f"after {getattr(srv, 'ready_after', 0):.0f}s" if ok else srv.log_text()[-500:],
     )
     if ok:
-        st, j = srv.submit()
-        srv.wait_job(j["id"], ("completed", "failed"), 600)
-        body = srv.job(j["id"])
-        p("  job:", body.get("status"), body.get("error"))
+        # The mp4 is written only after the whole generation, so a request
+        # must be refused up front (503) instead of failing after the run.
+        st, body = srv.submit()
+        note(st == 503, "a request is refused with 503, no generation is started", f"http{st}")
         note(
-            body.get("status") == "failed" and bool(body.get("error")),
-            "the job fails with an error (not completed without a file)",
-            str(body.get("error")),
+            "not writable" in json.dumps(body),
+            "the answer names the output directory problem",
+            json.dumps(body)[:160],
         )
-        st, _ = srv.submit("after the failure")
-        note(st == 202, "the server still accepts jobs after the failure", f"http{st}")
+        note(
+            srv.call("GET", "/v1/videos/jobs")[1] == [],
+            "no job record was created",
+        )
+        note(
+            "Video output directory is not usable" in srv.log_text(),
+            "the startup log names the problem",
+        )
         note(
             srv.call("GET", "/tt-liveness", token=None)[1].get("status") == "alive",
             "the server is alive",
         )
+        # Fixing the folder is enough: no restart.
+        os.chmod(ro, 0o755)
+        st, j = srv.submit("after the fix")
+        note(st == 202, "after the folder is fixed a request is accepted again", f"http{st}")
+        if st == 202:
+            srv.wait_job(j["id"], ("completed", "failed"), 600)
+            body = srv.job(j["id"])
+            note(
+                body.get("status") == "completed",
+                "that job completes",
+                str(body.get("error")),
+            )
     srv.terminate()
     os.chmod(ro, 0o755)
     return finish()

@@ -50,6 +50,11 @@ class VideoService
    *  the model is not ready. */
   Json::Value createJob(domain::VideoGenerateRequest request);
 
+  /** Empty when new work can be accepted; otherwise why the mp4 output
+   *  directory cannot be written (the controller answers 503). Only checked
+   *  for the real device runner; the mock runner writes no files. */
+  std::string outputDirError() const;
+
   /** Public job id (UUID) -> internal task id; nullopt = unknown/malformed. */
   std::optional<uint32_t> resolveJobId(const std::string& publicId) const;
   std::optional<Json::Value> getJob(uint32_t jobId) const;
@@ -79,6 +84,7 @@ class VideoService
 
   config::VideoConfig videoConfig;
   std::filesystem::path payloadDir;
+  std::filesystem::path outputDir_;  // empty when the runner writes no mp4
   void startSweeper();
   void stopSweeper();
 
