@@ -1,0 +1,80 @@
+diff --git a/src/routers/http/router.rs b/src/routers/http/router.rs
+index 07b99d9..9661206 100644
+--- a/src/routers/http/router.rs
++++ b/src/routers/http/router.rs
+@@ -290,6 +290,8 @@ pub struct Router {
+     retry_config: RetryConfig,
+     circuit_breaker_config: CircuitBreakerConfig,
+     kv_aware_session_affinity_ttl_secs: Option<u64>,
++    /// VLLM_ROUTER_RETRY_EXCLUDE_FAILED=1: every policy retries on a worker that has not failed the request yet.
++    retry_exclude_failed: bool,
+     health_config: HealthConfig,
+     frontend: crate::backend::EngineFrontend,
+     _worker_loads: Arc<tokio::sync::watch::Receiver<HashMap<String, isize>>>,
+@@ -615,6 +617,7 @@ impl Router {
+             kv_aware_session_affinity_ttl_secs: ctx
+                 .router_config
+                 .kv_aware_session_affinity_ttl_secs,
++            retry_exclude_failed: std::env::var("VLLM_ROUTER_RETRY_EXCLUDE_FAILED").is_ok_and(|v| v == "1"),
+             health_config,
+             frontend,
+             _worker_loads: worker_loads,
+@@ -1358,6 +1361,23 @@ impl Router {
+             });
+         }
+ 
++        // VLLM_ROUTER_RETRY_EXCLUDE_FAILED=1: a retry skips the workers that already answered it with a retryable
++        // status, while any other remains (off: every policy but kv_aware ignores the list, as before).
++        let kept: Vec<Arc<dyn Worker>>;
++        let available = if excluded_workers.is_empty() || !self.retry_exclude_failed {
++            available
++        } else {
++            kept = available
++                .iter()
++                .filter(|worker| !excluded_workers.iter().any(|url| url == worker.url()))
++                .cloned()
++                .collect();
++            if kept.is_empty() {
++                available
++            } else {
++                &kept[..]
++            }
++        };
+         let idx = if let Some(cache) = policy
+             .as_any()
+             .downcast_ref::<crate::policies::CacheAwarePolicy>()
+@@ -1704,7 +1724,9 @@ impl Router {
+                 if was_available != worker.is_available() {
+                     self.worker_registry.notify_worker_state_change();
+                 }
+-                if is_retryable_status(status) && kv_ops.is_some() {
++                if is_retryable_status(status)
++                    && (kv_ops.is_some() || self.retry_exclude_failed)
++                {
+                     failed_workers.lock().push(worker.url().to_string());
+                 }
+ 
+@@ -5366,6 +5388,7 @@ mod tests {
+             kv_index_supervisor: None,
+             _kv_signal_handle: None,
+             kv_aware_session_affinity_ttl_secs: None,
++            retry_exclude_failed: false,
+             program_scheduler: None,
+             _program_observation_handle: None,
+             program_targets_cache: Mutex::new(HashMap::new()),
+@@ -5401,6 +5424,7 @@ mod tests {
+             kv_index_supervisor: None,
+             _kv_signal_handle: None,
+             kv_aware_session_affinity_ttl_secs: None,
++            retry_exclude_failed: false,
+             program_scheduler: None,
+             _program_observation_handle: None,
+             program_targets_cache: Mutex::new(HashMap::new()),
+@@ -6841,6 +6865,7 @@ mod tests {
+             kv_index_supervisor: None,
+             _kv_signal_handle: None,
+             kv_aware_session_affinity_ttl_secs: None,
++            retry_exclude_failed: false,
+             program_scheduler: None,
+             _program_observation_handle: None,
+             program_targets_cache: Mutex::new(HashMap::new()),

@@ -1,0 +1,47 @@
+diff --git a/src/server.rs b/src/server.rs
+index 45cdb20..e982c96 100644
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -1284,7 +1284,41 @@ pub async fn startup(config: ServerConfig) -> Result<(), Box<dyn std::error::Err
+ async fn bind_listener(
+     addr: &str,
+ ) -> std::io::Result<impl Listener<Io = TcpStream, Addr = SocketAddr>> {
+-    let listener = TcpListener::bind(addr).await?;
++    // VLLM_ROUTER_REUSEPORT=1: SO_REUSEADDR + SO_REUSEPORT, so a new router can bind the same
++    // port while the old one drains its streams after SIGTERM. Backlog 128 as TcpListener::bind.
++    let listener = if std::env::var("VLLM_ROUTER_REUSEPORT").is_ok_and(|v| v == "1") {
++        let mut last_err = None;
++        let mut bound = None;
++        for sock_addr in tokio::net::lookup_host(addr).await? {
++            let socket = if sock_addr.is_ipv4() {
++                tokio::net::TcpSocket::new_v4()?
++            } else {
++                tokio::net::TcpSocket::new_v6()?
++            };
++            socket.set_reuseaddr(true)?;
++            socket.set_reuseport(true)?;
++            match socket.bind(sock_addr).and_then(|()| socket.listen(128)) {
++                Ok(listener) => {
++                    bound = Some(listener);
++                    break;
++                }
++                Err(err) => last_err = Some(err),
++            }
++        }
++        match bound {
++            Some(listener) => {
++                info!("Listening on {} with SO_REUSEPORT", addr);
++                listener
++            }
++            None => {
++                return Err(last_err.unwrap_or_else(|| {
++                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "no address to bind")
++                }))
++            }
++        }
++    } else {
++        TcpListener::bind(addr).await?
++    };
+     Ok(listener.tap_io(|tcp| {
+         if let Err(err) = tcp.set_nodelay(true) {
+             warn!("Failed to set TCP_NODELAY on incoming connection: {err}");
