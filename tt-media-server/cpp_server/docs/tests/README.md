@@ -14,6 +14,8 @@ Rules:
 | 2026-11-14 | [Cancel on a real server (T3K, Wan2.2)](2026-11-14-video-cancel-real-server.md) | 21/21 (repeated with the new log line and after the C++ runner-id change: 21/21) |
 | 2026-11-14 | [Cancel/CLAIMED race on a real runner](2026-11-14-video-cancel-race-real-server.md) | 10/10 (repeated after the C++ runner-id change: 10/10) |
 | 2026-11-14 | [Job queue, download/Range, repeatability, sync mode (T3K, Wan2.2)](2026-11-14-video-real-server-queue-download-sync.md) | 45/45 (repeated after the C++ change: 45/45) |
+| 2026-11-14 | [Curl examples and worker crash on a real device (T3K, Wan2.2)](2026-11-14-video-curl-examples-and-worker-crash-real-device.md) | curl examples: all pass; worker crash: job fails correctly; hang on a failed warmup found and fixed, repeated on the device |
+| 2026-11-14 | [Extended checks: fields, content, load, restart, limits, Python comparison (T3K and mock)](2026-11-14-video-real-device-extended-checks.md) | mock 53/53 + 15/15 + 58/58 + 36/36, unit 55/55; device 35/36 (wrong expectation) + 9/9 + 27/27 + 8/8; a segfault on worker exit fixed; 4 open findings |
 
 ## Problem analyses
 
