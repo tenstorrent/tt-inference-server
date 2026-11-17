@@ -98,6 +98,24 @@ TEST(VideoJobStoreTest, CreateGetAndListUseTaskIdOrder) {
             std::optional<uint32_t>(3U));
 }
 
+TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
+  VideoJobStore store(10, 0);
+  // indexed like JobStatus: queued, in_progress, completed, failed, cancelled,
+  // cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 0, 0, 0}));
+  store.create(1, "tt-wan2.2", params("a"));
+  store.create(2, "tt-wan2.2", params("b"));
+  store.create(3, "tt-wan2.2", params("c"));
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{3, 0, 0, 0, 0, 0}));
+  store.markInProgress(1);
+  store.markInProgress(2);
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
+  store.complete(1, "", "boom");  // worker error -> failed
+  ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
+  ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));
+}
+
 TEST(VideoJobStoreTest, InProgressThenCompleteKeepsTheFileAndResultPath) {
   VideoJobStore store(10, 0);
   const auto clip = tempClip("complete");

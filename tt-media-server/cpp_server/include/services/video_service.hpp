@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include "config/runner_config.hpp"
 #include "domain/video/video_response.hpp"
@@ -75,6 +76,9 @@ class VideoService
   void onTaskClaimed(size_t workerIdx, const IpcResult& result,
                      std::chrono::steady_clock::time_point claimTime,
                      double queueWaitMs, double shmEnqueueMs) override;
+  void onTaskCompleted(size_t workerIdx, const IpcResult& result,
+                       std::chrono::steady_clock::time_point gotResultTime,
+                       std::chrono::steady_clock::time_point doneTime) override;
   void onStopped() override;
   bool tryRecoverWorker(size_t workerIdx) override;
 
@@ -89,6 +93,12 @@ class VideoService
   void stopSweeper();
 
   VideoJobStore jobs;
+
+  // Telemetry: when each task was handed to the pipeline (for e2e time).
+  void refreshJobGauges() const;
+  std::mutex submitMutex_;
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>
+      submitTimes_;
 
   // Periodic job cleanup (Python job_cleanup_interval_seconds etc.).
   int64_t sweepIntervalSeconds_ = 300;
