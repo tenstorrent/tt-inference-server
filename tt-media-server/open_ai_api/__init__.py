@@ -72,6 +72,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.GENERATION.value: [
         ServiceRoute(generations.router, "", None, ["Generations"]),
+        ServiceRoute(image.generation_router, "/v1/images", None, ["Image processing"]),
     ],
 }
 

@@ -163,6 +163,8 @@ class GenerationRequest(BaseRequest):
     _height: int = PrivateAttr(default=0)
     _seed: int = PrivateAttr(default=0)
     _prompt: str = PrivateAttr(default="")
+    # JPEG quality of the outputs; None: the server's default.
+    _image_quality: Optional[int] = PrivateAttr(default=None)
     # Shared with the device worker: a set cancel event keeps a worker from
     # claiming the request, and the assignment tells the job manager whether
     # one already has.

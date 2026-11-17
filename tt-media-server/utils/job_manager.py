@@ -418,6 +418,15 @@ class JobManager:
                 job._task.cancel()
         self._logger.info(f"Job {job_id} failed: {error_message}")
 
+    def cancel_waiting_job(self, job_id: str) -> bool:
+        """Cancel a job no worker has claimed yet; leave one that is rendering.
+        Whether it was cancelled."""
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != JobStatus.QUEUED or _held_by_a_worker(job):
+                return False
+        return self.cancel_job(job_id) is not None
+
     def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""
         with self._jobs_lock:

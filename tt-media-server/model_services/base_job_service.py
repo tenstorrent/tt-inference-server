@@ -94,6 +94,9 @@ class BaseJobService(BaseService):
     def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
         return self._job_manager.cancel_job(job_id, org_id=org_id)
 
+    def cancel_waiting_job(self, job_id: str) -> bool:
+        return self._job_manager.cancel_waiting_job(job_id)
+
     async def delete_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
         return await self._job_manager.delete_job(job_id, org_id=org_id)
 

@@ -4,15 +4,37 @@
 
 from config.constants import ModelRunners
 from config.settings import settings
+from domain.flux3_image_klein_request import (
+    FLUX3_IMAGE_KLEIN,
+    FLUX3_KLEIN_SIZES,
+    Flux3ImageKleinRequest,
+)
 from domain.image_edit_request import ImageEditRequest
-from domain.image_generate_request import ImageGenerateRequest
+from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
+import asyncio
+import base64
 import json
 import os
+import time
+from pathlib import Path
+from typing import Awaitable, Callable, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Security, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Security,
+    UploadFile,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
+from model_services.generation_service import GenerationService, read_manifest
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 
@@ -254,6 +276,223 @@ async def lora_status(
         ready = False
     return JSONResponse(content={"active": active, "model_ready": ready})
 
+
+# ----------------------------- FLUX.3 Image klein -----------------------------
+# Synchronous /generations and /edits for clients that wait for the image
+# (Console). Each request is one ordinary Klein job, queued with the
+# /v1/generations jobs and rendered one at a time, waited for here and returned
+# inline, then deleted. A client that leaves, or a wait that times out, only
+# cancels a job no worker has claimed: a render is never stopped.
+
+# Well under Console's 120 s request timeout.
+KLEIN_WAIT_SECONDS = 90.0
+_KLEIN_POLL_SECONDS = 0.05
+# The image API's field each Klein field is filled from, for the errors.
+_KLEIN_ERROR_FIELDS = {
+    "images": "image",
+    "aspect_ratio": "width",
+    "size": "width",
+    "format": "image_return_format",
+}
+
+
+class _KleinImageFields(BaseModel):
+    """The image API's fields as Klein takes them, over BaseImageRequest's."""
+
+    width: Optional[int] = Field(default=None, ge=256, le=4096)
+    height: Optional[int] = Field(default=None, ge=256, le=4096)
+    # Klein's own: 16 steps, no guidance or negative prompt. Ignored.
+    num_inference_steps: Optional[int] = None
+    guidance_scale: Optional[float] = None
+
+    @field_validator("num_inference_steps")
+    @classmethod
+    def validate_num_inference_steps(cls, v):
+        return v
+
+    # One render per request keeps a call within seconds; four in a row would
+    # hold the connection for half a minute.
+    @field_validator("number_of_images", check_fields=False)
+    @classmethod
+    def _one_image(cls, v):
+        if v not in (None, 1):
+            raise ValueError(
+                "FLUX.3 Image klein makes 1 image per request; send one request "
+                "per image"
+            )
+        return v
+
+
+class KleinImageGenerateRequest(_KleinImageFields, ImageGenerateRequest):
+    pass
+
+
+class KleinImageEditRequest(_KleinImageFields, ImageEditRequest):
+    pass
+
+
+def _klein_errors(error: ValidationError) -> RequestValidationError:
+    errors = error.errors(include_url=False, include_context=False, include_input=False)
+    return RequestValidationError(
+        [
+            {
+                **e,
+                # A model-level error is the output size's.
+                "loc": ("body", _KLEIN_ERROR_FIELDS.get(e["loc"][0], e["loc"][0]))
+                if e["loc"]
+                else ("body", "width"),
+            }
+            for e in errors
+        ]
+    )
+
+
+def _klein_request(
+    request: BaseImageRequest, image: Optional[str]
+) -> Flux3ImageKleinRequest:
+    """The Klein job for an image API request; 422 for what Klein can't make."""
+    image_format = (request.image_return_format or "JPEG").lower()
+    fields = {"prompt": request.prompt, "format": image_format, "seed": request.seed}
+    if request.width is not None:
+        shape = (request.width, request.height)
+        keys = [key for key, size in FLUX3_KLEIN_SIZES.items() if size == shape]
+        if not keys:
+            served = ", ".join(
+                f"{w}x{h}" for w, h in Flux3ImageKleinRequest.served_sizes().values()
+            )
+            raise RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "width"),
+                        "msg": f"{shape[0]}x{shape[1]} is not served; this "
+                        f"deployment serves {served}",
+                        "type": "value_error",
+                    }
+                ]
+            )
+        fields["aspect_ratio"], fields["size"] = keys[0]
+    if image is not None and not image.startswith(("https://", "http://")):
+        # As ImageManager.base64_to_pil_image takes it for Kontext and SDXL:
+        # bare base64 or a data URL, its padding restored. Klein takes a data
+        # URI; the decoder reads the format from the bytes.
+        prefix, _, data = image.rpartition(",")
+        image = (
+            (prefix or "data:image/png;base64") + "," + data + "=" * (-len(data) % 4)
+        )
+    if image is not None:
+        fields["images"] = [image]
+    try:
+        klein = Flux3ImageKleinRequest(**fields)
+    except ValidationError as e:
+        raise _klein_errors(e)
+    if image_format == "jpeg":
+        klein._image_quality = request.image_quality
+    return klein
+
+
+async def _wait_for_job(
+    service: GenerationService,
+    job_id: str,
+    disconnected: Callable[[], Awaitable[bool]],
+) -> dict:
+    """The job once it ends; 504 after KLEIN_WAIT_SECONDS or when the client
+    leaves, cancelling it only if no worker has claimed it."""
+    deadline = time.monotonic() + KLEIN_WAIT_SECONDS
+    while True:
+        metadata = service.get_job_metadata(job_id)
+        if metadata is None:
+            raise HTTPException(status_code=500, detail=f"Job {job_id} is gone")
+        if metadata["status"] in ("completed", "failed", "cancelled"):
+            return metadata
+        gone = await disconnected()
+        if gone or time.monotonic() > deadline:
+            cancelled = service.cancel_waiting_job(job_id)
+            reason = (
+                "client disconnected"
+                if gone
+                else (f"not done within {KLEIN_WAIT_SECONDS:g} s")
+            )
+            outcome = (
+                "cancelled before it started"
+                if cancelled
+                else f"it is still rendering: GET /v1/jobs/{job_id}"
+            )
+            raise HTTPException(
+                status_code=504, detail=f"Job {job_id} {reason}; {outcome}"
+            )
+        await asyncio.sleep(_KLEIN_POLL_SECONDS)
+
+
+def _read_image(result_path: str) -> str:
+    (output,) = read_manifest(result_path)
+    return base64.b64encode((Path(result_path) / output["file"]).read_bytes()).decode()
+
+
+async def _klein_render(
+    service: GenerationService, http_request: Request, request: Flux3ImageKleinRequest
+) -> JSONResponse:
+    started = time.monotonic()
+    job = await service.submit(request, FLUX3_IMAGE_KLEIN.id)
+    metadata = await _wait_for_job(service, job["id"], http_request.is_disconnected)
+    if metadata["status"] == "failed":
+        raise HTTPException(status_code=500, detail=metadata["error"]["message"])
+    if metadata["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail=f"Job {job['id']} was cancelled")
+    try:
+        image = await asyncio.to_thread(
+            _read_image, service.get_job_result_path(job["id"])
+        )
+    finally:
+        await service.delete_job(job["id"])
+    return JSONResponse(
+        content={
+            "images": [image],
+            "generation_time": round(time.monotonic() - started, 2),
+        }
+    )
+
+
+klein_router = APIRouter()
+
+
+@klein_router.post("/generations")
+async def klein_generate_image(
+    http_request: Request,
+    image_generate_request: KleinImageGenerateRequest,
+    service: GenerationService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """Text to image with FLUX.3 Image klein; waits for the image."""
+    try:
+        request = _klein_request(image_generate_request, image=None)
+        return await _klein_render(service, http_request, request)
+    except (HTTPException, RequestValidationError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@klein_router.post("/edits")
+async def klein_edit_image(
+    http_request: Request,
+    image_edit_request: KleinImageEditRequest,
+    service: GenerationService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """Edit `image` with FLUX.3 Image klein; waits for the image."""
+    try:
+        request = _klein_request(image_edit_request, image=image_edit_request.image)
+        return await _klein_render(service, http_request, request)
+    except (HTTPException, RequestValidationError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Mounted beside the generations API: only Klein's deployment serves images.
+generation_router = APIRouter()
+if settings.model_runner == ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value:
+    generation_router.include_router(klein_router)
 
 router = APIRouter()
 

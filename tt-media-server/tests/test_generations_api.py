@@ -658,7 +658,11 @@ def test_lossy_outputs_are_saved_at_high_quality(tmp_path, output_format, option
     pixels = np.random.default_rng(0).integers(0, 256, (64, 64, 3), dtype=np.uint8)
     image = Image.fromarray(pixels)
     request = SimpleNamespace(
-        OUTPUT_TYPE="image", format=output_format, _seed=0, _prompt="x"
+        OUTPUT_TYPE="image",
+        format=output_format,
+        _seed=0,
+        _prompt="x",
+        _image_quality=None,
     )
     output = GenerationService._write_output(tmp_path, 0, request, image)
     expected = BytesIO()

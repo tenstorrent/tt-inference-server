@@ -529,7 +529,10 @@ class GenerationService(BaseJobService):
                     if pil_format == "JPEG"
                     else without_opaque_alpha(result)
                 )
-                image.save(path, format=pil_format, **IMAGE_SAVE_OPTIONS[pil_format])
+                options = IMAGE_SAVE_OPTIONS[pil_format]
+                if pil_format == "JPEG" and request._image_quality is not None:
+                    options = {**options, "quality": request._image_quality}
+                image.save(path, format=pil_format, **options)
             return {
                 **output,
                 "file": path.name,
