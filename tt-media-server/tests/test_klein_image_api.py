@@ -421,4 +421,7 @@ def test_v1_models_lists_the_image_api_fields(monkeypatch):
     properties = entry["schema"]["properties"]
     assert {"prompt", "image", "strength", "width", "height"} <= set(properties)
     assert properties["width"]["anyOf"][0]["maximum"] == 4096
+    # Console offers references only when strength has a numeric default.
+    assert isinstance(properties["strength"]["default"], float)
+    assert properties["image"]["default"] is None
     assert entry["schema"]["required"] == ["prompt"]

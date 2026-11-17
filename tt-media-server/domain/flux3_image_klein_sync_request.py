@@ -65,4 +65,6 @@ class KleinImageRequest(KleinImageGenerateRequest):
     `image` (and `strength`, ignored) on /v1/images/image-to-image."""
 
     image: Optional[str] = None
-    strength: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    # Klein has no strength. Console offers image to image only for a schema
+    # whose strength has a numeric default: ImageToImageRequest's.
+    strength: Optional[float] = Field(default=0.6, ge=0.0, le=1.0)
