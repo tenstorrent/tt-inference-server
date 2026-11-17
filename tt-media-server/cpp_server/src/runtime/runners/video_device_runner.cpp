@@ -241,6 +241,7 @@ bool VideoDeviceRunner::warmup() {
   if (ownsInterpreter) {
     py::initialize_interpreter();
   }
+  bool warmupFailed = false;
   try {
     py::gil_scoped_acquire gil;
     preparePythonPath();
@@ -273,16 +274,20 @@ bool VideoDeviceRunner::warmup() {
   } catch (const py::error_already_set& e) {
     TT_LOG_ERROR("[VideoDevice] Warmup failed: {}", e.what());
     ready = false;
-    return false;
+    warmupFailed = true;
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[VideoDevice] Warmup failed: {}", e.what());
     ready = false;
-    return false;
+    warmupFailed = true;
   }
+  // initialize_interpreter() leaves the GIL held by this thread. Release it on
+  // the failure path too: the worker then calls stop(), which takes the GIL from
+  // another thread, and with the GIL still held here the process never exits
+  // (the service would not notice the dead worker).
   if (ownsInterpreter) {
     PyEval_SaveThread();
   }
-  return true;
+  return !warmupFailed;
 }
 
 std::string VideoDeviceRunner::run(
@@ -309,7 +314,9 @@ std::string VideoDeviceRunner::run(
 }
 
 void VideoDeviceRunner::stop() {
-  if (!python || python->runner.is_none()) {
+  // A failed warmup can leave `runner` (and `loop`) as null handles, not as
+  // Python None; is_none() is false for a null handle and attr() would crash.
+  if (!python || !python->runner || python->runner.is_none()) {
     ready = false;
     return;
   }
@@ -324,7 +331,7 @@ void VideoDeviceRunner::stop() {
     TT_LOG_WARN("[VideoDevice] close_device raised: {}", e.what());
   }
   try {
-    if (!python->loop.is_none()) {
+    if (python->loop && !python->loop.is_none()) {
       python->loop.attr("close")();
     }
   } catch (const py::error_already_set& e) {
