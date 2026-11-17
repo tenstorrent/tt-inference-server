@@ -248,6 +248,14 @@ def validate_runtime_args(model_spec, runtime_config):
             "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
         )
 
+    if (
+        getattr(args, "kernel_cache_dir", None)
+        and DeviceTypes.from_string(args.device).is_multihost()
+    ):
+        raise ValueError(
+            "--kernel-cache-dir is not supported for multi-host deployments"
+        )
+
     # Validate mutual exclusivity of weight source options
     weight_source_args = [
         args.host_volume,
@@ -489,7 +497,7 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     """Validate that --image-user UID can access bind-mounted host paths.
 
     Checks read permission for --host-hf-cache and --host-weights-dir (readonly mounts),
-    and read+write permission for --host-volume (read-write mount).
+    and read+write permission for --host-volume and --kernel-cache-dir (read-write mounts).
 
     If a check fails, attempts to fix permissions via chmod (no sudo).
     Raises ValueError with actionable guidance if the fix is not possible.
@@ -511,6 +519,13 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
         checks.append(
             ("--quetzal-package-root", args.quetzal_package_root, False, True)
         )
+    kernel_cache_dir = getattr(args, "kernel_cache_dir", None)
+    if kernel_cache_dir:
+        kernel_cache_path = Path(kernel_cache_dir)
+        if not kernel_cache_path.exists():
+            logger.info(f"Creating kernel cache directory: {kernel_cache_path}")
+            kernel_cache_path.mkdir(parents=True, exist_ok=True)
+        checks.append(("--kernel-cache-dir", kernel_cache_dir, True, True))
     if quetzal_package_mount:
         for auxiliary in quetzal_package_mount.auxiliary:
             checks.append(
