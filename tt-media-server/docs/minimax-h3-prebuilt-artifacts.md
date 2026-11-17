@@ -32,7 +32,15 @@ All commands below are subcommands of `scripts/prebuilt_artifacts.py`, run from 
      --cache-dir <kernel cache dir> --manifest kernel_cache_manifest.json --tag <image>-kc --push
    ```
 
-   The manifest records the values of the variables that change the compiled kernels (see the list below), as the capture run saw them. `build-image` bakes those values into the new image with `tt-media-server/Dockerfile.kernel-cache`. Compiler logs and temporary files are left out.
+   The manifest records the values of the variables that change the compiled kernels (see the list below), as the capture run saw them. Give it the `.env` file and the runtime model spec of the capture run, or the values set there are missing. `build-image` bakes those values into the new image with `tt-media-server/Dockerfile.kernel-cache`. Compiler logs and temporary files are left out.
+
+   Both commands stop on anything that would put the wrong content into the image:
+
+   - `manifest` fails if the server log has no compile line although kernels were captured. That log is not from the capture run, or compile logging is off, and the check in step 3 would prove nothing.
+   - `build-image` only packages the directory the manifest describes: the build key folders must be there and the file count and size must match.
+   - A symbolic link anywhere in the kernel cache is refused. The cache was written by a container, and a link could pull a host file into the image.
+
+   `build-image` stages a copy of the cache in the temporary directory (`TMPDIR`), which needs room for it. The build needs BuildKit; the command turns it on. After a push it prints `digest: <repo>@sha256:...`, which is the image this run built. Use that digest, not the tag, if several runs can push the same tag.
 
 3. Start the new image once and check that it compiled nothing:
 
@@ -48,7 +56,15 @@ All commands below are subcommands of `scripts/prebuilt_artifacts.py`, run from 
      --manifest-out tt_weights_manifest.json
    ```
 
-   The upload makes `tt_dit_cache/` on the revision an exact copy of the local cache. Earlier versions stay reachable through their tags. An existing tag is never moved.
+   What the upload does:
+
+   - It only writes to a private repo. A repo that does not exist is created private; an existing repo that is not private is refused.
+   - It replaces the cache directories it uploads and leaves every other directory on the revision alone, so two model variants can share a repo. A symbolic link in the cache is refused.
+   - A large upload takes several commits. The manifest on the revision is removed first and written back last, so a commit with a manifest is a finished upload.
+   - The tag is created only after the files at the final commit match the local cache.
+   - A tag is never moved. Running the same upload again under a tag that already holds this cache succeeds and reports the published commit, so a failed job can be re-run. A tag that holds other content is refused, so each model variant needs its own tag.
+
+   Do not run two uploads to the same revision at the same time.
 
 5. Write the release file:
 
@@ -78,7 +94,9 @@ Weights:
     --revision <commit or tag> --dest <tt_dit cache dir>
   ```
 
-  A directory is marked complete only after its file count and size match the manifest. On a mismatch the command fails and marks nothing.
+  Use the tag or the commit, not a branch: a branch can be in the middle of an upload, and the download then fails because it has no manifest.
+
+  The download first removes the completion markers of the directories it is about to replace, so a run that stops part way leaves none of them looking complete. The files are checked against the manifest in a staging folder (`.tt_weights_download` in the destination) before any of them is moved in, and a directory is marked complete only after that. On a mismatch the command fails, moves nothing and keeps the staging folder; the next run for the same commit continues from it. A destination directory that holds files the manifest does not list is refused: remove that directory first.
 
 - The server still reads a small part of the original checkpoint: the configs, the VAE, the tokenizer, the vision tower of the text encoder and the LoRA file. Download only that part into the directory used as `MINIMAX_H3_MODEL_PATH`:
 
@@ -105,6 +123,6 @@ Count these lines in the server log. Zero means every kernel came from the cache
 python3 scripts/prebuilt_artifacts.py kernel-cache check-log --server-log <server log>
 ```
 
-The command prints the count and exits 0 when it is zero. Otherwise it exits 1 and prints the first 20 compiled kernels. `--max-compiled <N>` sets how many compiled kernels still pass.
+The command prints the count and exits 0 when it is zero. Otherwise it exits 1 and prints the first 20 compiled kernels. `--max-compiled <N>` sets how many compiled kernels still pass. A missing or empty log fails.
 
 The compiled kernels also depend on the host, for example on its Ethernet firmware. On a host that differs from the CI host in such a way tt-metal compiles again. The start still works; it is only slow.
