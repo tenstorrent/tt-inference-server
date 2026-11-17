@@ -8081,6 +8081,11 @@ templates:
         GLM53_STACK_PREFIX_KEEP_PREV: "1"
         GLM53_PREFIX_ASYNC_EXPORT: "1"
         VLLM_HTTP_TIMEOUT_KEEP_ALIVE: "600"
+        # A 1,024-row prefill bucket beside 2,048 / 8,192 (tt-metal #64931 79e20b32ae7: the auto tail split takes the cheapest
+        # mix of bucket sizes): exact-snapshot remainders replay 1,024 rows instead of a full 2,048-row chunk. AgentX c8
+        # (abd539b80fc): total 23,237 -> 23,749 tok/s, decode 38.1 -> 38.9 tok/s/u, TTFT p50 / p90 2.45 / 15.44 -> 2.07 / 11.25 s;
+        # served 1 M x 1 / 2 / 4 / 8 errors 0 (re-chunked prefill tails: coherent near-tie text changes, not bitwise)
+        GLM53_PREFILL_BUCKETS: "1024,2048,8192"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
         # speculates up to 1 M), and its per-slot state in the prefix snapshots (a warm turn keeps speculating)
         GLM53_SPEC_MTP_SPARSE: "1"
