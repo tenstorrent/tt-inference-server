@@ -21,6 +21,8 @@ See tt-media-server/docs/minimax-h3-prebuilt-artifacts.md.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import fnmatch
 import glob
 import hashlib
@@ -76,16 +78,26 @@ MESH_SHAPE = re.compile(r"mesh(\d+x\d+)_")
 # Manifest fields that say when and by which server commit an upload was made,
 # not what it holds. A tag is reused when everything else is equal.
 MANIFEST_RUN_FIELDS = ("created_utc", "server_sha")
+WEIGHTS_MANIFEST_FIELDS = (
+    "variant",
+    "cache_directories",
+    "original_files",
+    "original_folders",
+)
 
-# What a start with a complete converted cache still reads from the original
+# What a server with a complete converted cache still reads from the original
 # checkpoint directory (MINIMAX_H3_MODEL_PATH). Correct the list here only.
-# Globs relative to that directory; each must match a file:
+# Globs relative to that directory; each must match a file. The audio VAE
+# weights are listed for the audio encoder: only a request whose reference has a
+# soundtrack loads it, so a capture run without one publishes no converted copy
+# and the server converts it from these.
 TEXT_ENCODER_INDEX = "text_encoder/model.safetensors.index.json"
 ORIGINAL_SUBSET = (
     "model_index.json",
     "vae/config.json",
     "vae/*",
-    "audio_vae/config.json",
+    "audio_vae/*.json",
+    "audio_vae/*.safetensors",
     "text_encoder/config.json",
     TEXT_ENCODER_INDEX,
     "text_encoder/*.json",
@@ -121,6 +133,16 @@ def read_json(path: Path) -> dict:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise CliError(f"{path} is not valid JSON: {error}") from error
+
+
+def manifest_fields(data, names: tuple, source) -> dict:
+    """The named fields of a manifest; an error when it is not one of this layout."""
+    missing = [name for name in names if not isinstance(data, dict) or name not in data]
+    if missing:
+        raise CliError(
+            f"{source} is not a manifest this command reads: no {', '.join(missing)}"
+        )
+    return {name: data[name] for name in names}
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -599,11 +621,15 @@ def published_manifest(api, repo, commit, variant) -> dict | None:
     if not api.file_exists(repo_id=repo, filename=filename, revision=commit):
         return None
     with tempfile.TemporaryDirectory(prefix="tt-weights-manifest-") as folder:
-        return read_json(
+        manifest = read_json(
             api.hf_hub_download(
                 repo_id=repo, filename=filename, revision=commit, local_dir=folder
             )
         )
+    manifest_fields(
+        manifest, WEIGHTS_MANIFEST_FIELDS, f"{filename} at {commit} of {repo}"
+    )
+    return manifest
 
 
 def published_files(api, repo, commit) -> dict:
@@ -616,12 +642,12 @@ def published_files(api, repo, commit) -> dict:
 
 
 def published_directory(files: dict, relative: str) -> dict:
-    """{file name: file entry} of one cache directory in a listing of the repo."""
-    prefix = f"{TT_WEIGHTS_FOLDER}/{relative}/"
+    """{file name: file entry} of the files directly in one cache directory, in a listing of the repo."""
+    folder = f"{TT_WEIGHTS_FOLDER}/{relative}"
     return {
-        path[len(prefix) :]: item
+        path[len(folder) + 1 :]: item
         for path, item in files.items()
-        if path.startswith(prefix)
+        if path.rpartition("/")[0] == folder
     }
 
 
@@ -649,60 +675,101 @@ def tensor_sizes(directory: Path) -> dict:
     }
 
 
-def upload_plan(api, repo, revision, cache_dir, original_dir, manifest) -> tuple:
+def holds_directory(directory: Path, remote: dict) -> bool:
+    """True when a local cache directory holds exactly the files the Hub lists for it."""
+    local = tensor_sizes(directory)
+    return (
+        bool(remote)
+        and remote.keys() == local.keys()
+        and all(
+            same_content(directory / name, size, remote[name])
+            for name, size in local.items()
+        )
+    )
+
+
+def is_listed_file(path: Path, entry: dict) -> bool:
+    """True when a file has the bytes and sha256 of an original file of a manifest."""
+    return (
+        path.is_file()
+        and path.stat().st_size == entry["bytes"]
+        and file_hash(path) == entry["sha256"]
+    )
+
+
+def differing(files: dict, cache_dir, original_dir, manifest) -> tuple:
+    """The manifest's cache directories and original files that a listing of the repo does not hold as they are locally."""
+    directories = [
+        entry["path"]
+        for entry in manifest["cache_directories"]
+        if not holds_directory(
+            cache_dir / entry["path"], published_directory(files, entry["path"])
+        )
+    ]
+    originals = [
+        entry["path"]
+        for entry in manifest["original_files"]
+        if not same_content(
+            original_dir / entry["path"],
+            entry["bytes"],
+            files.get(f"{ORIGINAL_FOLDER}/{entry['path']}"),
+            entry["sha256"],
+        )
+    ]
+    return directories, originals
+
+
+def upload_plan(
+    api, repo, revision, cache_dir, original_dir, manifest, replace_shared
+) -> tuple:
     """What to send so the revision holds what the manifest lists.
 
     Returns the cache directories and original files that differ from the Hub,
-    the Hub's files of those directories that the local ones lack, and whether
-    the Hub holds a manifest of this variant. Raises when a path that another
-    variant's manifest lists would change.
+    the Hub's files of those directories that the local ones lack, and the
+    variants whose manifest leaves the revision first: this one and, with
+    replace_shared, those that list a path that would change. Without
+    replace_shared such a path is refused.
     """
     files = published_files(api, repo, revision)
     manifest_path = re.compile(rf"{MANIFEST_FOLDER}/([^/]+)\.json")
     variants = {
         match.group(1) for match in map(manifest_path.fullmatch, files) if match
     }
-    shared = set()
+    listed = {}
     for variant in sorted(variants - {manifest["variant"]}):
         other = published_manifest(api, repo, revision, variant)
-        shared.update(
+        paths = [
             f"{TT_WEIGHTS_FOLDER}/{entry['path']}"
             for entry in other["cache_directories"]
-        )
-        shared.update(
-            f"{ORIGINAL_FOLDER}/{entry['path']}" for entry in other["original_files"]
-        )
-
-    directories, stale, originals, changed = [], [], [], []
-    for entry in manifest["cache_directories"]:
-        local = tensor_sizes(cache_dir / entry["path"])
-        remote = published_directory(files, entry["path"])
-        if remote.keys() == local.keys() and all(
-            same_content(cache_dir / entry["path"] / name, size, remote[name])
-            for name, size in local.items()
-        ):
-            continue
-        directories.append(entry["path"])
-        stale += [
-            f"{entry['path']}/{name}" for name in sorted(set(remote) - set(local))
         ]
-        changed.append(f"{TT_WEIGHTS_FOLDER}/{entry['path']}")
-    for entry in manifest["original_files"]:
-        path = f"{ORIGINAL_FOLDER}/{entry['path']}"
-        local = original_dir / entry["path"]
-        if same_content(local, entry["bytes"], files.get(path), entry["sha256"]):
-            continue
-        originals.append(entry["path"])
-        if path in files:
-            changed.append(path)
-    refused = sorted(shared.intersection(changed))
-    if refused:
-        raise CliError(
-            f"{repo} holds other content at paths that another variant's manifest "
-            "lists; they are not replaced and nothing was uploaded:\n  "
-            + "\n  ".join(refused)
+        paths += [
+            f"{ORIGINAL_FOLDER}/{entry['path']}" for entry in other["original_files"]
+        ]
+        for path in paths:
+            listed.setdefault(path, set()).add(variant)
+
+    directories, originals = differing(files, cache_dir, original_dir, manifest)
+    stale = [
+        f"{path}/{name}"
+        for path in directories
+        for name in sorted(
+            set(published_directory(files, path)) - set(tensor_sizes(cache_dir / path))
         )
-    return directories, stale, originals, manifest["variant"] in variants
+    ]
+    changed = [f"{TT_WEIGHTS_FOLDER}/{path}" for path in directories]
+    changed += [f"{ORIGINAL_FOLDER}/{path}" for path in originals]
+    refused = sorted(set(listed).intersection(changed))
+    displaced = sorted(set().union(*(listed[path] for path in refused)))
+    if refused and not replace_shared:
+        raise CliError(
+            f"{repo} holds other content at paths that the manifest of "
+            f"{', '.join(displaced)} lists; they are not replaced and nothing was "
+            "uploaded:\n  " + "\n  ".join(refused) + "\n--replace-shared replaces "
+            f"them: it first removes those manifests from {revision}, until the "
+            "variants are uploaded again. Their tags keep what they hold."
+        )
+    retire = sorted({manifest["variant"], *displaced} & variants)
+    return directories, stale, originals, retire
 
 
 def describe_variant(args) -> dict:
@@ -753,12 +820,13 @@ def upload_tt_weights(api, args) -> None:
     """Publish one variant: its cache directories, its original subset, its manifest and a tag.
 
     The repo holds other variants and they share directories. A path another
-    variant's manifest lists is left as it is or the upload is refused; a file
-    the Hub already holds is not sent again. The upload takes several commits,
-    so this variant's manifest is removed first and written back last: a commit
-    with the manifest is a finished upload. The tag is made only after the files
-    at that commit match the local ones. A tag that already holds this content
-    is reused.
+    variant's manifest lists is left as it is, or the upload is refused, or with
+    --replace-shared that manifest is removed first; a file the Hub already
+    holds is not sent again. The upload takes several commits, so this variant's
+    manifest is removed first and written back last: a commit with the manifest
+    is a finished upload. The tag is made only after the files at that commit
+    have the content of the local ones. A tag that already holds this content is
+    reused.
     """
     repo, revision, variant = args.repo, args.revision, args.variant
     manifest = describe_variant(args)
@@ -792,16 +860,23 @@ def upload_tt_weights(api, args) -> None:
         commit, manifest = tags[tag], published
     else:
         api.create_branch(repo_id=repo, branch=revision, exist_ok=True)
+        local = (args.cache_dir, args.original_dir, manifest)
         send_directories, stale, send_originals, retire = upload_plan(
-            api, repo, revision, args.cache_dir, args.original_dir, manifest
+            api, repo, revision, *local, args.replace_shared
         )
-        manifest_path = f"{MANIFEST_FOLDER}/{variant}.json"
-        if retire:
+        for name in retire:
+            path = f"{MANIFEST_FOLDER}/{name}.json"
             api.delete_file(
-                path_in_repo=manifest_path,
+                path_in_repo=path,
                 repo_id=repo,
                 revision=revision,
-                commit_message=f"Remove {manifest_path} until the upload is complete",
+                commit_message=f"Remove {path} until {name} is uploaded",
+            )
+        displaced = [name for name in retire if name != variant]
+        if displaced:
+            step(
+                f"replace-shared: removed the manifest of {', '.join(displaced)} "
+                f"from {revision}; upload them again"
             )
         if send_directories:
             api.upload_folder(
@@ -830,29 +905,17 @@ def upload_tt_weights(api, args) -> None:
         )
         commit = api.upload_file(
             path_or_fileobj=(json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
-            path_in_repo=manifest_path,
+            path_in_repo=f"{MANIFEST_FOLDER}/{variant}.json",
             repo_id=repo,
             revision=revision,
         ).oid
         step(f"commit: {commit}")
 
-        files = published_files(api, repo, commit)
-        differing = []
-        for entry in directories:
-            remote = published_directory(files, entry["path"]).values()
-            if (len(remote), sum(item.size for item in remote)) != (
-                entry["files"],
-                entry["bytes"],
-            ):
-                differing.append(entry["path"])
-        for entry in originals:
-            remote = files.get(f"{ORIGINAL_FOLDER}/{entry['path']}")
-            if remote is None or remote.size != entry["bytes"]:
-                differing.append(entry["path"])
-        if differing:
+        differ = sum(differing(published_files(api, repo, commit), *local), [])
+        if differ:
             raise CliError(
                 f"commit {commit} of {repo} does not hold the local files in "
-                f"{', '.join(differing)}: something else changed {revision} during "
+                f"{', '.join(differ)}: something else changed {revision} during "
                 "the upload. Nothing was tagged; run the upload again."
             )
         api.create_tag(repo_id=repo, tag=tag, revision=commit)
@@ -864,16 +927,35 @@ def upload_tt_weights(api, args) -> None:
     step(f"manifest: {args.manifest_out}")
 
 
+@contextlib.contextmanager
+def exclusive(directory: Path):
+    """Hold a download destination; a second download into it at the same time is refused."""
+    directory.mkdir(parents=True, exist_ok=True)
+    lock = os.open(directory, os.O_RDONLY)
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise CliError(
+                f"another download is writing to {directory}; run this one after it"
+            ) from error
+        yield
+    finally:
+        os.close(lock)
+
+
 def download_tt_weights(
     api, repo, revision, variant, dest_cache, dest_original
 ) -> None:
     """Fetch what manifests/<variant>.json of a revision lists and mark what was verified.
 
-    The markers of the cache directories about to be replaced are removed first,
-    so a download that stops part way leaves none of them looking complete. The
-    files are checked in a staging folder before any of them is moved into
-    place. A failed run keeps that folder, and the next run for the same commit
-    continues from it.
+    What the destination already holds with the content of that revision is
+    kept as it is, marker included: it is not fetched again, and a variant that
+    shares it keeps working if this download fails. The markers of the other
+    cache directories are removed first, so a download that stops part way
+    leaves none of them looking complete. The files are checked in a staging
+    folder before any of them is moved into place. A failed run keeps that
+    folder, and the next run for the same commit continues from it.
     """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
@@ -885,17 +967,36 @@ def download_tt_weights(
             "variant is not published there, or an upload of it did not finish. "
             "Use the tag or commit of a release file."
         )
-    directories, originals = manifest["cache_directories"], manifest["original_files"]
+    listed, listed_files = manifest["cache_directories"], manifest["original_files"]
     folders = manifest["original_folders"]
-    for path in [entry["path"] for entry in directories + originals] + folders:
+    for path in [entry["path"] for entry in listed + listed_files] + folders:
         relative = PurePosixPath(path)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise CliError(f"unsafe path in the manifest: {path}")
     step(
-        f"manifest: {len(directories)} cache directories, "
-        f"{sum(entry['files'] for entry in directories)} files, "
-        f"{gigabytes(sum(entry['bytes'] for entry in directories))}; "
-        f"{len(originals)} original files"
+        f"manifest: {len(listed)} cache directories, "
+        f"{sum(entry['files'] for entry in listed)} files, "
+        f"{gigabytes(sum(entry['bytes'] for entry in listed))}; "
+        f"{len(listed_files)} original files"
+    )
+
+    files = published_files(api, repo, commit)
+    directories = [
+        entry
+        for entry in listed
+        if not holds_directory(
+            dest_cache / entry["path"], published_directory(files, entry["path"])
+        )
+    ]
+    originals = [
+        entry
+        for entry in listed_files
+        if not is_listed_file(dest_original / entry["path"], entry)
+    ]
+    step(
+        f"keep: {len(listed) - len(directories)} cache directories and "
+        f"{len(listed_files) - len(originals)} original files that the destination "
+        "already holds as they are at this commit"
     )
 
     markers = [dest_cache / entry["path"] / CACHE_MARKER for entry in directories]
@@ -906,16 +1007,16 @@ def download_tt_weights(
     staging = dest_cache / TT_WEIGHTS_STAGING / commit
     if staging.parent.exists() and not staging.is_dir():
         shutil.rmtree(staging.parent)
-    api.snapshot_download(
-        repo_id=repo,
-        revision=commit,
-        allow_patterns=[
-            f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/*"
-            for entry in directories
-        ]
-        + [f"{ORIGINAL_FOLDER}/{glob.escape(entry['path'])}" for entry in originals],
-        local_dir=str(staging),
-    )
+    patterns = [
+        f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/*" for entry in directories
+    ] + [f"{ORIGINAL_FOLDER}/{glob.escape(entry['path'])}" for entry in originals]
+    if patterns:
+        api.snapshot_download(
+            repo_id=repo,
+            revision=commit,
+            allow_patterns=patterns,
+            local_dir=str(staging),
+        )
     step(f"download: {variant} of {repo} into {staging}")
 
     staged = [staging / TT_WEIGHTS_FOLDER / entry["path"] for entry in directories]
@@ -934,11 +1035,7 @@ def download_tt_weights(
                 f"that are not in the manifest, for example {other[0]}"
             )
     for entry in originals:
-        source = staging / ORIGINAL_FOLDER / entry["path"]
-        if not source.is_file() or (source.stat().st_size, file_hash(source)) != (
-            entry["bytes"],
-            entry["sha256"],
-        ):
+        if not is_listed_file(staging / ORIGINAL_FOLDER / entry["path"], entry):
             mismatches.append(f"{entry['path']}: not the file the manifest lists")
     if mismatches:
         raise CliError(
@@ -961,10 +1058,10 @@ def download_tt_weights(
         shutil.move(staging / ORIGINAL_FOLDER / entry["path"], target)
     for folder in folders:
         (dest_original / folder).mkdir(parents=True, exist_ok=True)
-    for marker in markers:
-        marker.touch()
-    shutil.rmtree(staging.parent)
-    step(f"mark: {len(markers)} directories complete in {dest_cache}")
+    for entry in listed:
+        (dest_cache / entry["path"] / CACHE_MARKER).touch()
+    shutil.rmtree(staging.parent, ignore_errors=True)
+    step(f"mark: {len(listed)} directories complete in {dest_cache}")
 
 
 def write_release_hash(args) -> None:
@@ -985,8 +1082,11 @@ def write_release_hash(args) -> None:
 
     tt_weights = None
     if args.weights_manifest:
-        weights = read_json(args.weights_manifest)
-        tt_weights = {key: weights[key] for key in ("repo", "variant", "tag", "commit")}
+        tt_weights = manifest_fields(
+            read_json(args.weights_manifest),
+            ("repo", "variant", "tag", "commit"),
+            args.weights_manifest,
+        )
 
     identity = {
         "model": args.model,
@@ -1105,6 +1205,7 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--server-sha", required=True)
     upload.add_argument("--source-revision")
     upload.add_argument("--tag")
+    upload.add_argument("--replace-shared", action="store_true")
     upload.add_argument("--manifest-out", type=path_argument, required=True)
 
     download = tt_weights.add_parser(
@@ -1164,14 +1265,15 @@ def run(args, docker_run, hf_api) -> int:
         if args.action == "upload":
             upload_tt_weights(api, args)
         else:
-            download_tt_weights(
-                api,
-                args.repo,
-                args.revision,
-                args.variant,
-                args.dest_cache,
-                args.dest_original,
-            )
+            with exclusive(args.dest_cache):
+                download_tt_weights(
+                    api,
+                    args.repo,
+                    args.revision,
+                    args.variant,
+                    args.dest_cache,
+                    args.dest_original,
+                )
     return 0
 
 

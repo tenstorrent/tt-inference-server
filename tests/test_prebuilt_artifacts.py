@@ -2,9 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import fcntl
 import fnmatch
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,7 +58,7 @@ class FakeHub:
 
     def __init__(self):
         self.private, self.tags, self.commits, self.sent = None, {}, [{}], []
-        self.head = "0"
+        self.head, self.fetched = "0", []
 
     def _commit(self, files):
         self.commits.append(files)
@@ -136,6 +138,7 @@ class FakeHub:
     def snapshot_download(self, repo_id, revision, allow_patterns, local_dir):
         files = self.files(revision).items()
         wanted = {path: data for path, data in files if matches(path, allow_patterns)}
+        self.fetched += wanted
         write_files(Path(local_dir), wanted)
 
 
@@ -269,6 +272,7 @@ SHARDS = {
 }
 INDEX = json.dumps({"weight_map": SHARDS}).encode()
 LOG = f"../{FL2VA}/server.log"
+OTHER_LAYOUT = {"manifests/old.json": b'{"variant": "old"}'}
 NOT_READ_BY_A_CACHED_START = {
     "transformer/diffusion_pytorch_model.safetensors": b"big",
     "text_encoder/model-00001-of-00002.safetensors": b"big",
@@ -289,6 +293,7 @@ def original_subset(variant):
         "vae/config.json": b"{}",
         "vae/diffusion_pytorch_model.safetensors": b"vae",
         "audio_vae/config.json": b"{}",
+        "audio_vae/diffusion_pytorch_model.safetensors": b"audio",
         f"lightx2v/{variant}.safetensors": variant.encode(),
     }
 
@@ -396,10 +401,43 @@ def test_upload_stores_shared_paths_once_and_replaces_only_its_own(hub, cache_di
     assert set(hub.sent) == set(published(REF2VA)) - set(published(FL2VA))
     own = cache_dir / OWN[REF2VA]
     (own / "blocks.0.weight.tensorbin").rename(own / "blocks.0.scale.tensorbin")
+    nested = f"tt_dit_cache/{OWN[REF2VA]}/host_coords_r0-3_c0-7/a.tensorbin"
+    hub.files()[nested] = b"a multi-host capture of the same component"
     assert main(upload_argv(cache_dir, REF2VA, tt_metal_sha="c" * 40), hf_api=hub) == 0
     remote = {path for path in hub.files() if not path.startswith("manifests/")}
     renamed = {path.replace("0.weight", "0.scale") for path in published(REF2VA)}
-    assert remote == renamed | set(published(FL2VA))
+    assert remote == renamed | set(published(FL2VA)) | {nested}
+
+
+def test_upload_does_not_tag_a_commit_that_holds_other_content(cache_dir, capsys):
+    hub = FakeHub()
+    upload_file = hub.upload_file
+
+    def another_upload_writes(**arguments):
+        hub.files()[f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"] = b"7 bytes"
+        return upload_file(**arguments)
+
+    hub.upload_file = another_upload_writes
+
+    assert main(upload_argv(cache_dir), hf_api=hub) == 1
+
+    assert "something else changed main" in capsys.readouterr().err
+    assert hub.tags == {}
+
+
+def test_replace_shared_removes_the_manifests_that_list_the_path(hub, cache_dir):
+    assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
+    tagged = {tag: dict(hub.files(tag)) for tag in hub.tags}
+    (cache_dir / SHARED / "embed.weight.tensorbin").write_bytes(b"converted anew")
+    argv = upload_argv(cache_dir, tt_metal_sha="c" * 40) + ["--replace-shared"]
+
+    assert main(argv, hf_api=hub) == 0
+
+    head = hub.files()
+    assert head[f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"] == b"converted anew"
+    manifests = {path for path in head if path.startswith("manifests/")}
+    assert manifests == {f"manifests/{FL2VA}.json"}
+    assert tagged.items() <= {tag: hub.files(tag) for tag in hub.tags}.items()
 
 
 @pytest.mark.parametrize(
@@ -407,13 +445,15 @@ def test_upload_stores_shared_paths_once_and_replaces_only_its_own(hub, cache_di
     [
         (0, "a", f"{NOT_LOADED}/x.tensorbin", b"", "already holds this content at"),
         (1, "a", f"{OWN[FL2VA]}/x.tensorbin", b"", "already exists in"),
-        (1, "c", f"{SHARED}/x.tensorbin", b"", "another variant's manifest lists"),
+        (1, "c", f"{SHARED}/x.tensorbin", b"", f"the manifest of {REF2VA} lists"),
         (1, "c", f"{SHARED}/x.tmp.42.0", b"", "1 temp file(s)"),
         (1, "c", f"{SHARED}/cache_dict.json", None, "no cache_dict.json"),
         (1, "c", f"{SHARED}/link", Path("/"), "symbolic links"),
         (1, "c", LOG, b"ready", "names no directory under"),
         (1, "c", LOG, f"'{CONTAINER_CACHE}/gone'".encode(), "gone: missing"),
         (1, "c", f"../{FL2VA}/weights/vae/config.json", None, "reads: vae/config.json"),
+        (1, "c", "", lambda hub: setattr(hub, "private", False), "is not private"),
+        (1, "c", "", lambda hub: hub.files().update(OTHER_LAYOUT), "old.json at main"),
     ],
 )
 def test_upload_that_must_not_change_the_hub(
@@ -421,7 +461,9 @@ def test_upload_that_must_not_change_the_hub(
 ):
     assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
     argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40, server_sha="d" * 40)
-    if isinstance(content, Path):
+    if callable(content):
+        content(hub)
+    elif isinstance(content, Path):
         (cache_dir / path).symlink_to(content)
     elif content is None:
         (cache_dir / path).unlink()
@@ -435,13 +477,15 @@ def test_upload_that_must_not_change_the_hub(
     assert (hub.head, hub.tags) == before
 
 
-def download_argv(dest):
+def download_argv(dest, variant=FL2VA):
     argv = ["tt-weights", "download", "--repo", WEIGHTS_REPO, "--revision", "main"]
-    argv += ["--variant", FL2VA, "--dest-cache", str(dest / "tt_dit_cache")]
+    argv += ["--variant", variant, "--dest-cache", str(dest / "tt_dit_cache")]
     return argv + ["--dest-original", str(dest / "weights")]
 
 
-def test_download_marks_one_variant_after_verifying(hub, cache_dir, tmp_path):
+def test_download_marks_one_variant_and_keeps_it_when_another_fails(
+    hub, cache_dir, tmp_path
+):
     assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
     dest = tmp_path / "deployment"
 
@@ -451,6 +495,28 @@ def test_download_marks_one_variant_after_verifying(hub, cache_dir, tmp_path):
     for directory in (OWN[FL2VA], SHARED):
         expected[f"tt_dit_cache/{directory}/cache_dict.json"] = b""
     assert tree(dest) == expected
+
+    hub.fetched.clear()
+    del hub.files()[f"tt_dit_cache/{OWN[REF2VA]}/blocks.0.weight.tensorbin"]
+    assert main(download_argv(dest), hf_api=hub) == 0
+    assert main(download_argv(dest, REF2VA), hf_api=hub) == 1
+
+    assert not set(hub.fetched) & set(published(FL2VA))
+    applied = {p: d for p, d in tree(dest).items() if ".tt_weights_download" not in p}
+    assert applied == expected
+
+
+def test_download_refuses_a_destination_another_download_holds(hub, tmp_path, capsys):
+    dest = tmp_path / "deployment"
+    (dest / "tt_dit_cache").mkdir(parents=True)
+    lock = os.open(dest / "tt_dit_cache", os.O_RDONLY)
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
+    assert main(download_argv(dest), hf_api=hub) == 1
+
+    os.close(lock)
+    assert "another download is writing" in capsys.readouterr().err
+    assert tree(dest) == {}
 
 
 @pytest.mark.parametrize(
