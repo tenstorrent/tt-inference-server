@@ -7330,7 +7330,7 @@ templates:
       # One 8-chip group of the Galaxy; the other 24 chips stay idle.
       max_concurrency: 8
       max_context: 131072  # 128 * 1024
-      default_impl: true
+      default_impl: false  # fast mode (tt_lab_qwen27b_fast) is the Galaxy default
       docker_stop_timeout: 30  # TODO: measure on a Galaxy
       docker_host_state_dir: /var/lib/tenstorrent
       docker_entrypoint:
@@ -7388,7 +7388,7 @@ templates:
       # One 8-chip group of the Galaxy, one context.
       max_concurrency: 1
       max_context: 131072  # 128 * 1024
-      default_impl: false
+      default_impl: true
       docker_stop_timeout: 30  # TODO: measure on a Galaxy
       docker_host_state_dir: /var/lib/tenstorrent
       docker_entrypoint:
