@@ -1,0 +1,128 @@
+diff --git a/src/backend/preprocess.rs b/src/backend/preprocess.rs
+index b8ab9b1..0c32106 100644
+--- a/src/backend/preprocess.rs
++++ b/src/backend/preprocess.rs
+@@ -151,6 +151,57 @@ fn http_kv_input(body: &serde_json::Value, route: &str) -> Result<HttpKvInput, &
+     Ok(HttpKvInput::Render { path })
+ }
+ 
++/// Whether VLLM_ROUTER_MEDIA_PLACEHOLDERS=1 (read once).
++fn media_placeholders_enabled() -> bool {
++    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ENABLED.get_or_init(|| std::env::var("VLLM_ROUTER_MEDIA_PLACEHOLDERS").is_ok_and(|v| v == "1"))
++}
++
++/// The routing key of one media part: its URL (or data URL) when it has one, else the part itself, hashed.
++fn media_part_key(part: &serde_json::Value) -> String {
++    use sha2::{Digest, Sha256};
++    let kind = part.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
++    let source = part
++        .get(kind)
++        .and_then(|inner| inner.get("url").or(Some(inner)))
++        .and_then(serde_json::Value::as_str)
++        .map(str::to_owned)
++        .unwrap_or_else(|| part.to_string());
++    let digest = Sha256::digest(source.as_bytes());
++    let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
++    format!("<|media:{kind}:{hex}|>")
++}
++
++/// For prefix routing of chats with media (enabled by VLLM_ROUTER_MEDIA_PLACEHOLDERS=1): a copy of `body` whose
++/// non-text content parts are text parts naming a hash of their URL, so the worker renders it as text (no media fetch
++/// or encode) and the same media gives the same ids in every turn and on every worker. None when disabled, not a
++/// chat, or without media parts. Only the routing key changes; the generation request is untouched.
++fn media_placeholders(body: &serde_json::Value, route: &str) -> Option<serde_json::Value> {
++    if route != "/v1/chat/completions" || !media_placeholders_enabled() {
++        return None;
++    }
++    let messages = body.get("messages")?.as_array()?;
++    let is_media = |part: &serde_json::Value| part.get("type").and_then(serde_json::Value::as_str) != Some("text");
++    if !messages.iter().any(|m| {
++        m.get("content")
++            .and_then(serde_json::Value::as_array)
++            .is_some_and(|parts| parts.iter().any(is_media))
++    }) {
++        return None;
++    }
++    let mut out = body.clone();
++    for message in out.get_mut("messages")?.as_array_mut()? {
++        if let Some(parts) = message.get_mut("content").and_then(serde_json::Value::as_array_mut) {
++            for part in parts.iter_mut() {
++                if is_media(part) {
++                    *part = serde_json::json!({"type": "text", "text": media_part_key(part)});
++                }
++            }
++        }
++    }
++    Some(out)
++}
++
+ /// Backend-effective prompts, shared by colocated and PD routing policies.
+ #[derive(Clone)]
+ pub(crate) struct HttpTokenInput {
+@@ -188,6 +239,10 @@ pub(crate) async fn prepare_http_token_inputs(
+     use futures_util::{stream, StreamExt};
+     urls.sort();
+     urls.dedup();
++    // VLLM_ROUTER_MEDIA_PLACEHOLDERS=1: a chat's media parts become text placeholders in the body rendered for
++    // prefix routing only (the request the worker generates from is never this body).
++    let placeheld = media_placeholders(body, route);
++    let body = placeheld.as_ref().unwrap_or(body);
+     let input = match http_kv_input(body, route) {
+         Ok(input) => input,
+         Err(reason) => return urls.into_iter().map(|url| (url, Err(reason))).collect(),
+@@ -1026,6 +1081,28 @@ mod tests {
+         server.abort();
+     }
+ 
++    #[test]
++    fn media_placeholders_key_media_by_url_and_leave_text() {
++        use serde_json::json;
++        std::env::set_var("VLLM_ROUTER_MEDIA_PLACEHOLDERS", "1");
++        let image = |url: &str| json!({"messages":[{"role":"user","content":[
++            {"type":"text","text":"what is this?"},{"type":"image_url","image_url":{"url":url}}]}],"stream":true});
++        let a = super::media_placeholders(&image("https://x/a.png"), "/v1/chat/completions").unwrap();
++        let a2 = super::media_placeholders(&image("https://x/a.png"), "/v1/chat/completions").unwrap();
++        let b = super::media_placeholders(&image("https://x/b.png"), "/v1/chat/completions").unwrap();
++        assert_eq!(a, a2);
++        assert_ne!(a, b);
++        assert_eq!(a["messages"][0]["content"][0], json!({"type":"text","text":"what is this?"}));
++        assert_eq!(a["messages"][0]["content"][1]["type"], "text");
++        assert!(a["messages"][0]["content"][1]["text"].as_str().unwrap().starts_with("<|media:image_url:"));
++        assert_eq!(a["stream"], true);
++        assert!(super::http_cache_identity(a.as_object().unwrap()).is_ok());
++        // Text-only chats and other routes are left alone.
++        let text = json!({"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]});
++        assert!(super::media_placeholders(&text, "/v1/chat/completions").is_none());
++        assert!(super::media_placeholders(&image("https://x/a.png"), "/v1/completions").is_none());
++    }
++
+     #[test]
+     fn http_cache_identity_checks_extensions_and_message_parts() {
+         use serde_json::json;
+diff --git a/src/policies/cache_aware.rs b/src/policies/cache_aware.rs
+index eeab835..514a539 100644
+--- a/src/policies/cache_aware.rs
++++ b/src/policies/cache_aware.rs
+@@ -446,10 +446,17 @@ impl CacheAwarePolicy {
+     }
+ 
+     fn least_loaded(workers: &[Arc<dyn Worker>], healthy: &[usize]) -> Option<usize> {
+-        healthy
+-            .iter()
+-            .min_by_key(|&&idx| workers[idx].load())
+-            .copied()
++        // VLLM_ROUTER_RANDOM_TIES=1: a random one of the least loaded, not always the first in the list.
++        static RANDOM_TIES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        let random = *RANDOM_TIES.get_or_init(|| std::env::var("VLLM_ROUTER_RANDOM_TIES").is_ok_and(|v| v == "1"));
++        // One read of each load (they change concurrently).
++        let loads: Vec<(usize, usize)> = healthy.iter().map(|&idx| (idx, workers[idx].load())).collect();
++        let min = loads.iter().map(|&(_, load)| load).min()?;
++        let tied: Vec<usize> = loads.iter().filter(|&&(_, load)| load == min).map(|&(idx, _)| idx).collect();
++        if !random {
++            return tied.first().copied();
++        }
++        tied.get(rand::rng().random_range(0..tied.len())).copied()
+     }
+ 
+     /// Choose using an approximate affinity observation, but current eligibility
