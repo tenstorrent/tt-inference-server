@@ -3,233 +3,19 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import fnmatch
-import inspect
+import hashlib
 import json
-import os
-import subprocess
-import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from scripts.prebuilt_artifacts import KERNEL_CACHE_DOCKERFILE, main
-from workflows.kernel_cache import (
-    KERNEL_CACHE_CONTAINER_DIR,
-    KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
-)
+from scripts.prebuilt_artifacts import BUILD_KEY_ENV_VARS, KERNEL_CACHE_DOCKERFILE, main
+from workflows.kernel_cache import KERNEL_CACHE_CONTAINER_DIR
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 BASE_IMAGE = "registry.example/media-server:1.0-aaa-bbb-1"
 KC_IMAGE = f"{BASE_IMAGE}-kc"
 WEIGHTS_REPO = "example-org/model-tt-weights"
-ORIGINAL_REPO = "example-org/original-model"
-LORA_REPO = "example-org/turbo-lora"
-
-
-class FakeDocker:
-    """Stands in for subprocess.run: records docker commands and answers inspect calls."""
-
-    def __init__(self, image_env=(), repo_digests=(), failing=None):
-        self.image_env = list(image_env)
-        self.repo_digests = list(repo_digests)
-        self.failing = failing
-        self.commands = []
-        self.environments = []
-        self.build_context = None
-
-    def __call__(self, command, capture_output=False, text=False, env=None):
-        self.commands.append(command)
-        self.environments.append(env)
-        stdout = ""
-        if command[1:3] == ["image", "inspect"]:
-            template = command[command.index("--format") + 1]
-            if "Config.Env" in template:
-                stdout = json.dumps(self.image_env)
-            elif "RepoDigests" in template:
-                stdout = json.dumps(self.repo_digests)
-            else:
-                stdout = "sha256:1111\n"
-        elif command[1] == "build":
-            context = Path(command[-1])
-            self.build_context = {
-                path.relative_to(context).as_posix(): path.read_bytes()
-                for path in context.rglob("*")
-                if path.is_file()
-            }
-        returncode = 1 if command[1] == self.failing else 0
-        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="boom")
-
-
-class FakeHub:
-    """In-memory Hugging Face Hub with the HfApi methods the CLI calls.
-
-    Every commit is kept, so a tag or a commit hash still reads the files it
-    pointed at. Like the real client on a large folder, upload_folder commits
-    `batch` files at a time, with the deletions in its first commit; it loses the
-    connection after `interrupt_after` commits.
-    """
-
-    def __init__(self, repos=None, batch=None):
-        self.batch = batch
-        self.interrupt_after = None
-        self.private = {}
-        self.branches = {}
-        self.tags = {}
-        self.commits = {}
-        self.calls = []
-        for repo, files in (repos or {}).items():
-            self._create(repo, files, private=True)
-
-    def _create(self, repo, files, private):
-        self.private[repo] = private
-        self.branches[repo] = {}
-        self.tags[repo] = {}
-        self._commit(repo, "main", files)
-
-    def _commit(self, repo, branch, files):
-        commit = f"{len(self.commits) + 1:040x}"
-        self.commits[commit] = dict(files)
-        self.branches[repo][branch] = commit
-        return commit
-
-    def _record(self, method, **kwargs):
-        self.calls.append((method, kwargs))
-
-    def called(self, method):
-        return [kwargs for name, kwargs in self.calls if name == method]
-
-    def commit(self, repo, revision="main"):
-        for refs in (self.tags[repo], self.branches[repo]):
-            if revision in refs:
-                return refs[revision]
-        return revision
-
-    def files(self, repo, revision=None):
-        return self.commits[self.commit(repo, revision or "main")]
-
-    @staticmethod
-    def _matches(path, patterns):
-        return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
-
-    def repo_exists(self, **kwargs):
-        self._record("repo_exists", **kwargs)
-        return kwargs["repo_id"] in self.branches
-
-    def model_info(self, **kwargs):
-        self._record("model_info", **kwargs)
-        repo = kwargs["repo_id"]
-        return SimpleNamespace(
-            sha=self.commit(repo, kwargs.get("revision") or "main"),
-            private=self.private[repo],
-        )
-
-    def list_repo_refs(self, **kwargs):
-        self._record("list_repo_refs", **kwargs)
-        tags = self.tags[kwargs["repo_id"]]
-        return SimpleNamespace(
-            tags=[
-                SimpleNamespace(name=name, target_commit=commit)
-                for name, commit in tags.items()
-            ]
-        )
-
-    def create_repo(self, **kwargs):
-        self._record("create_repo", **kwargs)
-        self._create(kwargs["repo_id"], {}, private=kwargs.get("private"))
-
-    def create_branch(self, **kwargs):
-        self._record("create_branch", **kwargs)
-        branches = self.branches[kwargs["repo_id"]]
-        branches.setdefault(kwargs["branch"], branches["main"])
-
-    def file_exists(self, **kwargs):
-        self._record("file_exists", **kwargs)
-        return kwargs["filename"] in self.files(
-            kwargs["repo_id"], kwargs.get("revision")
-        )
-
-    def delete_file(self, **kwargs):
-        self._record("delete_file", **kwargs)
-        repo, branch = kwargs["repo_id"], kwargs["revision"]
-        files = dict(self.files(repo, branch))
-        del files[kwargs["path_in_repo"]]
-        return SimpleNamespace(oid=self._commit(repo, branch, files))
-
-    def upload_folder(self, **kwargs):
-        self._record("upload_folder", **kwargs)
-        repo, branch = kwargs["repo_id"], kwargs["revision"]
-        folder, prefix = Path(kwargs["folder_path"]), kwargs["path_in_repo"] + "/"
-        uploads = sorted(
-            (prefix + path.relative_to(folder).as_posix(), path.read_bytes())
-            for path in folder.rglob("*")
-            if path.is_file()
-            and not self._matches(
-                path.relative_to(folder).as_posix(), kwargs["ignore_patterns"]
-            )
-        )
-        replaced = {path for path, _ in uploads}
-        files = {
-            path: data
-            for path, data in self.files(repo, branch).items()
-            if path in replaced
-            or not path.startswith(prefix)
-            or not self._matches(path[len(prefix) :], kwargs["delete_patterns"])
-        }
-        commit = self.commit(repo, branch)
-        batch = self.batch or len(uploads)
-        for number, first in enumerate(range(0, len(uploads), batch)):
-            if number == self.interrupt_after:
-                raise ConnectionError("connection lost")
-            files.update(uploads[first : first + batch])
-            commit = self._commit(repo, branch, files)
-        return SimpleNamespace(oid=commit)
-
-    def upload_file(self, **kwargs):
-        self._record("upload_file", **kwargs)
-        repo, branch = kwargs["repo_id"], kwargs["revision"]
-        files = dict(self.files(repo, branch))
-        files[kwargs["path_in_repo"]] = kwargs["path_or_fileobj"]
-        return SimpleNamespace(oid=self._commit(repo, branch, files))
-
-    def list_repo_tree(self, **kwargs):
-        self._record("list_repo_tree", **kwargs)
-        prefix = kwargs["path_in_repo"] + "/"
-        files = {
-            path: data
-            for path, data in self.files(kwargs["repo_id"], kwargs["revision"]).items()
-            if path.startswith(prefix)
-        }
-        folders = sorted({PurePosixPath(path).parent.as_posix() for path in files})
-        return [SimpleNamespace(path=folder) for folder in folders] + [
-            SimpleNamespace(path=path, size=len(data)) for path, data in files.items()
-        ]
-
-    def create_tag(self, **kwargs):
-        self._record("create_tag", **kwargs)
-        repo = kwargs["repo_id"]
-        self.tags[repo][kwargs["tag"]] = self.commit(repo, kwargs["revision"])
-
-    def hf_hub_download(self, **kwargs):
-        self._record("hf_hub_download", **kwargs)
-        files = self.files(kwargs["repo_id"], kwargs.get("revision"))
-        target = Path(kwargs["local_dir"]) / kwargs["filename"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(files[kwargs["filename"]])
-        return str(target)
-
-    def snapshot_download(self, **kwargs):
-        self._record("snapshot_download", **kwargs)
-        files = self.files(kwargs["repo_id"], kwargs.get("revision"))
-        for path, content in files.items():
-            if not self._matches(path, kwargs["allow_patterns"]):
-                continue
-            if self._matches(path, kwargs.get("ignore_patterns") or []):
-                continue
-            target = Path(kwargs["local_dir"]) / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
-        return kwargs["local_dir"]
 
 
 def write_files(root, files):
@@ -237,1062 +23,477 @@ def write_files(root, files):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    return root
 
 
 def tree(root):
-    return {
-        path.relative_to(root).as_posix(): path.read_bytes()
-        for path in root.rglob("*")
-        if path.is_file()
-    }
+    files = (path for path in root.rglob("*") if path.is_file())
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in files}
 
 
-@pytest.fixture
-def kernel_cache(tmp_path):
-    """A captured cache: two kernels and firmware under one build key, plus the shared PCH."""
-    cache_dir = tmp_path / "kernel_cache"
-    write_files(
-        cache_dir,
-        {
-            "tt-metal-cache4242/kernels/reader/111/brisc/brisc.elf": b"elf-1",
-            "tt-metal-cache4242/kernels/reader/111/brisc/brisc.elf.log": b"log",
-            "tt-metal-cache4242/kernels/reader/111/.build_state": b"state",
-            "tt-metal-cache4242/kernels/writer/222/ncrisc/ncrisc.o": b"object",
-            "tt-metal-cache4242/kernels/writer/222/ncrisc/ncrisc.9001_77.o": b"temp",
-            "tt-metal-cache4242/kernels/writer/222/.build_state.9001_77": b"temp",
-            "tt-metal-cache4242/firmware/brisc/brisc.elf": b"firmware",
-            "tt-metal-cache/pch/00ff/umbrella.hpp.gch": b"pch",
-        },
-    )
-    return cache_dir
+def matches(path, patterns):
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns or ())
+
+
+class FakeDocker:
+    """Stands in for subprocess.run: answers image inspect and keeps the build context."""
+
+    def __init__(self, image_env=()):
+        self.image_env, self.commands, self.build_context = list(image_env), [], None
+
+    def __call__(self, command, capture_output=False, text=False, env=None):
+        self.commands.append(command)
+        stdout = "sha256:1111\n"
+        if "{{json .Config.Env}}" in command:
+            stdout = json.dumps(self.image_env)
+        elif command[1] == "build":
+            self.build_context = tree(Path(command[-1]))
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+
+class FakeHub:
+    """One in-memory Hugging Face repo behind the HfApi methods the CLI calls."""
+
+    def __init__(self):
+        self.private, self.tags, self.commits, self.sent = None, {}, [{}], []
+        self.head = "0"
+
+    def _commit(self, files):
+        self.commits.append(files)
+        self.head = str(len(self.commits) - 1)
+        return SimpleNamespace(oid=self.head)
+
+    def files(self, revision=None):
+        commit = self.tags.get(revision, revision)
+        return self.commits[int(commit) if str(commit).isdigit() else -1]
+
+    def create_repo(self, repo_id, private, exist_ok):
+        self.private = private if self.private is None else self.private
+
+    def model_info(self, repo_id, revision=None):
+        commit = self.tags.get(revision, self.head)
+        return SimpleNamespace(sha=commit, private=self.private)
+
+    def list_repo_refs(self, repo_id):
+        tags = [SimpleNamespace(name=n, target_commit=c) for n, c in self.tags.items()]
+        return SimpleNamespace(tags=tags)
+
+    def create_branch(self, repo_id, branch, exist_ok):
+        assert exist_ok
+
+    def create_tag(self, repo_id, tag, revision):
+        self.tags[tag] = revision
+
+    def file_exists(self, repo_id, filename, revision):
+        return filename in self.files(revision)
+
+    def delete_file(self, path_in_repo, repo_id, revision, commit_message):
+        files = self.files().items()
+        return self._commit(
+            {path: data for path, data in files if path != path_in_repo}
+        )
+
+    def upload_file(self, path_or_fileobj, path_in_repo, repo_id, revision):
+        return self._commit({**self.files(), path_in_repo: path_or_fileobj})
+
+    def upload_folder(
+        self,
+        repo_id,
+        folder_path,
+        path_in_repo,
+        revision,
+        commit_message,
+        allow_patterns,
+        ignore_patterns=None,
+        delete_patterns=None,
+    ):
+        added = {
+            f"{path_in_repo}/{path}": data
+            for path, data in tree(Path(folder_path)).items()
+            if matches(path, allow_patterns) and not matches(path, ignore_patterns)
+        }
+        deleted = [f"{path_in_repo}/{pattern}" for pattern in delete_patterns or ()]
+        files = self.files().items()
+        kept = {path: data for path, data in files if not matches(path, deleted)}
+        self.sent += added
+        return self._commit({**kept, **added})
+
+    def list_repo_tree(self, repo_id, recursive, revision):
+        entries = [SimpleNamespace(path="tt_dit_cache")]
+        for path, data in self.files(revision).items():
+            large = path.endswith((".tensorbin", ".safetensors"))
+            lfs = SimpleNamespace(sha256=hashlib.sha256(data).hexdigest())
+            blob_id = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+            entry = SimpleNamespace(path=path, size=len(data), blob_id=blob_id)
+            entry.lfs = lfs if large else None
+            entries.append(entry)
+        return entries
+
+    def hf_hub_download(self, repo_id, filename, revision, local_dir):
+        content = self.files(revision)[filename]
+        return str(write_files(Path(local_dir), {filename: content}) / filename)
+
+    def snapshot_download(self, repo_id, revision, allow_patterns, local_dir):
+        files = self.files(revision).items()
+        wanted = {path: data for path, data in files if matches(path, allow_patterns)}
+        write_files(Path(local_dir), wanted)
 
 
 IMAGE_FILES = {
     "tt-metal-cache4242/kernels/reader/111/brisc/brisc.elf": b"elf-1",
-    "tt-metal-cache4242/kernels/reader/111/.build_state": b"state",
     "tt-metal-cache4242/kernels/writer/222/ncrisc/ncrisc.o": b"object",
-    "tt-metal-cache4242/firmware/brisc/brisc.elf": b"firmware",
     "tt-metal-cache/pch/00ff/umbrella.hpp.gch": b"pch",
 }
-
-BUILD_KEY_ENV = {
+NOT_IMAGE_FILES = {
+    "tt-metal-cache4242/kernels/reader/111/brisc/brisc.elf.log": b"log",
+    "tt-metal-cache4242/kernels/writer/222/ncrisc/ncrisc.9001_77.o": b"temp",
+}
+SET_VARIABLES = {
     "TT_METAL_INSPECTOR": "0",
-    "TT_METAL_RISCV_DEBUG_INFO": None,
     "TT_MM_THROTTLE_PERF": "5",
     "MINIMAX_H3_TOPOLOGY": "linear",
     "MINIMAX_H3_VAE_OUTPUT": "yuv420",
-    "TT_METAL_WATCHER": None,
+}
+KERNEL_MANIFEST = {
+    "base_image": BASE_IMAGE,
+    "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
+    "build_keys": ["tt-metal-cache4242"],
+    "kernel_hash_dirs": 2,
+    "files": 3,
+    "bytes": 14,
+    "compiled_kernels_in_log": 2,
+    "build_key_env": {**dict.fromkeys(BUILD_KEY_ENV_VARS), **SET_VARIABLES},
 }
 
 
-def write_kernel_manifest(path, base_image=BASE_IMAGE):
-    path.write_text(
-        json.dumps(
-            {
-                "base_image": base_image,
-                "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
-                "build_keys": ["tt-metal-cache4242"],
-                "kernel_hash_dirs": 2,
-                "files": 5,
-                "bytes": 27,
-                "compiled_kernels_in_log": 2,
-                "build_key_env": BUILD_KEY_ENV,
-            }
-        )
-    )
-    return path
+@pytest.fixture
+def kernel_cache(tmp_path):
+    return write_files(tmp_path / "cache", {**IMAGE_FILES, **NOT_IMAGE_FILES})
 
 
 def write_server_log(path, compiled):
-    lines = ["2026-01-01 | info | Device | opening mesh"]
-    lines += [
-        f"2026-01-01 | info | BuildKernels | compiled kernel_{i}/{1000 + i}/ in {i} ms"
-        for i in range(compiled)
-    ]
-    lines.append("2026-01-01 | info | Server | ready")
-    path.write_text("\n".join(lines) + "\n")
+    lines = [f"info | compiled k_{i}/{i}/ in 9 ms" for i in range(compiled)]
+    path.write_text("\n".join(["info | opening mesh", *lines, "info | ready"]))
     return path
 
 
-def manifest_argv(cache_dir, tmp_path, compiled=2, extra=()):
-    return [
-        "kernel-cache",
-        "manifest",
-        "--cache-dir",
-        str(cache_dir),
-        "--server-log",
-        str(write_server_log(tmp_path / "server.log", compiled)),
-        "--base-image",
-        BASE_IMAGE,
-        "--out",
-        str(tmp_path / "out" / "kernel_cache_manifest.json"),
-        *extra,
-    ]
-
-
-def build_image_argv(cache_dir, manifest, base_image=BASE_IMAGE, extra=()):
-    return [
-        "kernel-cache",
-        "build-image",
-        "--base-image",
-        base_image,
-        "--cache-dir",
-        str(cache_dir),
-        "--manifest",
-        str(manifest),
-        "--tag",
-        KC_IMAGE,
-        *extra,
-    ]
-
-
-def test_kernel_cache_manifest_describes_cache_and_capture_env(
-    kernel_cache, tmp_path, capsys
-):
-    docker = FakeDocker(
-        image_env=["PATH=/usr/bin", "TT_MM_THROTTLE_PERF=5", "TT_METAL_INSPECTOR=1"]
-    )
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "# secrets\nHF_TOKEN=hf_secret_value\nTT_METAL_INSPECTOR=0\nJWT_SECRET\n"
-    )
+def test_kernel_cache_manifest_content_and_env_order(kernel_cache, tmp_path, capsys):
+    docker = FakeDocker(["TT_MM_THROTTLE_PERF=5", "TT_METAL_INSPECTOR=1"])
+    env = tmp_path / ".env"
+    env.write_text("HF_TOKEN=hf_secret\nTT_METAL_INSPECTOR=0\nMINIMAX_H3_TOPOLOGY=ring")
+    env_vars = {"MINIMAX_H3_TOPOLOGY": "linear", "MINIMAX_H3_VAE_OUTPUT": "yuv420"}
     spec_json = tmp_path / "runtime_model_spec.json"
-    spec_json.write_text(
-        json.dumps(
-            {
-                "runtime_model_spec": {
-                    "env_vars": {
-                        "MINIMAX_H3_TOPOLOGY": "linear",
-                        "MINIMAX_H3_VAE_OUTPUT": "yuv420",
-                        "TT_METAL_WATCHER": "",
-                    }
-                },
-                "runtime_config": {},
-            }
-        )
-    )
+    spec_json.write_text(json.dumps({"env_vars": {**env_vars, "TT_METAL_WATCHER": ""}}))
     out = tmp_path / "out" / "kernel_cache_manifest.json"
-    extra = ["--env-file", str(env_file), "--spec-json", str(spec_json)]
+    argv = ["kernel-cache", "manifest", "--cache-dir", str(kernel_cache)]
+    argv += ["--server-log", str(write_server_log(tmp_path / "server.log", 2))]
+    argv += ["--base-image", BASE_IMAGE, "--env-file", str(env)]
+    argv += ["--spec-json", str(spec_json), "--out", str(out)]
 
-    exit_code = main(
-        manifest_argv(kernel_cache, tmp_path, extra=extra), docker_run=docker
-    )
+    assert main(argv, docker_run=docker) == 0
 
-    assert exit_code == 0
     manifest = json.loads(out.read_text())
-    assert manifest["base_image"] == BASE_IMAGE
-    assert manifest["kernel_cache_path"] == KERNEL_CACHE_CONTAINER_DIR
-    assert manifest["build_keys"] == ["tt-metal-cache4242"]
-    assert manifest["kernel_hash_dirs"] == 2
-    assert manifest["files"] == len(IMAGE_FILES)
-    assert manifest["bytes"] == sum(len(data) for data in IMAGE_FILES.values())
-    assert manifest["compiled_kernels_in_log"] == 2
-    assert manifest["build_key_env"] == BUILD_KEY_ENV
-    assert docker.commands == [
-        ["docker", "image", "inspect", "--format", "{{json .Config.Env}}", BASE_IMAGE]
-    ]
-    captured = capsys.readouterr()
-    assert len(captured.out.splitlines()) == 4
-    assert "hf_secret_value" not in captured.out + captured.err + out.read_text()
+    assert manifest.pop("created_utc").endswith("Z")
+    assert manifest == {"schema_version": 1, **KERNEL_MANIFEST}
+    assert "hf_secret" not in "".join(capsys.readouterr()) + out.read_text()
 
 
-@pytest.mark.parametrize("wrapper", ["runtime_model_spec", "model_spec", None])
-def test_kernel_cache_manifest_reads_every_spec_format_run_py_reads(
-    kernel_cache, tmp_path, wrapper
-):
-    model_spec = {"env_vars": {"MINIMAX_H3_TOPOLOGY": "linear"}}
-    spec_json = tmp_path / "spec.json"
-    spec_json.write_text(
-        json.dumps(
-            {wrapper: model_spec, "runtime_config": {}} if wrapper else model_spec
-        )
-    )
-    extra = ["--spec-json", str(spec_json)]
-
-    exit_code = main(
-        manifest_argv(kernel_cache, tmp_path, extra=extra), docker_run=FakeDocker()
-    )
-
-    assert exit_code == 0
-    manifest = json.loads((tmp_path / "out" / "kernel_cache_manifest.json").read_text())
-    assert manifest["build_key_env"]["MINIMAX_H3_TOPOLOGY"] == "linear"
+def build_image_argv(kernel_cache, tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps(KERNEL_MANIFEST))
+    argv = ["kernel-cache", "build-image", "--base-image", BASE_IMAGE]
+    argv += ["--cache-dir", str(kernel_cache), "--manifest", str(manifest)]
+    return argv + ["--tag", KC_IMAGE]
 
 
-@pytest.mark.parametrize(
-    "option, content, message",
-    [
-        ("--spec-json", '{"runtime_config": {}}', "no env_vars in the model spec"),
-        (
-            "--env-file",
-            "TT_METAL_INSPECTOR\n",
-            "takes TT_METAL_INSPECTOR from the environment",
-        ),
-    ],
-)
-def test_kernel_cache_manifest_refuses_build_key_values_it_cannot_resolve(
-    kernel_cache, tmp_path, capsys, option, content, message
-):
-    source = tmp_path / "source"
-    source.write_text(content)
+def test_build_image_stages_cache_files_and_bakes_set_variables(kernel_cache, tmp_path):
+    docker = FakeDocker()
 
-    exit_code = main(
-        manifest_argv(kernel_cache, tmp_path, extra=[option, str(source)]),
-        docker_run=FakeDocker(),
-    )
-
-    assert exit_code == 1
-    assert message in capsys.readouterr().err
-    assert not (tmp_path / "out").exists()
-
-
-def test_kernel_cache_manifest_says_which_env_sources_were_not_given(
-    kernel_cache, tmp_path, capsys
-):
-    exit_code = main(manifest_argv(kernel_cache, tmp_path), docker_run=FakeDocker())
-
-    assert exit_code == 0
-    assert "env: no --env-file or --spec-json given" in capsys.readouterr().out
-
-
-def test_kernel_cache_manifest_fails_when_nothing_was_captured(tmp_path, capsys):
-    empty = tmp_path / "kernel_cache"
-    empty.mkdir()
-
-    exit_code = main(
-        manifest_argv(empty, tmp_path, compiled=0), docker_run=FakeDocker()
-    )
-
-    assert exit_code == 1
-    assert "nothing was captured" in capsys.readouterr().err
-    assert not (tmp_path / "out").exists()
-
-
-def test_kernel_cache_manifest_refuses_a_log_without_the_compiles_of_the_capture(
-    kernel_cache, tmp_path, capsys
-):
-    exit_code = main(
-        manifest_argv(kernel_cache, tmp_path, compiled=0), docker_run=FakeDocker()
-    )
-
-    assert exit_code == 1
-    assert "has no compile line although the cache holds 2 kernel hash folders" in (
-        capsys.readouterr().err
-    )
-    assert not (tmp_path / "out").exists()
-
-
-def test_kernel_cache_build_image_stages_context_builds_and_pushes(
-    kernel_cache, tmp_path, capsys
-):
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
-    digest = f"{BASE_IMAGE.rsplit(':', 1)[0]}@sha256:2222"
-    docker = FakeDocker(repo_digests=["registry.example/other@sha256:9999", digest])
-
-    exit_code = main(
-        build_image_argv(kernel_cache, manifest, extra=["--push"]), docker_run=docker
-    )
-
-    assert exit_code == 0
-    build, inspect_id, push, inspect_digests = docker.commands
-    context = Path(build[-1])
-    assert build == [
-        "docker",
-        "build",
-        "--build-arg",
-        f"BASE_IMAGE={BASE_IMAGE}",
-        "--tag",
-        KC_IMAGE,
-        "--file",
-        str(context / "Dockerfile"),
-        str(context),
-    ]
-    build_environment, *other_environments = docker.environments
-    assert build_environment == {**os.environ, "DOCKER_BUILDKIT": "1"}
-    assert other_environments == [None, None, None]
-    assert push == ["docker", "push", KC_IMAGE]
-    assert not context.exists()
+    assert main(build_image_argv(kernel_cache, tmp_path), docker_run=docker) == 0
 
     staged = dict(docker.build_context)
     dockerfile = staged.pop("Dockerfile").decode()
-    assert staged.pop("kernel_cache_manifest.json") == manifest.read_bytes()
+    assert json.loads(staged.pop("kernel_cache_manifest.json")) == KERNEL_MANIFEST
     assert staged == {
         f"kernel_cache/{path}": data for path, data in IMAGE_FILES.items()
     }
     assert dockerfile.startswith(KERNEL_CACHE_DOCKERFILE.read_text())
-    assert [line for line in dockerfile.splitlines() if line.startswith("ENV ")] == [
-        f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}",
-        'ENV TT_METAL_INSPECTOR="0"',
-        'ENV TT_MM_THROTTLE_PERF="5"',
-        'ENV MINIMAX_H3_TOPOLOGY="linear"',
-        'ENV MINIMAX_H3_VAE_OUTPUT="yuv420"',
-    ]
-
-    output = capsys.readouterr().out.splitlines()
-    assert "image-id: sha256:1111" in output
-    assert f"digest: {digest}" in output
+    baked = [f'ENV {name}="{value}"' for name, value in SET_VARIABLES.items()]
+    env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
+    assert env_lines == [f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}", *baked]
 
 
-def test_kernel_cache_build_image_without_push_stays_local(
-    kernel_cache, tmp_path, capsys
-):
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
-    docker = FakeDocker()
-
-    exit_code = main(build_image_argv(kernel_cache, manifest), docker_run=docker)
-
-    assert exit_code == 0
-    assert [command[1] for command in docker.commands] == ["build", "image"]
-    assert "digest:" not in capsys.readouterr().out
-
-
-@pytest.mark.parametrize(
-    "base_image, failing, message",
-    [
-        ("registry.example/media-server:other", None, "made for base image"),
-        (BASE_IMAGE, "build", "docker build failed"),
-        (BASE_IMAGE, "push", "docker push"),
-    ],
-)
-def test_kernel_cache_build_image_failures_exit_non_zero(
-    kernel_cache, tmp_path, capsys, base_image, failing, message
-):
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
-
-    exit_code = main(
-        build_image_argv(kernel_cache, manifest, base_image, extra=["--push"]),
-        docker_run=FakeDocker(failing=failing),
-    )
-
-    assert exit_code == 1
-    assert message in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("link_to_folder", [False, True])
-def test_kernel_cache_commands_refuse_symbolic_links(
-    kernel_cache, tmp_path, capsys, link_to_folder
-):
-    write_files(tmp_path / "host", {"secrets/.env": b"JWT_SECRET=value"})
-    target = tmp_path / "host" / "secrets"
-    link = kernel_cache / "tt-metal-cache4242/kernels/reader/111/linked.o"
-    link.symlink_to(target if link_to_folder else target / ".env")
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
-    docker = FakeDocker()
-
-    assert main(build_image_argv(kernel_cache, manifest), docker_run=docker) == 1
-    assert "symbolic links and special files are not packaged" in (
-        capsys.readouterr().err
-    )
-    assert main(manifest_argv(kernel_cache, tmp_path), docker_run=docker) == 1
-    assert "kernels/reader/111/linked.o" in capsys.readouterr().err
-    assert docker.commands == []
-    assert not (tmp_path / "out").exists()
-
-
-def test_kernel_cache_build_image_refuses_a_directory_the_manifest_does_not_describe(
-    kernel_cache, tmp_path, capsys
-):
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
-    checkout = tmp_path / "checkout"
-    write_files(checkout, {".env": b"JWT_SECRET=value"})
-    docker = FakeDocker()
-
-    assert main(build_image_argv(checkout, manifest), docker_run=docker) == 1
-    assert "has no tt-metal-cache4242" in capsys.readouterr().err
-
+def test_build_image_refuses_a_tree_that_differs(kernel_cache, tmp_path, capsys):
     (kernel_cache / "tt-metal-cache4242/kernels/reader/111/added.o").write_bytes(b"x")
-    assert main(build_image_argv(kernel_cache, manifest), docker_run=docker) == 1
-    assert "holds 6 files, 28 bytes; the manifest says 5 files, 27 bytes" in (
-        capsys.readouterr().err
-    )
-    assert docker.commands == []
-
-
-def test_path_options_refuse_an_empty_value(tmp_path, capsys):
-    manifest = write_kernel_manifest(tmp_path / "manifest.json")
     docker = FakeDocker()
 
-    with pytest.raises(SystemExit) as stopped:
-        main(build_image_argv("", manifest), docker_run=docker)
+    assert main(build_image_argv(kernel_cache, tmp_path), docker_run=docker) == 1
 
-    assert stopped.value.code == 2
-    assert "argument --cache-dir: the path is empty" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "holds 4 files, 15 bytes; the manifest says 3 files, 14 bytes" in error
     assert docker.commands == []
 
 
-def test_kernel_cache_dockerfile_keeps_base_image_runtime_contract():
-    instructions = [
-        line.split()
-        for line in KERNEL_CACHE_DOCKERFILE.read_text().splitlines()
-        if line and not line.startswith("#")
-    ]
+@pytest.mark.parametrize("compiled, exit_code", [(0, 0), (25, 1)])
+def test_check_log_fails_on_compiled_kernels(tmp_path, capsys, compiled, exit_code):
+    argv = ["kernel-cache", "check-log", "--server-log"]
+    argv.append(str(write_server_log(tmp_path / "server.log", compiled)))
 
-    assert instructions == [
-        ["ARG", "BASE_IMAGE"],
-        ["FROM", "${BASE_IMAGE}"],
-        ["COPY", "--chmod=777", "kernel_cache/", f"{KERNEL_CACHE_CONTAINER_DIR}/"],
-        ["RUN", "chmod", "777", KERNEL_CACHE_CONTAINER_DIR],
-        [
-            "COPY",
-            "--chmod=644",
-            "kernel_cache_manifest.json",
-            KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
-        ],
-        ["ENV", f"TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}"],
-    ]
+    assert main(argv) == exit_code
 
-
-def test_check_log_passes_when_nothing_was_compiled(tmp_path, capsys):
-    server_log = write_server_log(tmp_path / "server.log", compiled=0)
-
-    exit_code = main(["kernel-cache", "check-log", "--server-log", str(server_log)])
-
-    assert exit_code == 0
-    assert capsys.readouterr().out == "compiled kernels: 0 (allowed: 0)\n"
-
-
-def test_check_log_fails_and_names_the_first_20_compiled_kernels(tmp_path, capsys):
-    server_log = write_server_log(tmp_path / "server.log", compiled=25)
-    argv = ["kernel-cache", "check-log", "--server-log", str(server_log)]
-
-    assert main(argv) == 1
     output = capsys.readouterr().out.splitlines()
-    assert output[0].startswith("compiled kernels: 25")
-    assert output[1:] == [f"kernel_{i}/{1000 + i}" for i in range(20)]
-
-    assert main(argv + ["--max-compiled", "25"]) == 0
+    assert output[0].startswith(f"compiled kernels: {compiled}")
+    assert output[1:] == [f"k_{i}/{i}" for i in range(min(compiled, 20))]
 
 
-def test_check_log_fails_on_a_log_that_shows_no_server_start(tmp_path, capsys):
-    empty = tmp_path / "empty.log"
-    empty.write_text("")
-    missing = tmp_path / "missing.log"
+FL2VA, REF2VA = "minimax-h3-fl2va-lightx2v", "minimax-h3-ref2va-lightx2v"
+CONTAINER_CACHE = "/home/container_app_user/cache_root/tt_dit_cache"
+MODEL_PATH = "/home/container_app_user/cache_root/weights/Example-Model"
+SOURCE_COMMIT = "c0ffee12" + "0" * 32
+SHARED = "model/text_encoder/mesh4x8_bf16"
+OWN = {
+    FL2VA: "model/transformer_lora-a/TP4_mesh4x8_bf16",
+    REF2VA: "model/transformer_ref_lora-b/TP4_mesh4x8_bf16",
+}
+NOT_LOADED = "model/vae_previous/mesh1x8_fp32"
+CACHE_FILES = {
+    f"{OWN[FL2VA]}/blocks.0.weight.tensorbin": b"abc",
+    f"{OWN[FL2VA]}/blocks.0.bias.tensorbin": b"defgh",
+    f"{OWN[REF2VA]}/blocks.0.weight.tensorbin": b"ref",
+    f"{SHARED}/embed.weight.tensorbin": b"ijklmno",
+    f"{NOT_LOADED}/conv.weight.tensorbin": b"stale",
+}
+SHARDS = {
+    "model.language_model.layers.0.weight": "model-00001-of-00002.safetensors",
+    "model.visual.blocks.0.weight": "model-00002-of-00002.safetensors",
+}
+INDEX = json.dumps({"weight_map": SHARDS}).encode()
+LOG = f"../{FL2VA}/server.log"
+NOT_READ_BY_A_CACHED_START = {
+    "transformer/diffusion_pytorch_model.safetensors": b"big",
+    "text_encoder/model-00001-of-00002.safetensors": b"big",
+    "lightx2v/another-adapter.safetensors": b"big",
+}
 
-    assert main(["kernel-cache", "check-log", "--server-log", str(empty)]) == 1
-    assert "is empty" in capsys.readouterr().err
-    assert main(["kernel-cache", "check-log", "--server-log", str(missing)]) == 1
-    captured = capsys.readouterr()
-    assert captured.err.startswith("error: kernel-cache check-log: FileNotFoundError")
-    assert captured.out == ""
+
+def original_subset(variant):
+    transformer = "transformer_ref" if variant == REF2VA else "transformer"
+    return {
+        "model_index.json": b"{}",
+        "tokenizer/tokenizer.json": b"{}",
+        f"{transformer}/config.json": b"{}",
+        "text_encoder/config.json": b"{}",
+        "text_encoder/preprocessor_config.json": b"{}",
+        "text_encoder/model.safetensors.index.json": INDEX,
+        "text_encoder/model-00002-of-00002.safetensors": b"vision",
+        "vae/config.json": b"{}",
+        "vae/diffusion_pytorch_model.safetensors": b"vae",
+        "audio_vae/config.json": b"{}",
+        f"lightx2v/{variant}.safetensors": variant.encode(),
+    }
 
 
-def test_cli_runs_as_a_script_from_the_repo_root(tmp_path):
-    server_log = write_server_log(tmp_path / "server.log", compiled=1)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/prebuilt_artifacts.py",
-            "kernel-cache",
-            "check-log",
-            "--server-log",
-            str(server_log),
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 1
-    assert "kernel_0/1000" in result.stdout
+def published(variant, original="original_subset"):
+    """Repo paths of a variant: the cache directories its start used and its original subset."""
+    subset = original_subset(variant).items()
+    files = {f"{original}/{path}": data for path, data in subset}
+    for path, data in CACHE_FILES.items():
+        if path.startswith((OWN[variant], SHARED)):
+            files[f"tt_dit_cache/{path}"] = data
+    return files
 
 
 @pytest.fixture
-def tt_dit_cache(tmp_path):
-    """Two finished conversions, each with its (empty) completion marker."""
-    cache_dir = tmp_path / "volume" / "tt_dit_cache"
-    write_files(
-        cache_dir,
-        {
-            "model/transformer_lora/TP4_mesh4x8_bf16/blocks.0.weight.tensorbin": b"abc",
-            "model/transformer_lora/TP4_mesh4x8_bf16/blocks.0.bias.tensorbin": b"defgh",
-            "model/transformer_lora/TP4_mesh4x8_bf16/cache_dict.json": b"",
-            "model/text_encoder/mesh4x8_bf16/embed.weight.tensorbin": b"ijklmno",
-            "model/text_encoder/mesh4x8_bf16/cache_dict.json": b"",
-        },
+def cache_dir(tmp_path):
+    markers = {f"{Path(path).parent}/cache_dict.json": b"" for path in CACHE_FILES}
+    return write_files(tmp_path / "volume" / "tt_dit_cache", {**CACHE_FILES, **markers})
+
+
+def upload_argv(cache_dir, variant=FL2VA, tt_metal_sha="a" * 40, server_sha="b" * 40):
+    """Upload after a start of the variant: shared directory loaded, its own one written."""
+    work = cache_dir.parent / variant
+    files = {**original_subset(variant), **NOT_READ_BY_A_CACHED_START}
+    for path in original_subset(variant):
+        if not path.startswith("lightx2v/"):
+            metadata = f".cache/huggingface/download/{path}.metadata"
+            files[metadata] = f"{SOURCE_COMMIT}\netag\n0.0\n".encode()
+    write_files(work / "weights", files)
+    (work / "server.log").write_text(
+        f"INFO | loading 1 cached weight tensors from '{CONTAINER_CACHE}/{SHARED}'...\n"
+        "INFO | Cache does not exist. Loading PyTorch state dict.\n"
+        f"INFO | Writing cache to '{CONTAINER_CACHE}/{OWN[variant]}'.\n"
     )
-    return cache_dir
+    env_vars = {
+        "TT_DIT_CACHE_DIR": CONTAINER_CACHE,
+        "MINIMAX_H3_MODEL_PATH": MODEL_PATH,
+        "MINIMAX_H3_LORA_PATH": f"{MODEL_PATH}/lightx2v/{variant}.safetensors",
+    }
+    spec = {"hf_weights_repo": "example-org/original-model", "env_vars": env_vars}
+    (work / "spec.json").write_text(json.dumps({"runtime_model_spec": spec}))
+    argv = ["tt-weights", "upload", "--cache-dir", str(cache_dir), "--variant", variant]
+    argv += ["--original-dir", str(work / "weights"), "--repo", WEIGHTS_REPO]
+    argv += ["--server-log", str(work / "server.log")]
+    argv += ["--spec-json", str(work / "spec.json"), "--tt-metal-sha", tt_metal_sha]
+    return argv + ["--server-sha", server_sha, "--manifest-out", str(work / "out.json")]
 
 
-TRANSFORMER_DIR = "model/transformer_lora/TP4_mesh4x8_bf16"
-TEXT_ENCODER_DIR = "model/text_encoder/mesh4x8_bf16"
-TENSORS = {
-    f"{TRANSFORMER_DIR}/blocks.0.weight.tensorbin": b"abc",
-    f"{TRANSFORMER_DIR}/blocks.0.bias.tensorbin": b"defgh",
-    f"{TEXT_ENCODER_DIR}/embed.weight.tensorbin": b"ijklmno",
-}
-OTHER_VARIANT_TENSOR = (
-    "tt_dit_cache/model/transformer_ref/TP4_mesh4x8_bf16/blocks.0.weight.tensorbin"
-)
-
-
-def upload_argv(cache_dir, manifest_out, tag="ttm-aaa-srv-bbb"):
-    return [
-        "tt-weights",
-        "upload",
-        "--cache-dir",
-        str(cache_dir),
-        "--repo",
-        WEIGHTS_REPO,
-        "--revision",
-        "main",
-        "--tag",
-        tag,
-        "--meta",
-        "tt_metal_sha=aaa",
-        "server_sha=bbb",
-        "--manifest-out",
-        str(manifest_out),
-    ]
-
-
-def download_argv(dest, revision="main"):
-    return [
-        "tt-weights",
-        "download",
-        "--repo",
-        WEIGHTS_REPO,
-        "--revision",
-        revision,
-        "--dest",
-        str(dest),
-    ]
-
-
-def test_tt_weights_upload_creates_private_repo_manifest_and_tag(
-    tt_dit_cache, tmp_path
-):
+@pytest.fixture
+def hub(cache_dir, capsys):
     hub = FakeHub()
-    manifest_out = tmp_path / "tt_weights_manifest.json"
-
-    exit_code = main(upload_argv(tt_dit_cache, manifest_out), hf_api=hub)
-
-    assert exit_code == 0
-    assert hub.private[WEIGHTS_REPO] is True
-    remote = dict(hub.files(WEIGHTS_REPO))
-    remote_manifest = json.loads(remote.pop("tt_weights_manifest.json"))
-    assert remote == {f"tt_dit_cache/{path}": data for path, data in TENSORS.items()}
-
-    manifest = json.loads(manifest_out.read_text())
-    assert manifest.pop("commit") == hub.commit(WEIGHTS_REPO)
-    assert manifest == remote_manifest
-    assert manifest["directories"] == [
-        {"path": TEXT_ENCODER_DIR, "files": 1, "bytes": 7},
-        {"path": TRANSFORMER_DIR, "files": 2, "bytes": 8},
-    ]
-    assert (manifest["files"], manifest["bytes"]) == (3, 15)
-    assert manifest["meta"] == {"tt_metal_sha": "aaa", "server_sha": "bbb"}
-    assert manifest["revision"] == "main"
-    assert manifest["created_utc"].endswith("Z")
-    assert hub.tags[WEIGHTS_REPO] == {"ttm-aaa-srv-bbb": hub.commit(WEIGHTS_REPO)}
-    assert hub.called("upload_folder")[0]["revision"] == "main"
+    assert main(upload_argv(cache_dir), hf_api=hub) == 0
+    return hub
 
 
 @pytest.mark.parametrize(
-    "broken_file, removed_file, reason",
+    "option, downloaded_with_hf, source",
+    [([], True, SOURCE_COMMIT), ([], False, "unknown"), (["f" * 9], True, "f" * 9)],
+)
+def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
+    cache_dir, capsys, option, downloaded_with_hf, source
+):
+    hub = FakeHub()
+    argv = upload_argv(cache_dir) + ["--source-revision"] * len(option) + option
+    weights = cache_dir.parent / FL2VA / "weights"
+    if not downloaded_with_hf:
+        (weights / ".cache").rename(weights.parent / "moved")
+
+    assert main(argv, hf_api=hub) == 0
+
+    assert hub.private is True
+    remote = dict(hub.files())
+    manifest = json.loads(remote.pop(f"manifests/{FL2VA}.json"))
+    assert remote == published(FL2VA)
+    left_out = f"the log does not name: {OWN[REF2VA]}, {NOT_LOADED}\n"
+    assert left_out in capsys.readouterr().out
+    tag = f"{FL2VA}_src-{source[:8]}_mesh4x8_ttm-aaaaaaaa"
+    assert hub.tags == {tag: hub.head}
+    out = json.loads((weights.parent / "out.json").read_text())
+    assert out == {**manifest, "repo": WEIGHTS_REPO, "tag": tag, "commit": hub.head}
+    assert manifest.pop("created_utc").endswith("Z")
+    sha256 = {path: hashlib.sha256(data).hexdigest() for path, data in remote.items()}
+    assert manifest == {
+        "schema_version": 1,
+        "variant": FL2VA,
+        "source": {"repo": "example-org/original-model", "revision": source},
+        "mesh_shape": "4x8",
+        "tt_metal_sha": "a" * 40,
+        "server_sha": "b" * 40,
+        "cache_directories": [
+            {"path": SHARED, "files": 1, "bytes": 7},
+            {"path": OWN[FL2VA], "files": 2, "bytes": 8},
+        ],
+        "original_files": [
+            {"path": p, "bytes": len(d), "sha256": sha256[f"original_subset/{p}"]}
+            for p, d in sorted(original_subset(FL2VA).items())
+        ],
+        "original_folders": ["transformer", "text_encoder", "vae", "audio_vae"],
+    }
+
+
+def test_upload_stores_shared_paths_once_and_replaces_only_its_own(hub, cache_dir):
+    hub.sent.clear()
+    assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
+    assert set(hub.sent) == set(published(REF2VA)) - set(published(FL2VA))
+    own = cache_dir / OWN[REF2VA]
+    (own / "blocks.0.weight.tensorbin").rename(own / "blocks.0.scale.tensorbin")
+    assert main(upload_argv(cache_dir, REF2VA, tt_metal_sha="c" * 40), hf_api=hub) == 0
+    remote = {path for path in hub.files() if not path.startswith("manifests/")}
+    renamed = {path.replace("0.weight", "0.scale") for path in published(REF2VA)}
+    assert remote == renamed | set(published(FL2VA))
+
+
+@pytest.mark.parametrize(
+    "exit_code, tt_metal, path, content, message",
     [
-        (None, f"{TEXT_ENCODER_DIR}/cache_dict.json", "no cache_dict.json"),
-        (f"{TRANSFORMER_DIR}/x.tensorbin.tmp.4242.0", None, "1 temp file(s)"),
-        ("stray.tensorbin", None, "1 file(s) outside a cache directory"),
+        (0, "a", f"{NOT_LOADED}/x.tensorbin", b"", "already holds this content at"),
+        (1, "a", f"{OWN[FL2VA]}/x.tensorbin", b"", "already exists in"),
+        (1, "c", f"{SHARED}/x.tensorbin", b"", "another variant's manifest lists"),
+        (1, "c", f"{SHARED}/x.tmp.42.0", b"", "1 temp file(s)"),
+        (1, "c", f"{SHARED}/cache_dict.json", None, "no cache_dict.json"),
+        (1, "c", f"{SHARED}/link", Path("/"), "symbolic links"),
+        (1, "c", LOG, b"ready", "names no directory under"),
+        (1, "c", LOG, f"'{CONTAINER_CACHE}/gone'".encode(), "gone: missing"),
+        (1, "c", f"../{FL2VA}/weights/vae/config.json", None, "reads: vae/config.json"),
     ],
 )
-def test_tt_weights_upload_refuses_an_unfinished_conversion(
-    tt_dit_cache, tmp_path, capsys, broken_file, removed_file, reason
+def test_upload_that_must_not_change_the_hub(
+    hub, cache_dir, capsys, exit_code, tt_metal, path, content, message
 ):
-    if broken_file:
-        (tt_dit_cache / broken_file).write_bytes(b"partial")
-    if removed_file:
-        (tt_dit_cache / removed_file).unlink()
-    hub = FakeHub()
-    manifest_out = tmp_path / "tt_weights_manifest.json"
+    assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
+    argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40, server_sha="d" * 40)
+    if isinstance(content, Path):
+        (cache_dir / path).symlink_to(content)
+    elif content is None:
+        (cache_dir / path).unlink()
+    else:
+        (cache_dir / path).write_bytes(content)
+    before = (hub.head, dict(hub.tags))
 
-    exit_code = main(upload_argv(tt_dit_cache, manifest_out), hf_api=hub)
+    assert main(argv, hf_api=hub) == exit_code
 
-    assert exit_code == 1
-    assert reason in capsys.readouterr().err
-    assert hub.calls == []
-    assert not manifest_out.exists()
-
-
-def test_tt_weights_upload_refuses_a_symbolic_link(tt_dit_cache, tmp_path, capsys):
-    host_file = tmp_path / "host_secret"
-    host_file.write_text("JWT_SECRET=value")
-    (tt_dit_cache / TRANSFORMER_DIR / "linked.tensorbin").symlink_to(host_file)
-    hub = FakeHub()
-
-    exit_code = main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub)
-
-    assert exit_code == 1
-    assert f"{TRANSFORMER_DIR}/linked.tensorbin" in capsys.readouterr().err
-    assert hub.calls == []
+    assert message in "".join(capsys.readouterr())
+    assert (hub.head, hub.tags) == before
 
 
-def test_tt_weights_upload_refuses_an_existing_repo_that_is_not_private(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub({WEIGHTS_REPO: {}})
-    hub.private[WEIGHTS_REPO] = False
-
-    exit_code = main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub)
-
-    assert exit_code == 1
-    assert "exists and is not private" in capsys.readouterr().err
-    assert hub.called("upload_folder") == []
-    assert hub.files(WEIGHTS_REPO) == {}
+def download_argv(dest):
+    argv = ["tt-weights", "download", "--repo", WEIGHTS_REPO, "--revision", "main"]
+    argv += ["--variant", FL2VA, "--dest-cache", str(dest / "tt_dit_cache")]
+    return argv + ["--dest-original", str(dest / "weights")]
 
 
-def test_tt_weights_upload_replaces_its_directories_and_keeps_the_others(
-    tt_dit_cache, tmp_path
-):
-    stale = f"tt_dit_cache/{TRANSFORMER_DIR}/renamed.tensorbin"
-    hub = FakeHub(
-        {
-            WEIGHTS_REPO: {
-                stale: b"old",
-                OTHER_VARIANT_TENSOR: b"ref",
-                "README.md": b"notes",
-            }
-        }
-    )
-    hub.tags[WEIGHTS_REPO] = {"ttm-old-srv-old": hub.commit(WEIGHTS_REPO)}
+def test_download_marks_one_variant_after_verifying(hub, cache_dir, tmp_path):
+    assert main(upload_argv(cache_dir, REF2VA), hf_api=hub) == 0
+    dest = tmp_path / "deployment"
 
-    exit_code = main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub)
-
-    assert exit_code == 0
-    assert hub.called("create_repo") == []
-    remote = hub.files(WEIGHTS_REPO)
-    assert stale not in remote
-    assert remote[OTHER_VARIANT_TENSOR] == b"ref"
-    assert remote["README.md"] == b"notes"
-    assert set(hub.tags[WEIGHTS_REPO]) == {"ttm-old-srv-old", "ttm-aaa-srv-bbb"}
-
-
-def test_tt_weights_upload_again_under_the_same_tag_reuses_what_is_published(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub()
-    first, again = tmp_path / "first.json", tmp_path / "again.json"
-    assert main(upload_argv(tt_dit_cache, first), hf_api=hub) == 0
-    published = hub.commit(WEIGHTS_REPO)
-
-    exit_code = main(upload_argv(tt_dit_cache, again), hf_api=hub)
-
-    assert exit_code == 0
-    assert json.loads(again.read_text()) == json.loads(first.read_text())
-    assert len(hub.called("upload_folder")) == 1
-    assert hub.commit(WEIGHTS_REPO) == published
-    assert hub.tags[WEIGHTS_REPO] == {"ttm-aaa-srv-bbb": published}
-    assert f"already holds this cache at commit {published}" in capsys.readouterr().out
-
-
-def test_tt_weights_upload_refuses_to_move_an_existing_tag(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub()
-    assert main(upload_argv(tt_dit_cache, tmp_path / "first.json"), hf_api=hub) == 0
-    published = hub.commit(WEIGHTS_REPO)
-    (tt_dit_cache / TRANSFORMER_DIR / "blocks.1.weight.tensorbin").write_bytes(b"pq")
-    manifest_out = tmp_path / "manifest.json"
-
-    exit_code = main(upload_argv(tt_dit_cache, manifest_out), hf_api=hub)
-
-    assert exit_code == 1
-    assert "tag ttm-aaa-srv-bbb already exists" in capsys.readouterr().err
-    assert len(hub.called("upload_folder")) == 1
-    assert hub.commit(WEIGHTS_REPO) == published
-    assert not manifest_out.exists()
-
-
-def test_tt_weights_interrupted_upload_cannot_be_downloaded_until_it_finishes(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub(batch=1)
-    assert (
-        main(upload_argv(tt_dit_cache, tmp_path / "old.json", "old"), hf_api=hub) == 0
-    )
-    old_release = tree(tt_dit_cache)
-    for path, data in TENSORS.items():
-        (tt_dit_cache / path).write_bytes(data.upper())
-    hub.interrupt_after = 1
-    upload_new = upload_argv(tt_dit_cache, tmp_path / "new.json", "new")
-    from_branch, from_tag = tmp_path / "from_branch", tmp_path / "from_tag"
-
-    assert main(upload_new, hf_api=hub) == 1
-
-    assert "error: tt-weights upload: ConnectionError" in capsys.readouterr().err
-    on_branch = [
-        data
-        for path, data in hub.files(WEIGHTS_REPO).items()
-        if path.endswith(".tensorbin")
-    ]
-    assert {data.isupper() for data in on_branch} == {True, False}
-    assert set(hub.tags[WEIGHTS_REPO]) == {"old"}
-    assert main(download_argv(from_branch), hf_api=hub) == 1
-    assert "an upload to it did not finish" in capsys.readouterr().err
-    assert not from_branch.exists()
-    assert main(download_argv(from_tag, revision="old"), hf_api=hub) == 0
-    assert tree(from_tag) == old_release
-
-    hub.interrupt_after = None
-    assert main(upload_new, hf_api=hub) == 0
-    assert main(download_argv(from_branch), hf_api=hub) == 0
-    assert tree(from_branch) == tree(tt_dit_cache)
-
-
-def test_tt_weights_upload_does_not_tag_a_commit_that_lacks_its_files(
-    tt_dit_cache, tmp_path, capsys
-):
-    class OverlappingUploadHub(FakeHub):
-        """Another upload to the revision removes a file before the manifest lands."""
-
-        def upload_file(self, **kwargs):
-            lost = f"tt_dit_cache/{TEXT_ENCODER_DIR}/embed.weight.tensorbin"
-            del self.files(kwargs["repo_id"], kwargs["revision"])[lost]
-            return super().upload_file(**kwargs)
-
-    hub = OverlappingUploadHub()
-    manifest_out = tmp_path / "manifest.json"
-
-    exit_code = main(upload_argv(tt_dit_cache, manifest_out), hf_api=hub)
-
-    assert exit_code == 1
-    assert f"does not hold the local cache in {TEXT_ENCODER_DIR}" in (
-        capsys.readouterr().err
-    )
-    assert hub.called("create_tag") == []
-    assert not manifest_out.exists()
-
-
-def test_tt_weights_download_verifies_then_marks_directories_complete(
-    tt_dit_cache, tmp_path
-):
-    hub = FakeHub({WEIGHTS_REPO: {OTHER_VARIANT_TENSOR: b"ref"}})
-    assert main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub) == 0
-    dest = tmp_path / "deployment" / "tt_dit_cache"
-
-    exit_code = main(download_argv(dest, revision="ttm-aaa-srv-bbb"), hf_api=hub)
-
-    assert exit_code == 0
-    assert tree(dest) == tree(tt_dit_cache)
-    commit = hub.commit(WEIGHTS_REPO)
-    assert hub.called("model_info")[-1]["revision"] == "ttm-aaa-srv-bbb"
-    assert hub.called("hf_hub_download")[-1]["revision"] == commit
-    download = hub.called("snapshot_download")[0]
-    assert download["revision"] == commit
-    assert download["allow_patterns"] == [
-        f"tt_dit_cache/{TEXT_ENCODER_DIR}/*",
-        f"tt_dit_cache/{TRANSFORMER_DIR}/*",
-    ]
-
-
-def test_tt_weights_download_that_fails_the_manifest_moves_nothing_and_unmarks(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub()
-    assert main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub) == 0
-    lost = f"tt_dit_cache/{TRANSFORMER_DIR}/blocks.0.bias.tensorbin"
-    content = hub.files(WEIGHTS_REPO).pop(lost)
-    dest = tmp_path / "deployment" / "tt_dit_cache"
-    previous_release = {
-        f"{TRANSFORMER_DIR}/blocks.0.weight.tensorbin": b"old",
-        f"{TRANSFORMER_DIR}/blocks.0.bias.tensorbin": b"older",
-    }
-    write_files(dest, {**previous_release, f"{TRANSFORMER_DIR}/cache_dict.json": b""})
-
-    exit_code = main(download_argv(dest), hf_api=hub)
-
-    assert exit_code == 1
-    assert f"{TRANSFORMER_DIR}: 1 files, 3 bytes" in capsys.readouterr().err
-    assert not list(dest.rglob("cache_dict.json"))
-    assert tree(dest / TRANSFORMER_DIR) == {
-        Path(path).name: data for path, data in previous_release.items()
-    }
-    assert not (dest / TEXT_ENCODER_DIR).exists()
-
-    hub.files(WEIGHTS_REPO)[lost] = content
     assert main(download_argv(dest), hf_api=hub) == 0
-    assert tree(dest) == tree(tt_dit_cache)
 
-
-def test_tt_weights_download_refuses_a_destination_with_files_of_another_release(
-    tt_dit_cache, tmp_path, capsys
-):
-    hub = FakeHub()
-    assert main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub) == 0
-    dest = tmp_path / "deployment" / "tt_dit_cache"
-    previous_release = {
-        f"{TRANSFORMER_DIR}/renamed.tensorbin": b"old",
-        f"{TRANSFORMER_DIR}/cache_dict.json": b"",
-    }
-    write_files(dest, previous_release)
-
-    exit_code = main(download_argv(dest), hf_api=hub)
-
-    assert exit_code == 1
-    assert "not in the manifest, for example renamed.tensorbin" in (
-        capsys.readouterr().err
-    )
-    assert not list(dest.rglob("cache_dict.json"))
-    assert tree(dest / TRANSFORMER_DIR) == {"renamed.tensorbin": b"old"}
-
-
-def test_tt_weights_download_that_stops_part_way_leaves_no_marker(
-    tt_dit_cache, tmp_path, monkeypatch, capsys
-):
-    hub = FakeHub()
-    assert main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub) == 0
-    dest = tmp_path / "deployment" / "tt_dit_cache"
-    write_files(dest, {path: b"old" for path in tree(tt_dit_cache)})
-    replace, moved = os.replace, []
-
-    def replace_once(source, target):
-        if moved:
-            raise PermissionError(13, "Permission denied", str(target))
-        moved.append(target)
-        replace(source, target)
-
-    monkeypatch.setattr(os, "replace", replace_once)
-
-    exit_code = main(download_argv(dest), hf_api=hub)
-
-    assert exit_code == 1
-    assert capsys.readouterr().err.startswith(
-        "error: tt-weights download: PermissionError"
-    )
-    assert len(moved) == 1
-    assert not list(dest.rglob("cache_dict.json"))
-
-
-ORIGINAL_FILES = {
-    "model_index.json": b"{}",
-    "scheduler/scheduler_config.json": b"{}",
-    "tokenizer/tokenizer.json": b"{}",
-    "transformer/config.json": b"{}",
-    "transformer/diffusion_pytorch_model-00001-of-00002.safetensors": b"big",
-    "transformer_ref/config.json": b"{}",
-    "transformer_ref/diffusion_pytorch_model-00001-of-00002.safetensors": b"big",
-    "text_encoder/config.json": b"{}",
-    "text_encoder/preprocessor_config.json": b"{}",
-    "text_encoder/model.safetensors.index.json": json.dumps(
-        {
-            "weight_map": {
-                "model.language_model.layers.0.weight": "model-00001-of-00003.safetensors",
-                "model.visual.blocks.0.weight": "model-00002-of-00003.safetensors",
-                "model.visual.blocks.1.weight": "model-00002-of-00003.safetensors",
-                "lm_head.weight": "model-00003-of-00003.safetensors",
-            }
-        }
-    ).encode(),
-    "text_encoder/model-00001-of-00003.safetensors": b"big",
-    "text_encoder/model-00002-of-00003.safetensors": b"vision",
-    "text_encoder/model-00003-of-00003.safetensors": b"big",
-    "vae/config.json": b"{}",
-    "vae/diffusion_pytorch_model.safetensors": b"vae",
-    "audio_vae/config.json": b"{}",
-    "audio_vae/diffusion_pytorch_model.safetensors": b"big",
-    "FL2VA/original_bundle.safetensors": b"big",
-    "assets/sample.mp4": b"big",
-}
+    expected = published(FL2VA, original="weights")
+    for directory in (OWN[FL2VA], SHARED):
+        expected[f"tt_dit_cache/{directory}/cache_dict.json"] = b""
+    assert tree(dest) == expected
 
 
 @pytest.mark.parametrize(
-    "variant, transformer, other_transformer",
+    "path, content",
     [
-        ("fl2va", "transformer", "transformer_ref"),
-        ("ref2va", "transformer_ref", "transformer"),
+        (f"tt_dit_cache/{OWN[FL2VA]}/blocks.0.bias.tensorbin", None),
+        ("original_subset/vae/config.json", b"[]"),
     ],
 )
-def test_original_subset_downloads_only_what_a_cached_start_reads(
-    tmp_path, variant, transformer, other_transformer
-):
-    hub = FakeHub(
-        {ORIGINAL_REPO: ORIGINAL_FILES, LORA_REPO: {"turbo.safetensors": b"lora"}}
-    )
-    dest = tmp_path / "weights"
+def test_download_failure_leaves_no_marker(hub, tmp_path, capsys, path, content):
+    del hub.files()[path]
+    if content:
+        hub.files()[path] = content
+    dest = tmp_path / "deployment"
+    previous = {"embed.weight.tensorbin": b"old", "cache_dict.json": b""}
+    write_files(dest / "tt_dit_cache" / SHARED, previous)
 
-    exit_code = main(
-        [
-            "tt-weights",
-            "original-subset",
-            "--repo",
-            ORIGINAL_REPO,
-            "--variant",
-            variant,
-            "--dest",
-            str(dest),
-            "--lora",
-            f"{LORA_REPO}:turbo.safetensors",
-        ],
-        hf_api=hub,
-    )
+    assert main(download_argv(dest), hf_api=hub) == 1
 
-    assert exit_code == 0
-    assert set(tree(dest)) == {
-        "model_index.json",
-        "scheduler/scheduler_config.json",
-        "tokenizer/tokenizer.json",
-        f"{transformer}/config.json",
-        "text_encoder/config.json",
-        "text_encoder/preprocessor_config.json",
-        "text_encoder/model.safetensors.index.json",
-        "text_encoder/model-00002-of-00003.safetensors",
-        "vae/config.json",
-        "vae/diffusion_pytorch_model.safetensors",
-        "audio_vae/config.json",
-        "lightx2v/turbo.safetensors",
-    }
-    assert not (dest / other_transformer).exists()
+    assert "the download was not applied" in capsys.readouterr().err
+    assert not list(dest.rglob("cache_dict.json"))
+    assert tree(dest / "tt_dit_cache" / SHARED) == {"embed.weight.tensorbin": b"old"}
+    assert not (dest / "weights").exists()
 
 
-def test_original_subset_creates_the_folders_the_pipeline_requires(tmp_path):
-    files = {
-        path: data
-        for path, data in ORIGINAL_FILES.items()
-        if not path.startswith(("audio_vae/", "transformer/"))
-    }
-    hub = FakeHub({ORIGINAL_REPO: files})
-    dest = tmp_path / "weights"
-
-    exit_code = main(
-        [
-            "tt-weights",
-            "original-subset",
-            "--repo",
-            ORIGINAL_REPO,
-            "--variant",
-            "fl2va",
-            "--dest",
-            str(dest),
-        ],
-        hf_api=hub,
-    )
-
-    assert exit_code == 0
-    for folder in ("transformer", "text_encoder", "vae", "audio_vae"):
-        assert (dest / folder).is_dir()
-    assert not (dest / "lightx2v").exists()
-
-
-def test_tt_weights_calls_match_the_installed_huggingface_hub(tt_dit_cache, tmp_path):
-    huggingface_hub = pytest.importorskip("huggingface_hub")
-    hub = FakeHub(
-        {ORIGINAL_REPO: ORIGINAL_FILES, LORA_REPO: {"turbo.safetensors": b"lora"}}
-    )
-    assert main(upload_argv(tt_dit_cache, tmp_path / "manifest.json"), hf_api=hub) == 0
-    assert (
-        main(upload_argv(tt_dit_cache, tmp_path / "m.json", "tag-2"), hf_api=hub) == 0
-    )
-    assert main(download_argv(tmp_path / "dest"), hf_api=hub) == 0
-    subset_argv = ["tt-weights", "original-subset", "--repo", ORIGINAL_REPO]
-    subset_argv += ["--variant", "fl2va", "--dest", str(tmp_path / "weights")]
-    subset_argv += ["--lora", f"{LORA_REPO}:turbo.safetensors"]
-    assert main(subset_argv, hf_api=hub) == 0
-
-    api = huggingface_hub.HfApi()
-    for method, kwargs in hub.calls:
-        inspect.signature(getattr(api, method)).bind(**kwargs)
-
-
-def test_tt_weights_needs_the_token_in_the_environment(tmp_path, monkeypatch, capsys):
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-
-    exit_code = main(download_argv(tmp_path / "dest"))
-
-    assert exit_code == 1
-    assert capsys.readouterr().err == "error: HF_TOKEN is not set\n"
-    assert not (tmp_path / "dest").exists()
-
-
-def release_argv(tmp_path, out, weights_manifest=None, digest="sha256:2222"):
-    argv = [
-        "release-hash",
-        "--base-image",
-        BASE_IMAGE,
-        "--image",
-        KC_IMAGE,
-        "--image-digest",
-        digest,
-        "--kernel-manifest",
-        str(write_kernel_manifest(tmp_path / "kernel_cache_manifest.json")),
-        "--tt-metal-sha",
-        "aaa",
-        "--server-sha",
-        "bbb",
-        "--model",
-        "example-model",
-        "--device",
-        "galaxy",
-        "--out",
-        str(out),
-    ]
-    if weights_manifest:
-        argv += ["--weights-manifest", str(weights_manifest)]
-    return argv
-
-
-def test_release_hash_names_image_kernel_cache_and_weights(tt_dit_cache, tmp_path):
+def test_release_hash_names_image_kernel_cache_and_weights(tmp_path):
+    kernel_manifest = tmp_path / "kernel_cache_manifest.json"
+    kernel_manifest.write_text(json.dumps(KERNEL_MANIFEST))
+    weights = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}
     weights_manifest = tmp_path / "tt_weights_manifest.json"
-    hub = FakeHub()
-    assert main(upload_argv(tt_dit_cache, weights_manifest), hf_api=hub) == 0
+    weights_manifest.write_text(json.dumps({**weights, "cache_directories": []}))
     out = tmp_path / "release.json"
-    extra = ["--warm-ready-seconds", "731.5", "--run-url", "https://ci.example/run/1"]
+    argv = ["release-hash", "--base-image", BASE_IMAGE, "--image", KC_IMAGE]
+    argv += ["--image-digest", "sha256:2222", "--kernel-manifest", str(kernel_manifest)]
+    argv += ["--weights-manifest", str(weights_manifest), "--tt-metal-sha", "aaa"]
+    argv += ["--server-sha", "bbb", "--model", "example-model", "--device", "galaxy"]
 
-    exit_code = main(release_argv(tmp_path, out, weights_manifest) + extra)
+    assert main(argv + ["--out", str(out)]) == 0
 
-    assert exit_code == 0
     release = json.loads(out.read_text())
     assert len(release["release_hash"]) == 64
-    assert release["image"] == {
-        "reference": KC_IMAGE,
-        "digest": "sha256:2222",
-        "base_image": BASE_IMAGE,
-    }
-    assert release["kernel_cache"]["path"] == KERNEL_CACHE_CONTAINER_DIR
-    assert release["kernel_cache"]["env"] == {
-        "TT_METAL_CACHE": KERNEL_CACHE_CONTAINER_DIR,
-        "TT_METAL_INSPECTOR": "0",
-        "TT_MM_THROTTLE_PERF": "5",
-        "MINIMAX_H3_TOPOLOGY": "linear",
-        "MINIMAX_H3_VAE_OUTPUT": "yuv420",
-    }
-    assert release["kernel_cache"]["kernel_hash_dirs"] == 2
-    assert release["tt_weights"] == {
-        "repo": WEIGHTS_REPO,
-        "revision": "main",
-        "tag": "ttm-aaa-srv-bbb",
-        "commit": hub.commit(WEIGHTS_REPO),
-        "files": 3,
-        "bytes": 15,
-        "meta": {"tt_metal_sha": "aaa", "server_sha": "bbb"},
-    }
-    assert (release["tt_metal_sha"], release["server_sha"]) == ("aaa", "bbb")
-    assert (release["model"], release["device"]) == ("example-model", "galaxy")
-    assert release["warm_ready_seconds"] == 731.5
-    assert release["run_url"] == "https://ci.example/run/1"
-
-
-def test_release_hash_depends_only_on_what_is_deployed(tmp_path):
-    def release(name, **kwargs):
-        out = tmp_path / name
-        assert main(release_argv(tmp_path, out, **kwargs)) == 0
-        return json.loads(out.read_text())
-
-    first = release("first.json")
-    again = release("again.json")
-    other_image = release("other.json", digest="sha256:3333")
-
-    assert first["tt_weights"] is None
-    assert first["warm_ready_seconds"] is None
-    assert first["release_hash"] == again["release_hash"]
-    assert first["release_hash"] != other_image["release_hash"]
-
-
-def test_release_hash_refuses_a_kernel_manifest_of_another_image(tmp_path, capsys):
-    out = tmp_path / "release.json"
-    argv = release_argv(tmp_path, out)
-    write_kernel_manifest(
-        tmp_path / "kernel_cache_manifest.json", "registry.example/media-server:other"
-    )
-
-    assert main(argv) == 1
-    assert "made for base image" in capsys.readouterr().err
-    assert not out.exists()
+    assert release["tt_weights"] == weights
+    image = {"reference": KC_IMAGE, "digest": "sha256:2222", "base_image": BASE_IMAGE}
+    assert release["image"] == image
+    kernel_cache_env = {"TT_METAL_CACHE": KERNEL_CACHE_CONTAINER_DIR, **SET_VARIABLES}
+    assert release["kernel_cache"]["env"] == kernel_cache_env
