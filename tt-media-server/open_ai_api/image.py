@@ -35,8 +35,10 @@ from fastapi import (
     Security,
     UploadFile,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from model_services.base_service import BaseService
 from model_services.generation_service import GenerationService, read_manifest
 from pydantic import ValidationError
@@ -439,7 +441,29 @@ async def _klein_render(
     )
 
 
-klein_router = APIRouter()
+class _KleinRoute(APIRoute):
+    """Answers a 422 without each error's `input`, which FastAPI echoes: for an
+    image or a mask, megabytes back to the client."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def route_handler(request: Request):
+            try:
+                return await handler(request)
+            except RequestValidationError as e:
+                errors = [
+                    {key: value for key, value in error.items() if key != "input"}
+                    for error in e.errors()
+                ]
+                return JSONResponse(
+                    status_code=422, content={"detail": jsonable_encoder(errors)}
+                )
+
+        return route_handler
+
+
+klein_router = APIRouter(route_class=_KleinRoute)
 
 
 @klein_router.post("/generations")

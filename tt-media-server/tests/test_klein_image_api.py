@@ -302,6 +302,26 @@ async def test_edits_refuses_a_mask(klein_app):
     assert device.requests == []
 
 
+@pytest.mark.parametrize(
+    ("route", "fields", "field"),
+    [
+        ("edits", {"mask": "m" * 1_000_000}, "mask"),
+        ("image-to-image", {"strength": 5.0, "seed": "x" * 1_000_000}, "seed"),
+    ],
+)
+async def test_a_422_does_not_echo_the_input(klein_app, route, fields, field):
+    client, _, _, _ = klein_app
+    response = await client.post(
+        f"/v1/images/{route}",
+        json={"prompt": "x", "image": "i" * 1_000_000, **fields},
+    )
+    assert response.status_code == 422, response.text[:500]
+    assert len(response.content) < 2_000
+    errors = response.json()["detail"]
+    assert field in {error["loc"][1] for error in errors}
+    assert all("input" not in error and error["msg"] for error in errors)
+
+
 async def test_a_reference_over_16_mp_is_refused(klein_app):
     client, device, _, _ = klein_app
     buffer = BytesIO()
