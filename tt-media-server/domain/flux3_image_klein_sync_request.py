@@ -8,7 +8,7 @@ Image klein's synchronous /v1/images routes take them."""
 from typing import Optional
 
 from domain.image_edit_request import ImageEditRequest
-from domain.image_generate_request import ImageGenerateRequest
+from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,6 +22,7 @@ class _KleinImageFields(BaseModel):
     num_inference_steps: Optional[int] = None
     guidance_scale: Optional[float] = None
 
+    # Replaces BaseImageRequest's check by name: steps are ignored.
     @field_validator("num_inference_steps")
     @classmethod
     def validate_num_inference_steps(cls, v):
@@ -60,9 +61,11 @@ class KleinImageEditRequest(_KleinImageFields, ImageEditRequest):
         return v
 
 
-class KleinImageRequest(KleinImageGenerateRequest):
+class KleinImageRequest(_KleinImageFields, BaseImageRequest):
     """What the routes take together, as GET /v1/models lists it: with
-    `image` (and `strength`, ignored) on /v1/images/image-to-image."""
+    `image` (and `strength`, ignored) on /v1/images/image-to-image. Without
+    ImageGenerateRequest's other fields, which Klein ignores: Console offers
+    a LoRA control for a schema with lora_path and lora_scale."""
 
     image: Optional[str] = None
     # Klein has no strength. Console offers image to image only for a schema

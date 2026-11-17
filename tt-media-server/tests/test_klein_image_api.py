@@ -425,3 +425,38 @@ def test_v1_models_lists_the_image_api_fields(monkeypatch):
     assert isinstance(properties["strength"]["default"], float)
     assert properties["image"]["default"] is None
     assert entry["schema"]["required"] == ["prompt"]
+    # tt-cloud-console's parseModelFeatures: no LoRA or guidance control.
+    assert _console_features(properties) == {
+        "img2img": {"min": 0.0, "max": 1.0, "default": 0.6}
+    }
+    for ignored in ("lora_path", "lora_scale", "prompt_2", "sigmas", "timesteps"):
+        assert ignored not in properties
+
+
+def _number_bounds(prop):
+    """Console's extractFeatureValues: (min, max, default) when all three are
+    numbers, directly or in an anyOf's number variant; else None."""
+    if not isinstance(prop, dict):
+        return None
+    variants = [prop] + [v for v in prop.get("anyOf", []) if v.get("type") == "number"]
+    for variant in variants:
+        values = (variant.get("minimum"), variant.get("maximum"), prop.get("default"))
+        if all(isinstance(value, float) for value in values):
+            return dict(zip(("min", "max", "default"), values))
+    return None
+
+
+def _console_features(properties) -> dict:
+    """Console's parseModelFeatures over a /v1/models schema's properties."""
+    features = {}
+    lora = _number_bounds(properties.get("lora_scale"))
+    if "lora_path" in properties and lora:
+        features["lora"] = lora
+    if guidance := _number_bounds(properties.get("guidance_scale")):
+        features["guidance_scale"] = guidance
+    strength = _number_bounds(properties.get("strength"))
+    if "image" in properties and strength:
+        features["img2img"] = strength
+        if "mask" in properties:
+            features["inpainting"] = {}
+    return features
