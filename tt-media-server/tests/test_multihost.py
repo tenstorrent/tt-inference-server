@@ -470,52 +470,90 @@ class TestCanary:
 
 class TestStopSignal:
     """A stopped follower never leaves in the middle of a request: that leaves
-    the mesh unusable until it is reset."""
+    the mesh unusable until it is reset. It follows rank 0 to its
+    ShutdownMessage and closes its part of the mesh."""
 
     @pytest.fixture
     def exits(self, monkeypatch):
-        exits = []
-        monkeypatch.setattr(follower_module.os, "_exit", exits.append)
+        exits = types.SimpleNamespace(calls=[], timers=[])
+        timers = exits.timers
+        monkeypatch.setattr(follower_module.os, "_exit", exits.calls.append)
         monkeypatch.setattr(follower_module, "_STOPPING", threading.Event())
+        monkeypatch.setattr(follower_module, "_RUNNING", threading.Lock())
+        monkeypatch.setattr(follower_module, "_stop_grace_seconds", lambda: 360.0)
+        monkeypatch.setattr(
+            follower_module.threading,
+            "Timer",
+            lambda seconds, function: timers.append((seconds, function)) or MagicMock(),
+        )
         return exits
 
-    def _follower(self):
-        return MultiHostLockstepFollower(
-            1, runner_factory=MagicMock(), comm=MagicMock()
-        )
-
-    def test_idle_follower_exits_at_once(self, exits):
+    def test_a_stop_signal_waits_for_rank_0(self, exits):
         follower_module._exit_on_signal(15, None)
-        assert exits == [0]
+        follower_module._exit_on_signal(2, None)
+        assert exits.calls == []
+        assert [seconds for seconds, _ in exits.timers] == [360.0]
 
-    def test_follower_exits_after_the_request_it_is_running(self, exits):
-        ran = []
-
-        class Runner:
-            def run(self, requests):
-                follower_module._exit_on_signal(15, None)
-                assert exits == []
-                ran.append(requests)
-
-        self._follower()._run(Runner(), ["r"], "task")
-        assert (ran, exits) == ([["r"]], [0])
-
-    def test_stopped_follower_starts_no_request(self, exits):
-        follower_module._STOPPING.set()
+    def test_a_stopped_follower_runs_rank_0s_requests_then_closes_the_mesh(self, exits):
+        follower_module._exit_on_signal(15, None)
         runner = MagicMock()
-        with patch.object(follower_module.os, "_exit", side_effect=SystemExit):
-            with pytest.raises(SystemExit):
-                self._follower()._run(runner, ["r"], "task")
-        runner.run.assert_not_called()
+        runner.run.side_effect = lambda requests: None
+        messages = iter(
+            [
+                RunMessage(requests=[to_request_data(_video_request("last"))]),
+                ShutdownMessage(),
+            ]
+        )
+        comm_ = MagicMock()
+        comm_.receive.side_effect = lambda: next(messages)
+        follower = MultiHostLockstepFollower(
+            1, runner_factory=lambda: runner, comm=comm_
+        )
+        with patch.object(follower_module.asyncio, "run", return_value=True):
+            assert follower.run() == 0
+        assert [c[0][0][0].prompt for c in runner.run.call_args_list] == ["last"]
+        runner.close_device.assert_called_once()
+        assert exits.calls == []
 
-    def test_stopping_rank_zero_drops_its_queued_requests(self):
+    def test_without_rank_0_it_leaves_once_the_request_ends(self, exits):
+        follower_module._exit_on_signal(15, None)
+        ((_, exit_when_idle),) = exits.timers
+        follower_module._RUNNING.acquire()
+        waiting = threading.Thread(target=exit_when_idle)
+        waiting.start()
+        waiting.join(0.2)
+        assert exits.calls == []
+        follower_module._RUNNING.release()
+        waiting.join(_TIMEOUT_S)
+        assert exits.calls == [0]
+
+    def test_stopping_drops_queued_requests_and_fails_their_jobs(self):
         from model_services.scheduler import Scheduler
 
-        scheduler = types.SimpleNamespace(task_queue=queue.Queue(), logger=MagicMock())
-        for request in ("a", "b"):
-            scheduler.task_queue.put(request)
-        Scheduler._drop_queued_requests(scheduler)
+        dropped = []
+        scheduler = types.SimpleNamespace(
+            task_queue=queue.Queue(),
+            logger=MagicMock(),
+            on_request_dropped=dropped.append,
+        )
+        for task_id in ("a", "b"):
+            scheduler.task_queue.put(types.SimpleNamespace(_task_id=task_id))
+        Scheduler.drop_queued_requests(scheduler)
         assert scheduler.task_queue.empty()
+        assert dropped == ["a", "b"]
+
+    def test_a_queue_that_returns_none_when_empty_is_drained(self):
+        from model_services.scheduler import Scheduler
+
+        items = iter([types.SimpleNamespace(_task_id="a"), None])
+        dropped = []
+        scheduler = types.SimpleNamespace(
+            task_queue=types.SimpleNamespace(get_nowait=lambda: next(items)),
+            logger=MagicMock(),
+            on_request_dropped=dropped.append,
+        )
+        Scheduler.drop_queued_requests(scheduler)
+        assert dropped == ["a"]
 
 
 class TestWrapIfMultihost:
@@ -669,10 +707,13 @@ with patch.object(main, "is_follower_rank", return_value=False), \\
         patch.object(main, "service_resolver") as resolver, \\
         patch.object(main, "get_job_manager") as job_manager:
     job_manager.return_value.shutdown = AsyncMock()
+    resolver.return_value.finish_running_jobs = AsyncMock()
     async def enter():
         async with main.lifespan(main.app):
             resolver.return_value.start_workers.assert_called_once()
     asyncio.run(enter())
+# the running job ends before the job manager would cancel it
+resolver.return_value.finish_running_jobs.assert_awaited_once()
 resolver.return_value.stop_workers.assert_called_once()
 print("LIFESPAN-OK")
 """

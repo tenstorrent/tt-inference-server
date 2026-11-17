@@ -822,6 +822,27 @@ async def test_cancelling_a_running_job(generations_app):
     assert job["expires_at"] == job["completed_at"] + _RETENTION_SECONDS
 
 
+async def test_a_stop_finishes_the_running_job_and_fails_the_queued_one(
+    generations_app,
+):
+    from resolver.service_resolver import service_resolver
+
+    client, device = generations_app("tt-flux-3-image-klein", delay=1.0)
+    service = client._transport.app.dependency_overrides[service_resolver]()
+    path = "/v1/generations/black-forest-labs/flux-3-image-klein"
+    running = (await client.post(path, json={"prompt": "a cat"})).json()
+    await _wait_status(client, running["id"], "in_progress")
+    device.queued = 60.0
+    queued = (await client.post(path, json={"prompt": "a dog"})).json()
+    device.drop_queued_requests = lambda: service._fail_dropped_job(queued["id"])
+    await service.finish_running_jobs()
+    running = (await client.get(f"/v1/jobs/{running['id']}")).json()
+    assert running["status"] == "completed" and running["outputs"]
+    queued = (await client.get(f"/v1/jobs/{queued['id']}")).json()
+    assert queued["status"] == "failed"
+    assert queued["error"]["code"] == "server_stopping"
+
+
 async def test_the_list_holds_jobs_of_every_status(generations_app):
     client, device = _ltx_app(generations_app, delay=2.0)
     first = (await client.post(_LTX[1], json={"prompt": "a cat"})).json()
@@ -1868,10 +1889,15 @@ def flux3_on_quad(monkeypatch):
             {"aspect_ratio": "9:16", "size": "4K"},
             "9:16 is served on a Galaxy quad only",
         ),
+        # Not "served at 4K only", which reads as if 4K would do.
+        (
+            {"aspect_ratio": "16:9", "size": "2K"},
+            "16:9 is served on a Galaxy quad only",
+        ),
         ({"images": ["https://x/a.png"] * 2}, "at most 1 item"),
     ],
 )
-def test_flux3_serves_one_square_shape_per_size(
+def test_flux3_off_a_quad_refuses_16_9_9_16_and_a_second_image(
     flux3_upsampler, flux3_on_quad, fields, message
 ):
     flux3_upsampler("ahead")
@@ -1949,23 +1975,16 @@ def test_flux3_liveness_says_whether_a_job_is_rendering(monkeypatch):
 def test_image_output_is_png_level_1_with_alpha_only_when_it_is_real(
     tmp_path, monkeypatch, mode, alpha, saved
 ):
-    import model_services.generation_service as service
     from model_services.generation_service import GenerationService
 
-    writes = []
-    real_write = service.write_png
-
-    def write_png(image, path, **options):
-        writes.append(options)
-        return real_write(image, path, **options)
-
-    monkeypatch.setattr(service, "write_png", write_png)
     color = (10, 20, 30) if alpha is None else (10, 20, 30, alpha)
     request = SimpleNamespace(OUTPUT_TYPE="image", _seed=1, _prompt="p", format="png")
     output = GenerationService._write_output(
         tmp_path, 0, request, Image.new(mode, (8, 8), color)
     )
-    assert writes == [{"compress_level": 1}]
+    data = (tmp_path / output["file"]).read_bytes()
+    # zlib header 78 01: the fastest level
+    assert data[data.index(b"IDAT") + 4 : data.index(b"IDAT") + 6] == b"\x78\x01"
     with Image.open(tmp_path / output["file"]) as written:
         assert written.mode == saved
         assert written.getpixel((0, 0))[:3] == (10, 20, 30)

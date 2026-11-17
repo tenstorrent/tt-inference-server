@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import asyncio
 import os
+import time
 from multiprocessing import Manager
 from typing import Any, Optional
 
@@ -19,11 +21,30 @@ class BaseJobService(BaseService):
     def __init__(self):
         super().__init__()
         self._job_manager = get_job_manager()
+        self.scheduler.on_request_dropped = self._fail_dropped_job
         # Forked before the port opens, so it inherits no client connections.
         self._processManager = Manager()
 
     def _createStartEvent(self):
         return self._processManager.Event()
+
+    async def finish_running_jobs(self) -> None:
+        """Stopping: fail the queued jobs, then let the running one end, its
+        output written, within the worker's stop budget. The job manager's
+        shutdown would cancel it, and only the device would finish it."""
+        self.scheduler.drop_queued_requests()
+        deadline = time.monotonic() + settings.worker_shutdown_timeout_seconds
+        while time.monotonic() < deadline:
+            active = self._job_manager.count_active_jobs()
+            if not (active["queued"] or active["in_progress"] or active["cancelling"]):
+                return
+            await asyncio.sleep(0.2)
+        self.logger.warning("Stopping: a job still runs after the stop budget")
+
+    def _fail_dropped_job(self, job_id: str) -> None:
+        self._job_manager.fail_job(
+            job_id, "server_stopping", "the server stopped before the job ran"
+        )
 
     def stop_workers(self):
         result = super().stop_workers()

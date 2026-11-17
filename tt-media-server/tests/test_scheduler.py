@@ -628,6 +628,14 @@ class TestScheduler:
             # Verify worker_info was cleared
             assert len(scheduler.worker_info) == 0
 
+    def test_every_stop_drops_the_queued_requests(self, scheduler):
+        # One host too: a queued request would render before SHUTDOWN_SIGNAL
+        # and outlast the join.
+        assert not scheduler.is_multihost
+        with patch.object(scheduler, "drop_queued_requests") as drop:
+            scheduler.stop_workers()
+        drop.assert_called_once()
+
 
 class TestSchedulerQueueTypes:
     """Test different queue type configurations"""

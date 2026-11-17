@@ -875,6 +875,34 @@ class TestJobManager:
             assert db_job["error_message"]["code"] == "processing_error"
 
     @pytest.mark.asyncio
+    async def test_a_dropped_job_fails_with_its_reason(self, job_manager, mock_request):
+        never = asyncio.Event()
+
+        async def task_func(req):
+            await never.wait()
+
+        await job_manager.create_job(
+            job_id="job-123",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        job_manager.fail_job(
+            "job-123", "server_stopping", "the server stopped before the job ran"
+        )
+        metadata = job_manager.get_job_metadata("job-123")
+        assert metadata["status"] == "failed"
+        assert metadata["error"]["code"] == "server_stopping"
+        assert job_manager.count_active_jobs()["queued"] == 0
+        if job_manager.db:
+            assert job_manager.db.get_job_by_id("job-123")["status"] == "failed"
+        job_manager.fail_job("job-123", "other", "ignored")
+        assert job_manager.get_job_metadata("job-123")["error"]["code"] == (
+            "server_stopping"
+        )
+
+    @pytest.mark.asyncio
     async def test_job_processing_failure_invalid_result_path(
         self, job_manager, mock_request
     ):

@@ -159,12 +159,21 @@ class Job:
         return data
 
 
+_unreadable_assignment_logged = False
+
+
 def _held_by_a_worker(job: Job) -> bool:
     """Whether a worker has claimed ``job`` and not yet finished running it.
-    Unknown (the shared assignment can't be read) counts as held."""
+    Unknown (the shared assignment can't be read) counts as held, logged once."""
+    global _unreadable_assignment_logged
     try:
         return job.assigned_worker_identity() is not None
-    except Exception:
+    except Exception as e:
+        if not _unreadable_assignment_logged:
+            _unreadable_assignment_logged = True
+            TTLogger().warning(
+                f"Job {job.id}: worker assignment unreadable ({e}); counted as rendering"
+            )
         return True
 
 
@@ -394,6 +403,16 @@ class JobManager:
             if job:
                 return job.job_checkpoints
         return None
+
+    def fail_job(self, job_id: str, error_code: str, error_message: str) -> None:
+        """Fail a job that has not ended, e.g. one a stopping server dropped."""
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.is_terminal():
+                return
+            job.mark_failed(error_code=error_code, error_message=error_message)
+            self._sync_status_to_db(job)
+        self._logger.info(f"Job {job_id} failed: {error_message}")
 
     def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""

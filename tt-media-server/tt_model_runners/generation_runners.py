@@ -49,6 +49,7 @@ from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
+from multihost import is_follower_rank
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -387,7 +388,6 @@ FLUX3_QUAD_ENV = {
     "TT_METAL_OPERATION_TIMEOUT_SECONDS": "300",
     "TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS": "120000",
     "TT_METAL_TDP_LIMIT_WATTS": "160",
-    "TT_DIT_RMSNORM_HEAD_SPLIT": "1",
 }
 FLUX3_MAX_TDP_WATTS = 160
 
@@ -397,10 +397,10 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         if on_galaxy_quad():
             for name, value in FLUX3_QUAD_ENV.items():
                 os.environ.setdefault(name, value)
-            if int(os.environ["TT_METAL_TDP_LIMIT_WATTS"]) > FLUX3_MAX_TDP_WATTS:
-                raise RuntimeError(
-                    f"TT_METAL_TDP_LIMIT_WATTS above {FLUX3_MAX_TDP_WATTS} W"
-                )
+        if int(os.environ.get("TT_METAL_TDP_LIMIT_WATTS", 0)) > FLUX3_MAX_TDP_WATTS:
+            raise RuntimeError(
+                f"TT_METAL_TDP_LIMIT_WATTS above {FLUX3_MAX_TDP_WATTS} W"
+            )
         return super().set_device()
 
     def create_pipeline(self):
@@ -502,6 +502,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             raise ValueError(f"an input could not be decoded: {e}") from e
         recorder = self._image_stage_recorder()
         output = None
+        follower = False
         try:
             result = self.pipeline.generate(
                 Flux3KleinRequest(
@@ -514,8 +515,10 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                 )
             )
             if result.image is None:
+                if not is_follower_rank():
+                    raise RuntimeError("the pipeline returned no image on rank 0")
                 # another rank of a multi-host mesh: rank 0 keeps the image
-                recorder = None
+                follower = True
                 return None
             # the caption the image was rendered from (the prompt as sent when
             # the upsampler is frozen), which the output reports as its prompt
@@ -536,8 +539,9 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                     )
                 }
         finally:
-            # A failed run is recorded too, as a run with no output.
-            if recorder is not None:
+            # A failed run is recorded too, as a run with no output; a
+            # follower rank records nothing.
+            if recorder is not None and not follower:
                 recorder.flush(output)
         return output
 

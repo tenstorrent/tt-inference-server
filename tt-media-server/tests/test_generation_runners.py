@@ -390,9 +390,10 @@ def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
 def test_flux3_sets_the_quad_runtime_env_before_the_mesh_opens(
     flux3_runner, monkeypatch
 ):
-    for name in runners.FLUX3_QUAD_ENV:
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("TT_METAL_OPERATION_TIMEOUT_SECONDS", "600")
+    # A copy: set_device sets the variables for real.
+    environ = {k: v for k, v in os.environ.items() if k not in runners.FLUX3_QUAD_ENV}
+    monkeypatch.setattr(os, "environ", environ)
+    environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "600"
     opened = []
     monkeypatch.setattr(
         runners.TTDiTRunner, "set_device", lambda self: opened.append(dict(os.environ))
@@ -404,13 +405,18 @@ def test_flux3_sets_the_quad_runtime_env_before_the_mesh_opens(
         **runners.FLUX3_QUAD_ENV,
         "TT_METAL_OPERATION_TIMEOUT_SECONDS": "600",
     }
-    monkeypatch.setenv("TT_METAL_TDP_LIMIT_WATTS", "190")
+    environ["TT_METAL_TDP_LIMIT_WATTS"] = "190"
+    with pytest.raises(RuntimeError, match="above 160 W"):
+        flux3_runner.set_device()
+    # The 160 W rule holds on every Galaxy.
+    monkeypatch.setattr(get_settings(), "device", "galaxy")
     with pytest.raises(RuntimeError, match="above 160 W"):
         flux3_runner.set_device()
 
 
-def test_flux3_returns_nothing_on_the_other_ranks(flux3_runner):
+def test_flux3_returns_nothing_on_the_other_ranks(flux3_runner, monkeypatch):
     # A multi-host mesh: only rank 0's pipeline result carries the image.
+    monkeypatch.setattr(runners, "is_follower_rank", lambda: True)
     recorder = _StageRecorder()
     flux3_runner._image_stage_recorder = lambda: recorder
     flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
@@ -419,6 +425,19 @@ def test_flux3_returns_nothing_on_the_other_ranks(flux3_runner):
     request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
     assert flux3_runner.run([request]) is None
     assert recorder.flushed == "never"
+
+
+def test_flux3_fails_a_run_without_an_image_on_rank_0(flux3_runner, monkeypatch):
+    monkeypatch.setattr(runners, "is_follower_rank", lambda: False)
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=None, prompt=request.prompt, timings={}
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    with pytest.raises(RuntimeError, match="no image on rank 0"):
+        flux3_runner.run([request])
+    assert recorder.flushed is None
 
 
 def test_flux3_records_the_pipeline_stage_times(flux3_runner):
@@ -572,17 +591,42 @@ def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
 def test_flux3_serves_the_shapes_the_pipeline_warms(
     tt_metal_flux3, flux3_runner, monkeypatch
 ):
-    """The server's copies of tt-metal's constants, against tt-metal
-    (klein-demo-quad: no upsampler, so frozen)."""
+    """The server's copies of tt-metal's constants, against tt-metal."""
     pipeline = tt_metal_flux3[
         "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
     ]
-    # On a Galaxy quad, every shape the schema accepts is one the pipeline
-    # serves and warms.
+    # Every size the schema accepts is one the pipeline serves and warms.
     monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
-    monkeypatch.setattr(get_settings(), "device", "galaxy_quad")
-    assert Flux3ImageKleinRequest.warmup_sizes() == list(pipeline.SHAPES)
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES
+    ]
+    if hasattr(pipeline, "SHAPES"):
+        monkeypatch.setattr(get_settings(), "device", "galaxy_quad")
+        assert Flux3ImageKleinRequest.warmup_sizes() == list(pipeline.SHAPES)
     assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
+
+
+def test_flux3_matches_the_resident_upsampler(
+    tt_metal_flux3, flux3_runner, monkeypatch
+):
+    """With the upsampler resident: all sizes but the largest, and the mesh
+    settings it shares with the DiT."""
+    name = "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
+    if name not in tt_metal_flux3:
+        pytest.skip("this tt-metal tree has no FLUX.3 prompt upsampler")
+    pipeline = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    upsampler = tt_metal_flux3[name]
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES if side < max(pipeline.SIZES)
+    ]
+    _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
+    params = flux3_runner.get_pipeline_device_params()
+    assert {
+        name: params[name] for name in upsampler.SHARED_MESH_PARAMS
+    } == upsampler.SHARED_MESH_PARAMS
 
 
 @pytest.fixture

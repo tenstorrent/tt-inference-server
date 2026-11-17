@@ -137,6 +137,9 @@ class BaseService(ABC):
         except Exception as e:
             self.logger.error(f"Failed to start workers: {e}")
 
+    async def finish_running_jobs(self) -> None:
+        """Stopping, before the job manager ends what is left: nothing here."""
+
     @log_execution_time("Stopping workers")
     def stop_workers(self):
         return self.scheduler.stop_workers()

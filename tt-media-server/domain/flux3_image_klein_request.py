@@ -32,7 +32,8 @@ FLUX3_KLEIN_SIZES: dict[tuple[str, str], tuple[int, int]] = {
     ("16:9", "4K"): (4096, 2304),
     ("9:16", "4K"): (2304, 4096),
 }
-# 16:9 and 9:16 are served on a Galaxy quad only (tt-metal klein-demo-quad).
+# 16:9 and 9:16 are served on a Galaxy quad only, by a tt-metal tree without
+# the prompt upsampler.
 FLUX3_QUAD_RATIOS = ("16:9", "9:16")
 FLUX3_KLEIN_STEPS = 16
 
@@ -138,12 +139,12 @@ class Flux3ImageKleinRequest(GenerationRequest):
     @model_validator(mode="after")
     def _size_is_served(self):
         key = (self.aspect_ratio, self.size)
+        if key[0] in FLUX3_QUAD_RATIOS and not on_galaxy_quad():
+            raise ValueError(f"{key[0]} is served on a Galaxy quad only")
         if key not in FLUX3_KLEIN_SIZES:
             sizes = [size for ratio, size in FLUX3_KLEIN_SIZES if ratio == key[0]]
             raise ValueError(f"{key[0]} is served at {', '.join(sizes)} only")
         if key not in self.served_sizes():
-            if key[0] in FLUX3_QUAD_RATIOS and not on_galaxy_quad():
-                raise ValueError(f"{key[0]} is served on a Galaxy quad only")
             raise ValueError(
                 f"{self.size} is served with the prompt upsampler ahead of the "
                 f"deployment ({FLUX3_PROMPT_UPSAMPLER_FROZEN}=1)"

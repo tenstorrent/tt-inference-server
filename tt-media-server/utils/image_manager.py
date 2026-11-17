@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
+from utils.png_writer import write_png
 
 
 class ImageManager:
@@ -50,16 +51,17 @@ class ImageManager:
             Base64 encoded string
         """
         buffered = BytesIO()
-        # Optimized save parameters for speed
-        image.save(
-            buffered,
-            format=format,
-            quality=quality,
-            optimize=False,
-            progressive=False,
-            # PNG: zlib level 1, as lossless as the default 6 and about 3x faster
-            **({"compress_level": 1} if format.upper() == "PNG" else {}),
-        )
+        if format.upper() == "PNG":
+            write_png(image, buffered)
+        else:
+            # Optimized save parameters for speed
+            image.save(
+                buffered,
+                format=format,
+                quality=quality,
+                optimize=False,
+                progressive=False,
+            )
         # Use base64.encodebytes which is faster than b64encode for larger data
         encoded_bytes = base64.encodebytes(buffered.getvalue())
         # decode() is faster than str() conversion

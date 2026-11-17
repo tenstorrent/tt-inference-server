@@ -36,25 +36,43 @@ def _default_runner_factory() -> Any:
 # Held while this rank runs a request; set once a stop signal arrived.
 _RUNNING = threading.Lock()
 _STOPPING = threading.Event()
+# How long after rank 0's own stop budget a stopped follower waits for
+# ShutdownMessage before it decides rank 0 is gone.
+_STOP_MARGIN_S = 60.0
+
+
+def _stop_grace_seconds() -> float:
+    from config.settings import settings
+
+    return settings.worker_shutdown_timeout_seconds + _STOP_MARGIN_S
 
 
 def _exit_on_signal(signum, _frame) -> None:
-    # mpirun forwards SIGTERM/SIGINT to every rank. Rank 0 may be stopped
-    # mid-request and never send ShutdownMessage, so don't wait for it; but a
-    # rank that leaves in the middle of a request leaves the mesh unusable
-    # until it is reset, so one that is running a request exits after it.
-    _STOPPING.set()
-    if _RUNNING.locked():
-        TTLogger().info(
-            f"Follower rank: received signal {signum}, exiting after the current request"
-        )
+    # mpirun forwards SIGTERM/SIGINT to every rank. Rank 0 then finishes its
+    # render, drops its queue and sends ShutdownMessage, so this rank keeps
+    # following and closes its part of the mesh after rank 0's last request.
+    # A rank that leaves in the middle of a request leaves the mesh unusable
+    # until it is reset, so if rank 0 is gone and the message never comes,
+    # it leaves once idle, after rank 0's stop budget.
+    if _STOPPING.is_set():
         return
-    TTLogger().info(f"Follower rank: received signal {signum}, exiting")
-    os._exit(0)
+    _STOPPING.set()
+    TTLogger().info(f"Follower rank: received signal {signum}, stopping with rank 0")
+    timer = threading.Timer(_stop_grace_seconds(), _exit_when_idle)
+    timer.daemon = True
+    timer.start()
+
+
+def _exit_when_idle() -> None:
+    with _RUNNING:
+        TTLogger().warning(
+            "Follower rank: no shutdown from rank 0 after a stop signal, exiting"
+        )
+        os._exit(0)
 
 
 def install_exit_signal_handlers() -> None:
-    """Exit on SIGTERM/SIGINT even while the follower thread is blocked in MPI.
+    """Stop on SIGTERM/SIGINT even while the follower thread is blocked in MPI.
 
     Must be called from the main thread. The handler runs there, so it fires
     regardless of what the follower thread is waiting on.
@@ -144,19 +162,13 @@ class MultiHostLockstepFollower:
                 raise TypeError(f"unknown message from rank 0: {message!r}")
 
     def _run(self, runner: Any, requests: list[Any], label: str) -> None:
+        # Every request rank 0 sends is run, stopping or not: rank 0 runs it
+        # too, and waits for this rank in its collectives.
         with _RUNNING:
-            if _STOPPING.is_set():
-                self._exit_stopped(label)
             try:
                 discard_outputs(runner.run(requests))
             except ValueError as e:
                 self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
-        if _STOPPING.is_set():
-            self._exit_stopped(label)
-
-    def _exit_stopped(self, label: str) -> None:
-        self._logger.info(f"Rank {self.rank}: stopped (after or instead of {label})")
-        os._exit(0)
 
 
 def _task_ids(requests: list[Any]) -> str:

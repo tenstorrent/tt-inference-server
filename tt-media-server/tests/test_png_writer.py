@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from io import BytesIO
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -22,3 +24,19 @@ def test_write_png_is_lossless(tmp_path, mode, width, height):
         assert written.format == "PNG"
         assert written.mode == image.mode
         assert written.tobytes() == image.tobytes()
+
+
+@pytest.mark.parametrize(
+    ("mode", "alpha", "saved"),
+    [("RGB", None, "RGB"), ("RGBA", 255, "RGB"), ("RGBA", 128, "RGBA")],
+)
+def test_write_png_is_level_1_with_alpha_only_when_it_is_real(mode, alpha, saved):
+    color = (10, 20, 30) if alpha is None else (10, 20, 30, alpha)
+    buffer = BytesIO()
+    write_png(Image.new(mode, (8, 8), color), buffer)
+    data = buffer.getvalue()
+    # zlib header 78 01: the fastest level
+    assert data[data.index(b"IDAT") + 4 : data.index(b"IDAT") + 6] == b"\x78\x01"
+    with Image.open(BytesIO(data)) as written:
+        assert written.mode == saved
+        assert written.getpixel((0, 0))[:3] == (10, 20, 30)

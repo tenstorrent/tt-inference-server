@@ -306,6 +306,9 @@ LTX23_DISTILLED_NUM_FORWARDS = 8 + 3
 # H3's step counts are grid points, one more than the forwards it runs.
 _MINIMAX_H3_FORWARDS = MINIMAX_H3_NUM_INFERENCE_STEPS - 1
 _MINIMAX_H3_LIGHTX2V_FORWARDS = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS - 1
+# A stop waits this long for a FLUX.3 render in progress: one stopped part way
+# leaves the mesh unusable until a reset.
+FLUX3_RENDER_SECONDS_MAX = 300
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
@@ -971,8 +974,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # a render stopped part way leaves the mesh unusable until a reset
-        "worker_shutdown_timeout_seconds": 300,
+        "worker_shutdown_timeout_seconds": FLUX3_RENDER_SECONDS_MAX,
     },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -1347,7 +1349,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        "worker_shutdown_timeout_seconds": 300,
+        "worker_shutdown_timeout_seconds": FLUX3_RENDER_SECONDS_MAX,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),

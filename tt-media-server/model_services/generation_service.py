@@ -50,7 +50,7 @@ from utils.media_probe import (
     media_format_error,
     probe_reference_media,
 )
-from utils.png_writer import write_png
+from utils.png_writer import without_opaque_alpha, write_png
 from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
@@ -67,21 +67,7 @@ IMAGE_FORMATS = {
 IMAGE_SAVE_OPTIONS = {
     "JPEG": {"quality": 95, "subsampling": 0},
     "WEBP": {"quality": 90},
-    # zlib level 1 instead of 6: as lossless, about 3x faster to write (4096x4096:
-    # 4.0 -> 1.4 s on one core), files 2-14 % larger; write_png splits it over
-    # threads.
-    "PNG": {"compress_level": 1},
 }
-
-
-def _without_opaque_alpha(image: Image.Image) -> Image.Image:
-    """``image`` without its alpha channel when that is opaque everywhere."""
-    if image.mode in ("RGBA", "LA") and image.getchannel("A").getextrema() == (
-        255,
-        255,
-    ):
-        return image.convert(image.mode[:-1])
-    return image
 
 
 def _too_large(kind: str, max_bytes: int) -> HTTPException:
@@ -535,10 +521,10 @@ class GenerationService(BaseJobService):
         if request.OUTPUT_TYPE == "image":
             pil_format, content_type = IMAGE_FORMATS[request.format]
             path = directory / f"{index}.{request.format}"
-            image = _without_opaque_alpha(result)
+            image = without_opaque_alpha(result)
             image = image.convert("RGB") if pil_format == "JPEG" else image
             if pil_format == "PNG":
-                write_png(image, path, **IMAGE_SAVE_OPTIONS["PNG"])
+                write_png(image, path)
             else:
                 image.save(path, format=pil_format, **IMAGE_SAVE_OPTIONS[pil_format])
             return {

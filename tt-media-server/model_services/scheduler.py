@@ -9,6 +9,7 @@ from multiprocessing import Event as ProcessEvent
 from multiprocessing import Lock as ProcessLock
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
+from queue import Empty
 from threading import Lock
 from typing import Any
 
@@ -88,6 +89,8 @@ class Scheduler:
         self.worker_info = {}
         self.monitor_running = True
         self.result_queues = {}
+        # Called with the task id of each queued request a stop drops.
+        self.on_request_dropped = None
         # Model-agnostic canary monitor; started after the first worker is ready
         # (see device_warmup_listener) and stopped in stop_workers.
         self.canary_monitor = None
@@ -618,10 +621,9 @@ class Scheduler:
 
             self.is_ready = False
 
-            if self.is_multihost:
-                # The other ranks exit after their current request when
-                # stopped: a queued request would start on rank 0 alone.
-                self._drop_queued_requests()
+            # The worker would render every queued request before
+            # SHUTDOWN_SIGNAL; the join below waits for one render.
+            self.drop_queued_requests()
 
             for _ in self.worker_info:
                 try:
@@ -853,14 +855,21 @@ class Scheduler:
                 self.logger.error(f"Failed to kill worker during exit: {e}")
         os._exit(1)
 
-    def _drop_queued_requests(self) -> None:
+    def drop_queued_requests(self) -> None:
         dropped = 0
         while True:
             try:
-                self.task_queue.get_nowait()
-            except Exception:
+                request = self.task_queue.get_nowait()
+            except Empty:
+                break
+            except Exception as e:
+                self.logger.error(f"Stopping: could not drain the task queue: {e}")
+                break
+            if request is None:  # TTBatchFifoQueue when empty
                 break
             dropped += 1
+            if self.on_request_dropped is not None:
+                self.on_request_dropped(request._task_id)
         if dropped:
             self.logger.warning(f"Stopping: dropped {dropped} queued request(s)")
 

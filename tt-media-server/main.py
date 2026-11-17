@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
     yield
     if launcher_watch is not None:
         launcher_watch.cancel()
+    await service_resolver().finish_running_jobs()
     await get_job_manager().shutdown()
     service_resolver().stop_workers()
 

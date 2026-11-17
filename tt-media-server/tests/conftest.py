@@ -66,6 +66,17 @@ try:
     _tt_metal_flux3 = {name: sys.modules[name] for name in _TT_METAL_FLUX3_MODULES}
 except ImportError:
     _tt_metal_flux3 = None
+# The prompt upsampler, in the trees that have it (not the Galaxy quad's).
+_TT_METAL_FLUX3_UPSAMPLER = "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
+if _tt_metal_flux3 is not None:
+    try:
+        import models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein  # noqa: F401
+
+        _tt_metal_flux3[_TT_METAL_FLUX3_UPSAMPLER] = sys.modules[
+            _TT_METAL_FLUX3_UPSAMPLER
+        ]
+    except ImportError:
+        pass
 
 # Mock modules that are not available in test environment
 mock_modules = [
@@ -905,7 +916,8 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture
 def tt_metal_flux3() -> dict:
-    """tt-metal's FLUX.3 pipeline module, by name."""
+    """tt-metal's FLUX.3 pipeline module, and its upsampler module where the
+    tree has one, by name."""
     if _tt_metal_flux3 is None:
         pytest.skip("needs tt-metal's FLUX.3 pipeline")
     return _tt_metal_flux3
