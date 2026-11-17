@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
+
 from utils.png_writer import write_png
 
 

@@ -49,7 +49,6 @@ from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
-from multihost import is_follower_rank
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -57,6 +56,7 @@ from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
 from models.tt_dit.pipelines.minimax_h3.policy import MINIMAX_H3_SHORT_EDGE
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
 from models.tt_dit.pipelines.wan.policy import served_resolutions
+from multihost import is_follower_rank
 from PIL import Image
 from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
@@ -397,7 +397,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         if on_galaxy_quad():
             for name, value in FLUX3_QUAD_ENV.items():
                 os.environ.setdefault(name, value)
-        if int(os.environ.get("TT_METAL_TDP_LIMIT_WATTS", 0)) > FLUX3_MAX_TDP_WATTS:
+        if int(os.environ.get("TT_METAL_TDP_LIMIT_WATTS", "0")) > FLUX3_MAX_TDP_WATTS:
             raise RuntimeError(
                 f"TT_METAL_TDP_LIMIT_WATTS above {FLUX3_MAX_TDP_WATTS} W"
             )

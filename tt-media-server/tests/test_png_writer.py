@@ -26,6 +26,16 @@ def test_write_png_is_lossless(tmp_path, mode, width, height):
         assert written.tobytes() == image.tobytes()
 
 
+@pytest.mark.parametrize("mode", ["L", "RGB", "RGBA"])
+def test_write_png_is_lossless_on_its_threads(tmp_path, mode):
+    # 2 MP and up: bands on the thread pool
+    pixels = np.random.default_rng(1).integers(0, 256, (1030, 2048, 4), np.uint8)
+    image = Image.fromarray(pixels, "RGBA").convert(mode)
+    write_png(image, tmp_path / "out.png")
+    with Image.open(tmp_path / "out.png") as written:
+        assert written.tobytes() == image.tobytes()
+
+
 @pytest.mark.parametrize(
     ("mode", "alpha", "saved"),
     [("RGB", None, "RGB"), ("RGBA", 255, "RGB"), ("RGBA", 128, "RGBA")],

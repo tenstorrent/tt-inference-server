@@ -91,6 +91,9 @@ class Scheduler:
         self.result_queues = {}
         # Called with the task id of each queued request a stop drops.
         self.on_request_dropped = None
+        # time.monotonic() by which a stop has its worker stopped; None: the
+        # full worker_shutdown_timeout_seconds from stop_workers on.
+        self.stop_deadline = None
         # Model-agnostic canary monitor; started after the first worker is ready
         # (see device_warmup_listener) and stopped in stop_workers.
         self.canary_monitor = None
@@ -635,7 +638,7 @@ class Scheduler:
                 worker = worker_element["process"]
                 worker_pid = worker.pid
                 if worker.is_alive():
-                    worker.join(timeout=self.settings.worker_shutdown_timeout_seconds)
+                    worker.join(timeout=self._stop_budget_left())
                     if worker.is_alive():
                         self.logger.warning(f"Worker {i} did not shutdown gracefully")
                         worker.terminate()
@@ -855,6 +858,11 @@ class Scheduler:
                 self.logger.error(f"Failed to kill worker during exit: {e}")
         os._exit(1)
 
+    def _stop_budget_left(self) -> float:
+        if self.stop_deadline is None:
+            return self.settings.worker_shutdown_timeout_seconds
+        return max(self.stop_deadline - time.monotonic(), 1.0)
+
     def drop_queued_requests(self) -> None:
         dropped = 0
         while True:
@@ -869,7 +877,10 @@ class Scheduler:
                 break
             dropped += 1
             if self.on_request_dropped is not None:
-                self.on_request_dropped(request._task_id)
+                try:
+                    self.on_request_dropped(request._task_id)
+                except Exception as e:
+                    self.logger.error(f"Stopping: could not fail a dropped job: {e}")
         if dropped:
             self.logger.warning(f"Stopping: dropped {dropped} queued request(s)")
 

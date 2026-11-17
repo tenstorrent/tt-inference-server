@@ -897,6 +897,11 @@ class TestJobManager:
         assert job_manager.count_active_jobs()["queued"] == 0
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-123")["status"] == "failed"
+        await asyncio.sleep(0)
+        # the task waiting for a result that will not come ends too
+        task = job_manager._jobs["job-123"]._task
+        assert task is None or task.cancelled()
+        assert job_manager.get_job_metadata("job-123")["status"] == "failed"
         job_manager.fail_job("job-123", "other", "ignored")
         assert job_manager.get_job_metadata("job-123")["error"]["code"] == (
             "server_stopping"

@@ -5,6 +5,7 @@
 import asyncio
 import sys
 import threading
+import time
 from multiprocessing import Process, Queue
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -627,6 +628,15 @@ class TestScheduler:
 
             # Verify worker_info was cleared
             assert len(scheduler.worker_info) == 0
+
+    def test_a_stop_has_one_budget(self, scheduler):
+        # finish_running_jobs sets the deadline; the join gets what is left.
+        scheduler.settings = Mock(worker_shutdown_timeout_seconds=300)
+        assert scheduler._stop_budget_left() == 300
+        scheduler.stop_deadline = time.monotonic() + 100
+        assert 99 < scheduler._stop_budget_left() <= 100
+        scheduler.stop_deadline = time.monotonic() - 5
+        assert scheduler._stop_budget_left() == 1.0
 
     def test_every_stop_drops_the_queued_requests(self, scheduler):
         # One host too: a queued request would render before SHUTDOWN_SIGNAL

@@ -2052,6 +2052,18 @@ async def test_flux3_refuses_a_reference_over_16_mp_from_its_header(
         assert decoded == [] and device.requests == []
 
 
+def test_a_decompression_bomb_is_refused_as_over_16_mp(monkeypatch):
+    from model_services.generation_service import _check_image_pixels
+
+    # PIL refuses to open past twice its limit: no size to report
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    buffer = BytesIO()
+    Image.new("L", (10, 10)).save(buffer, "PNG")
+    with pytest.raises(ValueError) as error:
+        _check_image_pixels(buffer.getvalue(), 16 * 1024 * 1024)
+    assert str(error.value) == "image is over 16 MP (16,777,216 pixels)"
+
+
 def _decode(data):
     from utils.media_probe import decode_image
 

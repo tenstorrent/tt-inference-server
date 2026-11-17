@@ -96,7 +96,7 @@ def _image_size(data: bytes) -> tuple[int, int]:
 def _check_image_pixels(data: bytes, max_pixels: int) -> None:
     """Refuse an image over ``max_pixels`` from its header alone. The EXIF
     turn swaps the sides, so the count is the same upright."""
-    limit = f"at most {max_pixels / 2**20:g} MP ({max_pixels:,} pixels)"
+    limit = f"{max_pixels / 2**20:g} MP ({max_pixels:,} pixels)"
     try:
         with Image.open(io.BytesIO(data)) as image:
             width, height = image.size
@@ -106,8 +106,8 @@ def _check_image_pixels(data: bytes, max_pixels: int) -> None:
         return  # the full decode reports it
     if width * height > max_pixels:
         raise ValueError(
-            f"image is {width}x{height} ({width * height / 2**20:.1f} MP); {limit} "
-            "is accepted"
+            f"image is {width}x{height} ({width * height / 2**20:.1f} MP); at most "
+            f"{limit} is accepted"
         )
 
 
@@ -521,18 +521,21 @@ class GenerationService(BaseJobService):
         if request.OUTPUT_TYPE == "image":
             pil_format, content_type = IMAGE_FORMATS[request.format]
             path = directory / f"{index}.{request.format}"
-            image = without_opaque_alpha(result)
-            image = image.convert("RGB") if pil_format == "JPEG" else image
             if pil_format == "PNG":
-                write_png(image, path)
+                write_png(result, path)  # drops an opaque alpha itself
             else:
+                image = (
+                    result.convert("RGB")
+                    if pil_format == "JPEG"
+                    else without_opaque_alpha(result)
+                )
                 image.save(path, format=pil_format, **IMAGE_SAVE_OPTIONS[pil_format])
             return {
                 **output,
                 "file": path.name,
                 "content_type": content_type,
-                "width": image.width,
-                "height": image.height,
+                "width": result.width,
+                "height": result.height,
             }
 
         path = directory / f"{index}.mp4"

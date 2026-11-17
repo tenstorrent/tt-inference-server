@@ -11,6 +11,7 @@ the GIL. Every band but the last ends in a sync flush, so the bands form one
 zlib stream, one IDAT chunk per band.
 """
 
+import contextlib
 import struct
 import zlib
 from concurrent.futures import ThreadPoolExecutor
@@ -21,8 +22,10 @@ from PIL import Image
 _COLOR_TYPES = {"L": 0, "RGB": 2, "LA": 4, "RGBA": 6}
 _COMPRESS_LEVEL = 1
 _BAND_ROWS = 128
-# Few threads: the next job's render shares the host.
+# Few threads: the next job's render shares the host. A smaller image is
+# written on the caller's thread: an image API runs one writer per worker.
 _pool = ThreadPoolExecutor(8, thread_name_prefix="png")
+_THREADED_PIXELS = 2 * 1024 * 1024
 
 
 def without_opaque_alpha(image: Image.Image) -> Image.Image:
@@ -67,7 +70,8 @@ def write_png(image: Image.Image, fp) -> None:
         end = zlib.Z_FINISH if index == last else zlib.Z_SYNC_FLUSH
         return raw, deflate.compress(raw) + deflate.flush(end)
 
-    bands = list(_pool.map(band, range(len(starts))))
+    run = _pool.map if image.width * image.height >= _THREADED_PIXELS else map
+    bands = list(run(band, range(len(starts))))
     adler = 1
     for raw, _ in bands:
         adler = zlib.adler32(raw, adler)
@@ -78,10 +82,7 @@ def write_png(image: Image.Image, fp) -> None:
         "!IIBBBBB", image.width, image.height, 8, _COLOR_TYPES[image.mode], 0, 0, 0
     )
     chunks = [b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header)]
-    chunks += _pool.map(lambda stream: _chunk(b"IDAT", stream), streams)
+    chunks += run(lambda stream: _chunk(b"IDAT", stream), streams)
     chunks.append(_chunk(b"IEND", b""))
-    if hasattr(fp, "write"):
-        fp.write(b"".join(chunks))
-    else:
-        with open(fp, "wb") as f:
-            f.writelines(chunks)
+    with contextlib.nullcontext(fp) if hasattr(fp, "write") else open(fp, "wb") as f:
+        f.writelines(chunks)

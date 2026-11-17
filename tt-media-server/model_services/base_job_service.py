@@ -32,8 +32,10 @@ class BaseJobService(BaseService):
         """Stopping: fail the queued jobs, then let the running one end, its
         output written, within the worker's stop budget. The job manager's
         shutdown would cancel it, and only the device would finish it."""
-        self.scheduler.drop_queued_requests()
         deadline = time.monotonic() + settings.worker_shutdown_timeout_seconds
+        # stop_workers' join gets what is left: one budget for the whole stop
+        self.scheduler.stop_deadline = deadline
+        self.scheduler.drop_queued_requests()
         while time.monotonic() < deadline:
             active = self._job_manager.count_active_jobs()
             if not (active["queued"] or active["in_progress"] or active["cancelling"]):

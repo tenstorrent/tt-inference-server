@@ -469,33 +469,15 @@ class TestCanary:
 
 
 class TestStopSignal:
-    """A stopped follower never leaves in the middle of a request: that leaves
-    the mesh unusable until it is reset. It follows rank 0 to its
-    ShutdownMessage and closes its part of the mesh."""
+    """A follower never leaves in the middle of a request: that leaves the mesh
+    unusable until it is reset. It stops only on rank 0's ShutdownMessage."""
 
-    @pytest.fixture
-    def exits(self, monkeypatch):
-        exits = types.SimpleNamespace(calls=[], timers=[])
-        timers = exits.timers
-        monkeypatch.setattr(follower_module.os, "_exit", exits.calls.append)
-        monkeypatch.setattr(follower_module, "_STOPPING", threading.Event())
-        monkeypatch.setattr(follower_module, "_RUNNING", threading.Lock())
-        monkeypatch.setattr(follower_module, "_stop_grace_seconds", lambda: 360.0)
-        monkeypatch.setattr(
-            follower_module.threading,
-            "Timer",
-            lambda seconds, function: timers.append((seconds, function)) or MagicMock(),
-        )
-        return exits
-
-    def test_a_stop_signal_waits_for_rank_0(self, exits):
-        follower_module._exit_on_signal(15, None)
-        follower_module._exit_on_signal(2, None)
-        assert exits.calls == []
-        assert [seconds for seconds, _ in exits.timers] == [360.0]
-
-    def test_a_stopped_follower_runs_rank_0s_requests_then_closes_the_mesh(self, exits):
-        follower_module._exit_on_signal(15, None)
+    def test_a_stop_signal_is_logged_and_the_follower_follows_rank_0_to_its_shutdown(
+        self, monkeypatch
+    ):
+        exits = []
+        monkeypatch.setattr(os, "_exit", exits.append)
+        follower_module._log_stop_signal(15, None)
         runner = MagicMock()
         runner.run.side_effect = lambda requests: None
         messages = iter(
@@ -513,19 +495,7 @@ class TestStopSignal:
             assert follower.run() == 0
         assert [c[0][0][0].prompt for c in runner.run.call_args_list] == ["last"]
         runner.close_device.assert_called_once()
-        assert exits.calls == []
-
-    def test_without_rank_0_it_leaves_once_the_request_ends(self, exits):
-        follower_module._exit_on_signal(15, None)
-        ((_, exit_when_idle),) = exits.timers
-        follower_module._RUNNING.acquire()
-        waiting = threading.Thread(target=exit_when_idle)
-        waiting.start()
-        waiting.join(0.2)
-        assert exits.calls == []
-        follower_module._RUNNING.release()
-        waiting.join(_TIMEOUT_S)
-        assert exits.calls == [0]
+        assert exits == []
 
     def test_stopping_drops_queued_requests_and_fails_their_jobs(self):
         from model_services.scheduler import Scheduler
@@ -554,6 +524,24 @@ class TestStopSignal:
         )
         Scheduler.drop_queued_requests(scheduler)
         assert dropped == ["a"]
+
+    def test_a_failing_drop_callback_does_not_end_the_drain(self):
+        from model_services.scheduler import Scheduler
+
+        dropped = []
+
+        def fail(task_id):
+            dropped.append(task_id)
+            raise RuntimeError("job store gone")
+
+        scheduler = types.SimpleNamespace(
+            task_queue=queue.Queue(), logger=MagicMock(), on_request_dropped=fail
+        )
+        scheduler.task_queue.put(types.SimpleNamespace(_task_id="a"))
+        scheduler.task_queue.put(object())  # no _task_id
+        scheduler.task_queue.put(types.SimpleNamespace(_task_id="b"))
+        Scheduler.drop_queued_requests(scheduler)
+        assert dropped == ["a", "b"] and scheduler.task_queue.empty()
 
 
 class TestWrapIfMultihost:

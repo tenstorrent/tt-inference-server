@@ -412,6 +412,10 @@ class JobManager:
                 return
             job.mark_failed(error_code=error_code, error_message=error_message)
             self._sync_status_to_db(job)
+            # It waits for a result that will not come; cancelled, it keeps
+            # its terminal status.
+            if job._task is not None:
+                job._task.cancel()
         self._logger.info(f"Job {job_id} failed: {error_message}")
 
     def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:

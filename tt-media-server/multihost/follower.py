@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import signal
-import threading
 import traceback
 from typing import Any, Callable
 
@@ -33,52 +31,24 @@ def _default_runner_factory() -> Any:
     return get_device_runner(worker_id)
 
 
-# Held while this rank runs a request; set once a stop signal arrived.
-_RUNNING = threading.Lock()
-_STOPPING = threading.Event()
-# How long after rank 0's own stop budget a stopped follower waits for
-# ShutdownMessage before it decides rank 0 is gone.
-_STOP_MARGIN_S = 60.0
-
-
-def _stop_grace_seconds() -> float:
-    from config.settings import settings
-
-    return settings.worker_shutdown_timeout_seconds + _STOP_MARGIN_S
-
-
-def _exit_on_signal(signum, _frame) -> None:
-    # mpirun forwards SIGTERM/SIGINT to every rank. Rank 0 then finishes its
-    # render, drops its queue and sends ShutdownMessage, so this rank keeps
-    # following and closes its part of the mesh after rank 0's last request.
-    # A rank that leaves in the middle of a request leaves the mesh unusable
-    # until it is reset, so if rank 0 is gone and the message never comes,
-    # it leaves once idle, after rank 0's stop budget.
-    if _STOPPING.is_set():
-        return
-    _STOPPING.set()
-    TTLogger().info(f"Follower rank: received signal {signum}, stopping with rank 0")
-    timer = threading.Timer(_stop_grace_seconds(), _exit_when_idle)
-    timer.daemon = True
-    timer.start()
-
-
-def _exit_when_idle() -> None:
-    with _RUNNING:
-        TTLogger().warning(
-            "Follower rank: no shutdown from rank 0 after a stop signal, exiting"
-        )
-        os._exit(0)
+def _log_stop_signal(signum, _frame) -> None:
+    # A follower stops only on rank 0's ShutdownMessage, after rank 0's last
+    # request: a rank that leaves part way through a render leaves the mesh
+    # unusable until it is reset. Rank 0 alone gets the stop (serve_quad.sh
+    # stop); a signal here comes from the launcher, which (prterun on SIGTERM,
+    # tt-run on Ctrl-C) kills every rank itself, so there is nothing to wait for.
+    TTLogger().info(
+        f"Follower rank: received signal {signum}; stopping only on rank 0's shutdown"
+    )
 
 
 def install_exit_signal_handlers() -> None:
-    """Stop on SIGTERM/SIGINT even while the follower thread is blocked in MPI.
+    """Log SIGTERM/SIGINT instead of letting uvicorn stop this rank mid-render.
 
-    Must be called from the main thread. The handler runs there, so it fires
-    regardless of what the follower thread is waiting on.
+    Must be called from the main thread.
     """
-    signal.signal(signal.SIGTERM, _exit_on_signal)
-    signal.signal(signal.SIGINT, _exit_on_signal)
+    signal.signal(signal.SIGTERM, _log_stop_signal)
+    signal.signal(signal.SIGINT, _log_stop_signal)
 
 
 class MultiHostLockstepFollower:
@@ -162,13 +132,12 @@ class MultiHostLockstepFollower:
                 raise TypeError(f"unknown message from rank 0: {message!r}")
 
     def _run(self, runner: Any, requests: list[Any], label: str) -> None:
-        # Every request rank 0 sends is run, stopping or not: rank 0 runs it
-        # too, and waits for this rank in its collectives.
-        with _RUNNING:
-            try:
-                discard_outputs(runner.run(requests))
-            except ValueError as e:
-                self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
+        # Every request rank 0 sends is run: rank 0 runs it too, and waits for
+        # this rank in its collectives.
+        try:
+            discard_outputs(runner.run(requests))
+        except ValueError as e:
+            self._logger.error(f"Rank {self.rank}: {label} rejected: {e}")
 
 
 def _task_ids(requests: list[Any]) -> str:
