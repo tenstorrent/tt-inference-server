@@ -219,6 +219,8 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
+A MiniMax-H3 server on one Galaxy can start from compiled kernels and converted weights that CI produced; see [MiniMax-H3 prebuilt start-up artifacts](docs/minimax-h3-prebuilt-artifacts.md).
+
 ## Basic Single Host Deployment
 
 ```bash

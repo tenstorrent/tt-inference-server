@@ -214,6 +214,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--host-volume` | None for Docker, repo `persistent_volume/` for local when omitted | Host directory for persistent cache/log/tensor storage. |
 | `--host-hf-cache` | None | Host HuggingFace cache directory to reuse for model weights. If the flag is given without a path, it defaults to `HOST_HF_HOME`, then `HF_HOME`, then `~/.cache/huggingface`. |
 | `--host-weights-dir` | None | Host directory with pre-downloaded model weights. |
+| `--kernel-cache-dir` | None | Host directory mounted read-write as the container's tt-metal kernel cache (`TT_METAL_CACHE`), to capture the kernels compiled in the run. Created if missing. Docker only, single host. See [MiniMax-H3 prebuilt start-up artifacts](../tt-media-server/docs/minimax-h3-prebuilt-artifacts.md). |
 | `--image-user` | `1000` | UID passed to `docker run --user`. Docker only; `--local-server` ignores this flag and runs as the invoking host user. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
 Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified explicitly. For `--local-server`, omitting all three still uses the repo `persistent_volume/` path for TT caches and logs.
