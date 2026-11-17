@@ -64,6 +64,8 @@ def _effective_model_kwargs(
     if task.workflow_venv_type in (
         WorkflowVenvType.EVALS_VISION,
         WorkflowVenvType.EVALS_AUDIO,
+        WorkflowVenvType.EVALS_MULTIMODAL,
+        WorkflowVenvType.EVALS_OPENBENCH,
     ):
         return model_kwargs
     if not device_max_context:
@@ -221,6 +223,8 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     if task.workflow_venv_type in (
         WorkflowVenvType.EVALS_VISION,
         WorkflowVenvType.EVALS_AUDIO,
+        WorkflowVenvType.EVALS_MULTIMODAL,
+        WorkflowVenvType.EVALS_OPENBENCH,
     ):
         logger.warning(
             "--eval-samples is not supported for vision/audio evals; "
@@ -533,6 +537,27 @@ def build_eval_command(
                 f"(device_model_spec.max_concurrency={device_max_concurrency})"
             )
 
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_MULTIMODAL:
+        return _build_multimodal_command(
+            task,
+            model_spec,
+            base_url,
+            task_venv_path,
+            output_path,
+            effective_max_concurrent,
+            runtime_config,
+        )
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_OPENBENCH:
+        return _build_openbench_command(
+            task,
+            model_spec,
+            base_url,
+            task_venv_path,
+            output_path,
+            effective_max_concurrent,
+            runtime_config,
+        )
+
     effective_batch_size = task.batch_size
     if effective_batch_size and device_max_concurrency:
         effective_batch_size = min(effective_batch_size, device_max_concurrency)
@@ -786,6 +811,92 @@ def build_eval_command(
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
+    return cmd
+
+
+# The mimo_lmms model's thinking switch for EvalTask.thinking (None: send none).
+_THINKING_ARG = {True: "on", False: "off", None: "default"}
+# gen_kwargs the mimo_lmms model reads (lmms-eval passes the rest to the task).
+_MULTIMODAL_GEN_KEYS = ("max_new_tokens", "temperature", "top_p")
+
+
+def _build_multimodal_command(
+    task, model_spec, base_url, venv_path, output_path, concurrency, runtime_config
+) -> List[str]:
+    """lmms-eval 0.7 through llm_module/lmms_eval_multimodal.py with the
+    ``mimo_openrouter`` model: OpenRouter-shaped image / video / audio requests,
+    a per-task resume journal next to the results, the reasoning switch from
+    ``task.thinking``. ``task.model_kwargs`` add model args (``video_max_mb``...)."""
+    output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
+    model_args = {
+        "model_version": model_spec.hf_model_repo,
+        "base_url": base_url,
+        "target": "vllm",
+        "thinking": _THINKING_ARG[getattr(task, "thinking", None)],
+        "num_concurrent": concurrency or 16,
+        "journal": output_dir_path / f"{task.task_name}_journal.jsonl",
+        **(task.model_kwargs or {}),
+    }
+    cmd = [
+        str(venv_path / "bin" / "python"),
+        str(Path(__file__).with_name("lmms_eval_multimodal.py")),
+        "--model",
+        task.eval_class,
+        "--model_args",
+        ",".join(f"{k}={v}" for k, v in model_args.items()),
+        "--tasks",
+        task.task_name,
+        "--include_path",
+        str(Path(__file__).parent / "lmms_plugins" / "mimo_lmms" / "tasks"),
+        "--batch_size",
+        "1",
+        "--output_path",
+        str(output_dir_path),
+        "--log_samples",
+        "--seed",
+        str(task.seed),
+    ]
+    gen_kwargs = {
+        k: v for k, v in (task.gen_kwargs or {}).items() if k in _MULTIMODAL_GEN_KEYS
+    }
+    if gen_kwargs:
+        cmd += ["--gen_kwargs", ",".join(f"{k}={v}" for k, v in gen_kwargs.items())]
+    limit_arg = _resolve_eval_limit(task, runtime_config)
+    if limit_arg is not None:
+        cmd += ["--limit", str(limit_arg)]
+    return [str(c) for c in cmd]
+
+
+def _build_openbench_command(
+    task, model_spec, base_url, venv_path, output_path, concurrency, runtime_config
+) -> List[str]:
+    """llm_module/openbench_eval.py for an openbench / inspect-ai task; it writes
+    lm-eval-shaped results and per-sample logs under the usual output dir.
+    ``task.model_kwargs`` may set ``epochs``, ``user_model``, ``max_tokens``."""
+    output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
+    cmd = [
+        str(venv_path / "bin" / "python"),
+        str(Path(__file__).with_name("openbench_eval.py")),
+        "--task",
+        task.task_name,
+        "--base-url",
+        base_url,
+        "--model",
+        model_spec.hf_model_repo,
+        "--hf-repo",
+        model_spec.hf_model_repo,
+        "--output-dir",
+        str(output_dir_path),
+        "--concurrency",
+        str(concurrency or 16),
+    ]
+    for key in ("epochs", "user_model", "max_tokens", "timeout"):
+        value = (task.model_kwargs or {}).get(key)
+        if value is not None:
+            cmd += [f"--{key.replace('_', '-')}", str(value)]
+    limit_arg = _resolve_eval_limit(task, runtime_config)
+    if limit_arg is not None:
+        cmd += ["--limit", str(limit_arg)]
     return cmd
 
 

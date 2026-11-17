@@ -24,6 +24,8 @@ _STANDARD_EVAL_VENVS = frozenset(
         WorkflowVenvType.EVALS_COMMON,
         WorkflowVenvType.EVALS_META,
         WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_MULTIMODAL,
+        WorkflowVenvType.EVALS_OPENBENCH,
     }
 )
 

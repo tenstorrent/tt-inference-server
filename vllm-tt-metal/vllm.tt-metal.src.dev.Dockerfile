@@ -10,6 +10,12 @@ ARG TT_METAL_DOCKERFILE_URL
 # with a sanitized, exact-commit named context supplied by the build script.
 FROM scratch AS quetzal_source
 
+# Native builds resolve this name to an empty stage too. A build that ships the shared KV page
+# store overrides it with a context that holds the ttserve-kvstore binary
+# (build_single_docker.sh --kvstore-bin); without it the image has no store and the launcher
+# serves without one.
+FROM scratch AS kvstore_source
+
 # ==============================================================================
 # BUILDER STAGE - Contains all build dependencies and artifacts
 # ==============================================================================
@@ -99,6 +105,9 @@ ENV UV_HTTP_RETRIES=10
 # tt-transformers declares a released ttnn, and a resolving install would replace the ttnn
 # built here. Two models pinning different commits fail the build instead of leaving one of
 # them on the other's version.
+# torchaudio (CPU wheel of the installed torch's version, --no-deps so torch stays the one
+# create_venv.sh installed): vLLM's MiMo-V2-Omni processor computes audio features with it, and
+# without it every audio request to a multimodal MiMo deployment answers 500.
 RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -107,6 +116,8 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && bash ./build_metal.sh \
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
+    && TORCH_VERSION=\$(python -c 'import torch; print(torch.__version__.split(\"+\")[0])') \
+    && uv pip install --no-deps \"torchaudio==\${TORCH_VERSION}\" --index-url https://download.pytorch.org/whl/cpu \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
     && if [ -s /tmp/tt-transformers-requirements.txt ]; then uv pip install --no-deps -r /tmp/tt-transformers-requirements.txt; fi \
@@ -276,6 +287,13 @@ RUN if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# The shared KV page store of a host's submesh engines (run_vllm_api_server.py starts it when the
+# model spec configures vllm-tt-plugin's TTKVStoreConnector), when the build supplied its binary.
+RUN --mount=type=bind,from=kvstore_source,source=.,target=/tmp/kvstore-source,ro \
+    if [ -f /tmp/kvstore-source/ttserve-kvstore ]; then \
+      install -m 0755 /tmp/kvstore-source/ttserve-kvstore /usr/local/bin/ttserve-kvstore; \
+    fi
 
 # Switch to non-root user for runtime
 USER ${CONTAINER_APP_USERNAME}

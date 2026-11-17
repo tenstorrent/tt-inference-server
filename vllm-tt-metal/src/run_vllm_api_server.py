@@ -11,6 +11,7 @@ import os
 import re
 import runpy
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -868,6 +869,18 @@ def model_setup(model_spec_json):
             ):
                 raise ValueError(f"{key} must be an environment variable name")
             dynamic_env_vars[env_name] = str(value)
+    # cache_subdir_envs: {ENV: subdir}, more caches the model keeps inside its TT cache
+    # dir (so inside the model's persistent volume), e.g. a vision encoder's weights.
+    for env_name, subdir in (metadata.get("cache_subdir_envs") or {}).items():
+        if not isinstance(env_name, str) or not re.fullmatch(
+            r"[A-Z][A-Z0-9_]*", env_name
+        ):
+            raise ValueError(
+                "cache_subdir_envs keys must be environment variable names"
+            )
+        if not isinstance(subdir, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", subdir):
+            raise ValueError("cache_subdir_envs values must be plain directory names")
+        dynamic_env_vars[env_name] = str(Path(os.getenv("TT_CACHE_PATH")) / subdir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
@@ -1538,6 +1551,105 @@ def _without_port_args(argv: List[str]) -> List[str]:
     return out
 
 
+# The shared KV page store of a host's submesh engines (ttserve-kvstore): the engines' KV connector (vllm-tt-plugin
+# TTKVStoreConnector, configured by the spec's kv-transfer-config) keeps the KV of prompt prefixes in its
+# shared-memory pools, so a prefix one engine computed is loaded by the others instead of prefilled again.
+KVSTORE_CONNECTOR = "TTKVStoreConnector"
+KVSTORE_ENV = (
+    "TT_KVSTORE"  # "0": serve without the store even when the spec configures it
+)
+KVSTORE_BIN_ENV = (
+    "TT_KVSTORE_BIN"  # the store's binary (default: ttserve-kvstore on PATH)
+)
+KVSTORE_SHM_DIR_ENV = "TT_KVSTORE_SHM_DIR"  # the tmpfs of its pools (default /dev/shm)
+KVSTORE_DISABLED_ENV = "TT_KVSTORE_DISABLED"  # set for the engines when no store runs
+KVSTORE_START_TIMEOUT_S = 30.0
+KV_TRANSFER_KEYS = ("kv-transfer-config", "kv_transfer_config")
+
+
+def kvstore_settings(vllm_args: dict) -> Optional[dict]:
+    """The TTKVStoreConnector's settings in the spec's kv-transfer-config (socket, global_gib, swa_gib), or None when
+    the spec configures no such connector."""
+    for key in KV_TRANSFER_KEYS:
+        raw = vllm_args.get(key)
+        if not raw:
+            continue
+        try:
+            config = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (ValueError, TypeError):
+            return None
+        if config.get("kv_connector") != KVSTORE_CONNECTOR:
+            return None
+        return dict(config.get("kv_connector_extra_config") or {})
+    return None
+
+
+def drop_kv_transfer_config(vllm_args: dict) -> None:
+    for key in KV_TRANSFER_KEYS:
+        vllm_args.pop(key, None)
+
+
+def start_kvstore(settings: dict):
+    """Start ttserve-kvstore for the engines' connector; returns its process, or None when the engines are to serve
+    without it: turned off (TT_KVSTORE=0), no binary in the image, too little room in the pools' tmpfs (in a
+    container: its --shm-size, DeviceModelSpec.docker_shm_size), or the store did not come up."""
+    if os.environ.get(KVSTORE_ENV, "1") == "0":
+        logger.info(f"Shared KV store off ({KVSTORE_ENV}=0)")
+        return None
+    binary = os.environ.get(KVSTORE_BIN_ENV) or shutil.which("ttserve-kvstore")
+    if not binary or not os.path.exists(binary):
+        logger.warning(
+            "The model spec configures the shared KV store but ttserve-kvstore is not installed: "
+            "serving without it"
+        )
+        return None
+    socket_path = settings.get("socket", "/tmp/ttserve-kvstore.sock")
+    gib = float(settings.get("global_gib", 48)) + float(settings.get("swa_gib", 8))
+    shm_dir = os.environ.get(KVSTORE_SHM_DIR_ENV, "/dev/shm")
+    free_gib = shutil.disk_usage(shm_dir).free / (1 << 30)
+    if free_gib < gib:
+        logger.warning(
+            f"The shared KV store's pools need {gib:.0f} GiB in {shm_dir}, which has {free_gib:.0f} GiB free "
+            "(a container's --shm-size): serving without it"
+        )
+        return None
+    if os.path.exists(socket_path):
+        os.unlink(socket_path)  # a previous store's
+    command = [
+        binary,
+        "--socket",
+        socket_path,
+        "--shm-dir",
+        shm_dir,
+        "--max-gib",
+        str(int(gib) + 1),
+    ]
+    logger.info(f"Starting the shared KV store: {shlex.join(command)}")
+    proc = subprocess.Popen(command, start_new_session=True)
+    deadline = time.monotonic() + KVSTORE_START_TIMEOUT_S
+    while not os.path.exists(socket_path):
+        if proc.poll() is not None or time.monotonic() > deadline:
+            logger.warning(
+                f"ttserve-kvstore did not come up (exit code {proc.poll()}): serving without it"
+            )
+            stop_kvstore(proc)
+            return None
+        time.sleep(0.1)
+    return proc
+
+
+def stop_kvstore(proc) -> None:
+    """Stop the store (it removes its pools' files on SIGTERM)."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
 def submesh_engine_command(
     launcher_argv: List[str], service_port: int, index: int
 ) -> List[str]:
@@ -1565,6 +1677,10 @@ def configure_submesh_engine(engines: int, default_vllm_args: dict) -> None:
     )
     default_vllm_args.pop("data-parallel-size", None)
     default_vllm_args["data_parallel_size"] = 1
+    if os.environ.get(KVSTORE_DISABLED_ENV) == "1":
+        drop_kv_transfer_config(
+            default_vllm_args
+        )  # the launcher started no store for this run
     logger.info(
         f"Submesh engine {index}/{engines}: TT_VISIBLE_DEVICES={os.environ['TT_VISIBLE_DEVICES']} "
         f"MESH_DEVICE={os.environ['MESH_DEVICE']} OMP_NUM_THREADS={os.environ['OMP_NUM_THREADS']}"
@@ -1645,9 +1761,18 @@ def run_submesh_engines(
     launcher_argv: List[str],
     service_port: int,
     host: str,
+    kvstore: Optional[dict] = None,
 ) -> int:
-    """One engine per (TT_VISIBLE_DEVICES, MESH_DEVICE) group behind the proxy on service_port; returns the exit code."""
+    """One engine per (TT_VISIBLE_DEVICES, MESH_DEVICE) group behind the proxy on service_port; returns the exit code.
+    ``kvstore``: the spec's TTKVStoreConnector settings (kvstore_settings): the shared KV store is started before the
+    engines and stopped after them; when it does not start the engines run without the connector."""
     procs = []
+    store = None
+    engine_env = {}
+    if kvstore is not None:
+        store = start_kvstore(kvstore)
+        if store is None:
+            engine_env[KVSTORE_DISABLED_ENV] = "1"
     try:
         for index, (devices, mesh) in enumerate(groups):
             command = submesh_engine_command(launcher_argv, service_port, index)
@@ -1660,6 +1785,7 @@ def run_submesh_engines(
                     SUBMESH_ENGINE_INDEX_ENV: str(index),
                     SUBMESH_ENGINE_DEVICES_ENV: devices,
                     SUBMESH_ENGINE_MESH_ENV: mesh,
+                    **engine_env,
                 },
             )
             procs.append(
@@ -1676,6 +1802,7 @@ def run_submesh_engines(
         return asyncio.run(serve_engine_proxy(procs, backends, host, service_port))
     finally:
         stop_submesh_engines(procs)
+        stop_kvstore(store)
 
 
 def main():
@@ -1726,6 +1853,14 @@ def main():
     in_submesh_engine = os.environ.get(SUBMESH_ENGINE_INDEX_ENV) is not None
     if submesh_engines and in_submesh_engine:
         configure_submesh_engine(submesh_engines, default_vllm_args)
+    kvstore = kvstore_settings(default_vllm_args)
+    if kvstore is not None and not submesh_engines:
+        # The connector serves one lane per engine: without submesh engines there is no store to share.
+        logger.warning(
+            "kv-transfer-config needs submesh engines (one engine per device group): ignored"
+        )
+        drop_kv_transfer_config(default_vllm_args)
+        kvstore = None
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
@@ -1736,7 +1871,9 @@ def main():
         host = _extract_cli_arg_value(sys.argv[1:], "--host") or "0.0.0.0"
         groups = discover_submesh_engine_groups(submesh_engines)
         sys.exit(
-            run_submesh_engines(groups, launcher_argv, resolve_service_port(), host)
+            run_submesh_engines(
+                groups, launcher_argv, resolve_service_port(), host, kvstore
+            )
         )
     configure_quetzal_provider(model_spec)
 
