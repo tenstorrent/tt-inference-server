@@ -490,7 +490,8 @@ async def klein_image_to_image(
     service: GenerationService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
-    """`image` as FLUX.3 Image klein's reference; waits for the image."""
+    """`image` as FLUX.3 Image klein's reference; waits for the image. A mask
+    is refused (422)."""
     try:
         request = _klein_request(
             image_to_image_request, image=image_to_image_request.image

@@ -45,20 +45,24 @@ class KleinImageGenerateRequest(_KleinImageFields, ImageGenerateRequest):
     pass
 
 
+def _no_mask(v):
+    if v:
+        raise ValueError(
+            "FLUX.3 Image klein does not inpaint with a mask; send the image "
+            "to /v1/images/image-to-image without one"
+        )
+    return v
+
+
 class KleinImageToImageRequest(_KleinImageFields, ImageToImageRequest):
-    pass
+    # Not in ImageToImageRequest, so it would pass unread.
+    mask: Optional[str] = None
+
+    _no_mask = field_validator("mask")(_no_mask)
 
 
 class KleinImageEditRequest(_KleinImageFields, ImageEditRequest):
-    @field_validator("mask")
-    @classmethod
-    def _no_mask(cls, v):
-        if v:
-            raise ValueError(
-                "FLUX.3 Image klein does not inpaint with a mask; send the image "
-                "to /v1/images/image-to-image"
-            )
-        return v
+    _no_mask = field_validator("mask")(_no_mask)
 
 
 class KleinImageRequest(_KleinImageFields, BaseImageRequest):

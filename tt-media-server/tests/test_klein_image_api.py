@@ -269,6 +269,7 @@ async def test_image_is_the_reference(klein_app, encode, route):
             "prompt": "make it night",
             "image": encode(1600, 900),
             "strength": 0.3,
+            "mask": "",
             **_CONSOLE_FIELDS,
         },
     )
@@ -289,10 +290,11 @@ async def test_image_to_image_takes_a_served_size(klein_app):
     assert _decoded(response).size == (2304, 4096)
 
 
-async def test_edits_refuses_a_mask(klein_app):
+@pytest.mark.parametrize("route", ["edits", "image-to-image"])
+async def test_a_mask_is_refused(klein_app, route):
     client, device, _, _ = klein_app
     response = await client.post(
-        "/v1/images/edits",
+        f"/v1/images/{route}",
         json={"prompt": "x", "image": _data_uri(), "mask": _data_uri(), "strength": 1},
     )
     assert response.status_code == 422, response.text

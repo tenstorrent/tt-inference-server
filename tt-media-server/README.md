@@ -465,7 +465,7 @@ and answer once the image is done: `{"images": [base64], "generation_time": s}`.
 | route | request | Klein |
 |---|---|---|
 | `/v1/images/generations` | `ImageGenerateRequest` | text to image |
-| `/v1/images/image-to-image` | `ImageToImageRequest` | `image` is the reference; `strength` is ignored |
+| `/v1/images/image-to-image` | `ImageToImageRequest` | `image` is the reference; `strength` is ignored; a `mask` is a 422 |
 | `/v1/images/edits` | `ImageEditRequest` | as image-to-image; a `mask` is a 422 (Klein does not inpaint) |
 
 Each call is one ordinary job of `POST
