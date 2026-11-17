@@ -46,7 +46,7 @@ sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
 # Import module under test after mocking dependencies
 from domain.worker_replacement import WorkerReplacementOutcome
-from model_services.scheduler import Scheduler
+from model_services.scheduler import WORKER_CLOSE_SECONDS, Scheduler
 
 
 def create_mock_queue():
@@ -584,7 +584,9 @@ class TestScheduler:
             scheduler.error_queue, "close"
         ) as mock_error_close, patch.object(
             scheduler.error_queue, "join_thread"
-        ) as mock_error_join:
+        ) as mock_error_join, patch.object(
+            scheduler.settings, "worker_shutdown_timeout_seconds", 10.0
+        ):
             # Make is_alive return False after first call so join doesn't hang
             mock_process1.is_alive.side_effect = [True, False]
             mock_process2.is_alive.side_effect = [True, False]
@@ -629,14 +631,16 @@ class TestScheduler:
             # Verify worker_info was cleared
             assert len(scheduler.worker_info) == 0
 
-    def test_a_stop_has_one_budget(self, scheduler):
-        # finish_running_jobs sets the deadline; the join gets what is left.
+    def test_a_stop_has_one_render_budget_plus_the_close(self, scheduler):
+        # finish_running_jobs sets the deadline; the join gets what is left of
+        # it, plus the close, which a long render must not use up.
+        close = WORKER_CLOSE_SECONDS
         scheduler.settings = Mock(worker_shutdown_timeout_seconds=300)
-        assert scheduler._stop_budget_left() == 300
+        assert scheduler._stop_budget_left() == 300 + close
         scheduler.stop_deadline = time.monotonic() + 100
-        assert 99 < scheduler._stop_budget_left() <= 100
+        assert 99 + close < scheduler._stop_budget_left() <= 100 + close
         scheduler.stop_deadline = time.monotonic() - 5
-        assert scheduler._stop_budget_left() == 1.0
+        assert scheduler._stop_budget_left() == close
 
     def test_every_stop_drops_the_queued_requests(self, scheduler):
         # One host too: a queued request would render before SHUTDOWN_SIGNAL

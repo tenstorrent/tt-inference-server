@@ -888,9 +888,17 @@ class TestJobManager:
             request=mock_request,
             task_function=task_func,
         )
-        job_manager.fail_job(
-            "job-123", "server_stopping", "the server stopped before the job ran"
+        await asyncio.sleep(0)  # the job's task is waiting, as a dropped one is
+        cleanup = patch.object(
+            job_manager, "_cleanup_job", wraps=job_manager._cleanup_job
         )
+        with cleanup as cleanup_job:
+            job_manager.fail_job(
+                "job-123", "server_stopping", "the server stopped before the job ran"
+            )
+            await asyncio.sleep(0)
+        # nothing to cancel: no "Cancelling active job" warning
+        cleanup_job.assert_not_called()
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata["status"] == "failed"
         assert metadata["error"]["code"] == "server_stopping"

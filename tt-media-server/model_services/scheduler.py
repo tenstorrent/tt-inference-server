@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import sys
 import time
 from multiprocessing import Event as ProcessEvent
 from multiprocessing import Lock as ProcessLock
@@ -29,6 +30,11 @@ from utils.simple_queue_factory import get_queue, get_task_queue
 
 WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS = 1.0
 WORKER_TERMINATION_GRACE_PERIOD_SECONDS = 5.0
+# A stopping worker's close, on top of the render budget: up to 5 s for an
+# in-flight canary, then (multi-host) the ShutdownMessage to the other ranks
+# and the mesh close. 1.0 s on the quad. Terminated before the message, the
+# other ranks would wait for rank 0 forever.
+WORKER_CLOSE_SECONDS = 30.0
 
 
 class Scheduler:
@@ -266,6 +272,13 @@ class Scheduler:
             ),
             name=f"DeviceWorker-{worker_id}",
         )
+        if "ttnn" in sys.modules:
+            # The worker would inherit Tracy's queues without the thread that
+            # drains them and grow with every program it runs.
+            self.logger.error(
+                f"ttnn is loaded in the server process before worker {worker_id} "
+                "is forked; its memory will grow with every job"
+            )
         p.start()
 
         self.worker_info[worker_id] = {
@@ -860,8 +873,10 @@ class Scheduler:
 
     def _stop_budget_left(self) -> float:
         if self.stop_deadline is None:
-            return self.settings.worker_shutdown_timeout_seconds
-        return max(self.stop_deadline - time.monotonic(), 1.0)
+            render_left = self.settings.worker_shutdown_timeout_seconds
+        else:
+            render_left = max(self.stop_deadline - time.monotonic(), 0.0)
+        return render_left + WORKER_CLOSE_SECONDS
 
     def drop_queued_requests(self) -> None:
         dropped = 0

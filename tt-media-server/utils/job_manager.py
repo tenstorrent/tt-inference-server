@@ -664,10 +664,12 @@ class JobManager:
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
+            # A terminal job was ended by fail_job and never reached a worker:
+            # there is nothing to cancel.
             if not job.is_terminal():
                 job.mark_cancelled()
                 self._sync_status_to_db(job)
-            self._cleanup_job(job)
+                self._cleanup_job(job)
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
