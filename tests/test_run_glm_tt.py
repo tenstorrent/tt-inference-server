@@ -281,6 +281,66 @@ def _hf_download(tmp_path, glm_tt_status=0):
     return weights, record
 
 
+def _split_download(tmp_path):
+    """The t6 layout: the engine binary at the top of its build folder (whose SHA256SUMS
+    also lists files the repo does not ship), runtime/ in an older package folder."""
+    weights, record = _hf_download(tmp_path)
+    package = weights / "glm-tt"
+    build, runtime = weights / "glx-tools-t6", weights / "glm-tt-ship2-x"
+    build.mkdir()
+    (package / "bin" / "glm-tt").rename(build / "tt-lab")
+    (build / "SOURCE").write_text("tt-lab abc\n")
+    tt_lab = hashlib.sha256((build / "tt-lab").read_bytes()).hexdigest()
+    (build / "SHA256SUMS").write_text(f"{tt_lab}  tt-lab\n{'0' * 64}  glm-vision\n")
+    package.rename(runtime)  # its SHA256SUMS lists bin/glm-tt, which is gone
+    return weights, build, runtime, record
+
+
+def test_main_serves_a_split_package(tmp_path, galaxy_env, monkeypatch):
+    weights, build, runtime, record = _split_download(tmp_path)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    monkeypatch.setattr(run_glm_tt.tempfile, "tempdir", str(staging))
+    galaxy_env.update(
+        GLM_TT_TTQ="w.ttq",
+        GLM_TT_VOCAB="v.gguf",
+        GLM_TT_PACKAGE="glx-tools-t6",
+        GLM_TT_BINARY="tt-lab",
+        GLM_TT_RUNTIME_PACKAGE="glm-tt-ship2-x",
+    )
+    assert run_glm_tt.main([], galaxy_env) == 0
+    assert json.loads(record.read_text())["argv"][0] == "serve"
+    (staged,) = staging.iterdir()
+    assert (staged / "bin" / "glm-tt").read_bytes() == (build / "tt-lab").read_bytes()
+    assert (staged / "runtime" / "ld-linux-x86-64.so.2").stat().st_mode & 0o111
+    assert (staged / "SOURCE").read_text() == "tt-lab abc\n"
+
+
+def test_split_package_refuses_tampered_or_unlisted_files(tmp_path, galaxy_env):
+    weights, build, runtime, record = _split_download(tmp_path)
+    galaxy_env.update(
+        GLM_TT_TTQ="w.ttq",
+        GLM_TT_VOCAB="v.gguf",
+        GLM_TT_PACKAGE="glx-tools-t6",
+        GLM_TT_BINARY="tt-lab",
+        GLM_TT_RUNTIME_PACKAGE="glm-tt-ship2-x",
+    )
+    loader = runtime / "runtime" / "ld-linux-x86-64.so.2"
+    good = loader.read_bytes()
+    loader.write_text("#!/bin/sh\n")
+    with pytest.raises(run_glm_tt.SetupError, match="has sha256"):
+        run_glm_tt.split_package_home(galaxy_env, staging_root=tmp_path)
+    loader.write_bytes(good)
+    galaxy_env["GLM_TT_BINARY"] = "glm-vision"  # listed, not shipped
+    with pytest.raises(run_glm_tt.SetupError, match="is missing"):
+        run_glm_tt.split_package_home(galaxy_env, staging_root=tmp_path)
+    galaxy_env["GLM_TT_BINARY"] = "SOURCE"  # shipped, not listed
+    with pytest.raises(run_glm_tt.SetupError, match="not listed"):
+        run_glm_tt.split_package_home(galaxy_env, staging_root=tmp_path)
+    assert run_glm_tt.main([], galaxy_env) == run_glm_tt.SETUP_FAILED
+    assert not record.exists()
+
+
 def test_split_ttq_is_found_by_its_manifest(tmp_path):
     (tmp_path / "w.ttq.manifest").write_text("glm-tt ttq split 1\n")
     env = {"MODEL_WEIGHTS_DIR": str(tmp_path)}

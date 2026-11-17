@@ -67,6 +67,25 @@ def test_offline_serves_complete_weights(tmp_path):
     assert entrypoint.fetch_weights(_env(tmp_path), run=_Run(1)) == 0
 
 
+def test_offline_serves_a_complete_split_package(tmp_path):
+    """glx-tools-t6/tt-lab with glm-tt-ship2-*/runtime/: both must be present."""
+    target = tmp_path / "weights" / "GLM-5.3-Flash"
+    (target / "build").mkdir(parents=True)
+    (target / "build" / "tt-lab").write_bytes(b"x")
+    (target / "w.ttq.manifest").write_text("part w.ttq.00001 0 1\n")
+    (target / "v.gguf").write_bytes(b"x")
+    env = _env(
+        tmp_path,
+        GLM_TT_PACKAGE="build",
+        GLM_TT_BINARY="tt-lab",
+        GLM_TT_RUNTIME_PACKAGE="rt",
+    )
+    assert entrypoint.fetch_weights(env, run=_Run(1)) == 64
+    (target / "rt" / "runtime").mkdir(parents=True)
+    (target / "rt" / "runtime" / "ld-linux-x86-64.so.2").write_bytes(b"x")
+    assert entrypoint.fetch_weights(env, run=_Run(1)) == 0
+
+
 def test_offline_fails_on_incomplete_weights(tmp_path):
     target = tmp_path / "weights" / "GLM-5.3-Flash"
     _complete(target)

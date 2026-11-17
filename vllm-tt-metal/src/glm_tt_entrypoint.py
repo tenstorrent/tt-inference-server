@@ -51,10 +51,15 @@ def weights_present(target, env) -> bool:
     """True when the files run_glm_tt.py needs are in target, with no download in flight."""
     ttq = env.get("GLM_TT_TTQ", "")
     package = env.get("GLM_TT_PACKAGE") or "glm-tt"
-    needed = [
-        os.path.join(target, package, "bin", "glm-tt"),
-        os.path.join(target, env.get("GLM_TT_VOCAB", "")),
-    ]
+    runtime_package = env.get("GLM_TT_RUNTIME_PACKAGE")
+    if runtime_package:  # a split package: the binary at the top, runtime/ elsewhere
+        binary = [
+            os.path.join(target, package, env.get("GLM_TT_BINARY") or "tt-lab"),
+            os.path.join(target, runtime_package, "runtime", "ld-linux-x86-64.so.2"),
+        ]
+    else:
+        binary = [os.path.join(target, package, "bin", "glm-tt")]
+    needed = binary + [os.path.join(target, env.get("GLM_TT_VOCAB", ""))]
     if not ttq:
         return False
     ttq_path = os.path.join(target, ttq)

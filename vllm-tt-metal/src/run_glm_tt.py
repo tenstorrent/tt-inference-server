@@ -15,6 +15,10 @@ and copied to a temporary directory to run.
 
 Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's env_vars):
   GLM_TT_PACKAGE     the package's folder in the weights directory (default glm-tt)
+  GLM_TT_RUNTIME_PACKAGE, GLM_TT_BINARY  a split package: GLM_TT_PACKAGE holds the engine
+                     binary GLM_TT_BINARY (e.g. tt-lab) at its top level, and the folder
+                     GLM_TT_RUNTIME_PACKAGE holds runtime/. Each is checked against its own
+                     folder's SHA256SUMS and staged together as bin/glm-tt and runtime/.
   GLM_TT_HOME        the package (default GLM_TT_PACKAGE in the weights directory, else
                      /home/container_app_user/glm-tt)
   DEVICE             p150x8 (LoudBox, one user) or blackhole_galaxy (Galaxy: --groups auto,
@@ -209,6 +213,71 @@ def package_home(env) -> Path:
     if directory and (Path(directory) / name / "bin" / "glm-tt").is_file():
         return Path(directory) / name
     return Path(DEFAULT_HOME)
+
+
+def _sums(folder: Path):
+    """{relative name: sha256} from folder's SHA256SUMS."""
+    sums = folder / "SHA256SUMS"
+    if not sums.is_file():
+        raise SetupError(f"{folder} has no SHA256SUMS to verify its files against")
+    entries = {}
+    for line in sums.read_text().splitlines():
+        if line.strip():
+            digest, name = line.split(maxsplit=1)
+            entries[name.lstrip("*")] = digest
+    return entries
+
+
+def _verified(path: Path, digest):
+    if digest is None:
+        raise SetupError(f"{path} is not listed in its folder's SHA256SUMS")
+    if not path.is_file():
+        raise SetupError(f"package file {path} (listed in SHA256SUMS) is missing")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != digest:
+        raise SetupError(f"package file {path} has sha256 {actual}, not {digest}")
+    return digest
+
+
+def split_package_home(env, staging_root=None):
+    """The staged package of a split layout (GLM_TT_RUNTIME_PACKAGE set), else None.
+
+    The engine binary GLM_TT_BINARY at the top of GLM_TT_PACKAGE and the runtime/ of
+    GLM_TT_RUNTIME_PACKAGE, both in the weights directory, are verified against their own
+    folders' SHA256SUMS (only the files that run: a build's sums may list files the repo does
+    not ship) and copied to bin/glm-tt and runtime/ of a temporary directory, with a
+    SHA256SUMS of the copy and the build's SOURCE.
+    """
+    runtime_name = env.get("GLM_TT_RUNTIME_PACKAGE")
+    if not runtime_name or env.get("GLM_TT_HOME"):
+        return None
+    directory = weights_dir(env)
+    if not directory:
+        raise SetupError("GLM_TT_RUNTIME_PACKAGE is set but there is no weights directory")
+    build = Path(directory) / (env.get("GLM_TT_PACKAGE") or "glm-tt")
+    runtime = Path(directory) / runtime_name
+    binary = env.get("GLM_TT_BINARY") or "tt-lab"
+    files = {"bin/glm-tt": build / binary}
+    files_sums = {"bin/glm-tt": _verified(build / binary, _sums(build).get(binary))}
+    runtime_sums = _sums(runtime)
+    for name, digest in runtime_sums.items():
+        if name.startswith("runtime/"):
+            files[name] = runtime / name
+            files_sums[name] = _verified(runtime / name, digest)
+    if "runtime/ld-linux-x86-64.so.2" not in files:
+        raise SetupError(f"{runtime}/SHA256SUMS lists no runtime/ld-linux-x86-64.so.2")
+    staged = Path(tempfile.mkdtemp(prefix="glm-tt-", dir=staging_root))
+    for name, source in files.items():
+        (staged / name).parent.mkdir(exist_ok=True)
+        shutil.copy(source, staged / name)
+        (staged / name).chmod(0o755)
+    (staged / "SHA256SUMS").write_text(
+        "".join(f"{digest}  {name}\n" for name, digest in files_sums.items())
+    )
+    if (build / "SOURCE").is_file():
+        shutil.copy(build / "SOURCE", staged / "SOURCE")
+    log(f"running {build / binary} with {runtime}/runtime, verified, from {staged}")
+    return staged
 
 
 def runnable_home(home: Path, staging_root=None) -> Path:
@@ -517,7 +586,7 @@ def main(argv=None, environ=None):
         passthrough = bool(argv) and argv[0] in ("glm-tt", "test-tt-kernels")
         if not passthrough:
             parse_vllm_args(argv, env)
-        home = package_home(env)
+        home = split_package_home(env) or package_home(env)
         if not (home / "bin/glm-tt").is_file():
             raise SetupError(
                 f"no glm-tt in {home}/bin (put the package at GLM_TT_HOME or glm-tt/ in "

@@ -7,7 +7,7 @@ This is the setup serving GLM-5.3-Flash on OpenRouter as of 2026-11-16: four Bla
 
 | | |
 | --- | --- |
-| Engine | glm-tt build t6 (tt-lab glx-tools t6, engine source `b12c169e`). Source: [tenstorrent/regen-glm5.3-flash, branch glm-5.3-flash-galaxy](https://github.com/tenstorrent/regen-glm5.3-flash/tree/glm-5.3-flash-galaxy). Prebuilt package and weights: the Hugging Face repo `tenstorrent/GLM-5.3-Flash-TTQ` (package folder `glm-tt-t6-b12c169e/`, the plan0h TTQ in five parts, the MTP sidecar, the vocabulary). |
+| Engine | tt-lab build t6 (glx-tools t6, engine source `b12c169e`, `tt-lab` sha256 `597f52fb...`). Source: [tenstorrent/regen-glm5.3-flash, branch glm-5.3-flash-galaxy](https://github.com/tenstorrent/regen-glm5.3-flash/tree/glm-5.3-flash-galaxy) (at t6). Binary and weights: the Hugging Face repo `tenstorrent/GLM-5.3-Flash-TTQ`: folder `glx-tools-t6/` (`tt-lab`, its firmware built in, `images/` for reference, SOURCE, SHA256SUMS, licenses), run through the loader and C/C++ libraries in `glm-tt-ship2-e492dca3/runtime/` as production does; plus the plan0h TTQ in five parts, the MTP sidecar and the vocabulary. |
 | Layout per Galaxy | 4 groups x 8 chips x 2 users = 8 slots, MTP, 262,144-position context for every request, `--overload 429 --admit-wait 1 --retry-after 1`, in-process group restart on failure |
 | Session store | RAM only, shared by the four groups, 100 GB per group (`--session-ram-gb 100`); no SSD tier |
 | Media caches | image cache 16 GB (`TT_LAB_SERVE_MEDIA_CACHE_MB=16384`), video cache on a local disk (`TT_LAB_SERVE_VIDEO_CACHE_DIR`). Both act only with the glm-vision worker (`--mm-encoder`), which the package does not include. |
@@ -23,9 +23,11 @@ Through `run.py` (the dev catalog row carries the production settings):
 python3 run.py --dev-mode --model GLM-5.3-Flash --tt-device blackhole_galaxy --workflow server --docker-server
 ```
 
-Host setup downloads `tenstorrent/GLM-5.3-Flash-TTQ` into the persistent volume (about 190 GB); the launcher,
-`src/run_glm_tt.py`, verifies the package against its `SHA256SUMS`, prints the Galaxy's Ethernet link map and starts
-`glm-tt serve` on port 8000 with the bearer key from `VLLM_API_KEY` or `API_KEY`. `/health` answers 200 once all four
+Host setup downloads `tenstorrent/GLM-5.3-Flash-TTQ` into the persistent volume (about 190 GB). The launcher,
+`src/run_glm_tt.py`, checks `glx-tools-t6/tt-lab` and `glm-tt-ship2-e492dca3/runtime/` against their folders'
+`SHA256SUMS` (`GLM_TT_PACKAGE`, `GLM_TT_BINARY`, `GLM_TT_RUNTIME_PACKAGE`), stages them together, prints the Galaxy's
+Ethernet link map and starts `tt-lab serve` through that loader on port 8000, with the bearer key from `VLLM_API_KEY`
+or `API_KEY`. `/health` answers 200 once all four
 groups serve (about 3-5 minutes). The host needs 600 GB of RAM for the page-cached TTQ and the session store.
 
 Under Kubernetes, the Helm chart runs the same row with the `tt-lab-glm` image (`tt-lab-glm.Dockerfile`,

@@ -59,8 +59,13 @@ def test_glm_galaxy_catalog_row():
     assert spec.min_disk_gb >= 190  # plan0h 181 GB, MTP 4.3 GB, package
     files = spec.metadata["checkpoint_files"]
     package = spec.env_vars["GLM_TT_PACKAGE"]
-    assert package.startswith("glm-tt-")
-    assert f"{package}/bin/glm-tt" in files
+    # t6 is a split package: the engine binary at the top of its build folder, run through
+    # an earlier package's runtime/ (the launcher stages both).
+    runtime = spec.env_vars["GLM_TT_RUNTIME_PACKAGE"]
+    assert f"{package}/{spec.env_vars['GLM_TT_BINARY']}" in files
+    assert f"{package}/SHA256SUMS" in files
+    assert f"{runtime}/SHA256SUMS" in files
+    assert f"{runtime}/runtime/ld-linux-x86-64.so.2" in files
     assert f"{spec.env_vars['GLM_TT_TTQ']}.manifest" in files
     assert spec.env_vars["GLM_TT_VOCAB"] in files
     assert "GLM_TT_HOME" not in spec.env_vars
