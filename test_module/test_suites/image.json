@@ -359,7 +359,14 @@
                 {
                     "template": "ImageGenerationAPIContractTest",
                     "enabled": true,
-                    "description": "Generation API create contract: auth, request validation, image URL policy and size, the model's own fields, and unserved-model refusals"
+                    "description": "Generation API create contract: auth, request validation, image URL policy and size, the model's own fields, and unserved-model refusals",
+                    "model_targets": {
+                        "ideogram4": {
+                            "sizes": [
+                                "2K"
+                            ]
+                        }
+                    }
                 },
                 {
                     "template": "ImageGenerationAPITest",

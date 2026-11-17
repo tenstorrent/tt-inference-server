@@ -55,8 +55,14 @@ PROMPT = (
 NOT_AN_IMAGE = "data:image/png;base64,bm90IGFuIGltYWdl"
 
 
-def valid_payload(model: ImageModel) -> dict[str, Any]:
-    """A request the model accepts; each case breaks only what it names."""
+def valid_payload(
+    model: ImageModel, sizes: tuple[str, ...] | None = None
+) -> dict[str, Any]:
+    """A request the model accepts; each case breaks only what it names.
+
+    ``sizes`` (``targets["sizes"]``) limits the size tiers to the ones the
+    deployment serves (Ideogram 4 serves only 2K).
+    """
     payload: dict[str, Any] = {"aspect_ratio": "1:1"}
     if model.prompt_field == "structured_prompt":
         payload["structured_prompt"] = copy.deepcopy(IDEOGRAM_CAPTION)
@@ -64,15 +70,18 @@ def valid_payload(model: ImageModel) -> dict[str, Any]:
         payload["prompt"] = PROMPT
     if model.min_images:
         payload["images"] = [TINY_PNG_DATA_URI] * model.min_images
-    if model.size_tiers:
-        payload["size"] = model.size_tiers[0]
+    tiers = [t for t in model.size_tiers if sizes is None or t in sizes]
+    if tiers:
+        payload["size"] = tiers[0]
     return payload
 
 
 def cases(
-    model: ImageModel, unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL
+    model: ImageModel,
+    unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
+    sizes: tuple[str, ...] | None = None,
 ) -> list[RequestCase]:
-    valid = valid_payload(model)
+    valid = valid_payload(model, sizes)
     path = model.submit_path
 
     def case(name: str, payload: dict, status: int = 422, **kwargs) -> RequestCase:
@@ -215,9 +224,10 @@ def ideogram_caption_cases(valid: dict, path: str) -> list[RequestCase]:
             lambda c: element(c).update(bbox=[0, 0, 10]),
             "bbox",
         ),
+        # Either case of #RRGGBB is a color; anything else is not.
         caption_case(
-            "caption_lowercase_palette_color",
-            lambda c: c["style_description"].update(color_palette=["#b22222"]),
+            "caption_palette_color_not_hex",
+            lambda c: c["style_description"].update(color_palette=["#B2222G"]),
             "color_palette",
         ),
         caption_case(
@@ -248,12 +258,13 @@ async def run_create_contract(
     model: ImageModel,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
+    sizes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=request_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = [
             await run_case(session, base_url=base_url, api_key=api_key, case=case)
-            for case in cases(model, unfetchable_image_url)
+            for case in cases(model, unfetchable_image_url, sizes)
         ]
     for result in results:
         if not result["passed"]:
@@ -272,6 +283,7 @@ class ImageGenerationAPIContractTest(BaseTest):
     """Workflow-compatible wrapper around an image model's create contract.
 
     The model is the deployment's (its Hugging Face repo), or ``targets["model"]``.
+    ``targets["sizes"]`` names the size tiers the deployment serves, when not all.
     """
 
     KIND = "image_generation_api_create_contract"
@@ -290,6 +302,7 @@ class ImageGenerationAPIContractTest(BaseTest):
             unfetchable_image_url=self.targets.get(
                 "unfetchable_image_url", DEFAULT_UNFETCHABLE_IMAGE_URL
             ),
+            sizes=tuple(self.targets.get("sizes") or ()) or None,
         )
 
 

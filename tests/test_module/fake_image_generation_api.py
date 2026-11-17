@@ -30,7 +30,7 @@ from test_module._test_common import image_generation_api as api
 from test_module._test_common.large_images import MAX_IMAGE_BYTES
 
 CHOSEN_SEED = 987654
-PALETTE = re.compile(r"^#[0-9A-F]{6}$")
+PALETTE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 def _error(loc: list, msg: str, type_: str, value: Any = None) -> dict:

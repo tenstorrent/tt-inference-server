@@ -102,6 +102,17 @@ def test_base_requests_and_contract_payloads_are_valid(model):
     assert all(not validation_errors(model, r) for _, r in sweep.variants(model))
 
 
+def test_contract_payload_uses_a_size_the_deployment_serves():
+    ideogram = api.MODELS["ideogram-ai/ideogram-4"]
+    assert contract.valid_payload(ideogram)["size"] == "1K"
+    assert contract.valid_payload(ideogram, ("2K",))["size"] == "2K"
+    assert all(
+        case.payload.get("size") == "2K"
+        for case in contract.cases(ideogram, sizes=("2K",))
+        if case.name.startswith("caption_")
+    )
+
+
 def test_case_and_variant_names_are_unique(model):
     names = [case.name for case in contract.cases(model)]
     assert len(names) == len(set(names))
