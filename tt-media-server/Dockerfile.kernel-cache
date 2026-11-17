@@ -15,7 +15,7 @@
 # deployment runs the server as. User, entrypoint and cmd come from the base image.
 #
 # Build (needs BuildKit for COPY --chmod):
-#   docker build -f Dockerfile.kernel-cache --build-arg BASE_IMAGE=<image> -t <tag> <context>
+#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.kernel-cache --build-arg BASE_IMAGE=<image> -t <tag> <context>
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}

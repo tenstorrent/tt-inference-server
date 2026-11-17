@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import glob
 import hashlib
 import itertools
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -88,7 +90,10 @@ def gigabytes(size: int) -> str:
 
 
 def read_json(path: Path) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise CliError(f"{path} is not valid JSON: {error}") from error
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -97,9 +102,11 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def docker(docker_run, args: list[str], capture: bool = False) -> str:
+def docker(
+    docker_run, args: list[str], capture: bool = False, env: dict | None = None
+) -> str:
     command = ["docker", *args]
-    result = docker_run(command, capture_output=capture, text=True)
+    result = docker_run(command, capture_output=capture, text=True, env=env)
     if result.returncode != 0:
         action = " ".join(itertools.takewhile(lambda arg: arg[0] != "-", command))
         detail = f": {result.stderr.strip()}" if capture and result.stderr else ""
@@ -107,14 +114,45 @@ def docker(docker_run, args: list[str], capture: bool = False) -> str:
     return result.stdout.strip() if capture else ""
 
 
-def kernel_cache_files(cache_dir: Path):
-    """Yield the cache files an image needs: no compiler logs, no temp files."""
-    for root, dirs, names in os.walk(cache_dir):
-        dirs.sort()
+def regular_files(root: Path) -> dict:
+    """Bytes of every file under root, as {directory: {file name: bytes}}.
+
+    The trees packaged here were written by containers. A symbolic link in one
+    would pull a host file into a published image or repo, so anything that is
+    not a regular file or a directory is refused.
+    """
+    tree, refused = {}, []
+    for directory, folders, names in os.walk(root):
+        folders.sort()
+        directory = Path(directory)
+        refused += [
+            directory / name for name in folders if (directory / name).is_symlink()
+        ]
+        sizes = {}
         for name in sorted(names):
-            if name.endswith(".log") or KERNEL_CACHE_TEMP_FILE.search(name):
-                continue
-            yield Path(root) / name
+            status = (directory / name).lstat()
+            if stat.S_ISREG(status.st_mode):
+                sizes[name] = status.st_size
+            else:
+                refused.append(directory / name)
+        tree[directory] = sizes
+    if refused:
+        shown = ", ".join(path.relative_to(root).as_posix() for path in refused[:5])
+        raise CliError(
+            f"symbolic links and special files are not packaged; {root} holds "
+            f"{len(refused)}: {shown}"
+        )
+    return tree
+
+
+def kernel_cache_files(cache_dir: Path) -> list:
+    """(path, bytes) of the cache files an image needs: no compiler logs, no temp files."""
+    return [
+        (directory / name, size)
+        for directory, sizes in regular_files(cache_dir).items()
+        for name, size in sizes.items()
+        if not (name.endswith(".log") or KERNEL_CACHE_TEMP_FILE.search(name))
+    ]
 
 
 def compiled_kernels(server_log: Path) -> list[str]:
@@ -143,19 +181,32 @@ def env_file_values(path: Path) -> dict:
     values = {}
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.lstrip()
-        if line.startswith("#") or "=" not in line:
+        if line.startswith("#"):
             continue
-        key, value = line.split("=", 1)
-        values[key] = value
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+        elif key.strip() in BUILD_KEY_ENV_VARS:
+            raise CliError(
+                f"{path} takes {key.strip()} from the environment of the docker "
+                f"command, so its value in the capture run is not known; write it "
+                f"as {key.strip()}=<value>"
+            )
     return values
 
 
 def spec_env_values(path: Path) -> dict:
-    """env_vars of a runtime model spec JSON, as run.py passes them with -e."""
+    """env_vars of a runtime model spec JSON, as run.py passes them with -e.
+
+    Reads the formats run.py reads: the model spec under runtime_model_spec or
+    model_spec, or the model spec alone.
+    """
     spec = read_json(path)
-    spec = spec.get("runtime_model_spec", spec)
-    env_vars = {key: str(value) for key, value in (spec.get("env_vars") or {}).items()}
-    return {key: value for key, value in env_vars.items() if value}
+    spec = spec.get("runtime_model_spec") or spec.get("model_spec") or spec
+    env_vars = spec.get("env_vars")
+    if not isinstance(env_vars, dict):
+        raise CliError(f"no env_vars in the model spec {path}")
+    return {key: str(value) for key, value in env_vars.items() if value}
 
 
 def kernel_cache_manifest(
@@ -175,8 +226,8 @@ def kernel_cache_manifest(
         for path in (cache_dir / key / "kernels").glob("*/*")
         if path.is_dir()
     )
-    files = list(kernel_cache_files(cache_dir))
-    size = sum(path.stat().st_size for path in files)
+    files = kernel_cache_files(cache_dir)
+    size = sum(file_size for _, file_size in files)
     step(
         f"scan: {len(build_keys)} build key(s), {kernel_hash_dirs} kernel hash folders, "
         f"{len(files)} files, {gigabytes(size)} in {cache_dir}"
@@ -184,12 +235,29 @@ def kernel_cache_manifest(
 
     compiled = len(compiled_kernels(server_log))
     step(f"log: {compiled} kernels compiled in {server_log}")
+    if kernel_hash_dirs and not compiled:
+        raise CliError(
+            f"{server_log} has no compile line although the cache holds "
+            f"{kernel_hash_dirs} kernel hash folders: it is not the log of the "
+            "capture run, or tt-metal did not log its compiles. check-log could "
+            "not tell a cold start from a warm one."
+        )
 
     layers = [image_env(docker_run, base_image)]
+    not_given = []
     if env_file:
         layers.append(env_file_values(env_file))
+    else:
+        not_given.append("--env-file")
     if spec_json:
         layers.append(spec_env_values(spec_json))
+    else:
+        not_given.append("--spec-json")
+    if not_given:
+        step(
+            f"env: no {' or '.join(not_given)} given; what the capture run set "
+            "there is not in the manifest"
+        )
     build_key_env = dict.fromkeys(BUILD_KEY_ENV_VARS)
     for layer in layers:
         for name in BUILD_KEY_ENV_VARS:
@@ -248,21 +316,32 @@ def build_kernel_cache_image(
             f"the manifest was made for base image {manifest['base_image']}, "
             f"not {base_image}"
         )
+    files = kernel_cache_files(cache_dir)
+    size = sum(file_size for _, file_size in files)
+    missing = [
+        key
+        for key in manifest["build_keys"]
+        if not (cache_dir / key / "kernels").is_dir()
+    ]
+    if missing or (len(files), size) != (manifest["files"], manifest["bytes"]):
+        raise CliError(
+            f"{cache_dir} is not the kernel cache the manifest describes: it holds "
+            f"{len(files)} files, {size} bytes"
+            + (f" and has no {', '.join(missing)}" if missing else "")
+            + f"; the manifest says {manifest['files']} files, {manifest['bytes']} bytes"
+        )
     with tempfile.TemporaryDirectory(prefix="kernel-cache-image-") as context:
         context = Path(context)
-        files = size = 0
-        for source in kernel_cache_files(cache_dir):
+        for source, _ in files:
             target = context / "kernel_cache" / source.relative_to(cache_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
-            files += 1
-            size += target.stat().st_size
+            shutil.copyfile(source, target, follow_symlinks=False)
         shutil.copyfile(manifest_path, context / "kernel_cache_manifest.json")
         dockerfile = context / "Dockerfile"
         dockerfile.write_text(
             render_kernel_cache_dockerfile(manifest["build_key_env"]), encoding="utf-8"
         )
-        step(f"stage: {files} files, {gigabytes(size)} in {context}")
+        step(f"stage: {len(files)} files, {gigabytes(size)} in {context}")
 
         step(f"build: {tag} from {base_image}")
         docker(
@@ -277,6 +356,7 @@ def build_kernel_cache_image(
                 str(dockerfile),
                 str(context),
             ],
+            env={**os.environ, "DOCKER_BUILDKIT": "1"},
         )
     image_id = docker(
         docker_run, ["image", "inspect", "--format", "{{.Id}}", tag], capture=True
@@ -305,6 +385,8 @@ def build_kernel_cache_image(
 
 
 def check_log(server_log, max_compiled) -> int:
+    if not server_log.stat().st_size:
+        raise CliError(f"{server_log} is empty: it does not show a server start")
     kernels = compiled_kernels(server_log)
     if len(kernels) <= max_compiled:
         step(f"compiled kernels: {len(kernels)} (allowed: {max_compiled})")
@@ -334,25 +416,27 @@ def scan_tt_weights(cache_dir: Path) -> list[dict]:
 
     Raises when a directory is not a finished conversion.
     """
+    if (cache_dir / TT_WEIGHTS_STAGING).exists():
+        raise CliError(
+            f"{cache_dir} holds an unfinished download ({TT_WEIGHTS_STAGING}); "
+            "finish it or remove that folder first"
+        )
     directories, problems = [], []
-    for root, dirs, names in os.walk(cache_dir):
-        dirs.sort()
-        if not names:
+    for path, sizes in regular_files(cache_dir).items():
+        if not sizes:
             continue
-        path = Path(root)
+        if path == cache_dir:
+            problems.append(f"{len(sizes)} file(s) outside a cache directory")
+            continue
         relative = path.relative_to(cache_dir).as_posix()
-        temp_files = fnmatch.filter(names, "*.tmp.*")
+        temp_files = fnmatch.filter(sizes, "*.tmp.*")
         if temp_files:
             problems.append(f"{relative}: {len(temp_files)} temp file(s)")
-        if CACHE_MARKER not in names:
+        if CACHE_MARKER not in sizes:
             problems.append(f"{relative}: no {CACHE_MARKER}")
-        tensors = [name for name in names if name != CACHE_MARKER]
+        tensors = [size for name, size in sizes.items() if name != CACHE_MARKER]
         directories.append(
-            {
-                "path": relative,
-                "files": len(tensors),
-                "bytes": sum((path / name).stat().st_size for name in tensors),
-            }
+            {"path": relative, "files": len(tensors), "bytes": sum(tensors)}
         )
     if problems:
         raise CliError(
@@ -363,11 +447,44 @@ def scan_tt_weights(cache_dir: Path) -> list[dict]:
     return directories
 
 
-def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -> None:
-    """Make tt_dit_cache/ at the revision an exact copy of cache_dir.
+def published_manifest(api, repo, commit) -> dict | None:
+    """tt_weights_manifest.json of a commit of the repo, or None when it has none."""
+    if not api.file_exists(repo_id=repo, filename=TT_WEIGHTS_MANIFEST, revision=commit):
+        return None
+    with tempfile.TemporaryDirectory(prefix="tt-weights-manifest-") as folder:
+        return read_json(
+            api.hf_hub_download(
+                repo_id=repo,
+                filename=TT_WEIGHTS_MANIFEST,
+                revision=commit,
+                local_dir=folder,
+            )
+        )
 
-    Files of an earlier upload that are no longer in cache_dir are removed from
-    the revision; earlier versions stay reachable through their tags.
+
+def published_directories(api, repo, commit) -> dict:
+    """(file count, bytes) per directory of tt_dit_cache/ at a commit of the repo."""
+    totals = {}
+    for item in api.list_repo_tree(
+        repo_id=repo, path_in_repo=TT_WEIGHTS_FOLDER, recursive=True, revision=commit
+    ):
+        size = getattr(item, "size", None)
+        if size is None:
+            continue
+        directory = PurePosixPath(item.path).parent.relative_to(TT_WEIGHTS_FOLDER)
+        files, total = totals.get(directory.as_posix(), (0, 0))
+        totals[directory.as_posix()] = (files + 1, total + size)
+    return totals
+
+
+def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -> None:
+    """Publish cache_dir as tt_dit_cache/ on the revision and tag the result.
+
+    The upload replaces the directories it holds and leaves every other directory
+    of the revision alone. It takes several commits, so the manifest of the
+    revision is removed first and written back last: a commit with a manifest is
+    a finished upload. The tag is made only after the files at that commit match
+    the local cache. A tag that already holds this cache is reused.
     """
     directories = scan_tt_weights(cache_dir)
     files = sum(entry["files"] for entry in directories)
@@ -378,14 +495,39 @@ def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -
     )
 
     if api.repo_exists(repo_id=repo):
-        if tag and tag in [ref.name for ref in api.list_repo_refs(repo_id=repo).tags]:
-            raise CliError(f"tag {tag} already exists in {repo}; tags are not moved")
-        step(f"repo: {repo} exists")
+        if api.model_info(repo_id=repo).private is not True:
+            raise CliError(
+                f"{repo} exists and is not private; converted weights are only "
+                "published to a private repo"
+            )
+        step(f"repo: {repo} exists and is private")
+        tags = {
+            ref.name: ref.target_commit for ref in api.list_repo_refs(repo_id=repo).tags
+        }
+        if tag in tags:
+            published = published_manifest(api, repo, tags[tag])
+            if published is None or published["directories"] != directories:
+                raise CliError(
+                    f"tag {tag} already exists in {repo} with other content; "
+                    "tags are not moved"
+                )
+            step(f"tag: {tag} already holds this cache at commit {tags[tag]}")
+            write_json(manifest_out, {**published, "commit": tags[tag]})
+            step(f"manifest: {manifest_out}")
+            return
     else:
         api.create_repo(repo_id=repo, private=True)
         step(f"repo: created {repo} as private")
     api.create_branch(repo_id=repo, branch=revision, exist_ok=True)
 
+    if api.file_exists(repo_id=repo, filename=TT_WEIGHTS_MANIFEST, revision=revision):
+        api.delete_file(
+            path_in_repo=TT_WEIGHTS_MANIFEST,
+            repo_id=repo,
+            revision=revision,
+            commit_message=f"Remove {TT_WEIGHTS_MANIFEST} until the upload is complete",
+        )
+        step(f"retire: the manifest of the previous upload to {revision}")
     api.upload_folder(
         repo_id=repo,
         folder_path=str(cache_dir),
@@ -393,7 +535,7 @@ def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -
         revision=revision,
         commit_message=f"Upload {TT_WEIGHTS_FOLDER}",
         ignore_patterns=[CACHE_MARKER, f"*/{CACHE_MARKER}"],
-        delete_patterns=["*"],
+        delete_patterns=[f"{glob.escape(entry['path'])}/*" for entry in directories],
     )
     step(f"upload: {TT_WEIGHTS_FOLDER}/ to {repo} at {revision}")
 
@@ -418,6 +560,20 @@ def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -
         commit_message=f"Upload {TT_WEIGHTS_MANIFEST}",
     ).oid
     step(f"commit: {commit}")
+
+    published = published_directories(api, repo, commit)
+    changed = [
+        entry["path"]
+        for entry in directories
+        if published.get(entry["path"], (0, 0)) != (entry["files"], entry["bytes"])
+    ]
+    if changed:
+        raise CliError(
+            f"commit {commit} of {repo} does not hold the local cache in "
+            f"{', '.join(changed)}: something else changed {revision} during the "
+            "upload. Nothing was tagged; run the upload again."
+        )
+    step(f"verify: {len(directories)} directories at that commit match the cache")
     if tag:
         api.create_tag(repo_id=repo, tag=tag, revision=commit)
         step(f"tag: {tag}")
@@ -426,69 +582,94 @@ def upload_tt_weights(api, cache_dir, repo, revision, tag, meta, manifest_out) -
     step(f"manifest: {manifest_out}")
 
 
+def tensor_sizes(directory: Path) -> dict:
+    """Bytes per file of a cache directory, without its completion marker."""
+    if not directory.is_dir():
+        return {}
+    return {
+        item.name: item.stat().st_size
+        for item in directory.iterdir()
+        if item.is_file() and item.name != CACHE_MARKER
+    }
+
+
 def download_tt_weights(api, repo, revision, dest) -> None:
+    """Fetch tt_dit_cache/ of a revision into dest and mark what was verified.
+
+    The markers of the directories about to be replaced are removed first, so a
+    download that stops part way leaves none of them looking complete. The files
+    are checked in a staging folder before any of them is moved into dest. A
+    failed run keeps that folder, and the next run for the same commit continues
+    from it.
+    """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
 
-    staging = dest / TT_WEIGHTS_STAGING
-    manifest = read_json(
-        api.hf_hub_download(
-            repo_id=repo,
-            filename=TT_WEIGHTS_MANIFEST,
-            revision=commit,
-            local_dir=str(staging),
+    manifest = published_manifest(api, repo, commit)
+    if manifest is None:
+        raise CliError(
+            f"{repo} has no {TT_WEIGHTS_MANIFEST} at {revision}: an upload to it did "
+            "not finish. Use the tag or commit of a release file."
         )
-    )
     directories = manifest["directories"]
     for entry in directories:
         relative = PurePosixPath(entry["path"])
-        if relative.is_absolute() or ".." in relative.parts:
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise CliError(f"unsafe directory in the manifest: {entry['path']}")
     step(
         f"manifest: {len(directories)} directories, {manifest['files']} files, "
         f"{gigabytes(manifest['bytes'])}"
     )
 
+    markers = [dest / entry["path"] / CACHE_MARKER for entry in directories]
+    for marker in markers:
+        marker.unlink(missing_ok=True)
+    step(f"unmark: {len(markers)} directories in {dest} until they are verified")
+
+    staging = dest / TT_WEIGHTS_STAGING / commit
+    if staging.parent.exists() and not staging.is_dir():
+        shutil.rmtree(staging.parent)
     api.snapshot_download(
         repo_id=repo,
         revision=commit,
-        allow_patterns=[f"{TT_WEIGHTS_FOLDER}/*"],
+        allow_patterns=[
+            f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/*"
+            for entry in directories
+        ],
         local_dir=str(staging),
     )
-    step(f"download: {TT_WEIGHTS_FOLDER}/ of {repo} into {dest}")
+    step(f"download: {TT_WEIGHTS_FOLDER}/ of {repo} into {staging}")
 
+    staged = [staging / TT_WEIGHTS_FOLDER / entry["path"] for entry in directories]
     mismatches = []
-    for entry in directories:
-        source = staging / TT_WEIGHTS_FOLDER / entry["path"]
-        target = dest / entry["path"]
-        target.mkdir(parents=True, exist_ok=True)
-        if source.is_dir():
-            for item in source.iterdir():
-                if item.is_file():
-                    os.replace(item, target / item.name)
-        tensors = [
-            item
-            for item in target.iterdir()
-            if item.is_file() and item.name != CACHE_MARKER
-        ]
-        size = sum(item.stat().st_size for item in tensors)
-        if (len(tensors), size) != (entry["files"], entry["bytes"]):
-            (target / CACHE_MARKER).unlink(missing_ok=True)
+    for entry, source, marker in zip(directories, staged, markers):
+        sizes = tensor_sizes(source)
+        other = sorted(set(tensor_sizes(marker.parent)) - set(sizes))
+        if (len(sizes), sum(sizes.values())) != (entry["files"], entry["bytes"]):
             mismatches.append(
-                f"{entry['path']}: {len(tensors)} files, {size} bytes; the manifest "
-                f"says {entry['files']} files, {entry['bytes']} bytes"
+                f"{entry['path']}: {len(sizes)} files, {sum(sizes.values())} bytes; "
+                f"the manifest says {entry['files']} files, {entry['bytes']} bytes"
+            )
+        elif other:
+            mismatches.append(
+                f"{entry['path']}: the destination holds {len(other)} file(s) "
+                f"that are not in the manifest, for example {other[0]}"
             )
     if mismatches:
         raise CliError(
-            "the download does not match the manifest; no directory was marked "
-            "complete:\n  " + "\n  ".join(mismatches)
+            f"the download was not applied: nothing was moved into {dest} and no "
+            "directory is marked complete:\n  " + "\n  ".join(mismatches)
         )
     step(f"verify: {len(directories)} directories match the manifest")
 
-    for entry in directories:
-        (dest / entry["path"] / CACHE_MARKER).touch()
-    shutil.rmtree(staging)
-    step(f"mark: {len(directories)} directories complete")
+    for source, marker in zip(staged, markers):
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        for name in tensor_sizes(source):
+            os.replace(source / name, marker.parent / name)
+    for marker in markers:
+        marker.touch()
+    shutil.rmtree(staging.parent)
+    step(f"mark: {len(markers)} directories complete in {dest}")
 
 
 def download_original_subset(api, repo, variant, dest, lora) -> None:
@@ -617,6 +798,13 @@ def write_release_hash(args) -> None:
     step(f"release: {args.out}")
 
 
+def path_argument(value: str) -> Path:
+    """A path option. An empty value would otherwise mean the current directory."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("the path is empty")
+    return Path(value)
+
+
 def parse_meta(pairs: list[str]) -> dict:
     meta = {}
     for pair in pairs:
@@ -641,26 +829,26 @@ def build_parser() -> argparse.ArgumentParser:
     manifest = kernel_cache.add_parser(
         "manifest", help="describe a captured kernel cache"
     )
-    manifest.add_argument("--cache-dir", type=Path, required=True)
-    manifest.add_argument("--server-log", type=Path, required=True)
+    manifest.add_argument("--cache-dir", type=path_argument, required=True)
+    manifest.add_argument("--server-log", type=path_argument, required=True)
     manifest.add_argument("--base-image", required=True)
-    manifest.add_argument("--env-file", type=Path)
-    manifest.add_argument("--spec-json", type=Path)
-    manifest.add_argument("--out", type=Path, required=True)
+    manifest.add_argument("--env-file", type=path_argument)
+    manifest.add_argument("--spec-json", type=path_argument)
+    manifest.add_argument("--out", type=path_argument, required=True)
 
     build_image = kernel_cache.add_parser(
         "build-image", help="add a captured kernel cache to the image it came from"
     )
     build_image.add_argument("--base-image", required=True)
-    build_image.add_argument("--cache-dir", type=Path, required=True)
-    build_image.add_argument("--manifest", type=Path, required=True)
+    build_image.add_argument("--cache-dir", type=path_argument, required=True)
+    build_image.add_argument("--manifest", type=path_argument, required=True)
     build_image.add_argument("--tag", required=True)
     build_image.add_argument("--push", action="store_true")
 
     check = kernel_cache.add_parser(
         "check-log", help="fail when a server start compiled kernels"
     )
-    check.add_argument("--server-log", type=Path, required=True)
+    check.add_argument("--server-log", type=path_argument, required=True)
     check.add_argument("--max-compiled", type=int, default=0)
 
     tt_weights = commands.add_parser(
@@ -668,19 +856,19 @@ def build_parser() -> argparse.ArgumentParser:
     ).add_subparsers(dest="action", required=True)
 
     upload = tt_weights.add_parser("upload", help="publish a converted weights cache")
-    upload.add_argument("--cache-dir", type=Path, required=True)
+    upload.add_argument("--cache-dir", type=path_argument, required=True)
     upload.add_argument("--repo", required=True)
     upload.add_argument("--revision", required=True)
     upload.add_argument("--tag")
     upload.add_argument("--meta", nargs="+", action="extend", default=[], metavar="K=V")
-    upload.add_argument("--manifest-out", type=Path, required=True)
+    upload.add_argument("--manifest-out", type=path_argument, required=True)
 
     download = tt_weights.add_parser(
         "download", help="fetch and verify a converted weights cache"
     )
     download.add_argument("--repo", required=True)
     download.add_argument("--revision", required=True)
-    download.add_argument("--dest", type=Path, required=True)
+    download.add_argument("--dest", type=path_argument, required=True)
 
     subset = tt_weights.add_parser(
         "original-subset",
@@ -688,7 +876,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subset.add_argument("--repo", required=True)
     subset.add_argument("--variant", choices=sorted(TRANSFORMER_FOLDER), required=True)
-    subset.add_argument("--dest", type=Path, required=True)
+    subset.add_argument("--dest", type=path_argument, required=True)
     subset.add_argument("--lora", metavar="REPO:FILENAME")
 
     release = commands.add_parser(
@@ -697,15 +885,15 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--base-image", required=True)
     release.add_argument("--image", required=True)
     release.add_argument("--image-digest", required=True)
-    release.add_argument("--kernel-manifest", type=Path, required=True)
-    release.add_argument("--weights-manifest", type=Path)
+    release.add_argument("--kernel-manifest", type=path_argument, required=True)
+    release.add_argument("--weights-manifest", type=path_argument)
     release.add_argument("--tt-metal-sha", required=True)
     release.add_argument("--server-sha", required=True)
     release.add_argument("--model", required=True)
     release.add_argument("--device", required=True)
     release.add_argument("--warm-ready-seconds", type=float)
     release.add_argument("--run-url")
-    release.add_argument("--out", type=Path, required=True)
+    release.add_argument("--out", type=path_argument, required=True)
     return parser
 
 
@@ -759,7 +947,10 @@ def main(argv=None, docker_run=subprocess.run, hf_api=None) -> int:
         return run(args, docker_run, hf_api)
     except CliError as error:
         print(f"error: {error}", file=sys.stderr)
-        return 1
+    except OSError as error:
+        command = " ".join(filter(None, (args.command, getattr(args, "action", None))))
+        print(f"error: {command}: {type(error).__name__}: {error}", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
