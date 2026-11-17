@@ -85,8 +85,25 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     return eval_results
 
 
+def _result_or_none(test):
+    """``test``'s result, or None once its retries are spent.
+
+    ``run_tests`` ends in SystemExit when every attempt fails. For FVD and FVMD
+    that is a score the eval does not have, not the end of the eval.
+    """
+    try:
+        return test.run_tests()
+    except SystemExit as e:
+        logger.warning("%s gave up: %.300s", type(test).__name__, e)
+        return None
+
+
 def _run_video_fvd_and_fvmd_eval() -> dict:
-    """Run FVD + FVMD eval against reference and generated video directories."""
+    """Run FVD + FVMD eval against reference and generated video directories.
+
+    The reference clips are from a gated dataset. Without access to it, and
+    with none on disk from an earlier run, FVD and FVMD are left out (None).
+    """
     from .._test_common import TestConfig
 
     from .video_fvd_eval_test import DATASET_DIR as FVD_DATASET_DIR
@@ -113,15 +130,19 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
         action="download", download_count=2, category="Sports"
     )
     download_test = VideoFVDTest(config, {"request": download_request})
-    download_result = download_test.run_tests()
-    if not download_result.data.get("success") or not download_result.data.get(
-        "result", {}
-    ).get("success"):
-        logger.warning(
-            "Reference video download failed: %s. "
-            "FVD/FVMD may fail if reference dir is empty.",
-            download_result,
-        )
+    download_result = _result_or_none(download_test)
+    if (
+        download_result is None
+        or not download_result.data.get("success")
+        or not download_result.data.get("result", {}).get("success")
+    ):
+        logger.warning("Reference video download failed: %s.", download_result)
+        if not any(Path(reference_videos_path).glob("*.mp4")):
+            logger.warning(
+                "No reference videos in %s: FVD and FVMD are not computed.",
+                reference_videos_path,
+            )
+            return {**combined_results, "fvd": None, "fvmd": None}
     else:
         logger.info("Reference videos downloaded successfully.")
 
@@ -131,8 +152,8 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
         generated_videos_path=generated_videos_path,
     )
     fvd_test = VideoFVDTest(config, {"request": fvd_request})
-    fvd_result = fvd_test.run_tests()
-    fvd_ok = fvd_result.data.get("success")
+    fvd_result = _result_or_none(fvd_test)
+    fvd_ok = fvd_result is not None and fvd_result.data.get("success")
     if fvd_ok:
         combined_results["fvd"] = fvd_result.data.get("fvd_score")
         logger.info("FVD score: %s", combined_results["fvd"])
@@ -146,8 +167,8 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
         generated_videos_path=generated_videos_path,
     )
     fvmd_test = VideoFVMDTest(config, {"request": fvmd_request})
-    fvmd_result = fvmd_test.run_tests()
-    fvmd_ok = fvmd_result.data.get("success")
+    fvmd_result = _result_or_none(fvmd_test)
+    fvmd_ok = fvmd_result is not None and fvmd_result.data.get("success")
     if fvmd_ok:
         combined_results["fvmd"] = fvmd_result.data.get("fvmd_score")
         logger.info("FVMD score: %s", combined_results["fvmd"])
