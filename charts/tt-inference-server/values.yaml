@@ -4592,24 +4592,32 @@ models:
                 path: /health
             resources:
               requests:
-                memory: 400Gi
+                memory: 600Gi
             env:
               - name: ARCH_NAME
                 value: blackhole
               - name: GLM_TT_EXTRA_ARGS
-                value: --users 2 --context 262144 --session-positions 262144 --session-ram-gb 64 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120
+                value: --users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120
               - name: GLM_TT_MAX_TOKENS
                 value: '131072'
               - name: GLM_TT_MTP
                 value: glm53-flash-mtp-plan0h.ttq
               - name: GLM_TT_PACKAGE
-                value: glm-tt-l5-6e3b301c
+                value: glm-tt-t6-b12c169e
               - name: GLM_TT_TTQ
                 value: glm53-flash-plan0h.ttq
               - name: GLM_TT_VOCAB
                 value: GLM-5.3-Flash-vocab.gguf
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: TT_LAB_GLM_TOOLS_STRICT
+                value: '1'
+              - name: TT_LAB_GLM_TOOL_REPAIR
+                value: '1'
+              - name: TT_LAB_SERVE_MEDIA_CACHE_MB
+                value: '16384'
+              - name: TT_LAB_SERVE_VIDEO_CACHE_DIR
+                value: /home/container_app_user/cache_root/video-cache
             # Hand-tuned, kept by the generator (it owns only image, resources.requests.memory,
             # progressDeadlineSeconds, env and probes.liveness.path). The chart mounts no
             # /var/lib/tenstorrent, so name the dirty-chip marker: on the node's cache hostPath it

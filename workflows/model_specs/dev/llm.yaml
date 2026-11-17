@@ -7691,8 +7691,9 @@ templates:
   # The plan0h TTQ (180,874,799,872 bytes in five 40 GiB parts) and the 4.3 GB MTP sidecar,
   # downloaded once into the persistent volume and read through the page cache.
   min_disk_gb: 200
-  # The page-cached TTQ (181 GB), plus 32 GB of session records per group (four groups).
-  min_ram_gb: 400
+  # The page-cached TTQ (181 GB), plus 100 GB of host session records per group (four groups)
+  # and the 16 GB image cache: 597 GB.
+  min_ram_gb: 600
   uses_tensor_model_cache: false
   # glm-tt loads its weights and compiles nothing at run time, and /health answers 200 only once it serves.
   has_builtin_warmup: true
@@ -7718,14 +7719,22 @@ templates:
       default_impl: true
       env_vars:
         GLM_TT_MTP: glm53-flash-mtp-plan0h.ttq
-        # The OpenRouter production config: 64 GB of host session records in one RAM-only store
-        # all groups share; a failed group reloads in-process (about 194 s) while the others
-        # serve. --overload 429: a request arriving when all 8 slots are busy waits up to 1 s
-        # for one, then gets 429 with Retry-After: 1 (OpenRouter fails over to another
-        # provider). Prompt length never causes a 429. The benchmark sweep and the agentic
+        # The OpenRouter production config (glx-tools t6, 2026-11-16): 100 GB of host session
+        # records per group in one RAM-only store all groups share (no SSD tier); a failed group
+        # reloads in-process (about 194 s) while the others serve. --overload 429: a request
+        # arriving when all 8 slots are busy waits up to 1 s for one, then gets 429 with
+        # Retry-After: 1 (OpenRouter fails over to another provider). Prompt length never causes a 429. The benchmark sweep and the agentic
         # evals send more than 8 requests at once: Shield CI runs use glm53f/8-ship2
         # (--overload queue) instead.
-        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 64 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120"
+        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120"
+        # Tool calls: arguments constrained to each tool's JSON Schema and typed by it.
+        TT_LAB_GLM_TOOLS_STRICT: "1"
+        TT_LAB_GLM_TOOL_REPAIR: "1"
+        # The image cache (16 GB in RAM) and the video cache (on the cache volume, a local disk;
+        # the launcher creates it). Both act only when serve has the glm-vision worker
+        # (--mm-encoder), which this package does not include.
+        TT_LAB_SERVE_MEDIA_CACHE_MB: "16384"
+        TT_LAB_SERVE_VIDEO_CACHE_DIR: /home/container_app_user/cache_root/video-cache
       # docker stop: drain, then four groups release their chips.
       docker_stop_timeout: 30
       # The "chips need a reset" marker outlives the container here when the host has the
@@ -7739,11 +7748,14 @@ templates:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
     # launcher takes a split TTQ by its manifest and the package from its folder.
     # The repo keeps each glm-tt build in its own folder, so a cached download fetches a new one.
-    # glm-tt-l5-6e3b301c: tt-lab glx-launch l5, the build serving OpenRouter (l4 plus a chunk
-    # planner that no longer stalls the host while prefills wait), firmware images
-    # byte-identical to ship2's. Images and video need the separate glm-vision worker
-    # (--mm-encoder), which this package does not include: served from here, it is text-only.
-    GLM_TT_PACKAGE: glm-tt-l5-6e3b301c
+    # glm-tt-t6-b12c169e: tt-lab glx-tools t6 (engine source b12c169e), the build serving
+    # OpenRouter since 2026-11-16: the Ethernet gather sequence no longer hangs a group when it
+    # wraps after about 6.8 days, feeder mailboxes are armed past zero, request ids are unique
+    # across restarts, serve ignores SIGPIPE, and image and video caches. The engine source is
+    # on tenstorrent/regen-glm5.3-flash branch glm-5.3-flash-galaxy. Images and video need the
+    # separate glm-vision worker (--mm-encoder), which this package does not include: served
+    # from here, it is text-only.
+    GLM_TT_PACKAGE: glm-tt-t6-b12c169e
     GLM_TT_TTQ: glm53-flash-plan0h.ttq
     GLM_TT_VOCAB: GLM-5.3-Flash-vocab.gguf
     GLM_TT_MAX_TOKENS: "131072"
@@ -7761,9 +7773,9 @@ templates:
         - glm53-flash-plan0h.ttq.00005-of-00005
         - glm53-flash-mtp-plan0h.ttq
         - GLM-5.3-Flash-vocab.gguf
-        - glm-tt-l5-6e3b301c/SHA256SUMS
-        - glm-tt-l5-6e3b301c/bin/glm-tt
-        - glm-tt-l5-6e3b301c/runtime/ld-linux-x86-64.so.2
+        - glm-tt-t6-b12c169e/SHA256SUMS
+        - glm-tt-t6-b12c169e/bin/glm-tt
+        - glm-tt-t6-b12c169e/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   # Any image with a python3 runs it (CI passes its own build as --override-docker-image). This is
   # the image the Helm chart runs (charts/tt-inference-server, generated by

@@ -114,6 +114,18 @@ def test_settings_in_the_environment_win(tmp_path):
     }
 
 
+def test_video_cache_dir_is_created(tmp_path):
+    cache = tmp_path / "cache_root" / "video-cache"
+    env = {"DEVICE": "p150x8", "API_KEY": "a", "TT_LAB_SERVE_VIDEO_CACHE_DIR": str(cache)}
+    env.update(_weights(tmp_path))
+    run_glm_tt.serve_command(env, USAGE, 8)
+    assert cache.is_dir()
+    (tmp_path / "file").write_bytes(b"x")
+    env["TT_LAB_SERVE_VIDEO_CACHE_DIR"] = str(tmp_path / "file" / "video-cache")
+    with pytest.raises(run_glm_tt.SetupError, match="TT_LAB_SERVE_VIDEO_CACHE_DIR"):
+        run_glm_tt.serve_command(env, USAGE, 8)
+
+
 def test_glm_tt_with_only_api_key_flag_gets_it_on_the_command_line(tmp_path):
     env = {"DEVICE": "p150x8", "API_KEY": "a"}
     env.update(_weights(tmp_path))

@@ -39,6 +39,11 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
                      JWT of JWT_SECRET only to vLLM; NO_AUTH=1 for none.
   SERVICE_PORT (8000), SERVED_MODEL_NAME (zai-org/$MODEL), GLM_TT_MAX_TOKENS (163840),
   GLM_TT_HOST (0.0.0.0), GLM_TT_EXTRA_ARGS (appended to serve's arguments, split on spaces),
+  TT_LAB_SERVE_VIDEO_CACHE_DIR  serve's video cache directory (a local disk; created here
+                     when missing). It and TT_LAB_SERVE_MEDIA_CACHE_MB (the image cache) only
+                     act when serve has a glm-vision worker (--mm-encoder).
+  TT_LAB_GLM_TOOLS_STRICT, TT_LAB_GLM_TOOL_REPAIR  tool-call arguments constrained to the
+                     tool's JSON Schema, and typed by it; passed on to serve.
   TT_LAB_DIRTY_MARKER (default /var/lib/tenstorrent/glm-tt.dirty when that host directory is
                      mounted, else $CACHE_ROOT/glm-tt.dirty; never under /tmp). The
                      $CACHE_ROOT fallback is advisory (CI shares that cache between hosts
@@ -378,6 +383,14 @@ def serve_command(env, usage, chips_present):
         if "--mtp" not in usage:
             raise SetupError("GLM_TT_MTP is set but this glm-tt has no --mtp")
         serve += ["--mtp", mtp]
+    video_cache = env.get("TT_LAB_SERVE_VIDEO_CACHE_DIR")
+    if video_cache:
+        try:
+            os.makedirs(video_cache, exist_ok=True)
+        except OSError as error:
+            raise SetupError(
+                f"TT_LAB_SERVE_VIDEO_CACHE_DIR={video_cache}: cannot create it ({error})"
+            ) from error
     extra = shlex.split(env.get("GLM_TT_EXTRA_ARGS", ""))
     return serve + args + device_args + extra, updates
 
