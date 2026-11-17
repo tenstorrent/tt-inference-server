@@ -117,6 +117,7 @@ def _unpadded_jpeg(width: int, height: int) -> str:
     ("size", "image_format"),
     [
         ({}, "JPEG"),
+        ({"width": None, "height": None}, "PNG"),
         ({"width": 1024, "height": 1024}, "JPEG"),
         ({"width": 2048, "height": 2048}, "PNG"),
         ({"width": 4096, "height": 4096}, "PNG"),
@@ -139,7 +140,8 @@ async def test_generations_waits_for_the_image(klein_app, size, image_format):
     assert set(response.json()) == {"images", "generation_time"}
     image = _decoded(response)
     assert image.format == image_format
-    assert image.size == (size.get("width", 2048), size.get("height", 2048))
+    # Console sends no size: 4096x4096.
+    assert image.size == (size.get("width") or 4096, size.get("height") or 4096)
     (request,) = device.requests
     assert (request.prompt, request._seed, request.images) == ("a cat", 7, [])
     # Returned, so not kept as a job.
@@ -165,6 +167,14 @@ async def test_generations_refuses_shapes_klein_does_not_serve(
     assert response.status_code == 422, response.text
     assert message in response.text
     assert device.requests == []
+
+
+async def test_without_4k_the_default_is_2048(klein_app, monkeypatch):
+    client, _, _, _ = klein_app
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
+    response = await client.post("/v1/images/generations", json={"prompt": "a cat"})
+    assert response.status_code == 200, response.text
+    assert _decoded(response).size == (2048, 2048)
 
 
 async def test_4k_is_refused_with_the_upsampler_in_the_deployment(
@@ -196,17 +206,22 @@ async def test_one_image_per_request(klein_app, count):
     assert device.requests == []
 
 
-async def test_steps_guidance_and_negative_prompt_are_ignored(klein_app):
+# As Console's worker sends them (tt-cloud-console ttservice.go imageGenRequest).
+_CONSOLE_FIELDS = {
+    "negative_prompt": "dogs",
+    "num_inference_steps": 4,
+    "guidance_scale": 0.0,
+    "number_of_images": 1,
+    "image_return_format": "JPEG",
+    "lora_scale": 0.5,
+    "lora_path": "some/lora",
+}
+
+
+async def test_steps_guidance_negative_prompt_and_lora_are_ignored(klein_app):
     client, device, _, _ = klein_app
     response = await client.post(
-        "/v1/images/generations",
-        json={
-            "prompt": "a cat",
-            "negative_prompt": "dogs",
-            "num_inference_steps": 4,
-            "guidance_scale": 0.0,
-            "number_of_images": 1,
-        },
+        "/v1/images/generations", json={"prompt": "a cat", **_CONSOLE_FIELDS}
     )
     assert response.status_code == 200, response.text
     (request,) = device.requests
@@ -214,7 +229,7 @@ async def test_steps_guidance_and_negative_prompt_are_ignored(klein_app):
         "prompt": "a cat",
         "count": 1,
         "aspect_ratio": "1:1",
-        "size": "2K",
+        "size": "4K",
         "format": "jpeg",
         "seed": None,
     }
@@ -244,32 +259,55 @@ def test_other_image_runners_keep_their_limits(monkeypatch):
     assert module.generation_router.routes == []
 
 
+@pytest.mark.parametrize("route", ["image-to-image", "edits"])
 @pytest.mark.parametrize("encode", [_bare_base64, _data_uri, _unpadded_jpeg])
-async def test_edits_takes_image_as_the_reference(klein_app, encode):
+async def test_image_is_the_reference(klein_app, encode, route):
     client, device, _, _ = klein_app
     response = await client.post(
-        "/v1/images/edits",
+        f"/v1/images/{route}",
         json={
             "prompt": "make it night",
             "image": encode(1600, 900),
             "strength": 0.3,
-            "width": 4096,
-            "height": 2304,
+            **_CONSOLE_FIELDS,
         },
     )
     assert response.status_code == 200, response.text
-    assert _decoded(response).size == (4096, 2304)
+    assert _decoded(response).size == (4096, 4096)
     (request,) = device.requests
     assert request._image_sizes == {"images": [(1600, 900)]}
     assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
 
 
-async def test_edits_refuses_a_reference_over_16_mp(klein_app):
+async def test_image_to_image_takes_a_served_size(klein_app):
+    client, _, _, _ = klein_app
+    response = await client.post(
+        "/v1/images/image-to-image",
+        json={"prompt": "x", "image": _data_uri(), "width": 2304, "height": 4096},
+    )
+    assert response.status_code == 200, response.text
+    assert _decoded(response).size == (2304, 4096)
+
+
+async def test_edits_refuses_a_mask(klein_app):
+    client, device, _, _ = klein_app
+    response = await client.post(
+        "/v1/images/edits",
+        json={"prompt": "x", "image": _data_uri(), "mask": _data_uri(), "strength": 1},
+    )
+    assert response.status_code == 422, response.text
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "mask"]
+    assert "send the image to /v1/images/image-to-image" in error["msg"]
+    assert device.requests == []
+
+
+async def test_a_reference_over_16_mp_is_refused(klein_app):
     client, device, _, _ = klein_app
     buffer = BytesIO()
     Image.new("L", (4097, 4096)).save(buffer, "PNG", compress_level=1)
     response = await client.post(
-        "/v1/images/edits",
+        "/v1/images/image-to-image",
         json={
             "prompt": "make it night",
             "image": base64.b64encode(buffer.getvalue()).decode(),
@@ -277,15 +315,15 @@ async def test_edits_refuses_a_reference_over_16_mp(klein_app):
     )
     assert response.status_code == 422, response.text
     (error,) = response.json()["detail"]
-    assert error["loc"] == ["body", "images", 0]
+    assert error["loc"] == ["body", "image"]
     assert "at most 16 MP (16,777,216 pixels) is accepted" in error["msg"]
     assert device.requests == []
 
 
-async def test_edits_refuses_an_image_that_is_not_one(klein_app):
+async def test_an_image_that_is_not_one_is_refused(klein_app):
     client, device, _, _ = klein_app
     response = await client.post(
-        "/v1/images/edits",
+        "/v1/images/image-to-image",
         json={"prompt": "make it night", "image": base64.b64encode(b"nope").decode()},
     )
     assert response.status_code == 422, response.text
@@ -351,3 +389,16 @@ async def test_a_failed_render_is_500(klein_app):
     response = await client.post("/v1/images/generations", json={"prompt": "a cat"})
     assert response.status_code == 500
     assert response.json() == {"detail": "device fell over"}
+
+
+def test_v1_models_lists_the_image_api_fields(monkeypatch):
+    import open_ai_api.models as models
+
+    monkeypatch.setattr(settings, "model_service", "generation")
+    monkeypatch.setattr(settings, "model_runner", _KLEIN)
+    (entry,) = models.list_models()["data"]
+    assert entry["id"] == "black-forest-labs/flux-3-image-klein"
+    properties = entry["schema"]["properties"]
+    assert {"prompt", "image", "strength", "width", "height"} <= set(properties)
+    assert properties["width"]["anyOf"][0]["maximum"] == 4096
+    assert entry["schema"]["required"] == ["prompt"]

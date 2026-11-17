@@ -7,6 +7,7 @@ import os
 from config.constants import ModelRunners, ModelServices
 from config.settings import settings
 from domain.base_request import BaseRequest
+from domain.flux3_image_klein_sync_request import KleinImageRequest
 from domain.generation_models import GENERATION_MODELS
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
@@ -64,6 +65,13 @@ def list_models():
     elif settings.model_service == ModelServices.GENERATION.value:
         model = GENERATION_MODELS[settings.model_runner]
         model_entry["id"] = model.id
-        model_entry["schema"] = model.request.model_json_schema()
+        # Klein's clients (Console) find its features here and call the
+        # synchronous /v1/images routes; /openapi.json has /v1/generations too.
+        request = (
+            KleinImageRequest
+            if settings.model_runner == ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value
+            else model.request
+        )
+        model_entry["schema"] = request.model_json_schema()
 
     return {"object": "list", "data": [model_entry]}

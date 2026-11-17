@@ -395,8 +395,9 @@ The image router exposes one of three endpoints depending on `MODEL_RUNNER`:
 | `tt-sdxl-edit`             | `POST /v1/images/edits`             |
 | any other image runner     | `POST /v1/images/generations`       |
 
-`tt-flux-3-image-klein` serves both `POST /v1/images/generations` and `POST
-/v1/images/edits` next to its generations API; see
+`tt-flux-3-image-klein` serves `POST /v1/images/generations`,
+`/v1/images/image-to-image` and `/v1/images/edits` next to its generations API;
+see
 [FLUX.3 Image klein: synchronous calls](#flux3-image-klein-synchronous-calls).
 
 ## Image generation test call
@@ -458,23 +459,31 @@ curl -X 'POST' \
 
 ## FLUX.3 Image klein: synchronous calls
 
-With `MODEL_RUNNER=tt-flux-3-image-klein`, `/v1/images/generations` (text to
-image) and `/v1/images/edits` (`image` is the reference) take the request above
+With `MODEL_RUNNER=tt-flux-3-image-klein`, three routes take the requests above
 and answer once the image is done: `{"images": [base64], "generation_time": s}`.
+
+| route | request | Klein |
+|---|---|---|
+| `/v1/images/generations` | `ImageGenerateRequest` | text to image |
+| `/v1/images/image-to-image` | `ImageToImageRequest` | `image` is the reference; `strength` is ignored |
+| `/v1/images/edits` | `ImageEditRequest` | as image-to-image; a `mask` is a 422 (Klein does not inpaint) |
+
 Each call is one ordinary job of `POST
 /v1/generations/black-forest-labs/flux-3-image-klein`, queued with that route's
 jobs and rendered one at a time; the job is deleted once it is returned.
+`GET /v1/models` lists these fields as the model's `schema`.
 
-- `width`/`height`: a shape the deployment serves, 1024x1024 or 2048x2048, and
+- `width`/`height`: a shape the deployment serves: 1024x1024, 2048x2048, and
   with the prompt upsampler ahead 4096x4096, plus 4096x2304 and 2304x4096 on a
-  Galaxy quad. Omitted: 2048x2048. Any other shape is a 422.
-- `image` (edits): bare base64 or a data URL, as for SDXL and Kontext, or an
-  `https://` URL. Kept at its aspect ratio, scaled down to at most 4 MP, never
-  cropped; at most 16 MP and 30 MB, else 422 or 413.
+  Galaxy quad. Omitted: 4096x4096 (2048x2048 where 4K is not served). Any other
+  shape is a 422.
+- `image`: bare base64 or a data URL, as for SDXL and Kontext, or an `https://`
+  URL. Kept at its aspect ratio, scaled down to at most 4 MP, never cropped; at
+  most 16 MP and 30 MB, else 422 or 413.
 - `number_of_images`: 1 only; more is a 422. Send one request per image.
 - `image_return_format` (`JPEG` default, or `PNG`) and `image_quality` (JPEG)
   apply. `seed` is kept; `num_inference_steps`, `guidance_scale`,
-  `negative_prompt`, `strength` and `mask` are ignored.
+  `negative_prompt`, `strength`, `lora_path` and `lora_scale` are ignored.
 - A call waits at most 90 s, then answers 504. A job still queued then is
   cancelled; a job rendering keeps going and stays at `GET /v1/jobs/{id}`. A
   client that disconnects never stops a render either.
@@ -482,9 +491,9 @@ jobs and rendered one at a time; the job is deleted once it is returned.
   `/v1/jobs/{id}/cancel` is a 409.
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/images/edits \
+curl -X POST http://127.0.0.1:8000/v1/images/image-to-image \
   -H 'Authorization: Bearer your-secret-key' -H 'Content-Type: application/json' \
-  -d '{"prompt": "make it night", "image": "[base64 encoded image]",
+  -d '{"prompt": "make it night", "image": "[base64 encoded image]", "strength": 0.6,
        "width": 4096, "height": 2304, "image_return_format": "PNG"}'
 ```
 
