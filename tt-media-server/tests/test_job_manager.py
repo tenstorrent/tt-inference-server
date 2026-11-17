@@ -1127,6 +1127,97 @@ class TestJobManager:
         if task is not None:
             await asyncio.gather(task, return_exceptions=True)
 
+    async def _waiting_job(self, job_manager, mock_request, job_id, **events):
+        async def render(req):
+            await asyncio.sleep(0.2)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id=job_id,
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=render,
+            result_path="result.pt",
+            **events,
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_waiting_job_cancels_an_unclaimed_job(
+        self, job_manager, mock_request
+    ):
+        assignment = SimpleNamespace(identity=None)
+        cancel_event = Event()
+        await self._waiting_job(
+            job_manager,
+            mock_request,
+            "unclaimed",
+            start_event=Event(),
+            cancel_event=cancel_event,
+            worker_assignment=assignment,
+        )
+        assert job_manager.cancel_waiting_job("unclaimed")
+        assert cancel_event.is_set()
+        assert job_manager.get_job_metadata("unclaimed")["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_cancel_waiting_job_leaves_a_claimed_job(
+        self, job_manager, mock_request
+    ):
+        assignment = SimpleNamespace(identity=("worker-0", 123))
+        cancel_event = Event()
+        await self._waiting_job(
+            job_manager,
+            mock_request,
+            "claimed",
+            start_event=Event(),
+            cancel_event=cancel_event,
+            worker_assignment=assignment,
+        )
+        assert not job_manager.cancel_waiting_job("claimed")
+        assert not cancel_event.is_set()
+        assert job_manager.get_job_metadata("claimed")["status"] == "queued"
+
+    @pytest.mark.parametrize("worker_rejects", [False, True])
+    @pytest.mark.asyncio
+    async def test_cancel_waiting_job_never_stops_a_render_claimed_meanwhile(
+        self, job_manager, mock_request, worker_rejects
+    ):
+        """The worker publishes its claim as the cancel event is set. Past its
+        last check it renders to completion; else it rejects the job, which
+        then ends cancelled."""
+        assignment = SimpleNamespace(identity=None)
+        start_event = Event()
+
+        class ClaimWhenCancelled:
+            cancelled = False
+
+            def is_set(self):
+                return self.cancelled
+
+            def set(self):
+                assignment.identity = ("worker-0", 123)
+                self.cancelled = True
+
+        await self._waiting_job(
+            job_manager,
+            mock_request,
+            "claimed-meanwhile",
+            start_event=start_event,
+            cancel_event=ClaimWhenCancelled(),
+            worker_assignment=assignment,
+        )
+        assert not job_manager.cancel_waiting_job("claimed-meanwhile")
+        assert job_manager.get_job_metadata("claimed-meanwhile")["status"] == "queued"
+        if worker_rejects:
+            assignment.identity = None
+        else:
+            start_event.set()
+        await asyncio.sleep(0.8)
+        assert job_manager.get_job_metadata("claimed-meanwhile")["status"] == (
+            "cancelled" if worker_rejects else "completed"
+        )
+
     @pytest.mark.asyncio
     async def test_cancel_task_sets_cancel_event(self, job_manager, mock_request):
         """When a training job's task receives CancelledError, _cleanup_job in the handler sets cancel_event."""

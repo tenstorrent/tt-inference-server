@@ -73,6 +73,8 @@ class Job:
     )
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
+    # Cancelled only if the worker that claimed it rejects it (cancel_waiting_job).
+    cancel_if_rejected: bool = False
     job_metrics: list = field(default_factory=list)
     job_logs: list = field(default_factory=list)
     job_checkpoints: list = field(default_factory=list)
@@ -421,18 +423,22 @@ class JobManager:
     def cancel_waiting_job(self, job_id: str) -> bool:
         """Cancel a job no worker has claimed yet; leave one that is rendering.
         Whether it was cancelled."""
-        with self._jobs_lock:
-            job = self._jobs.get(job_id)
-            if job is None or job.status != JobStatus.QUEUED or _held_by_a_worker(job):
-                return False
-        return self.cancel_job(job_id) is not None
+        return self.cancel_job(job_id, queued_only=True) is not None
 
-    def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
-        """Cancel job, cancel if in progress, and return cancellation confirmation."""
+    def cancel_job(
+        self, job_id: str, org_id: Optional[str] = None, queued_only: bool = False
+    ) -> Optional[dict]:
+        """Cancel job, cancel if in progress, and return cancellation confirmation.
+        With ``queued_only``, only a job no worker has claimed: one being
+        claimed renders untouched unless its worker rejects it."""
         with self._jobs_lock:
             job = self._get_job_if_authorized(job_id, org_id)
             if not job:
                 self._logger.warning(f"Cancel failed: Job {job_id} not found.")
+                return None
+            if queued_only and (
+                job.status != JobStatus.QUEUED or _held_by_a_worker(job)
+            ):
                 return None
             if job_id in self._deleting_job_ids:
                 self._logger.warning(f"Cancel failed: Job {job_id} is being deleted.")
@@ -462,6 +468,13 @@ class JobManager:
                 self._sync_status_to_db(job)
                 self._logger.info(f"Queued job {job_id} cancelled immediately.")
                 return job.to_public_dict()
+
+            if queued_only:
+                # A worker claimed it as the event was set: past its last check
+                # it renders on; otherwise it rejects it, and the start monitor
+                # ends the job cancelled.
+                job.cancel_if_rejected = True
+                return None
 
             job.mark_cancelling()
             self._sync_status_to_db(job)
@@ -620,7 +633,7 @@ class JobManager:
         if job.start_event:
             while not job.start_event.is_set():
                 if (
-                    job.status == JobStatus.CANCELLING
+                    (job.status == JobStatus.CANCELLING or job.cancel_if_rejected)
                     and job.cancel_event
                     and job.cancel_event.is_set()
                     and job.assigned_worker_identity() is None
