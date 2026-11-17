@@ -278,6 +278,8 @@ templates:
     # setup_host fetches it per hf_extra_files below.
     MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA-LightX2V/lightx2v/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
@@ -330,6 +332,8 @@ templates:
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V
     MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V/lightx2v/minimax_h3_ref2v_turbo_4step_v1.0_768p_bf16.safetensors
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
@@ -381,6 +385,8 @@ templates:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
   metadata:
@@ -426,6 +432,8 @@ templates:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
   metadata:
