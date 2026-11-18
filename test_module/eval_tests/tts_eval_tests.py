@@ -36,6 +36,8 @@ TTS_QUALITY_DEPS = ("numpy", "torch", "transformers", "librosa", "datasets")
 TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
 # Naturalness scores clips with a torch.hub MOS predictor (needs torchaudio).
 TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
+# Correctness transcribes with faster-whisper (CTranslate2, int8) on CPU.
+TTS_CORRECTNESS_DEPS = ("numpy", "scipy", "faster_whisper")
 
 # WER speaks only the Python media server's contract; SECS/naturalness use tts_client.
 TASK_WER = "tts_generation"
@@ -485,7 +487,7 @@ def _run_tts_correctness_eval(ctx: MediaContext, task) -> dict:
 
 def _run_correctness_task(ctx: MediaContext, task) -> Block:
     """Same-prompt correctness eval (task_name=tts_correctness) -> one Block."""
-    missing = _missing_deps(TTS_QUALITY_DEPS)
+    missing = _missing_deps(TTS_CORRECTNESS_DEPS)
     if missing:
         reason = f"TTS correctness eval deps unavailable: {', '.join(missing)}"
         logger.error(reason)

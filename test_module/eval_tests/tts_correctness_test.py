@@ -15,15 +15,21 @@ the PCM matches a reference are recorded for information only: the server
 samples, so slow but intelligible speech is not a failure. References run with
 nothing else in flight, so a failing reference means the server misbehaves
 without load too. WAVs and per-response results land in ``outdir``.
+
+ASR is faster-whisper (CTranslate2, int8, greedy) on CPU. The model loads while
+the reference requests run, and each response is transcribed as soon as it
+arrives, on ``asr_workers`` parallel workers that split the CPU budget.
 """
 
 import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import statistics as st
 import time
+from math import gcd
 from pathlib import Path
 
 import aiohttp
@@ -48,10 +54,13 @@ DEFAULT_REFS = 5
 DEFAULT_REQUESTS = 100
 DEFAULT_CONCURRENCY = 100
 DEFAULT_MAX_WER = 0.05
-DEFAULT_ASR_MODEL = "distil-whisper/distil-large-v3"
+# faster-whisper (CTranslate2) model name or local path.
+DEFAULT_ASR_MODEL = "distil-large-v3"
 DEFAULT_TIMEOUT_SECONDS = 300.0
 SAMPLE_RATE = 48000
 ASR_SAMPLE_RATE = 16000
+# Parallel ASR workers cap; each gets an equal share of the CPU budget.
+MAX_ASR_WORKERS = 4
 RESULTS_FILE = "correctness.json"
 
 
@@ -115,6 +124,45 @@ def grade(records: list, max_wer: float) -> dict:
     }
 
 
+def cpu_budget() -> int:
+    """CPUs this process may use: affinity, capped by a cgroup CPU quota.
+
+    ``os.cpu_count()`` reports the host's cores inside a CPU-limited container;
+    sizing threads from it oversubscribes the pod's share.
+    """
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:  # not Linux
+        cpus = os.cpu_count() or 1
+    quota = None
+    try:  # cgroup v2: "<quota> <period>" or "max <period>"
+        q, p = Path("/sys/fs/cgroup/cpu.max").read_text().split()[:2]
+        if q != "max":
+            quota = int(q) / int(p)
+    except (OSError, ValueError):
+        try:  # cgroup v1: quota -1 means unlimited
+            q = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+            p = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+            if q > 0:
+                quota = q / p
+        except (OSError, ValueError):
+            pass
+    if quota is not None:
+        cpus = min(cpus, max(1, int(quota)))
+    return max(1, cpus)
+
+
+def asr_threads(cpus: int, workers: int) -> int:
+    """CTranslate2 threads per worker; one CPU stays free for the HTTP client,
+    which is still reading responses while the first ones are transcribed."""
+    return max(1, (cpus - 1) // workers)
+
+
+def default_asr_workers(cpus: int) -> int:
+    """About four CPU threads per worker, at most ``MAX_ASR_WORKERS`` workers."""
+    return max(1, min(MAX_ASR_WORKERS, cpus // 4))
+
+
 class TTSCorrectnessTest(BaseTest):
     """One prompt sent many times; every response transcribed and graded."""
 
@@ -130,30 +178,77 @@ class TTSCorrectnessTest(BaseTest):
         concurrency = int(t.get("concurrency", DEFAULT_CONCURRENCY))
         max_wer = float(t.get("max_wer", DEFAULT_MAX_WER))
         asr_model = t.get("asr_model", DEFAULT_ASR_MODEL)
+        cpus = cpu_budget()
+        workers = max(1, int(t.get("asr_workers", default_asr_workers(cpus))))
+        threads = asr_threads(cpus, workers)
         outdir = Path(t.get("outdir", "tts_correctness"))
         (outdir / "wav").mkdir(parents=True, exist_ok=True)
         payload = tt_tts_payload(text, t.get("speech_ids"))
         url = f"{self.base_url}/v1/audio/speech"
 
-        async with aiohttp.ClientSession(
-            headers=auth_headers(), connector=aiohttp.TCPConnector(limit=0)
-        ) as session:
-            logger.info(f"[ref] {refs} sequential requests")
-            records = await self._send(session, url, payload, "ref", refs, 1, outdir)
-            logger.info(f"[load] {requests} requests at concurrency {concurrency}")
-            records += await self._send(
-                session, url, payload, "load", requests, concurrency, outdir
-            )
-
-        ok = [r for r in records if r["ok"]]
-        logger.info(f"Transcribing {len(ok)} responses with {asr_model}")
-        transcripts = await asyncio.to_thread(
-            self._transcribe, [r["wav"] for r in ok], asr_model
+        logger.info(
+            f"Loading ASR {asr_model}: {workers} workers x "
+            f"{threads} threads ({cpus} CPUs)"
         )
+        # Loads alongside the reference requests; transcription waits on it.
+        loader = asyncio.ensure_future(
+            asyncio.to_thread(self._load_asr, asr_model, workers, threads)
+        )
+        slots = asyncio.Semaphore(workers)
+        pending: dict = {}
+        done = [0]
+
+        async def transcribe(wav: str) -> str:
+            asr = await loader
+            async with slots:
+                out = await asyncio.to_thread(asr, wav)
+            done[0] += 1
+            if done[0] % 20 == 0:
+                logger.info(f"  transcribed {done[0]}/{len(pending)}")
+            return out
+
+        def on_audio(wav: str) -> None:
+            pending[wav] = asyncio.ensure_future(transcribe(wav))
+
+        try:
+            async with aiohttp.ClientSession(
+                headers=auth_headers(), connector=aiohttp.TCPConnector(limit=0)
+            ) as session:
+                logger.info(f"[ref] {refs} sequential requests")
+                records = await self._send(
+                    session, url, payload, "ref", refs, 1, outdir, on_audio
+                )
+                if loader.done() and loader.exception() is not None:
+                    raise loader.exception()
+                logger.info(f"[load] {requests} requests at concurrency {concurrency}")
+                records += await self._send(
+                    session,
+                    url,
+                    payload,
+                    "load",
+                    requests,
+                    concurrency,
+                    outdir,
+                    on_audio,
+                )
+            logger.info(
+                f"Requests done after {time.time() - start:.0f}s; waiting on "
+                f"{len(pending) - done[0]} of {len(pending)} transcripts"
+            )
+            results = await asyncio.gather(*pending.values(), return_exceptions=True)
+        finally:
+            for task in (loader, *pending.values()):
+                task.cancel()
+        for res in results:
+            if isinstance(res, BaseException):
+                raise res
+        transcripts = dict(zip(pending, results))
+
         ref_words = normalize(text)
-        for r in ok:
-            r["transcript"] = transcripts[r["wav"]]
-            r.update(word_errors(ref_words, normalize(r["transcript"])))
+        for r in records:
+            if r["ok"]:
+                r["transcript"] = transcripts[r["wav"]]
+                r.update(word_errors(ref_words, normalize(r["transcript"])))
         summary = grade(records, max_wer)
 
         graded = records
@@ -191,8 +286,11 @@ class TTSCorrectnessTest(BaseTest):
         )
         return result
 
-    async def _send(self, session, url, payload, tag, count, concurrency, outdir):
-        """``count`` copies of one request over ``concurrency`` slots; save WAVs."""
+    async def _send(
+        self, session, url, payload, tag, count, concurrency, outdir, on_audio
+    ):
+        """``count`` copies of one request over ``concurrency`` slots; save WAVs
+        and hand each one with audio to ``on_audio`` as soon as it lands."""
         slots = asyncio.Semaphore(concurrency)
 
         async def one(i: int) -> dict:
@@ -208,6 +306,8 @@ class TTSCorrectnessTest(BaseTest):
                 )
             wav = outdir / "wav" / f"{tag}_{i:03d}.wav"
             wav.write_bytes(body)
+            if rec["ok"]:
+                on_audio(str(wav))
             return {
                 "tag": tag,
                 "i": i,
@@ -223,31 +323,47 @@ class TTSCorrectnessTest(BaseTest):
         return list(await asyncio.gather(*(one(i) for i in range(count))))
 
     @staticmethod
-    def _transcribe(paths: list, model_name: str) -> dict:
-        """English Whisper transcripts; long-form audio is chunked, so a runaway
-        response's extra speech still shows up as insertions."""
-        import librosa
-        from transformers import pipeline
+    def _load_asr(model_name: str, workers: int, threads: int):
+        """Load faster-whisper once; return a thread-safe ``wav path -> text``.
 
-        asr = pipeline(
-            "automatic-speech-recognition",
-            model=model_name,
+        ``num_workers`` lets ``workers`` threads transcribe in parallel, each
+        with ``threads`` CTranslate2 threads. Greedy, no timestamps and
+        no carry-over between 30 s windows; no VAD, so a runaway response's
+        extra speech still shows up as insertions.
+        """
+        import numpy as np
+        from faster_whisper import WhisperModel
+        from scipy.signal import resample_poly
+
+        model = WhisperModel(
+            model_name,
             device="cpu",
-            chunk_length_s=30,
+            compute_type="int8",
+            cpu_threads=threads,
+            num_workers=workers,
         )
-        out = {}
-        for n, path in enumerate(paths, 1):
+
+        def transcribe(path: str) -> str:
             audio = decode_streamed_wav(Path(path).read_bytes())
-            samples = librosa.resample(
-                audio.samples, orig_sr=audio.sample_rate, target_sr=ASR_SAMPLE_RATE
+            samples = audio.samples
+            if audio.sample_rate != ASR_SAMPLE_RATE:
+                g = gcd(audio.sample_rate, ASR_SAMPLE_RATE)
+                samples = resample_poly(
+                    samples, ASR_SAMPLE_RATE // g, audio.sample_rate // g
+                )
+            segments, _ = model.transcribe(
+                np.asarray(samples, dtype=np.float32),
+                language="en",
+                task="transcribe",
+                beam_size=1,
+                temperature=0.0,
+                without_timestamps=True,
+                condition_on_previous_text=False,
+                vad_filter=False,
             )
-            out[path] = asr(
-                {"raw": samples, "sampling_rate": ASR_SAMPLE_RATE},
-                generate_kwargs={"language": "en", "task": "transcribe"},
-            )["text"].strip()
-            if n % 20 == 0:
-                logger.info(f"  transcribed {n}/{len(paths)}")
-        return out
+            return " ".join(s.text.strip() for s in segments).strip()
+
+        return transcribe
 
 
-__all__ = ["TTSCorrectnessTest", "grade", "normalize", "word_errors"]
+__all__ = ["TTSCorrectnessTest", "cpu_budget", "grade", "normalize", "word_errors"]

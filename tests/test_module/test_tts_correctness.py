@@ -174,19 +174,17 @@ async def _run_against_fake_server(tmp_path, targets, transcribe):
             _TestConfig({}), {"outdir": str(tmp_path), **targets}
         )
         test.base_url = f"http://127.0.0.1:{port}"
-        test._transcribe = transcribe
+        if transcribe is not None:
+            test._load_asr = lambda model, workers, threads: transcribe
         return await test._run_specific_test_async(), payloads
     finally:
         await runner.cleanup()
 
 
 def test_correctness_run_end_to_end(tmp_path):
-    def transcribe(paths, model_name):
+    def transcribe(path):
         # The reference comes back garbled; everything else is read back verbatim.
-        return {
-            p: "something else entirely" if p.endswith("ref_000.wav") else "hi there"
-            for p in paths
-        }
+        return "something else entirely" if path.endswith("ref_000.wav") else "hi there"
 
     result, payloads = asyncio.run(
         _run_against_fake_server(
@@ -212,3 +210,48 @@ def test_correctness_run_end_to_end(tmp_path):
     assert len(list((tmp_path / "wav").glob("*.wav"))) == 5
     ref_wav = (tmp_path / "wav" / "ref_000.wav").read_bytes()
     assert len(ref_wav) == STREAM_WAV_HEADER_BYTES + 9600
+
+
+def test_asr_failure_fails_the_run(tmp_path):
+    def transcribe(path):
+        raise RuntimeError("asr broke")
+
+    with pytest.raises(RuntimeError, match="asr broke"):
+        asyncio.run(
+            _run_against_fake_server(
+                tmp_path, {"text": "Hi.", "refs": 1, "requests": 2}, transcribe
+            )
+        )
+
+
+@pytest.mark.parametrize("cpus,workers", [(1, 1), (7, 1), (8, 2), (16, 4), (96, 4)])
+def test_default_asr_workers(cpus, workers):
+    assert correctness.default_asr_workers(cpus) == workers
+
+
+def test_cpu_budget_is_positive():
+    assert correctness.cpu_budget() >= 1
+
+
+@pytest.mark.parametrize("cpus,workers,threads", [(1, 1, 1), (2, 1, 1), (16, 4, 3)])
+def test_asr_threads_leave_a_cpu_free(cpus, workers, threads):
+    assert correctness.asr_threads(cpus, workers) == threads
+
+
+def test_asr_load_failure_fails_the_run(tmp_path, monkeypatch):
+    def broken_load(model, workers, threads):
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(
+        correctness.TTSCorrectnessTest, "_load_asr", staticmethod(broken_load)
+    )
+
+    async def run():
+        # The helper stubs _load_asr on the instance; undo that so the class
+        # stub (a failing model load) is what runs.
+        return await _run_against_fake_server(
+            tmp_path, {"text": "Hi.", "refs": 1, "requests": 2}, None
+        )
+
+    with pytest.raises(RuntimeError, match="no model"):
+        asyncio.run(run())
