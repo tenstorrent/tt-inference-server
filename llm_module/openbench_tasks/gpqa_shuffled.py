@@ -18,10 +18,15 @@ endpoints.
 
 Vendored from tt-metal models/experimental/mimo_v2_6_flash/tests/evals/openbench_tasks;
 llm_module/openbench_eval.py runs it.
+
+Security note: ``random.Random(seed)`` is used on purpose. The shuffle has to be
+reproducible (the same question must get the same option order on every run), which a
+cryptographic generator cannot give; the order of four public answer options is not a
+secret, token or identifier. The ``# nosec B311`` markers below acknowledge this.
 """
 
 import hashlib
-import random
+import random  # nosec B311  # noqa: S311  -- see module docstring
 
 from inspect_ai import Epochs, task
 from inspect_ai.model import GenerateConfig
@@ -42,7 +47,7 @@ def record_to_mcq_sample(record: dict) -> MCQSample:
     seed = int.from_bytes(
         hashlib.sha256(record["Question"].encode("utf-8")).digest()[:8], "big"
     )
-    random.Random(seed).shuffle(options)
+    random.Random(seed).shuffle(options)  # nosec B311  # noqa: S311  -- reproducible order
     return MCQSample(
         input=MULTIPLE_CHOICE_PROMPT_TEMPLATE.format(
             prompt=record["Question"],
