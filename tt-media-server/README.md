@@ -219,7 +219,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
-A MiniMax-H3 server on one Galaxy can start from compiled kernels and converted weights that CI produced; see [MiniMax-H3 prebuilt start-up artifacts](docs/minimax-h3-prebuilt-artifacts.md).
+A MiniMax-H3 server on one Galaxy can start from compiled kernels and converted weights that CI produced; see [MiniMax-H3 image with prebuilt kernels and weights](#minimax-h3-image-with-prebuilt-kernels-and-weights).
 
 ## Basic Single Host Deployment
 
@@ -1385,6 +1385,25 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
+
+## MiniMax-H3 image with prebuilt kernels and weights
+
+CI can bake the tt-metal kernel cache of a MiniMax-H3 start into the server image (the image tag contains `-kc`), publish the converted weights to a private Hugging Face repo and write a release file that names both. A server started from them loads the kernels and the weights instead of compiling and converting them:
+
+- Deploy the image by the digest in the release file (`image.digest`).
+- Leave `TT_METAL_CACHE` as baked and mount nothing over it: tt-metal reuses a kernel cache only at the path it was written at. Keep it writable; tt-metal writes into it on every start.
+- Do not override the variables listed under `kernel_cache.env` in the release file. Another value makes tt-metal compile again.
+- Fetch the weights inside a container of the image, with `HF_TOKEN` set. The release file gives the repo, the variant and the tag and commit under `tt_weights`:
+
+  ```bash
+  source "${PYTHON_ENV_DIR}/bin/activate" && python /home/container_app_user/tt_weights_download.py \
+    --repo <org>/<name> --revision <tag or commit from the release file> --variant <variant> \
+    --dest-cache <TT_DIT_CACHE_DIR> --dest-original <MINIMAX_H3_MODEL_PATH>
+  ```
+
+  This fetches about 123 GB of converted weights and the part of the original checkpoint the server still reads. A plain Hub download is not enough: the script marks each cache folder complete after verifying it, and the server loads only marked folders. `MINIMAX_H3_LORA_PATH` must name the LoRA file inside the model folder. Host setup in `run.py` still downloads the full checkpoint, so this download is for deployments that start the container themselves.
+- To tell that nothing was compiled, look at the server log: a start that used the cache has no `compiled <kernel>/<hash>/ in <N> ms` lines. The count is only meaningful when `TT_METAL_LOG_KERNEL_COMPILE` is not `0`. `python3 scripts/prebuilt_artifacts.py kernel-cache check-log --server-log <log>` counts the lines.
+- The kernels also depend on the host, so another host may compile again; that start is slow and still works. A start that compiles nothing has been shown on the host that built the cache only.
 
 # Profiling
 
