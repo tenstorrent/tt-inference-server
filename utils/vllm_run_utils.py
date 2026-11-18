@@ -49,7 +49,9 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_ma
     except FileNotFoundError:
         current = None
     except OSError:
-        raise AssertionError(f"symlink location: {symlink_path} has a non-symlink there.")
+        raise AssertionError(
+            f"symlink location: {symlink_path} has a non-symlink there."
+        )
     if current == str(weights_dir):
         return symlink_path
     # Swapped in atomically: submesh engines run this concurrently, and an unlink then symlink_to
