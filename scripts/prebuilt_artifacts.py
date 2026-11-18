@@ -3,30 +3,31 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Prebuilt start-up artifacts for a media-server model (MiniMax-H3 on Blackhole Galaxy).
+"""Prebuilt start-up artifacts for a tt-media-server model.
 
 A cold server start compiles the model's kernels and converts its weights. After
 one such start this tool packages both, so later starts load them instead:
 
     kernel-cache manifest | build-image | check-log    compiled kernels, baked into the image
-    tt-weights upload | download                       converted weights, in a Hugging Face repo
+    tt-weights upload                                  converted weights, in a Hugging Face repo
                                                        shared by the variants of the model
-    release-hash                                       one JSON file that names both
+    release-file                                       one JSON file that names both
+
+kernel-cache and release-file work for any media-server model; the manifest
+records BUILD_KEY_ENV_VARS, two of which are MiniMax-H3's. tt-weights upload
+supports MiniMax-H3 only: it knows which files of that checkpoint a start with
+converted weights still reads (the MINIMAX_H3_* block) and assumes tt_dit's
+cache layout. scripts/tt_weights_download.py fetches what was uploaded, for any
+model; build-image puts that file into the image.
 
 Run it from the repo root: python3 scripts/prebuilt_artifacts.py <command> --help
-The tt-weights commands need huggingface_hub and take the token from HF_TOKEN.
+tt-weights upload needs huggingface_hub and takes the token from HF_TOKEN.
 See tt-media-server/docs/minimax-h3-prebuilt-artifacts.md.
-
-build-image copies this file alone into the image, where a deployment runs
-tt-weights download with it. So nothing of the repo is imported at the top: the
-commands that need workflows/kernel_cache.py import it when they run.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
-import fcntl
 import fnmatch
 import glob
 import hashlib
@@ -43,8 +44,40 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-# Environment variables that change tt-metal's build key or kernel hashes for this model.
+from scripts.tt_weights_download import (
+    CACHE_MARKER,
+    MANIFEST_FOLDER,
+    ORIGINAL_SUBSET_FOLDER,
+    TT_WEIGHTS_FOLDER,
+    CliError,
+    file_hash,
+    gigabytes,
+    holds_directory,
+    hugging_face_api,
+    manifest_fields,
+    path_argument,
+    published_directory,
+    published_files,
+    published_manifest,
+    read_json,
+    same_content,
+    step,
+    tensor_sizes,
+    variant_argument,
+)
+from workflows.kernel_cache import (
+    KERNEL_CACHE_CONTAINER_DIR,
+    KERNEL_CACHE_ENV,
+    KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
+)
+
+# Environment variables that change tt-metal's build key or kernel hashes: the
+# ones this deployment is known to set, four of tt-metal and the media server
+# and two of MiniMax-H3. Another model adds its own here. tt-metal hashes more
+# options than these; a failing check-log is the sign that one is missing.
 BUILD_KEY_ENV_VARS = (
     "TT_METAL_INSPECTOR",
     "TT_METAL_RISCV_DEBUG_INFO",
@@ -54,106 +87,50 @@ BUILD_KEY_ENV_VARS = (
     "TT_METAL_WATCHER",
 )
 KERNEL_CACHE_DOCKERFILE = project_root / "tt-media-server" / "Dockerfile.kernel-cache"
-# Name of this file in the build context; the Dockerfile copies it into the image.
-TOOL_IN_BUILD_CONTEXT = "prebuilt_artifacts.py"
+# build-image stages this file; it is the only tool file in the image.
+DOWNLOAD_SCRIPT = project_root / "scripts" / "tt_weights_download.py"
 # tt-metal logs "compiled <kernel>/<hash>/ in <N> ms" per compiled kernel; a cache hit logs nothing.
 COMPILE_LINE = re.compile(r"compiled (\S+/[^/\s]+)/ in \d+ ms")
 # tt-metal writes a cache file as <stem>.<random id>_<pid><ext> and renames it into place.
 KERNEL_CACHE_TEMP_FILE = re.compile(r"\.\d+_\d+(\.|$)")
 
-# One private repo holds every variant of a model family, side by side:
-#   tt_dit_cache/<tree as under TT_DIT_CACHE_DIR>   converted weights, shared directories stored once
-#   original_subset/<paths as in the checkpoint>    what a cached start still reads from the original
-#   manifests/<variant>.json                        what one variant needs of the two
-TT_WEIGHTS_FOLDER = "tt_dit_cache"
-ORIGINAL_FOLDER = "original_subset"
-MANIFEST_FOLDER = "manifests"
-VARIANT_SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-# tt_dit loads a cache directory only when this (empty) file is in it.
-CACHE_MARKER = "cache_dict.json"
-TT_WEIGHTS_STAGING = ".tt_weights_download"
+# tt-weights upload writes to this branch of the weights repo and tags the result.
+WEIGHTS_BRANCH = "main"
 MESH_SHAPE = re.compile(r"mesh(\d+x\d+)_")
 # Manifest fields that say when and by which server commit an upload was made,
 # not what it holds. A tag is reused when everything else is equal.
 MANIFEST_RUN_FIELDS = ("created_utc", "server_sha")
-WEIGHTS_MANIFEST_FIELDS = (
-    "variant",
-    "cache_directories",
-    "original_files",
-    "original_folders",
-)
 
-# What a server with a complete converted cache still reads from the original
-# checkpoint directory (MINIMAX_H3_MODEL_PATH). Correct the list here only.
+# MiniMax-H3 checkpoint layout, used by tt-weights upload only: what a server
+# with a complete converted cache still reads from the original checkpoint
+# directory (MINIMAX_H3_MODEL_PATH). Correct the list here only.
 # Globs relative to that directory; each must match a file. The audio VAE
 # weights are listed for the audio encoder: only a request whose reference has a
 # soundtrack loads it, so a capture run without one publishes no converted copy
 # and the server converts it from these.
-TEXT_ENCODER_INDEX = "text_encoder/model.safetensors.index.json"
-ORIGINAL_SUBSET = (
+MINIMAX_H3_TEXT_ENCODER_INDEX = "text_encoder/model.safetensors.index.json"
+MINIMAX_H3_ORIGINAL_SUBSET = (
     "model_index.json",
     "vae/config.json",
     "vae/*",
     "audio_vae/*.json",
     "audio_vae/*.safetensors",
     "text_encoder/config.json",
-    TEXT_ENCODER_INDEX,
+    MINIMAX_H3_TEXT_ENCODER_INDEX,
     "text_encoder/*.json",
     "tokenizer/**/*",
 )
 # config.json of the transformer folder(s) the directory holds:
-TRANSFORMER_FOLDERS = ("transformer", "transformer_ref")
+MINIMAX_H3_TRANSFORMER_FOLDERS = ("transformer", "transformer_ref")
 # the text encoder shard(s) that the index gives for weights with this prefix:
-VISION_TOWER_PREFIX = "model.visual."
+MINIMAX_H3_VISION_TOWER_PREFIX = "model.visual."
 # and the LoRA file (MINIMAX_H3_LORA_PATH). These folders must exist, next to
 # the transformer folder(s):
-ORIGINAL_FOLDERS = ("text_encoder", "vae", "audio_vae")
-
-
-class CliError(Exception):
-    """A failure reported on stderr with exit code 1."""
-
-
-def step(message: str) -> None:
-    print(message, flush=True)
-
-
-def kernel_cache_constants():
-    """workflows/kernel_cache.py of the checkout this file is in.
-
-    Imported by the commands that use it: the copy of this file in the image
-    has no repo around it.
-    """
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    from workflows import kernel_cache
-
-    return kernel_cache
+MINIMAX_H3_REQUIRED_FOLDERS = ("text_encoder", "vae", "audio_vae")
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def gigabytes(size: int) -> str:
-    return f"{size / 1e9:.2f} GB"
-
-
-def read_json(path: Path) -> dict:
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise CliError(f"{path} is not valid JSON: {error}") from error
-
-
-def manifest_fields(data, names: tuple, source) -> dict:
-    """The named fields of a manifest; an error when it is not one of this layout."""
-    missing = [name for name in names if not isinstance(data, dict) or name not in data]
-    if missing:
-        raise CliError(
-            f"{source} is not a manifest this command reads: no {', '.join(missing)}"
-        )
-    return {name: data[name] for name in names}
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -162,11 +139,9 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def docker(
-    docker_run, args: list[str], capture: bool = False, env: dict | None = None
-) -> str:
+def docker(args: list[str], capture: bool = False, env: dict | None = None) -> str:
     command = ["docker", *args]
-    result = docker_run(command, capture_output=capture, text=True, env=env)
+    result = subprocess.run(command, capture_output=capture, text=True, env=env)
     if result.returncode != 0:
         action = " ".join(itertools.takewhile(lambda arg: arg[0] != "-", command))
         detail = f": {result.stderr.strip()}" if capture and result.stderr else ""
@@ -225,10 +200,9 @@ def compiled_kernels(server_log: Path) -> list[str]:
     return kernels
 
 
-def image_env(docker_run, image: str) -> dict:
+def image_env(image: str) -> dict:
     entries = json.loads(
         docker(
-            docker_run,
             ["image", "inspect", "--format", "{{json .Config.Env}}", image],
             capture=True,
         )
@@ -269,9 +243,9 @@ def spec_env_values(path: Path) -> dict:
     return {key: str(value) for key, value in env_vars.items() if value}
 
 
-def kernel_cache_manifest(
-    docker_run, cache_dir, server_log, base_image, env_file, spec_json, out
-) -> None:
+def kernel_cache_manifest(args) -> None:
+    cache_dir, server_log, base_image = args.cache_dir, args.server_log, args.base_image
+    env_file, spec_json, out = args.env_file, args.spec_json, args.out
     kernel_roots = [path for path in cache_dir.glob("*/kernels") if path.is_dir()] or [
         path for path in cache_dir.glob("*/*/kernels") if path.is_dir()
     ]
@@ -303,7 +277,7 @@ def kernel_cache_manifest(
             "not tell a cold start from a warm one."
         )
 
-    layers = [image_env(docker_run, base_image)]
+    layers = [image_env(base_image)]
     not_given = []
     if env_file:
         layers.append(env_file_values(env_file))
@@ -337,7 +311,7 @@ def kernel_cache_manifest(
             "schema_version": 1,
             "created_utc": utc_now(),
             "base_image": base_image,
-            "kernel_cache_path": kernel_cache_constants().KERNEL_CACHE_CONTAINER_DIR,
+            "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
             "build_keys": build_keys,
             "kernel_hash_dirs": kernel_hash_dirs,
             "files": len(files),
@@ -367,10 +341,9 @@ def render_kernel_cache_dockerfile(build_key_env: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_kernel_cache_image(
-    docker_run, base_image, cache_dir, manifest_path, tag, push
-) -> None:
-    manifest = read_json(manifest_path)
+def build_kernel_cache_image(args) -> None:
+    base_image, cache_dir, tag = args.base_image, args.cache_dir, args.tag
+    manifest = read_json(args.manifest)
     if manifest["base_image"] != base_image:
         raise CliError(
             f"the manifest was made for base image {manifest['base_image']}, "
@@ -396,8 +369,8 @@ def build_kernel_cache_image(
             target = context / "kernel_cache" / source.relative_to(cache_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target, follow_symlinks=False)
-        shutil.copyfile(manifest_path, context / "kernel_cache_manifest.json")
-        shutil.copyfile(Path(__file__).resolve(), context / TOOL_IN_BUILD_CONTEXT)
+        shutil.copyfile(args.manifest, context / "kernel_cache_manifest.json")
+        shutil.copyfile(DOWNLOAD_SCRIPT, context / DOWNLOAD_SCRIPT.name)
         dockerfile = context / "Dockerfile"
         dockerfile.write_text(
             render_kernel_cache_dockerfile(manifest["build_key_env"]), encoding="utf-8"
@@ -406,7 +379,6 @@ def build_kernel_cache_image(
 
         step(f"build: {tag} from {base_image}")
         docker(
-            docker_run,
             [
                 "build",
                 "--build-arg",
@@ -419,66 +391,22 @@ def build_kernel_cache_image(
             ],
             env={**os.environ, "DOCKER_BUILDKIT": "1"},
         )
-    image_id = docker(
-        docker_run, ["image", "inspect", "--format", "{{.Id}}", tag], capture=True
-    )
+    image_id = docker(["image", "inspect", "--format", "{{.Id}}", tag], capture=True)
     step(f"image-id: {image_id}")
-    if not push:
-        return
-
-    step(f"push: {tag}")
-    docker(docker_run, ["push", tag])
-    repository = tag.rsplit(":", 1)[0] if ":" in tag.rsplit("/", 1)[-1] else tag
-    repo_digests = json.loads(
-        docker(
-            docker_run,
-            ["image", "inspect", "--format", "{{json .RepoDigests}}", tag],
-            capture=True,
-        )
-    )
-    digest = next(
-        (entry for entry in repo_digests or [] if entry.split("@")[0] == repository),
-        None,
-    )
-    if digest is None:
-        raise CliError(f"docker reports no digest for {repository} after the push")
-    step(f"digest: {digest}")
 
 
-def check_log(server_log, max_compiled) -> int:
+def check_log(args) -> int:
+    server_log = args.server_log
     if not server_log.stat().st_size:
         raise CliError(f"{server_log} is empty: it does not show a server start")
     kernels = compiled_kernels(server_log)
-    if len(kernels) <= max_compiled:
-        step(f"compiled kernels: {len(kernels)} (allowed: {max_compiled})")
+    if not kernels:
+        step("compiled kernels: 0")
         return 0
-    step(
-        f"compiled kernels: {len(kernels)}, more than the allowed {max_compiled}; "
-        f"first {min(len(kernels), 20)}:"
-    )
+    step(f"compiled kernels: {len(kernels)}; first {min(len(kernels), 20)}:")
     for kernel in kernels[:20]:
         step(kernel)
     return 1
-
-
-def hugging_face_api():
-    """Hub client; huggingface_hub reads the token from HF_TOKEN itself."""
-    if not os.environ.get("HF_TOKEN"):
-        raise CliError("HF_TOKEN is not set")
-    try:
-        from huggingface_hub import HfApi
-    except ImportError as error:
-        raise CliError("the tt-weights commands need huggingface_hub") from error
-    return HfApi()
-
-
-def file_hash(path: Path, digest=None) -> str:
-    """sha256 of a file, or its hash in the digest given."""
-    digest = digest or hashlib.sha256()
-    with open(path, "rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def logged_cache_directories(server_log: Path, container_root: str) -> list[str]:
@@ -542,10 +470,15 @@ def variant_cache_directories(
     return directories
 
 
-def lora_file(env_vars: dict) -> str | None:
-    """The LoRA file of a model spec, relative to the checkpoint directory; None without one."""
+def minimax_h3_lora_file(env_vars: dict) -> str | None:
+    """The LoRA file of a MiniMax-H3 model spec, relative to the checkpoint directory; None without one.
+
+    The env_vars of another model are refused.
+    """
+    if "MINIMAX_H3_MODEL_PATH" not in env_vars:
+        raise CliError("tt-weights upload supports MiniMax-H3 only")
     lora = PurePosixPath(env_vars.get("MINIMAX_H3_LORA_PATH", ""))
-    model_path = PurePosixPath(env_vars.get("MINIMAX_H3_MODEL_PATH", ""))
+    model_path = PurePosixPath(env_vars["MINIMAX_H3_MODEL_PATH"])
     if not lora.name:
         return None
     if model_path not in lora.parents:
@@ -555,30 +488,32 @@ def lora_file(env_vars: dict) -> str | None:
     return lora.relative_to(model_path).as_posix()
 
 
-def original_subset(
+def minimax_h3_original_subset(
     original_dir: Path, lora: str | None
 ) -> tuple[list[dict], list[str]]:
-    """Path, bytes and sha256 of the ORIGINAL_SUBSET files, and the folders that must exist."""
+    """Path, bytes and sha256 of the MINIMAX_H3_ORIGINAL_SUBSET files, and the folders that must exist."""
     transformers = [
         folder
-        for folder in TRANSFORMER_FOLDERS
+        for folder in MINIMAX_H3_TRANSFORMER_FOLDERS
         if (original_dir / folder / "config.json").is_file()
     ]
-    wanted = [*ORIGINAL_SUBSET, *(f"{folder}/config.json" for folder in transformers)]
-    missing = (
-        []
-        if transformers
-        else [" or ".join(f"{folder}/config.json" for folder in TRANSFORMER_FOLDERS)]
+    wanted = [
+        *MINIMAX_H3_ORIGINAL_SUBSET,
+        *(f"{folder}/config.json" for folder in transformers),
+    ]
+    either_config = " or ".join(
+        f"{folder}/config.json" for folder in MINIMAX_H3_TRANSFORMER_FOLDERS
     )
-    index = original_dir / TEXT_ENCODER_INDEX
+    missing = [] if transformers else [either_config]
+    index = original_dir / MINIMAX_H3_TEXT_ENCODER_INDEX
     if index.is_file():
         shards = {
             shard
             for name, shard in read_json(index).get("weight_map", {}).items()
-            if name.startswith(VISION_TOWER_PREFIX)
+            if name.startswith(MINIMAX_H3_VISION_TOWER_PREFIX)
         }
         if not shards:
-            raise CliError(f"no {VISION_TOWER_PREFIX}* weights in {index}")
+            raise CliError(f"no {MINIMAX_H3_VISION_TOWER_PREFIX}* weights in {index}")
         wanted += [f"text_encoder/{glob.escape(shard)}" for shard in sorted(shards)]
     if lora:
         wanted.append(glob.escape(lora))
@@ -613,7 +548,7 @@ def original_subset(
         }
         for path in sorted(files)
     ]
-    return entries, [*transformers, *ORIGINAL_FOLDERS]
+    return entries, [*transformers, *MINIMAX_H3_REQUIRED_FOLDERS]
 
 
 def downloaded_revision(original_dir: Path, files: list[str]) -> str:
@@ -625,88 +560,6 @@ def downloaded_revision(original_dir: Path, files: list[str]) -> str:
         lines = record.read_text(encoding="utf-8").split() if record.is_file() else []
         revisions.add(lines[0] if lines else "unknown")
     return revisions.pop() if len(revisions) == 1 else "unknown"
-
-
-def published_manifest(api, repo, commit, variant) -> dict | None:
-    """manifests/<variant>.json at a commit of the repo, or None when it has none."""
-    filename = f"{MANIFEST_FOLDER}/{variant}.json"
-    if not api.file_exists(repo_id=repo, filename=filename, revision=commit):
-        return None
-    with tempfile.TemporaryDirectory(prefix="tt-weights-manifest-") as folder:
-        manifest = read_json(
-            api.hf_hub_download(
-                repo_id=repo, filename=filename, revision=commit, local_dir=folder
-            )
-        )
-    manifest_fields(
-        manifest, WEIGHTS_MANIFEST_FIELDS, f"{filename} at {commit} of {repo}"
-    )
-    return manifest
-
-
-def published_files(api, repo, commit) -> dict:
-    """{path: file entry} of every file at a commit of the repo."""
-    return {
-        item.path: item
-        for item in api.list_repo_tree(repo_id=repo, recursive=True, revision=commit)
-        if getattr(item, "size", None) is not None
-    }
-
-
-def published_directory(files: dict, relative: str) -> dict:
-    """{file name: file entry} of the files directly in one cache directory, in a listing of the repo."""
-    folder = f"{TT_WEIGHTS_FOLDER}/{relative}"
-    return {
-        path[len(folder) + 1 :]: item
-        for path, item in files.items()
-        if path.rpartition("/")[0] == folder
-    }
-
-
-def same_content(path: Path, size: int, remote, sha256: str | None = None) -> bool:
-    """True when a file entry of the Hub holds the bytes of the local file.
-
-    The Hub reports a sha256 for a file in large-file storage and a git blob id
-    for any other file.
-    """
-    if remote is None or remote.size != size:
-        return False
-    if remote.lfs:
-        return remote.lfs.sha256 == (sha256 or file_hash(path))
-    return remote.blob_id == file_hash(path, hashlib.sha1(b"blob %d\0" % size))
-
-
-def tensor_sizes(directory: Path) -> dict:
-    """Bytes per file of a cache directory, without its completion marker."""
-    if not directory.is_dir():
-        return {}
-    return {
-        item.name: item.stat().st_size
-        for item in directory.iterdir()
-        if item.is_file() and item.name != CACHE_MARKER
-    }
-
-
-def holds_directory(directory: Path, remote: dict) -> bool:
-    """True when a local cache directory holds exactly the files the Hub lists for it."""
-    local = tensor_sizes(directory)
-    return (
-        bool(remote)
-        and remote.keys() == local.keys()
-        and all(
-            same_content(directory / name, size, remote[name])
-            for name, size in local.items()
-        )
-    )
-
-
-def is_listed_file(path: Path, entry: dict) -> bool:
-    """True when a file has the bytes and sha256 of an original file of a manifest."""
-    return (
-        path.is_file()
-        and path.stat().st_size == entry["bytes"]
-        and file_hash(path) == entry["sha256"]
-    )
 
 
 def differing(files: dict, cache_dir, original_dir, manifest) -> tuple:
@@ -724,7 +577,7 @@ def differing(files: dict, cache_dir, original_dir, manifest) -> tuple:
         if not same_content(
             original_dir / entry["path"],
             entry["bytes"],
-            files.get(f"{ORIGINAL_FOLDER}/{entry['path']}"),
+            files.get(f"{ORIGINAL_SUBSET_FOLDER}/{entry['path']}"),
             entry["sha256"],
         )
     ]
@@ -755,7 +608,8 @@ def upload_plan(
             for entry in other["cache_directories"]
         ]
         paths += [
-            f"{ORIGINAL_FOLDER}/{entry['path']}" for entry in other["original_files"]
+            f"{ORIGINAL_SUBSET_FOLDER}/{entry['path']}"
+            for entry in other["original_files"]
         ]
         for path in paths:
             listed.setdefault(path, set()).add(variant)
@@ -769,7 +623,7 @@ def upload_plan(
         )
     ]
     changed = [f"{TT_WEIGHTS_FOLDER}/{path}" for path in directories]
-    changed += [f"{ORIGINAL_FOLDER}/{path}" for path in originals]
+    changed += [f"{ORIGINAL_SUBSET_FOLDER}/{path}" for path in originals]
     refused = sorted(set(listed).intersection(changed))
     displaced = sorted(set().union(*(listed[path] for path in refused)))
     if refused and not replace_shared:
@@ -787,6 +641,7 @@ def upload_plan(
 def describe_variant(args) -> dict:
     """The manifest of one variant: what its server start used, and where that came from."""
     env_vars = spec_env_values(args.spec_json)
+    lora = minimax_h3_lora_file(env_vars)
     if "TT_DIT_CACHE_DIR" not in env_vars:
         raise CliError(f"no TT_DIT_CACHE_DIR in the env_vars of {args.spec_json}")
     directories = variant_cache_directories(
@@ -800,8 +655,7 @@ def describe_variant(args) -> dict:
             "the cache directory names must carry one mesh shape, found "
             + (", ".join(meshes) or "none")
         )
-    lora = lora_file(env_vars)
-    originals, folders = original_subset(args.original_dir, lora)
+    originals, folders = minimax_h3_original_subset(args.original_dir, lora)
     step(
         f"scan: {len(directories)} cache directories, "
         f"{sum(entry['files'] for entry in directories)} files, "
@@ -828,7 +682,7 @@ def describe_variant(args) -> dict:
     }
 
 
-def upload_tt_weights(api, args) -> None:
+def upload_tt_weights(args) -> None:
     """Publish one variant: its cache directories, its original subset, its manifest and a tag.
 
     The repo holds other variants and they share directories. A path another
@@ -840,10 +694,11 @@ def upload_tt_weights(api, args) -> None:
     have the content of the local ones. A tag that already holds this content is
     reused.
     """
-    repo, revision, variant = args.repo, args.revision, args.variant
+    api = hugging_face_api()
+    repo, variant, branch = args.repo, args.variant, WEIGHTS_BRANCH
     manifest = describe_variant(args)
     directories, originals = manifest["cache_directories"], manifest["original_files"]
-    tag = args.tag or (
+    tag = (
         f"{variant}_src-{manifest['source']['revision'][:8]}"
         f"_mesh{manifest['mesh_shape']}_ttm-{args.tt_metal_sha[:8]}"
     )
@@ -871,31 +726,31 @@ def upload_tt_weights(api, args) -> None:
         step(f"tag: {tag} already holds this content at commit {tags[tag]}")
         commit, manifest = tags[tag], published
     else:
-        api.create_branch(repo_id=repo, branch=revision, exist_ok=True)
+        api.create_branch(repo_id=repo, branch=branch, exist_ok=True)
         local = (args.cache_dir, args.original_dir, manifest)
         send_directories, stale, send_originals, retire = upload_plan(
-            api, repo, revision, *local, args.replace_shared
+            api, repo, branch, *local, args.replace_shared
         )
         for name in retire:
             path = f"{MANIFEST_FOLDER}/{name}.json"
             api.delete_file(
                 path_in_repo=path,
                 repo_id=repo,
-                revision=revision,
+                revision=branch,
                 commit_message=f"Remove {path} until {name} is uploaded",
             )
         displaced = [name for name in retire if name != variant]
         if displaced:
             step(
                 f"replace-shared: removed the manifest of {', '.join(displaced)} "
-                f"from {revision}; upload them again"
+                f"from {branch}; upload them again"
             )
         if send_directories:
             api.upload_folder(
                 repo_id=repo,
                 folder_path=str(args.cache_dir),
                 path_in_repo=TT_WEIGHTS_FOLDER,
-                revision=revision,
+                revision=branch,
                 commit_message=f"Upload converted weights of {variant}",
                 allow_patterns=[f"{glob.escape(path)}/*" for path in send_directories],
                 ignore_patterns=[f"*/{CACHE_MARKER}"],
@@ -905,21 +760,21 @@ def upload_tt_weights(api, args) -> None:
             api.upload_folder(
                 repo_id=repo,
                 folder_path=str(args.original_dir),
-                path_in_repo=ORIGINAL_FOLDER,
-                revision=revision,
+                path_in_repo=ORIGINAL_SUBSET_FOLDER,
+                revision=branch,
                 commit_message=f"Upload original subset of {variant}",
                 allow_patterns=[glob.escape(path) for path in send_originals],
             )
         step(
             f"upload: {len(send_directories)} of {len(directories)} cache directories "
             f"and {len(send_originals)} of {len(originals)} original files to {repo} "
-            f"at {revision}; the Hub already holds the rest"
+            f"at {branch}; the Hub already holds the rest"
         )
         commit = api.upload_file(
             path_or_fileobj=(json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
             path_in_repo=f"{MANIFEST_FOLDER}/{variant}.json",
             repo_id=repo,
-            revision=revision,
+            revision=branch,
         ).oid
         step(f"commit: {commit}")
 
@@ -927,7 +782,7 @@ def upload_tt_weights(api, args) -> None:
         if differ:
             raise CliError(
                 f"commit {commit} of {repo} does not hold the local files in "
-                f"{', '.join(differ)}: something else changed {revision} during "
+                f"{', '.join(differ)}: something else changed {branch} during "
                 "the upload. Nothing was tagged; run the upload again."
             )
         api.create_tag(repo_id=repo, tag=tag, revision=commit)
@@ -939,152 +794,14 @@ def upload_tt_weights(api, args) -> None:
     step(f"manifest: {args.manifest_out}")
 
 
-@contextlib.contextmanager
-def exclusive(directory: Path):
-    """Hold a download destination; a second download into it at the same time is refused."""
-    directory.mkdir(parents=True, exist_ok=True)
-    lock = os.open(directory, os.O_RDONLY)
-    try:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise CliError(
-                f"another download is writing to {directory}; run this one after it"
-            ) from error
-        yield
-    finally:
-        os.close(lock)
-
-
-def download_tt_weights(
-    api, repo, revision, variant, dest_cache, dest_original
-) -> None:
-    """Fetch what manifests/<variant>.json of a revision lists and mark what was verified.
-
-    What the destination already holds with the content of that revision is
-    kept as it is, marker included: it is not fetched again, and a variant that
-    shares it keeps working if this download fails. The markers of the other
-    cache directories are removed first, so a download that stops part way
-    leaves none of them looking complete. The files are checked in a staging
-    folder before any of them is moved into place. A failed run keeps that
-    folder, and the next run for the same commit continues from it.
-    """
-    commit = api.model_info(repo_id=repo, revision=revision).sha
-    step(f"revision: {revision} is commit {commit}")
-
-    manifest = published_manifest(api, repo, commit, variant)
-    if manifest is None:
-        raise CliError(
-            f"{repo} has no {MANIFEST_FOLDER}/{variant}.json at {revision}: the "
-            "variant is not published there, or an upload of it did not finish. "
-            "Use the tag or commit of a release file."
-        )
-    listed, listed_files = manifest["cache_directories"], manifest["original_files"]
-    folders = manifest["original_folders"]
-    for path in [entry["path"] for entry in listed + listed_files] + folders:
-        relative = PurePosixPath(path)
-        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-            raise CliError(f"unsafe path in the manifest: {path}")
-    step(
-        f"manifest: {len(listed)} cache directories, "
-        f"{sum(entry['files'] for entry in listed)} files, "
-        f"{gigabytes(sum(entry['bytes'] for entry in listed))}; "
-        f"{len(listed_files)} original files"
-    )
-
-    files = published_files(api, repo, commit)
-    directories = [
-        entry
-        for entry in listed
-        if not holds_directory(
-            dest_cache / entry["path"], published_directory(files, entry["path"])
-        )
-    ]
-    originals = [
-        entry
-        for entry in listed_files
-        if not is_listed_file(dest_original / entry["path"], entry)
-    ]
-    step(
-        f"keep: {len(listed) - len(directories)} cache directories and "
-        f"{len(listed_files) - len(originals)} original files that the destination "
-        "already holds as they are at this commit"
-    )
-
-    markers = [dest_cache / entry["path"] / CACHE_MARKER for entry in directories]
-    for marker in markers:
-        marker.unlink(missing_ok=True)
-    step(f"unmark: {len(markers)} directories in {dest_cache} until they are verified")
-
-    staging = dest_cache / TT_WEIGHTS_STAGING / commit
-    if staging.parent.exists() and not staging.is_dir():
-        shutil.rmtree(staging.parent)
-    patterns = [
-        f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/*" for entry in directories
-    ] + [f"{ORIGINAL_FOLDER}/{glob.escape(entry['path'])}" for entry in originals]
-    if patterns:
-        api.snapshot_download(
-            repo_id=repo,
-            revision=commit,
-            allow_patterns=patterns,
-            local_dir=str(staging),
-        )
-    step(f"download: {variant} of {repo} into {staging}")
-
-    staged = [staging / TT_WEIGHTS_FOLDER / entry["path"] for entry in directories]
-    mismatches = []
-    for entry, source, marker in zip(directories, staged, markers):
-        sizes = tensor_sizes(source)
-        other = sorted(set(tensor_sizes(marker.parent)) - set(sizes))
-        if (len(sizes), sum(sizes.values())) != (entry["files"], entry["bytes"]):
-            mismatches.append(
-                f"{entry['path']}: {len(sizes)} files, {sum(sizes.values())} bytes; "
-                f"the manifest says {entry['files']} files, {entry['bytes']} bytes"
-            )
-        elif other:
-            mismatches.append(
-                f"{entry['path']}: the destination holds {len(other)} file(s) "
-                f"that are not in the manifest, for example {other[0]}"
-            )
-    for entry in originals:
-        if not is_listed_file(staging / ORIGINAL_FOLDER / entry["path"], entry):
-            mismatches.append(f"{entry['path']}: not the file the manifest lists")
-    if mismatches:
-        raise CliError(
-            f"the download was not applied: nothing was moved into {dest_cache} or "
-            f"{dest_original} and no directory is marked complete:\n  "
-            + "\n  ".join(mismatches)
-        )
-    step(
-        f"verify: {len(directories)} cache directories and {len(originals)} "
-        "original files match the manifest"
-    )
-
-    for source, marker in zip(staged, markers):
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        for name in tensor_sizes(source):
-            os.replace(source / name, marker.parent / name)
-    for entry in originals:
-        target = dest_original / entry["path"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(staging / ORIGINAL_FOLDER / entry["path"], target)
-    for folder in folders:
-        (dest_original / folder).mkdir(parents=True, exist_ok=True)
-    for entry in listed:
-        (dest_cache / entry["path"] / CACHE_MARKER).touch()
-    shutil.rmtree(staging.parent, ignore_errors=True)
-    step(f"mark: {len(listed)} directories complete in {dest_cache}")
-
-
-def write_release_hash(args) -> None:
+def write_release_file(args) -> None:
     kernel = read_json(args.kernel_manifest)
     if kernel["base_image"] != args.base_image:
         raise CliError(
             f"the kernel manifest was made for base image {kernel['base_image']}, "
             f"not {args.base_image}"
         )
-    constants = kernel_cache_constants()
-    kernel_cache_env = {constants.KERNEL_CACHE_ENV: kernel["kernel_cache_path"]}
+    kernel_cache_env = {KERNEL_CACHE_ENV: kernel["kernel_cache_path"]}
     kernel_cache_env.update(
         {
             name: value
@@ -1132,7 +849,7 @@ def write_release_hash(args) -> None:
             },
             "kernel_cache": {
                 "path": kernel["kernel_cache_path"],
-                "manifest_in_image": constants.KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
+                "manifest_in_image": KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
                 "env": kernel_cache_env,
                 "build_keys": kernel["build_keys"],
                 "kernel_hash_dirs": kernel["kernel_hash_dirs"],
@@ -1145,23 +862,7 @@ def write_release_hash(args) -> None:
         },
     )
     step(f"release-hash: {release_hash}")
-    step(f"release: {args.out}")
-
-
-def path_argument(value: str) -> Path:
-    """A path option. An empty value would otherwise mean the current directory."""
-    if not value.strip():
-        raise argparse.ArgumentTypeError("the path is empty")
-    return Path(value)
-
-
-def variant_argument(value: str) -> str:
-    """A variant slug. It names the manifest of the variant and starts its tag."""
-    if not VARIANT_SLUG.fullmatch(value):
-        raise argparse.ArgumentTypeError(
-            "a variant is a lowercase slug such as minimax-h3-fl2va-lightx2v"
-        )
-    return value
+    step(f"release file: {args.out}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1184,6 +885,7 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--env-file", type=path_argument)
     manifest.add_argument("--spec-json", type=path_argument)
     manifest.add_argument("--out", type=path_argument, required=True)
+    manifest.set_defaults(func=kernel_cache_manifest)
 
     build_image = kernel_cache.add_parser(
         "build-image", help="add a captured kernel cache to the image it came from"
@@ -1192,13 +894,13 @@ def build_parser() -> argparse.ArgumentParser:
     build_image.add_argument("--cache-dir", type=path_argument, required=True)
     build_image.add_argument("--manifest", type=path_argument, required=True)
     build_image.add_argument("--tag", required=True)
-    build_image.add_argument("--push", action="store_true")
+    build_image.set_defaults(func=build_kernel_cache_image)
 
     check = kernel_cache.add_parser(
         "check-log", help="fail when a server start compiled kernels"
     )
     check.add_argument("--server-log", type=path_argument, required=True)
-    check.add_argument("--max-compiled", type=int, default=0)
+    check.set_defaults(func=check_log)
 
     tt_weights = commands.add_parser(
         "tt-weights", help="converted weights, in a Hugging Face repo"
@@ -1213,25 +915,15 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--server-log", type=path_argument, required=True)
     upload.add_argument("--spec-json", type=path_argument, required=True)
     upload.add_argument("--repo", required=True)
-    upload.add_argument("--revision", default="main")
     upload.add_argument("--tt-metal-sha", required=True)
     upload.add_argument("--server-sha", required=True)
     upload.add_argument("--source-revision")
-    upload.add_argument("--tag")
     upload.add_argument("--replace-shared", action="store_true")
     upload.add_argument("--manifest-out", type=path_argument, required=True)
-
-    download = tt_weights.add_parser(
-        "download", help="fetch and verify what one model variant needs"
-    )
-    download.add_argument("--repo", required=True)
-    download.add_argument("--revision", required=True)
-    download.add_argument("--variant", type=variant_argument, required=True)
-    download.add_argument("--dest-cache", type=path_argument, required=True)
-    download.add_argument("--dest-original", type=path_argument, required=True)
+    upload.set_defaults(func=upload_tt_weights)
 
     release = commands.add_parser(
-        "release-hash", help="write the file handed to the deployment team"
+        "release-file", help="write the file handed to the deployment team"
     )
     release.add_argument("--base-image", required=True)
     release.add_argument("--image", required=True)
@@ -1245,55 +937,14 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--warm-ready-seconds", type=float)
     release.add_argument("--run-url")
     release.add_argument("--out", type=path_argument, required=True)
+    release.set_defaults(func=write_release_file)
     return parser
 
 
-def run(args, docker_run, hf_api) -> int:
-    if args.command == "release-hash":
-        write_release_hash(args)
-    elif args.command == "kernel-cache":
-        if args.action == "manifest":
-            kernel_cache_manifest(
-                docker_run,
-                args.cache_dir,
-                args.server_log,
-                args.base_image,
-                args.env_file,
-                args.spec_json,
-                args.out,
-            )
-        elif args.action == "build-image":
-            build_kernel_cache_image(
-                docker_run,
-                args.base_image,
-                args.cache_dir,
-                args.manifest,
-                args.tag,
-                args.push,
-            )
-        else:
-            return check_log(args.server_log, args.max_compiled)
-    else:
-        api = hf_api or hugging_face_api()
-        if args.action == "upload":
-            upload_tt_weights(api, args)
-        else:
-            with exclusive(args.dest_cache):
-                download_tt_weights(
-                    api,
-                    args.repo,
-                    args.revision,
-                    args.variant,
-                    args.dest_cache,
-                    args.dest_original,
-                )
-    return 0
-
-
-def main(argv=None, docker_run=subprocess.run, hf_api=None) -> int:
+def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return run(args, docker_run, hf_api)
+        return args.func(args) or 0
     except CliError as error:
         print(f"error: {error}", file=sys.stderr)
     except OSError as error:
