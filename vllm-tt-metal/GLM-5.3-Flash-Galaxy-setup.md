@@ -100,6 +100,23 @@ conversations' next turns prefill again elsewhere.
 Every production server runs a read-only sidecar, `glm_manifest.py` (a Python 3 standard-library script), in its own
 tmux session on port 8001. It serves `/manifest` (JSON) and `/manifest.md`, which name the code the server runs (repo,
 branch, commit, binary hashes), its uptime and live stats, and a scorecard against the regen spec it is linked to
-(`models/glm-5.3-flash/openrouter/spec.yaml` in tenstorrent/tt-regen-spec). The spec file is refreshed from GitHub on a
-machine with credentials and copied over, never fetched by the server itself. The sidecar only reads: it does not touch
+(`models/glm-5.3-flash/openrouter/spec.yaml` in tenstorrent/tt-regen-spec). The sidecar only reads: it does not touch
 the serve, the chips or the router.
+
+The tool is in [tenstorrent/regen-glm5.3-flash, branch glm-5.3-flash-galaxy](https://github.com/tenstorrent/regen-glm5.3-flash/tree/glm-5.3-flash-galaxy)
+under [`tools/cluster/glx-manifest/`](https://github.com/tenstorrent/regen-glm5.3-flash/tree/glm-5.3-flash-galaxy/tools/cluster/glx-manifest): `glm_manifest.py`,
+`glm-manifest-ctl.sh` (start, stop, restart, status), `glm-manifest` (query client), `glm-manifest-spec-update`,
+`write-provenance.sh`, `glm-manifest.conf.example` and `tests/`. Its design is in
+[`notes/glm-glx-manifest.md`](https://github.com/tenstorrent/regen-glm5.3-flash/blob/glm-5.3-flash-galaxy/notes/glm-glx-manifest.md) on that branch.
+
+Quick start, on each server:
+
+```
+cp glm-manifest.conf.example glm-manifest.conf   # set HOST_NAME, BIND (the host's own address), SERVE_URL, the dirs
+./glm-manifest-ctl.sh start                       # tmux session glm-manifest; then GET http://<BIND>:8001/manifest or /manifest.md
+```
+
+The spec copy goes in `<MANIFEST_DIR>/spec/` (`spec.yaml` plus `spec.meta.json`). The servers hold no GitHub
+credentials: `glm-manifest-spec-update` refreshes the copy from GitHub on a machine where `gh` works and installs it on
+the servers; the sidecar re-reads it without a restart. The fleet configuration (host names and addresses) is local to
+the operator and not published: recreate it from `glm-manifest.conf.example`.
