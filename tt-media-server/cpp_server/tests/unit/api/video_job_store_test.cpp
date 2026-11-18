@@ -144,6 +144,30 @@ TEST(VideoJobStoreTest, MarkInProgressDoesNotOverrideCancel) {
   EXPECT_EQ(statusOf(*store.get(6)), "cancelling");
 }
 
+// The in-process runner takes a task from its queue only if the job is still
+// wanted: a cancel that landed before the task was enqueued must not start a
+// multi-minute generation.
+TEST(VideoJobStoreTest, ClaimForRunRefusesAJobCancelledBeforeTheEnqueue) {
+  VideoJobStore store(10, 0);
+  store.create(10, "tt-wan2.2", params("queued"));
+  EXPECT_TRUE(store.claimForRun(10));
+  EXPECT_EQ(statusOf(*store.get(10)), "in_progress");
+  EXPECT_TRUE(store.claimForRun(10));  // already running: still true
+
+  store.create(11, "tt-wan2.2", params("cancelled first"));
+  ASSERT_TRUE(store.cancel(11).has_value());  // between create and enqueue
+  EXPECT_FALSE(store.claimForRun(11));
+  EXPECT_EQ(statusOf(*store.get(11)), "cancelled");
+
+  store.create(12, "tt-wan2.2", params("done"));
+  store.markInProgress(12);
+  store.complete(12, "", "boom");
+  EXPECT_FALSE(store.claimForRun(12));  // terminal: nothing to run
+
+  // A synchronous request has no job record and always runs.
+  EXPECT_TRUE(store.claimForRun(99));
+}
+
 TEST(VideoJobStoreTest, FailedCompletionKeepsTheFileOffTheResultPath) {
   VideoJobStore store(10, 0);
   const auto clip = tempClip("failed");

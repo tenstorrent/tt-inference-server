@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -19,6 +21,7 @@
 #include "domain/video/video_response.hpp"
 #include "domain/video_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
+#include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/request_pipeline.hpp"
 #include "services/video_job_store.hpp"
@@ -31,7 +34,15 @@ namespace tt::services {
  * returns the job metadata (id, status=queued) immediately; the client polls
  * `getJob` until `completed` and then downloads the mp4 via `resultPath`.
  * The device runner opens the chip, runs the Python DiT model selected by
- * MODEL_RUNNER, and the JSON `video_path` is the mp4 written for that job. */
+ * MODEL_RUNNER, and the JSON `video_path` is the mp4 written for that job.
+ *
+ * Two ways to run the device runner:
+ *  - worker process(es) (several DEVICE_IDS groups, or a multihost launch):
+ *    tasks travel through the shared-memory queue as described above;
+ *  - in process (one DEVICE_IDS group): the runner lives on a thread of this
+ *    server process and the queue is a plain deque in memory. No shared
+ *    memory, no request/response files, no second process. A cancelled job that
+ *    is still queued is removed from the deque. Chosen by `useInProcess()`. */
 class VideoService
     : public BaseAsyncService<domain::VideoGenerateRequest,
                               domain::video::VideoResponse,
@@ -41,7 +52,26 @@ class VideoService
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
                std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
                    queueManager);
+  /** In-process mode: no WorkerManager, no shared-memory queues. The runner is
+   *  created and warmed up on the service's own thread (start()). */
+  explicit VideoService(config::VideoConfig config);
   ~VideoService() override;
+
+  /** True when the service should run in process: TT_VIDEO_IN_PROCESS=1, or
+   *  not set and there is a single worker (one DEVICE_IDS group) on a launch
+   *  that is not multihost. TT_VIDEO_IN_PROCESS=0 keeps the worker process.
+   *  Throws std::runtime_error for =1 with several workers or on multihost. */
+  static bool useInProcess();
+
+  void start() override;
+  void stop() override;
+  bool isModelReady() const override;
+  bool hasFatalError() const override;
+
+  /** Same as the base class, plus the in-process queue. Used by the sync
+   *  (`?async=false`) endpoint. */
+  void submitRequestAsync(domain::VideoGenerateRequest request,
+                          Callback onComplete);
 
   std::string runnerInUse() const override;
   std::string servedModelName() const;
@@ -86,6 +116,8 @@ class VideoService
                        std::chrono::steady_clock::time_point gotResultTime,
                        std::chrono::steady_clock::time_point doneTime) override;
   void onStopped() override;
+  size_t currentQueueSize() const override;
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
   std::string payloadPath(uint32_t taskId, const char* prefix) const;
@@ -115,6 +147,36 @@ class VideoService
   std::mutex sweeperMutex_;
   std::condition_variable sweeperCv_;
   bool sweeperStop_ = false;
+
+  // ---- in-process mode (inProcess_) ----------------------------------------
+  struct InProcessTask {
+    domain::VideoGenerateRequest request;
+    Callback onComplete;
+    std::chrono::steady_clock::time_point submitTime;
+  };
+  void enqueueInProcess(domain::VideoGenerateRequest request,
+                        Callback onComplete);
+  void inProcessLoop();
+  void serveInProcessTask(InProcessTask& task);
+  void failQueuedInProcess(const std::string& error);
+  domain::video::VideoResponse runInProcessTask(const InProcessTask& task);
+
+  bool inProcess_ = false;
+  std::unique_ptr<
+      tt::runners::IMediaRunner<domain::VideoGenerateRequest, std::string>>
+      inRunner_;
+  std::thread inThread_;
+  mutable std::mutex inMutex_;  // guards inQueue_, inRunning_, inStop_
+  std::condition_variable inCv_;
+  std::deque<InProcessTask> inQueue_;
+  std::optional<uint32_t> inRunning_;  // task the runner is working on
+  bool inStop_ = false;
+  bool inStarted_ = false;
+  std::atomic<bool> inReady_{false};
+  std::atomic<bool> inFailed_{false};
+  std::atomic<bool> inLoopExited_{false};
+  mutable std::mutex inFailureMutex_;
+  std::string inFailureReason_;
 };
 
 }  // namespace tt::services
