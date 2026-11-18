@@ -26,3 +26,4 @@ Rules:
 | Date | Document |
 |---|---|
 | 2026-11-14 | [The server cannot open the device without `tt-smi -r` (`run_mailbox` error)](2026-11-14-device-reset-problem.md) |
+| 2026-11-17 | [C++ runner layer for all dit_runners models (T3K, Wan2.2)](2026-11-17-video-cpp-runner-layer-real-device.md) | runner classes, mesh/fabric, validation, mp4 export and multihost lockstep in C++, Python only as `tt_dit` adapters: on the device same warmup (101 s), same generation time, mp4 byte-identical to the Python runner; C++ 29/29 + 63/63, adapters 18/18, mock 15/15 |
