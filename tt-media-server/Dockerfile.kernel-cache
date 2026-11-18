@@ -15,12 +15,13 @@
 # the tree goes to the capture path and TT_METAL_CACHE points there. tt-metal
 # writes into the cache on every start, so the tree belongs to the image user.
 # The server runs as container_app_user or as root; both can write to the tree.
+# The fixed mode keeps the tree read-only for other users under any build umask.
 # User, entrypoint and cmd come from the base image.
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-COPY --chown=container_app_user:container_app_user kernel_cache/ /home/container_app_user/tt_metal_kernel_cache/
+COPY --chown=container_app_user:container_app_user --chmod=755 kernel_cache/ /home/container_app_user/tt_metal_kernel_cache/
 COPY --chmod=644 kernel_cache_manifest.json /home/container_app_user/kernel_cache_manifest.json
 # Downloads the converted weights of a model variant. It runs alone, with the
 # Python environment of the image.

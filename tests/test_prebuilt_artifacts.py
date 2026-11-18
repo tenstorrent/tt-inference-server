@@ -269,8 +269,14 @@ def test_build_image_stages_cache_files_and_bakes_set_variables(
         f"kernel_cache/{path}": data for path, data in IMAGE_FILES.items()
     }
     assert dockerfile.startswith(KERNEL_CACHE_DOCKERFILE.read_text())
-    for path in (KERNEL_CACHE_MANIFEST_CONTAINER_PATH, DOWNLOAD_SCRIPT_IN_IMAGE):
-        assert path in dockerfile
+    owned = "--chown=container_app_user:container_app_user --chmod=755"
+    manifest_in_image = KERNEL_CACHE_MANIFEST_CONTAINER_PATH
+    copy_lines = [line for line in dockerfile.splitlines() if line.startswith("COPY ")]
+    assert copy_lines == [
+        f"COPY {owned} kernel_cache/ {KERNEL_CACHE_CONTAINER_DIR}/",
+        f"COPY --chmod=644 kernel_cache_manifest.json {manifest_in_image}",
+        f"COPY --chmod=755 tt_weights_download.py {DOWNLOAD_SCRIPT_IN_IMAGE}",
+    ]
     baked = [f'ENV {name}="{value}"' for name, value in SET_VARIABLES.items()]
     env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
     assert env_lines == [f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}", *baked]
