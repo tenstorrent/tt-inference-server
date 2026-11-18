@@ -40,26 +40,15 @@ templates:
       # completions endpoint has no chat parsing (vllm-project/vllm#59254 fixes the parser in vLLM 0.32).
       benchmark_endpoint: completions
       env_vars:
-        # Accuracy (tt-metal models/demos/gpt_oss): the MXFP4 experts on the device's bfloat4_b grid lose GPQA
-        # (129/198 against the GPU reference's 72.8%). Offline GPTQ-rounded weights (Hub, pinned revisions) at the same
-        # bytes, exact MXFP4 (4-bit + 2-bit split) for each token's top-1 routed expert in 6 layers, RMSNorm / RoPE /
-        # prefill precision fixes; with the two decode speedups below, decode runs at or above the plain build's speed.
+        # Accuracy: tt-metal turns gpt-oss-20b's release settings on by default (models/demos/gpt_oss/__init__.py,
+        # RELEASE_DEFAULTS_20B): K-GPTQ-rounded experts for decode and prefill and GPTQ-rounded dense weights (Hub,
+        # pinned revisions), exact MXFP4 for the top-1 routed expert in 6 layers, RMSNorm / RoPE / prefill precision
+        # fixes and the two decode speedups (without them GPQA scores 129/198, against the GPU reference's 72.8%).
+        # The settings passed GPQA on QuietBox 2 as this entry's previous GPT_OSS_* variables; the K-GPTQ prefill
+        # experts that replace GPT_OSS_PREFILL_BF4_ROUNDED have not been through GPQA yet. They need a tt-metal with
+        # those defaults (jerrywangTT/gptoss20b-qb2-release 6af4d4df or later); an older one needs the previous
+        # revision's variables.
         GPT_OSS_FORCE_MODEL_LOAD: 1  # the weight-cache marker does not record these settings: load and pack every start
-        GPT_OSS_DECODE_BF4_ROUNDED: "hf://jerrywangTT/gpt-oss-20b-p150-gptq-experts@de25c21b074ca7bf7f55b1ec887579a350704fcf"
-        GPT_OSS_PREFILL_BF4_ROUNDED: 1
-        GPT_OSS_DENSE_ROUNDED_DECODE: "hf://jerrywangTT/gpt-oss-20b-qb2-kgptq@110a7d8d43e2a0ec9ac12bea3f6b681e2c2d0961/dense/dense_gptq_device.pt"
-        GPT_OSS_BOUNDARY_FIDELITY: HiFi3
-        GPT_OSS_PREFILL_NORM_FP32: 1
-        GPT_OSS_PREFILL_RESIDUAL_BF16: 1
-        GPT_OSS_QKV_ROPE_EXACT: 2
-        GPT_OSS_DECODE_EXPERTS_SPLIT: 1
-        GPT_OSS_DECODE_SPLIT_RANKS: "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,1,0,1,1"  # top-1 exact in layers 15, 17, 19, 20, 22, 23
-        GPT_OSS_DECODE_SPLIT_ROUND_DIR: "hf://jerrywangTT/gpt-oss-20b-qb2-kgptq@110a7d8d43e2a0ec9ac12bea3f6b681e2c2d0961/kgptq_experts"
-        GPT_OSS_DECODE_SPLIT_ROUND_ONLY: 1
-        GPT_OSS_DECODE_SPLIT_NATIVE: 1
-        GPT_OSS_DECODE_SPLIT_NATIVE_FOLD: 1
-        GPT_OSS_DECODE_BOUNDARY_EARLY_SUM: 1
-        GPT_OSS_DECODE_ROUTER_FAST_TOPK: 1
       override_tt_config:
         # the device settings of models/demos/gpt_oss/demo/text_demo.py on QuietBox 2 (tests/test_factory.py)
         fabric_config: FABRIC_1D_RING
