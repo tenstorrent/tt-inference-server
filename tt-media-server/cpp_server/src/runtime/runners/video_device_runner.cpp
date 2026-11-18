@@ -3,6 +3,7 @@
 
 #include "runtime/runners/video_device_runner.hpp"
 
+#include <json/json.h>
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
@@ -12,8 +13,10 @@
 #include <string>
 #include <system_error>
 #include <utility>
-#include <vector>
 
+#include "runtime/dit/dit_env.hpp"
+#include "runtime/dit/dit_python_runner.hpp"
+#include "runtime/runners/video_python_env.hpp"
 #include "utils/logger.hpp"
 #include "utils/video_output_dir.hpp"
 
@@ -22,26 +25,6 @@ namespace py = pybind11;
 namespace tt::runners {
 
 namespace {
-
-void setEnv(const char* key, const std::string& value) {
-  if (value.empty()) return;
-  ::setenv(key, value.c_str(), 1);
-}
-
-// Python VideoManager reads TT_VIDEO_OUTPUT_DIR once, at import. The binary
-// lives in cpp_server/build, so the sibling videos directory is
-// cpp_server/videos.
-void setVideoOutputDir() {
-  if (const char* existing = std::getenv("TT_VIDEO_OUTPUT_DIR")) {
-    if (*existing) return;
-  }
-  namespace fs = std::filesystem;
-  std::error_code ec;
-  const fs::path dir = tt::utils::resolveVideoOutputDir();
-  fs::create_directories(dir, ec);
-  setEnv("TT_VIDEO_OUTPUT_DIR", dir.string());
-  TT_LOG_INFO("[VideoDevice] Video output directory: {}", dir.string());
-}
 
 // tt_dit keeps converted weights in TT_DIT_CACHE_DIR: the first start fills it,
 // later starts load from it instead of re-reading and re-converting every HF
@@ -73,114 +56,17 @@ void setDitCacheDir() {
         dir.string(), ec.message());
     return;
   }
-  setEnv("TT_DIT_CACHE_DIR", dir.string());
+  tt::dit::setEnvIfChanged("TT_DIT_CACHE_DIR", dir.string());
   TT_LOG_INFO("[VideoDevice] tt_dit weight cache: {}", dir.string());
 }
 
-void prependEntry(py::list sysPath, const std::string& value) {
-  if (value.empty()) return;
-  for (const auto& entry : sysPath) {
-    if (py::str(entry).cast<std::string>() == value) return;
-  }
-  sysPath.attr("insert")(0, py::str(value));
-}
-
-void prependSysPath(const char* envName) {
-  const char* value = std::getenv(envName);
-  if (!value || !*value) return;
-  prependEntry(py::module_::import("sys").attr("path"), value);
-}
-
-// The embedded interpreter does not pick up the shell PYTHONPATH, and a raw
-// sys.path insert does not run .pth files. ttnn is an editable install: its
-// .pth file maps the package onto the tt-metal checkout. site.addsitedir
-// processes those files the same way the metal virtualenv does.
-void addMetalSitePackages() {
-  const char* metalHome = std::getenv("TT_METAL_HOME");
-  if (!metalHome || !*metalHome) return;
-  namespace fs = std::filesystem;
-  const fs::path libDir = fs::path(metalHome) / "python_env" / "lib";
-  std::error_code ec;
-  if (!fs::is_directory(libDir, ec)) return;
-  py::module_ site = py::module_::import("site");
-  for (const fs::directory_entry& child : fs::directory_iterator(libDir, ec)) {
-    if (ec) return;
-    const std::string name = child.path().filename().string();
-    if (name.rfind("python", 0) != 0) continue;
-    const fs::path sitePackages = child.path() / "site-packages";
-    if (!fs::is_directory(sitePackages, ec)) continue;
-    site.attr("addsitedir")(sitePackages.string());
-    TT_LOG_INFO("[VideoDevice] Added metal site-packages: {}",
-                sitePackages.string());
-  }
-}
-
-void preparePythonPath() {
-  const char* pythonPath = std::getenv("TT_PYTHON_PATH");
-  const char* metalHome = std::getenv("TT_METAL_HOME");
-  if (!pythonPath || !*pythonPath) {
-    throw std::runtime_error(
-        "[VideoDevice] TT_PYTHON_PATH is not set. Point it at the "
-        "tt-media-server directory.");
-  }
-  if (!metalHome || !*metalHome) {
-    throw std::runtime_error(
-        "[VideoDevice] TT_METAL_HOME is not set. Point it at the tt-metal "
-        "checkout.");
-  }
-  prependSysPath("TT_METAL_HOME");
-  prependSysPath("TT_PYTHON_PATH");
-  addMetalSitePackages();
-}
-
-py::object buildPythonRequest(const tt::domain::VideoGenerateRequest& request) {
-  py::module_ domain = py::module_::import("domain.video_generate_request");
-  py::dict fields;
-  fields["prompt"] = request.prompt;
-  if (request.negativePrompt) {
-    fields["negative_prompt"] = *request.negativePrompt;
-  }
-  if (request.numInferenceSteps) {
-    fields["num_inference_steps"] = *request.numInferenceSteps;
-  }
-  if (request.seed) fields["seed"] = *request.seed;
-  if (request.aspectRatio) fields["aspect_ratio"] = *request.aspectRatio;
-  if (request.height) fields["height"] = *request.height;
-  if (request.width) fields["width"] = *request.width;
-  if (request.fps) fields["fps"] = *request.fps;
-  if (request.duration) fields["duration"] = *request.duration;
-  if (request.numFrames) fields["num_frames"] = *request.numFrames;
-  return domain.attr("VideoGenerateRequest")(**fields);
-}
-
-std::string materializeVideo(const py::object& result, int fps) {
-  if (result.is_none()) {
-    throw std::runtime_error("[VideoDevice] runner returned no frames");
-  }
-  if (py::isinstance<py::str>(result)) {
-    return result.cast<std::string>();
-  }
-
-  py::module_ videoManager = py::module_::import("utils.video_manager");
-  py::object manager = videoManager.attr("VideoManager")();
-  py::object audioResult = videoManager.attr("VideoAudioResult");
-  if (py::isinstance(result, audioResult)) {
-    return manager
-        .attr("export_to_mp4_with_audio")(
-            result.attr("frames"), result.attr("audio"),
-            result.attr("sampling_rate"), py::arg("fps") = result.attr("fps"),
-            py::arg("pixel_format") = result.attr("pixel_format"))
-        .cast<std::string>();
-  }
-
-  py::object frames = result;
-  if (py::isinstance<py::list>(frames) || py::isinstance<py::tuple>(frames)) {
-    if (py::len(frames) == 0) {
-      throw std::runtime_error("[VideoDevice] runner returned an empty batch");
-    }
-    frames = frames[py::int_(0)];
-  }
-  return manager.attr("export_to_mp4")(frames, fps).cast<std::string>();
+// The server's request as the runner's own type, through its JSON: every field
+// the server accepted (image_prompts and references included) reaches the
+// model unchanged.
+tt::dit::DiTRequest toDiTRequest(const tt::domain::VideoGenerateRequest& r) {
+  Json::Value json = r.toJson();
+  json["task_id"] = std::to_string(r.task_id);
+  return tt::dit::DiTRequest::fromJson(json);
 }
 
 std::string requireMp4(const std::string& path) {
@@ -193,11 +79,37 @@ std::string requireMp4(const std::string& path) {
   return path;
 }
 
+// The runner for cfg.pythonRunner with its mesh open (wrapped for lockstep on a
+// multihost launch). The caller stores it before warmup() so that stop() closes
+// the mesh if warmup throws.
+tt::dit::RunnerConfig runnerConfigOf(const config::VideoConfig& cfg) {
+  tt::dit::RunnerConfig runnerConfig;
+  runnerConfig.modelRunner = cfg.pythonRunner;
+  runnerConfig.device = cfg.device;
+  runnerConfig.modelWeightsPath = cfg.model_weights_path;
+  runnerConfig.outputDir = tt::utils::resolveVideoOutputDir().string();
+  runnerConfig.workerId = cfg.worker_id;
+  return runnerConfig;
+}
+
+std::unique_ptr<tt::dit::IDiTRunner> makeRunner(
+    const config::VideoConfig& cfg) {
+  prepareVideoPythonPath();
+  const tt::dit::RunnerConfig runnerConfig = runnerConfigOf(cfg);
+  if (const auto model = tt::dit::createModel(runnerConfig);
+      model->outputKind() != tt::dit::OutputKind::Video) {
+    throw std::runtime_error("[VideoDevice] MODEL_RUNNER=" + cfg.pythonRunner +
+                             " is an image model; the video service serves "
+                             "video models");
+  }
+  return tt::dit::createOpenRunner(runnerConfig);
+}
+
 }  // namespace
 
 struct VideoDeviceRunner::PythonState {
-  py::object runner;
-  py::object loop;
+  // A DiTRunner, or its multihost LockstepRunner wrapper.
+  std::unique_ptr<tt::dit::IDiTRunner> runner;
 };
 
 VideoDeviceRunner::VideoDeviceRunner(config::VideoConfig config)
@@ -207,29 +119,33 @@ VideoDeviceRunner::VideoDeviceRunner(config::VideoConfig config)
         "[VideoDevice] pythonRunner is empty. Set MODEL_RUNNER, for example "
         "tt-wan2.2.");
   }
-  setVideoOutputDir();
-  setDitCacheDir();
-  setEnv("MODEL_SERVICE", "video");
-  setEnv("MODEL_RUNNER", videoConfig.pythonRunner);
-  setEnv("TT_VISIBLE_DEVICES", videoConfig.visible_devices);
-  // Leave DEVICE_MESH_SHAPE unset. Python settings resolves the mesh from
-  // MODEL and DEVICE; the C++ default "1,1" is not a tuple and pydantic
-  // rejects it.
-  if (const char* mesh = std::getenv("DEVICE_MESH_SHAPE")) {
-    ::unsetenv("DEVICE_MESH_SHAPE");
-    TT_LOG_INFO(
-        "[VideoDevice] Ignored DEVICE_MESH_SHAPE='{}'; Python settings "
-        "chooses the mesh",
-        mesh);
-  }
-  setEnv("MODEL_WEIGHTS_PATH", videoConfig.model_weights_path);
-  setEnv("DEVICE", videoConfig.device);
-  setEnv("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS",
-         std::to_string(videoConfig.weights_distribution_timeout_seconds));
+  prepareProcessEnvironment(videoConfig);
   TT_LOG_INFO(
-      "[VideoDevice] Constructed worker={} runner={} devices='{}' weights='{}'",
-      videoConfig.worker_id, videoConfig.pythonRunner,
+      "[VideoDevice] Constructed worker={} runner={} device={} devices='{}' "
+      "weights='{}'",
+      videoConfig.worker_id, videoConfig.pythonRunner, videoConfig.device,
       videoConfig.visible_devices, videoConfig.model_weights_path);
+}
+
+// Everything the runner puts into the process environment. In a worker process
+// the constructor does it; when the runner lives on a thread of the server,
+// VideoService calls this from the main thread before the runner thread and the
+// HTTP threads exist, because setenv() racing a getenv() is undefined. The
+// calls the runner thread makes later then change nothing.
+void VideoDeviceRunner::prepareProcessEnvironment(
+    const config::VideoConfig& cfg) {
+  setDitCacheDir();
+  if (!cfg.visible_devices.empty()) {
+    tt::dit::setEnvIfChanged("TT_VISIBLE_DEVICES", cfg.visible_devices);
+  }
+  try {
+    for (const auto& [name, value] :
+         tt::dit::createModel(runnerConfigOf(cfg))->envDefaults()) {
+      ::setenv(name.c_str(), value.c_str(), 0);  // a deployment can pin a flag
+    }
+  } catch (const std::exception&) {
+    // An unknown runner or device is reported by warmup(), as before.
+  }
 }
 
 VideoDeviceRunner::~VideoDeviceRunner() { stop(); }
@@ -244,28 +160,8 @@ bool VideoDeviceRunner::warmup() {
   bool warmupFailed = false;
   try {
     py::gil_scoped_acquire gil;
-    preparePythonPath();
-    py::module_ fabric = py::module_::import("tt_model_runners.runner_fabric");
-    // The Python server passes the worker's device group ("0,1,2,3") as the
-    // runner id, and setup_runner_environment() copies it into
-    // TT_VISIBLE_DEVICES. Pass the same here so the shared Python code works
-    // unchanged for a mesh worker. With no group configured, fall back to the
-    // worker index as before.
-    const std::string runnerId = videoConfig.visible_devices.empty()
-                                     ? std::to_string(videoConfig.worker_id)
-                                     : videoConfig.visible_devices;
-    python->runner = fabric.attr("get_device_runner")(runnerId);
-    python->runner.attr("set_device")();
-
-    py::module_ asyncio = py::module_::import("asyncio");
-    python->loop = asyncio.attr("new_event_loop")();
-    asyncio.attr("set_event_loop")(python->loop);
-    py::object warmupOk = python->loop.attr("run_until_complete")(
-        python->runner.attr("warmup")());
-    if (!warmupOk.cast<bool>()) {
-      throw std::runtime_error("[VideoDevice] warmup reported not-ready for " +
-                               videoConfig.pythonRunner);
-    }
+    python->runner = makeRunner(videoConfig);
+    python->runner->warmup();
     ready = true;
     TT_LOG_INFO("[VideoDevice] Warmup completed runner={}",
                 videoConfig.pythonRunner);
@@ -290,21 +186,18 @@ bool VideoDeviceRunner::warmup() {
 
 std::string VideoDeviceRunner::run(
     const tt::domain::VideoGenerateRequest& request) {
-  if (!ready || !python || python->runner.is_none()) {
+  if (!ready || !python || !python->runner) {
     throw std::runtime_error("[VideoDevice] runner is not warmed up");
   }
   py::gil_scoped_acquire gil;
   try {
-    py::object pyRequest = buildPythonRequest(request);
-    py::list batch;
-    batch.append(pyRequest);
-    py::object result = python->runner.attr("run")(batch);
-    const int fps = request.fps.has_value() && *request.fps > 0.0F
-                        ? static_cast<int>(*request.fps)
-                        : 16;
-    const std::string path = requireMp4(materializeVideo(result, fps));
+    const std::string path =
+        requireMp4(python->runner->generate(toDiTRequest(request)).path);
     TT_LOG_INFO("[VideoDevice] task {} wrote {}", request.task_id, path);
     return path;
+  } catch (const tt::dit::RequestError& e) {
+    throw std::runtime_error(std::string("[VideoDevice] request refused: ") +
+                             e.what());
   } catch (const py::error_already_set& e) {
     throw std::runtime_error(std::string("[VideoDevice] inference failed: ") +
                              e.what());
@@ -312,31 +205,25 @@ std::string VideoDeviceRunner::run(
 }
 
 void VideoDeviceRunner::stop() {
-  // A failed warmup can leave `runner` (and `loop`) as null handles, not as
-  // Python None; is_none() is false for a null handle and attr() would crash.
-  if (!python || !python->runner || python->runner.is_none()) {
+  if (!python || !python->runner) {
     ready = false;
     return;
   }
   if (!Py_IsInitialized()) {
     ready = false;
+    python->runner
+        .release();  // nothing can close a mesh without the interpreter
     return;
   }
   py::gil_scoped_acquire gil;
   try {
-    python->runner.attr("close_device")();
+    python->runner->close();
   } catch (const py::error_already_set& e) {
-    TT_LOG_WARN("[VideoDevice] close_device raised: {}", e.what());
+    TT_LOG_WARN("[VideoDevice] closing the device raised: {}", e.what());
+  } catch (const std::exception& e) {
+    TT_LOG_WARN("[VideoDevice] closing the device raised: {}", e.what());
   }
-  try {
-    if (python->loop && !python->loop.is_none()) {
-      python->loop.attr("close")();
-    }
-  } catch (const py::error_already_set& e) {
-    TT_LOG_WARN("[VideoDevice] event loop close raised: {}", e.what());
-  }
-  python->runner = py::object();
-  python->loop = py::object();
+  python->runner.reset();
   ready = false;
 }
 
