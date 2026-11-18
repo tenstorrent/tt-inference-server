@@ -21,6 +21,10 @@ class IWarmupSignalQueue {
    * worker id. */
   virtual int receive() = 0;
 
+  /** Non-blocking poll for a ready worker signal. Returns true and populates
+   * workerId if a message was available. */
+  virtual bool tryReceive(int& /*workerId*/) { return false; }
+
   /** Remove the named queue (main process only, before destructor). Default
    * no-op. */
   virtual void remove() {}

@@ -531,7 +531,7 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
         (
             "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V",
             "tt-minimax-h3-ref2va-lightx2v",
-            "minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors",
+            "minimax_h3_ref2v_turbo_4step_v1.0_768p_bf16.safetensors",
             "transformer_ref",
             "transformer",
         ),
@@ -607,3 +607,33 @@ def test_benchmark_endpoint_reaches_the_runtime_spec():
 def test_benchmark_endpoint_rejects_unknown_values():
     with pytest.raises(ValueError, match="benchmark_endpoint"):
         _endpoint_template("responses")
+
+
+def test_device_profile_can_narrow_the_template_modalities():
+    """``supported_modalities`` is template-wide; a device block that serves the
+    text model only narrows it for that profile, the others keep the template's."""
+    template = _build_template(
+        {
+            "weights": ["google/gemma-4-31B-it"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "supported_modalities": ["text", "image", "video"],
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "supported_modalities": ["text"],
+                },
+                {"device": "N300", "max_concurrency": 32, "max_context": 32768},
+            ],
+        },
+        "dev",
+    )
+    specs = {s.device_type: s for s in template.expand_to_specs()}
+    assert specs[DeviceTypes.N150].supported_modalities == ["text"]
+    assert specs[DeviceTypes.N300].supported_modalities == ["text", "image", "video"]
+    # The narrowing survives the JSON round trip the runtime reads the spec from.
+    assert specs[DeviceTypes.N150].get_serialized_dict()["supported_modalities"] == [
+        "text"
+    ]

@@ -55,4 +55,170 @@ templates:
   supported_modalities:
     - text
     - image
+- weights:
+    - Qwen/Qwen2.5-VL-32B-Instruct
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
+  vllm_commit: "6098002"
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    Qwen/Qwen2.5-VL-32B-Instruct:
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen2.5-VL-72B-Instruct
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
+  vllm_commit: "6098002"
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 98304    # 96 * 1024: the largest KV pool that leaves the 1x8 mesh room for the vision tower at full image size
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 28467200
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    Qwen/Qwen2.5-VL-72B-Instruct:
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen2.5-VL-7B-Instruct
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
+  vllm_commit: "6098002"
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+        async-scheduling: true
+          # Automatic prefix caching: the Qwen2.5-VL vLLM wrapper resumes prefill from the cached
+          # blocks and skips the vision tower for images inside the cached prefix.
+        enable-prefix-caching: true
+      override_tt_config:
+        sample_on_device_mode: decode_only
+        trace_region_size: 60000000
+  perf_targets_map:
+    functional: 0.5
+    complete: 0.8
+    target: 1.0
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    Qwen/Qwen2.5-VL-7B-Instruct:
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen2.5-VL-7B-Instruct
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
+  vllm_commit: "6098002"
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 128    # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+        # Private IPC namespace: the Wormhole Galaxy CI hosts prune the host /dev/shm every ~70 s
+        # under running jobs, and the four data-parallel engines' workers attach to their engine's
+        # shared-memory queue only after model load (~60 s on a cold cache), so the queue was gone
+        # (tt-shield run 37872760219 vs 37873453896). 8g is a ceiling, not a reservation.
+      docker_shm_size: 8g
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+        async-scheduling: true
+        enable-prefix-caching: true
+      override_tt_config:
+        sample_on_device_mode: decode_only
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
+    # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
+    # decode/TTFT figures measured on this commit; "complete" must hold 80% of them, "functional" 50%.
+    # 80% covers the spread between CI hosts of one device class (T3K llmbox: 28 ms vs 35 ms decode at
+    # 32 users for the same build), which is host-side, not model-side.
+  perf_targets_map:
+    functional: 0.5
+    complete: 0.8
+    target: 1.0
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    Qwen/Qwen2.5-VL-7B-Instruct:
+      tool_call_parser_name: hermes
+
+- weights:
+    - allenai/olmOCR-2-7B-1025
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
+  vllm_commit: "6098002"
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072    # 128 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+        async-scheduling: true
+          # Automatic prefix caching: the Qwen2.5-VL vLLM wrapper resumes prefill from the cached
+          # blocks and skips the vision tower for images inside the cached prefix.
+        enable-prefix-caching: true
+      override_tt_config:
+        sample_on_device_mode: decode_only
+        trace_region_size: 60000000
+  perf_targets_map:
+    functional: 0.5
+    complete: 0.8
+    target: 1.0
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+
 

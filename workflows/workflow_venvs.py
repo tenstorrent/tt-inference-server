@@ -42,10 +42,10 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
-EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
+EVALS_COMMON_LM_EVAL_COMMIT = "af401ef3dd3d2d90e55680990ed1f0c9f7892448"
 
 # MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
 # its verify.py and m3_format_check pytest suites run unchanged from these

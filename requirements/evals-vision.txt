@@ -9,7 +9,11 @@
 
 -c constraints.txt
 
-git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
+# The [audio] extra (editdistance, zhconv, librosa, soundfile) runs the audio tasks
+# (fleurs) from this venv; datasets<4 decodes the Audio column with soundfile
+# (datasets 4+ needs torchcodec/FFmpeg, absent on the runners).
+git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1#egg=lmms-eval[audio]
+datasets<4
 pyjwt
 pillow
 qwen_vl_utils

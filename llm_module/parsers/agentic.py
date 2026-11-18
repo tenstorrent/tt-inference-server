@@ -277,12 +277,16 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         return {}
 
     metrics_list = eval_stats.get("metrics", [])
+    # A verifier that writes one reward gets {"mean": x}; one that writes
+    # several (DeepSWE: reward, f2p, p2p, partial) gets each key's mean under
+    # its own name, and "reward" is the pass/fail score.
     mean_metric = next(
         (
-            metric.get("mean")
+            metric[key]
             for metric in metrics_list
             if isinstance(metric, Mapping)
-            and isinstance(metric.get("mean"), (int, float))
+            for key in ("mean", "reward")
+            if isinstance(metric.get(key), (int, float))
         ),
         None,
     )

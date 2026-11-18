@@ -1983,7 +1983,7 @@ class TTMiniMaxH3FL2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3FL2VARu
 
 
 class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VARunner):
-    """MiniMax-H3 ``ref2va`` with the lightx2v Ref2VA Turbo 4-step v0.1 adapter (544p-trained)."""
+    """MiniMax-H3 ``ref2va`` with the lightx2v Ref2VA Turbo 4-step v1.0 768p adapter."""
 
     video_shift = 12.0
     audio_shift = 3.0

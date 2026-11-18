@@ -14,8 +14,9 @@ templates:
     MODEL_RUNNER: "trainer-training-lora"
     TRAINING_MODEL: "Llama-3.1-8B-Instruct"
     ENABLE_JOB_PERSISTENCE: true
-  version: "0.25.0"
-  tt_metal_commit: "978f93b"
+    TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
+  version: "0.26.0"
+  tt_metal_commit: "09acccb"
   device_model_specs:
     - device: P150
       max_concurrency: 1

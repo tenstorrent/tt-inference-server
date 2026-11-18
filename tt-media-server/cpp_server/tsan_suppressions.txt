@@ -46,6 +46,10 @@ race:TcpServer.cc
 # file), so `race:TcpServer.cc` above does not match it — match by symbol.
 race:trantor::TcpServer::~TcpServer
 race:drogon::ListenerManager::~ListenerManager
+# Same unjoined-IO-loop ordering for the router: static-deinit frees
+# HttpControllersRouter's tables that a DrogonIoLoop thread last read while
+# routing a request (no happens-before, since the thread is never joined).
+race:drogon::HttpControllersRouter::reset
 
 # ── trantor::EventLoop test-fixture lifecycle ──────────────────────────────
 # session_manager_test's LoopFixture posts loop->quit() from the main thread

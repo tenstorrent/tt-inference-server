@@ -5,16 +5,10 @@
 
 #include <pybind11/embed.h>
 
-#include <atomic>
-#include <condition_variable>
-#include <deque>
 #include <functional>
-#include <future>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "config/runner_config.hpp"
@@ -55,11 +49,6 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   virtual domain::ImageGenerateRequest warmupRequest() const = 0;
   virtual void applyModeSpecificSettings(
       const domain::ImageGenerateRequest& /*request*/) {}
-
-  /** Port of `BaseSDXLRunner.is_request_batchable`. Override in subclasses to
-   *  add mode-specific fields (e.g. `strength` for img2img). */
-  virtual bool areBatchCompatible(const domain::ImageGenerateRequest& a,
-                                  const domain::ImageGenerateRequest& b) const;
 
   static void runAndCheckDuration(const std::string& tag,
                                   unsigned timeoutSeconds,
@@ -113,21 +102,8 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   struct PythonState;
   std::unique_ptr<PythonState> python_;
 
-  struct BatchSlot {
-    explicit BatchSlot(const domain::ImageGenerateRequest& req)
-        : request(req) {}
-    domain::ImageGenerateRequest request;
-    std::promise<std::vector<std::string>> promise;
-  };
-
-  void batcherLoop();
-  void runBatch(std::vector<BatchSlot>& batch);
-
-  std::mutex queue_mutex_;
-  std::condition_variable queue_cv_;
-  std::deque<BatchSlot> queue_;
-  std::atomic<bool> batcher_stop_{false};
-  std::thread batcher_thread_;
+  std::vector<std::string> runRequests(
+      const std::vector<domain::ImageGenerateRequest>& requests);
 };
 
 }  // namespace tt::runners::sdxl

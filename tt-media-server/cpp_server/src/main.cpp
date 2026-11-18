@@ -45,6 +45,7 @@ namespace {
 
 volatile std::sig_atomic_t gShutdownRequested = 0;
 volatile std::sig_atomic_t gSignalCount = 0;
+volatile std::sig_atomic_t gFatalServiceError = 0;
 
 // Returns true if the port is available, false if already in use.
 bool probePort(const std::string& host, uint16_t port) {
@@ -106,20 +107,51 @@ void startWorker(int workerId) {
   tt::worker::SingleProcessWorker worker(cfg);
 
   static std::atomic<bool> workerShutdown{false};
+  std::atomic<bool> runnerLoopExited{false};
   std::signal(SIGTERM, [](int) { workerShutdown.store(true); });
   std::signal(SIGINT, [](int) { workerShutdown.store(true); });
 
-  std::thread shutdownMonitor([&worker] {
+  std::thread shutdownMonitor([&worker, &runnerLoopExited, workerId] {
+    namespace defs = tt::config::defaults;
     while (!workerShutdown.load()) {
       std::this_thread::sleep_for(
-          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+          std::chrono::milliseconds(defs::SHUTDOWN_POLL_MS));
     }
     worker.stop();
+    // stop() only raises a flag; the runner loop sees it between tasks. If a
+    // run() is still in flight (or wedged) after the parent died, nobody
+    // will SIGKILL us, so exit here rather than keep the device open.
+    for (unsigned waited = 0; waited < defs::WORKER_SHUTDOWN_GRACE_MS;
+         waited += defs::SHUTDOWN_POLL_MS) {
+      if (runnerLoopExited.load()) return;
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(defs::SHUTDOWN_POLL_MS));
+    }
+    TT_LOG_CRITICAL(
+        "[Main] Worker {} runner loop did not exit within {}ms of stop(); "
+        "exiting",
+        workerId, defs::WORKER_SHUTDOWN_GRACE_MS);
+    std::_Exit(1);
   });
 
-  worker.start();
+  int exitCode = 0;
+  try {
+    worker.start();
+  } catch (const std::exception& e) {
+    TT_LOG_CRITICAL("[Main] Worker {} exiting after fatal error: {}", workerId,
+                    e.what());
+    exitCode = 1;
+  } catch (...) {
+    TT_LOG_CRITICAL("[Main] Worker {} exiting after unknown fatal error",
+                    workerId);
+    exitCode = 1;
+  }
+  runnerLoopExited.store(true);
   workerShutdown.store(true);
   if (shutdownMonitor.joinable()) shutdownMonitor.join();
+  if (exitCode != 0) {
+    std::exit(exitCode);
+  }
   return;
 }
 
@@ -167,15 +199,6 @@ int main(int argc, char* argv[]) {
   // Setup signal handlers
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
-
-  std::thread shutdownThread([&]() {
-    while (gShutdownRequested == 0) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
-    }
-    drogon::app().quit();
-  });
-  shutdownThread.detach();
 
   auto modelSvc = tt::config::modelService();
   std::string serviceName = tt::config::toString(modelSvc);
@@ -226,6 +249,27 @@ int main(int argc, char* argv[]) {
     TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
     return 1;
   }
+
+  // Started only once the service is registered, so its ServiceContainer reads
+  // never race initializeServices(). Joined after drogon::app().run() so its
+  // service reference is released before ServiceContainer's static destructor.
+  std::atomic<bool> shutdownThreadStop{false};
+  std::thread shutdownThread([&]() {
+    while (gShutdownRequested == 0 && !shutdownThreadStop.load()) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+      auto svc = tt::services::ServiceContainer::instance().configuredService();
+      if (svc && svc->hasFatalError()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        TT_LOG_CRITICAL(
+            "[Main] Configured service reported fatal worker error; "
+            "initiating server shutdown");
+        gFatalServiceError = 1;
+        gShutdownRequested = 1;
+      }
+    }
+    if (!shutdownThreadStop.load()) drogon::app().quit();
+  });
 
   // Sentry distributed tracing (no-op without SENTRY_DSN). Initialized after
   // the service fork+execv'd its workers so the SDK runs only in this node
@@ -468,13 +512,26 @@ int main(int argc, char* argv[]) {
   }
 
   drogon::app().run();
+  shutdownThreadStop.store(true);
+  shutdownThread.join();
 
   if (dynamoWorkerServer) {
     dynamoWorkerServer->stop();
     dynamoWorkerServer.reset();
   }
 
+  if (auto svc =
+          tt::services::ServiceContainer::instance().configuredService()) {
+    svc->stop();
+  }
+
   tt::telemetry::shutdown();
+
+  if (gFatalServiceError != 0) {
+    TT_LOG_CRITICAL(
+        "[Main] Server exiting with code 1 due to fatal worker error");
+    return 1;
+  }
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete (graceful)");
