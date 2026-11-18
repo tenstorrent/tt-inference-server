@@ -7851,6 +7851,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "text",
+                "impl": "tt_transformers",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -7874,6 +7875,7 @@
                 "max_concurrency": 32,
                 "num_prompts": 256,
                 "task_type": "text",
+                "impl": "tt_transformers",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -7897,6 +7899,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 4,
                 "task_type": "text",
+                "impl": "tt_transformers",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -7920,6 +7923,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 2,
                 "task_type": "text",
+                "impl": "tt_transformers",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -7943,6 +7947,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 1,
                 "task_type": "text",
+                "impl": "tt_transformers",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -7966,6 +7971,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "vlm",
+                "impl": "tt_transformers",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -7977,6 +7983,42 @@
                     }
                 },
                 "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
+            },
+            {
+                "_comment": [
+                    "gemma4_12b_qb2 (models/demos/gemma4_12b_qb2). One gated point, 128/128 at 1 user, like the K2-Horizon-7B and",
+                    "Muse-Glimmer-30B entries; the release sweep is reported ungated. The points above are the tt_transformers",
+                    "implementation's own.",
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries. Decoder 10.90B + tied",
+                    "LM head 1.01B = 11.91B params = 23.8 GB bf16, 5.95 GB per chip on the 4-chip TP mesh at ~560 GB/s = 10.6 ms per",
+                    "step = 94 t/s/u; TTFT floor two step-times (~21 ms). The deployed BFP8/BFP4 precision streams fewer bytes, so",
+                    "the true ceiling is higher; theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured: the worst of release runs 39881826134 / 40784172547 / 40917563431 (tt-agentic-bringup-qb2, bh-qb-ge,",
+                    "runners qb2-120-p05t02 / qb2-120-p05t05 / 120-qb2-p04t07): TTFT 36.4-36.7 ms, 67.8-79.7 t/s/u. Tolerance 0.2:",
+                    "decode differs by up to 15% between the runners."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "gemma4_12b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 21,
+                        "tput_user": 94,
+                        "tput": 94
+                    },
+                    "measured": {
+                        "ttft_ms": 36.8,
+                        "tput_user": 67.8,
+                        "tput": 67.0,
+                        "tolerance": 0.2
+                    }
+                }
             }
         ],
         "blackhole_galaxy": [
