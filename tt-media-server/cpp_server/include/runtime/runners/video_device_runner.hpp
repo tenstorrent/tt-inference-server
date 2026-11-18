@@ -12,9 +12,12 @@
 
 namespace tt::runners {
 
-/** Device video runner. Warmup calls the Python DiT runner selected by
- *  `VideoConfig::pythonRunner`: `set_device()` opens the mesh, `warmup()`
- *  loads weights. `run()` returns the mp4 path written for that request. */
+/** Device video runner: creates the C++ runner (runtime/dit) for
+ *  `VideoConfig::pythonRunner`. It opens the mesh, validates requests, builds
+ *  the pipeline calls and exports the mp4; the only Python it runs is the
+ *  model's adapter in `python/cpp_dit_adapters`, which calls tt_dit. On a
+ *  multihost launch the runner is wrapped so every rank runs each request.
+ *  `run()` returns the mp4 path written for that request. */
 class VideoDeviceRunner
     : public IMediaRunner<tt::domain::VideoGenerateRequest, std::string> {
  public:
@@ -28,6 +31,11 @@ class VideoDeviceRunner
   std::string run(const tt::domain::VideoGenerateRequest& request) override;
   void stop() override;
   const char* runnerType() const override { return "VideoDeviceRunner"; }
+
+  /** Sets the process environment the runner needs (weight cache, visible
+   *  devices, the model's flag defaults). Idempotent; call it before other
+   *  threads exist when the runner runs inside the server. */
+  static void prepareProcessEnvironment(const config::VideoConfig& config);
 
  private:
   struct PythonState;

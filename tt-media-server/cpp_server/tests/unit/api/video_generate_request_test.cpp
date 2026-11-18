@@ -266,3 +266,65 @@ TEST(VideoJobJsonOrder, ErrorAndDeleteKeepPythonKeysFirst) {
   EXPECT_EQ(tt::domain::video::orderedJson(deleted),
             R"({"id":"1","object":"video","deleted":true})");
 }
+
+TEST(VideoGenerateRequestParseTest, ImagePromptsPassThroughAndAreChecked) {
+  Json::Value json = promptJson();
+  Json::Value first;
+  first["image"] = "aGVsbG8=";
+  json["image_prompts"].append(first);
+  Json::Value last;
+  last["image"] = "d29ybGQ=";
+  last["frame_pos"] = -1;
+  json["image_prompts"].append(last);
+
+  const auto req = VideoGenerateRequest::fromJson(json, TEST_TASK_ID);
+  ASSERT_TRUE(req.imagePrompts.has_value());
+  ASSERT_EQ(req.imagePrompts->size(), 2u);
+  EXPECT_EQ((*req.imagePrompts)[0]["frame_pos"].asInt(), 0);
+  EXPECT_EQ((*req.imagePrompts)[1]["image"].asString(), "d29ybGQ=");
+  // The worker gets the images; the job record only what they pin.
+  EXPECT_EQ(req.toJson()["image_prompts"][1]["image"].asString(), "d29ybGQ=");
+  EXPECT_FALSE(
+      req.toJson(/*withMedia=*/false)["image_prompts"][1].isMember("image"));
+  EXPECT_EQ(req.toJson(false)["image_prompts"][1]["frame_pos"].asInt(), -1);
+
+  Json::Value duplicate = json;
+  duplicate["image_prompts"][1]["frame_pos"] = 0;
+  expectReject(duplicate, "duplicate frame_pos=0 in image_prompts");
+  Json::Value outOfRange = json;
+  outOfRange["image_prompts"][1]["frame_pos"] = 81;
+  expectReject(outOfRange, "image_prompts[].frame_pos must be in [-1, 81)");
+  Json::Value empty = promptJson();
+  empty["image_prompts"] = Json::arrayValue;
+  expectReject(empty, "image_prompts must have 1 to 81 entries");
+  Json::Value noImage = promptJson();
+  noImage["image_prompts"].append(Json::objectValue);
+  expectReject(noImage, "image_prompts[].image must not be empty");
+}
+
+TEST(VideoGenerateRequestParseTest, ReferencesTakeBase64Only) {
+  Json::Value json = promptJson();
+  Json::Value image;
+  image["b64"] = "aGVsbG8=";
+  json["references"]["images"].append(image);
+  const auto req = VideoGenerateRequest::fromJson(json, TEST_TASK_ID);
+  ASSERT_TRUE(req.references.has_value());
+  EXPECT_EQ(req.toJson()["references"]["images"][0]["b64"].asString(),
+            "aGVsbG8=");
+  EXPECT_EQ(req.toJson(false)["references"]["images"].asUInt(), 1u);
+  EXPECT_EQ(req.toJson(false)["references"]["audios"].asUInt(), 0u);
+
+  Json::Value url = promptJson();
+  url["references"]["videos"][0]["url"] = "https://example.com/a.mp4";
+  expectReject(url,
+               "references.videos[].url is not supported by this server; send "
+               "b64");
+  Json::Value unknown = promptJson();
+  unknown["references"]["masks"] = Json::arrayValue;
+  expectReject(unknown,
+               "references.masks is not supported; use images, videos or "
+               "audios");
+  Json::Value none = promptJson();
+  none["references"] = Json::objectValue;
+  expectReject(none, "references must contain at least one item");
+}

@@ -1245,6 +1245,28 @@ target_include_directories(video_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(dit_runner_test
+    tests/unit/dit/dit_runner_test.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/models_video.cpp
+    src/runtime/dit/models_minimax.cpp
+    src/runtime/dit/models_image.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_multihost.cpp
+    src/utils/logger.cpp)
+target_link_libraries(dit_runner_test PRIVATE
+    spdlog::spdlog
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(dit_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
 target_link_libraries(embedding_ipc_test PRIVATE
     llm_runner_lib
@@ -1391,6 +1413,18 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
     src/runtime/runners/video_multihost.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/models_video.cpp
+    src/runtime/dit/models_minimax.cpp
+    src/runtime/dit/models_image.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_multihost.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1537,6 +1571,18 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
     src/runtime/runners/video_multihost.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/models_video.cpp
+    src/runtime/dit/models_minimax.cpp
+    src/runtime/dit/models_image.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_multihost.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1731,6 +1777,7 @@ gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(video_generate_request_test)
+gtest_discover_tests(dit_runner_test)
 gtest_discover_tests(embedding_ipc_test)
 gtest_discover_tests(embedding_json_test)
 gtest_discover_tests(mock_embedding_runner_test)
@@ -2069,6 +2116,18 @@ set(SOURCES
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
     src/runtime/runners/video_multihost.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/models_video.cpp
+    src/runtime/dit/models_minimax.cpp
+    src/runtime/dit/models_image.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_multihost.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp

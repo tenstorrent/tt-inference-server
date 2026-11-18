@@ -18,7 +18,8 @@ bool isMultihostLaunch();
  */
 bool isFollowerRank();
 
-/** Block in the Python lockstep follower until rank 0 sends shutdown.
+/** Block in the C++ Follower (runtime/dit/dit_multihost.hpp) until rank 0
+ *  sends shutdown.
  *  Returns the process exit code. */
 int runVideoFollowerRank();
 
