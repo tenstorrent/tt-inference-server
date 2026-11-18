@@ -8091,6 +8091,12 @@ templates:
         # d5dc6459aeb, AgentX c8: prefix hit 95.93 -> 96.58 %, total 23,636 -> 24,001 tok/s, decode 39.5 -> 39.8 tok/s/u, TTFT p90
         # 13.37 -> 10.63 s; c16: total 22,634 -> 24,085 tok/s, decode 31.8 -> 32.9 tok/s/u, host-tier restores max 2.4 s
         GLM53_STACK_PREFIX_KEEP_PREV_MIN: "32768"
+        # The prefix store's block hashes over the ids' int32 bytes (host cost per prefix lookup), and the prefill's last
+        # chunk split into the cheapest mix of the 1,024 / 2,048 / 8,192 buckets by the cost table (padding on agentic
+        # suffixes ~49 -> ~25 %). Every AgentX row of this profile since 2026-11-14 ran with both; the best c8 (tt-metal
+        # #64931 8bf49e5cddb): 25,145 tok/s, decode 42.7 tok/s/u, TTFT p50 / p90 1.68 / 8.82 s, 797 requests / h
+        GLM53_PREFIX_FAST_HASH: "1"
+        GLM53_PF_TAIL_SPLIT: "auto"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
         # speculates up to 1 M), and its per-slot state in the prefix snapshots (a warm turn keeps speculating)
         GLM53_SPEC_MTP_SPARSE: "1"
