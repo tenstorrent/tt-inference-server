@@ -42,7 +42,8 @@ Starts its own server (ports 18150 and 18151, private shm names, a temporary
 output folder). Case A kills the worker with `SIGKILL` while one job runs and
 another waits: a dead worker is not restarted, so the server exits with code 1 (a
 supervisor starts a fresh one) and no job is left waiting for it. Case B starts
-the real device runner with a wrong `TT_PYTHON_PATH` (no chip is opened) and checks
+the real device runner with a wrong `TT_VIDEO_PYTHON_DIR` (the `cpp_dit_adapters`
+package is not found, no chip is opened) and checks
 that the failed worker exits, so the server exits with code 1; it guards the fix of
 a GIL deadlock on that path. Needs a built `./build/tt_media_server_cpp`.
 
