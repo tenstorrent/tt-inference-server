@@ -16,6 +16,10 @@ one such start this tool packages both, so later starts load them instead:
 Run it from the repo root: python3 scripts/prebuilt_artifacts.py <command> --help
 The tt-weights commands need huggingface_hub and take the token from HF_TOKEN.
 See tt-media-server/docs/minimax-h3-prebuilt-artifacts.md.
+
+build-image copies this file alone into the image, where a deployment runs
+tt-weights download with it. So nothing of the repo is imported at the top: the
+commands that need workflows/kernel_cache.py import it when they run.
 """
 
 from __future__ import annotations
@@ -39,14 +43,6 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from workflows.kernel_cache import (
-    KERNEL_CACHE_CONTAINER_DIR,
-    KERNEL_CACHE_ENV,
-    KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
-)
 
 # Environment variables that change tt-metal's build key or kernel hashes for this model.
 BUILD_KEY_ENV_VARS = (
@@ -58,6 +54,8 @@ BUILD_KEY_ENV_VARS = (
     "TT_METAL_WATCHER",
 )
 KERNEL_CACHE_DOCKERFILE = project_root / "tt-media-server" / "Dockerfile.kernel-cache"
+# Name of this file in the build context; the Dockerfile copies it into the image.
+TOOL_IN_BUILD_CONTEXT = "prebuilt_artifacts.py"
 # tt-metal logs "compiled <kernel>/<hash>/ in <N> ms" per compiled kernel; a cache hit logs nothing.
 COMPILE_LINE = re.compile(r"compiled (\S+/[^/\s]+)/ in \d+ ms")
 # tt-metal writes a cache file as <stem>.<random id>_<pid><ext> and renames it into place.
@@ -118,6 +116,19 @@ class CliError(Exception):
 
 def step(message: str) -> None:
     print(message, flush=True)
+
+
+def kernel_cache_constants():
+    """workflows/kernel_cache.py of the checkout this file is in.
+
+    Imported by the commands that use it: the copy of this file in the image
+    has no repo around it.
+    """
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from workflows import kernel_cache
+
+    return kernel_cache
 
 
 def utc_now() -> str:
@@ -326,7 +337,7 @@ def kernel_cache_manifest(
             "schema_version": 1,
             "created_utc": utc_now(),
             "base_image": base_image,
-            "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
+            "kernel_cache_path": kernel_cache_constants().KERNEL_CACHE_CONTAINER_DIR,
             "build_keys": build_keys,
             "kernel_hash_dirs": kernel_hash_dirs,
             "files": len(files),
@@ -386,6 +397,7 @@ def build_kernel_cache_image(
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target, follow_symlinks=False)
         shutil.copyfile(manifest_path, context / "kernel_cache_manifest.json")
+        shutil.copyfile(Path(__file__).resolve(), context / TOOL_IN_BUILD_CONTEXT)
         dockerfile = context / "Dockerfile"
         dockerfile.write_text(
             render_kernel_cache_dockerfile(manifest["build_key_env"]), encoding="utf-8"
@@ -1071,7 +1083,8 @@ def write_release_hash(args) -> None:
             f"the kernel manifest was made for base image {kernel['base_image']}, "
             f"not {args.base_image}"
         )
-    kernel_cache_env = {KERNEL_CACHE_ENV: kernel["kernel_cache_path"]}
+    constants = kernel_cache_constants()
+    kernel_cache_env = {constants.KERNEL_CACHE_ENV: kernel["kernel_cache_path"]}
     kernel_cache_env.update(
         {
             name: value
@@ -1119,7 +1132,7 @@ def write_release_hash(args) -> None:
             },
             "kernel_cache": {
                 "path": kernel["kernel_cache_path"],
-                "manifest_in_image": KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
+                "manifest_in_image": constants.KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
                 "env": kernel_cache_env,
                 "build_keys": kernel["build_keys"],
                 "kernel_hash_dirs": kernel["kernel_hash_dirs"],

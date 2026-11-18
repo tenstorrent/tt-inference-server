@@ -100,7 +100,15 @@ Weights:
 
   Use the tag or commit from the release file, not a branch: a branch can be in the middle of an upload, and the variant then has no manifest.
 
-  Only what `manifests/<variant>.json` lists is fetched, and what the destination already holds with the same content (sha256) is kept: a second variant fetches only its own part, and its failure does not break the first. Files are verified in a staging folder (`.tt_weights_download` in the cache destination): count and bytes per cache directory, sha256 per original file. Only then are they moved into place and the directories marked complete. On a mismatch or a failed transfer nothing is moved, the directories being replaced stay unmarked and the staging folder is kept for the next run. Refused: a destination cache directory with files the manifest does not list (remove it first), and a second download into the same cache destination at the same time.
+  The `-kc` image carries the tool at `/home/container_app_user/prebuilt_artifacts.py`, so a container of it needs no checkout of this repo. Run it there with the image's Python environment and the options above:
+
+  ```bash
+  source "${PYTHON_ENV_DIR}/bin/activate" && python /home/container_app_user/prebuilt_artifacts.py tt-weights download <options>
+  ```
+
+  A plain Hub download (`hf download`) is not enough: the tool verifies the files and then writes the empty `cache_dict.json` into each cache directory, and the server loads a cache directory only when that file is in it.
+
+  Only what `manifests/<variant>.json` lists is fetched, and what the destination already holds with the same content (sha256) is kept: a second variant fetches only its own part, and its failure does not break the first. Files are verified in a staging folder (`.tt_weights_download` in the cache destination): count and bytes per cache directory, sha256 per original file. Only then are they moved into place and the directories marked complete. On a mismatch or a failed transfer nothing is moved. The directories being replaced stay unmarked, and the staging folder is kept for the next run. Refused: a destination cache directory with files the manifest does not list (remove it first), and a second download into the same cache destination at the same time.
 
 - The LoRA file lands at its path in the model directory (`<model dir>/lightx2v/<file>`); `MINIMAX_H3_LORA_PATH` must name it. Host setup in `run.py` still downloads the full checkpoint, so this download is for deployments that start the container themselves.
 

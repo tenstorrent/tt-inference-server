@@ -5,16 +5,25 @@
 import fcntl
 import fnmatch
 import hashlib
+import inspect
 import json
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from scripts.prebuilt_artifacts import BUILD_KEY_ENV_VARS, KERNEL_CACHE_DOCKERFILE, main
-from workflows.kernel_cache import KERNEL_CACHE_CONTAINER_DIR
+from workflows.kernel_cache import (
+    KERNEL_CACHE_CONTAINER_DIR,
+    KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
+)
 
+TOOL = Path(inspect.getsourcefile(main))
+TOOL_IN_IMAGE = "/home/container_app_user/prebuilt_artifacts.py"
 BASE_IMAGE = "registry.example/media-server:1.0-aaa-bbb-1"
 KC_IMAGE = f"{BASE_IMAGE}-kc"
 WEIGHTS_REPO = "example-org/model-tt-weights"
@@ -217,13 +226,34 @@ def test_build_image_stages_cache_files_and_bakes_set_variables(kernel_cache, tm
     staged = dict(docker.build_context)
     dockerfile = staged.pop("Dockerfile").decode()
     assert json.loads(staged.pop("kernel_cache_manifest.json")) == KERNEL_MANIFEST
+    assert staged.pop("prebuilt_artifacts.py") == TOOL.read_bytes()
     assert staged == {
         f"kernel_cache/{path}": data for path, data in IMAGE_FILES.items()
     }
     assert dockerfile.startswith(KERNEL_CACHE_DOCKERFILE.read_text())
+    layers = [line for line in dockerfile.splitlines() if line[:4] in ("COPY", "RUN ")]
+    assert layers == [
+        f"COPY --chmod=777 kernel_cache/ {KERNEL_CACHE_CONTAINER_DIR}/",
+        f"RUN chmod 777 {KERNEL_CACHE_CONTAINER_DIR}",
+        "COPY --chmod=644 kernel_cache_manifest.json "
+        + KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
+        f"COPY --chmod=755 prebuilt_artifacts.py {TOOL_IN_IMAGE}",
+    ]
     baked = [f'ENV {name}="{value}"' for name, value in SET_VARIABLES.items()]
     env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
     assert env_lines == [f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}", *baked]
+
+
+@pytest.mark.parametrize("argv", [["--help"], ["tt-weights", "download", "--help"]])
+def test_the_copy_in_the_image_runs_without_the_repo(tmp_path, argv):
+    copy = shutil.copyfile(TOOL, tmp_path / TOOL.name)
+    assert os.listdir(tmp_path) == [TOOL.name]
+
+    command = [sys.executable, "-I", str(copy), *argv]
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("usage: ")
 
 
 def test_build_image_refuses_a_tree_that_differs(kernel_cache, tmp_path, capsys):
