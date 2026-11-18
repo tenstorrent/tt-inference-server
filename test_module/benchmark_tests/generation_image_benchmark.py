@@ -18,7 +18,8 @@ and graded against its own entry in ``model_performance_reference.json``:
 A request is one job: ``POST /v1/generations/{model}``, then ``GET
 /v1/jobs/{id}`` until it is final. Its time runs from the submit to the poll
 that sees it completed, reported as ``ttft`` (the whole image, as the other
-image benchmarks report it), and ``tput_user`` is images per second. Jobs run
+image benchmarks report it), and ``tput_user`` is images per second. Jobs ask
+for JPEG output (``OUTPUT_FORMAT``), since the encode is inside that time. Jobs run
 one at a time and are deleted once done. One block holds every configuration,
 its fields suffixed with the configuration's name.
 """
@@ -51,6 +52,11 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_IMAGES = _PROJECT_ROOT / "test_fixtures" / "datasets" / "imagenet_subset"
+# Each job asks for JPEG: the server encodes the image before the job completes, so the
+# format is inside the measured time, and PNG (zlib, one thread) costs about 0.2 s at
+# 1024x1024 and 0.8 s at 2048x2048 against about 0.01 s and 0.02 s for JPEG (PIL, on a
+# Blackhole Galaxy host's EPYC 9354P).
+OUTPUT_FORMAT = "jpeg"
 POLL_INTERVAL_SECONDS = 0.25
 JOB_TIMEOUT_SECONDS = 30 * 60
 SEED = 42
@@ -171,7 +177,7 @@ def _run_config(
     ctx: MediaContext, config: BenchmarkConfig, num_calls: int, submit_path: str
 ) -> dict:
     """``num_calls`` jobs of one configuration, its record and its target checks."""
-    request = {**config.request, "seed": SEED, "format": "png"}
+    request = {**config.request, "seed": SEED, "format": OUTPUT_FORMAT}
     if config.num_images:
         request["images"] = _fixture_images(config.num_images)
     results = []

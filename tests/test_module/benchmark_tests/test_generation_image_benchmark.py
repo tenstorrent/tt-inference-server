@@ -98,7 +98,7 @@ def test_a_job_is_submitted_polled_to_completion_and_deleted(monkeypatch):
     monkeypatch.setattr(bench, "POLL_INTERVAL_SECONDS", 0)
     server = FakeImageServer(MODELS["ideogram-ai/ideogram-4"])
     config = bench.BENCHMARKS["tt-ideogram-4"][0]
-    request = {**config.request, "seed": 1, "format": "png"}
+    request = {**config.request, "seed": 1, "format": bench.OUTPUT_FORMAT}
 
     async def body():
         app = web.Application()
