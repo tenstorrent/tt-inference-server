@@ -461,6 +461,15 @@ def serve_command(env, usage, chips_present):
                 f"TT_LAB_SERVE_VIDEO_CACHE_DIR={video_cache}: cannot create it ({error})"
             ) from error
     extra = shlex.split(env.get("GLM_TT_EXTRA_ARGS", ""))
+    # serve's session SSD files live in --session-dir (a local NVMe): create it like the video cache.
+    for i, flag in enumerate(extra[:-1]):
+        if flag == "--session-dir":
+            try:
+                os.makedirs(extra[i + 1], exist_ok=True)
+            except OSError as error:
+                raise SetupError(
+                    f"--session-dir {extra[i + 1]}: cannot create it ({error})"
+                ) from error
     return serve + args + device_args + extra, updates
 
 

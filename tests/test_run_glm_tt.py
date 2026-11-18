@@ -126,6 +126,23 @@ def test_video_cache_dir_is_created(tmp_path):
         run_glm_tt.serve_command(env, USAGE, 8)
 
 
+def test_session_dir_is_created(tmp_path):
+    sessions = tmp_path / "cache_root" / "session-store"
+    env = {
+        "DEVICE": "p150x8",
+        "API_KEY": "a",
+        "GLM_TT_EXTRA_ARGS": f"--session-ssd-gb 512 --session-dir {sessions}",
+    }
+    env.update(_weights(tmp_path))
+    serve, _ = run_glm_tt.serve_command(env, USAGE, 8)
+    assert sessions.is_dir()
+    assert serve[-1] == str(sessions)
+    (tmp_path / "file").write_bytes(b"x")
+    env["GLM_TT_EXTRA_ARGS"] = f"--session-dir {tmp_path / 'file' / 'sessions'}"
+    with pytest.raises(run_glm_tt.SetupError, match="--session-dir"):
+        run_glm_tt.serve_command(env, USAGE, 8)
+
+
 def test_glm_tt_with_only_api_key_flag_gets_it_on_the_command_line(tmp_path):
     env = {"DEVICE": "p150x8", "API_KEY": "a"}
     env.update(_weights(tmp_path))

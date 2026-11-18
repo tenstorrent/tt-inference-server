@@ -4599,13 +4599,13 @@ models:
               - name: GLM_TT_BINARY
                 value: tt-lab
               - name: GLM_TT_EXTRA_ARGS
-                value: --users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120
+                value: --users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-ssd-gb 512 --session-dir /home/container_app_user/cache_root/session-store --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120
               - name: GLM_TT_MAX_TOKENS
                 value: '131072'
               - name: GLM_TT_MTP
                 value: glm53-flash-mtp-plan0h.ttq
               - name: GLM_TT_PACKAGE
-                value: glx-tools-t6
+                value: glx-tools-t7b
               - name: GLM_TT_RUNTIME_PACKAGE
                 value: glm-tt-ship2-e492dca3
               - name: GLM_TT_TTQ

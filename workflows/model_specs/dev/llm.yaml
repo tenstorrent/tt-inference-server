@@ -7677,7 +7677,7 @@ templates:
 # script is in the vLLM image's app/src and, with --dev-mode, mounted there from this checkout.
 # hf_weights_repo holds tt-lab's prequantized plan0h TTQ (split into parts with a manifest), its MTP
 # sidecar TTQ, the vocabulary GGUF and the glm-tt packages (glm-tt-<build>/: bin/, runtime/, licenses,
-# SHA256SUMS; from t6 on, a build folder with the engine binary at its top and no runtime/, run with
+# SHA256SUMS; from t6 on (t7b is current), a build folder with the engine binary at its top and no runtime/, run with
 # an earlier package's runtime/). Host setup downloads it into the persistent volume like any checkpoint
 # (checkpoint_files says when it is complete); the launcher verifies the package and runs a copy,
 # since downloads keep no exec bits.
@@ -7690,8 +7690,9 @@ templates:
     - text
   hf_weights_repo: tenstorrent/GLM-5.3-Flash-TTQ
   # The plan0h TTQ (180,874,799,872 bytes in five 40 GiB parts) and the 4.3 GB MTP sidecar,
-  # downloaded once into the persistent volume and read through the page cache.
-  min_disk_gb: 200
+  # downloaded once into the persistent volume and read through the page cache (200 GB), plus the
+  # session SSD files on the same volume, a local NVMe: 4 groups x 512 GB = 2048 GB of free space.
+  min_disk_gb: 2248
   # The page-cached TTQ (181 GB), plus 100 GB of host session records per group (four groups)
   # and the 16 GB image cache: 597 GB.
   min_ram_gb: 600
@@ -7720,14 +7721,16 @@ templates:
       default_impl: true
       env_vars:
         GLM_TT_MTP: glm53-flash-mtp-plan0h.ttq
-        # The OpenRouter production config (glx-tools t6, 2026-11-16): 100 GB of host session
-        # records per group in one RAM-only store all groups share (no SSD tier); a failed group
+        # The OpenRouter production config (glx-tools t7b, 2026-11-17): 100 GB of host session
+        # records per group in one store all groups share, with a 512 GB SSD tier per group
+        # (--session-ssd-gb, files in --session-dir on the cache volume, a local NVMe; the launcher
+        # creates the directory) that takes the sessions RAM evicts; a failed group
         # reloads in-process (about 194 s) while the others serve. --overload 429: a request
         # arriving when all 8 slots are busy waits up to 1 s for one, then gets 429 with
         # Retry-After: 1 (OpenRouter fails over to another provider). Prompt length never causes a 429. The benchmark sweep and the agentic
         # evals send more than 8 requests at once: Shield CI runs use glm53f/8-ship2
         # (--overload queue) instead.
-        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120"
+        GLM_TT_EXTRA_ARGS: "--users 2 --context 262144 --session-positions 262144 --session-ram-gb 100 --session-ssd-gb 512 --session-dir /home/container_app_user/cache_root/session-store --session-store shared --overload 429 --admit-wait 1 --retry-after 1 --on-group-failure restart --drain-seconds 120"
         # Tool calls: arguments constrained to each tool's JSON Schema and typed by it.
         TT_LAB_GLM_TOOLS_STRICT: "1"
         TT_LAB_GLM_TOOL_REPAIR: "1"
@@ -7749,17 +7752,18 @@ templates:
     # Names in the downloaded weights repo ($CACHE_ROOT/weights/$MODEL in the container); the
     # launcher takes a split TTQ by its manifest and the package from its folder.
     # The repo keeps each glm-tt build in its own folder, so a cached download fetches a new one.
-    # glx-tools-t6: tt-lab glx-tools t6 (engine source b12c169e, tt-lab sha256 597f52fb), the
-    # build serving OpenRouter since 2026-11-16: the Ethernet gather sequence no longer hangs a
-    # group when it wraps after about 6.8 days, feeder mailboxes are armed past zero, request ids
-    # are unique across restarts, serve ignores SIGPIPE, and image and video caches. The engine
+    # glx-tools-t7b: tt-lab glx-tools t7b (engine source ee8aaa78, tt-lab sha256 c8c11c89), the
+    # build serving OpenRouter since 2026-11-17 (t6 added: the Ethernet gather sequence no longer
+    # hangs a group when it wraps after about 6.8 days, feeder mailboxes are armed past zero,
+    # request ids are unique across restarts, serve ignores SIGPIPE, image and video caches; t7b
+    # brings the SSD session tier back and GET /tt-liveness answers 200). The engine
     # source is on tenstorrent/regen-glm5.3-flash branch glm-5.3-flash-galaxy. The folder holds
     # the binary tt-lab at its top (its firmware is built in; images/ is for reference) and no
     # runtime/: as in production, it runs through glm-tt-ship2-e492dca3/runtime/ (the loader and
     # C/C++ libraries). The launcher verifies each against its folder's SHA256SUMS and stages
     # them together. Images and video need the separate glm-vision worker (--mm-encoder), which
     # the repo does not include: served from here, it is text-only.
-    GLM_TT_PACKAGE: glx-tools-t6
+    GLM_TT_PACKAGE: glx-tools-t7b
     GLM_TT_BINARY: tt-lab
     GLM_TT_RUNTIME_PACKAGE: glm-tt-ship2-e492dca3
     GLM_TT_TTQ: glm53-flash-plan0h.ttq
@@ -7779,8 +7783,8 @@ templates:
         - glm53-flash-plan0h.ttq.00005-of-00005
         - glm53-flash-mtp-plan0h.ttq
         - GLM-5.3-Flash-vocab.gguf
-        - glx-tools-t6/SHA256SUMS
-        - glx-tools-t6/tt-lab
+        - glx-tools-t7b/SHA256SUMS
+        - glx-tools-t7b/tt-lab
         - glm-tt-ship2-e492dca3/SHA256SUMS
         - glm-tt-ship2-e492dca3/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL

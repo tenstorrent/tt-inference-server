@@ -56,10 +56,16 @@ def test_glm_galaxy_catalog_row():
     # Weights and the glm-tt package come from the weights repo, not host packages.
     assert spec.hf_weights_repo
     assert not host_packages_provide_weights(spec)
-    assert spec.min_disk_gb >= 190  # plan0h 181 GB, MTP 4.3 GB, package
+    # plan0h 181 GB, MTP 4.3 GB, package, and 4 groups x 512 GB of session SSD files.
+    assert spec.min_disk_gb >= 190 + 4 * 512
+    assert extra[extra.index("--session-ssd-gb") + 1] == "512"
+    assert extra[extra.index("--session-ram-gb") + 1] == "100"
+    assert extra[extra.index("--session-dir") + 1].startswith(
+        "/home/container_app_user/cache_root/"
+    )
     files = spec.metadata["checkpoint_files"]
     package = spec.env_vars["GLM_TT_PACKAGE"]
-    # t6 is a split package: the engine binary at the top of its build folder, run through
+    # t6 and t7b are split packages: the engine binary at the top of its build folder, run through
     # an earlier package's runtime/ (the launcher stages both).
     runtime = spec.env_vars["GLM_TT_RUNTIME_PACKAGE"]
     assert f"{package}/{spec.env_vars['GLM_TT_BINARY']}" in files
