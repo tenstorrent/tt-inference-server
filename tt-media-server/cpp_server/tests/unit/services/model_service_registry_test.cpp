@@ -8,7 +8,9 @@
 
 #include "api/route_registry.hpp"
 #include "config/types.hpp"
+#include "runtime/runners/i_embedding_runner.hpp"
 #include "runtime/runners/media_runner.hpp"
+#include "runtime/runners/mock_embedding_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "services/request_pipeline.hpp"
 #include "services/service_container.hpp"
@@ -209,6 +211,29 @@ TEST(RunnerRegistryTest, MediaNoMatchReturnsNullptr) {
   auto runner = RunnerRegistry::instance().createMedia<FakeMediaRunner>(
       ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
   EXPECT_EQ(runner, nullptr);
+}
+
+TEST(RunnerRegistryTest, EmbeddingMediaRunnerRegistersAndInstantiatesMock) {
+  RunnerRegistry::instance().clear();
+  RunnerRegistry::instance().registerMediaRunner(
+      ModelService::EMBEDDING, ModelRunnerType::EMBEDDING_MOCK,
+      [](const tt::config::RunnerConfig& cfg)
+          -> std::unique_ptr<tt::runners::IRunnerBase> {
+        return std::make_unique<tt::runners::MockEmbeddingRunner>(
+            std::get<tt::config::EmbeddingConfig>(cfg));
+      });
+
+  tt::config::EmbeddingConfig embCfg;
+  embCfg.hf_model_id = "BAAI/bge-large-en-v1.5";
+  embCfg.max_batch_size = 8;
+  tt::config::RunnerConfig cfg = embCfg;
+
+  auto runner =
+      RunnerRegistry::instance().createMedia<tt::runners::IEmbeddingRunner>(
+          ModelService::EMBEDDING, ModelRunnerType::EMBEDDING_MOCK, cfg);
+  ASSERT_NE(runner, nullptr);
+  EXPECT_STREQ(runner->runnerType(), "MockEmbeddingRunner");
+  EXPECT_TRUE(runner->warmup());
 }
 
 // ---------------------------------------------------------------------------

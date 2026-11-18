@@ -40,9 +40,39 @@ class TTModelInput:
     sampling_metadata: None  # Not used in V1
     multi_modal_kwargs: dict
     cross_block_tables: torch.Tensor | None  # Not yet supported in V1
+    # Persistent input-batch slots corresponding to active sampled rows, grouped
+    # by DP segment. Populated when one process owns all segments (including
+    # in-process TT submesh DP); unavailable for gathered process DP.
+    sampling_batch_indices: list[list[int]] | None = None
 
 
-def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=False):
+def _multinomial(probs, generators):
+    """Draw one index per row, honouring any per-row seeded generator.
+
+    ``torch.multinomial`` accepts a single generator for the whole call, so a
+    seeded row has to be drawn on its own. Drawing row-by-row also makes a
+    seeded row's result independent of which other requests share the batch --
+    with one shared generator the draws are consumed in row order, so adding or
+    removing a neighbour would shift a seeded request's stream.
+
+    ``generators`` is None when nothing in the batch is seeded, which keeps the
+    common path on the single batched draw.
+    """
+    if generators is None:
+        return torch.multinomial(probs, num_samples=1)
+
+    assert len(generators) == probs.shape[0], (
+        f"got {len(generators)} generators for {probs.shape[0]} rows"
+    )
+    out = torch.empty((probs.shape[0], 1), dtype=torch.long, device=probs.device)
+    for i, generator in enumerate(generators):
+        out[i] = torch.multinomial(probs[i], num_samples=1, generator=generator)
+    return out
+
+
+def top_pk_logits_efficient(
+    logits, p=0.9, k=10, temperature=1.0, return_probs=False, generators=None
+):
     # Do not keep the entire vocab size after top k.
     # Instead, keep the k size tensor and record the associated indices.
     if k < 1:  # no top-k sampling if set to -1 or 0
@@ -57,7 +87,7 @@ def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=F
     probs = torch.nan_to_num(
         probs
     )  # convert nan to num to prevent error in multinomial
-    top_k_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
+    top_k_id = _multinomial(probs, generators).squeeze(-1)
     token = top_k_indices.gather(-1, top_k_id.unsqueeze(-1)).squeeze(-1)
     if return_probs:
         return token, (probs, top_k_indices)
@@ -65,7 +95,7 @@ def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=F
         return token
 
 
-def sample_tokens(logits, tt_sampling_params: TTSamplingParams):
+def sample_tokens(logits, tt_sampling_params: TTSamplingParams, generators=None):
     if tt_sampling_params.temperature == 0:  # greedy decoding
         return torch.argmax(logits, dim=-1)
     else:  # top-k top-p sampling
@@ -74,4 +104,5 @@ def sample_tokens(logits, tt_sampling_params: TTSamplingParams):
             p=tt_sampling_params.top_p,
             k=tt_sampling_params.top_k,
             temperature=tt_sampling_params.temperature,
+            generators=generators,
         )

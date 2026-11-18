@@ -1,0 +1,133 @@
+openapi: 3.1.0
+info:
+  title: FLUX.3 Image klein generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `black-forest-labs/flux-3-image-klein` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/black-forest-labs/flux-3-image-klein:
+    post:
+      operationId: submitFlux3ImageKlein
+      tags: [FLUX.3 Image klein]
+      summary: Submit a FLUX.3 Image klein job
+      description: |
+        Text to image, or editing a reference when `images` is given. Every prompt is rewritten by the model's prompt
+        upsampler first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Flux3ImageKleinRequest"
+            example:
+              prompt: >-
+                Hot-air balloons <balloon_1> <balloon_2> over a green valley at
+                sunrise. [{"id": "balloon_1", "bbox": [80, 60, 480, 380],
+                "desc": "A red and yellow striped hot-air balloon."}, {"id":
+                "balloon_2", "bbox": [200, 620, 420, 800], "desc": "A small blue
+                hot-air balloon."}]
+              aspect_ratio: "1:1"
+              size: 2K
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"
+  schemas:
+    Flux3ImageKleinRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            What to generate or how to edit, in plain words. The model's prompt
+            upsampler always rewrites it into the detailed caption the model
+            was trained on, and each output reports that caption as its
+            `prompt`.
+
+            Refer to `images` by tag: `<ref_image_0>` is the first.
+
+            Bounding boxes go at the end of the prompt: tag
+            each element in the text (`<balloon_1>`), then add one space and a
+            JSON list with a row per tag. Coordinates are `[top, left, bottom,
+            right]` on a 0–1000 grid with (0, 0) at the top left, whatever the
+            output shape.
+
+            - New element: `{"id": "balloon_1", "bbox": [80, 60, 480, 380],
+              "desc": "…"}`.
+            - Element of a reference (edits): `{"id": "knight_1", "from":
+              "ref_image_0", "src_bbox": […], "tgt_bbox": […], "desc": "…"}`.
+              The same box in both keeps it; different boxes move or resize it;
+              `"tgt_bbox": null` removes it; `"from": null, "src_bbox": null`
+              adds a new element.
+        images:
+          type: array
+          maxItems: 1
+          items:
+            $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            Reference to edit: 0 or 1 for now; a list so more can be allowed
+            later without a schema change. Omitted = text to image. Resized and
+            center-cropped to the output size.
+        count:
+          type: integer
+          minimum: 1
+          maximum: 1
+          default: 1
+          description: |
+            Number of images. Only 1 for now; kept so more can be allowed later
+            without a schema change.
+        aspect_ratio:
+          type: string
+          enum: ["1:1"]
+          default: "1:1"
+          description: |
+            Output shape. Only `1:1` for now; more can be allowed later without
+            a schema change. Each output reports its exact size. Boxes are
+            placed on the output's grid.
+        size:
+          type: string
+          enum: [1K, 2K, 4K]
+          default: 2K
+          description: |
+            Size tier. With `aspect_ratio`, it fixes the output size:
+
+            | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
+            | -------------- | --------- | --------- | --------- |
+            | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
+        format:
+          $ref: "../../common.yaml#/components/schemas/ImageFormat"
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"
+

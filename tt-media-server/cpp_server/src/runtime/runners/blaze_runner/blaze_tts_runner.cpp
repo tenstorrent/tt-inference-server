@@ -7,12 +7,12 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
 #include "config/defaults.hpp"
+#include "runtime/runners/tts_runner_metrics.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "utils/logger.hpp"
 #include "utils/tts_prompt_compiler.hpp"
@@ -21,6 +21,8 @@
 namespace tt::runners::blaze {
 
 namespace sched = tts_scheduler;
+using tt::runners::tts::elapsedUsSince;
+using tt::runners::tts::voiceSourceOf;
 
 namespace {
 
@@ -30,30 +32,6 @@ sched::GenerationParams toSchedulerGeneration(
   out.ignoreEos = generation.ignoreEos;
   out.stopTokens = generation.stopTokenIds;
   return out;
-}
-
-/** Microseconds elapsed since `start`, saturating at uint32 (~71 min) so a
- *  pathological stall cannot wrap the IPC field into a small value. */
-uint32_t elapsedUsSince(std::chrono::steady_clock::time_point start) {
-  const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                      std::chrono::steady_clock::now() - start)
-                      .count();
-  if (us <= 0) return 0;
-  return static_cast<uint32_t>(
-      std::min<int64_t>(us, std::numeric_limits<uint32_t>::max()));
-}
-
-/** Bounded metrics dimension for "which voice produced these tokens". A
- *  cloned voice costs more per token than the default speaker, and the TTS
- *  API exposes no voice ID to label by. */
-tt::worker::tts::VoiceSource voiceSourceOf(const ipc::tts::TtsIpcTask& task) {
-  if (!task.voiceWavPcm.empty()) {
-    return tt::worker::tts::VoiceSource::VoiceSample;
-  }
-  if (task.description.has_value() && !task.description->empty()) {
-    return tt::worker::tts::VoiceSource::Description;
-  }
-  return tt::worker::tts::VoiceSource::Default;
 }
 
 }  // namespace

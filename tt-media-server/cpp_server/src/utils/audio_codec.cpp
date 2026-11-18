@@ -104,8 +104,22 @@ std::string bf16SamplesToPcm16Bytes(const std::vector<uint16_t>& samplesBf16) {
   return out;
 }
 
+std::string pcm16SamplesToBytes(const std::vector<int16_t>& samplesPcm16) {
+  std::string out;
+  out.reserve(samplesPcm16.size() * sizeof(int16_t));
+  for (int16_t sample : samplesPcm16) {
+    const auto raw = static_cast<uint16_t>(sample);
+    out.push_back(static_cast<char>(raw & 0xFFu));
+    out.push_back(static_cast<char>((raw >> 8) & 0xFFu));
+  }
+  return out;
+}
+
 std::string audioChunkToPcm16Bytes(
     const tt::domain::tts::TtsAudioChunk& chunk) {
+  if (!chunk.samplesPcm16.empty()) {
+    return pcm16SamplesToBytes(chunk.samplesPcm16);
+  }
   return bf16SamplesToPcm16Bytes(chunk.samplesBf16);
 }
 

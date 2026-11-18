@@ -4,6 +4,7 @@
 
 import asyncio
 from abc import ABC
+from typing import Optional
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -143,6 +144,10 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
 
+    def _get_request_processing_timeout(self) -> Optional[float]:
+        """Return the timeout in seconds, or None to wait indefinitely."""
+        return settings.request_processing_timeout_seconds
+
     def _teardown_task(self, task_id: str) -> None:
         """Drop the per-task result queue and signal the worker to abort any
         in-flight asyncio task for this id. Idempotent — on the success path
@@ -157,10 +162,12 @@ class BaseService(ABC):
 
         self.scheduler.process_request(request)
 
+        timeout = self._get_request_processing_timeout()
         try:
-            result = await asyncio.wait_for(
-                queue.get(), timeout=settings.request_processing_timeout_seconds
-            )
+            if timeout is None:
+                result = await queue.get()
+            else:
+                result = await asyncio.wait_for(queue.get(), timeout=timeout)
             # Mirror process_streaming: scheduler.error_listener pushes
             # Exception(error) onto the result queue when the worker fails.
             # Without unwrapping here the exception flows into post_process
@@ -171,7 +178,7 @@ class BaseService(ABC):
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
+                f"Request timed out for task {request._task_id} after {timeout}s"
             )
             raise
         except Exception as e:

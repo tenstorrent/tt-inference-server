@@ -93,6 +93,7 @@ enum class ModelRunnerType {
   TT_SDXL_IMAGE_TO_IMAGE,
   TT_SDXL_EDIT,
   TT_TTS,
+  TT_QWEN3_TTS,
   TT_BGE_LARGE_EN,
   TT_BGE_M3,
   TT_QWEN_EMBEDDING_8B,
@@ -157,6 +158,8 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_sdxl_edit";
     case ModelRunnerType::TT_TTS:
       return "tt_tts";
+    case ModelRunnerType::TT_QWEN3_TTS:
+      return "tt_qwen3_tts";
     case ModelRunnerType::TT_BGE_LARGE_EN:
       return "tt_bge_large_en";
     case ModelRunnerType::TT_BGE_M3:
@@ -180,12 +183,14 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-sdxl-edit";
     case ModelRunnerType::TT_TTS:
       return "tt-tts";
+    case ModelRunnerType::TT_QWEN3_TTS:
+      return "tt-qwen3-tts";
+    // Embedding runners have no client runner name: the string existed only
+    // as the MODEL_RUNNER export for Python's runner_fabric, which the
+    // tt-metal-direct runner no longer uses.
     case ModelRunnerType::TT_BGE_LARGE_EN:
-      return "bge_large_en_v1_5";
     case ModelRunnerType::TT_BGE_M3:
-      return "bge-m3";
     case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
-      return "qwen_embedding_8b";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:
@@ -194,6 +199,43 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "";
   }
   return "";
+}
+
+/** Qwen3-TTS release (`tts_model_type` in the checkpoint's config.json). */
+enum class Qwen3TtsRelease {
+  BASE,
+  CUSTOM_VOICE,
+  VOICE_DESIGN,
+};
+
+/** Wire/env string, matching `weights.model_kind()` in tt-metal. */
+inline std::string toString(Qwen3TtsRelease r) {
+  switch (r) {
+    case Qwen3TtsRelease::BASE:
+      return "base";
+    case Qwen3TtsRelease::CUSTOM_VOICE:
+      return "custom_voice";
+    case Qwen3TtsRelease::VOICE_DESIGN:
+      return "voice_design";
+  }
+  return "unknown";
+}
+
+/** Qwen3-TTS checkpoint size (`tts_model_size` in config.json). */
+enum class Qwen3TtsModelSize {
+  SIZE_1B7,
+  SIZE_0B6,
+};
+
+/** Wire/env string, matching `weights.model_size()` in tt-metal. */
+inline std::string toString(Qwen3TtsModelSize s) {
+  switch (s) {
+    case Qwen3TtsModelSize::SIZE_1B7:
+      return "1b7";
+    case Qwen3TtsModelSize::SIZE_0B6:
+      return "0b6";
+  }
+  return "unknown";
 }
 
 inline Model modelFromString(const std::string_view& v) {

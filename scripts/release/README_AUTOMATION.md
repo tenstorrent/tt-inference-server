@@ -100,6 +100,7 @@ Cuts a `v<version>` branch from the release HEAD (the same commit the tag points
 
 ### 4.12 Build the release-artifacts zip
 Downloads the per-model/device workflow artifacts from the tt-shield run and packs them into `v<version>-release_artifacts.zip` (kept on the runner). This same zip is attached to the Release automatically in 4.19 (it is also uploaded as a workflow artifact for the Actions UI).
+One bundle per released model/device: `workflow_logs_release_<model>_<device>.zip`. A model/device released with more than one impl keeps that name for its default impl and adds `_<impl>` for each explicit one (e.g. `..._p300x2_llama31-8b-qb2.zip`).
 
 ### 4.13 Resolve source images and map to release images
 Finds the `vllm` / `media` / `forge` dev images the tt-shield run built, and computes the destination release image tags. Example:
@@ -124,7 +125,14 @@ Creates a **draft** GitHub Release named `v<version>`, referencing the tag from 
 ### 4.19 Upload the release-artifacts zip as a Release asset
 Attaches `v<version>-release_artifacts.zip` (from 4.12) to the draft Release as an asset, uploaded **directly** so it is a single zip — not the double-zipped workflow artifact. (This automates the former manual download-and-upload step.)
 
-> **After the pipeline:** the automation has already pushed the generated files + tag + `v<version>` branch on `stable`, published the images, opened a **draft PR** into `main`, and created a **draft Release `v<version>`** with the `v<version>-release_artifacts.zip` asset attached and an empty body. What remains is a human **review + merge** (Steps 5–6); **publishing (Step 7) is then automated** by a second workflow.
+### 4.20 Build and upload the release manifest
+Builds `v<version>-release-manifest.json` from the exact release scope, promoted
+prod catalog, prior prod state, and tt-shield run. Each changed runtime leaf
+includes its exact identity and pins, the before-values used by the post-release
+PR, and its CI job link when available. The manifest is attached directly to
+the draft Release.
+
+> **After the pipeline:** the automation has already pushed the generated files + tag + `v<version>` branch on `stable`, published the images, opened a **draft PR** into `main`, and created a **draft Release `v<version>`** with the release-artifacts ZIP and release-manifest JSON attached and an empty body. What remains is a human **review + merge** (Steps 5–6); **publishing (Step 7) is then automated** by a second workflow.
 
 ## Step 5: Review the auto-created PR and draft Release  *(manual)*
 
@@ -140,7 +148,9 @@ Merging the post-release PR triggers **`.github/workflows/publish-release.yml`**
 - writes the **final (merged) PR body** into the Release notes of the draft `v<version>`, and
 - flips the Release from **draft → published** and marks it **latest**.
 
-The tag and the `v<version>-release_artifacts.zip` asset are already in place from Step 4, so nothing else is attached — no manual publishing needed.
+The tag, `v<version>-release_artifacts.zip`, and
+`v<version>-release-manifest.json` assets are already in place from Step 4, so
+nothing else is attached — no manual publishing needed.
 
 Notes / caveats:
 - The trigger is filtered on the **`VERSION`** file, so it fires only when the merged PR changed `VERSION` (every real forward release does). It will **not** fire on a same-version re-release.

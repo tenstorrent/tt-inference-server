@@ -102,8 +102,8 @@ flowchart TD
 
   subgraph clientWorkflows ["Client Workflow Processes"]
     benchConfig["benchmark_config<br/>+ benchmark targets"]
-    runBench["run_benchmarks.py"]
-    benchServing["vLLM benchmark_serving.py"]
+    runBench["llm_module runner<br/>+ drivers"]
+    benchServing["vllm bench serve<br/>(or AIPerf, GenAI-Perf, GuideLLM)"]
     runBench --> benchServing
     benchConfig --> runBench
   end
@@ -113,7 +113,7 @@ flowchart TD
     runLogs["run_logs/<br/>stdout + stderr"]
     runSpecs["runtime_model_specs/<br/>runtime_model_spec_*.json"]
     serverLogs["docker_server/<br/>inference server logs"]
-    toolOutputs["benchmarks_output/<br/>evals_output/<br/>tool-specific data files"]
+    toolOutputs["evals_output/<br/>stress_tests_output/<br/>tool-specific data files"]
     reports["reports_output/<br/>summary tables, reports"]
   end
 
@@ -480,7 +480,6 @@ Each workflow run script receives the runtime model spec JSON path (`--runtime-m
 │   ├── model_spec.py               # ModelSpecTemplate, ModelSpec, ImplSpec, DeviceModelSpec
 │   ├── runtime_config.py           # RuntimeConfig dataclass (CLI/runtime state)
 │   ├── run_docker_server.py        # Docker command generation and container lifecycle
-│   ├── run_workflows.py            # Workflow orchestration and WorkflowSetup
 │   ├── setup_host.py               # Host setup: SetupConfig, HostSetupManager
 │   ├── validate_setup.py           # Pre-run validation checks
 │   ├── device_utils.py             # Device inference from tt-smi
@@ -492,16 +491,14 @@ Each workflow run script receives the runtime model spec JSON path (`--runtime-m
 ├── vllm-tt-metal/
 │   └── src/
 │       └── run_vllm_api_server.py  # Container entrypoint (independent from run.py)
-├── benchmarking/
-│   ├── run_benchmarks.py           # Benchmarks workflow run script
-│   └── benchmark_config.py         # Benchmark configuration and targets
-├── evals/
-│   ├── run_evals.py                # Evals workflow run script
-│   └── eval_config.py              # Evaluation configuration
-├── stress_tests/
-│   └── run_stress_tests.py         # Stress tests workflow run script
-└── tests/
-    └── run_tests.py                # Tests workflow run script
+├── run_workflows.py                # Workflow engine entry point (run.py dispatches here)
+├── reference_config/
+│   ├── benchmarking/               # Benchmark sweep (benchmark_config.py) and targets (benchmark_targets/)
+│   └── evals/                      # Eval task configuration
+├── llm_module/                     # LLM benchmark drivers, parsers, runner, target checks
+├── test_module/                    # Workflow callers: llm_tests/, stress_tests/, ...
+├── workflow_module/                # Workflow engine
+└── report_module/                  # Markdown + JSON report generation
 ```
 
 ## Error Handling
@@ -601,6 +598,6 @@ Key concepts:
 - **RuntimeConfig**: Captures all CLI/runtime state (workflow, service port, Docker flags, overrides) separately from the static model definition. Created via `RuntimeConfig.from_args()` and applied to the model spec via `model_spec.apply_overrides(runtime_config)`.
 - **model_spec.json**: Exported at `run.py` startup from `MODEL_SPECS` and bundled into Docker images. The container interface uses this catalog to resolve a model spec from `--model` + `--tt-device` without needing `run.py`.
 
-Performance targets for each model-hardware combination are defined in `reference_config/benchmarking/benchmark_targets/model_performance_reference.json`. The key is the default-impl `ModelSpec`'s first model weights name (e.g. `Llama-3.3-70B`), which uniquely defines targets for all weight variants of the same architecture. Targets can be added directly to a specific `ModelSpec` for additional comparison points.
+Performance targets for each model-hardware combination are defined in `reference_config/benchmarking/benchmark_targets/model_performance_reference.json`, keyed by Hugging Face repo id and then device; an entry with `impl` applies only to that implementation. See [Targets and grading](../reference_config/benchmarking/README.md#targets-and-grading).
 
 Evaluation targets are defined per model weights because they depend on model output, not on the implementation or hardware.

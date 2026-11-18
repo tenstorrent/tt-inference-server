@@ -41,7 +41,7 @@ TEST(MediaPayloadIpcTest, ResultQueueUsesDonePillForShutdown) {
   result.task_id = 7;
   result.response_path = "/tmp/response-7.json";
   result.generation_time_seconds = 1.25;
-  ASSERT_TRUE(owner.push(result));
+  owner.push(result);
 
   tt::ipc::media_payload::MediaPayloadResult received;
   EXPECT_TRUE(peer.blockingPop(received));
@@ -49,6 +49,12 @@ TEST(MediaPayloadIpcTest, ResultQueueUsesDonePillForShutdown) {
   EXPECT_EQ(received.response_path, result.response_path);
   EXPECT_DOUBLE_EQ(received.generation_time_seconds,
                    result.generation_time_seconds);
+  EXPECT_FALSE(received.isClaimed());
+
+  owner.push(tt::ipc::media_payload::MediaPayloadResult::claimed(7));
+  EXPECT_TRUE(peer.blockingPop(received));
+  EXPECT_EQ(received.task_id, 7u);
+  EXPECT_TRUE(received.isClaimed());
 
   owner.shutdown();
   EXPECT_FALSE(peer.blockingPop(received));

@@ -30,6 +30,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [stabilityai/stable-diffusion-3.5-large](https://huggingface.co/stabilityai/stable-diffusion-3.5-large) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers) |
-| tt-metal Commit | `c180ef7` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-c180ef7` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers) |
+| tt-metal Commit | `13f44c5` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686` |

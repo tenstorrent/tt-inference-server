@@ -41,10 +41,39 @@ class DeviceLivenessTest(BaseTest):
             timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
+                    try:
+                        data = await response.json(content_type=None)
+                    except Exception:
+                        data = None
+
+                    if isinstance(data, dict):
+                        status = data.get("status")
+                        if status is not None and status != "alive":
+                            error_detail = data.get("error") or data.get("detail") or ""
+                            raise SystemExit(
+                                f"❌ Service status is '{status}', expected 'alive'"
+                                + (f": {error_detail}" if error_detail else "")
+                            )
+
+                        worker_info = data.get("worker_info")
+                        if isinstance(worker_info, dict):
+                            dead_workers = [
+                                f"{wid} (pid={w.get('pid')})"
+                                for wid, w in worker_info.items()
+                                if isinstance(w, dict)
+                                and (w.get("pid") or 0) > 0
+                                and w.get("is_alive") is False
+                            ]
+                            if dead_workers:
+                                raise SystemExit(
+                                    f"❌ Worker process(es) died: {', '.join(dead_workers)}"
+                                )
+
                     assert response.status == 200, (
                         f"Expected status 200, got {response.status}"
                     )
-                    data = await response.json()
+                    if not isinstance(data, dict):
+                        data = await response.json()
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")

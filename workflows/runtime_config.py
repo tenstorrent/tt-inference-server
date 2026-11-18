@@ -67,13 +67,19 @@ class RuntimeConfig:
     disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
     percentile_report: bool = False
-    prewarm: bool = False
-    prewarm_only: bool = False
     streaming: Optional[str] = None
     preprocessing: Optional[str] = None
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
     eval_samples: Optional[str] = None
+    # Comma-separated task names (full samples); see run.py --eval-tasks.
+    eval_tasks: Optional[str] = None
+    # "i/N": run shard i of N of each selected eval task; see run.py --eval-shard.
+    eval_shard: Optional[str] = None
+    # Set only on the runtime model spec that report_module.merge_eval_shards
+    # writes for a merged task (eval_shard is then None): which shards were
+    # merged, from which plan, package and ref. Never set from the CLI.
+    eval_shard_merge: Optional[Dict] = None
     sdxl_num_prompts: str = "100"
 
     # Prefix-cache benchmark
@@ -185,13 +191,13 @@ class RuntimeConfig:
             disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
             percentile_report=args.percentile_report,
-            prewarm=getattr(args, "prewarm", False),
-            prewarm_only=getattr(args, "prewarm_only", False),
             streaming=args.streaming,
             preprocessing=args.preprocessing,
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
+            eval_tasks=getattr(args, "eval_tasks", None),
+            eval_shard=getattr(args, "eval_shard", None),
             sdxl_num_prompts=args.sdxl_num_prompts,
             prefix_cache=getattr(args, "prefix_cache", False),
             prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),

@@ -16,13 +16,14 @@ import pytest
 from workflows.utils import get_repo_root_path
 
 CHART = get_repo_root_path() / "charts" / "tt-inference-server"
+FIXTURES = get_repo_root_path() / "tests" / "test_chart" / "fixtures"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("helm") is None, reason="helm CLI not available"
 )
 
 
-def _render(*set_args):
+def _render(*set_args, values_files=()):
     cmd = [
         "helm",
         "template",
@@ -33,6 +34,8 @@ def _render(*set_args):
         "--set",
         "auth.apiKey=fake",
     ]
+    for f in values_files:
+        cmd.extend(["-f", str(FIXTURES / f)])
     for s in set_args:
         cmd.extend(["--set", s])
     return subprocess.run(cmd, capture_output=True, text=True)
@@ -47,25 +50,36 @@ def test_single_engine_resolves_without_flags():
 
 
 def test_default_engine_picks_vllm_when_device_under_multiple_engines():
-    r = _render("model=Llama-3.1-70B", "device=t3k")
+    # No catalogue model has one device under two engines, so overlay a
+    # synthetic fixture whose t3k is served by both vllm and media.
+    r = _render(
+        "model=resolver-multi-engine-fixture",
+        "device=t3k",
+        values_files=["resolver_multi_engine.yaml"],
+    )
     assert r.returncode == 0, r.stderr
     assert "vllm-tt-metal-src" in r.stdout
 
 
 def test_explicit_engine_override_picks_media():
-    r = _render("model=Llama-3.1-70B", "device=t3k", "engine=media")
+    r = _render(
+        "model=resolver-multi-engine-fixture",
+        "device=t3k",
+        "engine=media",
+        values_files=["resolver_multi_engine.yaml"],
+    )
     assert r.returncode == 0, r.stderr
     assert "tt-media-inference-server" in r.stdout
 
 
-def test_explicit_impl_override_picks_non_default():
+def test_explicit_impl_override_picks_named_impl():
     r = _render(
         "model=Qwen3-32B",
         "device=galaxy",
-        "impl=tt_transformers",
+        "impl=qwen3_32b_galaxy",
     )
     assert r.returncode == 0, r.stderr
-    assert "e95ffa5-48eba14" in r.stdout, "expected tt_transformers' image tag"
+    assert "0.21.0-bc4c4df-be7d805" in r.stdout
 
 
 def test_unknown_impl_fails_with_clear_error():
@@ -110,6 +124,6 @@ def test_hfcachedir_sets_weights_env_and_mount():
 
 
 def test_cache_hostpath_includes_impl():
-    r = _render("model=Qwen3-32B", "device=galaxy", "impl=tt_transformers")
+    r = _render("model=Qwen3-32B", "device=galaxy", "impl=qwen3_32b_galaxy")
     assert r.returncode == 0, r.stderr
-    assert "/opt/cache/Qwen3-32B-galaxy-tt_transformers" in r.stdout
+    assert "/opt/cache/Qwen3-32B-galaxy-qwen3_32b_galaxy" in r.stdout

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -85,3 +86,45 @@ def test_diffusiongemma_suite_fails_loudly_without_max_context():
 
     with pytest.raises(RuntimeError, match="max_context"):
         test._extra_pytest_args()
+
+
+def _make_test_with_config(config: dict) -> VLLMParamConformanceTest:
+    return VLLMParamConformanceTest(
+        TestConfig(config), {}, ctx=_fake_ctx(hf_model_repo="org/m", model_name="m")
+    )
+
+
+def test_suite_passes_the_test_cases_chat_template_kwargs_verbatim():
+    """The checks read message.content, so a test case states the kwargs that
+    switch its model's thought channel off; the key is model-specific."""
+    for kwargs in ({"enable_thinking": False}, {"thinking": False}):
+        test = _make_test_with_config({"chat_template_kwargs": kwargs})
+        assert test._extra_pytest_args() == [
+            "--chat-template-kwargs",
+            json.dumps(kwargs),
+        ]
+
+
+def test_suite_accepts_chat_template_kwargs_as_a_json_string():
+    test = _make_test_with_config(
+        {"chat_template_kwargs": '{"enable_thinking": false}'}
+    )
+    assert test._extra_pytest_args() == [
+        "--chat-template-kwargs",
+        '{"enable_thinking": false}',
+    ]
+
+
+@pytest.mark.parametrize(
+    "config", [{}, {"chat_template_kwargs": {}}, {"chat_template_kwargs": ""}]
+)
+def test_suite_adds_no_template_args_without_chat_template_kwargs(config):
+    assert _make_test_with_config(config)._extra_pytest_args() == []
+    assert VLLMParamConformanceTest(TestConfig(config), {})._extra_pytest_args() == []
+
+
+def test_suite_rejects_chat_template_kwargs_that_are_not_an_object():
+    with pytest.raises(ValueError, match="chat_template_kwargs"):
+        _make_test_with_config(
+            {"chat_template_kwargs": ["enable_thinking"]}
+        )._extra_pytest_args()

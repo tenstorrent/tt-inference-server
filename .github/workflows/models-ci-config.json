@@ -20,16 +20,6 @@
                 }
             }
         },
-        "tiiuae/Falcon3-7B-Instruct": {
-            "inference_engine": "FORGE",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P150"
-                    ]
-                }
-            }
-        },
         "meta-llama/Llama-3.1-8B-Instruct": {
             "implementations": [
                 {
@@ -48,7 +38,6 @@
                                 "GALAXY",
                                 "N300",
                                 "P100",
-                                "P150X4",
                                 "T3K"
                             ]
                         }
@@ -73,10 +62,16 @@
                             "devices": [
                                 "P150"
                             ]
-                        },
-                        "release": {
+                        }
+                    }
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "llama31-8b-qb2",
+                    "ci": {
+                        "nightly": {
                             "devices": [
-                                "P150"
+                                "P300X2"
                             ]
                         }
                     }
@@ -148,14 +143,12 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "P300X2"
                     ]
                 },
                 "weekly": {
                     "devices": [
                         "GALAXY",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -180,16 +173,6 @@
                         "weekly": {
                             "devices": [
                                 "T3K"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "inference_engine": "FORGE",
-                    "ci": {
-                        "nightly": {
-                            "devices": [
-                                "BH_GALAXY"
                             ]
                         }
                     }
@@ -272,9 +255,31 @@
         "Qwen/Qwen2.5-VL-7B-Instruct": {
             "inference_engine": "vLLM",
             "ci": {
+                "nightly": {
+                    "devices": [
+                        "T3K",
+                        "GALAXY"
+                    ]
+                },
                 "weekly": {
                     "devices": [
                         "N300"
+                    ]
+                }
+            }
+        },
+        "allenai/olmOCR-2-7B-1025": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "T3K",
+                        "GALAXY"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "GALAXY"
                     ]
                 }
             }
@@ -339,6 +344,27 @@
             ]
         },
         "Qwen/Qwen3.6-27B": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2",
+                        "P150X4"
+                    ]
+                }
+            }
+        },
+        "Qwen/Qwen3.5-27B": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P150X4"
+                    ]
+                }
+            }
+        },
+        "Qwen/Qwen3.8-27B": {
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
@@ -428,7 +454,6 @@
                     "devices": [
                         "GALAXY",
                         "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
@@ -441,8 +466,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
@@ -477,7 +500,6 @@
                     "devices": [
                         "GALAXY",
                         "P300X2",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -490,7 +512,6 @@
                     "devices": [
                         "GALAXY",
                         "P300X2",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -552,6 +573,33 @@
             "ci": {
                 "nightly": {
                     "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                }
+            }
+        },
+        "IFM/K2-Horizon-7B": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                }
+            }
+        },
+        "meta-models/Muse-Glimmer-30B": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
                         "P300X2"
                     ]
                 }
@@ -572,7 +620,14 @@
             "ci": {
                 "nightly": {
                     "devices": [
-                        "P300X2"
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
                     ]
                 }
             }
@@ -583,6 +638,7 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
+                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]
@@ -627,7 +683,6 @@
                     "devices": [
                         "GALAXY",
                         "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
@@ -702,7 +757,6 @@
                         "nightly": {
                             "devices": [
                                 "GALAXY",
-                                "BH_GALAXY",
                                 "N150",
                                 "N300",
                                 "P300X2"
@@ -775,7 +829,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "N150",
                         "P150"
                     ]
@@ -789,6 +842,42 @@
         },
         "Tongyi-MAI/Z-Image-Turbo": {
             "inference_engine": "MEDIA",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                }
+            }
+        },
+        "Aleph-Alpha/Kolibri-1-BF16": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                }
+            }
+        },
+        "google/gemma-4-26B-A4B-it": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                }
+            }
+        },
+        "ibm-granite/granite-4.2-30b": {
+            "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
                     "devices": [

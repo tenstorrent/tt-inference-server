@@ -4,7 +4,7 @@
 
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -54,7 +54,12 @@ if "tt_model_runners.runner_fabric" not in sys.modules:
     sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
 # Now import the modules under test
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.worker_utils import (
+    claim_job_for_worker,
+    dequeue_and_claim_requests,
+    initialize_device_worker,
+    release_job_from_worker,
+)
 from utils.runner_utils import (
     _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
@@ -127,26 +132,6 @@ class TestSetupRunnerEnvironment:
                 setup_runner_environment(worker_id)
 
                 assert os.environ["TT_VISIBLE_DEVICES"] == "0"
-
-    def test_sets_metal_cache_path(self):
-        """Test that TT_METAL_CACHE is set correctly"""
-        worker_id = "0"
-
-        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("utils.runner_utils.get_telemetry_client"):
-                setup_runner_environment(worker_id)
-
-                assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0"
-
-    def test_handles_comma_separated_worker_id(self):
-        """Test that comma in worker_id is replaced with underscore"""
-        worker_id = "0,1"
-
-        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("utils.runner_utils.get_telemetry_client"):
-                setup_runner_environment(worker_id)
-
-                assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0_1"
 
     def test_initializes_telemetry_when_enabled(self):
         """Test that telemetry is initialized when enabled"""
@@ -283,22 +268,57 @@ class TestSetupGalaxyMeshConfig:
                 assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
 
 
-class TestSignalJobStart:
-    """Device dispatch must set the job start_event when present."""
-
-    def test_sets_event_when_present(self):
+class TestClaimJobForWorker:
+    @patch("device_workers.worker_utils.os.getpid", return_value=123)
+    def test_publishes_assignment_and_sets_start_event(self, _mock_getpid):
         request = Mock()
         request._start_event = Mock()
-        signalJobStart(request)
+        request._cancel_event = None
+        request._worker_assignment = Mock()
+
+        assert claim_job_for_worker(request, "worker-0") is True
+        assert request._worker_assignment.identity == ("worker-0", 123)
         request._start_event.set.assert_called_once()
 
     def test_noops_when_event_missing(self):
-        signalJobStart(object())
+        assert claim_job_for_worker(object(), "worker-0") is True
 
-    def test_noops_when_event_is_none(self):
+    def test_rejects_request_cancelled_during_claim(self):
         request = Mock()
-        request._start_event = None
-        signalJobStart(request)
+        request._cancel_event.is_set.side_effect = [False, True]
+        request._worker_assignment.identity = None
+
+        assert claim_job_for_worker(request, "worker-0") is False
+        assert request._worker_assignment.identity is None
+        request._start_event.set.assert_not_called()
+
+
+class TestWorkerClaimBarrier:
+    def test_retiring_worker_does_not_dequeue(self):
+        retirement_event = Mock()
+        retirement_event.is_set.return_value = True
+        task_queue = Mock()
+
+        requests = dequeue_and_claim_requests(
+            task_queue,
+            "worker-0",
+            1,
+            block=True,
+            timeout=0.2,
+            retirement_event=retirement_event,
+            claim_lock=MagicMock(),
+        )
+
+        assert requests is None
+        task_queue.get_many.assert_not_called()
+
+    def test_release_clears_assignment(self):
+        request = Mock()
+        request._worker_assignment.identity = ("worker-0", 123)
+
+        release_job_from_worker(request, MagicMock())
+
+        assert request._worker_assignment.identity is None
 
 
 class TestInitializeDeviceWorker:

@@ -3,12 +3,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
+import subprocess
+import tarfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional, Tuple
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, Callable, Optional, Sequence, Tuple
 
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
@@ -34,8 +39,46 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+# Track the runtime branch during development. It will be protected and require
+# review before merging changes. Switch to a specific commit once development
+# is stable.
+HARBOR_REPO = "https://github.com/tenstorrent/harbor.git"
+HARBOR_REF = "tt-inference-server"
+
+EVALS_COMMON_LM_EVAL_COMMIT = "af401ef3dd3d2d90e55680990ed1f0c9f7892448"
+
+# MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
+# its verify.py and m3_format_check pytest suites run unchanged from these
+# files, and test_module/llm_tests/minimax_verifier_grading.py grades their
+# output. Pinned to an upstream commit: the `verify` gate is blocking, so a
+# moving branch (or a fork) must not change what is graded. This commit is
+# MiniMax-AI/MiniMax-Provider-Verifier main as of #67, which carries the
+# `reasoning_content` fix vLLM servers need. The `verify` cases set no
+# `targets`: they are graded against the README defaults in VERIFY_METRICS
+# (minimax_verifier_grading.py). The GPU vLLM measurements in MiniMax-M3's
+# `_comment_threshold` (test_module/test_suites/llm.json) are reference only.
+# Moving the pin can change scores: re-measure them there when it does, but
+# don't add them as `targets` unless the gates are deliberately changed.
+MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
+MINIMAX_VERIFIER_COMMIT = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
+MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
+# The full tree is ~870 MB, mostly official-deployment baselines for every
+# model x 10 loops. Only these paths are extracted (see export_repo_commit):
+# verify.py and its sample, validator/ (imported by verify.py), the
+# m3_format_check pytest suites, and the first loop of each enrolled model,
+# the ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
+# test_module/test_suites/llm.json).
+MINIMAX_VERIFIER_PATHS = (
+    "verify.py",
+    "sample.jsonl",
+    "validator",
+    "m3_format_check",
+    "output-dir/MiniMax-M3/loop_01",
+    "output-dir/MiniMax-M2.7/loop_01",
+)
+TARBALL_TIMEOUT_S = 300
+# Written next to the exported files: the commit they came from.
+SOURCE_COMMIT_FILE = ".source_commit"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -60,9 +103,8 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
         ):
             return False
 
-    # `fetch <sha>` rather than a full mirror fetch: uploadpack.allowAnySHA1InWant
-    # is on for GitHub, so a single commit and its trees come down without the
-    # rest of the history. --depth 1 keeps a bumped pin from accumulating it.
+    # Fetch the selected branch or commit rather than all remote refs.
+    # --depth 1 keeps repeated updates from accumulating history.
     steps = (
         f"git -C {dest} remote set-url origin {repo}",
         f"git -C {dest} fetch --depth 1 origin {ref}",
@@ -72,6 +114,85 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
         if run_command(step, logger=logger) != 0:
             logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
             return False
+    return True
+
+
+def read_source_commit(dest: Path) -> Optional[str]:
+    """The commit :func:`export_repo_commit` exported into *dest*, if any."""
+    try:
+        return (dest / SOURCE_COMMIT_FILE).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def tarball_url(repo: str, commit: str) -> str:
+    """codeload URL of *repo*'s (a github.com URL) tarball at *commit*."""
+    slug = repo.removeprefix("https://github.com/").removesuffix(".git")
+    return f"https://codeload.github.com/{slug}/tar.gz/{commit}"
+
+
+def _wanted_path(
+    member: tarfile.TarInfo, paths: Sequence[str]
+) -> Optional[PurePosixPath]:
+    """*member*'s path without the tarball's top-level dir, when it is a file
+    under (or equal to) one of *paths*."""
+    rel = PurePosixPath(*PurePosixPath(member.name).parts[1:])
+    if not member.isfile() or ".." in rel.parts:
+        return None
+    if any(rel == PurePosixPath(p) or PurePosixPath(p) in rel.parents for p in paths):
+        return rel
+    return None
+
+
+def export_repo_commit(
+    dest: Path, repo: str, commit: str, paths: Sequence[str]
+) -> bool:
+    """Materialize *paths* of *repo* at *commit* in *dest*, as plain files.
+    Returns success.
+
+    The export is re-done only when the commit recorded in ``SOURCE_COMMIT_FILE``
+    is not *commit*, so a matching export needs no network at all. When the
+    download fails, whatever export exists is left untouched but the call
+    fails: an export of a different commit must not stand in for the pin.
+
+    The export streams the GitHub tarball at that exact commit and extracts
+    only *paths* (files, or directories taken whole) into a sibling staging
+    directory, swapped into place once every path was found: no clone, so no
+    ``.git`` and no dependence on the local git's sparse-checkout behaviour.
+    """
+    if dest.is_dir() and read_source_commit(dest) == commit:
+        logger.info("%s is at %s %s", dest, repo, commit)
+        return True
+
+    url = tarball_url(repo, commit)
+    staging = dest.with_name(dest.name + ".staging")
+    shutil.rmtree(staging, ignore_errors=True)
+    logger.info("Downloading %s (%s) ...", url, commit)
+    try:
+        with urllib.request.urlopen(
+            url, timeout=TARBALL_TIMEOUT_S
+        ) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
+            for member in tar:
+                rel = _wanted_path(member, paths)
+                if rel is None:
+                    continue
+                out = staging / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(member) as src, open(out, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except (urllib.error.URLError, tarfile.TarError, OSError) as e:
+        logger.error("Failed to export %s %s from %s: %s", repo, commit, url, e)
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    missing = [p for p in paths if not (staging / p).exists()]
+    if missing:
+        logger.error("%s at %s has no %s", repo, commit, ", ".join(missing))
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    (staging / SOURCE_COMMIT_FILE).write_text(commit + "\n")
+    shutil.rmtree(dest, ignore_errors=True)
+    staging.rename(dest)
+    logger.info("Exported %s %s to %s", repo, commit, dest)
     return True
 
 
@@ -248,6 +369,24 @@ def _write_harbor_adapters_pth(
     return True
 
 
+def setup_minimax_verifier(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for MINIMAX_VERIFIER: export MiniMax-Provider-Verifier at its pinned commit.
+
+    Nothing is installed from the checkout: the spec test runs its
+    ``verify.py`` and pytest suites with this venv's python, and the
+    dependencies come from requirements/minimax-verifier.txt.
+    """
+    return export_repo_commit(
+        venv_config.venv_path / MINIMAX_VERIFIER_DIR_NAME,
+        MINIMAX_VERIFIER_REPO,
+        MINIMAX_VERIFIER_COMMIT,
+        MINIMAX_VERIFIER_PATHS,
+    )
+
+
 def check_docker_available(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -261,6 +400,118 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 # Records the revision the checkout is currently on, so a repeat run with the
 # same pin skips the fetch + reinstall and a run with a different pin does not.
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
+# Patches carried here until they land upstream. Each subdirectory names the
+# path inside the InferenceX checkout the patches apply to (``aiperf`` ->
+# ``utils/aiperf``); files apply in sorted order.
+# TODO(#5254): remove patches/inferencex/aiperf/0001-wait-for-all-service-replicas.patch
+# once upstream AgentX / InferenceX rebases its vendored aiperf onto a revision
+# that includes https://github.com/ai-dynamo/aiperf/pull/1348 and the
+# InferenceX pin moves to it. If no patches are left after that, also remove
+# _INFERENCEX_PATCH_DIR, _INFERENCEX_PATCH_TARGETS, _inferencex_patches,
+# _inferencex_stamp, _patch_check, _apply_inferencex_patches, their call sites
+# in setup_agentic_traces and tests/test_workflow_venvs_patches.py.
+# https://github.com/tenstorrent/tt-inference-server/issues/5254
+_INFERENCEX_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "inferencex"
+_INFERENCEX_PATCH_TARGETS = {"aiperf": Path("utils") / "aiperf"}
+
+
+def _inferencex_patches() -> list[tuple[Path, Path]]:
+    """(patch file, target path relative to the checkout) for every carried patch."""
+    patches: list[tuple[Path, Path]] = []
+    for subdir, target in sorted(_INFERENCEX_PATCH_TARGETS.items()):
+        patch_dir = _INFERENCEX_PATCH_DIR / subdir
+        if patch_dir.is_dir():
+            patches.extend((p, target) for p in sorted(patch_dir.glob("*.patch")))
+    return patches
+
+
+def _inferencex_stamp(git_ref: str) -> str:
+    """Ref plus a digest of the carried patches, so a patch change re-runs setup."""
+    patches = _inferencex_patches()
+    if not patches:
+        return git_ref
+    digest = hashlib.sha256()
+    for patch, _ in patches:
+        digest.update(patch.name.encode())
+        digest.update(patch.read_bytes())
+    return f"{git_ref}+patches:{digest.hexdigest()[:16]}"
+
+
+def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
+    """Quiet `git apply --check`: these probes are expected to fail on one side."""
+    result = subprocess.run(
+        ["git", "-C", str(target_dir), "apply", "--check", *flags, str(patch)],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
+    """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
+    for patch, target in _inferencex_patches():
+        target_dir = repo_dir / target
+        # An unpopulated submodule is an empty directory inside the superproject;
+        # `git apply` run there ignores every path in the patch and reports
+        # success, so require the submodule's own .git entry.
+        if not (target_dir / ".git").exists():
+            logger.error("Patch target %s is not a checkout under %s", target, repo_dir)
+            return False
+        if _patch_check(target_dir, patch, "--reverse"):
+            logger.info("Patch %s already applied to %s", patch.name, target)
+            continue
+        if not _patch_check(target_dir, patch):
+            logger.error(
+                "Patch %s does not apply to %s at this InferenceX ref; drop or "
+                "refresh it against the pinned revision.",
+                patch.name,
+                target,
+            )
+            return False
+        if (
+            run_command(
+                ["git", "-C", str(target_dir), "apply", str(patch)], logger=logger
+            )
+            != 0
+        ):
+            return False
+        logger.info("Applied %s to %s", patch.name, target)
+    return True
+
+
+# InferenceX pins whose vendored aiperf builds the agentic auto-warmup phase
+# without ``phase_kind``. 8f12037728d6 vendors aiperf 754356e9 (agentx-v1.0.5),
+# which still does.
+_AGENTIC_WARMUP_PATCH_REFS = frozenset({"8f12037728d6fc118422318d5472f147dcc2a291"})
+
+
+def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
+    # Separate auto-warmup from profiling:
+    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
+    # Without ``phase_kind="warmup"`` AIPerf tags the auto-warmup's server
+    # metric baselines as profiling, so warmup counter growth (including the
+    # prompt-token sources the prefix-cache hit rate is computed from) leaks
+    # into the profiling totals.
+    # TODO(#5253): remove this function, _AGENTIC_WARMUP_PATCH_REFS, their call
+    # sites in setup_agentic_traces and tests/workflows/test_agentic_warmup_patch.py
+    # once https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
+    # InferenceX pin moves to a revision that vendors it.
+    # https://github.com/tenstorrent/tt-inference-server/issues/5253
+    if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
+        return True
+    config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
+    source = config_path.read_text(encoding="utf-8")
+    old = (
+        "        phase=CreditPhase.WARMUP,\n"
+        "        timing_mode=TimingMode.AGENTIC_REPLAY,\n"
+    )
+    new = old + '        phase_kind="warmup",\n'
+    if source.count(old) != 1:
+        logger.error("Unexpected AIPerf warmup configuration: %s", config_path)
+        return False
+    if new not in source:
+        config_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+    return True
 
 
 def setup_agentic_traces(
@@ -313,15 +564,21 @@ def setup_agentic_traces(
     git_ref = config.inferencex_git_ref
     repo_dir = venv_config.venv_path / "InferenceX"
     stamp_file = venv_config.venv_path / _INFERENCEX_REF_STAMP
+    stamp = _inferencex_stamp(git_ref)
 
     if repo_dir.is_dir() and stamp_file.is_file():
-        if stamp_file.read_text().strip() == git_ref:
+        if stamp_file.read_text().strip() == stamp:
+            # The stamp only says the patches were applied at setup time. Check
+            # the tree on every run and re-apply if something reset it, so a
+            # run never silently proceeds without them.
+            if not _apply_inferencex_patches(repo_dir, logger):
+                return False
             logger.info(
                 "InferenceX already checked out at %s in %s; skipping setup.",
                 git_ref,
                 repo_dir,
             )
-            return True
+            return _patch_agentic_warmup(repo_dir, git_ref)
         logger.info(
             "InferenceX checkout is on a different ref than the configured %s; "
             "re-checking out and reinstalling.",
@@ -355,6 +612,8 @@ def setup_agentic_traces(
         != 0
     ):
         return False
+    if not _apply_inferencex_patches(repo_dir, logger):
+        return False
 
     logger.warning(
         "Installing the InferenceX AIPerf fork; this pulls transformers from "
@@ -381,7 +640,10 @@ def setup_agentic_traces(
     if run_command(install_cmd, logger=logger) != 0:
         return False
 
-    stamp_file.write_text(f"{git_ref}\n")
+    if not _patch_agentic_warmup(repo_dir, git_ref):
+        return False
+
+    stamp_file.write_text(f"{stamp}\n")
     logger.info("InferenceX ready at %s (ref %s)", repo_dir, git_ref)
     return True
 
@@ -408,6 +670,24 @@ def setup_evals_meta(
     ):
         return True
 
+    # Cookbook's editable install and IFEval need pkg_resources. Repair cached
+    # environments too, before any cookbook import or editable install.
+    if (
+        run_command(
+            [
+                str(UV_EXEC),
+                "pip",
+                "install",
+                "--managed-python",
+                "--python",
+                str(venv_config.venv_python),
+                "setuptools>=77,<81",
+            ],
+            logger=logger,
+        )
+        != 0
+    ):
+        return False
     setup_succeeded = True
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
     original_dir = os.getcwd()
@@ -419,10 +699,9 @@ def setup_evals_meta(
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
         setup_succeeded = run_command(clone_cmd, logger=logger) == 0 and setup_succeeded
-        # cookbook editable install needs modern setuptools
         setup_succeeded = (
             run_command(
-                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip",
                 logger=logger,
             )
             == 0
@@ -442,6 +721,21 @@ def setup_evals_meta(
         setup_succeeded = (
             install_requirements(venv_config, "evals-meta.txt") and setup_succeeded
         )
+    # Fail before sending evaluation requests if sentence scoring cannot run.
+    # Use the venv's standard NLTK data path; do not relax NLTK proxy checks.
+    if (
+        not setup_succeeded
+        or run_command(
+            [
+                str(venv_config.venv_python),
+                str(get_repo_root_path() / "scripts" / "setup_nltk_data.py"),
+            ],
+            logger=logger,
+        )
+        != 0
+    ):
+        os.chdir(original_dir)
+        return False
     meta_eval_dir = (
         cookbook_dir
         / "end-to-end-use-cases"
@@ -495,6 +789,64 @@ def setup_evals_meta(
     # meta_ifeval) when a sibling model's data overwrote the shared dir.
     os.chdir(original_dir)
     return setup_succeeded
+
+
+def verify_evals_common_lm_eval(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Fail closed unless EVALS_COMMON installed the reviewed harness commit.
+
+    PEP 610 requires direct-URL installs to retain their resolved VCS commit in
+    ``direct_url.json``. Printing that record puts the immutable dependency in
+    every setup log; comparing it here prevents a stale persistent venv or an
+    installer regression from silently running a different harness.
+    """
+    del model_spec
+    probe = f"""
+import importlib.metadata
+import json
+
+expected = {EVALS_COMMON_LM_EVAL_COMMIT!r}
+dist = importlib.metadata.distribution("lm-eval")
+record = json.loads(dist.read_text("direct_url.json"))
+actual = record.get("vcs_info", {{}}).get("commit_id")
+print(json.dumps({{"distribution": dist.metadata["Name"], "commit_id": actual}}, sort_keys=True))
+if actual != expected:
+    raise SystemExit(f"lm-eval commit mismatch: expected {{expected}}, installed {{actual}}")
+"""
+    return (
+        run_command(
+            [str(venv_config.venv_python), "-c", probe],
+            logger=logger,
+        )
+        == 0
+    )
+
+
+def setup_evals_common(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Verify the pinned harness, then stage the NLTK Punkt data IFEval scores with.
+
+    ifeval / leaderboard_ifeval run in this venv, and NLTK's own downloader is
+    refused by the runner proxy ("Security Violation" loading punkt_tab), so
+    scoring failed after every response had been generated. Same staging step
+    setup_evals_meta runs (ported from #5234).
+    """
+    if not verify_evals_common_lm_eval(venv_config, model_spec):
+        return False
+    return (
+        run_command(
+            [
+                str(venv_config.venv_python),
+                str(get_repo_root_path() / "scripts" / "setup_nltk_data.py"),
+            ],
+            logger=logger,
+        )
+        == 0
+    )
 
 
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
@@ -625,6 +977,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
+        setup_function=setup_evals_common,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
@@ -647,6 +1000,13 @@ _venv_config_list = [
         requirements_file="evals-agentic.txt",
         python_version="3.12",
         setup_function=setup_evals_agentic,
+    ),
+    # 3.12: the verifier's pyproject requires >=3.12.
+    VenvConfig(
+        venv_type=WorkflowVenvType.MINIMAX_VERIFIER,
+        requirements_file="minimax-verifier.txt",
+        python_version="3.12",
+        setup_function=setup_minimax_verifier,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
@@ -674,6 +1034,12 @@ _venv_config_list = [
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
         # 0.13.0 for every other model. See llm-vllm-overrides.txt.
         overrides_file="llm-vllm-overrides.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.LLM_VLLM_TOKEN_TIMING,
+        requirements_file="llm-vllm-token-timing.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),

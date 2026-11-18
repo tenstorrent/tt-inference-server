@@ -144,6 +144,15 @@ class EvalsWorkflow(WorkflowExecution):
             )
             return TaskOutcome("evaluation", 0, elapsed, None)
 
+        if any(
+            isinstance(block.data, dict) and block.data.get("subprocess_rc")
+            for block in blocks
+        ):
+            self.logger.error(
+                "Evaluation subprocess failed; partial results are not a completed evaluation"
+            )
+            return TaskOutcome("evaluation", 1, elapsed, blocks[0].kind)
+
         self.logger.info(
             "✅ %s blocks=%d kind=%s (%.1fs)",
             _LLM_EVAL_TASK_LABEL,

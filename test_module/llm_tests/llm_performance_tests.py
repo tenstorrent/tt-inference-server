@@ -6,10 +6,11 @@
 
 Bridges ``test_module`` to ``llm_module``: builds an
 ``LLMPerformanceRunner`` from a (driver, server_controller) pair,
-executes the sweep defined by ``configs``, and forwards the resulting
-``list[Block]`` to ``workflow_module`` for downstream processing
-(report rendering, artifact upload, etc.). The driver carries its own
-parser, so command-build, execute, and parse stay selected as one unit.
+executes the sweep defined by ``configs``, and forwards each resulting
+``Block`` to ``workflow_module`` as it is produced -- each accept
+checkpoints the report (``WorkflowExecution``'s accumulator hook), so a
+sweep killed mid-flight still leaves a report for the points that finished. The driver carries its own parser, so
+command-build, execute, and parse stay selected as one unit.
 
 The caller is the only place in test_module that knows about
 llm_module's internals; everything else (drivers, runner
@@ -34,6 +35,7 @@ from llm_module import (
     ServerController,
 )
 from llm_module.runner import RunnerResult
+from utils.pinned_artifacts import resolve_tokenizer
 from workflow_module import accept_blocks
 
 from .._test_common import report_model_fields
@@ -67,15 +69,22 @@ def run_llm_performance(
         metadata.get("tokenizer_trust_remote_code", False)
     )
 
+    output_dir = Path(ctx.output_path) / output_subdir
+    tokenizer = ""
+    if any(getattr(config, "token_timing", False) for config in configs):
+        if driver.name != "vllm":
+            raise ValueError("Fixed token-timing references require the vLLM client")
+        tokenizer = resolve_tokenizer(ctx.model_spec, output_dir, require_hashes=True)
+
     server = ServerConnection(
         base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
+        tokenizer=tokenizer,
         auth_token=auth_token,
         is_remote=ctx.remote_server,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
-    output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     context = DriverContext(output_dir=output_dir, device=device_label, goodput=goodput)
 
@@ -96,7 +105,20 @@ def run_llm_performance(
         driver=driver,
         server_controller=server_controller,
     )
-    result = runner.run(configs, server, context)
+
+    # Built before the sweep: `generated_at` is recorded once and synthesises
+    # the report_id that names the report files, so the checkpoints and the
+    # final report overwrite one another.
+    envelope = {
+        **report_model_fields(ctx.model_spec),
+        "device": device_label,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+    def _persist(block) -> None:
+        accept_blocks([block], envelope=envelope)
+
+    result = runner.run(configs, server, context, on_block=_persist)
 
     if result.return_codes and not result.ok:
         logger.warning(
@@ -109,14 +131,6 @@ def run_llm_performance(
             len(result.return_codes),
         )
 
-    accept_blocks(
-        result.blocks,
-        envelope={
-            **report_model_fields(ctx.model_spec),
-            "device": device_label,
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        },
-    )
     return result
 
 

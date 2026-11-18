@@ -193,13 +193,26 @@ void init(const std::string& release, const std::string& instanceTag) {
   gInitialized.store(true);
 
   // sentry-native does not auto-detect the host like the Python/Node SDKs
-  // do, so attach it as a global tag (in k8s this is the pod name).
-  char hostname[256] = {};
-  if (gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
-    sentry_set_tag("server_name", hostname);
+  // do, so attach it as a global tag. Precedence: explicit SENTRY_SERVER_NAME
+  // override, then the k8s pod name, then the OS hostname (a random container
+  // ID under Docker — the case the override exists for).
+  std::string serverName = tt::config::sentryServerName();
+  if (serverName.empty()) {
+    serverName = tt::config::dynamoPodName();
   }
-  TT_LOG_INFO("[Telemetry] Sentry tracing enabled (environment={}, release={})",
-              environment, effectiveRelease);
+  if (serverName.empty()) {
+    char hostname[256] = {};
+    if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
+      serverName = hostname;
+    }
+  }
+  if (!serverName.empty()) {
+    sentry_set_tag("server_name", serverName.c_str());
+  }
+  TT_LOG_INFO(
+      "[Telemetry] Sentry tracing enabled (environment={}, release={}, "
+      "server_name={})",
+      environment, effectiveRelease, serverName);
 }
 
 void shutdown() {

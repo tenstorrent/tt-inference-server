@@ -34,7 +34,7 @@ def _resolve_image_request_model():
     return MODEL_RUNNER_TO_REQUEST_MAP.get(settings.model_runner, BaseRequest)
 
 
-@router.get("/v1/models")
+@router.api_route("/v1/models", methods=["GET", "HEAD"])
 def list_models():
     """
     List current model. OpenAI-compatible endpoint.

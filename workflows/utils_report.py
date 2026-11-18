@@ -26,6 +26,7 @@ class PerformanceTarget:
     tpot_ms: float = None
     e2el_ms: float = None
     tput_total: float = None
+    tput_input: float = None
     goodput: float = None
     tolerance: float = 0.0
 
@@ -41,12 +42,6 @@ class PerformanceTargets:
     e2el_ms: float = None
     tput: float = None
     rtr: float = None
-    fc_p50_ms: float = None
-    fc_p95_ms: float = None
-    sc_p50_ms: float = None
-    sc_p95_ms: float = None
-    tc_p50_ms: float = None
-    tc_p95_ms: float = None
     tolerance: float = 0.05
     max_concurrency: int = None
     num_eval_runs: int = None
@@ -69,12 +64,6 @@ class PerformanceTargets:
             e2el_ms=theoretical.get("e2el_ms"),
             tput=theoretical.get("tput"),
             rtr=theoretical.get("rtr"),
-            fc_p50_ms=theoretical.get("fc_p50_ms"),
-            fc_p95_ms=theoretical.get("fc_p95_ms"),
-            sc_p50_ms=theoretical.get("sc_p50_ms"),
-            sc_p95_ms=theoretical.get("sc_p95_ms"),
-            tc_p50_ms=theoretical.get("tc_p50_ms"),
-            tc_p95_ms=theoretical.get("tc_p95_ms"),
             tolerance=theoretical.get("tolerance", 0.05),
             max_concurrency=device_config.get("max_concurrency"),
             num_eval_runs=device_config.get("num_eval_runs"),
@@ -168,10 +157,9 @@ class BenchmarkTaskParams:
     # downgrade individual metric failures instead of the whole block.
     target_priorities: dict = None
 
-    # ``vllm bench serve --goodput`` SLO constraint string for this sweep
-    # point ("ttft:2000 tpot:20 e2el:20000", milliseconds), derived from the
-    # requirements scenario's SLOs. None means goodput is not measured.
-    goodput: str = None
+    # Tool-neutral SLO bars (llm_module.goodput.GoodputSlo, milliseconds) from
+    # the scenario's SLOs; the driver renders it. None = not measured.
+    goodput: object = None
 
     def __post_init__(self):
         self._infer_data()

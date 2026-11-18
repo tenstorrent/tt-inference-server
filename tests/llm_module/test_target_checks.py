@@ -139,6 +139,16 @@ class TestBuildTargetChecks:
         assert checks["target"]["goodput_check"] == ReportCheckTypes.PASS
         assert verdict == ReportCheckTypes.PASS
 
+    def test_grades_input_throughput(self):
+        targets = {"target": PerformanceTarget(tput_input=500.0)}
+        met, _ = build_target_checks(targets, _record(tps_input_throughput=520.0))
+        missed, verdict = build_target_checks(
+            targets, _record(tps_input_throughput=480.0)
+        )
+        assert met["target"]["tput_input_check"] == ReportCheckTypes.PASS
+        assert missed["target"]["tput_input_check"] == ReportCheckTypes.FAIL
+        assert verdict == ReportCheckTypes.FAIL
+
     def test_goodput_below_target_fails(self):
         targets = {"target": PerformanceTarget(goodput=99.0)}
         checks, verdict = build_target_checks(targets, _record(goodput_pct=36.0))
@@ -335,3 +345,29 @@ class TestAcceptanceIntegration:
         # the should-priority goodput failure is waived, not a blocker
         assert not any("goodput" in key for key in blockers)
         assert category.failed == 1
+
+
+@pytest.mark.parametrize("invalid", [None, float("nan"), float("inf"), -1.0, 0.0, "50"])
+@pytest.mark.parametrize(
+    "raw_key,field",
+    [
+        ("mean_ttft_ms", "ttft"),
+        ("tput_user", "tput_user"),
+        ("tps_output_throughput", "tput"),
+    ],
+)
+def test_partial_report_cannot_pass_with_a_missing_or_invalid_required_metric(
+    invalid, raw_key, field
+):
+    targets = {
+        "target": PerformanceTarget(
+            ttft_ms=100.0, tput_user=100.0, tput=100.0, tolerance=0.05
+        )
+    }
+    record = _record(ttft=50.0, tpot=None, tput=125.0, tput_user=125.0)
+    record[raw_key] = invalid
+    checks, verdict = build_target_checks(
+        targets, record, require_complete_metrics=True
+    )
+    assert checks["target"][f"{field}_check"] == ReportCheckTypes.FAIL
+    assert verdict == ReportCheckTypes.FAIL

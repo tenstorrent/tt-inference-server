@@ -6,10 +6,6 @@
 - [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`yolox_nano` is also supported on hardware:
-
-- [N150](yolox_nano_n150.md)
-
 ## Quickstart - Deploy yolox_nano Inference Server on p150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.

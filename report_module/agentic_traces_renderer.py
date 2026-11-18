@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from report_module.acceptance_criteria import STAGE_TARGET_KEY
 from report_module.markdown_table import build_markdown_table
 from report_module.renderers import _extract_records, _resolve_model_device, register
 from report_module.schema import Block
@@ -131,6 +132,19 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("tool_idle_ms", "Tool Idle (ms)"),
     ("measured_benchmark_duration", "Measured (s)"),
     ("error_summary", "Top Errors"),
+]
+
+# Per-point telemetry charts, written as SVG by
+# ``llm_module.agentic_traces.charts``; the payload carries each one's link
+# relative to the report as ``telemetry_chart_<name>``. Duplicated rather than
+# imported, like the source names above. Order is the order they are shown.
+TELEMETRY_CHART_PREFIX = "telemetry_chart_"
+TELEMETRY_CHARTS: List[Tuple[str, str]] = [
+    ("isl_osl", "Sequence length distribution"),
+    ("latency", "TTFT and end-to-end latency over the run"),
+    ("interactivity", "Interactivity over the run"),
+    ("throughput", "Prefill and decode throughput over the run"),
+    ("load", "Concurrency, prefix cache hit rate and completed requests"),
 ]
 
 # Rendered transposed: these are the row labels, not headers.
@@ -442,6 +456,38 @@ def _run_header(row: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _telemetry_section(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Link each run's telemetry charts, one subsection per run."""
+    parts: List[str] = []
+    for row in rows:
+        images = [
+            f"**{title}**\n\n![{title} - {_run_header(row)}]({link})"
+            for name, title in TELEMETRY_CHARTS
+            if isinstance(link := row.get(f"{TELEMETRY_CHART_PREFIX}{name}"), str)
+            and link
+        ]
+        if images:
+            parts.append(f"##### {_run_header(row)}\n\n" + "\n\n".join(images))
+    if not parts:
+        return ""
+    intro = (
+        "Drawn from the client's per-request export; times are measured from "
+        "the start of the profiling window. Latency and interactivity show the "
+        "P90 and P75 over a rolling window (50 requests, or a tenth of a short "
+        "run) and the cumulative "
+        'P90, over the individual requests. For interactivity, "P90" is the '
+        "tokens/s/user that 90% of requests exceeded, i.e. the slow tail. "
+        "The request queue is the requests sent but still awaiting their first "
+        "token (queued plus prefill), as the client sees them; with engine "
+        "metrics the engine's own waiting count is drawn beside it. The prefix "
+        "cache hit rate comes from the serving engine's counters when the run "
+        "scraped them, else from the cached tokens the server reports in each "
+        "response. KV cache utilisation is an engine-side metric: a run that "
+        "did not scrape it shows the client's tokens in flight instead."
+    )
+    return "#### Per-point Telemetry\n\n" + intro + "\n\n" + "\n\n".join(parts)
+
+
 def _sort_rows(rows: Sequence[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
     return sorted(
         rows,
@@ -571,6 +617,10 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             f"**Submission** {_submission_caption(rows)}\n\n{health}"
         )
 
+    telemetry = _telemetry_section(rows)
+    if telemetry:
+        parts.append(telemetry)
+
     config = _vertical_table(rows, CONFIG_FIELDS)
     if config:
         parts.append(
@@ -616,7 +666,7 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
     """Render the sweep's grading against the requirements document's targets.
 
     The verdicts are precomputed into the block by
-    :func:`llm_module.parsers.aiperf_agentic_traces.build_targets_block`, so
+    :func:`llm_module.parsers.aiperf_agentic_traces.build_targets_blocks`, so
     this section and the acceptance criteria read the same grading rather
     than each deriving their own. Grading is exact (tolerance 0), matching
     how the document grades benchmark targets: latencies gate at or below
@@ -635,8 +685,14 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
     if not points and not missing:
         return ""
 
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    stage = targets.get(STAGE_TARGET_KEY)
+    stage = stage if isinstance(stage, Mapping) else None
+    heading = "#### Requirements Targets"
+    if stage:
+        heading += f" — {stage.get('name') or stage.get('key')}"
     parts = [
-        "#### Requirements Targets\n",
+        f"{heading}\n",
         "Measured against the expected `agenticSweep` points from the "
         "requirements document, exact (tolerance 0): latencies pass at or "
         "below the target (↓), rates at or above (↑). Cells read "
@@ -688,6 +744,11 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
                 entry[header] = _target_cell(verdict) if verdict is not None else "—"
             table_rows.append(entry)
         parts.append(build_markdown_table(table_rows))
+        if any(v.get("soft") for point in points for v in point.get("verdicts") or []):
+            parts.append(
+                "Targets marked (soft) are advisory: they are reported but do "
+                "not fail a point, and are not counted in its targets met."
+            )
 
     if missing:
         listed = ", ".join(f"c{concurrency}" for concurrency in missing)
@@ -707,7 +768,8 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
 
 def _target_field_label(verdict: Mapping[str, Any]) -> str:
     direction = "↓" if verdict.get("lower_is_better") else "↑"
-    return f"`{verdict.get('field')}` {direction}"
+    soft = " (soft)" if verdict.get("soft") else ""
+    return f"`{verdict.get('field')}` {direction}{soft}"
 
 
 def _target_cell(verdict: Mapping[str, Any]) -> str:

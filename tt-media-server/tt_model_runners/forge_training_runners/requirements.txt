@@ -1,0 +1,12 @@
+# Dockerfile.crank worker venv; separate from forge_runners (tt-crank pins torch 2.10, tt-forge 2.11).
+--extra-index-url https://pypi.eng.aws.tenstorrent.com
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# blacksmith declares no dependencies; these are the ones the trainer imports.
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@dfb15fc5261635ff3af9c860e4e8e63bf3c80903
+transformers==5.12.1 # version required by tt-crank
+datasets
+peft
+
+pyarrow<26 # pyarrow 26 needs NumPy 2, tt-crank pins numpy<2
+pyyaml

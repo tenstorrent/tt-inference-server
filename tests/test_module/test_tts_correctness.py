@@ -2,192 +2,213 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Unit coverage for the TTS same-prompt correctness check."""
+"""tt-tts same-prompt correctness eval: grading, workflow args, and a run against
+a fake streaming server (ASR stubbed)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
-import socket
-import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from aiohttp import web
 
-from test_module.benchmark_tests import tts_correctness as correctness
-from test_module.benchmark_tests import tts_load_harness as harness
-
-TEXT = "the quick brown fox jumps over the lazy dog"
-
-
-def _args(**kw):
-    base = dict(
-        no_asr=True,
-        asr_model="tiny",
-        asr_threads=1,
-        max_wer=0.05,
-    )
-    base.update(kw)
-    return SimpleNamespace(**base)
-
-
-def _rec(tag, i, sha="a", audio_s=2.0, ok=True, error=None):
-    return {
-        "tag": tag,
-        "i": i,
-        "ok": ok,
-        "status": 200 if ok else 429,
-        "error": error,
-        "ttfb_s": 0.1,
-        "audio_s": audio_s,
-        "sha256": sha,
-        "wav": f"{tag}_{i:03d}.wav",
-    }
+from test_module._test_common import ReportCheckTypes
+from test_module._test_common import TestConfig as _TestConfig
+from test_module.eval_tests import tts_correctness_test as correctness
+from test_module.eval_tests import tts_eval_tests
+from test_module.eval_tests.tts_client import STREAM_WAV_HEADER_BYTES
 
 
 class TestWordErrors:
-    def test_identical(self):
-        assert correctness.word_errors(["a", "b"], ["a", "b"]) == {
-            "wer": 0.0,
-            "sub": 0,
-            "del": 0,
-            "ins": 0,
+    def test_counts_each_edit_kind(self):
+        ref = "the cat sat on the mat".split()
+        assert correctness.word_errors(ref, ref)["wer"] == 0.0
+        sub = correctness.word_errors(ref, "the dog sat on the mat".split())
+        assert (sub["sub"], sub["del"], sub["ins"]) == (1, 0, 0)
+        dels = correctness.word_errors(ref, "the cat sat".split())
+        assert (dels["del"], dels["wer"]) == (3, 0.5)
+        ins = correctness.word_errors(ref, ref + ["again", "again"])
+        assert ins["ins"] == 2
+
+    def test_normalize_drops_case_and_punctuation(self):
+        assert correctness.normalize("It's DONE, ok?") == ["its", "done", "ok"]
+
+
+def _rec(tag, i, ok=True, wer=0.0, sha="a", audio_s=2.0):
+    return {"tag": tag, "i": i, "ok": ok, "wer": wer if ok else None,
+            "sha256": sha, "audio_s": audio_s, "error": None if ok else "http 500"}  # fmt: skip
+
+
+class TestGrade:
+    def test_any_bad_response_fails_it_and_is_counted(self):
+        records = [
+            _rec("ref", 0),
+            _rec("ref", 1, ok=False),
+            _rec("load", 0, sha="b", audio_s=4.0),
+            _rec("load", 1, wer=0.2),
+        ]
+        summary = correctness.grade(records, max_wer=0.05)
+        assert [r["pass"] for r in records] == [True, False, True, False]
+        assert records[3]["reasons"] == ["wer 20.0% > 5.0%"]
+        assert records[2]["duration_ratio"] == 2.0
+        assert records[2]["pcm_matches_ref"] is False
+        assert summary["reference_failures"] == 1
+        assert (summary["load_requests"], summary["load_failures"]) == (2, 1)
+
+    def test_missing_transcript_fails(self):
+        records = [_rec("load", 0, wer=None)]
+        correctness.grade(records, max_wer=0.05)
+        assert records[0]["reasons"] == ["no transcript"]
+
+
+def _ctx(workflow_args=""):
+    return SimpleNamespace(runtime_config=SimpleNamespace(workflow_args=workflow_args))
+
+
+class TestWorkflowArgOverrides:
+    def test_only_eval_keys_apply(self):
+        ctx = _ctx("concurrency=600 isl=128 eval_requests=20 eval_refs=0 eval_x=1")
+        assert tts_eval_tests._correctness_overrides(ctx) == {
+            "requests": 20,
+            "refs": 0,
         }
 
-    def test_substitution_deletion_insertion_are_separated(self):
-        ref = TEXT.split()
-        assert correctness.word_errors(ref, ref[:-2])["del"] == 2
-        assert correctness.word_errors(ref, ref + ["dog", "dog"])["ins"] == 2
-        swapped = ref[:3] + ["cat"] + ref[4:]
-        out = correctness.word_errors(ref, swapped)
-        assert (out["sub"], out["del"], out["ins"]) == (1, 0, 0)
-        assert out["wer"] == pytest.approx(1 / len(ref))
-
-    def test_empty_hypothesis_is_all_deletions(self):
-        assert correctness.word_errors(["a", "b", "c"], [])["wer"] == 1.0
+    @pytest.mark.parametrize(
+        "arg", ["eval_requests=0", "eval_concurrency=x", "eval_refs=-1"]
+    )
+    def test_invalid_values_are_rejected(self, arg):
+        with pytest.raises(ValueError):
+            tts_eval_tests._correctness_overrides(_ctx(arg))
 
 
-def test_normalize_drops_case_and_punctuation():
-    assert correctness.normalize("Hello, World! It's done.") == correctness.normalize(
-        "hello world its done"
+def _task():
+    return SimpleNamespace(
+        task_name=tts_eval_tests.TASK_CORRECTNESS,
+        model_kwargs={"tts_api": "tt_tts", "requests": 3},
+        score=SimpleNamespace(
+            tolerance=None, published_score=100.0, published_score_ref=""
+        ),
     )
 
 
-class TestScore:
-    def test_pcm_and_duration_are_information_only(self):
-        records = [_rec("ref", i) for i in range(3)]
-        records += [_rec("load", 0), _rec("load", 1, sha="b", audio_s=6.0)]
-        summary = correctness.score(records, TEXT, _args())
-        assert summary["deterministic"] is True
-        assert all(r["pass"] for r in records)
-        assert summary["load_failures"] == 0
-        assert records[4]["pcm_matches_ref"] is False
-        assert records[4]["duration_ratio"] == pytest.approx(3.0)
-
-    def test_failed_request_fails_with_its_error(self):
-        records = [_rec("ref", 0), _rec("load", 0, ok=False, error="http 429: full")]
-        correctness.score(records, TEXT, _args())
-        assert records[1]["reasons"] == ["http 429: full"]
-
-    def test_fails_only_on_wer_against_the_text(self, monkeypatch):
-        words = TEXT.split()
-        transcripts = {
-            "ref_000.wav": TEXT,
-            "ref_001.wav": " ".join(words * 5),  # babbling reference: 400% WER
-            "load_000.wav": " ".join(words[:-1]),  # 1/9 WER
-            "load_001.wav": TEXT,
-        }
+class TestCorrectnessTask:
+    def _block(self, monkeypatch, result):
+        monkeypatch.setattr(tts_eval_tests, "_missing_deps", lambda deps: [])
         monkeypatch.setattr(
-            correctness, "transcribe", lambda paths, model, threads: transcripts
+            tts_eval_tests, "_run_tts_correctness_eval", lambda ctx, task: result
         )
-        records = [_rec("ref", 0, sha="0"), _rec("ref", 1, sha="1", audio_s=120.0)]
-        records += [_rec("load", 0, sha="2"), _rec("load", 1, sha="3", audio_s=9.0)]
-        summary = correctness.score(records, TEXT, _args(no_asr=False, max_wer=0.1))
-        assert summary["wer_limit"] == 0.1
-        assert [r["pass"] for r in records] == [True, False, False, True]
-        assert records[2]["del"] == 1
-        assert summary["reference_failures"] == 1
-        assert summary["load_failures"] == 1
+        monkeypatch.setattr(tts_eval_tests, "block_id", lambda ctx: None)
+        return tts_eval_tests._run_correctness_task(SimpleNamespace(), _task())
 
-    def test_without_successful_references_load_is_still_scored(self):
-        records = [_rec("ref", 0, ok=False, error="http 429: full"), _rec("load", 0)]
-        summary = correctness.score(records, TEXT, _args())
-        assert summary["references"] == 0
-        assert summary["reference_failures"] == 1
-        assert summary["reference_duration_s"] is None
-        assert records[1]["pass"] is True
-        assert records[1]["duration_ratio"] is None
-        assert "References: 0 ok, 1 failed" in correctness.report(summary, records)
+    def test_all_pass(self, monkeypatch):
+        block = self._block(
+            monkeypatch,
+            {
+                "success": True,
+                "pass_rate": 100.0,
+                "mean_wer": 0.01,
+                "failed_responses": [],
+            },  # fmt: skip
+        )
+        assert block.data["accuracy_check"] is ReportCheckTypes.PASS
+        assert block.data["score"] == 100.0
+        assert block.data["failed_responses"] is None
+
+    def test_one_failure_fails(self, monkeypatch):
+        block = self._block(
+            monkeypatch,
+            {
+                "success": False,
+                "pass_rate": 75.0,
+                "load_failures": 1,
+                "failed_responses": ["load_001"],
+            },  # fmt: skip
+        )
+        assert block.data["accuracy_check"] is ReportCheckTypes.FAIL
+        assert block.data["failed_responses"] == "load_001"
+
+    def test_missing_deps_is_na(self, monkeypatch):
+        monkeypatch.setattr(tts_eval_tests, "_missing_deps", lambda deps: ["torch"])
+        monkeypatch.setattr(tts_eval_tests, "block_id", lambda ctx: None)
+        block = tts_eval_tests._run_correctness_task(SimpleNamespace(), _task())
+        assert block.data["accuracy_check"] is ReportCheckTypes.NA
+
+    def test_registered_as_a_task_runner(self):
+        runner = tts_eval_tests._TASK_RUNNERS[tts_eval_tests.TASK_CORRECTNESS]
+        assert runner is tts_eval_tests._run_correctness_task
 
 
-def test_report_lists_failures_with_transcripts(monkeypatch):
-    transcripts = {"ref_000.wav": TEXT, "load_000.wav": "the quick brown fox"}
-    monkeypatch.setattr(
-        correctness, "transcribe", lambda paths, model, threads: transcripts
+def _wav_header():
+    return b"RIFF\xff\xff\xff\xffWAVEfmt " + bytes.fromhex(
+        "10000000" "0100" "0100" "80bb0000" "00770100" "0200" "1000"
+    ) + b"data\xff\xff\xff\xff"  # fmt: skip
+
+
+async def _run_against_fake_server(tmp_path, targets, transcribe):
+    payloads, served = [], [0]
+
+    async def speech(request):
+        payloads.append(await request.json())
+        served[0] += 1
+        response = web.StreamResponse()
+        response.enable_chunked_encoding()
+        await response.prepare(request)
+        await response.write(_wav_header())
+        if served[0] != 4:  # the 4th response is header-only
+            await response.write(b"\1\0" * 4800)
+        await response.write_eof()
+        return response
+
+    app = web.Application()
+    app.router.add_post("/v1/audio/speech", speech)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        test = correctness.TTSCorrectnessTest(
+            _TestConfig({}), {"outdir": str(tmp_path), **targets}
+        )
+        test.base_url = f"http://127.0.0.1:{port}"
+        test._transcribe = transcribe
+        return await test._run_specific_test_async(), payloads
+    finally:
+        await runner.cleanup()
+
+
+def test_correctness_run_end_to_end(tmp_path):
+    def transcribe(paths, model_name):
+        # The reference comes back garbled; everything else is read back verbatim.
+        return {
+            p: "something else entirely" if p.endswith("ref_000.wav") else "hi there"
+            for p in paths
+        }
+
+    result, payloads = asyncio.run(
+        _run_against_fake_server(
+            tmp_path,
+            {
+                "text": "Hi there.",
+                "refs": 1,
+                "requests": 4,
+                "concurrency": 2,
+                "speech_ids": [5, 6],
+            },  # fmt: skip
+            transcribe,
+        )
     )
-    records = [_rec("ref", 0, sha="0"), _rec("load", 0, sha="1")]
-    records += [_rec("load", 1, ok=False, error="http 429: full")]
-    summary = correctness.score(records, TEXT, _args(no_asr=False, max_wer=0.1))
-    out = correctness.report(summary, records)
-    assert "load WER: max 55.6%" in out
-    assert "Load: 0/2 pass" in out
-    assert "load #000 (2.0 s) wer 55.6% > 10.0%" in out
-    assert '"the quick brown fox"' in out
-    assert "load #001 http 429: full" in out
-
-
-def _serve(chunks: list[bytes], requests: int, seen: list[dict]):
-    """One-connection-per-request fake server streaming ``chunks`` as chunked WAV."""
-    srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
-    srv.listen(requests)
-
-    def loop():
-        for _ in range(requests):
-            conn, _ = srv.accept()
-            with conn:
-                data = b""
-                while b"\r\n\r\n" not in data:
-                    data += conn.recv(65536)
-                head, body = data.split(b"\r\n\r\n", 1)
-                length = int(
-                    [
-                        line.split(b":")[1]
-                        for line in head.split(b"\r\n")
-                        if line.lower().startswith(b"content-length")
-                    ][0]
-                )
-                while len(body) < length:
-                    body += conn.recv(65536)
-                seen.append(json.loads(body))
-                out = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-                for chunk in chunks:
-                    out += b"%x\r\n%s\r\n" % (len(chunk), chunk)
-                conn.sendall(out + b"0\r\n\r\n")
-        srv.close()
-
-    threading.Thread(target=loop, daemon=True).start()
-    return srv.getsockname()[1]
-
-
-def test_send_saves_wavs_and_sends_speech_ids(tmp_path):
-    header = b"RIFF" + b"\0" * 40
-    pcm = [b"\1\2" * 480, b"\3\4" * 960]
-    seen: list[dict] = []
-    port = _serve([header] + pcm, 3, seen)
-    (tmp_path / "wav").mkdir()
-    tgt = harness.Target(host="127.0.0.1", port=port, text="hi", speech_ids=[7, 8])
-
-    records = correctness.send(tgt, "load", 3, 2, str(tmp_path))
-
-    assert seen == [{"text": "hi", "speech_ids": [7, 8]}] * 3
-    assert [r["i"] for r in records] == [0, 1, 2]
-    assert all(r["ok"] for r in records)
-    assert len({r["sha256"] for r in records}) == 1
-    wav = (tmp_path / "wav" / "load_001.wav").read_bytes()
-    assert wav == header + b"".join(pcm)
-    assert records[0]["audio_s"] == pytest.approx(1440 / harness.SAMPLE_RATE)
-
-
-def test_target_without_speech_ids_sends_text_only():
-    body = harness.Target(text="hi").request.split(b"\r\n\r\n", 1)[1]
-    assert json.loads(body) == {"text": "hi"}
+    assert len(payloads) == 5
+    assert payloads[0] == {"text": "Hi there.", "speech_ids": [5, 6]}
+    assert result["success"] is False
+    assert result["reference_failures"] == 1  # garbled transcript
+    assert result["load_failures"] == 1  # the header-only response
+    assert result["pass_rate"] == pytest.approx(60.0)
+    saved = json.loads(Path(result["results_file"]).read_text())
+    assert len(saved["records"]) == 5
+    assert len(list((tmp_path / "wav").glob("*.wav"))) == 5
+    ref_wav = (tmp_path / "wav" / "ref_000.wav").read_bytes()
+    assert len(ref_wav) == STREAM_WAV_HEADER_BYTES + 9600

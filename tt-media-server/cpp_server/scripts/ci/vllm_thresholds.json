@@ -24,6 +24,13 @@
       "label": "Dynamo Frontend + cpp_server Integration",
       "min_completed": 1000,
       "max_failed": 0
+    },
+    "embedding_mock": {
+      "label": "C++ Server vLLM Bench (embedding_mock)",
+      "note": "max_mean_e2el_ms is a generous placeholder; calibrate on the target runner (worst of 5-10 runs, then +50-100%) before tightening.",
+      "min_completed": 4000,
+      "max_failed": 0,
+      "max_mean_e2el_ms": 2000
     }
   }
 }

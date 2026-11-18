@@ -112,6 +112,14 @@ class TargetPack(Protocol):
         """
         ...
 
+    def stage_of(self, block: Any) -> Optional[Mapping[str, Any]]:
+        """The delivery stage report ``block`` is graded under, or None.
+
+        A stage is ``{"key", "name", "position"}``; the report grades each one
+        on its own blocks. None leaves the block in the overall verdict only.
+        """
+        ...
+
 
 _target_pack: Optional[TargetPack] = None
 

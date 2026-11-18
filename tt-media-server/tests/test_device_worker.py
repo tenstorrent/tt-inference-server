@@ -594,3 +594,58 @@ def reset_mocks():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--timeout=10"])
+
+
+class TestDeviceWorkerShutdownAndEncode:
+    """Shutdown closes the device; video results go through the encode stage."""
+
+    def _run_worker(self, runner, batches, mock_queues):
+        from config.constants import SHUTDOWN_SIGNAL
+
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+        task_queue.get_many.side_effect = create_get_many_side_effect(
+            batches + [[SHUTDOWN_SIGNAL]]
+        )
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+        with patch(
+            "device_workers.worker_utils.get_device_runner", return_value=runner
+        ):
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with patch("device_workers.device_worker.threading.Timer"):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
+        return mock_loop
+
+    def test_shutdown_closes_device(self, mock_queues):
+        runner = Mock()
+        mock_loop = self._run_worker(runner, [], mock_queues)
+        runner.close_device.assert_called_once()
+        mock_loop.close.assert_called_once()
+
+    def test_video_results_go_through_encode_stage(self, mock_queues):
+        _, result_queue, _, _ = mock_queues
+        runner = Mock()
+        runner.run.return_value = ["frames_1", "frames_2"]
+        stage = Mock()
+        with patch("device_workers.device_worker.EncodeStage") as encode_stage_cls:
+            encode_stage_cls.for_runner.return_value = stage
+            encode_stage_cls.normalize_responses.side_effect = lambda r: r
+            self._run_worker(
+                runner,
+                [[MockImageGenerateRequest("t1"), MockImageGenerateRequest("t2")]],
+                mock_queues,
+            )
+        assert [c.args for c in stage.submit.call_args_list] == [
+            ("t1", "frames_1"),
+            ("t2", "frames_2"),
+        ]
+        result_queue.put_many.assert_not_called()
+        stage.close.assert_called_once()
+        runner.close_device.assert_called_once()

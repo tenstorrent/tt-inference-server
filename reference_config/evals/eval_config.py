@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import math
@@ -87,6 +88,18 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         if normalized not in {"true", "false"}:
             raise ValueError(f"{env_var} must be 'true' or 'false'")
         kwargs[kwarg] = normalized == "true"
+    memory_limit_multiplier = os.getenv("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER")
+    if memory_limit_multiplier:
+        # Memory limit = task memory_mb x this; the request stays at memory_mb,
+        # so pods pack the same and a short spike above the budget is not
+        # OOM-killed. Harbor applies it only under the ``auto`` memory policy.
+        try:
+            multiplier = float(memory_limit_multiplier)
+        except ValueError:
+            multiplier = 0.0
+        if multiplier < 1:
+            raise ValueError("HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER must be a number >= 1")
+        kwargs["memory_limit_multiplier"] = multiplier
     prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
     if prebuilt_image_mirrors:
         parsed_mirrors = json.loads(prebuilt_image_mirrors)
@@ -157,6 +170,10 @@ class ModeReferenceScore:
     ref: str = ""
     # Falls back to EvalTaskScore.tolerance when None.
     tolerance: Optional[float] = None
+    # Minimum number of correct samples, regardless of the scored sample count.
+    # Agentic runs grade on the trials that produced a score, so an errored trial
+    # shrinks n and the integer floor can reach 0; this keeps "at least k solved".
+    min_correct: int = 0
 
 
 @dataclass(frozen=True)
@@ -210,6 +227,7 @@ def resolve_eval_reference(score_obj, limit_mode):
             if mode_ref.tolerance is not None
             else score_obj.tolerance,
             "is_subset_reference": True,
+            "min_correct": mode_ref.min_correct,
         }
 
     return {
@@ -230,7 +248,8 @@ def accept_eval_score(ref, score, n_total=None):
     check is sample-count-aware:
 
         n_correct_obs = round(score/100 * n_total)
-        threshold     = floor(n_total * reference/100 * (1 - tolerance))
+        threshold     = max(floor(n_total * reference/100 * (1 - tolerance)),
+                            min_correct)
         PASS iff n_correct_obs >= threshold
 
     The integer floor lets tiny subsets tolerate one flipped item without a
@@ -245,7 +264,10 @@ def accept_eval_score(ref, score, n_total=None):
     assert reference > 0, "Reference score is not > 0"
     if ref.get("is_subset_reference") and n_total:
         ref_rate = reference / 100.0
-        threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
+        threshold = max(
+            math.floor(n_total * ref_rate * (1.0 - tolerance)),
+            ref.get("min_correct", 0),
+        )
         observed = round(score / 100.0 * n_total)
         return observed >= threshold
     return (score / reference) >= (1.0 - tolerance)
@@ -265,6 +287,10 @@ class HarborEvalConfig:
     dataset: str
     agent: str
     model: Optional[str] = None
+    # Harbor Hub ref for an ``org/name`` package dataset (tag, rev, or
+    # ``sha256:`` content digest). None resolves ``@latest`` at run time, so
+    # the task set can change under a run; pin released benchmarks.
+    dataset_ref: Optional[str] = None
     n_concurrent_trials: int = 1
     n_attempts: int = 1
     n_tasks: Optional[int] = None
@@ -272,8 +298,17 @@ class HarborEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
+    # Replace every task's task.toml budget. Leave unset unless the published
+    # score states its own setting: leaderboards reject resource overrides.
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
+    # Harbor's ``auto`` is a hard limit on Docker but only a request on
+    # Kubernetes, where a trial can burst to the whole node. CPU uses ``limit``
+    # on both (Kubernetes then sets the request to the limit); going over only
+    # throttles. Memory stays on ``auto`` (None): a hard limit on Docker, and on
+    # Kubernetes a request whose ceiling is HARBOR_K8S_MEMORY_LIMIT_MULTIPLIER.
+    cpu_enforcement_policy: Optional[str] = "limit"
+    memory_enforcement_policy: Optional[str] = None
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
     agent_setup_timeout_multiplier: Optional[float] = None
@@ -304,11 +339,44 @@ class HarborEvalConfig:
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
+    # Allow the agent to reach the inference endpoint when the task blocks
+    # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
+    # the endpoint's host joins Harbor's run-specific agent allowlist.
+    allow_agent_endpoint: bool = False
+    # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
+    # environment is docker and the image is not already local, e.g. the base
+    # image every trial's environment build starts FROM: concurrent trials
+    # otherwise each pull it inside their build, and on a slow registry link
+    # every build fails together.
+    prepull_images: List[str] = field(default_factory=list)
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
+
+# Docker's ``cpus`` limit is a quota, so Node still reports every host core and
+# vitest/jest start ~63 workers in a 2-CPU, 8 GB container: vitest times out
+# and jest gets OOM-killed. Report the 2 cores a cpuset would give, so both
+# pick 1 worker. jest has no worker-count env var, hence the NODE_OPTIONS
+# preload; the VITEST_* vars also cover vitest runs that replace NODE_OPTIONS.
+# vitest <4 reads the THREADS/FORKS pairs (min defaults to the core count, so
+# both bounds are needed); vitest 4 reads MAX_WORKERS.
+_DEEPSWE_NODE_CPU_PRELOAD = (
+    'import os from "node:os";'
+    'import {syncBuiltinESMExports} from "node:module";'
+    "os.availableParallelism=()=>2;"
+    "syncBuiltinESMExports();"
+)
+DEEPSWE_TEST_WORKER_ENV = {
+    "NODE_OPTIONS": "--import=data:text/javascript;base64,"
+    + base64.b64encode(_DEEPSWE_NODE_CPU_PRELOAD.encode()).decode(),
+    "VITEST_MAX_THREADS": "1",
+    "VITEST_MIN_THREADS": "1",
+    "VITEST_MAX_FORKS": "1",
+    "VITEST_MIN_FORKS": "1",
+    "VITEST_MAX_WORKERS": "1",
+}
 
 
 @dataclass(frozen=True)
@@ -328,6 +396,16 @@ class EvalTask:
     seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
+    # lm-eval --fewshot_as_multiturn. None keeps the harness default (the
+    # pinned harness turns it on whenever --apply_chat_template is set); set
+    # False/True only where a model's chat template needs the other layout.
+    fewshot_as_multiturn: Optional[bool] = None
+    # Why this task needs a (new) GPU reference from
+    # scripts/gpu_reference_colab/ --sweep, e.g. the published number measures a
+    # different checkpoint or setting. The sweep selects every task that sets it
+    # (even one with a gpu_reference_score) plus every ungated task; recording
+    # the reference clears it. Data only: never read when grading.
+    gpu_reference_requested: Optional[str] = None
     log_samples: bool = True
     # Opt-in: preserve the model's separate reasoning_content trace in the
     # per-sample logs (requires the chat API + a server that returns reasoning
@@ -335,6 +413,35 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
+    # Per-request body fields merged into every request this task sends, e.g.
+    # {"chat_template_kwargs": {"enable_thinking": False}}. A per-eval override
+    # of the serving entry's server-wide defaults (vLLM applies a request-level
+    # chat_template_kwargs over --default-chat-template-kwargs), so one server
+    # can run thinking-on and thinking-off evals back to back. lm-eval tasks go
+    # through llm_module/lm_eval_request_overrides.py; Harbor tasks get it as
+    # the agent's extra_body (see llm_module/request_overrides.py); lmms-eval
+    # tasks on the openai_compatible client get it through the same wrapper
+    # (--harness lmms-eval, merged into the openai SDK's extra_body).
+    request_body: Dict[str, Any] = field(default_factory=dict)
+    # Convenience for the common case. None (default) leaves the model in the
+    # serving entry's default thinking mode; True/False force it for this task
+    # only, as chat_template_kwargs[thinking_kwarg]. Needs use_chat_api=True on
+    # lm-eval tasks (the server must render the template for the switch to
+    # exist). Score references must match the mode they were measured in.
+    thinking: Optional[bool] = None
+    # The chat-template switch the model's template reads ("enable_thinking"
+    # for Gemma 4 / Qwen3 / GLM; some templates use "thinking").
+    thinking_kwarg: str = "enable_thinking"
+    # Execution policy only; does not reduce samples, context, or output tokens.
+    wall_clock_timeout_seconds: Optional[int] = None
+    # Per-mode wall-clock bounds, keyed like limit_samples_map. A run in a
+    # listed mode uses that bound; any other run, including an unrestricted
+    # full run, falls back to wall_clock_timeout_seconds. Lets a task bound its
+    # capped CI subset without also cutting off the full dataset.
+    wall_clock_timeout_seconds_map: Dict[EvalLimitMode, int] = field(
+        default_factory=dict
+    )
+    max_attempts: Optional[int] = None
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
@@ -364,6 +471,10 @@ class EvalTask:
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
     priority: str = "must"
+    # Media the task sends beyond text, e.g. ["audio"]; None keeps the venv's
+    # default (lmms-eval EVALS_VISION tasks send images). The eval runner skips
+    # a task on a serving profile whose ``supported_modalities`` lack one.
+    modalities: Optional[List[str]] = None
     # Per-device overrides, keyed by device name (e.g. "GALAXY",
     # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
     # three-tier device-variance model:
@@ -374,8 +485,30 @@ class EvalTask:
     #   3. measured baselines (device-variant): score.
     # Only tier-2/3 fields may appear in an override block.
     device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Fixed doc_id subset for lm-eval ``--samples`` (tier-2). Used when
+    # --eval-samples does not name the task; limit modes then take the first N
+    # of this list instead of passing ``--limit`` (lm-eval rejects both).
+    doc_ids: Optional[List[int]] = None
 
     def __post_init__(self):
+        for name in ("wall_clock_timeout_seconds", "max_attempts"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value <= 0):
+                raise ValueError(f"{name} must be a positive integer")
+        for mode, value in self.wall_clock_timeout_seconds_map.items():
+            if not isinstance(mode, EvalLimitMode):
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map keys must be EvalLimitMode"
+                )
+            if type(value) is not int or value <= 0:
+                raise ValueError(
+                    "wall_clock_timeout_seconds_map values must be positive integers"
+                )
+        if (
+            self.max_attempts is not None
+            and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
+        ):
+            raise ValueError("max_attempts currently requires EVALS_COMMON")
         self.validate_data()
         self._infer_data()
 
@@ -409,11 +542,29 @@ class EvalTask:
             "task_name",
             "workflow_venv_type",
             "eval_class",
+            "modalities",
             "num_fewshot",
             "seed",
             "include_path",
             "device_overrides",
         }
+        if self.doc_ids is not None and (
+            not isinstance(self.doc_ids, (list, tuple))
+            or not self.doc_ids
+            or not all(
+                isinstance(i, int) and not isinstance(i, bool) and i >= 0
+                for i in self.doc_ids
+            )
+        ):
+            raise ValueError(
+                f"EvalTask {self.task_name!r}: doc_ids must be a non-empty list of "
+                "non-negative integers"
+            )
+        if self.doc_ids is not None and len(set(self.doc_ids)) != len(self.doc_ids):
+            raise ValueError(
+                f"EvalTask {self.task_name!r}: doc_ids contains duplicate ids; "
+                "lm-eval runs each document once, so the list must be unique"
+            )
         for device_key, overrides in self.device_overrides.items():
             if not isinstance(overrides, dict):
                 raise ValueError(
@@ -474,7 +625,721 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Terminal-Bench 2.0 wave the Gemma 4 presets run: a seed-42 sample of 24 of the 89 tasks,
+# one wave of 24 concurrent trials under the runners' Docker address pools.
+GEMMA4_TERMINAL_BENCH_2_WAVE = [
+    "terminal-bench/build-cython-ext",
+    "terminal-bench/build-pmars",
+    "terminal-bench/code-from-image",
+    "terminal-bench/configure-git-webserver",
+    "terminal-bench/constraints-scheduling",
+    "terminal-bench/custom-memory-heap-crash",
+    "terminal-bench/feal-linear-cryptanalysis",
+    "terminal-bench/financial-document-processor",
+    "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/fix-git",
+    "terminal-bench/gcode-to-text",
+    "terminal-bench/headless-terminal",
+    "terminal-bench/nginx-request-logging",
+    "terminal-bench/openssl-selfsigned-cert",
+    "terminal-bench/path-tracing",
+    "terminal-bench/pypi-server",
+    "terminal-bench/query-optimize",
+    "terminal-bench/sam-cell-seg",
+    "terminal-bench/sparql-university",
+    "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/torch-pipeline-parallelism",
+    "terminal-bench/train-fasttext",
+    "terminal-bench/video-processing",
+    "terminal-bench/vulnerable-secret",
+]
+
+# LiveCodeBench "v6" window (contest_date >= 2025-02-01) as doc_ids of the
+# lm-eval livecodebench task (six code_generation_lite release files
+# concatenated, 1055 problems; indices are stable because releases append).
+# 131 problems; the Gemma 4 model card's LiveCodeBench v6 column uses this window.
+LIVECODEBENCH_V6_DOC_IDS = [
+    *range(904, 965),
+    *range(971, 992),
+    *range(1003, 1037),
+    *range(1040, 1055),
+]
+
+# Terminal-Bench 2.0 as published on the Harbor Hub (terminal-bench/terminal-bench-2
+# rev 1, 2026-03-20, 89 tasks). Pinned so the task set and images cannot move
+# under a release run; bump deliberately when a new revision is published.
+TERMINAL_BENCH_2_DATASET_REF = (
+    "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
+)
+
+# Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
+# pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
+# venv that include_path is normally joined with.
+_K2_HORIZON_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
+)
+
+# Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
+# `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
+# The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
+# (issue #141) let every request finish, so the timeout must cover a full-length
+# generation, never cut it. Derivation from Shield run 38323771398 (P300X2,
+# num_concurrent=32, KV pool 152,000 tokens = 3.71 full-length requests, so
+# requests queue and are preempted under load): per-request decode rate from the
+# KV-usage slope, p10 6.2 tok/s, p50 8.4 tok/s. 32768 / 6.2 = 5285 s, doubled for
+# time spent waiting in the scheduler queue (up to 16 of 32 in-flight requests
+# observed waiting) = 10570 s, rounded up to 3 h. At 3600 s (aime24/math500) the
+# run logged 10 timeouts recovered by retry; at the 1800 s default (gpqa) 22/198
+# requests exhausted retries as __INFERENCE_ERROR__.
+QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
+
 _eval_config_list = [
+    # Fixed Granite release cohorts; published scores are context, not GPU controls.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=10,
+                use_chat_api=True,
+                num_fewshot=0,
+                seed=42,
+                score=EvalTaskScore(
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"max_length": 131072, "timeout": 7200},
+                gen_kwargs={
+                    "max_gen_toks": 32768,
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "do_sample": True,
+                    "stream": False,
+                    "until": [],
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+                capture_reasoning=True,
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=57.0,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        mode: ModeReferenceScore(
+                            score=40.0,
+                            ref="User-approved first-five SWE CI gate: 2/5 (40%); published 57% is full-set context, not a matched GPU reference",
+                            tolerance=0.0,
+                        )
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "config": {
+                            "environment": {
+                                "env": {
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/root/.local/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                }
+                            },
+                            "model": {
+                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                            },
+                        },
+                    },
+                    task_names_map={
+                        mode: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ]
+                        for mode in (EvalLimitMode.CI_NIGHTLY, EvalLimitMode.SMOKE_TEST)
+                    },
+                    agent_env={
+                        "UV_OVERRIDE": "https://raw.githubusercontent.com/tenstorrent/tt-metal/1c3f8659de467ae39fcea6368b59a528d5690c36/models/demos/gemma4_26b_a4b_qb2/tests/harbor_dependency_overrides.txt"
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+                thinking=True,
+                request_body={"chat_template_kwargs": {"low_effort": False}},
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="microsoft/phi-1",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (20.68); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=15.34,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.98).
+                score=EvalTaskScore(
+                    published_score=1.02,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 11.62, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-1B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (24.28); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=17.74,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (3.32).
+                score=EvalTaskScore(
+                    published_score=2.79,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-3B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (27.65); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=20.89,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (11.78).
+                score=EvalTaskScore(
+                    published_score=10.48,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-7B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (34.16); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=27.91,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (19.41).
+                score=EvalTaskScore(
+                    published_score=17.65,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-7B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('You are Qwen,
+                # created by Alibaba Cloud. You are a helpful assistant.') is injected in both runs.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (34.46); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=27.91,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=27.73,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('You are Qwen,
+                # created by Alibaba Cloud. You are a helpful assistant.') is injected in both runs.
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (19.18).
+                score=EvalTaskScore(
+                    published_score=16.7,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=16.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="TinyLlama/TinyLlama_v1.1",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (20.01); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=14.23,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama_v1.1/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.21).
+                score=EvalTaskScore(
+                    published_score=1.11,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama_v1.1/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 10.49, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="stabilityai/stablelm-2-1_6b",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (11.57); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=8.87,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.76).
+                score=EvalTaskScore(
+                    published_score=0.75,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="microsoft/phi-1_5",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (20.33); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=13.68,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1_5/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.81).
+                score=EvalTaskScore(
+                    published_score=1.69,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1_5/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 16.91, not comparable to generative mmlu_pro.)
+        ],
+    ),
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
         tasks=[
@@ -589,8 +1454,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -850,8 +1713,6 @@ _eval_config_list = [
                     n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -902,9 +1763,9 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=2,
+                    n_concurrent_trials=40,
                     n_attempts=1,
-                    n_tasks=40,
+                    n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
                     agent_timeout_sec=3600,
@@ -1010,8 +1871,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1167,8 +2026,6 @@ _eval_config_list = [
                     n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1280,8 +2137,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=69.0,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    gpu_reference_score=76.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-5998550273",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1291,7 +2148,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=6,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
@@ -1396,8 +2253,6 @@ _eval_config_list = [
                     n_concurrent_trials=93,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1617,8 +2472,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1767,10 +2620,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=62,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
+                capture_reasoning=True,
                 score=EvalTaskScore(
                     published_score=92.9,
                     published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
@@ -1806,6 +2660,45 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=62,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=61.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-5991635102",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1024 * 1024,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
+                    "until": ["[e~["],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (+64K gen + template < 1M)
+                    "pretrained": "MiniMaxAI/MiniMax-M3",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -1825,8 +2718,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=8,
-                    override_memory_mb=32 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -1886,6 +2777,12 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so without this the agent samples at the server
+                        # default top_p=1.0. MiniMax recommends temperature 1.0
+                        # / top_p 0.95, as every other M3 task sends.
+                        # Must stay a JSON *string* (see the Kimi tau3 entry).
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
@@ -1917,8 +2814,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=80.5,
                     published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
-                    gpu_reference_score=65.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4830558090",
+                    gpu_reference_score=77.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-5991635102",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1960,6 +2857,286 @@ _eval_config_list = [
             ),
         ],
     ),
+    # MiMo-V2.6-Flash-MOPD: the RL checkpoint plus a short MOPD stage that
+    # curbs repeated tool calls in agent loops. Xiaomi publishes benchmark
+    # scores only for the RL checkpoint, so published scores cite that card.
+    # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
+    # (the chat template only disables it on enable_thinking=false).
+    # GPU references: tenstorrent/tt-inference-server#5416. Concurrency 16 (8
+    # for tau3) and one attempt per task.
+    EvalConfig(
+        hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=16,
+                use_chat_api=True,
+                # Thinking is on, so the answer can arrive in reasoning_content.
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # Neither model card nor the technical report reports GPQA
+                    # Diamond; the GPU reference is the only anchor.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=85.35,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1024 * 1024,
+                    # A request may stream max_gen_toks (400K): ~1.5 h at the
+                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
+                    # at 30 ms/token. At 7200 s three CI streams were cut short
+                    # and lm_eval failed the task.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 400 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep for MiMo's 1M window (max_position_embeddings).
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=66.15,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6211836375",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    # A request's time includes its queue on the server: a
+                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
+                    # concurrent 256K-900K prompts each lane prefills a few in
+                    # turn (~45 min for a 900K prompt) before decoding up to 64K
+                    # tokens. At 7200 s three CI requests were cut short.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (65536) before hitting the
+                # 1048576 window.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 64K gen)
+                    "pretrained": "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=87.6,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266196347",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 896 * 1024,
+                            "max_output_tokens": 128 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 128 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not on either model card; the GPU reference is the only
+                    # anchor until a published score is confirmed.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=48.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6266198959",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 0.95}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    # Every trial's environment builds FROM it; on the Galaxy
+                    # runner the four CI trials' concurrent pulls all failed.
+                    prepull_images=["python:3.12-slim"],
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="deepswe",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=67.9,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    # MOPD weights, 3 attempts per task, with the DeepSWE harness env fixes.
+                    gpu_reference_score=65.49,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5416#issuecomment-6317472058",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    # Checked out from datacurve-ai/deep-swe at v1.1 (see
+                    # llm_module/agentic/deepswe.py); not a registry dataset.
+                    dataset="datacurve/deep-swe",
+                    # The DeepSWE leaderboard runs every model with mini-swe-agent.
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # None keeps each task's own 3h agent timeout.
+                    agent_timeout_sec=None,
+                    agent_kwargs={
+                        # The leaderboard's published job (2026-06-06) ran an
+                        # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
+                        "version": "2.3.0",
+                        "max_tokens": 128 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        # One task per language family: Go, Python,
+                        # TypeScript, Rust.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "abs-module-cache-flags",
+                            "httpx-streaming-json-iteration",
+                            "ts-pattern-match-each",
+                            "wasmi-trap-coredumps",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
@@ -1983,6 +3160,8 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
@@ -2069,6 +3248,71 @@ _eval_config_list = [
             #         EvalLimitMode.SMOKE_TEST: 5,
             #     },
             # ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; task family and harness as Qwen/Qwen3.6-27B. Published score from
+    # this checkpoint's model card (revision 995ad96e), Coding Agent table, Terminal-Bench 2.0 column Qwen3.6-35BA3B;
+    # the card's footnote states the same harness (Harbor/Terminus-2, 3 h timeout, temp 1.0, top_p 0.95, top_k 20,
+    # max_tokens 80K, 256K ctx). GPU reference TBD. swe_bench_verified (card: 73.4) stays disabled as on Qwen3.6-27B
+    # (https://github.com/tenstorrent/tt-inference-server/issues/4675).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.6-35B-A3B",
+        tasks=[
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=51.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B (Coding Agent table, Terminal-Bench 2.0)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
+                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -2199,7 +3443,7 @@ _eval_config_list = [
                     published_score=61.4,  # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2328,7 +3572,7 @@ _eval_config_list = [
                     published_score=91.1,  # 91.1% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2486,6 +3730,18 @@ _eval_config_list = [
                     published_score_ref="https://arxiv.org/pdf/2502.13923",
                     gpu_reference_score=83.6,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/392#issuecomment-3422979962",
+                    # lmms-eval's --limit takes the first N docs and ChartQA's test split lists its 1250
+                    # human-authored items before the 1250 augmented ones, so the ci-nightly 20% subset is
+                    # human-split only; compare it with the GPU run's relaxed_human_split, not the overall score.
+                    # Validated on the full 2500-sample set on Wormhole (2026-10-13): relaxed_overall 83.0 vs 83.6 on
+                    # the H100, human split 71.76 vs 72.56, augmented split 94.24 vs 94.64.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=72.56,
+                            ref="relaxed_human_split of the same H100 run, https://github.com/tenstorrent/tt-inference-server/issues/392#issuecomment-3422979962",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2495,6 +3751,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2530,6 +3787,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2594,6 +3852,16 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=84.0,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # lmms-eval's --limit takes the first N docs and ChartQA's test split lists its 1250
+                    # human-authored items before the 1250 augmented ones, so the ci-nightly 20% subset is
+                    # human-split only; compare it with the GPU run's relaxed_human_split, not the overall score.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the same H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2603,6 +3871,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2638,6 +3907,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2664,6 +3934,13 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=50.78,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # T3K release runs land at 48.2-48.9 (434-440 of 900), and the
+                    # 0.05 floor is 48.24 (435/900): one question of margin, so a
+                    # single flipped answer blocks the release (tt-shield run
+                    # 40366385918 failed at 48.22). 0.10 puts the floor at 45.7,
+                    # about 3 binomial SEs (1.67 pts at n=900) under the reference,
+                    # still far above the 25-30% chance level of MMMU.
+                    tolerance=0.10,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2684,6 +3961,155 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                     "max_new_tokens": "512",
+                },
+            ),
+        ],
+    ),
+    # olmOCR: fine-tune of Qwen2.5-VL-7B for document OCR
+    # olmOCR-bench overall score: 82.3 (https://huggingface.co/allenai/olmOCR-2-7B-1025)
+    # GPU reference scores from lmms-eval v0.4.0 with qwen2_5_vl model on CUDA (bfloat16).
+    EvalConfig(
+        hf_model_repo="allenai/olmOCR-2-7B-1025",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=83.0,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=83.0,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    # The ci-nightly 20% subset of ChartQA is human-split only (see the Qwen2.5-VL-7B entry);
+                    # the base model's H100 relaxed_human_split stands in as the subset reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the Qwen2.5-VL-7B H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["relaxed_overall,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=93.9,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=93.9,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="textvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=82.05,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=82.05,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="infovqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=78.64,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=78.64,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -2711,6 +4137,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2746,6 +4173,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2819,6 +4247,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2854,6 +4283,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2925,6 +4355,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 # max_gen_toks restored 12288 -> 32768: fits the P150 max_model_len
@@ -2945,6 +4380,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                gpu_reference_requested="published 56.73 is the Qwen3-8B-Base checkpoint's MMLU-Pro, not this chat model's",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=56.73,
@@ -2983,16 +4419,103 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-8B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-14B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=64.0,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 15: Qwen3-14B (Thinking), GPQA-Diamond)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # max_length clamped 65536 -> 40960 (Qwen3-14B max context).
+                model_kwargs={
+                    "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
+                },
+                # gen_kwargs as on Qwen3-8B (https://huggingface.co/Qwen/Qwen3-14B#best-practices).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-14B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=74.47,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6181816096",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # max_length clamped 65536 -> 40960 (Qwen3-14B max context).
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                # gen_kwargs as on Qwen3-8B (https://huggingface.co/Qwen/Qwen3-14B#best-practices).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-4B",
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    published_score=55.9,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 17: Qwen3-4B (Thinking), GPQA-Diamond)",
+                    gpu_reference_score=58.08,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3004,6 +4527,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 # max_gen_toks restored 12288 -> 32768 (see Qwen3-8B gpqa above).
                 gen_kwargs={
@@ -3023,11 +4551,15 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-4B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=66.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3058,6 +4590,172 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-4B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-1.7B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=40.1,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 19: Qwen3-1.7B (Thinking), GPQA-Diamond)",
+                    gpu_reference_score=41.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-1.7B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=53.72,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-4B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-0.6B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=27.9,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 19: Qwen3-0.6B (Thinking), GPQA-Diamond)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-0.6B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
@@ -3067,7 +4765,7 @@ _eval_config_list = [
                     published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # CI subset (--ci-mode -> ci-nightly limit 0.5 = 15 of 30
                     # docs). The full set scores 76.67% and PASSES against the
                     # 80.00 full-set reference (0.958 >= 0.95); the subset
@@ -3123,7 +4821,7 @@ _eval_config_list = [
                     published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3158,7 +4856,7 @@ _eval_config_list = [
                     published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # Widened from the 0.05 default because this check is not
                     # apples-to-apples: a ~40-question stochastic subset score is
                     # being graded against a FULL-DATASET published number.
@@ -3258,11 +4956,77 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # mmlu_pro's few-shot examples put the worked answer inside the user turn, so the harness's default
+                # multiturn layout (on under --apply_chat_template) sends system + six consecutive user messages,
+                # which Mistral's chat template rejects ("conversation roles must alternate"). Single-turn renders
+                # all five examples into one user message. Set before the #5353 GPU reference was measured.
+                fewshot_as_multiturn=False,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=29.12,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    # Re-measured single-turn on the pinned harness (vLLM 0.13.0 bf16, A100, 12,032 samples). The
+                    # previous 29.12 (#248) predates the harness auto-enabling multiturn few-shot, under which this
+                    # task now errors on Mistral's template (see fewshot_as_multiturn above).
+                    gpu_reference_score=32.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6072510890",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from mistralai/Mistral-7B-Instruct-v0.3; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="ALLaM-AI/ALLaM-7B-Instruct-preview",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                apply_chat_template=False,
+                # The card's IFEval (prompt strict) 38.08 is results.ifeval.prompt_level_strict_acc,none in the model
+                # repo's evaluations/en/Allam-7b-instruct-preview/ifeval_0_shot.json: lm-eval 'ifeval' (version 4.0, as
+                # pinned here), 0-shot, run with chat_template=null and system_instruction=null. Score the same
+                # untemplated prompt.
+                score=EvalTaskScore(
+                    published_score=38.08,
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview/blob/main/evaluations/en/Allam-7b-instruct-preview/ifeval_0_shot.json (results.ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                # ALLaM's chat template enforces strict user/assistant alternation and rejects
+                # lm-eval's few-shot chat rendering ("Conversation roles must alternate",
+                # Shield run 37310746376); score the plain few-shot prompt instead.
+                apply_chat_template=False,
+                num_fewshot=5,
+                # The card's MMLU Pro 5 Shot 30.4 is results.mmlu_pro.exact_match,custom-extract in the model repo's
+                # evaluations/en/Allam-7b-instruct-preview/mmlu_pro_5_shot.json: lm-eval generative mmlu_pro (CoT, regex
+                # letter extraction), 5-shot, chat_template=null, matching this task. Harness drift: that run used
+                # mmlu_pro group version 2.0 (stop 'Q:', 256 generated tokens); the pinned 3.0 stops at 'Question:' and
+                # allows 2048.
+                score=EvalTaskScore(
+                    published_score=30.4,
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview/blob/main/evaluations/en/Allam-7b-instruct-preview/mmlu_pro_5_shot.json (results.mmlu_pro.exact_match,custom-extract)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3295,7 +5059,7 @@ _eval_config_list = [
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3318,7 +5082,7 @@ _eval_config_list = [
                     published_score=88.41,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3327,6 +5091,18 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # lm-eval's humaneval_instruct ends the chat with an assistant
+                # gen_prefix ("```python\n<prompt>") to be continued. vLLM's
+                # mistral tokenizer (tokenizer_mode auto -> mistral) refuses
+                # add_generation_prompt=True after a final assistant message, so
+                # every request was a 400 and pass@1 graded 0 (Shield run
+                # 38216483981: 164/164 __INFERENCE_ERROR__, 0.089 s/task). Ask
+                # the server to continue the final message instead, which is
+                # what the prefix means.
+                request_body={
+                    "add_generation_prompt": False,
+                    "continue_final_message": True,
+                },
                 apply_chat_template=True,
                 max_concurrent=8,
                 gen_kwargs={
@@ -3337,6 +5113,82 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # Mistral-Small-4 - GPQA-Diamond for the Blaze d-gen P/D deployment on
+    # exabox (tt-orchestration charts/ttop-pmix-disaggregated-dgen/values/
+    # values.mistral-small-4.yaml), resolved through the SUPER_CLUSTER spec in
+    # workflows/model_specs/dev/llm.yaml and run against the dynamo frontend
+    # with --server-url.
+    #
+    # The task below is copied verbatim from the GPU reference eval config of
+    # #4909 (d8b35d72 on tt-rfp-m0, never merged into main); its aime25 and
+    # terminal_bench_2_1 tasks are left out. The GPU reference (77.27) was
+    # measured with reasoning_effort=high, temperature=0.7, top_p=0.95.
+    #   - Reasoning is opt-in PER REQUEST via reasoning_effort; ONLY "none" and
+    #     "high" are accepted (any other value raises in the chat template).
+    #   - The task allows 64K output tokens and max_length 262144, so it needs
+    #     the 256K decode context; the P/D values serve 8192 tokens per request
+    #     today. For a shorter-context run, add a SUPER_CLUSTER entry in
+    #     device_overrides (gen_kwargs / model_kwargs / score) rather than
+    #     editing the task, so the GPU reference stays attached to its settings.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-4-119B-2603",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (same task DeepSeek
+                # used): the model reasons then emits a final answer; the task's
+                # extractor scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=71.2,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-4-119B-2603",
+                    # Full 198-sample r1_gpqa_diamond, single run, GPU
+                    # bring-your-own vLLM (Mistral-Small-4-119B-2603,
+                    # --max-model-len 262144) with reasoning_effort=high,
+                    # temperature=0.7, top_p=0.95. 153/198 = 77.27% (exceeds
+                    # the published 71.2).
+                    gpu_reference_score=77.27,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (153/198), GPU Mistral-Small-4-119B-2603 bring-your-own vLLM w/ reasoning_effort=high, 2026-08-10",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so reasoning_effort reaches the server (which
+                # applies the mistral chat template + reasoning parser).
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                # reasoning_effort=high enables Mistral's reasoning mode.
+                # Magistral-style sampling: temperature=0.7, top_p=0.95.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "reasoning_effort": "high",
+                    "max_gen_toks": 64 * 1024,
+                    # Never empty: the Dynamo frontend rejects `stop: []` with 400
+                    # "Stop sequences array cannot be empty" (vLLM accepted it).
+                    # Same value as the GLM-5.3 d-gen config; generation still
+                    # ends at the model's EOS.
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -3362,7 +5214,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -3390,7 +5242,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -3418,6 +5270,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -3660,6 +5513,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=46.58,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6111782935",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -3708,8 +5563,295 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=28.09,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    gpu_reference_score=57.30,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6111782935",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
+    # All tasks NA: no Open LLM Leaderboard v2 entry exists for this checkpoint, and neither the model card nor the
+    # DeepSeekMath paper (arXiv 2402.03300) reports IFEval, MATH Lvl 5, GPQA-Diamond or MMLU-Pro.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/deepseek-math-7b-instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-14B-Instruct-1M",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=84.3,
+                    published_score_ref="https://arxiv.org/abs/2501.15383 (Qwen2.5-1M Technical Report, Table 6: short-context benchmarks, IFEval strict prompt-level accuracy)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot, chat template applied. published_score is the unweighted mean
+                # of the 7 subtask exact_match values in the cited JSON, matching score_multilevel_keys_mean; the
+                # leaderboard's displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (53.02).
+                score=EvalTaskScore(
+                    published_score=50.72,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-14B-Instruct-1M/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                # NA: the report's GPQA (39.9) does not state the subset or prompt setting, and the leaderboard's
+                # GPQA is 0-shot loglikelihood multiple-choice; neither matches 5-shot generative GPQA-Diamond.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=35.86,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6149563613",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The report does not state the MMLU-Pro prompt setting; TTIS mmlu_pro is 5-shot generative CoT.
+                # (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 48.50.)
+                score=EvalTaskScore(
+                    published_score=63.3,
+                    published_score_ref="https://arxiv.org/abs/2501.15383 (Qwen2.5-1M Technical Report, Table 6: Qwen2.5-14B-1M, MMLU-Pro)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-7B-Instruct-1M",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=73.0,
+                    published_score_ref="https://arxiv.org/abs/2501.15383 (Qwen2.5-1M Technical Report, Table 6: short-context benchmarks, IFEval strict prompt-level accuracy)",
+                    gpu_reference_score=72.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=38.75,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=30.81,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=55.46,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4005,6 +6147,969 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks mirror Qwen/Qwen2.5-7B-Instruct; GPU references TBD.
+    EvalConfig(
+        hf_model_repo="arcee-ai/Arcee-Spark",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    # The model card's 56.21 is the leaderboard's displayed IFEval, the MEAN of prompt- and
+                    # instruction-level strict acc; this task scores prompt-level only.
+                    published_score=51.39,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/arcee-ai/Arcee-Spark/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=50.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.56,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=25.25,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6112289522",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro (the model card's 31.36 is the leaderboard's normalized MMLU-PRO, (38.22 - 10) /
+            # 0.9, of the results JSON's leaderboard_mmlu_pro acc,none = 38.22), which the pinned harness scores as
+            # 5-shot log-likelihood multiple choice (acc). TTIS mmlu_pro generates a 5-shot chain of thought and
+            # extracts a letter (exact_match,custom-extract), so the two measure different behaviour and are not
+            # comparable. The matching leaderboard_mmlu_pro task needs prompt log-likelihoods from the server, which
+            # no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2. Published score: Cogito 3B (Standard, non-thinking) MMLU-Pro
+    # from the model card's benchmark table; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-llama-3B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=38.87,
+                    published_score_ref="https://huggingface.co/deepcogito/cogito-v1-preview-llama-3B/blob/main/images/3b_benchmarks.png (Cogito 3B Standard)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Base (pretrained) checkpoints served by quetzal on P300X2. Tasks use the text completions endpoint
+    # (use_chat_api=False). apply_chat_template follows the cited Open LLM Leaderboard v2 run: False where its
+    # results JSON records chat_template=null, True where it records the tokenizer's template (Qwen2.5-Coder-7B,
+    # Qwen2.5-Math-7B).
+    # Open LLM Leaderboard v2 (OLL) numbers come from the per-model results JSON (2025-02-13 re-scoring,
+    # which is what the leaderboard currently displays), run with the same lm-eval leaderboard_* tasks and n-shot.
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.2-1B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (14.78); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=11.09,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=10.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.21).
+                score=EvalTaskScore(
+                    published_score=1.16,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=0.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=11.03,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.2-3B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (13.37); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=9.24,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-3B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.89).
+                score=EvalTaskScore(
+                    published_score=1.87,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-3B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON + model card (MMLU-Pro); GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.1-8B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (12.46); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=8.13,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.1-8B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (6.57).
+                score=EvalTaskScore(
+                    published_score=5.76,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.1-8B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # Source metric is macro_avg/acc_char over subjects; lm-eval mmlu_pro exact_match,custom-extract is a
+                # micro average over questions. Same 5-shot CoT setting.
+                score=EvalTaskScore(
+                    published_score=37.1,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B (Benchmark scores > Base pretrained models: MMLU-Pro (CoT), 5-shot, macro_avg/acc_char)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-10B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (36.48); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=30.87,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-10B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (24.92).
+                score=EvalTaskScore(
+                    published_score=22.95,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-10B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the model card's MMLU-PRO (5-shot) 42.5 comes from tiiuae's internal
+            # lm-evaluation-harness pipeline (raw scores) without stating the scoring method, and it tracks the Open
+            # LLM Leaderboard v2 log-likelihood leaderboard_mmlu_pro acc for this checkpoint (42.40), not a generative
+            # score. TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter
+            # (exact_match,custom-extract), so no comparable published number is established.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen1.5-0.5B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (17.06); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=11.09,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.74).
+                score=EvalTaskScore(
+                    published_score=1.53,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="EleutherAI/pythia-160m",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (18.16); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=12.57,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-160m/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.91).
+                score=EvalTaskScore(
+                    published_score=0.92,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-160m/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 11.20, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="EleutherAI/pythia-410m",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (21.95); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=16.45,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-410m/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.98).
+                score=EvalTaskScore(
+                    published_score=0.95,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-410m/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 11.28, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="EleutherAI/pythia-1b",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (22.08); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=16.82,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-1b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.91).
+                score=EvalTaskScore(
+                    published_score=0.72,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/EleutherAI/pythia-1b/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 11.36, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="huggyllama/llama-7b",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (25.01); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=18.48,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/huggyllama/llama-7b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.83).
+                score=EvalTaskScore(
+                    published_score=0.78,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/huggyllama/llama-7b/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 13.13, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Math-7B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('Please reason step
+                # by step, and put your final answer within \boxed{}.') is injected in both runs.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (24.60); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=19.22,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('Please reason step
+                # by step, and put your final answer within \boxed{}.') is injected in both runs.
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (30.51).
+                score=EvalTaskScore(
+                    published_score=27.67,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2-7B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (31.49); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=25.32,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (20.39).
+                score=EvalTaskScore(
+                    published_score=18.19,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the model card's performance table (MMLU-Pro, 5-shot, 40.0) states only the shot
+            # count, not whether MMLU-Pro was scored by log-likelihood or by generating a chain of thought (contrast
+            # the Qwen3 report, which marks its base-model MMLU-Pro '5-shot, CoT'). TTIS mmlu_pro is generative CoT
+            # (exact_match,custom-extract); the Open LLM Leaderboard v2 number for this checkpoint is log-likelihood
+            # leaderboard_mmlu_pro acc (41.83). No comparable published number is established.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-7B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (33.74); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=28.28,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=28.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6109341330",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (25.08).
+                score=EvalTaskScore(
+                    published_score=22.65,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=20.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6109341330",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the Qwen2.5 Technical Report, Table 4 (MMLU-pro 45.0; 5-shot per Sec. 5.1) states only
+            # the shot count, not whether MMLU-Pro was scored by log-likelihood or by generating a chain of thought
+            # (contrast the Qwen3 report, which marks its base-model MMLU-Pro '5-shot, CoT'). TTIS mmlu_pro is
+            # generative CoT (exact_match,custom-extract); the Open LLM Leaderboard v2 number for this checkpoint is
+            # log-likelihood leaderboard_mmlu_pro acc (43.65). No comparable published number is established.
+        ],
+    ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tasks=[
@@ -4109,11 +7214,17 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={
+                    "stream": "False",
+                    "temperature": 0,
+                    "max_gen_toks": 512,
+                },
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=31.89,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=31.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4124,11 +7235,17 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={
+                    "stream": "False",
+                    "temperature": 0,
+                    "max_gen_toks": 512,
+                },
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=51.66,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=57.69,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4187,14 +7304,2998 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=7.67,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
+                    gpu_reference_score=3.62,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6180129891",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
                         "unit": "percent",
                     },
                 ),
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen1.5-0.5B-Chat",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (18.07); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=13.12,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=13.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.68).
+                score=EvalTaskScore(
+                    published_score=0.58,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=1.02,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=11.04,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,  # OLL v2 ran this checkpoint without its chat template
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (5.96); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=3.88,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama-1.1B-Chat-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,  # OLL v2 ran this checkpoint without its chat template
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.51).
+                score=EvalTaskScore(
+                    published_score=1.51,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama-1.1B-Chat-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 11.01, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (53.68); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=48.24,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/HuggingFaceTB/SmolLM2-1.7B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (5.82).
+                score=EvalTaskScore(
+                    published_score=4.86,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/HuggingFaceTB/SmolLM2-1.7B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from tiiuae/Falcon3-7B-Instruct; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-1B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                score=EvalTaskScore(
+                    published_score=50.46,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                # No published 5-shot generative GPQA-Diamond score: the model card reports GPQA (0-shot) on the main set
+                # and the leaderboard's GPQA is 0-shot loglikelihood multiple-choice. NA until a GPU reference is measured.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=25.25,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6149563613",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from tiiuae/Falcon3-7B-Instruct; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-3B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                score=EvalTaskScore(
+                    published_score=65.43,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                # No published 5-shot generative GPQA-Diamond score: the model card reports GPQA (0-shot) on the main set
+                # and the leaderboard's GPQA is 0-shot loglikelihood multiple-choice. NA until a GPU reference is measured.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.77,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6149563613",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from tiiuae/Falcon3-7B-Instruct; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-10B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                score=EvalTaskScore(
+                    published_score=74.68,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-10B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                # No published 5-shot generative GPQA-Diamond score: the model card reports GPQA (0-shot) on the main set
+                # and the leaderboard's GPQA is 0-shot loglikelihood multiple-choice. NA until a GPU reference is measured.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=38.38,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6149563613",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-70B; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=50.4,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B (Distilled Model Evaluation table, AIME 2024 pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=49.0,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B (Distilled Model Evaluation table, GPQA Diamond pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (exabox wave16); tasks as deepseek-ai/DeepSeek-R1-Distill-Llama-8B,
+    # scores from this checkpoint's Distilled Model Evaluation table; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=72.6,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B (Distilled Model Evaluation table, AIME 2024 pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=62.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B (Distilled Model Evaluation table, GPQA Diamond pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="NousResearch/Hermes-3-Llama-3.2-3B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (38.25); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=31.05,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/NousResearch/Hermes-3-Llama-3.2-3B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (3.93).
+                score=EvalTaskScore(
+                    published_score=3.8,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/NousResearch/Hermes-3-Llama-3.2-3B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="01-ai/Yi-1.5-6B-Chat",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                gpu_reference_requested="Shield run 37890816505 failed math_hard against OLL; verify this OLL reference like-for-like too",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (51.45); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=45.47,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-6B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                gpu_reference_requested="Shield run 37890816505 failed at 0.85 of the OLL reference; verify like-for-like",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (16.24).
+                score=EvalTaskScore(
+                    published_score=14.43,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-6B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2-7B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # Its JSON predates the fewshot_as_multiturn field (transformers 4.41.2 run); the leaderboard v2 harness ran
+                # every chat-template model with --fewshot_as_multiturn, as for 01-ai/Yi-1.5-9B-Chat.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (56.79); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=52.31,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2-7B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # Its JSON predates the fewshot_as_multiturn field (transformers 4.41.2 run); the leaderboard v2 harness ran
+                # every chat-template model with --fewshot_as_multiturn, as for 01-ai/Yi-1.5-9B-Chat.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (27.64).
+                score=EvalTaskScore(
+                    published_score=24.77,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2-7B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Math-7B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (26.36); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=20.7,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (58.08).
+                score=EvalTaskScore(
+                    published_score=56.13,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="allenai/Llama-3.1-Tulu-3-8B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (82.55); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=79.48,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/allenai/Llama-3.1-Tulu-3-8B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (21.15).
+                score=EvalTaskScore(
+                    published_score=18.84,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/allenai/Llama-3.1-Tulu-3-8B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="arcee-ai/Llama-3.1-SuperNova-Lite",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (80.17); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=76.89,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/arcee-ai/Llama-3.1-SuperNova-Lite/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (18.28).
+                score=EvalTaskScore(
+                    published_score=16.46,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/arcee-ai/Llama-3.1-SuperNova-Lite/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="01-ai/Yi-1.5-9B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (29.36); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=23.11,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-9B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (11.4).
+                score=EvalTaskScore(
+                    published_score=10.27,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-9B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Nemo-Instruct-2407",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (63.8); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=58.78,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/mistralai/Mistral-Nemo-Instruct-2407/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (12.69).
+                score=EvalTaskScore(
+                    published_score=11.29,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/mistralai/Mistral-Nemo-Instruct-2407/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-14B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (34.73); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=27.73,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-14B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (22.51).
+                score=EvalTaskScore(
+                    published_score=20.43,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-14B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-14B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (69.08); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=65.25,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-14B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (32.48).
+                score=EvalTaskScore(
+                    published_score=30.51,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-14B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-32B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (40.77); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=35.49,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-32B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (35.65).
+                score=EvalTaskScore(
+                    published_score=33.25,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-32B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-32B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (43.63); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=39.19,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-32B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # OLL v2 ran this checkpoint without a chat template (results JSON chat_template is null); so does TTIS.
+                # The safetensors at the evaluated revision are identical to HF main.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (30.89).
+                score=EvalTaskScore(
+                    published_score=28.12,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-32B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="01-ai/Yi-1.5-34B-Chat",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # Its JSON predates the fewshot_as_multiturn field (transformers 4.41.2 run); the leaderboard v2 harness ran
+                # every chat-template model with --fewshot_as_multiturn, as for 01-ai/Yi-1.5-9B-Chat.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (60.67); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=55.27,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-34B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # Its JSON predates the fewshot_as_multiturn field (transformers 4.41.2 run); the leaderboard v2 harness ran
+                # every chat-template model with --fewshot_as_multiturn, as for 01-ai/Yi-1.5-9B-Chat.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (27.72).
+                score=EvalTaskScore(
+                    published_score=24.74,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-34B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); tasks as deepseek-ai/DeepSeek-R1-Distill-Llama-8B, scores from
+    # this checkpoint's Distilled Model Evaluation table (the same table and columns the Llama-8B and Qwen-32B rows cite);
+    # GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=55.5,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B (Distilled Model Evaluation table, AIME 2024 pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=49.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B (Distilled Model Evaluation table, GPQA Diamond pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); tasks as deepseek-ai/DeepSeek-R1-Distill-Llama-8B, scores from
+    # this checkpoint's Distilled Model Evaluation table (the same table and columns the Llama-8B and Qwen-32B rows cite);
+    # GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=69.7,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B (Distilled Model Evaluation table, AIME 2024 pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=59.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B (Distilled Model Evaluation table, GPQA Diamond pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); tasks as deepseek-ai/deepseek-coder-1.3b-instruct, scores from the
+    # same DeepSeek-Coder paper table (Table 3: 500-problem MBPP few-shot and HumanEval Python 0-shot); GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/deepseek-coder-6.7b-instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=65.4,
+                    published_score_ref="https://arxiv.org/abs/2401.14196 (DeepSeek-Coder paper, Table 3: Multilingual HumanEval and MBPP, DeepSeek-Coder-Instruct 6.7B, MBPP)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=78.6,
+                    published_score_ref="https://arxiv.org/abs/2401.14196 (DeepSeek-Coder paper, Table 3: Multilingual HumanEval and MBPP, DeepSeek-Coder-Instruct 6.7B, HumanEval Python)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); task as Qwen/Qwen3-4B (thinking mode). Published score: the
+    # model card's Performance table, Qwen3-4B-Thinking-2507 column, GPQA 65.8 -- the same table's Qwen3-4B Thinking column
+    # reads 55.9, the Qwen3 Technical Report value the Qwen/Qwen3-4B r1_gpqa_diamond task cites. GPU reference TBD.
+    # mmlu_pro omitted: the card does not state its MMLU-Pro prompt setting (shots, CoT, template), so its 74.0 is not
+    # comparable to TTIS 5-shot generative mmlu_pro; it needs a GPU reference (Colab list) before it can grade, and an
+    # ungraded 12k-prompt thinking-mode task would only consume the Shield eval window.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B-Thinking-2507",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=65.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B-Thinking-2507 (Performance table, Qwen3-4B-Thinking-2507 column: Knowledge > GPQA)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # Thinking model: sampling per the model card's Best Practices (Temperature=0.6, TopP=0.95, TopK=20,
+                # 32,768-token output), the Qwen3-4B thinking-mode settings.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2: meta-models/Muse-Glimmer-30B (text decoder; business-priority list).
+    # No like-for-like reference exists: the card's scores (GPQA-Diamond 83.5, AIME 2026 94.7, IFBench 77.0) are
+    # Artificial Analysis runs at "High Reasoning", not the TTIS lm-eval task variants, so every task is ungated
+    # (published and GPU reference None) for the Colab GPU-reference sweep to fill (issue #5353). leaderboard_ifeval
+    # is left out: its pinned task caps generation at 1280 tokens, which truncates this reasoning model's thinking.
+    EvalConfig(
+        hf_model_repo="meta-models/Muse-Glimmer-30B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=82.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6108470321",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
+                # at the chat template's default "Reasoning strength: high".
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # r1_aime24 (GPU reference 90.00, #5353 issuecomment-6108470321) is not run in CI: its CI_NIGHTLY
+            # subset is 6 problems at a 32K budget, so one problem moves the score 17 points (release run
+            # 39584812502: 3/6, one truncated at 32K).
+            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row: the CI agentic subsets gate on a 1-of-5 floor.
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
+                # CI runs 5 tasks from the oracle-checked K2-Horizon-7B QB2 list: the two
+                # this model solved in release run 38773036733 (fix-git,
+                # nginx-request-logging) and three it attempted to completion there.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card 51.7 on the full set; this 5-task CI subset is not comparable, so it is not cited.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 5 tasks at 5 concurrent = one wave of <= 3 h plus setup.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=3 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
+                    # left to the server default (device sampler). 96K input plus
+                    # 32K output fits the 131072 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                # SWE-bench Verified with mini-swe-agent: the model card reports 76.0.
+                # CI runs the 5-instance list shared with the Qwen3.x / Gemma 4 rows.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card 76.0 on the full set; this 5-task CI subset is not comparable, so it is not cited.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    # CI gate: at least 1 of the 5 tasks solved (subset check
+                    # round(acc/100*5) >= floor(5 * 0.20 * (1 - 0)) = 1). A sanity floor
+                    # that the agent loop works end to end, not a quality reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI floor: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    # 5 instances at 5 concurrent = one wave of <= 3 h.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2. meta_ifeval / meta_gpqa_cot (the Llama-3.1-8B-Instruct tasks) need
+    # "<hf_model_repo>-evals", which Meta did not publish for Llama 3, so the scored tasks are the Open LLM Leaderboard v2
+    # ones, cited to this checkpoint's OLL v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="meta-llama/Meta-Llama-3-8B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (47.82); the TTIS key is prompt-level only.
+                # OLL v2 ran this checkpoint without its chat template (results JSON chat_template is null).
+                score=EvalTaskScore(
+                    published_score=40.85,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Meta-Llama-3-8B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (9.14).
+                # OLL v2 ran this checkpoint without its chat template (results JSON chat_template is null).
+                score=EvalTaskScore(
+                    published_score=8.13,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Meta-Llama-3-8B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; task copied from deepcogito/cogito-v1-preview-llama-3B. Published score:
+    # Cogito 8B (Standard, non-thinking) MMLU-Pro from the model card's benchmark table; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-llama-8B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=57.77,
+                    published_score_ref="https://huggingface.co/deepcogito/cogito-v1-preview-llama-8B/blob/main/images/8b_benchmarks.png (Cogito 8B Standard)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from Qwen/Qwen3-4B; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B-Instruct-2507",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=62.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507 (Performance table, Qwen3-4B-Instruct-2507 column: Knowledge > GPQA)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # Non-thinking model: sampling per the model card's Best Practices (Temperature=0.7, TopP=0.8, TopK=20,
+                # 16,384-token output), not the Qwen3-4B thinking-mode settings.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 16384,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_k": 20,
+                    "top_p": 0.8,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The card does not state the MMLU-Pro prompt setting; TTIS mmlu_pro is 5-shot generative CoT.
+                score=EvalTaskScore(
+                    published_score=69.6,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507 (Performance table, Qwen3-4B-Instruct-2507 column: Knowledge > MMLU-Pro)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # Non-thinking model: sampling per the model card's Best Practices (Temperature=0.7, TopP=0.8, TopK=20,
+                # 16,384-token output), not the Qwen3-4B thinking-mode settings.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 16384,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_k": 20,
+                    "top_p": 0.8,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; no TTIS sibling, so the tasks follow the other non-Meta chat rows
+    # (Open LLM Leaderboard v2 tasks, chat template applied as the leaderboard ran it); GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="upstage/SOLAR-10.7B-Instruct-v1.0",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (47.37); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=40.3,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=43.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (5.66).
+                score=EvalTaskScore(
+                    published_score=5.22,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=3.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                # Context: max_position_embeddings is 4096, so long 5-shot CoT prompts are left-truncated; the GPU spec
+                # uses the same 4096 window as the P300X2 row, so truncation matches.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=13.54,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issue-5769968012",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=37.71,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=22.69,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=51.08,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (2026-10-16); base checkpoint (Qwen3_5ForConditionalGeneration, text
+    # path); tasks and apply_chat_template=False copied from Qwen/Qwen3-4B-Base (the base profile). The model card
+    # publishes no scores: every gpu_reference_score is a full-sample GPU run of these exact tasks at this revision /
+    # max_context / concurrency (scripts/gpu_reference_colab/, issue #5353), TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.5-9B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=43.81,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=25.82,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=58.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6217691331",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-8B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=34.94,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.19,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=56.13,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 22960 on the A100; no request exceeded 4033 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-14B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=41.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.72,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=61.59,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); chat checkpoint
+    # without a TTIS sibling; tasks copied from the non-Meta chat rows (upstage/SOLAR-10.7B-Instruct-v1.0,
+    # chat template applied).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 48896 on the A100; no request exceeded 3894 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="NousResearch/Hermes-3-Llama-3.1-8B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=57.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=8.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=41.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); task copied from
+    # deepcogito/cogito-v1-preview-llama-8B.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-qwen-14B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); task copied from
+    # deepcogito/cogito-v1-preview-llama-8B.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-qwen-32B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
+    # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 57408 on the A100; no request exceeded 32942 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="nvidia/Llama-3.1-Nemotron-Nano-8B-v1",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=53.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=51.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
+    # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="open-thoughts/OpenThinker-7B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=33.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=44.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6073581024",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); tasks copied
+    # from mistralai/Mistral-Small-3.1-24B-Instruct-2503.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-24B-Instruct-2501",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                num_fewshot=0,
+                use_chat_api=True,
+                max_concurrent=8,
+                gen_kwargs={
+                    "max_gen_toks": "1024",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                max_concurrent=8,
+                gen_kwargs={
+                    "max_gen_toks": "512",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    # Quetzal (impl=quetzal) candidate on P300X2; no TTIS sibling, so the tasks follow the other non-Meta chat rows
+    # (Open LLM Leaderboard v2 tasks, chat template applied as the leaderboard ran it); GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="01-ai/Yi-1.5-9B-Chat",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (60.46); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=55.08,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-9B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (22.58).
+                score=EvalTaskScore(
+                    published_score=19.85,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-9B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-32B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=79.5,
+                    published_score_ref="https://arxiv.org/abs/2412.15115 (Qwen2.5 Technical Report, Table 7: Qwen2.5-32B-Instruct, IFEval)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (62.54).
+                score=EvalTaskScore(
+                    published_score=60.92,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-32B-Instruct/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                # NA: the technical report's GPQA (49.5) does not state the subset or prompt setting, and the leaderboard's
+                # GPQA is 0-shot loglikelihood multiple-choice; neither matches 5-shot generative GPQA-Diamond.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The report does not state the MMLU-Pro prompt setting; TTIS mmlu_pro is 5-shot generative CoT.
+                # (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 56.67.)
+                score=EvalTaskScore(
+                    published_score=69.0,
+                    published_score_ref="https://arxiv.org/abs/2412.15115 (Qwen2.5 Technical Report, Table 7: Qwen2.5-32B-Instruct, MMLU-Pro)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -4285,6 +10386,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4300,6 +10403,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4315,6 +10420,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_multi_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4330,6 +10437,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_single_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4345,6 +10454,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_summarization_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4360,6 +10471,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_synthetic_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4632,6 +10745,8 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
+                gpu_reference_requested="published 90.2 is EvalPlus MBPP (378 problems, 0-shot), not TTIS mbpp_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=90.2,
@@ -4656,6 +10771,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=92.7,
@@ -4700,6 +10816,122 @@ _eval_config_list = [
             #     },
             #     batch_size=16,
             # ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-Coder-32B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-Coder-32B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/deepseek-coder-1.3b-instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=49.4,
+                    published_score_ref="https://arxiv.org/abs/2401.14196 (DeepSeek-Coder paper, Table 3: Multilingual HumanEval and MBPP, DeepSeek-Coder-Instruct 1.3B, MBPP)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=65.2,
+                    published_score_ref="https://arxiv.org/abs/2401.14196 (DeepSeek-Coder paper, Table 3: Multilingual HumanEval and MBPP, DeepSeek-Coder-Instruct 1.3B, HumanEval Python)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-7B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # NA: the Qwen2.5-Coder Technical Report's Table 16 MBPP (83.5) is EvalPlus MBPP: the 378-problem
+                # sanitized subset, prompted 0-shot. TTIS mbpp_instruct runs the full 500-problem MBPP test split 3-shot,
+                # a different problem set and prompt (the same tables put DS-Coder-1.3B-Instruct at 65.3 on EvalPlus MBPP
+                # versus 49.4 on the 500-problem MBPP in the DeepSeek-Coder paper). No comparable published number.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=72.60,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                allow_code_execution=True,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=88.4,
+                    published_score_ref="https://arxiv.org/abs/2409.12186 (Qwen2.5-Coder Technical Report, Table 16)",
+                    gpu_reference_score=82.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -4929,14 +11161,22 @@ _eval_config_list = [
         hf_model_repo="propritery/tts-2",
         tasks=[
             EvalTask(
-                # Same prompt sent many times, each response transcribed by
-                # Whisper; see test_module/benchmark_tests/tts_correctness.py.
-                # Score is the % of responses that pass; any failure is a FAIL.
+                # Same prompt sent many times, every response transcribed by Whisper
+                # (test_module/eval_tests/tts_correctness_test.py). Score is the % of
+                # responses that pass; any failure is a FAIL.
                 task_name="tts_correctness",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
+                # tts_api also routes the benchmark to the chunk-aware load sweep.
+                model_kwargs={
+                    "tts_api": "tt_tts",
+                    "refs": 5,
+                    "requests": 100,
+                    "concurrency": 100,
+                    "max_wer": 0.05,
+                },
                 score=EvalTaskScore(
                     published_score=100.0,
                     published_score_ref="",
@@ -4959,6 +11199,187 @@ _eval_config_list = [
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
+            ),
+        ],
+    ),
+    # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145 / 4.420 (Base / CustomVoice / VoiceDesign).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        tasks=[
+            EvalTask(
+                task_name="tts_speaker_similarity",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=96.2,  # 100 * mean SECS
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "secs_baseline": "cross_speaker",
+                    "secs_floor": 0.90,
+                    "margin_threshold": 0.06,
+                },
+            ),
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=87.6,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 4.2,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        tasks=[
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=78.6,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "custom_voice",
+                    "speaker": "ryan",
+                    "language": "English",
+                    # Same texts as the Base battery.
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 3.85,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        tasks=[
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.5,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "voice_design",
+                    "description": "A calm adult male voice, speaking clearly at a moderate pace.",
+                    "language": "English",
+                    # Same texts as the Base battery.
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 4.1,
+                },
+            ),
+        ],
+    ),
+    # Calibrated on N150, 0.6B, seed 0: SECS 0.954, margin +0.138, UTMOS 4.511 / 4.197 (Base / CustomVoice).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        tasks=[
+            EvalTask(
+                task_name="tts_speaker_similarity",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=95.4,  # 100 * mean SECS
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "secs_baseline": "cross_speaker",
+                    "secs_floor": 0.88,
+                    "margin_threshold": 0.07,
+                },
+            ),
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=87.8,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 4.2,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        tasks=[
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=79.9,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "custom_voice",
+                    "speaker": "ryan",
+                    "language": "English",
+                    # Same texts as the Base battery.
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 3.9,
+                },
             ),
         ],
     ),
@@ -5084,15 +11505,39 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=32,
+                capture_reasoning=True,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Keep the request budget at the task budget so the task deadline is
+                    # always the binding failure mode. Shield run 38056762498 measured
+                    # one healthy streamed AIME request reaching the old 14400s total
+                    # timeout; lm-eval kept its partial output, reported one failed
+                    # prompt, and still scored the task PASS. That is not a clean full
+                    # eval. With this value a healthy long request can finish; a real
+                    # hang is killed by wall_clock_timeout_seconds below and the whole
+                    # task reports incomplete instead of scoring partial text.
+                    "timeout": "36000",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
                     # /v1/completions chunks, not /v1/chat/completions; keep
                     # stream=false to avoid empty resps + KeyError: 'message'.
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5101,6 +11546,16 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
+                # Sized from Shield run 37996687040 (QB2, limited): 14/15 samples in 10136 s, the 15th ~75k
+                # tokens deep at 19 tok/s, so 15 ~= 12,700 s and the full 30 ~= 25,400 s; x1.4 margin.
+                wall_clock_timeout_seconds=36000,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -5122,17 +11577,46 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=32,
+                capture_reasoning=True,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Match the task budget for the same reason as AIME above: the task
+                    # deadline must report a hang as incomplete before lm-eval can score
+                    # a timeout's partial streamed output.
+                    "timeout": "42000",
                 },
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
+                # Slower of two measured QB2 rates: 7 samples / 498 s (run 37996687040) and 48/198 in
+                # 8100 s (run 37097968441) -> 0.0059 samples/s, 198 ~= 33,600 s; x1.25 margin.
+                wall_clock_timeout_seconds=42000,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -5166,6 +11650,8 @@ _eval_config_list = [
                     "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
+                # 0.15-limited QB2 run (37996687040) took 2940 s, so full ~= 19,600 s; x1.3 margin.
+                wall_clock_timeout_seconds=25600,
             ),
         ],
     ),
@@ -5216,6 +11702,141 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.8-27B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=73.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=6 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"reasoning_effort": "medium"},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=61.7,
+                    published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
     # =========================================================================
     # Gemma 4 family - GPU reference eval configs.
     #
@@ -5241,8 +11862,189 @@ _eval_config_list = [
     # 26B-A4B / 12B still carry the 128K (96K+32K) placeholder budgets.
     # =========================================================================
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3.5-27B",
+        tasks=[
+            # Same task and sampling as Qwen/Qwen3.8-27B (same graph). The model
+            # card's Language table reports GPQA Diamond 85.5 for Qwen3.5-27B in
+            # its default thinking mode, and its recommended thinking sampling is
+            # temperature 1.0, top_p 0.95, top_k 20, max_tokens 81920. The same
+            # table reports MMLU-Pro 86.1 and IFEval 95.0; those are not enrolled
+            # here because the card does not state the shot count or harness.
+            # The two agentic tasks mirror Qwen3.8-27B's exactly (same harness, scaffold
+            # and sampling); the card's Terminal Bench 2 / SWE-bench Verified values do not
+            # state a scaffold, so both grade against colab GPU references.
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=85.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.5-27B/blob/fc05daec18b0a78c049392ed2e771dde82bdf654/README.md (Benchmark Results > Language, STEM & Reasoning: GPQA Diamond, Qwen3.5-27B column)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                # The quetzal row serves --default-chat-template-kwargs
+                # {"enable_thinking": false} (upstream stance). The card's 85.5
+                # is thinking mode, so this task turns thinking on per request.
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # Terminal Bench 2 = 41.6, but it names neither the agent scaffold nor the
+                # dataset revision; this task runs terminus-2 on terminal-bench-2-1, so the
+                # card value is not like-for-like. Graded against a GPU reference measured
+                # with exactly this config (issue #5353); NA until it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=6 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            # Qwen3.5-27B's template reads only enable_thinking (no
+                            # reasoning_effort). The quetzal row serves it false by
+                            # default, so thinking is turned on per request, as
+                            # Qwen3.8-27B runs.
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # SWE-bench Verified = 72.4 with no scaffold stated; this task runs
+                # mini-swe-agent, so the card value is not like-for-like. Graded against a
+                # GPU reference measured with exactly this config (issue #5353); NA until
+                # it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    # The row serves enable_thinking=false by
+                                    # default; think per request, as Qwen3.8 runs.
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="google/gemma-4-31B-it",
         tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run: GPQA Diamond in full (198), one 24-task Terminal-Bench 2 wave,
+            # the LiveCodeBench v6 window (131) and 865 MMMU-Pro questions. Both presets
+            # are the same sizes: no subset of GPQA judges accuracy against the published
+            # score (a 40-question slice scores below the set average on every model
+            # measured), and the other three are bounded by their own budgets.
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond (thinking mode).
                 # Model emits reasoning, then a final answer; the task's own
@@ -5267,18 +12069,6 @@ _eval_config_list = [
                     # channel that suppresses native reasoning.)
                     gpu_reference_score=83.33,
                     gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-16",
-                    # CI subset (--ci-mode -> ci-nightly limit 0.2 = doc_ids
-                    # 0-39). The full run scores only ~75% on these same 40
-                    # harder-than-average questions, and temp=1.0 adds ~+/-2.5
-                    # pts jitter, so compare against the subset measurement with
-                    # a looser 10% tolerance instead of the full-set 83.33.
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.00,
-                            ref="ci-nightly r1_gpqa_diamond (doc_ids 0-39), H100 gemma-4-31B-it, 2026-06-29",
-                            tolerance=0.10,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5289,18 +12079,21 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false.
+                # and the per-request chat_template_kwargs below; client-side
+                # apply_chat_template on /v1/completions would render with the
+                # template's default enable_thinking=false.
                 use_chat_api=True,
+                # Both references are thinking mode. Request it per task rather
+                # than relying on the serving entry's default: every Gemma 4 eval
+                # pins its own mode per request (MMMU-Pro runs thinking off), so
+                # the server default never decides a graded mode.
+                thinking=True,
                 model_kwargs={
                     "max_length": 131072,
-                    # lm-eval default HTTP timeout is 1800s. Under
-                    # num_concurrent=32, non-terminating / near-max_gen
-                    # thinking gens share decode and hit that wall (~30min)
-                    # while seq1 finishes each sample in a few minutes.
-                    # Match other reasoning models (Kimi/MiniMax): allow 2h.
-                    "timeout": 7200,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (the 26B lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -5318,33 +12111,20 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # CI_NIGHTLY 0.05 (~10 samples), not the usual 0.2: reasoning
-                # eval (~48K tokens/sample) served batch-1, so samples run
-                # sequentially and dominate CI runtime. Widen EvalTaskScore
-                # tolerance if the small-N accuracy gate flakes.
+                # Both presets run the full 198 questions (no preset entry).
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="terminal_bench_2",
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=36.0,
-                    published_score_ref="https://arxiv.org/abs/2607.02770",
-                    # Full terminal-bench-2 (89 tasks), terminus-2, single
-                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-                    # top_k=20, 112K in / 80K out, 2026-06-17. 40/89 solved =
-                    # 44.94%. published_score is Gemma 4 Terminal Bench Hard
-                    # (36.0, tech report) — a different suite than this TB2
-                    # harness; gpu_reference is the measured H100 TB2 run.
-                    # 16 tasks hit timeouts (15 AgentTimeoutError at the 3h/task
-                    # limit + 1 VerifierTimeoutError) and scored 0, so 44.94 is
-                    # a floor; raising agent_timeout_sec could recover a few.
-                    gpu_reference_score=44.94,
-                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
+                    published_score=39.33,
+                    published_score_ref="https://www.vals.ai/models/google_gemma-4-31b-it",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -5353,49 +12133,40 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
                     n_attempts=1,
-                    n_tasks=None,  # full dataset
-                    # QB2 release runners expose only 16 CPUs; docker compose
-                    # rejects a higher --cpus reservation ("range of CPUs is
-                    # from 0.01 to 16.00"). The H100 reference run used 32.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    n_tasks=None,
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # gemma-4-31B native ctx is 256K (model card), but a
-                            # single H100 NVL (94GB, bf16 KV) only holds a
-                            # 210,605-token KV cache, so a request can't exceed
-                            # ~205K. We serve at --max-model-len 204800 (200K).
-                            # The agent sends ~max_input + max_output per
-                            # request, so keep them under 204800: 112K + 80K =
-                            # 196K (~8K headroom for chat template + tool defs).
-                            # SWE/Terminal prompts rarely approach 200K, so the
-                            # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 112 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 32 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
@@ -5403,80 +12174,143 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # LiveCodeBench on the chat endpoint with thinking on (same
+                # sampling as r1_gpqa_diamond). Scored on the model card's "v6"
+                # window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); the 31B
+                # measured 78.6 on BLACKHOLE_GALAXY in 24 min.
+                task_name="livecodebench",
+                # Gating: graded against the published score on the full v6 window (131).
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=80.0,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    # Full SWE-bench Verified (500), mini-swe-agent, single
-                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-                    # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
-                    # = 64.80%. Google does not publish official SWE-bench
-                    # Verified for Gemma 4 (published_score=None).
-                    gpu_reference_score=64.80,
-                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": ["acc,none"],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    n_attempts=1,
-                    n_tasks=None,  # full dataset
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # gemma-4-31B native ctx is 256K (model card), but a
-                        # single H100 NVL (94GB, bf16 KV) only holds a
-                        # 210,605-token KV cache, so a request can't exceed
-                        # ~205K. We serve at --max-model-len 204800 (200K).
-                        # The GPU reference run below capped input at 160K, so
-                        # 160K + 32K = 192K stayed under it with ~8K headroom.
-                        # Only the output cap is expressible now; SWE prompts
-                        # rarely approach 200K, so this should not affect scores.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
+                use_chat_api=True,
+                thinking=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # MMMU-Pro, standard (10 options) split, chain-of-thought prompt ("think
+                # step by step", final line "Answer: X"): the image eval the Gemma 4 model
+                # card publishes. lmms-eval's mmmu_pro group would also run the 1,730-sample
+                # vision split (question rendered into the image), doubling the cost, so only
+                # the standard split runs; mmmu_acc is the overall accuracy over the 30 subjects.
+                # Stock lmms-eval openai_compatible client (as the other image evals), with
+                # thinking off per request (thinking=False below rides in every request's
+                # chat_template_kwargs through the request-overrides wrapper): the protocol
+                # of the GPU references, and the client drops an answer whose content is
+                # None, i.e. a thought that never closed. The client keeps up to 32 requests
+                # of a --batch_size chunk in flight and caps max_new_tokens at 4096.
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~12 points under the model card on this
+                # checkpoint on a GPU too (64.4 vs 76.9), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=76.9,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-31B-it served by vLLM 0.30.0 on an A100 80 GB: 64.39 (557/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=64.39,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-31B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=64.39,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-31B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
                     },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
                         ],
+                        "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points; ~35 min on
+                # the Galaxy at 128 requests in flight, about 4x that at the client's 32); no
+                # preset = the full 1,730. A 173-question slice cannot judge the published
+                # number (standard error ~3.4).
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
     ),
+    # =========================================================================
+    # IFM/K2-Horizon-7B (TP4 autoport, P300X2). Reasoning model: the model card
+    # asks for reasoning_effort=high (the chat template default), temperature
+    # 1.0, top_p 0.95 and >= 32768 output tokens ("truncated reasoning is a
+    # failed response"). The card's Full Results table publishes HMMT Feb 2026,
+    # Terminal-Bench 2.1 and SWE-bench Verified; its FTPO (anti-doom-loop) table
+    # also publishes GPQA Diamond. MMLU-Pro is published nowhere, so it is not
+    # run: a score with neither a published nor a GPU reference is graded NA.
+    # =========================================================================
     EvalConfig(
-        hf_model_repo="google/gemma-4-26B-A4B-it",
+        hf_model_repo="IFM/K2-Horizon-7B",
         tasks=[
             EvalTask(
-                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
-                # note above). Thinking-mode GPQA; scores exact_match,none.
-                # Published/GPU refs are official Gemma 4 model-card scores.
+                # R1-style zero-shot reasoning GPQA Diamond; the task's own
+                # extractor scores exact_match,none on the final answer. Chat
+                # API so the server renders the native template and the
+                # k2_horizon reasoning parser separates thinking from content.
                 task_name="r1_gpqa_diamond",
+                # 77.1 is the "7B before" column of the card's FTPO table, i.e. the
+                # pre-anti-doom-loop checkpoint this spec pins (036114ce), measured by
+                # the publisher with a 256K output budget. CI runs 40 docs at 64K and
+                # one sample, so the row is a lower bound (65-80 across CI runs).
                 score=EvalTaskScore(
-                    published_score=82.3,
-                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    published_score=77.1,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#anti-doom-loop-training",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -5488,14 +12322,254 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false and
-                # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
                 model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 14400,
+                },
+                # 64K output: at 32K, 8/40 GPQA and 13/33 HMMT traces hit the cap with no
+                # final answer (run 36837441412); the card asks for >= 32768.
+                # Model-card sampling (temperature 1.0, top_p 0.95, no top_k). With no
+                # top_k the TT plugin routes sampling to the host (device top-k is capped
+                # at 32), so every K2 eval row runs the host sampling path; only the
+                # greedy benchmarks sample on device (sample_on_device_mode: all).
+                # stream=false is required by lm-eval's chat-completions parser.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # CI subset: doc_ids 0-39 (served at up to 32 concurrent users).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # HMMT February 2026 (MathArena), the model card's "Math" row (73.3).
+                # Custom task (the pinned lm-eval fork has none): 33 problems graded by
+                # the fork's r1_evals math equivalence checker, as for r1_aime24.
+                task_name="k2_hmmt_feb_2026",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=73.3,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # All 33 problems, 1 sample each, nightly. The avg@4 variant
+                # (task k2_hmmt_feb_2026_avg4, same include_path) took 15.5 h at 64K
+                # in CI (run 37253570139), so it is for manual/full runs only; it must
+                # run with propagate_seed_to_gen_kwargs=False (see the task YAML).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 is the version the model card reports (39.1).
+                # CI runs the 5 tasks listed in task_names_map below.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=39.1,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
+                    # host-sampled as for the evals above.
+                    # 32K output is the card's minimum reasoning budget; 128K input
+                    # plus 32K output stays well inside the 524288 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        # Five tasks so the release job fits the 12 h nightly cap: with
+                        # 5 concurrent trials the slowest task sets the wall time, so
+                        # these are the tasks K2 usually finishes in about an hour
+                        # (CI runs 10-08..10-19). Dropped: compile-compcert,
+                        # cobol-modernization, feal-differential-cryptanalysis and
+                        # largest-eigenval (3 h cap in most runs), db-wal-recovery
+                        # (never solved) and qemu-startup (its verifier cannot run:
+                        # apt-get 404 for curl in the task image, run 37249479221).
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                # SWE-bench Verified: the model card reports 70.6. CI runs the
+                # 5 instances listed in task_names_map below.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=70.6,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # CI gate on the 5-task subset: at least one task solved.
+                    # The subset check is floor(5 * 20% * (1 - 0)) = 1 task.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # 2 h per task keeps the release job inside the 12 h
+                    # nightly cap: the 5 CI tasks run as one wave.
+                    agent_timeout_sec=2 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        # Five instances for the 12 h nightly cap: each finished in
+                        # under 2 h in both release runs that reached SWE-bench
+                        # (37667673404, 38406747530). Four come from the subset shared
+                        # by the other QB2 configs; pydata__xarray-4075 replaces
+                        # matplotlib__matplotlib-25332, which hit the 3 h cap once.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                            "pydata__xarray-4075",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-26B-A4B-it",
+        tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run, sized as on the 31B: GPQA Diamond in full (198), one 24-task
+            # Terminal-Bench 2 wave, the LiveCodeBench v6 window (131) and 865 MMMU-Pro
+            # questions.
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond; scores
+                # exact_match,none. Published ref is the official Gemma 4
+                # model-card score.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=82.3,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Same protocol as this entry (pinned lm-eval fork r1_gpqa_diamond, full 198, thinking on,
+                    # T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16 checkpoint google/gemma-4-26B-A4B-it
+                    # served by vLLM 0.30.0 on an A100 80 GB: 80.81.
+                    gpu_reference_score=80.81,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval r1_gpqa_diamond (198), baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # and the per-request chat_template_kwargs below.
+                use_chat_api=True,
+                # Both references are thinking-mode runs. The mode is pinned per profile
+                # through the catalog's eval_task_request_body_overrides (two implementations
+                # share this task): the tt-transformers entries pin thinking on, the dedicated
+                # gemma4_26b_a4b_qb2 profile pins it off. No task-level pin, so neither
+                # profile's override conflicts.
+                model_kwargs={
                     "max_length": 131072,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (this model lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -5503,20 +12577,31 @@ _eval_config_list = [
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32 * 1024,
+                    # 124K like the 31B / 12B tasks (strictly below max_length): the 32K cap
+                    # truncated thinking traces on the full set, and a truncated trace scores 0.
+                    "max_gen_toks": 124 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Both presets run the full 198 questions (no preset entry), as on the 31B.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="terminal_bench_2",
+                request_body={
+                    "seed": 9472,
+                    "repetition_detection": {
+                        "min_pattern_size": 16,
+                        "max_pattern_size": 1024,
+                        "min_count": 8,
+                    },
+                },
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=14.0,
@@ -5531,13 +12616,17 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # 5 h per task: the 3 h budget left 5 of the 24-task wave unfinished on the QB2
+                    # release run (shield 40142241727), which writes no score for an errored wave.
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -5551,17 +12640,18 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
@@ -5569,54 +12659,108 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # LiveCodeBench on the chat endpoint with thinking on (same
+                # sampling as r1_gpqa_diamond). Scored on the model card's "v6"
+                # window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); same task
+                # settings as the 31B entry.
+                task_name="livecodebench",
+                # Gating: graded against the published score on the full v6 window (131).
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=77.1,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (pinned lm-eval fork, livecodebench v6 window, the same 131
+                    # fixed problems, thinking on, T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16
+                    # checkpoint google/gemma-4-26B-A4B-it served by vLLM 0.30.0 on an A100 80 GB: 75.57.
+                    gpu_reference_score=75.57,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval livecodebench (131 fixed v6 problems), baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": ["acc,none"],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    n_attempts=1,
-                    n_tasks=None,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # Output cap left at the value the pre-Harbor runs used,
-                        # chosen so input + output (96K + 32K = 128K) fit
-                        # gemma-4's 131072 ctx.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
+                use_chat_api=True,
+                thinking=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # MMMU-Pro standard split, chain-of-thought prompt, on the stock lmms-eval
+                # openai_compatible client with thinking off per request: see the 31B entry
+                # for the protocol and the client's limits (32 requests in flight,
+                # max_new_tokens capped at 4096).
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~6 points under the model card on this
+                # checkpoint on a GPU too (67.5 vs 73.8), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=73.8,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-26B-A4B-it served by vLLM 0.30.0 on an A100 80 GB: 67.51 (584/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=67.51,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=67.51,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-26B-A4B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
                     },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
                         ],
+                        "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points); no preset =
+                # the full 1,730. A 173-question slice cannot judge the published number.
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -5624,19 +12768,24 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-4-12B-it",
         tasks=[
+            # The model-card evals, which are what the ci-nightly (--ci-mode) and ci-long
+            # presets run, sized as on the 31B: GPQA Diamond in full (198), one 24-task
+            # Terminal-Bench 2 wave, the LiveCodeBench v6 window (131) and 865 MMMU-Pro
+            # questions.
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
                 # note above). Thinking-mode GPQA; scores exact_match,none.
-                # Published/GPU refs are official Gemma 4 model-card scores.
+                # Published ref is the official Gemma 4 model-card score.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     # Official Gemma 4 model card / HF README (12B Unified).
-                    # gpu_reference left unset until an H100 full-set / CI-subset
-                    # measurement lands (CI_NIGHTLY is ~10 samples).
                     published_score=78.8,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (pinned lm-eval fork r1_gpqa_diamond, full 198, thinking on,
+                    # T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16 checkpoint google/gemma-4-12B-it
+                    # served by vLLM 0.30.0 on an A100 80 GB: 74.24.
+                    gpu_reference_score=74.24,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval r1_gpqa_diamond (198), baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5647,41 +12796,45 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false and
-                # suppress native reasoning (see gemma-4-31B-it note above).
+                # and the per-request chat_template_kwargs below; client-side
+                # apply_chat_template on /v1/completions would render with the
+                # template's default enable_thinking=false and suppress native
+                # reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
-                # KV is ~264k tokens (~1.01x @ 256k). 10 concurrent 32k thinking
-                # gens thrash at ~95% KV / ~2 tok/s and never finish. Run seq=1.
-                max_concurrent=1,
+                # Thinking on per request (both references are thinking mode);
+                # every Gemma 4 eval pins its own mode per request.
+                thinking=True,
+                # Default concurrency (32), same as the 31B task: the release entries'
+                # KV pools hold 32 x 124K worst case with queueing rather than thrashing.
                 model_kwargs={
                     "max_length": 131072,
-                    # Same as 31B: under num_concurrent=32, long thinking gens
-                    # exceed lm-eval's default 1800s HTTP timeout (prior QB2
-                    # ci-nightly lost 10/40 to TimeoutError). Allow 2h.
-                    "timeout": 7200,
+                    # lm-eval's default HTTP timeout is 1800 s. Under 32 concurrent
+                    # thinking generations a QB2 answer can take 1-2 h (the 26B lost
+                    # 52 samples to a 2 h timeout on one shield run), so allow 4 h.
+                    "timeout": 14400,
                 },
                 # Thinking-mode sampling for published-score GPQA (model card 78.8).
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32 * 1024,
+                    # 124K like the 31B task (strictly below max_length): a 32K cap cut
+                    # 7/198 thinking traces on the full set and those items scored 0.
+                    "max_gen_toks": 124 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # Match gemma-4-31B-it: CI_NIGHTLY 0.05 (~10 samples).
+                # Both presets run the full 198 questions (no preset entry), as on the 31B.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="terminal_bench_2",
+                # Gating: graded against the published score with the 24-task preset wave.
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=18.0,
@@ -5696,13 +12849,15 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=5 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -5716,17 +12871,18 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Thinking on per request (the published number is a
+                                # thinking-mode run); every Gemma 4 eval pins its own
+                                # mode per request.
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
+                    # Both presets: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                    # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: GEMMA4_TERMINAL_BENCH_2_WAVE,
+                        EvalLimitMode.CI_LONG: GEMMA4_TERMINAL_BENCH_2_WAVE,
                     },
                 ),
                 limit_samples_map={
@@ -5734,54 +12890,165 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # LiveCodeBench on the chat endpoint with thinking on, scored on
+                # the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
+                task_name="livecodebench",
+                # Gating: graded against the published score on the full v6 window (131).
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=72.0,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (pinned lm-eval fork, livecodebench v6 window, the same 131
+                    # fixed problems, thinking on, T=1.0/top-k 20/top-p 0.95, seed 42) on the baseline bf16
+                    # checkpoint google/gemma-4-12B-it served by vLLM 0.30.0 on an A100 80 GB: 73.28.
+                    gpu_reference_score=73.28,
+                    gpu_reference_score_ref="same-protocol GPU run: lm-eval livecodebench (131 fixed v6 problems), baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking on, T=1.0/top-k 20/top-p 0.95, seed 42",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": ["acc,none"],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    n_attempts=1,
-                    n_tasks=None,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # Output cap left at the value the pre-Harbor runs used,
-                        # chosen so input + output (96K + 32K = 128K) fit
-                        # gemma-4's 131072 ctx.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
+                use_chat_api=True,
+                thinking=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Both presets run the whole v6 window (no preset entry): a subset would
+                # not compare to the model card.
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                # MMMU-Pro standard split, chain-of-thought prompt, on the stock lmms-eval
+                # openai_compatible client with thinking off per request: see the 31B entry
+                # for the protocol and the client's limits (32 requests in flight,
+                # max_new_tokens capped at 4096).
+                eval_class="openai_compatible",
+                task_name="mmmu_pro_standard_cot",
+                # Graded against a same-protocol baseline GPU measurement of the preset subset:
+                # lmms-eval's standard CoT protocol scores ~8 points under the model card on this
+                # checkpoint on a GPU too (61.9 vs 69.1), so the published score is not the reference.
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    published_score=69.1,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Full 1730-doc set not measured on a GPU; the presets below cover the release runs.
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # Same protocol as this entry (lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc
+                    # subset = --limit 0.5, thinking off, greedy) on the baseline bf16 checkpoint
+                    # google/gemma-4-12B-it served by vLLM 0.30.0 on an A100 80 GB: 61.85 (535/865).
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=61.85,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
+                        EvalLimitMode.CI_LONG: ModeReferenceScore(
+                            score=61.85,
+                            ref="same-protocol GPU run: lmms-eval v0.4.1 mmmu_pro_standard_cot, 865-doc subset, baseline google/gemma-4-12B-it (bf16) on vLLM 0.30.0 (A100 80 GB), thinking off, greedy",
+                            tolerance=0.05,
+                        ),
                     },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
                         ],
+                        "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # The client's cap; a thinking-off CoT answer fits in it.
+                    "max_new_tokens": "4096",
+                },
+                # Both presets: 0.5 = 865 questions (standard error ~1.5 points); no preset =
+                # the full 1,730. A 173-question slice cannot judge the published number.
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_LONG: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # FLEURS en_us speech recognition (WER), the model card's audio benchmark
+                # for the 12B: the 647 test utterances on the stock lmms-eval
+                # openai_compatible client, thinking off per request like MMMU-Pro. The
+                # request-overrides wrapper sends each utterance as an OpenAI input_audio
+                # part (16-bit PCM WAV; lmms-eval v0.4.1 forwards the HF Audio dict
+                # unencoded). The task ships in the EVALS_VISION pin; the EVALS_AUDIO venv
+                # is tt-media-server's /audio client, not a chat-completions client.
+                eval_class="openai_compatible",
+                task_name="fleurs_en",
+                # Only profiles that serve audio run it (the 12B Blackhole QB2 / Galaxy /
+                # GPU blocks); the text-only blocks skip it like MMMU-Pro.
+                modalities=["audio"],
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                thinking=False,
+                batch_size=32,
+                max_concurrent=32,
+                score=EvalTaskScore(
+                    # Model card: WER 0.069 for the 12B, an average over the FLEURS
+                    # languages except Chinese (the English split should score at least
+                    # as well). Graded as 100 - WER so the higher-is-better accuracy
+                    # check applies.
+                    published_score=100 - 6.9,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # Same-protocol GPU reference: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 on an
+                    # A100 80 GB via stock vLLM 0.30.0, thinking off, greedy, WAV input_audio (2026-10-19):
+                    #   vllm serve google/gemma-4-12B-it --dtype bfloat16 --max-model-len 32768 --max-num-seqs 32 \
+                    #     --reasoning-parser gemma4 --default-chat-template-kwargs '{"enable_thinking": true}' --port 8000
+                    #   python run.py --model google/gemma-4-12B-it --workflow evals --tt-device gpu --dev-mode \
+                    #     --server-url http://127.0.0.1 --service-port 8000 --eval-tasks fleurs_en
+                    gpu_reference_score=100 - 6.63,
+                    gpu_reference_score_ref="same-protocol GPU run: lmms-eval v0.4.1 fleurs_en (647), baseline bf16 A100 80 GB, stock vLLM, thinking off, greedy, WAV input_audio (2026-10-19, WER 6.63)",
+                    # lmms-eval reports WER in percent; the gate itself scores a
+                    # "WER"-unit task as 100 - WER (llm_eval_tests), so the raw key is
+                    # returned here like the other WER tasks.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    # Transcripts are short: the task's own budget (thinking off).
+                    "max_new_tokens": "256",
+                },
+                # Both presets run the full 647 utterances (minutes at 32 in flight).
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -5855,8 +13122,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -6010,8 +13275,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
-                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -6169,8 +13432,6 @@ _eval_config_list = [
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
                     # The selected tasks are estimated at 5-20 expert minutes.
                     # DiffusionGemma is slower than the reference agents, but a
                     # bounded 45-minute budget keeps a stuck trial from
@@ -6213,6 +13474,148 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Aleph-Alpha/Kolibri-1-BF16 (TP4 autoport, P300X2). Reasoning model; the
+    # model card recommends temperature 1.0, top_p 0.97, top_k 128 with thinking
+    # on (reasoning_effort=high, the chat template default). Published scores are
+    # the model card's own single-harness table (GPQA Diamond EN 84.8, AIME 2025
+    # EN 95.8). No GPU reference run exists yet (tt-agentic-bringup-qb2#76).
+    # MMLU-Pro is not run: 3.4 h of CI for an EXPERIMENTAL-waived score that
+    # needs the GPU reference (#76) to interpret.
+    # Chat API so the server renders the native template and the kolibri1
+    # reasoning parser separates thinking from the final answer.
+    #
+    # Nightly (= ci-long; tt-shield's --ci-mode always runs ci-nightly) is the
+    # productization set: AIME full (30, one pass) and GPQA Diamond 80, both at
+    # a 64K thinking budget. Measured on the 32-slot QB2 CI server (runs
+    # 37777268044 and 37864081794): AIME 25K tokens/question, 16 slots -> ~54
+    # tok/s (30 -> 3.8 h); GPQA at 64K ~21K+ tokens/question and KV-bound (the
+    # 368K-token KV cache holds ~6 full 64K generations, so 8-20 requests run
+    # instead of 32 and aggregate decode drops from ~114 to ~85 tok/s): 80 ->
+    # ~6-7 h, full 198 -> >= 14.5 h, which does not fit next to anything in
+    # tt-shield's 1080-minute job (run 37864081794 was cancelled at the cap with
+    # GPQA at 142/198 and NO artifacts, losing the finished scores).
+    # Hence: AIME first, GPQA last, and in the CI modes each task bounded
+    # (wall_clock_timeout_seconds_map) with setup (~35 min) + sum of bounds
+    # < 18 h (0.6 + 4.5 + 8 = 13.1 h). Full runs (no limit mode) score the whole
+    # datasets and stay unbounded: the CI bounds would cut them off with no
+    # score. A per-user 64K generation takes 3.6-5.2 h (3.6-5 tok/s per user)
+    # plus queue wait, so the lm-eval per-request timeout equals the CI task
+    # bound: a timed-out request is re-sent from scratch (7 times in run
+    # 37864081794), pure waste.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="Aleph-Alpha/Kolibri-1-BF16",
+        tasks=[
+            # Order matters: tasks run sequentially and GPQA (bounded, longest)
+            # goes last so AIME is always scored.
+            # Long-generation math check for the batched-decode MoE path
+            # (tt-agentic-bringup-qb2#75). Informational ("should"): one pass over
+            # 30 problems is +/-4 pts, and the model card's thinking budget is
+            # unknown; this has to produce correct answers through tens of
+            # thousands of decode steps on the grouped/EP path.
+            EvalTask(
+                task_name="aime25",
+                priority="should",
+                score=EvalTaskScore(
+                    # Model card: AIME 2025 (EN) 95.8.
+                    published_score=95.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                # CI bound: 4.5 h (measured 3h50m for 30 problems at 16 slots: the
+                # tail of 64K solutions at ~5 tok/s per user dominates).
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 16200,
+                    EvalLimitMode.CI_LONG: 16200,
+                    EvalLimitMode.SMOKE_TEST: 16200,
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 16200,  # == CI wall bound: never retry a request
+                },
+                # Model-card sampling; a 64K generation budget because AIME
+                # solutions regularly exceed the 32K that empties GPQA answers.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,  # all 30 problems, one pass (+/-4 pts)
+                    EvalLimitMode.CI_LONG: 30,
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=84.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # CI bound: 8 h for 80 questions (estimate 6-7 h: ~1.8M tokens at
+                # ~85 tok/s KV-bound plus the tail of 64K generations). Exceeding
+                # it marks GPQA incomplete (rc=124) instead of losing the run.
+                # Full GPQA (198) at 64K measured >= 14.5 h alone, so full runs
+                # are unbounded.
+                wall_clock_timeout_seconds_map={
+                    EvalLimitMode.CI_NIGHTLY: 28800,
+                    EvalLimitMode.CI_LONG: 28800,
+                    EvalLimitMode.SMOKE_TEST: 28800,
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,  # == CI wall bound: never retry a request
+                },
+                # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
+                # stream=false is required by lm-eval's chat-completions parser.
+                # 64K budget: at 32K, 9 of 40 nightly answers came back empty
+                # (thinking truncated) in CI runs 37616282707 and 37777268044.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                # 80 of 198 (+/-4.5 pts); the first 80 docs, a superset of the
+                # 40 scored in runs 37616282707 / 37777268044.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.CI_LONG: 80,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 
@@ -6226,3 +13629,9 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
+# Every eval config, including models with no ModelSpec on this branch.
+# EVAL_CONFIGS is what a run dispatches from, so it stays spec-gated; callers
+# that only need a task *definition* to copy (see
+# RequirementsTargetPack._find_task_template) read this instead, so dropping a
+# task from one model's run set cannot make it unreachable catalog-wide.
+ALL_EVAL_CONFIGS = _eval_config_map

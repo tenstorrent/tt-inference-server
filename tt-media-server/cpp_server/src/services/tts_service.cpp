@@ -119,6 +119,8 @@ std::string TtsService::runnerInUse() const {
       return "tt_tts";
     case config::ModelRunnerType::MOCK_SCHEDULER:
       return "mock_tts";
+    case config::ModelRunnerType::TT_QWEN3_TTS:
+      return "tt_qwen3_tts";
     default:
       return config::toClientRunnerName(ttsConfig.runner_type);
   }

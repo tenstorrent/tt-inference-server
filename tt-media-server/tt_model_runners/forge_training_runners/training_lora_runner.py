@@ -207,10 +207,6 @@ class TrainingLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.info(f"Device {self.device_id}: Start event set")
-
         mesh = self._create_mesh() if self._is_multichip else None
 
         # Load datasets.
@@ -314,6 +310,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
 
                     running_loss += loss.item()
                     global_step += 1
+                    request.touch_progress()
 
                     # Training metrics
                     if global_step % request.steps_freq == 0:
@@ -496,5 +493,6 @@ class TrainingLoraRunner(BaseDeviceRunner):
 
                 total_val_loss += loss.item()
                 num_val_batches += 1
+                request.touch_progress()
 
         return total_val_loss / num_val_batches if num_val_batches > 0 else 0.0

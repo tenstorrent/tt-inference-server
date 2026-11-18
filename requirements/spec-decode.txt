@@ -15,14 +15,13 @@
 # pillow==11.1 pin in constraints.txt. pyjwt is pinned explicitly to
 # keep cross-venv alignment for the JWT auth path.
 
---extra-index-url https://download.pytorch.org/whl/cpu
-
-# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
-# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
-# import of `AutoTokenizer`.
-torch==2.4.0+cpu
+# No torch here: aiperf only needs transformers for tokenizers, and
+# transformers 5 loads them without torch. transformers 5 is required by
+# tokenizers whose config names `TokenizersBackend` (zai-org/GLM-5.2,
+# GLM-5.3), which 4.x rejects ("Tokenizer class TokenizersBackend does not
+# exist"). The old torch==2.4.0+cpu pin is what capped transformers at <5.
 aiperf==0.8.0
-transformers<5
+transformers>=5
 pyjwt==2.7.0
 requests
 datasets

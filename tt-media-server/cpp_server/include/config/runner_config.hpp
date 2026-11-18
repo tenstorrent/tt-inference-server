@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -87,30 +88,37 @@ struct BlazeConfig : RunnerConfigBase {
 /** Config for the embedding runners. Deliberately standalone rather than
  *  derived from MediaRunnerConfigBase: the embedding path reads none of the
  *  image/TTS weight-distribution fields, and inheriting would make it grow
- *  whenever those gain a field. `device_mesh_shape` is likewise absent -
- *  nothing here reads it, and Python derives the mesh from its own
- *  (runner, device) table in config/constants.py. */
+ *  whenever those gain a field.
+ *
+ *  The runner drives tt-metal directly (ttnn + the model's generator class),
+ *  so every knob Python's Settings used to resolve lives here now, filled
+ *  from the per-(model, device) table in settings.cpp. */
 struct EmbeddingConfig : RunnerConfigBase {
   EmbeddingConfig() { runner_type = ModelRunnerType::TT_BGE_LARGE_EN; }
 
   size_t worker_id = 0;
   // Chip ids this worker may use, e.g. "0" or "0,1" (from DEVICE_IDS).
   std::string visible_devices;
-  // Hard cap on requests per forward pass. Python derives it from its own
-  // (MODEL, DEVICE) table; the parent process needs it too because its
-  // dispatch thread forms the batches, so the worker verifies the two agree
-  // once Python is up.
+  // Hard cap on requests per forward pass; the parent's dispatch thread forms
+  // batches with it and the model asserts on anything larger.
   size_t max_batch_size = 1;
-  // Device type string, e.g. "n150" - selects the Python model config row.
+  // Device type string, e.g. "n150" - selects the model's table row.
   std::string device;
 
-  // The two names C++ must know before Python exists. hf_model_id is what
-  // clients send and what the runner validates against; python_model_name is
-  // the internal enum value exported as MODEL, without which Python's Settings
-  // skips its config lookup entirely. Which Python class implements the model
-  // is not here: tt_model_runners/runner_fabric.py picks it from MODEL_RUNNER.
+  // HuggingFace repo id, e.g. "BAAI/bge-m3". Triple duty: what clients send
+  // in "model" (and the controller defaults to), what the runner validates
+  // requests against, and the id weights + tokenizer are fetched under.
   std::string hf_model_id;
-  std::string python_model_name;
+
+  // Tokenizer truncation limit and the model's max_seq_len (vLLM's
+  // max_model_length; varies per device for some models).
+  size_t max_seq_len = 384;
+  // 2-D {rows, cols} passed to ttnn.MeshShape.
+  std::vector<size_t> mesh_shape{1, 1};
+  // 0 = leave ttnn's default (the model doesn't pass the kwarg).
+  size_t num_command_queues = 0;
+  // Bytes reserved for ttnn trace capture at device open.
+  size_t trace_region_size = 0;
 };
 
 struct ImageConfig : MediaRunnerConfigBase {
@@ -118,6 +126,21 @@ struct ImageConfig : MediaRunnerConfigBase {
 
   size_t imageWidth = 1024;
   size_t imageHeight = 1024;
+};
+
+/** Qwen3-TTS deployment settings; one release per deployment. */
+struct Qwen3TtsConfig {
+  Qwen3TtsRelease release = Qwen3TtsRelease::BASE;
+  Qwen3TtsModelSize modelSize = Qwen3TtsModelSize::SIZE_1B7;
+  std::string checkpointDir;
+  std::string hfModel;
+  // From the checkpoint's config.json; empty = unknown, left to the worker.
+  std::vector<std::string> speakers;
+  std::vector<std::string> languages;
+  uint32_t maxFrames = defaults::TTS_QWEN3_MAX_FRAMES;
+  // Sampling seed applied before every request; unset = unseeded sampling.
+  std::optional<uint64_t> seed;
+  uint32_t maxReferenceSeconds = defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS;
 };
 
 struct TtsConfig : RunnerConfigBase {
@@ -159,6 +182,14 @@ struct TtsConfig : RunnerConfigBase {
       defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX;
   std::string decoderSocketDescriptorPrefix =
       defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX;
+
+  // Set by workerRunnerConfig(); the Qwen3-TTS runner opens its device by it.
+  size_t workerId = 0;
+  // Chip ids this worker may use, e.g. "0" or "1" (its DEVICE_IDS group).
+  std::string visibleDevices;
+
+  // Set only when runner_type == TT_QWEN3_TTS.
+  std::optional<Qwen3TtsConfig> qwen3;
 };
 
 using RunnerConfig =

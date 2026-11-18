@@ -9,7 +9,13 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.encode_stage import EncodeStage
+from device_workers.worker_utils import (
+    claim_job_for_worker,
+    dequeue_and_claim_requests,
+    initialize_device_worker,
+    release_job_from_worker,
+)
 from utils.logger import TTLogger
 
 
@@ -75,8 +81,9 @@ async def _continuous_fan_out(
     inflight: dict[asyncio.Task, Any] = {}
     shutdown_seen = False
 
-    def schedule(req: Any) -> None:
-        signalJobStart(req)
+    def schedule(req: Any, already_claimed: bool = False) -> None:
+        if not already_claimed and not claim_job_for_worker(req, worker_id):
+            return
         task = asyncio.create_task(device_runner._run_async([req]))
         inflight[task] = req
 
@@ -86,7 +93,7 @@ async def _continuous_fan_out(
         if isinstance(req, CanaryProbeRequest):
             _run_canary_probe(device_runner, req, worker_id, result_queue, logger)
             continue
-        schedule(req)
+        schedule(req, already_claimed=True)
 
     while inflight:
         done, _pending = await asyncio.wait(
@@ -146,6 +153,23 @@ async def _continuous_fan_out(
     return shutdown_seen
 
 
+def _shutdown_worker(
+    device_runner: Any, loop: Any, encode_stage: Any, worker_id: str, logger: Any
+) -> None:
+    """Finish pending encodes, close the device, close the event loop.
+
+    ``close_device`` matters on a multi-host mesh: it is how rank 0 tells the
+    other ranks to exit.
+    """
+    if encode_stage is not None:
+        encode_stage.close()
+    try:
+        device_runner.close_device()
+    except Exception as e:
+        logger.warning(f"Worker {worker_id} close_device failed: {e}")
+    loop.close()
+
+
 def device_worker(
     worker_id: str,
     task_queue,
@@ -154,6 +178,8 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: None | str = None,
     cancel_queue: Queue = None,  # accepted for signature parity with dynamic-batch worker; unused here (legacy batched-sync path has no async tasks to cancel mid-flight).
+    retirement_event=None,
+    claim_lock=None,
 ):
     logger = TTLogger()
 
@@ -166,6 +192,9 @@ def device_worker(
         return
 
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
+    encode_stage = EncodeStage.for_runner(
+        device_runner, settings, worker_id, result_queue, error_queue
+    )
     # Signal that this worker is ready after warmup
     try:
         if warmup_signals_queue is not None and not getattr(
@@ -181,18 +210,26 @@ def device_worker(
 
     # Main processing loop
     while True:
-        requests: list[object] = task_queue.get_many(
-            max_messages_to_get=settings.max_batch_size,
+        requests = dequeue_and_claim_requests(
+            task_queue,
+            worker_id,
+            settings.max_batch_size,
             block=True,
             timeout=0.2,  # 200ms timeout - the batch queue will handle optimal batching
+            retirement_event=retirement_event,
+            claim_lock=claim_lock,
         )
-        if requests is None or len(requests) == 0:
+        if requests is None:
+            logger.info(f"Worker {worker_id} retiring before dequeuing more work")
+            loop.close()
+            break
+        if not requests:
             continue
 
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
-            loop.close()
+            _shutdown_worker(device_runner, loop, encode_stage, worker_id, logger)
             break
 
         # Canary-monitor probe: the monitor only submits a probe when idle, so
@@ -204,8 +241,6 @@ def device_worker(
             continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
-        for request in requests:
-            signalJobStart(request)
         responses = None
 
         successful = False
@@ -288,11 +323,15 @@ def device_worker(
                             f"Worker {worker_id} shutting down "
                             f"(SHUTDOWN_SIGNAL observed during continuous batch)"
                         )
-                        loop.close()
+                        _shutdown_worker(
+                            device_runner, loop, encode_stage, worker_id, logger
+                        )
                         break
                     continue
 
                 responses = device_runner.run(requests)
+                if encode_stage is not None:
+                    responses = EncodeStage.normalize_responses(responses)
 
                 if responses is None or len(responses) == 0:
                     for request in requests:
@@ -305,11 +344,16 @@ def device_worker(
                         )
                     continue
 
-                results = [
-                    (worker_id, request._task_id, responses[i])
-                    for i, request in enumerate(requests)
-                ]
-                result_queue.put_many(results, False)
+                if encode_stage is not None:
+                    # Encoded off-thread; the device moves on to the next request.
+                    for i, request in enumerate(requests):
+                        encode_stage.submit(request._task_id, responses[i])
+                else:
+                    results = [
+                        (worker_id, request._task_id, responses[i])
+                        for i, request in enumerate(requests)
+                    ]
+                    result_queue.put_many(results, False)
 
             successful = True
             timeout_timer.cancel()
@@ -321,6 +365,9 @@ def device_worker(
             for request in requests:
                 error_queue.put((worker_id, request._task_id, error_msg))
             continue
+        finally:
+            for request in requests:
+                release_job_from_worker(request, claim_lock)
 
         logger.debug(
             f"Worker {worker_id} finished processing tasks: {requests.__len__()}"

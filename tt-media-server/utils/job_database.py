@@ -163,7 +163,7 @@ class JobDatabase:
             print(f"Rows affected: {cursor.rowcount}")
 
     def delete_job(self, job_id: str) -> None:
-        """Delete a job from the database."""
+        """Delete a job and its related persisted data."""
         with self._get_cursor() as cursor:
             cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 

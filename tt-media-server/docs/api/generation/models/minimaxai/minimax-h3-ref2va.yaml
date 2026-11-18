@@ -1,0 +1,165 @@
+openapi: 3.1.0
+info:
+  title: MiniMax-H3 Ref2VA generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `minimaxai/minimax-h3-ref2va` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/minimaxai/minimax-h3-ref2va:
+    post:
+      operationId: submitMiniMaxH3Ref2VA
+      tags: [MiniMax-H3 Ref2VA]
+      summary: Submit a MiniMax-H3 Ref2VA job
+      description: |
+        Video with sound from text plus reference images, videos and audio
+        clips. Runs the `Ref2VA` checkpoint of `MiniMaxAI/MiniMax-H3`.
+
+        **tt-media-server today:** `POST /v1/videos/generations/ref2va`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MiniMaxH3Ref2VARequest"
+            example:
+              prompt: >-
+                The man from Picture 1 walks through the market from Video 1,
+                speaking in the voice of Audio 1.
+              images:
+                - https://storage.internal/inputs/man.png
+              videos:
+                - https://storage.internal/inputs/market.mp4
+              audios:
+                - https://storage.internal/inputs/voice.wav
+              duration: 5
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "400":
+          $ref: "../../common.yaml#/components/responses/MediaUrlNotAllowed"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "413":
+          $ref: "../../common.yaml#/components/responses/MediaTooLarge"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"
+  schemas:
+    MiniMaxH3Ref2VARequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        Shared by every MiniMax-H3 Ref2VA deployment, whatever its sampling
+        (e.g. `tenstorrent/minimax-h3-ref2va-lightx2v`).
+
+        References: at most 12 in total, and at least one image or video (audio
+        alone is rejected with 422). Video and audio clips are 2–15 s each and
+        at most 15 s combined per kind.
+
+        A reference video's soundtrack is audio conditioning: it counts toward
+        the audio limits (at most 3 audio references, at most 15 s of audio
+        combined) as well as the video ones. A video with sound counts once
+        toward the 12-reference total.
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            Refer to references by kind and position, numbered per kind in the
+            order given: `Picture 1` (the first of `images`), `Video 1`, `Audio
+            1`. The model sees each reference under that label. A video's own
+            sound track counts as an audio reference too.
+        images:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "../../common.yaml#/components/schemas/Media"
+          description: |
+            Reference images, aspect ratio from 1:4 to 4:1.
+
+            **tt-media-server today:** `references.images`.
+        videos:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "../../common.yaml#/components/schemas/VideoMedia"
+          description: |
+            Reference video clips, 2–15 s each, at most 15 s combined. A clip's
+            soundtrack, if it has one, is also audio conditioning and counts
+            toward the audio limits (see `audios`).
+
+            **tt-media-server today:** `references.videos`.
+        audios:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "../../common.yaml#/components/schemas/AudioMedia"
+          description: |
+            Reference audio clips, 2–15 s each. The audio limits cover these
+            clips plus the soundtrack of every reference video that has one: at
+            most 3 audio references and at most 15 s of audio combined, or 422.
+
+            **tt-media-server today:** `references.audios`.
+        aspect_ratio:
+          type: string
+          enum: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          default: "16:9"
+          description: |
+            Output shape, as for text-to-video: the references don't set it.
+            Each output reports its exact size.
+
+            **tt-media-server today:** same values, default `16:9`, or explicit
+            `height`/`width`.
+        size:
+          type: string
+          enum: [768p]
+          default: 768p
+          description: |
+            Size tier: a short edge of 768, the area capped at 768×1344, sides
+            multiples of 32:
+
+            | `aspect_ratio` | `768p`    |
+            | -------------- | --------- |
+            | `21:9`         | 1536×672  |
+            | `16:9`         | 1344×768  |
+            | `4:3`          | 1024×768  |
+            | `1:1`          | 768×768   |
+            | `3:4`          | 768×1024  |
+            | `9:16`         | 768×1344  |
+
+            Only `768p` for now; kept so other tiers can be added without a
+            schema change.
+        duration:
+          type: integer
+          minimum: 4
+          maximum: 15
+          default: 5
+          description: |
+            Seconds. The video runs at 24 fps and its length is rounded up to the
+            frame counts the model generates (17k + 5): 5 s gives 124 frames
+            (5.17 s). Each output reports its exact `duration` and
+            `num_frames`.
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"

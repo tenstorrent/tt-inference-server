@@ -31,6 +31,11 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
     MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_FL2VA = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_REF2VA = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_FASTH3 = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -83,6 +88,11 @@ class ModelNames(Enum):
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     LTX_2_3_DISTILLED = "LTX-2.3-distilled"
     MINIMAX_H3 = "MiniMax-H3"
+    MINIMAX_H3_FL2VA = "MiniMax-H3-FL2VA"
+    MINIMAX_H3_REF2VA = "MiniMax-H3-Ref2VA"
+    MINIMAX_H3_FASTH3 = "MiniMax-H3-FastH3"
+    MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMax-H3-FL2VA-LightX2V"
+    MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMax-H3-Ref2VA-LightX2V"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -137,6 +147,11 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
     TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
+    TT_MINIMAX_H3_FL2VA = "tt-minimax-h3-fl2va"
+    TT_MINIMAX_H3_REF2VA = "tt-minimax-h3-ref2va"
+    TT_MINIMAX_H3_FASTH3 = "tt-minimax-h3-fasth3"
+    TT_MINIMAX_H3_FL2VA_LIGHTX2V = "tt-minimax-h3-fl2va-lightx2v"
+    TT_MINIMAX_H3_REF2VA_LIGHTX2V = "tt-minimax-h3-ref2va-lightx2v"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -241,6 +256,11 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
         ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_T2VA,
+        ModelRunners.TT_MINIMAX_H3_FL2VA,
+        ModelRunners.TT_MINIMAX_H3_REF2VA,
+        ModelRunners.TT_MINIMAX_H3_FASTH3,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -279,26 +299,59 @@ I2V_MODEL_NAMES = frozenset(
     }
 )
 
+# MiniMax-H3 ref2va-only deployments: text-only and I2V endpoints must not
+# reach a worker that loaded ``transformer_ref/``.
+REF2VA_MODEL_RUNNERS = frozenset(
+    {ModelRunners.TT_MINIMAX_H3_REF2VA, ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V}
+)
+REF2VA_MODEL_NAMES = frozenset(
+    {ModelNames.MINIMAX_H3_REF2VA, ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V}
+)
+# The MiniMax-H3 tasks that are known NOT to serve Ref2VA. An SP frontend loads
+# no weights, so MODEL is its only signal about the peer's task; only these
+# names prove the peer would drop a ``references`` payload. Any other value —
+# a Wan model, an unset MODEL, an unrecognised string — says nothing, and the
+# frontend must stay permissive rather than refuse a working deployment.
+NON_REF2VA_H3_MODEL_NAMES = frozenset(
+    {
+        ModelNames.MINIMAX_H3,
+        ModelNames.MINIMAX_H3_FL2VA,
+        ModelNames.MINIMAX_H3_FASTH3,
+        ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
+    }
+)
+
 # Client-facing video API bounds
 MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
 # Pipelines that ignore the client's num_inference_steps. Keep these as the
-# values passed into the runner (dit_runners Distill / Lightning / AniSora).
+# values passed into the runner (dit_runners Distill / Lightning / AniSora /
+# FastH3 / LightX2V).
 WAN22_DISTILL_NUM_STEPS = 4
 WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_ANISORA_NUM_STEPS = 8
+MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 4
+# The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
+# counts sigma grid points, which is one more than the forward count.
+MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+    ModelRunners.TT_MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
     ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+    ModelNames.MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 
 
@@ -309,8 +362,9 @@ def video_executed_inference_steps(
 ) -> Optional[int]:
     """Return the denoise steps the pipeline actually runs.
 
-    Distill, Lightning, and AniSora ignore ``num_inference_steps``; SP_RUNNER
-    serving those weights is identified by ``MODEL``, not by the runner name.
+    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``;
+    SP_RUNNER serving those weights is identified by ``MODEL``, not by the
+    runner name.
     """
     if model_runner:
         try:
@@ -361,6 +415,11 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.MOCHI_1,
     },
     ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
+    ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
+    ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
+    ModelRunners.TT_MINIMAX_H3_FASTH3: {ModelNames.MINIMAX_H3_FASTH3},
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V},
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -417,6 +476,9 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
+    # Four Blackhole Galaxies as one (4, 32) mesh, launched with tt-run (see
+    # multihost/). Each rank sees its own host's 32 chips.
+    GALAXY_QUAD = "galaxy_quad"
 
 
 class QueueType(Enum):
@@ -511,6 +573,63 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     if is_large_mesh(mesh_shape):
         return WAN22_RESOLUTION_LARGE_MESH
     return WAN22_RESOLUTION_SMALL_MESH
+
+
+# --- LTX-2.3 distilled inference shape policy ---------------------------------
+# Served shape for the (4, 8) Galaxy ring: 1080p, 153 frames (6.12s, the nearest
+# 8k+1 count to 6s) at 25 fps. H/W must be %64 and (num_frames-1)%8 == 0.
+# fps conditions the model (audio latent length, A/V cross-PE), so it must reach
+# create_pipeline, not only generate(), or lip sync drifts.
+# 153f relies on the latent T=20 conv3d blocking entries in
+# models/tt_dit/utils/conv3d.py; without them decode is ~2x slower.
+# The shape is baked into the captured traces, so a request may only ask for the
+# shape this process serves; see ltx_served_shape().
+
+
+class VideoShapeConfig(NamedTuple):
+    """One servable video generation shape. Fixed at pipeline construction."""
+
+    num_frames: int
+    height: int
+    width: int
+    fps: float
+
+
+# Mirrors TEMPORAL_COMPRESSION in models/tt_dit/utils/ltx.py. tt-metal does not
+# assert 8k+1 frame counts (others silently truncate), hence snap_num_frames.
+LTX_TEMPORAL_COMPRESSION = 8
+# LTXDistilledPipeline.generate() asserts height % 64 == 0 and width % 64 == 0.
+LTX_SPATIAL_MULTIPLE = 64
+
+LTX_SHAPE_1080P_6S_25FPS = VideoShapeConfig(
+    num_frames=153, height=1088, width=1920, fps=25.0
+)
+
+# Shapes the pipeline may be built with; ltx_served_shape() is the one this process
+# has traces for, and is what requests are validated against.
+LTX_ACCEPTED_SHAPES = frozenset({LTX_SHAPE_1080P_6S_25FPS})
+
+LTX_NUM_FRAMES = LTX_SHAPE_1080P_6S_25FPS.num_frames
+LTX_HEIGHT = LTX_SHAPE_1080P_6S_25FPS.height
+LTX_WIDTH = LTX_SHAPE_1080P_6S_25FPS.width
+LTX_FPS = LTX_SHAPE_1080P_6S_25FPS.fps
+
+# Fixed by the distilled sigma schedules (8 stage-1 + 3 stage-2 steps); the
+# pipeline takes no step count.
+LTX_NUM_INFERENCE_STEPS = 11
+
+
+def ltx_served_shape() -> VideoShapeConfig:
+    """The shape this process's pipeline was built with (and captured traces for)."""
+    return LTX_SHAPE_1080P_6S_25FPS
+
+
+def snap_num_frames(n: int) -> int:
+    """Snap a frame count to the nearest legal LTX value, i.e. (n - 1) % 8 == 0."""
+    if n < 1:
+        return 1
+    k = round((n - 1) / LTX_TEMPORAL_COMPRESSION)
+    return k * LTX_TEMPORAL_COMPRESSION + 1
 
 
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
@@ -1019,8 +1138,72 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
+    # BH Galaxy is 32 chips, same one-worker-per-mesh layout as WH Galaxy.
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
     # One device-id group -> one worker -> requests serialise on the mesh.
     (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1058,6 +1241,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1135,9 +1325,122 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # LTX 1080p ~6s AV generation (145 frames) plus first-request trace
-        # capture during warmup; give it a generous ceiling.
+        # LTX 1080p ~6s AV generation (153 frames @ 25 fps) plus first-request
+        # trace capture during warmup; give it a generous ceiling.
         "request_processing_timeout_seconds": 7200,
+    },
+    # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
+    # device-id group -> one worker on rank 0; tt-run assigns each rank's chips.
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_T2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_ANISORA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_DISTILL, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LORA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LIGHTNING, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
@@ -1634,35 +1937,42 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
+    # Training runners download their own weights: from_pretrained(repo_id) fetches into
+    # $HF_HOME/hub on first load, so a startup download would only add an unused copy.
     (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
 }
 

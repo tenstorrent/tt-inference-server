@@ -16,7 +16,6 @@ namespace tt::config::defaults {
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
 constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 2;
-constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
@@ -80,6 +79,8 @@ constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
 constexpr const char* TT_MEDIA_TASK_QUEUE = "tt_media_tasks";
 constexpr const char* TT_MEDIA_RESULT_QUEUE = "tt_media_results";
+constexpr const char* TT_EMBEDDING_TASK_QUEUE = "tt_embedding_tasks";
+constexpr const char* TT_EMBEDDING_RESULT_QUEUE = "tt_embedding_results";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
@@ -114,14 +115,14 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
  * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var).
  */
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
-// Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
-// the legacy default (16) for small (1-16 worker) deployments.
-constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
-// Safety ceiling for the dispatch thread pool to avoid pathological configs
-// (e.g. accidental CALLBACK_POOL_THREADS=100000).
-constexpr size_t CALLBACK_POOL_THREADS_MAX = 32;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
+/** How long a worker blocks on its task queue before re-checking its stop
+ * flag; bounds how long a worker lingers after the parent dies. */
+constexpr unsigned WORKER_TASK_POLL_MS = 200;
+/** After SIGTERM, how long a worker waits for an in-flight run() to return
+ * before exiting outright so it does not keep the device open. */
+constexpr unsigned WORKER_SHUTDOWN_GRACE_MS = 10 * 1000;
 
 // IPC queue capacities
 constexpr size_t RESULT_QUEUE_CAPACITY = 65536;
@@ -185,6 +186,9 @@ constexpr const char* SENTRY_ENVIRONMENT = "development";
 // Empty = label events with the server version passed to telemetry::init().
 constexpr const char* SENTRY_RELEASE = "";
 constexpr bool SENTRY_DEBUG = false;
+// server_name tag override (e.g. a deployment or pod name). Empty falls back
+// to POD_NAME, then the OS hostname (a random container ID under Docker).
+constexpr const char* SENTRY_SERVER_NAME = "";
 
 // Text-to-speech scheduler defaults.
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;
@@ -197,5 +201,18 @@ constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
 constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
 constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
 constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
+
+// Qwen3-TTS: the codec reads the voice clip and writes audio at 24 kHz.
+constexpr uint32_t TTS_QWEN3_SAMPLE_RATE_HZ = 24000;
+// 32 s at 12.5 frames/s; fixes the talker's KV cache size for the worker.
+constexpr uint32_t TTS_QWEN3_MAX_FRAMES = 400;
+// Hard ceiling: a 2 MiB task-queue message holds ~43 s of 24 kHz PCM16.
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS = 30;
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT = 40;
+// 4 s of 24 kHz PCM16 (192 KB), under the 512 KiB audio-queue message limit.
+constexpr size_t TTS_QWEN3_CHUNK_SAMPLES = 96000;
+// tt-metal's checkpoint_dir() default when QWEN3_TTS_CKPT/HF_MODEL are unset.
+constexpr const char* TTS_QWEN3_DEFAULT_HF_MODEL =
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base";
 
 }  // namespace tt::config::defaults

@@ -48,10 +48,42 @@ TT_DRAFT_COUNTER = "tt_spec_decode_num_draft_tokens_total"
 TT_NUM_DRAFTS_COUNTER = "tt_spec_decode_num_drafts_total"
 TT_PER_POS_PREFIX = "tt_spec_decode_num_accepted_tokens_per_pos"
 
-SPEC_DECODE_PREFIXES: Tuple[str, ...] = (SPEC_DECODE_PREFIX, TT_SPEC_DECODE_PREFIX)
-ACCEPTED_COUNTERS: Tuple[str, ...] = (ACCEPTED_COUNTER, TT_ACCEPTED_COUNTER)
-DRAFT_COUNTERS: Tuple[str, ...] = (DRAFT_COUNTER, TT_DRAFT_COUNTER)
-NUM_DRAFTS_COUNTERS: Tuple[str, ...] = (NUM_DRAFTS_COUNTER, TT_NUM_DRAFTS_COUNTER)
+# What the cpp_server Blaze runner exports today: cumulative per-worker
+# accept/reject totals (labelled worker_id), rendered on the same /metrics as
+# the server metrics. Draft tokens are accepts + rejects; there is no
+# num_drafts, so mean accepted length stays unavailable from these.
+TT_WORKER_SPEC_PREFIX = "tt_worker_spec_"
+TT_WORKER_ACCEPTS = "tt_worker_spec_accepts_total"
+TT_WORKER_REJECTS = "tt_worker_spec_rejects_total"
+
+# tt-d-gen workers (DFlash / MTP): vLLM semantics, labelled by method, on the
+# worker's Dynamo status port (DYN_SYSTEM_PORT). Summed across methods.
+TT_ENGINE_SPEC_DECODE_PREFIX = "tt_engine_spec_decode_"
+TT_ENGINE_ACCEPTED_COUNTER = "tt_engine_spec_decode_accepted_tokens_total"
+TT_ENGINE_DRAFT_COUNTER = "tt_engine_spec_decode_draft_tokens_total"
+TT_ENGINE_NUM_DRAFTS_COUNTER = "tt_engine_spec_decode_drafts_total"
+
+SPEC_DECODE_PREFIXES: Tuple[str, ...] = (
+    SPEC_DECODE_PREFIX,
+    TT_SPEC_DECODE_PREFIX,
+    TT_WORKER_SPEC_PREFIX,
+    TT_ENGINE_SPEC_DECODE_PREFIX,
+)
+ACCEPTED_COUNTERS: Tuple[str, ...] = (
+    ACCEPTED_COUNTER,
+    TT_ACCEPTED_COUNTER,
+    TT_ENGINE_ACCEPTED_COUNTER,
+)
+DRAFT_COUNTERS: Tuple[str, ...] = (
+    DRAFT_COUNTER,
+    TT_DRAFT_COUNTER,
+    TT_ENGINE_DRAFT_COUNTER,
+)
+NUM_DRAFTS_COUNTERS: Tuple[str, ...] = (
+    NUM_DRAFTS_COUNTER,
+    TT_NUM_DRAFTS_COUNTER,
+    TT_ENGINE_NUM_DRAFTS_COUNTER,
+)
 PER_POS_PREFIXES: Tuple[str, ...] = (PER_POS_PREFIX, TT_PER_POS_PREFIX)
 
 _LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
@@ -196,6 +228,10 @@ def _acceptance_metrics_from_deltas(
     accepted = _sum_by_metrics(deltas, ACCEPTED_COUNTERS)
     draft = _sum_by_metrics(deltas, DRAFT_COUNTERS)
     num_drafts = _sum_by_metrics(deltas, NUM_DRAFTS_COUNTERS)
+    if draft <= 0:
+        # Fall back to the cpp_server worker totals (see TT_WORKER_SPEC_PREFIX).
+        accepted = _sum_by_metrics(deltas, (TT_WORKER_ACCEPTS,))
+        draft = accepted + _sum_by_metrics(deltas, (TT_WORKER_REJECTS,))
     per_pos = sorted(_extract_per_position(deltas).items())
 
     acceptance_rate = (accepted / draft) if draft > 0 else 0.0
@@ -254,6 +290,8 @@ __all__ = [
     "SPEC_DECODE_PREFIX",
     "SPEC_DECODE_PREFIXES",
     "TT_SPEC_DECODE_PREFIX",
+    "TT_WORKER_SPEC_PREFIX",
+    "TT_ENGINE_SPEC_DECODE_PREFIX",
     "fetch_metrics_endpoint",
     "fetch_prometheus_counters",
     "fetch_prometheus_counters_multi",

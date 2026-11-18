@@ -45,10 +45,13 @@ import json
 import logging
 import shutil
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
@@ -201,16 +204,26 @@ class AIPerfSpecDecodeDriver:
             spec_run.num_prompts,
         )
 
-        env = dict(context.extra_env)
+        env = {**AIPERF_PROGRESS_ENV, **context.extra_env}
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
-        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
+        progress = _RunProgress(artifact_dir=artifact_dir, total=spec_run.num_prompts)
+        run_start = time.monotonic()
+        with _heartbeat(spec_run.slug, run_start, progress=progress):
+            rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
+        logger.info(
+            "[spec-decode] %s: aiperf exited rc=%d after %.0fs",
+            spec_run.slug,
+            rc,
+            time.monotonic() - run_start,
+        )
         if rc != 0:
             logger.error(
                 "[spec-decode] aiperf failed for %s with rc=%d",
                 spec_run.slug,
                 rc,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=rc, payload=None, raw_path=None)
 
         metrics = _parse_aiperf_output(artifact_dir)
@@ -237,11 +250,20 @@ class AIPerfSpecDecodeDriver:
                 mean_ttft_ms,
                 artifact_dir,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
         spec_decode_metrics = _scrape_acceptance_metrics(
             url, before, spec_run, metrics_urls
         )
+        if (spec_decode_metrics or {}).get("draft_tokens"):
+            spec_decode_metrics["source"] = "metrics"
+        else:
+            # No counters on /metrics (e.g. a Dynamo frontend): fall back to
+            # the accepted/rejected prediction tokens in each response's usage.
+            spec_decode_metrics = (
+                _usage_acceptance_metrics(artifact_dir) or spec_decode_metrics
+            )
 
         payload = _build_payload(
             run=spec_run,
@@ -249,6 +271,9 @@ class AIPerfSpecDecodeDriver:
             spec_decode_metrics=spec_decode_metrics,
             model_repo=server.model or self.model_repo,
         )
+        placeholders = _count_placeholder_prompts(artifact_dir)
+        if placeholders is not None:
+            payload["placeholder_prompts"], payload["total_prompts"] = placeholders
         raw_path = _save_payload(
             payload=payload,
             output_dir=self.output_dir,
@@ -259,6 +284,158 @@ class AIPerfSpecDecodeDriver:
         _log_run_summary(spec_run, metrics, spec_decode_metrics)
 
         return SpecDecodeDriverResult(return_code=0, payload=payload, raw_path=raw_path)
+
+
+# ---------------------------------------------------------------------
+# Progress logging
+# ---------------------------------------------------------------------
+
+HEARTBEAT_S = 30.0
+PROGRESS_BAR_WIDTH = 20
+# AIPerf buffers raw records 10 at a time; flushing each one as its request
+# finishes lets the heartbeat count completions while the run is live.
+AIPERF_PROGRESS_ENV = {"AIPERF_RECORD_RAW_EXPORT_BATCH_SIZE": "1"}
+
+
+@contextmanager
+def _heartbeat(
+    slug: str,
+    start: float,
+    interval_s: float = HEARTBEAT_S,
+    progress: Optional[Callable[[float], str]] = None,
+):
+    """Log the run's progress every ``interval_s`` while the block runs.
+
+    AIPerf disables its UI when stdout is not a TTY (CI), so without this a
+    run prints nothing until it ends (up to the per-run timeout).
+    ``progress(elapsed_s)`` returns the status for each beat (see
+    :class:`_RunProgress`); without it the beat says "still running".
+    """
+    stop = threading.Event()
+
+    def _beat() -> None:
+        while not stop.wait(interval_s):
+            elapsed = time.monotonic() - start
+            status = "still running"
+            if progress is not None:
+                try:
+                    status = progress(elapsed)
+                except Exception as exc:  # noqa: BLE001 -- progress is best-effort
+                    logger.debug("[spec-decode] progress check failed: %s", exc)
+            logger.info(
+                "[spec-decode] %s %s (%s elapsed)", slug, status, _fmt_duration(elapsed)
+            )
+
+    thread = threading.Thread(target=_beat, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+
+
+def _fmt_duration(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes}m{secs:02d}s" if minutes else f"{secs}s"
+
+
+class _RunProgress:
+    """Live progress of one aiperf run, rendered as one heartbeat line.
+
+    Counts finished requests (and how many errored) from the raw records
+    aiperf flushes per request (``AIPERF_PROGRESS_ENV``), so it works
+    against any server, with or without a ``/metrics`` endpoint.
+    """
+
+    def __init__(self, *, artifact_dir: Path, total: Optional[int]) -> None:
+        self.artifact_dir = Path(artifact_dir)
+        self.total = total
+        self.done = 0
+        self.errors = 0
+        self._offsets: Dict[Path, int] = {}
+
+    def __call__(self, elapsed: float) -> str:
+        self._read_new_records()
+        finished = self.done + self.errors
+        errors = f", {self.errors} errors" if self.errors else ""
+        if not self.total:
+            return f"{finished} requests done{errors}"
+        frac = min(finished / self.total, 1.0)
+        filled = int(frac * PROGRESS_BAR_WIDTH)
+        bar = "#" * filled + "-" * (PROGRESS_BAR_WIDTH - filled)
+        text = f"[{bar}] {finished}/{self.total} ({frac:.0%}){errors}"
+        if 0 < finished < self.total:
+            eta = elapsed / finished * (self.total - finished)
+            text += f", ETA ~{_fmt_duration(eta)}"
+        return text
+
+    def _read_new_records(self) -> None:
+        """Count the raw records appended since the previous beat."""
+        for path in self.artifact_dir.rglob("raw_records_*.jsonl"):
+            offset = self._offsets.get(path, 0)
+            with path.open("rb") as fh:
+                fh.seek(offset)
+                for line in fh:
+                    if not line.endswith(b"\n"):
+                        break  # partial write; read it next beat
+                    offset += len(line)
+                    self._count(line)
+            self._offsets[path] = offset
+
+    def _count(self, line: bytes) -> None:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if (record.get("metadata") or {}).get("benchmark_phase") == "warmup":
+            return
+        if record.get("error") or (record.get("status") or 200) >= 400:
+            self.errors += 1
+        else:
+            self.done += 1
+
+
+def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:
+    """Copy the end of AIPerf's own log into ours, so CI shows why a run failed."""
+    for path in sorted(Path(artifact_dir).rglob("aiperf.log")):
+        try:
+            tail = path.read_text(errors="replace").splitlines()[-lines:]
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", path, exc)
+            continue
+        logger.error(
+            "[spec-decode] last %d lines of %s:\n%s", len(tail), path, "\n".join(tail)
+        )
+
+
+# The public HF copy of nvidia/SPEED-Bench masks many prompts with this
+# sentence; the full data must be fetched with NVIDIA's specdec_bench (#5279).
+SPEED_BENCH_PLACEHOLDER = "FULL BENCHMARK DATA SHOULD BE FETCHED FROM THE SOURCE"
+
+
+def _count_placeholder_prompts(artifact_dir: Path) -> Optional[Tuple[int, int]]:
+    """``(placeholder, total)`` payloads in aiperf's ``inputs.json``; warn if any.
+
+    ``None`` when aiperf wrote no ``inputs.json`` (best effort).
+    """
+    path = next(Path(artifact_dir).rglob("inputs.json"), None)
+    inputs = load_json(path) if path else None
+    if not inputs:
+        return None
+    payloads = [
+        json.dumps(p) for s in inputs.get("data", []) for p in s.get("payloads", [])
+    ]
+    placeholders = sum(SPEED_BENCH_PLACEHOLDER in p for p in payloads)
+    if placeholders:
+        logger.warning(
+            "[spec-decode] %d/%d prompts in the dataset aiperf loaded are the "
+            "SPEED-Bench placeholder sentence; this run's results are "
+            "unreliable (see #5279).",
+            placeholders,
+            len(payloads),
+        )
+    return placeholders, len(payloads)
 
 
 # ---------------------------------------------------------------------
@@ -338,6 +515,15 @@ def _build_aiperf_cmd(
             f"max_completion_tokens:{run.max_completion_tokens}",
         ]
     cmd += [
+        # Streaming responses carry usage (with the accepted/rejected
+        # prediction tokens) only when asked, and a Dynamo frontend forwards
+        # the worker's engine_data (draft count) only when selected. The raw
+        # export keeps both.
+        "--extra-inputs",
+        '{"stream_options": {"include_usage": true}, '
+        '"nvext": {"extra_fields": ["engine_data"]}}',
+        "--export-level",
+        "raw",
         "--artifact-dir",
         artifact_dir,
     ]
@@ -484,6 +670,116 @@ def _scrape_acceptance_metrics(
             exc,
         )
         return None
+
+
+def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
+    """Acceptance from each response in aiperf's raw export.
+
+    Sums ``usage.completion_tokens_details`` ``accepted_prediction_tokens`` /
+    ``rejected_prediction_tokens`` over each request's last usage chunk.
+    ``usage`` has no draft count, so ``num_drafts`` (and with it mean
+    accepted length) comes from ``nvext.engine_data.spec_decode`` when the
+    server sends it, and covers only responses that report both the draft
+    count and the prediction tokens. A response that reports the prediction
+    tokens is counted even when aiperf marked it invalid (e.g. no text
+    content): the server did the drafting. One without them is left out of
+    the sums, as ``failed_responses`` when the request failed (an aiperf
+    ``error`` or HTTP status >= 400), otherwise as ``responses_without_usage``
+    with a warning. A line or SSE message that is not valid JSON is skipped
+    with a warning. ``None`` when no response reports prediction tokens.
+    """
+    accepted = rejected = responses = without = failed = 0
+    paired_accepted = num_drafts = with_drafts = 0
+    unparsable = 0
+    found = False
+    for path in Path(artifact_dir).rglob("profile_export_raw.jsonl"):
+        with path.open(errors="replace") as fh:
+            for line in fh:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    unparsable += 1
+                    continue
+                details = spec = None
+                for response in record.get("responses") or []:
+                    # One SSE message; its data fields join with "\n" per the
+                    # SSE spec (aiperf's SSEMessage.extract_data_content).
+                    value = "\n".join(
+                        packet.get("value") or ""
+                        for packet in response.get("packets") or []
+                        if packet.get("name") == "data"
+                    )
+                    if '"completion_tokens_details"' not in value and (
+                        '"engine_data"' not in value
+                    ):
+                        continue
+                    try:
+                        chunk = json.loads(value)
+                    except json.JSONDecodeError:
+                        unparsable += 1
+                        continue
+                    usage = chunk.get("usage") or {}
+                    details = usage.get("completion_tokens_details") or details
+                    engine_data = (chunk.get("nvext") or {}).get("engine_data") or {}
+                    spec = engine_data.get("spec_decode") or spec
+                if details and "accepted_prediction_tokens" in details:
+                    found = True
+                    accepted += details.get("accepted_prediction_tokens") or 0
+                    rejected += details.get("rejected_prediction_tokens") or 0
+                    if spec and spec.get("num_drafts") is not None:
+                        with_drafts += 1
+                        num_drafts += spec["num_drafts"]
+                        paired_accepted += (
+                            details.get("accepted_prediction_tokens") or 0
+                        )
+                elif record.get("error") or (record.get("status") or 200) >= 400:
+                    failed += 1
+                    continue
+                else:
+                    without += 1
+                responses += 1
+    if unparsable:
+        logger.warning(
+            "[spec-decode] skipped %d unparsable raw-export lines or SSE messages.",
+            unparsable,
+        )
+    if not found:
+        return None
+    if without:
+        # A Dynamo frontend that stops on a stop string drops the worker's
+        # final usage (ai-dynamo/dynamo#15386); a request that drafted
+        # nothing omits it too.
+        logger.warning(
+            "[spec-decode] %d/%d responses carry no prediction tokens in "
+            "usage; acceptance covers the other %d.",
+            without,
+            responses,
+            responses - without,
+        )
+    with_usage = responses - without
+    if with_drafts and with_drafts < with_usage:
+        logger.warning(
+            "[spec-decode] %d/%d responses with prediction tokens report a "
+            "draft count; mean accepted length covers those.",
+            with_drafts,
+            with_usage,
+        )
+    draft = accepted + rejected
+    return {
+        "acceptance_rate": accepted / draft if draft else 0.0,
+        "accepted_tokens": float(accepted),
+        "draft_tokens": float(draft),
+        "num_drafts": float(num_drafts) if with_drafts else None,
+        "mean_accepted_length": (
+            1 + paired_accepted / num_drafts if num_drafts else None
+        ),
+        "responses_with_drafts": with_drafts,
+        "accepted_per_pos": [],
+        "source": "usage",
+        "responses_without_usage": without,
+        "responses": responses,
+        "failed_responses": failed,
+    }
 
 
 def _build_payload(

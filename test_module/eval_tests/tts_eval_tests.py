@@ -5,15 +5,12 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import logging
-import os
 import shlex
 import sys
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -21,9 +18,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
+from workflow_module import accept_blocks
 from workflow_module.context_helpers import get_num_calls
 
-from .._test_common import ReportCheckTypes, block_id
+from .._test_common import ReportCheckTypes, block_id, sweep_envelope
 from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -34,18 +32,20 @@ DEFAULT_WER_THRESHOLD = 0.20
 DEFAULT_QUALITY_SAMPLE_COUNT = 10
 _NUM_CALLS_SENTINEL = 2
 TTS_QUALITY_DEPS = ("numpy", "torch", "transformers", "librosa", "datasets")
+# SECS additionally decodes/resamples audio client-side.
+TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
+# Naturalness scores clips with a torch.hub MOS predictor (needs torchaudio).
+TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 
-# tt-tts correctness eval: one prompt sent many times, every response transcribed.
-TT_TTS_IMPL = "tt-tts"
-CORRECTNESS_REFS = 5
-CORRECTNESS_REQUESTS = 100
-CORRECTNESS_CONCURRENCY = 100
-CORRECTNESS_ASR_MODEL = "distil-large-v3"
-CORRECTNESS_MAX_WER = 0.05
-CORRECTNESS_TIMEOUT_SECONDS = 300.0
+# WER speaks only the Python media server's contract; SECS/naturalness use tts_client.
+TASK_WER = "tts_generation"
+TASK_SECS = "tts_speaker_similarity"
+TASK_NATURALNESS = "tts_naturalness"
+# tt-tts: one prompt sent many times, every response transcribed (any failure fails).
+TASK_CORRECTNESS = "tts_correctness"
 CORRECTNESS_DIR = "tts_correctness"
-# --workflow-args keys; prefixed so `--workflow release` can also pass the
-# benchmark's own `concurrency=`/`isl=` in the same string.
+# ``--workflow-args`` overrides, prefixed so ``--workflow release`` can pass the
+# benchmark's own ``concurrency=`` in the same string.
 _CORRECTNESS_ARG_PREFIX = "eval_"
 _CORRECTNESS_ARG_KEYS = ("refs", "requests", "concurrency")
 
@@ -57,9 +57,43 @@ def _tts_sample_count(ctx: MediaContext) -> int:
     return DEFAULT_QUALITY_SAMPLE_COUNT
 
 
-def _missing_quality_deps() -> List[str]:
-    """Return the subset of :data:`TTS_QUALITY_DEPS` that cannot be imported."""
-    return [name for name in TTS_QUALITY_DEPS if not _can_import(name)]
+class _PlaceholderScore:
+    """Report-metadata stand-in used when no EvalConfig is registered."""
+
+    published_score = None
+    published_score_ref = ""
+    tolerance = None
+
+
+class _PlaceholderTask:
+    """Minimal task shape _tts_eval_block needs to render an NA block."""
+
+    task_name = "tts_generation"
+    score = _PlaceholderScore()
+
+
+_PLACEHOLDER_TASK = _PlaceholderTask()
+
+
+def _resolve_eval_tasks(ctx: MediaContext) -> list:
+    """Return all eval tasks for this model ([] if none is registered)."""
+    tasks = getattr(ctx.all_params, "tasks", None)
+    return list(tasks) if tasks else []
+
+
+# EVALS_META injects add_bos_token for lm-eval; it is not a TTS eval target.
+_NON_TARGET_MODEL_KWARGS = frozenset({"add_bos_token"})
+
+
+def _task_targets(task) -> dict:
+    """Eval targets for a SECS/naturalness task, from its ``model_kwargs``."""
+    kwargs = getattr(task, "model_kwargs", None) or {}
+    return {k: v for k, v in kwargs.items() if k not in _NON_TARGET_MODEL_KWARGS}
+
+
+def _missing_deps(deps) -> List[str]:
+    """Return the subset of ``deps`` that cannot be imported."""
+    return [name for name in deps if not _can_import(name)]
 
 
 def _can_import(module_name: str) -> bool:
@@ -93,10 +127,9 @@ def _tts_eval_block(
     task,
     *,
     score: Optional[float],
-    wer: Optional[float],
     accuracy_check: ReportCheckTypes,
     error: Optional[str] = None,
-    extra: Optional[dict] = None,
+    metrics: Optional[dict] = None,
 ) -> Block:
     """Build a canonical TTS eval Block (accuracy/quality fields only)."""
     data = {
@@ -105,11 +138,9 @@ def _tts_eval_block(
         "published_score": task.score.published_score,
         "score": score,
         "published_score_ref": task.score.published_score_ref,
-        "wer": wer,
         "accuracy_check": accuracy_check,
     }
-    if extra:
-        data.update(extra)
+    data.update(metrics or {})
     if error is not None:
         data["error"] = error
     return Block(
@@ -166,138 +197,9 @@ def _run_tts_quality_eval(ctx: MediaContext) -> dict:
     return dict(test.run_tests().data)
 
 
-def _correctness_params(ctx: MediaContext) -> dict:
-    """``eval_refs``/``eval_requests``/``eval_concurrency`` from ``--workflow-args``.
-
-    Keys without the ``eval_`` prefix belong to other workflows and are ignored.
-    """
-    params = {
-        "refs": CORRECTNESS_REFS,
-        "requests": CORRECTNESS_REQUESTS,
-        "concurrency": CORRECTNESS_CONCURRENCY,
-    }
-    rc = getattr(ctx, "runtime_config", None)
-    for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
-        key, _, value = token.partition("=")
-        if not key.startswith(_CORRECTNESS_ARG_PREFIX):
-            continue
-        key = key[len(_CORRECTNESS_ARG_PREFIX) :]
-        if key not in _CORRECTNESS_ARG_KEYS:
-            logger.warning(
-                f"TTS correctness eval ignores workflow arg {token!r}; supported: "
-                f"{[_CORRECTNESS_ARG_PREFIX + k for k in _CORRECTNESS_ARG_KEYS]}"
-            )
-            continue
-        try:
-            params[key] = int(value)
-        except ValueError:
-            params[key] = -1
-        if params[key] < (0 if key == "refs" else 1):
-            raise ValueError(f"TTS correctness eval workflow arg {token!r} is invalid")
-    return params
-
-
-def _run_tts_correctness_eval(ctx: MediaContext, task) -> Block:
-    """Same-prompt correctness check for the tt-tts server (any failure = FAIL).
-
-    Sends ``refs`` sequential references, then ``requests`` copies of the same
-    prompt at ``concurrency``; each response fails on no audio or Whisper WER
-    above :data:`CORRECTNESS_MAX_WER`. WAVs and per-response transcripts land in
-    ``<output_path>/tts_correctness``.
-    """
-    if not _can_import("faster_whisper"):
-        reason = "TTS correctness eval needs faster-whisper, which is not installed"
-        logger.error(reason)
-        return _tts_eval_block(
-            ctx,
-            task,
-            score=None,
-            wer=None,
-            accuracy_check=ReportCheckTypes.NA,
-            error=reason,
-        )
-    from ..benchmark_tests import tts_correctness, tts_load_harness
-
-    params = _correctness_params(ctx)
-    parsed = urlparse(ctx.base_url)
-    if not parsed.hostname:
-        raise ValueError(f"TTS eval could not resolve a host from {ctx.base_url!r}")
-    target = tts_load_harness.Target(
-        host=parsed.hostname,
-        port=ctx.server_port,
-        timeout=CORRECTNESS_TIMEOUT_SECONDS,
-        text=tts_correctness.DEFAULT_TEXT,
-    )
-    outdir = Path(ctx.output_path) / CORRECTNESS_DIR
-    args = argparse.Namespace(
-        outdir=str(outdir),
-        no_asr=False,
-        asr_model=CORRECTNESS_ASR_MODEL,
-        asr_threads=os.cpu_count() or 8,
-        max_wer=CORRECTNESS_MAX_WER,
-    )
-    logger.info(
-        "Running TTS correctness eval: refs=%d requests=%d concurrency=%d asr=%s",
-        params["refs"],
-        params["requests"],
-        params["concurrency"],
-        CORRECTNESS_ASR_MODEL,
-    )
-    doc = tts_correctness.run_check(
-        target, params["refs"], params["requests"], params["concurrency"], args
-    )
-    summary = doc["summary"]
-    logger.info("\n%s", tts_correctness.report(summary, doc["records"]))
-
-    graded = [r for r in doc["records"] if r["tag"] in ("ref", "load")]
-    passed = sum(1 for r in graded if r["pass"])
-    failed = [f"{r['tag']}_{r['i']:03d}" for r in graded if not r["pass"]]
-    wers = [r["wer"] for r in graded if r.get("wer") is not None]
-    accuracy_check = (
-        ReportCheckTypes.FAIL
-        if summary["load_failures"] or summary["reference_failures"]
-        else ReportCheckTypes.PASS
-    )
-    return _tts_eval_block(
-        ctx,
-        task,
-        score=round(100.0 * passed / len(graded), 2) if graded else None,
-        wer=sum(wers) / len(wers) if wers else None,
-        accuracy_check=accuracy_check,
-        extra={
-            "requests": summary["load_requests"],
-            "concurrency": params["concurrency"],
-            "load_failures": summary["load_failures"],
-            "references": params["refs"],
-            "reference_failures": summary["reference_failures"],
-            "max_wer": CORRECTNESS_MAX_WER,
-            "failed_responses": ", ".join(failed) or None,
-            "results": str(outdir / tts_correctness.RESULTS_FILE),
-        },
-    )
-
-
-def run_tts_eval(ctx: MediaContext) -> Block:
-    """Run the WER quality eval for a TTS model (SpeechT5, etc.).
-
-    The tt-tts server instead runs the same-prompt correctness check
-    (:func:`_run_tts_correctness_eval`), where any malformed response fails.
-
-    ``accuracy_check`` reflects Word Error Rate against the quality threshold;
-    a missing transcription toolchain or a run that produced no usable samples
-    yields an NA block (not a false FAIL) so an unprovisioned environment does
-    not block acceptance.
-    """
-    logger.info(
-        f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
-    )
-    require_health(ctx, HardwareRequirement.ANY_CHIP)
-    task = ctx.all_params.tasks[0]
-    impl_name = getattr(getattr(ctx.model_spec, "impl", None), "impl_name", None)
-    if impl_name == TT_TTS_IMPL:
-        return _run_tts_correctness_eval(ctx, task)
-
-    missing = _missing_quality_deps()
+def _run_wer_task(ctx: MediaContext, task) -> Block:
+    """WER intelligibility eval (task_name=tts_generation) -> one Block."""
+    missing = _missing_deps(TTS_QUALITY_DEPS)
     if missing:
         reason = f"TTS quality eval dependencies unavailable: {', '.join(missing)}"
         logger.error(reason)
@@ -305,9 +207,9 @@ def run_tts_eval(ctx: MediaContext) -> Block:
             ctx,
             task,
             score=None,
-            wer=None,
             accuracy_check=ReportCheckTypes.NA,
             error=reason,
+            metrics={"wer": None},
         )
 
     try:
@@ -319,9 +221,9 @@ def run_tts_eval(ctx: MediaContext) -> Block:
             ctx,
             task,
             score=None,
-            wer=None,
             accuracy_check=ReportCheckTypes.NA,
             error=reason,
+            metrics={"wer": None},
         )
 
     avg_wer = result.get("avg_wer")
@@ -346,9 +248,358 @@ def run_tts_eval(ctx: MediaContext) -> Block:
         ctx,
         task,
         score=score,
-        wer=avg_wer,
         accuracy_check=accuracy_check,
+        metrics={"wer": avg_wer},
     )
+
+
+def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
+    """Run ``TTSSpeakerSimilarityTest`` against the live server (lazy imports)."""
+    from .._test_common import TestConfig
+    from .tts_speaker_similarity_test import TTSSpeakerSimilarityTest
+
+    targets = _task_targets(task)
+    test = TTSSpeakerSimilarityTest(
+        TestConfig(
+            {
+                "timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": False,
+            }
+        ),
+        targets=targets,
+        ctx=ctx,
+    )
+    logger.info(
+        "Running TTSSpeakerSimilarityTest: base_url=%s targets=%s",
+        ctx.base_url,
+        targets,
+    )
+    return dict(test.run_tests().data)
+
+
+def _sample_counts(result: dict) -> dict:
+    """Valid, failed and total sample counts of an eval result, for the report."""
+    return {
+        key: result.get(key)
+        for key in ("valid_samples", "failed_samples", "sample_count")
+    }
+
+
+def _run_secs_task(ctx: MediaContext, task) -> Block:
+    """Speaker-similarity eval (task_name=tts_speaker_similarity) -> one Block."""
+    missing = _missing_deps(TTS_SECS_DEPS)
+    if missing:
+        reason = f"TTS speaker-similarity deps unavailable: {', '.join(missing)}"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_secs": None},
+        )
+
+    try:
+        result = _run_tts_secs_eval(ctx, task)
+    except Exception as e:
+        reason = f"TTS speaker-similarity eval failed to run: {type(e).__name__}: {e}"
+        logger.exception(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_secs": None},
+        )
+
+    mean_secs = result.get("mean_secs")
+    mean_margin = result.get("mean_margin")
+    valid_samples = int(result.get("valid_samples") or 0)
+    if valid_samples <= 0 or mean_secs is None or mean_margin is None:
+        # Requests ran but none produced audio: that is a failed eval, not a missing one.
+        sampled = int(result.get("sample_count") or 0) > 0
+        accuracy_check = ReportCheckTypes.FAIL if sampled else ReportCheckTypes.NA
+        score = None
+    else:
+        accuracy_check = (
+            ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
+        )
+        score = round(max(0.0, mean_secs) * 100.0, 2)
+    logger.info(
+        "TTS SECS eval: mean_secs=%s mean_margin=%s valid_samples=%s -> score=%s check=%s",
+        mean_secs,
+        mean_margin,
+        valid_samples,
+        score,
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=score,
+        accuracy_check=accuracy_check,
+        metrics={
+            "mean_secs": mean_secs,
+            "mean_margin": mean_margin,
+            **_sample_counts(result),
+        },
+    )
+
+
+def _run_tts_naturalness_eval(ctx: MediaContext, task) -> dict:
+    """Run ``TTSNaturalnessTest`` against the live server (lazy imports)."""
+    from .._test_common import TestConfig
+    from .tts_naturalness_test import TTSNaturalnessTest
+
+    targets = _task_targets(task)
+    test = TTSNaturalnessTest(
+        TestConfig(
+            {
+                "timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": False,
+            }
+        ),
+        targets=targets,
+        ctx=ctx,
+    )
+    logger.info(
+        "Running TTSNaturalnessTest: base_url=%s targets=%s", ctx.base_url, targets
+    )
+    return dict(test.run_tests().data)
+
+
+def _run_naturalness_task(ctx: MediaContext, task) -> Block:
+    """Naturalness eval (task_name=tts_naturalness) -> one Block."""
+    missing = _missing_deps(TTS_NATURALNESS_DEPS)
+    if missing:
+        reason = f"TTS naturalness deps unavailable: {', '.join(missing)}"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_utmos": None},
+        )
+
+    try:
+        result = _run_tts_naturalness_eval(ctx, task)
+    except Exception as e:
+        reason = f"TTS naturalness eval failed to run: {type(e).__name__}: {e}"
+        logger.exception(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_utmos": None},
+        )
+
+    mean_utmos = result.get("mean_utmos")
+    valid_samples = int(result.get("valid_samples") or 0)
+    if valid_samples <= 0 or mean_utmos is None:
+        sampled = int(result.get("sample_count") or 0) > 0
+        accuracy_check = ReportCheckTypes.FAIL if sampled else ReportCheckTypes.NA
+        score = None
+    else:
+        accuracy_check = (
+            ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
+        )
+        # MOS is 1..5; map to the suite's 0..100 scale.
+        score = round((mean_utmos - 1.0) / 4.0 * 100.0, 2)
+    logger.info(
+        "TTS naturalness eval: mean_utmos=%s valid_samples=%s -> score=%s check=%s",
+        mean_utmos,
+        valid_samples,
+        score,
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=score,
+        accuracy_check=accuracy_check,
+        metrics={"mean_utmos": mean_utmos, **_sample_counts(result)},
+    )
+
+
+def _correctness_overrides(ctx: MediaContext) -> dict:
+    """``eval_refs``/``eval_requests``/``eval_concurrency`` from ``--workflow-args``."""
+    overrides = {}
+    rc = getattr(ctx, "runtime_config", None)
+    for token in shlex.split(getattr(rc, "workflow_args", None) or ""):
+        key, _, value = token.partition("=")
+        if not key.startswith(_CORRECTNESS_ARG_PREFIX):
+            continue
+        key = key[len(_CORRECTNESS_ARG_PREFIX) :]
+        if key not in _CORRECTNESS_ARG_KEYS:
+            logger.warning(
+                f"TTS correctness eval ignores workflow arg {token!r}; supported: "
+                f"{[_CORRECTNESS_ARG_PREFIX + k for k in _CORRECTNESS_ARG_KEYS]}"
+            )
+            continue
+        try:
+            overrides[key] = int(value)
+        except ValueError:
+            overrides[key] = -1
+        if overrides[key] < (0 if key == "refs" else 1):
+            raise ValueError(f"TTS correctness eval workflow arg {token!r} is invalid")
+    return overrides
+
+
+def _run_tts_correctness_eval(ctx: MediaContext, task) -> dict:
+    """Run ``TTSCorrectnessTest`` against the live server (lazy imports)."""
+    from .._test_common import TestConfig
+    from .tts_correctness_test import TTSCorrectnessTest
+
+    targets = {
+        **_task_targets(task),
+        **_correctness_overrides(ctx),
+        "outdir": str(Path(ctx.output_path) / CORRECTNESS_DIR),
+    }
+    test = TTSCorrectnessTest(
+        TestConfig(
+            {
+                "timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": False,
+            }
+        ),
+        targets=targets,
+        ctx=ctx,
+    )
+    logger.info(
+        "Running TTSCorrectnessTest: base_url=%s targets=%s", ctx.base_url, targets
+    )
+    return dict(test.run_tests().data)
+
+
+def _run_correctness_task(ctx: MediaContext, task) -> Block:
+    """Same-prompt correctness eval (task_name=tts_correctness) -> one Block."""
+    missing = _missing_deps(TTS_QUALITY_DEPS)
+    if missing:
+        reason = f"TTS correctness eval deps unavailable: {', '.join(missing)}"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"wer": None},
+        )
+
+    try:
+        result = _run_tts_correctness_eval(ctx, task)
+    except Exception as e:
+        reason = f"TTS correctness eval failed to run: {type(e).__name__}: {e}"
+        logger.exception(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"wer": None},
+        )
+
+    score = result.get("pass_rate")
+    if score is None:
+        accuracy_check = ReportCheckTypes.NA
+    else:
+        accuracy_check = (
+            ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
+        )
+    logger.info(
+        "TTS correctness eval: pass_rate=%s mean_wer=%s -> check=%s",
+        score,
+        result.get("mean_wer"),
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=round(score, 2) if score is not None else None,
+        accuracy_check=accuracy_check,
+        metrics={
+            "wer": result.get("mean_wer"),
+            "max_wer": result.get("max_wer"),
+            "concurrency": result.get("concurrency"),
+            "load_requests": result.get("load_requests"),
+            "load_failures": result.get("load_failures"),
+            "reference_requests": result.get("reference_requests"),
+            "reference_failures": result.get("reference_failures"),
+            "failed_responses": ", ".join(result.get("failed_responses") or []) or None,
+            "results_file": result.get("results_file"),
+        },
+    )
+
+
+_TASK_RUNNERS = {
+    TASK_WER: _run_wer_task,
+    TASK_SECS: _run_secs_task,
+    TASK_NATURALNESS: _run_naturalness_task,
+    TASK_CORRECTNESS: _run_correctness_task,
+}
+
+
+def run_tts_eval(ctx: MediaContext) -> Block:
+    """Run every eval task the model's EvalConfig registers."""
+    logger.info(
+        f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
+    )
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
+
+    tasks = _resolve_eval_tasks(ctx)
+    if not tasks:
+        reason = (
+            f"No EvalConfig registered for {ctx.model_spec.model_name!r} "
+            f"(hf_model_repo={ctx.model_spec.hf_model_repo!r}) in "
+            "reference_config/evals/eval_config.py; cannot run the TTS quality eval."
+        )
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            _PLACEHOLDER_TASK,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"wer": None},
+        )
+
+    blocks: List[Block] = []
+    for task in tasks:
+        runner = _TASK_RUNNERS.get(task.task_name)
+        if runner is None:
+            reason = (
+                f"Unknown TTS eval task {task.task_name!r}; "
+                f"known: {sorted(_TASK_RUNNERS)}"
+            )
+            logger.error(reason)
+            blocks.append(
+                _tts_eval_block(
+                    ctx,
+                    task,
+                    score=None,
+                    accuracy_check=ReportCheckTypes.NA,
+                    error=reason,
+                )
+            )
+            continue
+        blocks.append(runner(ctx, task))
+
+    if len(blocks) > 1:
+        accept_blocks(blocks[:-1], envelope=sweep_envelope(ctx))
+    return blocks[-1]
 
 
 __all__ = ["run_tts_eval"]

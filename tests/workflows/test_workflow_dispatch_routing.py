@@ -234,6 +234,21 @@ def test_selected_eval_tasks_eval_samples_filters_to_requested():
     assert [t.task_name for t in sel] == ["longbench_single_e"]
 
 
+def test_selected_eval_tasks_eval_tasks_selects_full_tasks():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [
+        _ev_task("aime25", V.EVALS_COMMON),
+        _ev_task("gpqa_diamond_cot_zeroshot", V.EVALS_COMMON),
+        _ev_task("mmlu_generative", V.EVALS_COMMON),
+    ]
+    rc = SimpleNamespace(
+        eval_tasks="aime25", eval_samples=None, limit_samples_mode=None
+    )
+    sel = workflow_dispatch._selected_eval_tasks(tasks, rc)
+    assert [t.task_name for t in sel] == ["aime25"]
+
+
 def test_selected_eval_tasks_smoke_keeps_first_only():
     from workflows.workflow_types import WorkflowVenvType as V
 
@@ -286,6 +301,8 @@ def test_any_image_model_routes_to_v2(model_name, workflow):
         "Wan2.2-I2V-AniSora-V3.2",
         "Wan2.2-I2V-Distill-LightX2V",
         "Wan2.2-I2V-LoRA",
+        "MiniMax-H3-FL2VA-LightX2V",
+        "MiniMax-H3-Ref2VA-LightX2V",
     ],
 )
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])

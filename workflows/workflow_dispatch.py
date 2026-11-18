@@ -497,6 +497,12 @@ def _forward_requirements(cmd, runtime_config) -> None:
     The runtime-config JSON already carries the path, but the child needs it on
     the command line: argparse decides whether the catalog gate applies to
     --model and which target pack to register *before* that JSON is read.
+
+    Only the path is forwarded, never a "llm-gauntlet;<path>" scheme value or
+    the ref it was resolved at: apply_requirements() rewrites the value to the
+    resolved absolute path inside the clone before RuntimeConfig is built, so a
+    child is handed a plain file that already exists. There is nothing for it to
+    re-resolve, which is why no repo-ref flag is threaded through here.
     """
     _extend_if_set(
         cmd, "--requirements-json", getattr(runtime_config, "requirements_json", None)
@@ -791,7 +797,10 @@ def _selected_eval_tasks(tasks, runtime_config):
     only the venvs the run will actually use (--eval-samples / smoke-test).
     Falls back to all tasks when nothing narrows them (over-provision is safe;
     under-provision would break a task the run still tries to execute)."""
-    names = _eval_samples_task_names(runtime_config)
+    from llm_module.eval_configs import eval_task_names
+
+    names = eval_task_names(runtime_config)
+    names = set(names) if names else _eval_samples_task_names(runtime_config)
     if names:
         sel = [t for t in tasks if t.task_name in names]
         if sel:

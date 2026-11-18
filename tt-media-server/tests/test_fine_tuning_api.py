@@ -16,7 +16,9 @@ from security.org_id_checker import get_org_id
 
 @pytest.fixture
 def mock_service():
-    return MagicMock()
+    service = MagicMock()
+    service.delete_job = AsyncMock()
+    return service
 
 
 @pytest.fixture
@@ -79,6 +81,20 @@ class TestSubmitCustomDatasetJob:
             == 422
         )
 
+    def test_returns_500_with_error_message_when_job_creation_fails(
+        self, submit, mock_service
+    ):
+        mock_service.create_job.side_effect = RuntimeError("Job queue unavailable")
+
+        response = submit(
+            train_dataset_path="/datasets/train.json",
+            file_type="json",
+            template="alpaca",
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Job queue unavailable"
+
 
 class TestGetCatalog:
     def test_returns_catalog_json(self, client):
@@ -94,3 +110,37 @@ class TestGetCatalog:
         assert "optimizers" in data
         assert "clusters" in data
         assert "supported" in data
+
+
+class TestDeleteJob:
+    def test_delete_terminal_job(self, client, mock_service):
+        mock_service.delete_job.return_value = True
+
+        response = client.delete("/jobs/job-1")
+
+        assert response.status_code == 204
+        mock_service.delete_job.assert_called_once_with("job-1", org_id="test-org")
+
+    def test_force_delete_failure_returns_conflict(self, client, mock_service):
+        mock_service.delete_job.side_effect = ValueError(
+            "Could not force-delete job job-1"
+        )
+
+        response = client.delete("/jobs/job-1")
+
+        assert response.status_code == 409
+
+    def test_delete_missing_job_returns_404(self, client, mock_service):
+        mock_service.delete_job.return_value = False
+
+        response = client.delete("/jobs/missing")
+
+        assert response.status_code == 404
+
+    def test_delete_adapter_merge_job(self, client, mock_service):
+        mock_service.delete_job.return_value = True
+
+        response = client.delete("/jobs/merge-1")
+
+        assert response.status_code == 204
+        mock_service.delete_job.assert_called_once_with("merge-1", org_id="test-org")

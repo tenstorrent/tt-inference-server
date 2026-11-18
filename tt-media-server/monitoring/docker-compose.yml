@@ -44,6 +44,14 @@ services:
       - PREFILL_TARGET=${PREFILL_TARGET:-tt-prefill-server:8001}
       - DECODE_TARGET=${DECODE_TARGET:-tt-decode-server:8000}
       - GATEWAY_TARGET=${GATEWAY_TARGET:-prefill-gateway:9091}
+      # Fleet aggregation, both off by default. REMOTE_WRITE_URL empty keeps
+      # this stack local, so a dev box never starts shipping to a shared store
+      # by accident. DEPLOYMENT_NAME is the per-deployment identity stamped on
+      # every remote-written series; it is REQUIRED once REMOTE_WRITE_URL is
+      # set (startup refuses otherwise) because without it every deployment
+      # claims the same instance labels and collides into one series.
+      - DEPLOYMENT_NAME=${DEPLOYMENT_NAME:-}
+      - REMOTE_WRITE_URL=${REMOTE_WRITE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -53,8 +61,19 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g; s|__PREFILL_TARGET__|$$PREFILL_TARGET|g; s|__DECODE_TARGET__|$$DECODE_TARGET|g; s|__GATEWAY_TARGET__|$$GATEWAY_TARGET|g"
+        case "$$DEPLOYMENT_NAME" in *[!A-Za-z0-9._-]*)
+        echo "DEPLOYMENT_NAME must contain only letters, digits, dot, underscore or hyphen (got: $$DEPLOYMENT_NAME). It is substituted into the config, where an & or | would be interpreted rather than inserted — & silently yields a bogus identity and | aborts the render." >&2;
+        exit 1;;
+        esac;
+        if [ -n "$$REMOTE_WRITE_URL" ] && [ -z "$$DEPLOYMENT_NAME" ]; then
+        echo "REMOTE_WRITE_URL is set but DEPLOYMENT_NAME is empty. Set DEPLOYMENT_NAME to a stable, unique name for this deployment (site or cluster, not the container hostname) — without it every deployment writes identical instance labels and collides into one series." >&2;
+        exit 1;
+        fi;
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g; s|__PREFILL_TARGET__|$$PREFILL_TARGET|g; s|__DECODE_TARGET__|$$DECODE_TARGET|g; s|__GATEWAY_TARGET__|$$GATEWAY_TARGET|g; s|__DEPLOYMENT_NAME__|$$DEPLOYMENT_NAME|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
+        && if [ -n "$$REMOTE_WRITE_URL" ]; then
+        printf '\nremote_write:\n  - url: "%s"\n' "$$REMOTE_WRITE_URL" >> /tmp/prometheus.yml;
+        fi
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
         --storage.tsdb.path=/prometheus

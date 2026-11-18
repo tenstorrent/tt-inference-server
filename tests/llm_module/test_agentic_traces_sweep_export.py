@@ -44,6 +44,7 @@ _METRICS = {
     "p90_e2el_ms": 17735.0,
     "p95_e2el_ms": 22518.11,
     "request_throughput": 0.07416,
+    "input_token_throughput": 19910.6,
     "total_token_throughput": 20057.37,
     "output_token_throughput": 146.77,
     "mean_isl": 268485.14,
@@ -76,6 +77,7 @@ class TestToAgenticSweepPoint:
             "e2elP90Ms": 17735.0,
             "e2elP95Ms": 22518.11,
             "reqThroughputRps": 0.07416,
+            "inputThroughputTps": 19910.6,
             "totalThroughputTps": 20057.37,
             "decodeThroughputTps": 146.77,
             "inputTokensMean": 268485.14,
@@ -318,6 +320,48 @@ class TestGradeSweepPoint:
 
         assert verdict.graded == 0 and verdict.verdicts != ()
         assert verdict.passed is False
+
+    def test_a_blank_target_is_not_graded(self):
+        """llm-gauntlet stores a blank (soft) column as 0; a 0 ms latency bar is
+        not a target, so it must not fail every point."""
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 500.0, "decodeThroughputTps": 200.0},
+            {"concurrency": 1, "ttftMeanMs": 0, "decodeThroughputTps": 150.0},
+        )
+
+        assert [v.field for v in verdict.verdicts] == ["decodeThroughputTps"]
+        assert verdict.passed is True
+
+    def test_a_soft_miss_is_reported_but_does_not_fail_the_point(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 900.0, "decodeThroughputTps": 200.0},
+            {
+                "concurrency": 1,
+                "ttftMeanMs": 800.0,
+                "decodeThroughputTps": 150.0,
+                "softMetrics": ["ttftMeanMs"],
+            },
+        )
+
+        ttft = self._field(verdict, "ttftMeanMs")
+        assert ttft.soft is True and ttft.passed is False
+        assert verdict.met == 1 and verdict.graded == 1
+        assert verdict.passed is True
+        assert verdict.to_dict()["verdicts"][0]["soft"] is True
+
+    def test_a_point_with_only_soft_targets_is_ungraded(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 900.0},
+            {"concurrency": 1, "ttftMeanMs": 800.0, "softMetrics": ["ttftMeanMs"]},
+        )
+
+        assert verdict.passed is None
 
     @staticmethod
     def _field(verdict, name):

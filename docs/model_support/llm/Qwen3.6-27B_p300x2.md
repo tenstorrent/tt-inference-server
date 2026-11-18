@@ -8,7 +8,7 @@
 
 `Qwen3.6-27B` is also supported on hardware:
 
-- [BH LoudBox](Qwen3.6-27B_p150x8.md)
+- [BH 4xP150](Qwen3.6-27B_p150x4.md)
 
 ## Quickstart - Deploy Qwen3.6-27B Inference Server on BH QuietBox 2
 

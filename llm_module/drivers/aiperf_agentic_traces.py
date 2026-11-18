@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
+from ..agentic_traces.charts import TELEMETRY_CHART_PREFIX, write_point_charts
 from ..agentic_traces.sweep_export import write_agentic_sweep
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
@@ -82,12 +84,38 @@ class AIPerfAgenticTracesDriver:
         model_repo: str = "",
         model_id: str = "",
         output_dir: Optional[Path] = None,
+        report_dir: Optional[Path] = None,
     ) -> None:
         self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)
         self.artifact_root = Path(artifact_root) if artifact_root else None
         self.model_repo = model_repo
         self.model_id = model_id
         self.output_dir = Path(output_dir) if output_dir else None
+        # Chart links in the payload are relative to the directory the markdown
+        # report is written to, so they resolve wherever the report is opened.
+        self.report_dir = Path(report_dir) if report_dir else None
+
+    def _write_telemetry_charts(
+        self, trace_run: AgenticTracesRun, artifact_dir: Path
+    ) -> Dict[str, str]:
+        """Draw the run's per-point charts; ``{name: link relative to the report}``."""
+        assert self.output_dir is not None
+        chart_dir = (
+            self.output_dir / "charts" / safe_filename_part(trace_run.filesafe_label())
+        )
+        try:
+            written = write_point_charts(artifact_dir, chart_dir)
+        except Exception:
+            # Charts are an extra view over numbers the tables already carry.
+            logger.exception(
+                "[agentic-traces] Telemetry charts failed for %s", trace_run.label
+            )
+            return {}
+        base = self.report_dir or self.output_dir
+        return {
+            name: Path(os.path.relpath(chart_dir / filename, base)).as_posix()
+            for name, filename in written.items()
+        }
 
     def run(
         self,
@@ -174,6 +202,11 @@ class AIPerfAgenticTracesDriver:
             model_repo=server.model or self.model_repo,
             artifact_dir=artifact_dir,
         )
+        charts = self._write_telemetry_charts(trace_run, artifact_dir)
+        # Flat keys, not a nested map: the report generator flattens nested
+        # mappings when it merges the runs' blocks, which would lose them.
+        for name, link in charts.items():
+            payload[f"{TELEMETRY_CHART_PREFIX}{name}"] = link
         raw_path = _save_payload(
             payload=payload,
             output_dir=self.output_dir,
@@ -277,6 +310,10 @@ def build_aiperf_cmd(
         str(artifact_dir),
         "--public-dataset",
         run.public_dataset,
+        # Fixed count: processors auto-scaled after the dataset is configured
+        # never receive DatasetConfiguredNotification and abort mid-run.
+        "--record-processor-service-count",
+        "8",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
@@ -293,7 +330,6 @@ def build_aiperf_cmd(
         cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
-        cmd.extend(["--prefill-concurrency", str(run.concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:
@@ -301,6 +337,10 @@ def build_aiperf_cmd(
         cmd.append("--no-gpu-telemetry")
     if run.tokenizer_trust_remote_code:
         cmd.append("--tokenizer-trust-remote-code")
+    if run.trace_idle_gap_cap_seconds is not None:
+        cmd.extend(
+            ["--trace-idle-gap-cap-seconds", f"{run.trace_idle_gap_cap_seconds:g}"]
+        )
     if auth_token:
         cmd.extend(["--api-key", auth_token])
     return cmd
@@ -823,6 +863,7 @@ def _build_payload(
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,
+        "trace_idle_gap_cap_seconds": run.trace_idle_gap_cap_seconds,
         "artifact_dir": str(artifact_dir),
         "metadata": dict(run.metadata or {}),
         **metrics,

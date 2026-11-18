@@ -8,6 +8,7 @@
 
 `gpt-oss-120b` is also supported on hardware:
 
+- [BH Galaxy](gpt-oss-120b_blackhole_galaxy.md)
 - [BH QuietBox 2](gpt-oss-120b_p300x2.md)
 - [WH LoudBox/QuietBox](gpt-oss-120b_t3k.md)
 

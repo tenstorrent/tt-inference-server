@@ -8,6 +8,7 @@
 
 `Qwen3-32B` is also supported on hardware:
 
+- [BH Galaxy](Qwen3-32B_blackhole_galaxy.md)
 - [BH LoudBox](Qwen3-32B_p150x8.md)
 - [BH QuietBox 2](Qwen3-32B_p300x2.md)
 - [WH LoudBox/QuietBox](Qwen3-32B_t3k.md)
@@ -57,7 +58,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
 |---|---|---|---|---|---|---|
-| [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) | `tt-transformers` | 128 | 131072 | `e95ffa5` | `48eba14` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) | `tt-transformers` | 128 | 131072 | `e95ffa5` | `48eba14` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.4.0-e95ffa5-48eba14` |
 
 ---
 
@@ -75,7 +76,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.4.0-e95ffa5-48eba14 \
   --model Qwen/Qwen3-32B \
   --tt-device galaxy_t3k
 ```
@@ -97,4 +98,4 @@ python3 run.py --model Qwen/Qwen3-32B --device galaxy_t3k --workflow server --do
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
 | tt-metal Commit | `e95ffa5` |
 | vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.4.0-e95ffa5-48eba14` |

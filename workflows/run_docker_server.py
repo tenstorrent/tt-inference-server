@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+from utils.pinned_artifacts import get_pinned_revision
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -106,15 +107,45 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 }
 
 
+# One deployment per Qwen3-TTS release; the C++ server derives it from HF_MODEL.
+_CPP_TTS_RUNNER_BY_MODEL_NAME = {
+    "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-1.7B-VoiceDesign": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-CustomVoice": "tt_qwen3_tts",
+}
+
+# device.name.lower() -> DEVICE_IDS (one worker per chip).
+_CPP_TTS_DEVICE_IDS = {
+    "n150": "(0)",
+    "p150": "(0)",
+}
+
+# Reseeded before every request; the TTS evals rely on reproducible audio.
+_CPP_TTS_SEED = "0"
+# Kept small: the server's default queue sizes reserve ~2.5 GB of /dev/shm.
+_CPP_TTS_TASK_QUEUE_CAPACITY = "16"
+_CPP_TTS_AUDIO_QUEUE_CAPACITY = "64"
+_CPP_TTS_CANCEL_QUEUE_CAPACITY = "64"
+
+
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
-    if model_spec.inference_engine != InferenceEngine.MEDIA.value:
+    if getattr(model_spec, "inference_engine", None) != InferenceEngine.MEDIA.value:
         return False
-    device = model_spec.device_type.name.lower()
-    if model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
+    device_type = getattr(model_spec, "device_type", None)
+    device_name = getattr(device_type, "name", None)
+    if not isinstance(device_name, str):
+        return False
+    device = device_name.lower()
+    model_name = getattr(model_spec, "model_name", None)
+    if model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
         return device in _CPP_SDXL_DEVICE_DEFAULTS
-    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+    if model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return device in _CPP_EMBEDDING_DEVICE_IDS
+    if model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_TTS_DEVICE_IDS
     return False
 
 
@@ -135,15 +166,18 @@ def _get_cpp_image_server_docker_env_vars(model_spec):
         "SERVER_MODE": "cpp",
         "MODEL_SERVICE": "image",
         "MODEL_RUNNER_TYPE": runner,
+        "DEVICE": device,
         "DEVICE_MESH_SHAPE": mesh_shape,
         "IS_GALAXY": "true" if is_galaxy else "false",
         "DEVICE_IDS": device_ids,
         "MAX_BATCH_SIZE": "1",
         "SDXL_IMAGE_RESOLUTION": "1024x1024",
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
     }
     logger.info(
         f"cpp_server environment variables: MODEL_SERVICE=image, "
-        f"MODEL_RUNNER_TYPE={runner}, DEVICE_MESH_SHAPE={mesh_shape}, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE={device}, DEVICE_MESH_SHAPE={mesh_shape}, "
         f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
     )
     return env_vars
@@ -182,10 +216,39 @@ def _get_cpp_embedding_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_tts_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server TTS (Qwen3-TTS) service needs."""
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_TTS_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    device_ids = _CPP_TTS_DEVICE_IDS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "tts",
+        "MODEL_RUNNER_TYPE": runner,
+        "HF_MODEL": model_spec.hf_model_repo,
+        "DEVICE_IDS": device_ids,
+        "TTS_QWEN3_SEED": _CPP_TTS_SEED,
+        "TTS_TASK_QUEUE_CAPACITY": _CPP_TTS_TASK_QUEUE_CAPACITY,
+        "TTS_AUDIO_QUEUE_CAPACITY": _CPP_TTS_AUDIO_QUEUE_CAPACITY,
+        "TTS_CANCEL_QUEUE_CAPACITY": _CPP_TTS_CANCEL_QUEUE_CAPACITY,
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=tts, "
+        f"MODEL_RUNNER_TYPE={runner}, HF_MODEL={model_spec.hf_model_repo}, "
+        f"DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def _get_cpp_server_docker_env_vars(model_spec):
     """Dispatch to the per-service env-var builder for the cpp_server backend."""
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return _get_cpp_embedding_server_docker_env_vars(model_spec)
+    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_tts_server_docker_env_vars(model_spec)
     return _get_cpp_image_server_docker_env_vars(model_spec)
 
 
@@ -454,6 +517,9 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         if value is True:
             cli_args.append(flag)
         elif isinstance(value, (dict, list)):
+            # One JSON token. Whether a list must be split into one token per
+            # item depends on the flag's nargs, which only vLLM knows; the
+            # container entrypoint does that split (run_vllm_api_server.py).
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]
@@ -473,6 +539,41 @@ def _resolve_training_store_root(setup_config) -> str:
     if setup_config and setup_config.host_model_volume_root:
         return str(setup_config.cache_root)
     return _EPHEMERAL_TRAINING_STORE_ROOT
+
+
+_DEFAULT_CPP_MEDIA_SHM_SIZE = "8g"
+
+
+def _media_pre_downloaded_weights_path(setup_config, model_spec):
+    """Container path of the weights run.py already fetched, or None.
+
+    Without MODEL_WEIGHTS_PATH every cpp_server SDXL worker resolves the HF repo
+    id itself (32 Galaxy workers racing one cold download)."""
+    if setup_config is None or not setup_config.container_model_weights_path:
+        return None
+    if setup_config.host_model_weights_mount_dir:
+        return str(setup_config.container_model_weights_path)
+    if not setup_config.host_model_volume_root:
+        return None
+    host_weights_dir = (
+        Path(setup_config.host_model_volume_root) / "weights" / model_spec.model_name
+    )
+    if not host_weights_dir.is_dir() or not any(host_weights_dir.iterdir()):
+        return None
+    return str(setup_config.container_model_weights_path)
+
+
+def _docker_ipc_args(model_spec) -> List[str]:
+    """IPC namespace for the container: the host's by default; a private one with its own
+    /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec) or when
+    running the C++ media server (whose Boost IPC queues and worker metrics live in /dev/shm)."""
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    shm_size = getattr(device_spec, "docker_shm_size", None)
+    if not shm_size and _is_cpp_media_spec(model_spec):
+        shm_size = _DEFAULT_CPP_MEDIA_SHM_SIZE
+    if shm_size:
+        return ["--ipc", "private", "--shm-size", str(shm_size)]
+    return ["--ipc", "host"]
 
 
 def generate_docker_run_command(
@@ -523,7 +624,7 @@ def generate_docker_run_command(
         "--name", container_name,
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--ipc", "host",
+        *_docker_ipc_args(model_spec),
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -560,6 +661,15 @@ def generate_docker_run_command(
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
+        # New Hub caches can link repo blobs to a cache-wide sibling store.
+        # Keep that relative link chain valid inside the read-only mounts.
+        if setup_config.host_model_weights_snapshot_dir and get_pinned_revision(model_spec):
+            shared_blobs = setup_config.host_model_weights_mount_dir.parent / "blobs"
+            if shared_blobs.is_dir():
+                container_shared_blobs = setup_config.container_model_weights_mount_dir.parent / "blobs"
+                docker_command.extend([
+                    "--mount", f"type=bind,src={shared_blobs},dst={container_shared_blobs},readonly"
+                ])
 
     if quetzal_package_mount:
         docker_command.extend([
@@ -568,6 +678,13 @@ def generate_docker_run_command(
             f"src={quetzal_package_mount.host_root},"
             f"dst={quetzal_package_mount.runtime_root},readonly",
         ])
+        for auxiliary in quetzal_package_mount.auxiliary:
+            docker_command.extend([
+                "--mount",
+                "type=bind,"
+                f"src={auxiliary.host_root},"
+                f"dst={auxiliary.runtime_root},readonly",
+            ])
 
     if runtime_config.interactive:
         docker_command.append("-itd")
@@ -608,6 +725,15 @@ def generate_docker_run_command(
         # effect. Runtime-derived values below override these.
         docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        if (
+            _is_cpp_media_spec(model_spec)
+            and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+        ):
+            sdxl_weights_path = _media_pre_downloaded_weights_path(
+                setup_config, model_spec
+            )
+            if sdxl_weights_path:
+                docker_env_vars["MODEL_WEIGHTS_PATH"] = sdxl_weights_path
         api_key = os.getenv("API_KEY")
         if runtime_config.no_auth:
             docker_env_vars["NO_AUTH"] = "1"
@@ -723,11 +849,11 @@ def run_docker_command(
         docker_log_file_path: Path to the docker log file
 
     Returns:
-        Dict with container_name, container_id, docker_log_file_path, service_port
+        Dict with container identity, foreground process, log path, and service port.
     """
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    _ = subprocess.Popen(
+    docker_process = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
@@ -784,6 +910,7 @@ def run_docker_command(
     return {
         "container_name": container_name,
         "container_id": container_id,
+        "process": docker_process,
         "docker_log_file_path": str(docker_log_file_path),
         "service_port": runtime_config.service_port,
     }

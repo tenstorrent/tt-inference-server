@@ -486,6 +486,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
     src/config/settings.cpp
+    src/config/qwen3_tts.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
     src/utils/tokenizers/llama_tokenizer.cpp
@@ -1182,6 +1183,29 @@ target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
 target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+# Qwen3-TTS: release resolution and settings (llm_runner_lib holds both).
+add_executable(qwen3_tts_config_test tests/unit/config/qwen3_tts_config_test.cpp)
+target_link_libraries(qwen3_tts_config_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(qwen3_tts_settings_test tests/unit/config/qwen3_tts_settings_test.cpp)
+target_link_libraries(qwen3_tts_settings_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+# Qwen3-TTS request fields, release validation and the preprocessor's Qwen3 path.
+add_executable(qwen3_tts_request_test
+    tests/unit/services/qwen3_tts_request_test.cpp
+    src/services/qwen3_tts_request_validator.cpp
+    src/services/tts_request_preprocessor.cpp
+)
+target_link_libraries(qwen3_tts_request_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+# TTS IPC wire: Qwen3 task fields, PCM16 audio chunks, chunking, WAV bytes.
+add_executable(tts_audio_ipc_test
+    tests/unit/ipc/tts_audio_ipc_test.cpp
+    src/utils/audio_codec.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
+)
+target_link_libraries(tts_audio_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
 target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
 target_include_directories(voice_sample_cache_test PRIVATE
@@ -1206,12 +1230,32 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(embedding_codec_test tests/unit/services/embedding_codec_test.cpp)
-target_link_libraries(embedding_codec_test PRIVATE
+add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
+target_link_libraries(embedding_ipc_test PRIVATE
+    llm_runner_lib
     JsonCpp::JsonCpp
     GTest::gtest_main
 )
-target_include_directories(embedding_codec_test PRIVATE
+target_include_directories(embedding_ipc_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(embedding_json_test tests/unit/domain/embedding_json_test.cpp)
+target_link_libraries(embedding_json_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(embedding_json_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(mock_embedding_runner_test
+    tests/unit/runners/mock_embedding_runner_test.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+)
+target_link_libraries(mock_embedding_runner_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(mock_embedding_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1233,6 +1277,7 @@ target_include_directories(worker_metrics_shm_test PRIVATE
 add_executable(model_service_registry_test
     tests/unit/services/model_service_registry_test.cpp
     src/services/service_container.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
 )
 target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
 
@@ -1328,7 +1373,7 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
-    src/services/media_worker_scheduler.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/services/model_service_registration.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
@@ -1341,12 +1386,14 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1391,6 +1438,39 @@ target_include_directories(tts_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+# Qwen3TtsRunner against a fake tt-metal Python package (no device, no Blaze).
+add_executable(qwen3_tts_runner_test
+    tests/integration/runners/qwen3_tts_runner_test.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(qwen3_tts_runner_test PRIVATE
+    llm_runner_lib pybind11::embed GTest::gtest_main)
+target_include_directories(qwen3_tts_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Embedding service integration test: real EmbeddingService forking 32 mock
+# workers (galaxy shape) via WorkerManager + SingleProcessWorker. Custom main()
+# pins the env before config caching and routes "--worker N" to
+# SingleProcessWorker, so no gtest_main.
+add_executable(embedding_service_test
+    tests/integration/services/embedding_service_test.cpp
+    ${SERVICE_TEST_COMMON_SOURCES}
+)
+target_link_libraries(embedding_service_test PRIVATE
+    llm_runner_lib
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    GTest::gtest)
+target_include_directories(embedding_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 # Common server-stack sources shared by every integration-test executable.
 # Each integration binary boots the full stack in-process and differs only by
 # its test-entry .cpp (and the MODEL it pins), so the source list is shared here
@@ -1419,12 +1499,14 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1432,7 +1514,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
-    src/services/media_worker_scheduler.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/metrics/metrics.cpp
@@ -1589,6 +1671,11 @@ gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
+gtest_discover_tests(qwen3_tts_config_test)
+gtest_discover_tests(qwen3_tts_settings_test)
+gtest_discover_tests(qwen3_tts_request_test)
+gtest_discover_tests(tts_audio_ipc_test)
+gtest_discover_tests(qwen3_tts_runner_test)
 gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
@@ -1608,10 +1695,19 @@ set_tests_properties(TtsServiceMetricsTest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
+# embedding_service_test forks 32 worker processes per service instance, so it
+# gets one ctest entry (single process) and shares the integration lock.
+add_test(NAME EmbeddingServiceIntegrationTest COMMAND embedding_service_test)
+set_tests_properties(EmbeddingServiceIntegrationTest PROPERTIES
+    TIMEOUT 300
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
-gtest_discover_tests(embedding_codec_test)
+gtest_discover_tests(embedding_ipc_test)
+gtest_discover_tests(embedding_json_test)
+gtest_discover_tests(mock_embedding_runner_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
@@ -1925,7 +2021,7 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/mock_embedding_runner.cpp
-    src/runtime/runners/embedding_runner_factory.cpp
+    src/runtime/runners/embedding_ipc_runner.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -1933,6 +2029,8 @@ set(SOURCES
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1940,7 +2038,7 @@ set(SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
-    src/services/media_worker_scheduler.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/services/disaggregation_contract_mapping.cpp

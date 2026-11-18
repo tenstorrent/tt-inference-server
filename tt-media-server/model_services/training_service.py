@@ -42,6 +42,9 @@ class TrainingService(BaseJobService):
         self._adapter_merge_lock = asyncio.Lock()
         super().__init__()
 
+    def _get_request_processing_timeout(self) -> Optional[float]:
+        return None
+
     async def create_job(
         self,
         job_type: JobTypes,
@@ -59,6 +62,9 @@ class TrainingService(BaseJobService):
         request._training_metrics = self._manager.list()
         request._training_logs = self._manager.list()
         request._training_checkpoints = self._manager.list()
+        request._progress_tracker = self._manager.Value("d", time.monotonic())
+        request._worker_assignment = self._manager.Namespace()
+        request._worker_assignment.identity = None
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -72,6 +78,10 @@ class TrainingService(BaseJobService):
             job_metrics=request._training_metrics,
             job_logs=request._training_logs,
             job_checkpoints=request._training_checkpoints,
+            progress_tracker=request._progress_tracker,
+            worker_assignment=request._worker_assignment,
+            mark_worker_retiring=self.scheduler.mark_worker_retiring,
+            replace_worker=self.scheduler.replace_worker,
             org_id=org_id,
         )
 

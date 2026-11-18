@@ -140,3 +140,59 @@ class TestInjectMetadata:
             "model_impl",
         ):
             assert absent not in schema.metadata
+
+
+class _StagePack:
+    """Tags evals with one stage and benchmarks with another."""
+
+    def stage_of(self, block):
+        position = {"evals": 1, "benchmarks": 2}.get(block.kind)
+        if position is None:
+            return None
+        return {"key": block.kind, "name": block.kind.title(), "position": position}
+
+    def extra_spec_metadata_fields(self):
+        return ()
+
+
+class TestDeliveryStages:
+    def _schema(self):
+        from report_module.schema import Block
+
+        return ReportSchema(
+            metadata={"model_name": "m", "device": "SUPER_CLUSTER"},
+            sections=[
+                Block(kind="evals", data={"task_name": "t", "accuracy_check": 2}),
+                Block(kind="benchmarks", data={"concurrency": 1}),
+                Block(kind="spec_tests", data={}),
+            ],
+        )
+
+    def test_acceptance_grades_each_tagged_stage(self, monkeypatch):
+        from workflow_module import target_pack
+
+        monkeypatch.setattr(target_pack, "_target_pack", _StagePack())
+        workflow = _make_workflow(OrchestratorMetadata(server_mode="API"))
+        schema = self._schema()
+
+        workflow._tag_stages(schema)
+        workflow.apply_acceptance_criteria(schema, task_outcomes=[])
+
+        assert [b.targets.get("stage", {}).get("key") for b in schema.sections] == [
+            "evals",
+            "benchmarks",
+            None,
+        ]
+        stages = schema.metadata["acceptance_stages"]
+        assert [s["key"] for s in stages] == ["evals", "benchmarks"]
+        assert "#### Delivery stages" in schema.metadata["acceptance_summary_markdown"]
+
+    def test_a_checkpoint_report_is_tagged_too(self, monkeypatch):
+        from workflow_module import target_pack
+
+        monkeypatch.setattr(target_pack, "_target_pack", _StagePack())
+        schema = self._schema()
+
+        _make_workflow(OrchestratorMetadata(server_mode="API")).inject_metadata(schema)
+
+        assert schema.sections[0].targets["stage"]["key"] == "evals"

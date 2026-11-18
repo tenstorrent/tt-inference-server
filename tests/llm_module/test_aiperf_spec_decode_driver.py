@@ -17,6 +17,7 @@ off the worker(s) rather than the spec-decode-unaware Dynamo frontend:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from llm_module.drivers.aiperf_spec_decode import (
     AIPerfSpecDecodeDriver,
     _worker_metrics_urls,
 )
+from llm_module.parsers.aiperf_spec_decode import AIPerfSpecDecodeParser
 from llm_module.spec_decode import SpecDecodeRun
 
 FRONTEND = "http://dynamo-frontend:8000"
@@ -229,6 +231,7 @@ class TestRunScrapesWorkerEndpoints:
 
         assert result.return_code == 0
         assert result.payload["spec_decode_metrics"]["acceptance_rate"] == 0.25
+        assert result.payload["spec_decode_metrics"]["source"] == "metrics"
 
     def test_failed_after_scrape_omits_acceptance_block(self, monkeypatch, tmp_path):
         captured: dict = {}
@@ -254,3 +257,257 @@ class TestRunScrapesWorkerEndpoints:
 
         assert result.return_code == 0
         assert "spec_decode_metrics" not in result.payload
+
+
+class TestPlaceholderPrompts:
+    """The public SPEED-Bench copy masks prompts with a placeholder (#5279)."""
+
+    def _write_inputs(self, artifact_dir: Path, prompts: list) -> None:
+        sessions = [
+            {"session_id": str(i), "payloads": [{"messages": [{"content": p}]}]}
+            for i, p in enumerate(prompts)
+        ]
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "inputs.json").write_text(json.dumps({"data": sessions}))
+
+    def test_counts_placeholders_and_warns(self, tmp_path, caplog):
+        placeholder = driver_mod.SPEED_BENCH_PLACEHOLDER + " USING SPECDEC_BENCH"
+        self._write_inputs(tmp_path, [placeholder, "real prompt", placeholder])
+
+        assert driver_mod._count_placeholder_prompts(tmp_path) == (2, 3)
+        assert "2/3 prompts" in caplog.text
+
+    def test_clean_dataset_does_not_warn(self, tmp_path, caplog):
+        self._write_inputs(tmp_path, ["real prompt"])
+
+        assert driver_mod._count_placeholder_prompts(tmp_path) == (0, 1)
+        assert "placeholder" not in caplog.text
+
+    def test_missing_inputs_json_is_skipped(self, tmp_path):
+        assert driver_mod._count_placeholder_prompts(tmp_path) is None
+
+    def test_report_shows_placeholder_count(self):
+        parser = AIPerfSpecDecodeParser()
+        base = {"public_dataset": "speed_bench_math", "completed": 80}
+
+        flagged = parser.parse({**base, "placeholder_prompts": 62, "total_prompts": 80})
+        assert flagged.data["placeholder_prompts"] == "62/80"
+        assert parser.parse(base).data["placeholder_prompts"] is None
+
+
+def _sse(*data_fields: str) -> dict:
+    """One SSE message as aiperf's raw export stores it."""
+    return {"packets": [{"name": "data", "value": value} for value in data_fields]}
+
+
+class TestUsageAcceptance:
+    """Acceptance from per-request usage, for frontends (Dynamo) whose
+    /metrics carries no spec-decode counters."""
+
+    def _write_raw(
+        self, artifact_dir: Path, usages: list, num_drafts=None, errors=0
+    ) -> None:
+        records = [
+            {"status": 500, "error": {"code": 500, "message": "boom"}, "responses": []}
+        ] * errors
+        if not isinstance(num_drafts, list):
+            num_drafts = [num_drafts] * len(usages)
+        for usage, drafts in zip(usages, num_drafts):
+            # aiperf stores one response per SSE message.
+            chunks = [json.dumps({"choices": []})]
+            if drafts is not None:
+                nvext = {"engine_data": {"spec_decode": {"num_drafts": drafts}}}
+                chunks.append(json.dumps({"nvext": nvext}))
+            if usage is not None:
+                chunks.append(json.dumps({"usage": usage}))
+            chunks.append("[DONE]")
+            records.append({"responses": [_sse(chunk) for chunk in chunks]})
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "profile_export_raw.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in records)
+        )
+
+    def test_sums_accepted_and_rejected_prediction_tokens(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path,
+            [{"completion_tokens_details": details}] * 2 + [None],
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 12.0
+        assert out["draft_tokens"] == 20.0
+        assert out["acceptance_rate"] == pytest.approx(0.6)
+        assert out["source"] == "usage"
+        assert out["num_drafts"] is None
+        assert out["mean_accepted_length"] is None
+        assert out["responses_without_usage"] == 1
+        assert out["responses"] == 3
+
+    def test_engine_data_draft_count_gives_mean_accepted_length(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}] * 2, num_drafts=3
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["num_drafts"] == 6.0
+        assert out["mean_accepted_length"] == pytest.approx(1 + 12 / 6)
+
+    def test_mean_accepted_length_uses_only_responses_with_draft_counts(
+        self, tmp_path, caplog
+    ):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path,
+            [{"completion_tokens_details": details}] * 2,
+            num_drafts=[3, None],
+        )
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 12.0
+        assert out["num_drafts"] == 3.0
+        assert out["responses_with_drafts"] == 1
+        assert out["mean_accepted_length"] == pytest.approx(1 + 6 / 3)
+        assert "1/2 responses with prediction tokens report a draft count" in (
+            caplog.text
+        )
+
+    def test_draft_count_without_prediction_tokens_is_ignored(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}, None], num_drafts=3
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["num_drafts"] == 3.0
+        assert out["mean_accepted_length"] == pytest.approx(1 + 6 / 3)
+
+    def test_multiline_sse_data_is_joined(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        body = json.dumps({"usage": {"completion_tokens_details": details}}, indent=1)
+        first, rest = body.split("\n", 1)
+        record = {"responses": [_sse(first, rest), _sse("[DONE]")]}
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(json.dumps(record))
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+
+    def test_malformed_telemetry_is_skipped(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        good = {
+            "responses": [
+                _sse(json.dumps({"usage": {"completion_tokens_details": details}}))
+            ]
+        }
+        bad = {
+            "status": 500,
+            "error": {"code": 500},
+            "responses": [_sse('{"usage": {"completion_tokens_details": {')],
+        }
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(
+            "\n".join([json.dumps(good), json.dumps(bad), '{"responses": ['])
+        )
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+        assert out["responses"] == 1
+        assert out["failed_responses"] == 1
+        assert "skipped 2 unparsable" in caplog.text
+
+    def test_usage_without_prediction_tokens_is_none(self, tmp_path):
+        self._write_raw(tmp_path, [{"prompt_tokens_details": {"cached_tokens": 0}}])
+
+        assert driver_mod._usage_acceptance_metrics(tmp_path) is None
+        assert driver_mod._usage_acceptance_metrics(tmp_path / "missing") is None
+
+    def test_report_shows_acceptance_source(self):
+        parser = AIPerfSpecDecodeParser()
+        base = {"public_dataset": "speed_bench_qa", "completed": 80}
+
+        for source in ("metrics", "usage"):
+            raw = {
+                **base,
+                "spec_decode_metrics": {"acceptance_rate": 0.6, "source": source},
+            }
+            assert parser.parse(raw).data["acceptance_source"] == source
+        assert parser.parse(base).data["acceptance_source"] is None
+
+    def test_failed_requests_are_not_counted_as_missing_usage(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}] * 3, errors=1
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["failed_responses"] == 1
+        assert out["responses"] == 3
+        assert out["responses_without_usage"] == 0
+        assert out["accepted_tokens"] == 18.0
+        assert "carry no prediction tokens" not in caplog.text
+        source = AIPerfSpecDecodeParser().parse({"spec_decode_metrics": out}).data
+        assert source["acceptance_source"] == "usage (1 failed)"
+
+    def test_invalid_response_with_prediction_tokens_still_counts(self, tmp_path):
+        # aiperf marks a 200 with no text content as an error, but the server drafted.
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        usage = {"usage": {"completion_tokens_details": details}}
+        record = {
+            "status": 200,
+            "error": {"type": "InvalidInferenceResultError"},
+            "responses": [_sse(json.dumps(usage))],
+        }
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "profile_export_raw.jsonl").write_text(json.dumps(record))
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["accepted_tokens"] == 6.0
+        assert out["failed_responses"] == 0
+        assert out["responses"] == 1
+
+    def test_source_cell_shows_missing_usage_and_failures_together(self, tmp_path):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(
+            tmp_path, [{"completion_tokens_details": details}, None, None], errors=2
+        )
+
+        out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        source = AIPerfSpecDecodeParser().parse({"spec_decode_metrics": out}).data
+        assert source["acceptance_source"] == "usage (2/3 without, 2 failed)"
+
+    def test_responses_without_usage_are_counted_and_shown(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(tmp_path, [{"completion_tokens_details": details}] + [None] * 3)
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert "3/4 responses carry no prediction tokens" in caplog.text
+        raw = {"public_dataset": "speed_bench_qa", "spec_decode_metrics": out}
+        source = AIPerfSpecDecodeParser().parse(raw).data["acceptance_source"]
+        assert source == "usage (3/4 without)"
+
+    def test_every_response_with_usage_shows_plain_source(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(tmp_path, [{"completion_tokens_details": details}] * 2)
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["responses_without_usage"] == 0
+        assert "prediction tokens" not in caplog.text
+        raw = {"public_dataset": "speed_bench_qa", "spec_decode_metrics": out}
+        assert AIPerfSpecDecodeParser().parse(raw).data["acceptance_source"] == "usage"
