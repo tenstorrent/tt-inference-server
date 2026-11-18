@@ -290,7 +290,14 @@ def main():
     pid = server_pid(srv)
     desc = descendants(pid)
     ipc_mine = f"tt-video-ipc-{pid}"
-    note(ipc_mine in os.listdir("/tmp"), "the ipc folder exists while the server runs", ipc_mine)
+    # One DEVICE_IDS group runs the runner on a thread of the server (no worker process,
+    # no ipc folder); TT_VIDEO_IN_PROCESS=0 brings the worker process back.
+    in_process = "Creating in-process video service" in srv.log_text()
+    p("  execution mode:", "in-process (no worker, no ipc folder)" if in_process else "worker process")
+    if in_process:
+        note(ipc_mine not in os.listdir("/tmp"), "in-process mode: no ipc folder is created", ipc_mine)
+    else:
+        note(ipc_mine in os.listdir("/tmp"), "the ipc folder exists while the server runs", ipc_mine)
     shm_run = shm_names()
     t0 = time.time()
     code = srv.terminate(signal.SIGTERM, 120)

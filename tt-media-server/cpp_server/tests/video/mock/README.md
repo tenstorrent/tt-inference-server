@@ -16,6 +16,7 @@ tests that run against the server with the mock runner. The unit tests are descr
 | `server_cases.py` | checks against a real `tt_media_server_cpp` with the mock runner, by phase |
 | `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `server_cases.py` |
 | `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks the failed job, the restart, the restart limit and that a worker whose warmup fails exits |
+| `inprocess_cases.py` | in process mode (one `DEVICE_IDS` group: the runner on a thread of the server, queue in memory): how the mode is chosen (one group, two groups, `TT_VIDEO_IN_PROCESS=0/1`), no child process / shm queue / ipc folder, cancel takes a queued job out of the queue, sync and the `429` limit, SIGTERM idle and during a generation, a failed warmup stops the server. `--only a,b` runs some cases |
 | `lifecycle_cases.py` | starts its own server per case: the background cleaner, `stale_job`, SIGTERM during a job, a dropped sync request, two sync requests, the warmup window of a restarted worker, a crash before `CLAIMED`, 400 concurrent requests, 10000 jobs, parallel downloads, no ffmpeg. `--only a,b` runs some cases |
 
 `contract_cases.py` checks the job API (async mode; sync mode is covered by
@@ -43,6 +44,20 @@ race. No device is needed. The script needs a built `./build/tt_media_server_cpp
 
 Phases (see `server_cases.py`): `main`, `sync-error`, `limits`, `warmup`,
 `cancel-race`.
+
+## Execution mode in the tests
+
+With one `DEVICE_IDS` group (the default in these tests) the server runs the runner in its own
+process. `worker_crash_cases.py` and `lifecycle_cases.py` are about the worker process (kill it,
+restart it, shm queues, the ipc folder), so their `start()` pins `TT_VIDEO_IN_PROCESS=0`.
+`run_server_tests.sh` runs its API phases in the default mode; `TT_VIDEO_IN_PROCESS=0
+./tests/video/mock/run_server_tests.sh` runs the same phases against a worker process (the
+`cancel-race` phase always pins the worker process: it is a race between a worker and the
+service). `inprocess_cases.py` covers what is specific to the in-process mode.
+
+```bash
+python3 tests/video/mock/inprocess_cases.py
+```
 
 ## Worker crash tests
 
