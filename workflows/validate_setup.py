@@ -493,6 +493,15 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
         return False
 
 
+def _read_write_mount_check(flag, host_path):
+    """Permission check entry for a read-write bind mount; the directory is created if missing."""
+    path = Path(host_path)
+    if not path.exists():
+        logger.info(f"Creating {flag} directory: {path}")
+        path.mkdir(parents=True, exist_ok=True)
+    return (flag, host_path, True, True)
+
+
 def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     """Validate that --image-user UID can access bind-mounted host paths.
 
@@ -506,11 +515,7 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     checks = []
 
     if args.host_volume:
-        host_volume_path = Path(args.host_volume)
-        if not host_volume_path.exists():
-            logger.info(f"Creating host volume directory: {host_volume_path}")
-            host_volume_path.mkdir(parents=True, exist_ok=True)
-        checks.append(("--host-volume", args.host_volume, True, True))
+        checks.append(_read_write_mount_check("--host-volume", args.host_volume))
     if args.host_hf_cache:
         checks.append(("--host-hf-cache", args.host_hf_cache, False, True))
     if getattr(args, "host_weights_dir", None):
@@ -521,11 +526,7 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
         )
     kernel_cache_dir = getattr(args, "kernel_cache_dir", None)
     if kernel_cache_dir:
-        kernel_cache_path = Path(kernel_cache_dir)
-        if not kernel_cache_path.exists():
-            logger.info(f"Creating kernel cache directory: {kernel_cache_path}")
-            kernel_cache_path.mkdir(parents=True, exist_ok=True)
-        checks.append(("--kernel-cache-dir", kernel_cache_dir, True, True))
+        checks.append(_read_write_mount_check("--kernel-cache-dir", kernel_cache_dir))
     if quetzal_package_mount:
         for auxiliary in quetzal_package_mount.auxiliary:
             checks.append(

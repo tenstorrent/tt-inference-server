@@ -749,15 +749,6 @@ class TestModelSpecCliArgsCompatibility:
                 parse_arguments()
         assert "--kernel-cache-dir requires --docker-server" in capsys.readouterr().err
 
-    def test_kernel_cache_dir_rejects_a_comma(self, base_args, tmp_path, capsys):
-        """A comma would end the mount source and let docker read the rest as options."""
-        cache_dir = f"{tmp_path}/kernel_cache,readonly"
-        full_args = base_args + ["--docker-server", "--kernel-cache-dir", cache_dir]
-        with patch("sys.argv", ["run.py"] + full_args):
-            with pytest.raises(SystemExit):
-                parse_arguments()
-        assert "--kernel-cache-dir must not contain a comma" in capsys.readouterr().err
-
     def test_service_port_defaults_to_443_for_https_server_url(self, base_args):
         """--server-url https://host without a port targets 443 by default."""
         full_args = base_args + ["--server-url", "https://example.com"]

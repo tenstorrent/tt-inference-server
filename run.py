@@ -449,7 +449,9 @@ def parse_arguments():
         default=None,
         help="Host directory bind-mounted read-write as the container's tt-metal "
         "kernel cache (TT_METAL_CACHE), so the kernels compiled in this run can "
-        "be baked into an image. Created if missing. Requires --docker-server.",
+        "be baked into an image. Created if missing. Requires --docker-server. "
+        "Models served by the cpp server set their own TT_METAL_CACHE, so the "
+        "folder stays empty for them.",
     )
     parser.add_argument(
         "--custom-weights",
@@ -816,11 +818,6 @@ def parse_arguments():
         if not args.docker_server:
             parser.error("--kernel-cache-dir requires --docker-server.")
         args.kernel_cache_dir = str(Path(args.kernel_cache_dir).expanduser().resolve())
-        if "," in args.kernel_cache_dir:
-            parser.error(
-                "--kernel-cache-dir must not contain a comma; docker reads a comma "
-                "as the end of the mount source."
-            )
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )

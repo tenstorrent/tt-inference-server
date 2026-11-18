@@ -45,6 +45,8 @@ VARIANT_SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 # tt_dit loads a cache directory only when this (empty) file is in it.
 CACHE_MARKER = "cache_dict.json"
 TT_WEIGHTS_STAGING = ".tt_weights_download"
+# Layout version of the manifests and the release file; a reader refuses another.
+SCHEMA_VERSION = 1
 WEIGHTS_MANIFEST_FIELDS = (
     "variant",
     "cache_directories",
@@ -78,6 +80,11 @@ def manifest_fields(data, names: tuple, source) -> dict:
     if missing:
         raise CliError(
             f"{source} is not a manifest this command reads: no {', '.join(missing)}"
+        )
+    if data.get("schema_version") != SCHEMA_VERSION:
+        raise CliError(
+            f"{source} has schema_version {data.get('schema_version')}; this "
+            f"command reads {SCHEMA_VERSION}"
         )
     return {name: data[name] for name in names}
 
@@ -208,11 +215,13 @@ def download_tt_weights(
 
     What the destination already holds with the content of that revision is
     kept as it is, marker included: it is not fetched again, and a variant that
-    shares it keeps working if this download fails. The markers of the other
-    cache directories are removed first, so a download that stops part way
-    leaves none of them looking complete. The files are checked in a staging
-    folder before any of them is moved into place. A failed run keeps that
-    folder, and the next run for the same commit continues from it.
+    shares it keeps working if this download fails. A cache directory with
+    files the revision does not hold is refused before anything is changed or
+    fetched. The markers of the other cache directories are removed first, so a
+    download that stops part way leaves none of them looking complete. The
+    files are checked in a staging folder before any of them is moved into
+    place. A failed run keeps that folder, and the next run for the same commit
+    continues from it.
     """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
@@ -238,13 +247,28 @@ def download_tt_weights(
     )
 
     files = published_files(api, repo, commit)
+    remote = {
+        entry["path"]: published_directory(files, entry["path"]) for entry in listed
+    }
     directories = [
         entry
         for entry in listed
-        if not holds_directory(
-            dest_cache / entry["path"], published_directory(files, entry["path"])
-        )
+        if not holds_directory(dest_cache / entry["path"], remote[entry["path"]])
     ]
+    unlisted = []
+    for entry in directories:
+        local = tensor_sizes(dest_cache / entry["path"])
+        other = sorted(set(local) - set(remote[entry["path"]]))
+        if other:
+            unlisted.append(
+                f"{entry['path']}: {len(other)} file(s), for example {other[0]}"
+            )
+    if unlisted:
+        raise CliError(
+            f"{dest_cache} holds files that {repo} does not hold at {revision}; "
+            "nothing was changed or fetched. Remove these directories and run "
+            "the download again:\n  " + "\n  ".join(unlisted)
+        )
     originals = [
         entry
         for entry in listed_files
@@ -264,8 +288,11 @@ def download_tt_weights(
     staging = dest_cache / TT_WEIGHTS_STAGING / commit
     if staging.parent.exists() and not staging.is_dir():
         shutil.rmtree(staging.parent)
+    # One pattern per file: "<directory>/*" would also match its sub-folders.
     patterns = [
-        f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/*" for entry in directories
+        f"{TT_WEIGHTS_FOLDER}/{glob.escape(entry['path'])}/{glob.escape(name)}"
+        for entry in directories
+        for name in remote[entry["path"]]
     ] + [
         f"{ORIGINAL_SUBSET_FOLDER}/{glob.escape(entry['path'])}" for entry in originals
     ]
@@ -280,18 +307,12 @@ def download_tt_weights(
 
     staged = [staging / TT_WEIGHTS_FOLDER / entry["path"] for entry in directories]
     mismatches = []
-    for entry, source, marker in zip(directories, staged, markers):
+    for entry, source in zip(directories, staged):
         sizes = tensor_sizes(source)
-        other = sorted(set(tensor_sizes(marker.parent)) - set(sizes))
         if (len(sizes), sum(sizes.values())) != (entry["files"], entry["bytes"]):
             mismatches.append(
                 f"{entry['path']}: {len(sizes)} files, {sum(sizes.values())} bytes; "
                 f"the manifest says {entry['files']} files, {entry['bytes']} bytes"
-            )
-        elif other:
-            mismatches.append(
-                f"{entry['path']}: the destination holds {len(other)} file(s) "
-                f"that are not in the manifest, for example {other[0]}"
             )
     for entry in originals:
         if not is_listed_file(staging / ORIGINAL_SUBSET_FOLDER / entry["path"], entry):
@@ -341,13 +362,42 @@ def variant_argument(value: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch and verify the converted weights one model variant needs."
+        description="Fetch and verify the converted weights one model variant "
+        "needs. What the destination already holds with the same content is kept. "
+        "Needs huggingface_hub and the token in HF_TOKEN."
     )
-    parser.add_argument("--repo", required=True)
-    parser.add_argument("--revision", required=True)
-    parser.add_argument("--variant", type=variant_argument, required=True)
-    parser.add_argument("--dest-cache", type=path_argument, required=True)
-    parser.add_argument("--dest-original", type=path_argument, required=True)
+    parser.add_argument(
+        "--repo",
+        required=True,
+        help="Hugging Face repo that holds the converted weights, as <org>/<name>",
+    )
+    parser.add_argument(
+        "--revision",
+        required=True,
+        help="tag or commit from the release file; a branch can be in the middle "
+        "of an upload",
+    )
+    parser.add_argument(
+        "--variant",
+        type=variant_argument,
+        required=True,
+        help="model variant to fetch: the name of its manifest in the repo, such "
+        "as minimax-h3-fl2va-lightx2v",
+    )
+    parser.add_argument(
+        "--dest-cache",
+        type=path_argument,
+        required=True,
+        help="directory the server uses as TT_DIT_CACHE_DIR; the converted "
+        "weights go here",
+    )
+    parser.add_argument(
+        "--dest-original",
+        type=path_argument,
+        required=True,
+        help="checkpoint directory of the server (MINIMAX_H3_MODEL_PATH); the "
+        "files it still reads from the original checkpoint go here",
+    )
     return parser
 
 

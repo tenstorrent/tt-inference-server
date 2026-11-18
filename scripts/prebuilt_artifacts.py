@@ -22,7 +22,8 @@ model; build-image puts that file into the image.
 
 Run it from the repo root: python3 scripts/prebuilt_artifacts.py <command> --help
 tt-weights upload needs huggingface_hub and takes the token from HF_TOKEN.
-See tt-media-server/docs/minimax-h3-prebuilt-artifacts.md.
+What a deployment sets is in tt-media-server/README.md, section "MiniMax-H3
+image with prebuilt kernels and weights".
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from scripts.tt_weights_download import (
     CACHE_MARKER,
     MANIFEST_FOLDER,
     ORIGINAL_SUBSET_FOLDER,
+    SCHEMA_VERSION,
     TT_WEIGHTS_FOLDER,
     CliError,
     file_hash,
@@ -89,10 +91,21 @@ BUILD_KEY_ENV_VARS = (
 KERNEL_CACHE_DOCKERFILE = project_root / "tt-media-server" / "Dockerfile.kernel-cache"
 # build-image stages this file; it is the only tool file in the image.
 DOWNLOAD_SCRIPT = project_root / "scripts" / "tt_weights_download.py"
-# tt-metal logs "compiled <kernel>/<hash>/ in <N> ms" per compiled kernel; a cache hit logs nothing.
+# tt-metal logs "compiled <kernel>/<hash>/ in <N> ms" per compiled kernel when
+# TT_METAL_LOG_KERNEL_COMPILE is on. tt_dit turns it on unless the variable is
+# set, so a start with it set to 0 logs no such line. A cache hit logs nothing.
 COMPILE_LINE = re.compile(r"compiled (\S+/[^/\s]+)/ in \d+ ms")
 # tt-metal writes a cache file as <stem>.<random id>_<pid><ext> and renames it into place.
 KERNEL_CACHE_TEMP_FILE = re.compile(r"\.\d+_\d+(\.|$)")
+KERNEL_MANIFEST_FIELDS = (
+    "base_image",
+    "kernel_cache_path",
+    "build_keys",
+    "kernel_hash_dirs",
+    "files",
+    "bytes",
+    "build_key_env",
+)
 
 # tt-weights upload writes to this branch of the weights repo and tags the result.
 WEIGHTS_BRANCH = "main"
@@ -103,12 +116,15 @@ MANIFEST_RUN_FIELDS = ("created_utc", "server_sha")
 
 # MiniMax-H3 checkpoint layout, used by tt-weights upload only: what a server
 # with a complete converted cache still reads from the original checkpoint
-# directory (MINIMAX_H3_MODEL_PATH). Correct the list here only.
-# Globs relative to that directory; each must match a file. The audio VAE
-# weights are listed for the audio encoder: only a request whose reference has a
-# soundtrack loads it, so a capture run without one publishes no converted copy
-# and the server converts it from these.
+# directory (MINIMAX_H3_MODEL_PATH), besides the LoRA file (MINIMAX_H3_LORA_PATH).
+# Correct the lists here only.
+
+# Maps each text encoder weight to the shard that holds it.
 MINIMAX_H3_TEXT_ENCODER_INDEX = "text_encoder/model.safetensors.index.json"
+# Globs relative to the checkpoint directory; each must match a file. The audio
+# VAE weights are listed for the audio encoder: only a request whose reference
+# has a soundtrack loads it, so a capture run without one publishes no converted
+# copy and the server converts it from these.
 MINIMAX_H3_ORIGINAL_SUBSET = (
     "model_index.json",
     "vae/config.json",
@@ -120,12 +136,11 @@ MINIMAX_H3_ORIGINAL_SUBSET = (
     "text_encoder/*.json",
     "tokenizer/**/*",
 )
-# config.json of the transformer folder(s) the directory holds:
+# config.json is read from each of these folders that the checkpoint holds.
 MINIMAX_H3_TRANSFORMER_FOLDERS = ("transformer", "transformer_ref")
-# the text encoder shard(s) that the index gives for weights with this prefix:
+# The text encoder shards that hold weights with this prefix are read.
 MINIMAX_H3_VISION_TOWER_PREFIX = "model.visual."
-# and the LoRA file (MINIMAX_H3_LORA_PATH). These folders must exist, next to
-# the transformer folder(s):
+# Folders that must exist, next to the transformer folder(s).
 MINIMAX_H3_REQUIRED_FOLDERS = ("text_encoder", "vae", "audio_vae")
 
 
@@ -154,10 +169,15 @@ def regular_files(root: Path) -> dict:
 
     The trees packaged here were written by containers. A symbolic link in one
     would pull a host file into a published image or repo, so anything that is
-    not a regular file or a directory is refused.
+    not a regular file or a directory is refused. So is a folder that cannot be
+    listed: its files would be left out.
     """
+
+    def unreadable(error: OSError):
+        raise CliError(f"cannot read {error.filename}: {error.strerror}")
+
     tree, refused = {}, []
-    for directory, folders, names in os.walk(root):
+    for directory, folders, names in os.walk(root, onerror=unreadable):
         folders.sort()
         directory = Path(directory)
         refused += [
@@ -240,7 +260,18 @@ def spec_env_values(path: Path) -> dict:
     env_vars = read_model_spec(path).get("env_vars")
     if not isinstance(env_vars, dict):
         raise CliError(f"no env_vars in the model spec {path}")
-    return {key: str(value) for key, value in env_vars.items() if value}
+    return {key: str(value) for key, value in env_vars.items() if str(value)}
+
+
+def read_kernel_manifest(path: Path, base_image: str) -> dict:
+    """The kernel manifest at path; an error when it describes another base image."""
+    manifest = manifest_fields(read_json(path), KERNEL_MANIFEST_FIELDS, path)
+    if manifest["base_image"] != base_image:
+        raise CliError(
+            f"the kernel manifest {path} was made for base image "
+            f"{manifest['base_image']}, not {base_image}"
+        )
+    return manifest
 
 
 def kernel_cache_manifest(args) -> None:
@@ -273,8 +304,9 @@ def kernel_cache_manifest(args) -> None:
         raise CliError(
             f"{server_log} has no compile line although the cache holds "
             f"{kernel_hash_dirs} kernel hash folders: it is not the log of the "
-            "capture run, or tt-metal did not log its compiles. check-log could "
-            "not tell a cold start from a warm one."
+            "capture run, or tt-metal did not log its compiles "
+            "(TT_METAL_LOG_KERNEL_COMPILE=0). check-log could not tell a cold "
+            "start from a warm one."
         )
 
     layers = [image_env(base_image)]
@@ -308,7 +340,7 @@ def kernel_cache_manifest(args) -> None:
     write_json(
         out,
         {
-            "schema_version": 1,
+            "schema_version": SCHEMA_VERSION,
             "created_utc": utc_now(),
             "base_image": base_image,
             "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
@@ -343,12 +375,7 @@ def render_kernel_cache_dockerfile(build_key_env: dict) -> str:
 
 def build_kernel_cache_image(args) -> None:
     base_image, cache_dir, tag = args.base_image, args.cache_dir, args.tag
-    manifest = read_json(args.manifest)
-    if manifest["base_image"] != base_image:
-        raise CliError(
-            f"the manifest was made for base image {manifest['base_image']}, "
-            f"not {base_image}"
-        )
+    manifest = read_kernel_manifest(args.manifest, base_image)
     files = kernel_cache_files(cache_dir)
     size = sum(file_size for _, file_size in files)
     missing = [
@@ -426,23 +453,29 @@ def variant_cache_directories(
 ) -> list[dict]:
     """Path, file count and bytes (without the marker) of the cache directories the log names.
 
+    Only those directories are scanned; the rest of cache_dir is not published.
     Raises unless every one of them is a finished conversion.
     """
-    tree = {
-        path.relative_to(cache_dir).as_posix(): sizes
-        for path, sizes in regular_files(cache_dir).items()
-        if sizes
-    }
+    if not cache_dir.is_dir():
+        raise CliError(f"{cache_dir} is not a directory")
     named = logged_cache_directories(server_log, container_root)
     if not named:
         raise CliError(
             f"{server_log} names no directory under {container_root}: it is not "
             "the log of a server start that loaded or wrote the converted weights"
         )
+    root = cache_dir.resolve()
     directories, problems = [], []
     for relative in named:
-        sizes = tree.get(relative)
-        if sizes is None:
+        directory = cache_dir / relative
+        if directory.resolve() != root / relative:
+            problems.append(
+                f"{relative}: outside {cache_dir} or behind a symbolic link"
+            )
+            continue
+        tree = regular_files(directory) if directory.is_dir() else {}
+        sizes = tree.pop(directory, None)
+        if not sizes:
             problems.append(f"{relative}: missing or empty")
             continue
         temp_files = fnmatch.filter(sizes, "*.tmp.*")
@@ -450,7 +483,7 @@ def variant_cache_directories(
             problems.append(f"{relative}: {len(temp_files)} temp file(s)")
         if CACHE_MARKER not in sizes:
             problems.append(f"{relative}: no {CACHE_MARKER}")
-        if any(other.startswith(f"{relative}/") for other in tree):
+        if any(tree.values()):
             problems.append(f"{relative}: holds a folder")
         tensors = [size for name, size in sizes.items() if name != CACHE_MARKER]
         directories.append(
@@ -461,7 +494,13 @@ def variant_cache_directories(
             f"refusing to upload: the log names cache directories that are not "
             f"finished conversions in {cache_dir}:\n  " + "\n  ".join(problems)
         )
-    left_out = sorted(set(tree) - set(named))
+    # The other finished conversions are listed by name; their files are not read.
+    finished = {
+        Path(folder).relative_to(cache_dir).as_posix()
+        for folder, _, names in os.walk(cache_dir)
+        if CACHE_MARKER in names
+    }
+    left_out = sorted(finished - set(named))
     if left_out:
         step(
             f"left out: {len(left_out)} directories the log does not name: "
@@ -552,14 +591,27 @@ def minimax_h3_original_subset(
 
 
 def downloaded_revision(original_dir: Path, files: list[str]) -> str:
-    """Commit the files were downloaded at, from the metadata `hf download --local-dir` keeps."""
-    metadata = original_dir / ".cache" / "huggingface" / "download"
-    revisions = set()
+    """Commit the files were downloaded at, from the records `hf download --local-dir` keeps.
+
+    Raises unless every file has a record and all of them name one commit.
+    """
+    records = original_dir / ".cache" / "huggingface" / "download"
+    revisions, unrecorded = set(), 0
     for relative in files:
-        record = metadata / f"{relative}.metadata"
+        record = records / f"{relative}.metadata"
         lines = record.read_text(encoding="utf-8").split() if record.is_file() else []
-        revisions.add(lines[0] if lines else "unknown")
-    return revisions.pop() if len(revisions) == 1 else "unknown"
+        if lines:
+            revisions.add(lines[0])
+        else:
+            unrecorded += 1
+    if unrecorded or len(revisions) != 1:
+        raise CliError(
+            f"the download records under {records} do not give one source "
+            f"revision: {unrecorded} of {len(files)} files have no record, "
+            f"revisions found: {', '.join(sorted(revisions)) or 'none'}. Give the "
+            "revision of the original checkpoint with --source-revision."
+        )
+    return revisions.pop()
 
 
 def differing(files: dict, cache_dir, original_dir, manifest) -> tuple:
@@ -664,12 +716,18 @@ def describe_variant(args) -> dict:
         f"{gigabytes(sum(entry['bytes'] for entry in originals))}"
     )
     checkpoint_files = [entry["path"] for entry in originals if entry["path"] != lora]
+    source_repo = read_model_spec(args.spec_json).get("hf_weights_repo")
+    if not source_repo:
+        step(
+            f"source: no hf_weights_repo in {args.spec_json}; the manifest "
+            "records the source repo as unknown"
+        )
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "variant": args.variant,
         "created_utc": utc_now(),
         "source": {
-            "repo": read_model_spec(args.spec_json).get("hf_weights_repo") or "unknown",
+            "repo": source_repo or "unknown",
             "revision": args.source_revision
             or downloaded_revision(args.original_dir, checkpoint_files),
         },
@@ -692,7 +750,7 @@ def upload_tt_weights(args) -> None:
     manifest is removed first and written back last: a commit with the manifest
     is a finished upload. The tag is made only after the files at that commit
     have the content of the local ones. A tag that already holds this content is
-    reused.
+    reused; one that holds other content is an error, tags are not moved.
     """
     api = hugging_face_api()
     repo, variant, branch = args.repo, args.variant, WEIGHTS_BRANCH
@@ -713,23 +771,38 @@ def upload_tt_weights(args) -> None:
         ref.name: ref.target_commit for ref in api.list_repo_refs(repo_id=repo).tags
     }
     if tag in tags:
-        published = published_manifest(api, repo, tags[tag], variant) or {}
-        if any(
-            published.get(key) != value
+        commit = tags[tag]
+        published = published_manifest(api, repo, commit, variant) or {}
+        changed = [
+            key
             for key, value in manifest.items()
-            if key not in MANIFEST_RUN_FIELDS
-        ):
-            raise CliError(
-                f"tag {tag} already exists in {repo} with other content; "
-                "tags are not moved"
+            if key not in MANIFEST_RUN_FIELDS and published.get(key) != value
+        ]
+        if not changed:
+            changed_directories, changed_originals = differing(
+                published_files(api, repo, commit),
+                args.cache_dir,
+                args.original_dir,
+                manifest,
             )
-        step(f"tag: {tag} already holds this content at commit {tags[tag]}")
-        commit, manifest = tags[tag], published
+            changed = changed_directories + changed_originals
+        if changed:
+            raise CliError(
+                f"tag {tag} already exists in {repo} with other content "
+                f"({', '.join(changed)}); tags are not moved"
+            )
+        step(f"tag: {tag} already holds this content at commit {commit}")
+        manifest = published
     else:
         api.create_branch(repo_id=repo, branch=branch, exist_ok=True)
-        local = (args.cache_dir, args.original_dir, manifest)
         send_directories, stale, send_originals, retire = upload_plan(
-            api, repo, branch, *local, args.replace_shared
+            api,
+            repo,
+            branch,
+            args.cache_dir,
+            args.original_dir,
+            manifest,
+            args.replace_shared,
         )
         for name in retire:
             path = f"{MANIFEST_FOLDER}/{name}.json"
@@ -778,12 +851,18 @@ def upload_tt_weights(args) -> None:
         ).oid
         step(f"commit: {commit}")
 
-        differ = sum(differing(published_files(api, repo, commit), *local), [])
-        if differ:
+        changed_directories, changed_originals = differing(
+            published_files(api, repo, commit),
+            args.cache_dir,
+            args.original_dir,
+            manifest,
+        )
+        if changed_directories or changed_originals:
             raise CliError(
                 f"commit {commit} of {repo} does not hold the local files in "
-                f"{', '.join(differ)}: something else changed {branch} during "
-                "the upload. Nothing was tagged; run the upload again."
+                f"{', '.join(changed_directories + changed_originals)}: something "
+                f"else changed {branch} during the upload. Nothing was tagged; run "
+                "the upload again."
             )
         api.create_tag(repo_id=repo, tag=tag, revision=commit)
         step(f"tag: {tag}")
@@ -795,12 +874,7 @@ def upload_tt_weights(args) -> None:
 
 
 def write_release_file(args) -> None:
-    kernel = read_json(args.kernel_manifest)
-    if kernel["base_image"] != args.base_image:
-        raise CliError(
-            f"the kernel manifest was made for base image {kernel['base_image']}, "
-            f"not {args.base_image}"
-        )
+    kernel = read_kernel_manifest(args.kernel_manifest, args.base_image)
     kernel_cache_env = {KERNEL_CACHE_ENV: kernel["kernel_cache_path"]}
     kernel_cache_env.update(
         {
@@ -835,7 +909,7 @@ def write_release_file(args) -> None:
     write_json(
         args.out,
         {
-            "schema_version": 1,
+            "schema_version": SCHEMA_VERSION,
             "release_hash": release_hash,
             "created_utc": utc_now(),
             "model": args.model,
@@ -872,72 +946,237 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
+    def command(group, name: str, handler, summary: str, details: str = ""):
+        """A sub-command whose --help shows the summary and the details."""
+        description = f"{summary[0].upper()}{summary[1:]}. {details}".strip()
+        added = group.add_parser(name, help=summary, description=description)
+        added.set_defaults(func=handler)
+        return added
+
     kernel_cache = commands.add_parser(
         "kernel-cache", help="compiled kernels, baked into the image"
     ).add_subparsers(dest="action", required=True)
 
-    manifest = kernel_cache.add_parser(
-        "manifest", help="describe a captured kernel cache"
+    manifest = command(
+        kernel_cache,
+        "manifest",
+        kernel_cache_manifest,
+        "describe a captured kernel cache",
+        "Records its size and the variables that change the compiled kernels, as "
+        "the capture run set them. Stops when the log has no compile line although "
+        "kernels were captured, and on a symbolic link in the cache.",
     )
-    manifest.add_argument("--cache-dir", type=path_argument, required=True)
-    manifest.add_argument("--server-log", type=path_argument, required=True)
-    manifest.add_argument("--base-image", required=True)
-    manifest.add_argument("--env-file", type=path_argument)
-    manifest.add_argument("--spec-json", type=path_argument)
-    manifest.add_argument("--out", type=path_argument, required=True)
-    manifest.set_defaults(func=kernel_cache_manifest)
+    manifest.add_argument(
+        "--cache-dir",
+        type=path_argument,
+        required=True,
+        help="host directory the capture run got as run.py --kernel-cache-dir",
+    )
+    manifest.add_argument(
+        "--server-log",
+        type=path_argument,
+        required=True,
+        help="server log of the capture run; its compile lines are counted",
+    )
+    manifest.add_argument(
+        "--base-image", required=True, help="image the capture run started"
+    )
+    manifest.add_argument(
+        "--env-file",
+        type=path_argument,
+        help="docker --env-file of the capture run, for the variables it set",
+    )
+    manifest.add_argument(
+        "--spec-json",
+        type=path_argument,
+        help="runtime model spec JSON of the capture run, for its env_vars",
+    )
+    manifest.add_argument(
+        "--out", type=path_argument, required=True, help="manifest file to write"
+    )
 
-    build_image = kernel_cache.add_parser(
-        "build-image", help="add a captured kernel cache to the image it came from"
+    build_image = command(
+        kernel_cache,
+        "build-image",
+        build_kernel_cache_image,
+        "add a captured kernel cache to the image it came from",
+        "Builds the image locally, without compiler logs and temporary files, and "
+        "prints 'image-id: <id>'. It stages a copy of the cache in TMPDIR, which "
+        "needs room for it.",
     )
-    build_image.add_argument("--base-image", required=True)
-    build_image.add_argument("--cache-dir", type=path_argument, required=True)
-    build_image.add_argument("--manifest", type=path_argument, required=True)
-    build_image.add_argument("--tag", required=True)
-    build_image.set_defaults(func=build_kernel_cache_image)
+    build_image.add_argument(
+        "--base-image",
+        required=True,
+        help="image the cache was captured in; the manifest must name it",
+    )
+    build_image.add_argument(
+        "--cache-dir",
+        type=path_argument,
+        required=True,
+        help="captured kernel cache; it must be the one the manifest describes",
+    )
+    build_image.add_argument(
+        "--manifest",
+        type=path_argument,
+        required=True,
+        help="output of kernel-cache manifest; it is copied into the image",
+    )
+    build_image.add_argument("--tag", required=True, help="tag of the image to build")
 
-    check = kernel_cache.add_parser(
-        "check-log", help="fail when a server start compiled kernels"
+    check = command(
+        kernel_cache,
+        "check-log",
+        check_log,
+        "fail when a server start compiled kernels",
+        "Exits 0 when the log has no 'compiled <kernel>/<hash>/ in <N> ms' line, "
+        "else 1 with the first 20 kernels. tt-metal writes that line only when "
+        "TT_METAL_LOG_KERNEL_COMPILE is not 0 in the start. A missing or empty "
+        "log fails.",
     )
-    check.add_argument("--server-log", type=path_argument, required=True)
-    check.set_defaults(func=check_log)
+    check.add_argument(
+        "--server-log",
+        type=path_argument,
+        required=True,
+        help="log of the server start to check",
+    )
 
     tt_weights = commands.add_parser(
         "tt-weights", help="converted weights, in a Hugging Face repo"
     ).add_subparsers(dest="action", required=True)
 
-    upload = tt_weights.add_parser(
-        "upload", help="publish the converted weights of one model variant"
+    upload = command(
+        tt_weights,
+        "upload",
+        upload_tt_weights,
+        "publish the converted weights of one model variant",
+        f"Sends the cache directories the server log names, the files a start "
+        f"still reads from the original checkpoint and the manifest of the variant "
+        f"to branch {WEIGHTS_BRANCH}, then tags the commit "
+        f"<variant>_src-<source revision>_mesh<RxC>_ttm-<tt-metal commit>. Send "
+        f"every kind of request the deployment serves before the upload: a "
+        f"component no request loaded is not published. Run one upload to a repo "
+        f"at a time. Tags are not moved; the same content under an existing tag "
+        f"succeeds. Needs huggingface_hub and the token in HF_TOKEN.",
     )
-    upload.add_argument("--cache-dir", type=path_argument, required=True)
-    upload.add_argument("--original-dir", type=path_argument, required=True)
-    upload.add_argument("--variant", type=variant_argument, required=True)
-    upload.add_argument("--server-log", type=path_argument, required=True)
-    upload.add_argument("--spec-json", type=path_argument, required=True)
-    upload.add_argument("--repo", required=True)
-    upload.add_argument("--tt-metal-sha", required=True)
-    upload.add_argument("--server-sha", required=True)
-    upload.add_argument("--source-revision")
-    upload.add_argument("--replace-shared", action="store_true")
-    upload.add_argument("--manifest-out", type=path_argument, required=True)
-    upload.set_defaults(func=upload_tt_weights)
+    upload.add_argument(
+        "--cache-dir",
+        type=path_argument,
+        required=True,
+        help="host directory the server used as TT_DIT_CACHE_DIR",
+    )
+    upload.add_argument(
+        "--original-dir",
+        type=path_argument,
+        required=True,
+        help="host directory of the original checkpoint (MINIMAX_H3_MODEL_PATH)",
+    )
+    upload.add_argument(
+        "--variant",
+        type=variant_argument,
+        required=True,
+        help="lowercase name of the model variant, such as "
+        "minimax-h3-fl2va-lightx2v; it names the manifest and starts the tag",
+    )
+    upload.add_argument(
+        "--server-log",
+        type=path_argument,
+        required=True,
+        help="log of the server start; the cache directories it names are published",
+    )
+    upload.add_argument(
+        "--spec-json",
+        type=path_argument,
+        required=True,
+        help="runtime model spec JSON of that start",
+    )
+    upload.add_argument(
+        "--repo",
+        required=True,
+        help="private Hugging Face repo to publish to, as <org>/<name>; created "
+        "private when missing",
+    )
+    upload.add_argument(
+        "--tt-metal-sha",
+        required=True,
+        help="tt-metal commit the weights were validated with",
+    )
+    upload.add_argument(
+        "--server-sha",
+        required=True,
+        help="tt-inference-server commit of the run; recorded in the manifest",
+    )
+    upload.add_argument(
+        "--source-revision",
+        help="revision of the original checkpoint; needed when the download "
+        "records in --original-dir do not name one",
+    )
+    upload.add_argument(
+        "--replace-shared",
+        action="store_true",
+        help="replace content at paths the manifest of another variant lists; "
+        "that manifest leaves the branch until the variant is uploaded again",
+    )
+    upload.add_argument(
+        "--manifest-out",
+        type=path_argument,
+        required=True,
+        help="file to write the published manifest to, with repo, tag and commit",
+    )
 
-    release = commands.add_parser(
-        "release-file", help="write the file handed to the deployment team"
+    release = command(
+        commands,
+        "release-file",
+        write_release_file,
+        "write the file handed to the deployment team",
+        "It names the image and the weights that belong together. Its release_hash "
+        "changes with the model, the device, the two commits, the image digest, "
+        "the kernel cache variables and the weights repo, variant and commit, and "
+        "with nothing else.",
     )
-    release.add_argument("--base-image", required=True)
-    release.add_argument("--image", required=True)
-    release.add_argument("--image-digest", required=True)
-    release.add_argument("--kernel-manifest", type=path_argument, required=True)
-    release.add_argument("--weights-manifest", type=path_argument)
-    release.add_argument("--tt-metal-sha", required=True)
-    release.add_argument("--server-sha", required=True)
-    release.add_argument("--model", required=True)
-    release.add_argument("--device", required=True)
-    release.add_argument("--warm-ready-seconds", type=float)
-    release.add_argument("--run-url")
-    release.add_argument("--out", type=path_argument, required=True)
-    release.set_defaults(func=write_release_file)
+    release.add_argument(
+        "--base-image",
+        required=True,
+        help="image the kernel cache was captured in; the kernel manifest must name it",
+    )
+    release.add_argument(
+        "--image", required=True, help="reference of the image with the kernel cache"
+    )
+    release.add_argument(
+        "--image-digest",
+        required=True,
+        help="registry digest of that image; deployments pull by it",
+    )
+    release.add_argument(
+        "--kernel-manifest",
+        type=path_argument,
+        required=True,
+        help="output of kernel-cache manifest",
+    )
+    release.add_argument(
+        "--weights-manifest",
+        type=path_argument,
+        help="output of tt-weights upload; without it the release file names the "
+        "image only",
+    )
+    release.add_argument(
+        "--tt-metal-sha", required=True, help="tt-metal commit of the image"
+    )
+    release.add_argument(
+        "--server-sha", required=True, help="tt-inference-server commit of the image"
+    )
+    release.add_argument("--model", required=True, help="model name")
+    release.add_argument(
+        "--device", required=True, help="device type the artifacts were made on"
+    )
+    release.add_argument(
+        "--warm-ready-seconds",
+        type=float,
+        help="seconds the image took from start to ready in its validation start",
+    )
+    release.add_argument("--run-url", help="URL of the CI run that made the artifacts")
+    release.add_argument(
+        "--out", type=path_argument, required=True, help="release file to write"
+    )
     return parser
 
 

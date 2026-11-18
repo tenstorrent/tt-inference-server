@@ -47,13 +47,19 @@ def matches(path, patterns):
 
 
 class FakeDocker:
-    """Stands in for subprocess.run: answers image inspect and keeps the build context."""
+    """Stands in for subprocess.run: answers image inspect and keeps the build context.
+
+    The docker command named in `failing` exits 1.
+    """
 
     def __init__(self):
         self.image_env, self.commands, self.build_context = [], [], None
+        self.failing = None
 
     def __call__(self, command, capture_output=False, text=False, env=None):
         self.commands.append(command)
+        if command[1] == self.failing:
+            return SimpleNamespace(returncode=1, stdout="", stderr="daemon said no\n")
         stdout = "sha256:1111\n"
         if "{{json .Config.Env}}" in command:
             stdout = json.dumps(self.image_env)
@@ -167,6 +173,7 @@ SET_VARIABLES = {
     "MINIMAX_H3_VAE_OUTPUT": "yuv420",
 }
 KERNEL_MANIFEST = {
+    "schema_version": 1,
     "base_image": BASE_IMAGE,
     "kernel_cache_path": KERNEL_CACHE_CONTAINER_DIR,
     "build_keys": ["tt-metal-cache4242"],
@@ -196,42 +203,64 @@ def write_server_log(path, compiled):
     return path
 
 
+def manifest_argv(kernel_cache, tmp_path, compiled):
+    """kernel-cache manifest arguments for a capture log with that many compile lines, and the output file."""
+    out = tmp_path / "out" / "kernel_cache_manifest.json"
+    argv = ["kernel-cache", "manifest", "--cache-dir", str(kernel_cache)]
+    argv += ["--server-log", str(write_server_log(tmp_path / "server.log", compiled))]
+    return argv + ["--base-image", BASE_IMAGE, "--out", str(out)], out
+
+
 def test_kernel_cache_manifest_content_and_env_order(
     docker, kernel_cache, tmp_path, capsys
 ):
-    docker.image_env = ["TT_MM_THROTTLE_PERF=5", "TT_METAL_INSPECTOR=1"]
+    docker.image_env = ["TT_MM_THROTTLE_PERF=4", "TT_METAL_INSPECTOR=1"]
     env = tmp_path / ".env"
-    env.write_text("HF_TOKEN=hf_secret\nTT_METAL_INSPECTOR=0\nMINIMAX_H3_TOPOLOGY=ring")
+    env.write_text(
+        "HF_TOKEN=hf_secret\nTT_MM_THROTTLE_PERF=5\nMINIMAX_H3_TOPOLOGY=ring"
+    )
     env_vars = {"MINIMAX_H3_TOPOLOGY": "linear", "MINIMAX_H3_VAE_OUTPUT": "yuv420"}
+    env_vars.update({"TT_METAL_INSPECTOR": 0, "TT_METAL_WATCHER": ""})
     spec_json = tmp_path / "runtime_model_spec.json"
-    spec_json.write_text(json.dumps({"env_vars": {**env_vars, "TT_METAL_WATCHER": ""}}))
-    out = tmp_path / "out" / "kernel_cache_manifest.json"
-    argv = ["kernel-cache", "manifest", "--cache-dir", str(kernel_cache)]
-    argv += ["--server-log", str(write_server_log(tmp_path / "server.log", 2))]
-    argv += ["--base-image", BASE_IMAGE, "--env-file", str(env)]
-    argv += ["--spec-json", str(spec_json), "--out", str(out)]
+    spec_json.write_text(json.dumps({"env_vars": env_vars}))
+    argv, out = manifest_argv(kernel_cache, tmp_path, compiled=2)
 
-    assert main(argv) == 0
+    assert main(argv + ["--env-file", str(env), "--spec-json", str(spec_json)]) == 0
 
     manifest = json.loads(out.read_text())
     assert manifest.pop("created_utc").endswith("Z")
-    assert manifest == {"schema_version": 1, **KERNEL_MANIFEST}
+    assert manifest == KERNEL_MANIFEST
     assert "hf_secret" not in "".join(capsys.readouterr()) + out.read_text()
 
 
-def build_image_argv(kernel_cache, tmp_path):
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps(KERNEL_MANIFEST))
+def test_kernel_cache_manifest_refuses_a_log_without_compile_lines(
+    docker, kernel_cache, tmp_path, capsys
+):
+    argv, out = manifest_argv(kernel_cache, tmp_path, compiled=0)
+
+    assert main(argv) == 1
+
+    error = capsys.readouterr().err
+    assert "has no compile line although the cache holds 2 kernel hash folders" in error
+    assert "TT_METAL_LOG_KERNEL_COMPILE=0" in error
+    assert not out.exists()
+
+
+def build_image_argv(kernel_cache, tmp_path, manifest=KERNEL_MANIFEST):
+    manifest_file = tmp_path / "manifest.json"
+    manifest_file.write_text(json.dumps(manifest))
     argv = ["kernel-cache", "build-image", "--base-image", BASE_IMAGE]
-    argv += ["--cache-dir", str(kernel_cache), "--manifest", str(manifest)]
+    argv += ["--cache-dir", str(kernel_cache), "--manifest", str(manifest_file)]
     return argv + ["--tag", KC_IMAGE]
 
 
 def test_build_image_stages_cache_files_and_bakes_set_variables(
-    docker, kernel_cache, tmp_path
+    docker, kernel_cache, tmp_path, capsys
 ):
     assert main(build_image_argv(kernel_cache, tmp_path)) == 0
 
+    assert "image-id: sha256:1111\n" in capsys.readouterr().out
+    assert [command[1] for command in docker.commands] == ["build", "image"]
     staged = dict(docker.build_context)
     dockerfile = staged.pop("Dockerfile").decode()
     assert json.loads(staged.pop("kernel_cache_manifest.json")) == KERNEL_MANIFEST
@@ -240,28 +269,45 @@ def test_build_image_stages_cache_files_and_bakes_set_variables(
         f"kernel_cache/{path}": data for path, data in IMAGE_FILES.items()
     }
     assert dockerfile.startswith(KERNEL_CACHE_DOCKERFILE.read_text())
-    layers = [line for line in dockerfile.splitlines() if line[:4] in ("COPY", "RUN ")]
-    assert layers == [
-        "COPY --chown=container_app_user:container_app_user kernel_cache/ "
-        f"{KERNEL_CACHE_CONTAINER_DIR}/",
-        "COPY --chmod=644 kernel_cache_manifest.json "
-        + KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
-        f"COPY --chmod=755 tt_weights_download.py {DOWNLOAD_SCRIPT_IN_IMAGE}",
-    ]
+    for path in (KERNEL_CACHE_MANIFEST_CONTAINER_PATH, DOWNLOAD_SCRIPT_IN_IMAGE):
+        assert path in dockerfile
     baked = [f'ENV {name}="{value}"' for name, value in SET_VARIABLES.items()]
     env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
     assert env_lines == [f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}", *baked]
 
 
+@pytest.mark.parametrize(
+    "failing, error",
+    [
+        ("build", "docker build failed"),
+        ("image", "docker image inspect failed: daemon said no"),
+    ],
+)
+def test_build_image_fails_when_a_docker_command_fails(
+    docker, kernel_cache, tmp_path, capsys, failing, error
+):
+    docker.failing = failing
+
+    assert main(build_image_argv(kernel_cache, tmp_path)) == 1
+
+    output = capsys.readouterr()
+    assert output.err == f"error: {error}\n"
+    assert "image-id" not in output.out
+
+
 def test_the_download_script_runs_without_the_repo(tmp_path):
     copy = shutil.copyfile(DOWNLOAD_SCRIPT, tmp_path / DOWNLOAD_SCRIPT.name)
+    command = [sys.executable, "-I", str(copy), "--repo", WEIGHTS_REPO]
+    command += ["--revision", "main", "--variant", FL2VA]
+    command += ["--dest-cache", "cache", "--dest-original", "weights"]
+    no_token = {name: value for name, value in os.environ.items() if name != "HF_TOKEN"}
+
+    result = subprocess.run(
+        command, cwd=tmp_path, env=no_token, capture_output=True, text=True
+    )
+
+    assert (result.returncode, result.stderr) == (1, "error: HF_TOKEN is not set\n")
     assert os.listdir(tmp_path) == [DOWNLOAD_SCRIPT.name]
-
-    command = [sys.executable, "-I", str(copy), "--help"]
-    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith("usage: ")
 
 
 def test_build_image_refuses_a_tree_that_differs(
@@ -273,6 +319,38 @@ def test_build_image_refuses_a_tree_that_differs(
 
     error = capsys.readouterr().err
     assert "holds 4 files, 15 bytes; the manifest says 3 files, 14 bytes" in error
+    assert docker.commands == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can list any folder")
+def test_build_image_refuses_a_cache_folder_it_cannot_list(
+    docker, kernel_cache, tmp_path, capsys
+):
+    locked = kernel_cache / "tt-metal-cache4242/kernels/writer"
+    locked.chmod(0)
+    try:
+        assert main(build_image_argv(kernel_cache, tmp_path)) == 1
+    finally:
+        locked.chmod(0o755)
+
+    assert f"cannot read {locked}: Permission denied" in capsys.readouterr().err
+    assert docker.commands == []
+
+
+@pytest.mark.parametrize(
+    "manifest, error",
+    [
+        ({}, "is not a manifest this command reads: no base_image"),
+        ({**KERNEL_MANIFEST, "schema_version": 2}, "has schema_version 2"),
+        ({**KERNEL_MANIFEST, "base_image": "other"}, "was made for base image other"),
+    ],
+)
+def test_build_image_refuses_another_manifest(
+    docker, kernel_cache, tmp_path, capsys, manifest, error
+):
+    assert main(build_image_argv(kernel_cache, tmp_path, manifest)) == 1
+
+    assert error in capsys.readouterr().err
     assert docker.commands == []
 
 
@@ -391,20 +469,20 @@ def empty_hub(monkeypatch):
 
 
 @pytest.fixture
-def hub(empty_hub, cache_dir, capsys):
+def hub(empty_hub, cache_dir):
     assert main(upload_argv(cache_dir)) == 0
     return empty_hub
 
 
 @pytest.mark.parametrize(
     "option, downloaded_with_hf, source",
-    [([], True, SOURCE_COMMIT), ([], False, "unknown"), (["f" * 9], True, "f" * 9)],
+    [([], True, SOURCE_COMMIT), (["--source-revision", "f" * 9], False, "f" * 9)],
 )
 def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
     empty_hub, cache_dir, capsys, option, downloaded_with_hf, source
 ):
     hub = empty_hub
-    argv = upload_argv(cache_dir) + ["--source-revision"] * len(option) + option
+    argv = upload_argv(cache_dir) + option
     weights = cache_dir.parent / FL2VA / "weights"
     if not downloaded_with_hf:
         (weights / ".cache").rename(weights.parent / "moved")
@@ -440,6 +518,54 @@ def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
         ],
         "original_folders": ["transformer", "text_encoder", "vae", "audio_vae"],
     }
+
+
+@pytest.mark.parametrize(
+    "record, found",
+    [
+        (b"", f"1 of 11 files have no record, revisions found: {SOURCE_COMMIT}"),
+        (b"another\n", f"revisions found: another, {SOURCE_COMMIT}"),
+    ],
+    ids=["file-without-a-record", "two-revisions"],
+)
+def test_upload_asks_for_the_source_revision_it_cannot_read(
+    empty_hub, cache_dir, capsys, record, found
+):
+    argv = upload_argv(cache_dir)
+    records = cache_dir.parent / FL2VA / "weights/.cache/huggingface/download"
+    (records / "model_index.json.metadata").write_bytes(record)
+
+    assert main(argv) == 1
+
+    error = capsys.readouterr().err
+    assert found in error and "with --source-revision" in error
+    assert (empty_hub.private, empty_hub.head) == (None, "0")
+
+
+def test_upload_reads_only_the_directories_the_log_names(empty_hub, cache_dir):
+    tensor = cache_dir / SHARED / "embed.weight.tensorbin"
+    (cache_dir / NOT_LOADED / "link").symlink_to(tensor)
+    locked = write_files(cache_dir / "another_cache", {"file": b""})
+    locked.chmod(0)
+    try:
+        assert main(upload_argv(cache_dir)) == 0
+    finally:
+        locked.chmod(0o755)
+
+    remote = set(empty_hub.files()) - {f"manifests/{FL2VA}.json"}
+    assert remote == set(published(FL2VA))
+
+
+def test_upload_refuses_a_cache_dir_that_is_not_a_directory(
+    empty_hub, cache_dir, capsys
+):
+    argv = upload_argv(cache_dir)
+    argv[argv.index("--cache-dir") + 1] += "-mistyped"
+
+    assert main(argv) == 1
+
+    assert "tt_dit_cache-mistyped is not a directory\n" in capsys.readouterr().err
+    assert empty_hub.private is None
 
 
 def test_upload_stores_shared_paths_once_and_replaces_only_its_own(hub, cache_dir):
@@ -489,42 +615,115 @@ def test_replace_shared_removes_the_manifests_that_list_the_path(hub, cache_dir)
     assert tagged.items() <= {tag: hub.files(tag) for tag in hub.tags}.items()
 
 
-@pytest.mark.parametrize(
-    "exit_code, tt_metal, path, content, message",
-    [
-        (0, "a", f"{NOT_LOADED}/x.tensorbin", b"", "already holds this content at"),
-        (1, "a", f"{OWN[FL2VA]}/x.tensorbin", b"", "already exists in"),
-        (1, "c", f"{SHARED}/x.tensorbin", b"", f"the manifest of {REF2VA} lists"),
-        (1, "c", f"{SHARED}/x.tmp.42.0", b"", "1 temp file(s)"),
-        (1, "c", f"{SHARED}/cache_dict.json", None, "no cache_dict.json"),
-        (1, "c", f"{SHARED}/link", Path("/"), "symbolic links"),
-        (1, "c", f"../{FL2VA}/spec.json", OTHER_MODEL_SPEC, "MiniMax-H3 only"),
-        (1, "c", LOG, b"ready", "names no directory under"),
-        (1, "c", LOG, f"'{CONTAINER_CACHE}/gone'".encode(), "gone: missing"),
-        (1, "c", f"../{FL2VA}/weights/vae/config.json", None, "reads: vae/config.json"),
-        (1, "c", "", lambda hub: setattr(hub, "private", False), "is not private"),
-        (1, "c", "", lambda hub: hub.files().update(OTHER_LAYOUT), "old.json at main"),
-    ],
-)
-def test_upload_that_must_not_change_the_hub(
-    hub, cache_dir, capsys, exit_code, tt_metal, path, content, message
-):
+def write(path, content):
+    return lambda cache_dir, hub: (cache_dir / path).write_bytes(content)
+
+
+def remove(path):
+    return lambda cache_dir, hub: (cache_dir / path).unlink()
+
+
+def upload_again(hub, cache_dir, capsys, tt_metal, change):
+    """Exit code and output of a second FL2VA upload, made after a change and next to REF2VA.
+
+    The Hub must be left as it was.
+    """
     assert main(upload_argv(cache_dir, REF2VA)) == 0
     argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40, server_sha="d" * 40)
-    if callable(content):
-        content(hub)
-    elif isinstance(content, Path):
-        (cache_dir / path).symlink_to(content)
-    elif content is None:
-        (cache_dir / path).unlink()
-    else:
-        (cache_dir / path).write_bytes(content)
+    change(cache_dir, hub)
     before = (hub.head, dict(hub.tags))
-
-    assert main(argv) == exit_code
-
-    assert message in "".join(capsys.readouterr())
+    exit_code = main(argv)
     assert (hub.head, hub.tags) == before
+    return exit_code, "".join(capsys.readouterr())
+
+
+UPLOADS_UNDER_THE_TAG = {
+    "directory-the-log-does-not-name": (
+        write(f"{NOT_LOADED}/x.tensorbin", b""),
+        0,
+        "already holds this content at",
+    ),
+    "added-tensor": (
+        write(f"{OWN[FL2VA]}/x.tensorbin", b""),
+        1,
+        "with other content (cache_directories); tags are not moved",
+    ),
+    "tensor-of-the-same-size": (
+        write(f"{OWN[FL2VA]}/blocks.0.weight.tensorbin", b"XYZ"),
+        1,
+        f"with other content ({OWN[FL2VA]}); tags are not moved",
+    ),
+    "original-file-of-the-same-size": (
+        write(f"../{FL2VA}/weights/vae/config.json", b"[]"),
+        1,
+        "with other content (original_files); tags are not moved",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "change, expected, message",
+    UPLOADS_UNDER_THE_TAG.values(),
+    ids=UPLOADS_UNDER_THE_TAG.keys(),
+)
+def test_upload_under_an_existing_tag_needs_the_same_content(
+    hub, cache_dir, capsys, change, expected, message
+):
+    exit_code, output = upload_again(hub, cache_dir, capsys, "a", change)
+
+    assert message in output
+    assert exit_code == expected
+
+
+UPLOADS_REFUSED = {
+    "shared-directory-changed": (
+        write(f"{SHARED}/x.tensorbin", b""),
+        f"the manifest of {REF2VA} lists",
+    ),
+    "temp-file": (write(f"{SHARED}/x.tmp.42.0", b""), "1 temp file(s)"),
+    "no-marker": (remove(f"{SHARED}/cache_dict.json"), "no cache_dict.json"),
+    "symbolic-link": (
+        lambda cache_dir, hub: (cache_dir / SHARED / "link").symlink_to("/"),
+        "symbolic links",
+    ),
+    "spec-of-another-model": (
+        write(f"../{FL2VA}/spec.json", OTHER_MODEL_SPEC),
+        "MiniMax-H3 only",
+    ),
+    "log-names-no-directory": (write(LOG, b"ready"), "names no directory under"),
+    "log-names-a-missing-directory": (
+        write(LOG, f"'{CONTAINER_CACHE}/gone'".encode()),
+        "gone: missing or empty",
+    ),
+    "log-names-a-path-outside": (
+        write(LOG, f"'{CONTAINER_CACHE}/../{FL2VA}/weights/vae'".encode()),
+        "weights/vae: outside",
+    ),
+    "original-file-missing": (
+        remove(f"../{FL2VA}/weights/vae/config.json"),
+        "reads: vae/config.json",
+    ),
+    "repo-not-private": (
+        lambda cache_dir, hub: setattr(hub, "private", False),
+        "is not private",
+    ),
+    "manifest-of-another-layout": (
+        lambda cache_dir, hub: hub.files().update(OTHER_LAYOUT),
+        "old.json at main",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "change, message", UPLOADS_REFUSED.values(), ids=UPLOADS_REFUSED.keys()
+)
+def test_upload_that_is_refused_does_not_change_the_hub(
+    hub, cache_dir, capsys, change, message
+):
+    exit_code, output = upload_again(hub, cache_dir, capsys, "c", change)
+
+    assert message in output
+    assert exit_code == 1
 
 
 def download(dest, variant=FL2VA):
@@ -537,10 +736,13 @@ def test_download_marks_one_variant_and_keeps_it_when_another_fails(
     hub, cache_dir, tmp_path
 ):
     assert main(upload_argv(cache_dir, REF2VA)) == 0
+    nested = f"tt_dit_cache/{OWN[FL2VA]}/host_coords_r0-3_c0-7/a.tensorbin"
+    hub.files()[nested] = b"a multi-host capture of the same component"
     dest = tmp_path / "deployment"
 
     assert download(dest) == 0
 
+    assert sorted(hub.fetched) == sorted(published(FL2VA))
     expected = published(FL2VA, original="weights")
     for directory in (OWN[FL2VA], SHARED):
         expected[f"tt_dit_cache/{directory}/cache_dict.json"] = b""
@@ -569,6 +771,36 @@ def test_download_refuses_a_destination_another_download_holds(hub, tmp_path, ca
     assert tree(dest) == {}
 
 
+def test_download_refuses_a_directory_with_other_files_and_changes_nothing(
+    hub, tmp_path, capsys
+):
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    hub.fetched.clear()
+    other = {"renamed.tensorbin": b"converted by another tt-metal commit"}
+    write_files(dest / "tt_dit_cache" / OWN[FL2VA], other)
+    before = tree(dest)
+
+    assert download(dest) == 1
+
+    error = capsys.readouterr().err
+    assert f"{OWN[FL2VA]}: 1 file(s), for example renamed.tensorbin" in error
+    assert (tree(dest), hub.fetched) == (before, [])
+
+
+@pytest.mark.parametrize("unsafe", ["../outside", "/outside", ""])
+def test_download_refuses_a_manifest_with_an_unsafe_path(hub, tmp_path, capsys, unsafe):
+    manifest = json.loads(hub.files()[f"manifests/{FL2VA}.json"])
+    manifest["cache_directories"][0]["path"] = unsafe
+    hub.files()[f"manifests/{FL2VA}.json"] = json.dumps(manifest).encode()
+    dest = tmp_path / "deployment"
+
+    assert download(dest) == 1
+
+    assert f"unsafe path in the manifest: {unsafe}\n" in capsys.readouterr().err
+    assert (tree(dest), hub.fetched) == ({}, [])
+
+
 @pytest.mark.parametrize(
     "path, content",
     [
@@ -592,24 +824,76 @@ def test_download_failure_leaves_no_marker(hub, tmp_path, capsys, path, content)
     assert not (dest / "weights").exists()
 
 
-def test_release_file_names_image_kernel_cache_and_weights(tmp_path):
+WEIGHTS = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}
+RELEASE_OPTIONS = {
+    "--image": KC_IMAGE,
+    "--image-digest": "sha256:2222",
+    "--tt-metal-sha": "aaa",
+    "--server-sha": "bbb",
+    "--model": "example-model",
+    "--device": "galaxy",
+}
+
+
+def write_release(tmp_path, options=(), weights=WEIGHTS, kernel=KERNEL_MANIFEST):
+    """The release file written for the fixtures; options replace or add option values."""
     kernel_manifest = tmp_path / "kernel_cache_manifest.json"
-    kernel_manifest.write_text(json.dumps(KERNEL_MANIFEST))
-    weights = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}
-    weights_manifest = tmp_path / "tt_weights_manifest.json"
-    weights_manifest.write_text(json.dumps({**weights, "cache_directories": []}))
+    kernel_manifest.write_text(json.dumps(kernel))
     out = tmp_path / "release.json"
-    argv = ["release-file", "--base-image", BASE_IMAGE, "--image", KC_IMAGE]
-    argv += ["--image-digest", "sha256:2222", "--kernel-manifest", str(kernel_manifest)]
-    argv += ["--weights-manifest", str(weights_manifest), "--tt-metal-sha", "aaa"]
-    argv += ["--server-sha", "bbb", "--model", "example-model", "--device", "galaxy"]
+    argv = ["release-file", "--base-image", BASE_IMAGE, "--out", str(out)]
+    argv += ["--kernel-manifest", str(kernel_manifest)]
+    if weights:
+        weights_manifest = tmp_path / "tt_weights_manifest.json"
+        weights_manifest.write_text(json.dumps({"schema_version": 1, **weights}))
+        argv += ["--weights-manifest", str(weights_manifest)]
+    for name, value in {**RELEASE_OPTIONS, **dict(options)}.items():
+        argv += [name, value]
+    assert main(argv) == 0
+    return json.loads(out.read_text())
 
-    assert main(argv + ["--out", str(out)]) == 0
 
-    release = json.loads(out.read_text())
-    assert len(release["release_hash"]) == 64
-    assert release["tt_weights"] == weights
+def test_release_file_names_image_kernel_cache_and_weights(tmp_path):
+    release = write_release(tmp_path)
+
+    assert release["tt_weights"] == WEIGHTS
     image = {"reference": KC_IMAGE, "digest": "sha256:2222", "base_image": BASE_IMAGE}
     assert release["image"] == image
     kernel_cache_env = {"TT_METAL_CACHE": KERNEL_CACHE_CONTAINER_DIR, **SET_VARIABLES}
     assert release["kernel_cache"]["env"] == kernel_cache_env
+    assert write_release(tmp_path, weights=None)["tt_weights"] is None
+
+
+WATCHED = {**KERNEL_MANIFEST["build_key_env"], "TT_METAL_WATCHER": "10"}
+RELEASE_CHANGES = {
+    "run-url": ({"options": {"--run-url": "https://ci.example/run/2"}}, True),
+    "warm-ready-seconds": ({"options": {"--warm-ready-seconds": "301.5"}}, True),
+    "image-reference": ({"options": {"--image": f"{KC_IMAGE}-again"}}, True),
+    "weights-tag": ({"weights": {**WEIGHTS, "tag": "u"}}, True),
+    "kernel-cache-size": ({"kernel": {**KERNEL_MANIFEST, "files": 4}}, True),
+    "image-digest": ({"options": {"--image-digest": "sha256:3333"}}, False),
+    "tt-metal-sha": ({"options": {"--tt-metal-sha": "ccc"}}, False),
+    "server-sha": ({"options": {"--server-sha": "ccc"}}, False),
+    "model": ({"options": {"--model": "another-model"}}, False),
+    "device": ({"options": {"--device": "galaxy_quad"}}, False),
+    "weights-commit": ({"weights": {**WEIGHTS, "commit": "2" * 40}}, False),
+    "no-weights": ({"weights": None}, False),
+    "kernel-cache-variable": (
+        {"kernel": {**KERNEL_MANIFEST, "build_key_env": WATCHED}},
+        False,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "change, same_hash", RELEASE_CHANGES.values(), ids=RELEASE_CHANGES.keys()
+)
+def test_release_hash_changes_only_with_what_is_deployed(
+    tmp_path, monkeypatch, change, same_hash
+):
+    first = write_release(tmp_path)
+    monkeypatch.setattr(prebuilt_artifacts, "utc_now", lambda: "2000-01-01T00:00:00Z")
+
+    second = write_release(tmp_path, **change)
+
+    assert second["created_utc"] != first["created_utc"]
+    assert (second["release_hash"] == first["release_hash"]) is same_hash
