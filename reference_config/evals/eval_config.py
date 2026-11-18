@@ -13598,8 +13598,9 @@ _eval_config_list = [
     # temperature / top_p to the 10 most likely tokens). The chat
     # template thinks by default ("Reasoning Effort: Max" + <think>), so no
     # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
-    # the thought channel into reasoning_content. Concurrency 8: the DEFAULT 1 M
-    # profile (a release run's) and glm53_flash_1m admit 8 users, all resident.
+    # the thought channel into reasoning_content. Concurrency 8: the default
+    # profile glm53_flash_1m (a release run's) and glm53_flash admit 8 users,
+    # all resident.
     # The client is clamped to a profile's max_concurrency
     # (llm_module/eval_command.py), so glm53_flash_mtp runs 4 and the 16-user
     # profiles run 8. max_length = the 128 K context (every profile serves it).

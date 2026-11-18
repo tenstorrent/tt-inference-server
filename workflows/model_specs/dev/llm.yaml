@@ -7648,17 +7648,17 @@ templates:
 # Six serving profiles (distinct impl ids, one code path; the qwen36 / gemma4
 # profile pattern), each a slot geometry (decode slots x context per slot) and
 # a set of decode features:
-#   glm53_flash (default)  1 M x 8 users on the B 16 build; plain decode;
+#   glm53_flash            1 M x 8 users on the B 16 build; plain decode;
 #                          asynchronous scheduling
 #   glm53_flash_mtp        1 M x 4 users on the B 4 build; the MTP speculative
 #                          step for a lone greedy request (up to 256 K
 #                          positions); synchronous
 #   glm53_flash_mtp_mu     1 M x 16 users on the B 16 build; the multi-user MTP
 #                          steps (4 users x 3 drafts, 8 x 1); synchronous
-#   glm53_flash_1m         1 M x 8 users on the B 16 build; narrow width 4,
-#                          exact-position prefix snapshots + their host tier,
-#                          the lone / 4-user / 8-user MTP steps, 4 device steps
-#                          per verify; synchronous
+#   glm53_flash_1m         (default) 1 M x 8 users on the B 16 build; narrow
+#                          width 4, exact-position prefix snapshots + their host
+#                          tier, the lone / 4-user / 8-user MTP steps, 4 device
+#                          steps per verify; synchronous
 #   glm53_flash_128k       128 K x 16 users on the B 16 build; plain decode;
 #                          packed short prefills; asynchronous
 #   glm53_flash_128k_mm    glm53_flash_128k with image input (the vision tower
@@ -7713,7 +7713,7 @@ templates:
       # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
       max_tokens_all_users_override: 8388608  # 8 x 1048576
-      default_impl: true
+      default_impl: false  # glm53_flash_1m (the served profile) is the release default
       # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
       # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
       # ~11-12 min (the stack build ~5.5 min + the prefill-bucket and decode captures).
@@ -8023,7 +8023,7 @@ templates:
       # The logical KV pool: every slot owns a full context on device, so the pool is max_num_seqs x max_model_len
       # (the adapter's get_max_tokens_all_users); the benchmark concurrency cap derives from it.
       max_tokens_all_users_override: 8388608  # 8 x 1048576
-      default_impl: false
+      default_impl: true  # the release default: tt-shield's on-dispatch runs the default profile
       # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
       # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
       # ~12-15 min (the stack build ~5.5 min + the prefill-bucket, decode and speculative-step captures).
@@ -8089,12 +8089,13 @@ templates:
         # Kept previous snapshots spill to the host tier from 32,768 tokens (tt-metal's default 262,144 drops a shorter one): AgentX
         # turns that rewrite the tail of a 33-262 K prompt resumed at the 16 K head and re-prefilled the rest. tt-metal #64931
         # d5dc6459aeb, AgentX c8: prefix hit 95.93 -> 96.58 %, total 23,636 -> 24,001 tok/s, decode 39.5 -> 39.8 tok/s/u, TTFT p90
-        # 13.37 -> 10.63 s; c16: total 22,634 -> 24,085 tok/s, decode 31.8 -> 32.9 tok/s/u, host-tier restores max 2.4 s
+        # 13.37 -> 10.63 s (one run each); at c16 the host-tier restores stayed short (max 2.4 s)
         GLM53_STACK_PREFIX_KEEP_PREV_MIN: "32768"
-        # The prefix store's block hashes over the ids' int32 bytes (host cost per prefix lookup), and the prefill's last
-        # chunk split into the cheapest mix of the 1,024 / 2,048 / 8,192 buckets by the cost table (padding on agentic
-        # suffixes ~49 -> ~25 %). Every AgentX row of this profile since 2026-11-14 ran with both; the best c8 (tt-metal
-        # #64931 8bf49e5cddb): 25,145 tok/s, decode 42.7 tok/s/u, TTFT p50 / p90 1.68 / 8.82 s, 797 requests / h
+        # The prefix store's block hashes over the ids' int32 bytes (host cost per prefix lookup), and EVERY chunk of a
+        # prefill call split into the cheapest mix of the 1,024 / 2,048 / 8,192 buckets by the cost table (padding on
+        # agentic suffixes ~49 -> ~25 %; a cold prompt's full 8,192 chunks are re-chunked too: not bitwise vs unsplit).
+        # Every AgentX row of this profile since 2026-11-14 ran with both; the best c8 (tt-metal #64931 8bf49e5cddb):
+        # 25,145 tok/s, decode 42.7 tok/s/u, TTFT p50 / p90 1.68 / 8.82 s, 797 requests / h
         GLM53_PREFIX_FAST_HASH: "1"
         GLM53_PF_TAIL_SPLIT: "auto"
         # The MTP layer as a sequence-sharded sparse_dsa layer with its own indexer (no context cap: every user
@@ -8128,11 +8129,12 @@ templates:
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt; the TP prefill resumes on it
         prefill_chunk_alignment: 8192
-        # a prefill chunk (~2.7 s at 1 M) stalls every decoding user: one chunk per 8 decode steps keeps their median
-        # ITL at the decode step
+        # a prefill chunk stalls every decoding user: one chunk per 4 decode steps (glm53_flash: 8) shortens the AgentX
+        # prefill queue; adopted in the 2026-11-16 AgentX c8 bundle (keep-prev snapshots, async export, 1:4, keep-alive:
+        # TTFT p50 3.2 -> 2.5 s, decode 32.5 -> 34.2 tok/s/u together), not measured alone
         decode_interleave_enabled: true
         decode_interleave_prefill_steps: 1
-        decode_interleave_decode_steps: 4  # AgentX c8: 1:4 shortens the prefill queue (TTFT p50 3.6 -> 2.5 s) at the same decode rate
+        decode_interleave_decode_steps: 4
       vllm_args:
         max_num_seqs: 8  # the admitted users (8 for now); the stack builds GLM53_STACK_BUILD_B rows (>= max_num_seqs)
         # Speculation is synchronous (the adapter declares no supports_async_spec_decode); the explicit negative flag
@@ -8229,7 +8231,7 @@ templates:
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
         prefill_chunk_alignment: 8192
-        # one prefill chunk per 8 decode steps (see the 1 M profile): 8 K x 16 concurrent, median ITL 65.3 ms
+        # one prefill chunk per 8 decode steps (as glm53_flash): 8 K x 16 concurrent, median ITL 65.3 ms
         decode_interleave_enabled: true
         decode_interleave_prefill_steps: 1
         decode_interleave_decode_steps: 8
@@ -8326,7 +8328,7 @@ templates:
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
         prefill_chunk_alignment: 8192
-        # one prefill chunk per 8 decode steps (see the 1 M profile): 8 K x 16 concurrent, median ITL 65.3 ms
+        # one prefill chunk per 8 decode steps (as glm53_flash): 8 K x 16 concurrent, median ITL 65.3 ms
         decode_interleave_enabled: true
         decode_interleave_prefill_steps: 1
         decode_interleave_decode_steps: 8
