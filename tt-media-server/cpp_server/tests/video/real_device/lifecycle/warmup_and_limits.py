@@ -7,7 +7,7 @@
 Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
     python3 tests/video/real_device/lifecycle/warmup_and_limits.py \
-        --tt-metal <tt-metal> --media-server <path to tt-media-server> \
+        --tt-metal <tt-metal> \
         --dit-cache <tt_dit weight cache> --api-key <token>
 
   1. while the model warms up: /tt-liveness `model_ready=false`, POST answers 503 with
@@ -48,7 +48,7 @@ def post_raw(srv, token="default"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tt-metal", required=True)
-    ap.add_argument("--media-server", required=True)
+    ap.add_argument("--media-server", default="", help="unused, kept for older command lines")
     ap.add_argument("--dit-cache", required=True)
     ap.add_argument("--api-key", default="your-secret-key")
     ap.add_argument("--port", type=int, default=8000)

@@ -12,7 +12,7 @@ Wan2.2 weights; the environment is taken from the arguments (see the README of
 tests/video/real_device for what each variable does). Example, from cpp_server:
 
     python3 tests/video/real_device/lifecycle/restart_cases.py \
-        --tt-metal <tt-metal> --media-server <path to tt-media-server> \
+        --tt-metal <tt-metal> \
         --dit-cache <tt_dit weight cache> --api-key <token>
 
 Phases (each is a separate server start):
@@ -73,11 +73,13 @@ class Server:
             DEVICE_IDS="(0,1,2,3)",
             TT_DIT_CACHE_DIR=a.dit_cache,
             TT_METAL_HOME=a.tt_metal,
-            TT_PYTHON_PATH=a.media_server,
             HF_HUB_OFFLINE="1",
             OPENAI_API_KEY=a.api_key,
             TT_VIDEO_OUTPUT_DIR=str(self.outdir),
         )
+        # The runner only needs the python/cpp_dit_adapters package; tt-media-server is not needed.
+        # TT_VIDEO_TRACED is taken from the caller's environment (0 on a T3K).
+        env.pop("TT_PYTHON_PATH", None)
         env.update(self.extra_env)
         cmd = f"source '{a.tt_metal}/python_env/bin/activate' && exec ./build/tt_media_server_cpp -p {a.port}"
         self.logf = open(self.log, "wb")
@@ -208,7 +210,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tt-metal", required=True)
     ap.add_argument(
-        "--media-server", required=True, help="path to tt-media-server (TT_PYTHON_PATH)"
+        "--media-server",
+        default="",
+        help="unused, kept so older command lines still work (the worker no longer "
+        "loads tt-media-server)",
     )
     ap.add_argument("--dit-cache", required=True)
     ap.add_argument("--api-key", default="your-secret-key")

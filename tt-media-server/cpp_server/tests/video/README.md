@@ -6,6 +6,7 @@ The tests are split into folders by what they need to run.
 |---|---|---|
 | `mock/` | only a build of the server, no device | a local HTTP stub, contract cases, server tests, worker crash and lifecycle tests that use the mock runner. Guide: `mock/README.md` |
 | `real_device/` | a real server with a device and the model loaded | tests of cancel, the job queue, download and sync mode, grouped by topic. Guide: `real_device/README.md` |
+| `python/` | Python with numpy and pytest, no device | checks of the `python/cpp_dit_adapters` package (fake `tt_dit` pipelines), and of the runner list and mesh table against the Python server. The C++ runner layer is tested by `build/dit_runner_test`. Run: `python -m pytest -q tests/video/python` |
 | `benchmark/` | mock runner (server overhead) or a real server with a device | timings, not validation: sequential and burst video generation, control-plane latency, jobs per second. Guide: `benchmark/README.md` |
 | (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) and `UNIT_TESTS.md` |
 
@@ -51,7 +52,8 @@ python3 tests/video/real_device/jobs/queue_download_sync.py --server-log /path/t
 python3 tests/video/real_device/jobs/queue_download_sync.py --phase validation
 python3 tests/video/real_device/jobs/fields_content_load.py --server-log /path/to/server.log
 python3 tests/video/real_device/jobs/disconnect_and_queue_depth.py --server-log /path/to/server.log
-# these two start and stop the server themselves (nothing else may use the chips)
-python3 tests/video/real_device/lifecycle/restart_cases.py --tt-metal <tt-metal> --media-server <tt-media-server> --dit-cache <cache>
-python3 tests/video/real_device/lifecycle/warmup_and_limits.py --tt-metal <tt-metal> --media-server <tt-media-server> --dit-cache <cache>
+# these two start and stop the server themselves (nothing else may use the chips);
+# on a T3K run them with TT_VIDEO_TRACED=0 in the environment
+TT_VIDEO_TRACED=0 python3 tests/video/real_device/lifecycle/restart_cases.py --tt-metal <tt-metal> --dit-cache <cache>
+TT_VIDEO_TRACED=0 python3 tests/video/real_device/lifecycle/warmup_and_limits.py --tt-metal <tt-metal> --dit-cache <cache>
 ```

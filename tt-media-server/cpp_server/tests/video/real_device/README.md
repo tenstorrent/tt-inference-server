@@ -18,7 +18,7 @@ DEVICE=t3k \
 DEVICE_IDS="(0,1,2,3)" \
 TT_DIT_CACHE_DIR=<path to the tt_dit weight cache> \
 TT_METAL_HOME=<tt-metal> \
-TT_PYTHON_PATH=<path to tt-media-server> \
+TT_VIDEO_TRACED=0 \
 HF_HUB_OFFLINE=1 \
 OPENAI_API_KEY=<token> \
 ./build/tt_media_server_cpp -p 8000
@@ -33,9 +33,13 @@ Notes:
   built from PyTorch at every start, which is slow.
 - If the start fails with `Read unexpected run_mailbox value`, the chips are in a stale
   state and need `tt-smi -r`. Details: `docs/tests/2026-11-14-device-reset-problem.md`.
-- On a T3K, Wan2.2 text-to-video currently needs tracing disabled in the Python runner
-  (`"traced": False` in `_wan22_pipeline_args`); with the default the output is noise.
-  Details: `docs/tests/2026-11-14-non-video-changes-check.md`.
+- On a T3K, Wan2.2 runs untraced by default (traced output is noise there, unlike
+  the Python server's default). `TT_VIDEO_TRACED=0` in the command above is therefore
+  not needed on a T3K, but it makes the setting explicit; `TT_VIDEO_TRACED=1` forces
+  tracing.
+- The runner is C++; its only Python is the adapter in `python/cpp_dit_adapters` (only
+  tt-metal is needed), so `TT_PYTHON_PATH` is not used. `TT_VIDEO_PYTHON_DIR` overrides
+  where the adapters are looked up (default `cpp_server/python`).
 - The race test needs the extra variable `TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500`. It is a
   test hook and must not be set for normal use.
 

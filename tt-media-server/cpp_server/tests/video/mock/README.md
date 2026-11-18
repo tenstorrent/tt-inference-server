@@ -54,7 +54,7 @@ Starts its own server (ports 18150 and 18151, private shm names, a temporary
 output folder) and kills the worker with `SIGKILL`: the job the worker had taken
 becomes `failed` (`processing_error`), a new worker starts, the job waiting in the
 queue is served, and with `TT_VIDEO_WORKER_MAX_RESTARTS=1` the second crash makes the
-server exit with code 1. Case C starts the real device runner with a wrong `TT_PYTHON_PATH` (no chip is opened) and checks that the failed worker exits, so the server exits with code 1; it guards the fix of a GIL deadlock on that path. Needs a built `./build/tt_media_server_cpp`.
+server exit with code 1. Case C starts the real device runner with a wrong `TT_VIDEO_PYTHON_DIR` (the `cpp_dit_adapters` package is not found, no chip is opened) and checks that the failed worker exits, so the server exits with code 1; it guards the fix of a GIL deadlock on that path. Needs a built `./build/tt_media_server_cpp`.
 
 ## Cancel in the queue (manually, no device)
 
