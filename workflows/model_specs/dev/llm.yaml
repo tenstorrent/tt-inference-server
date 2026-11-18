@@ -57,9 +57,6 @@ templates:
         sample_on_device_mode: decode_only
       vllm_args:
         override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
-        # gpt-oss decode writes the K / V cache in whole 32-token tiles: vLLM's default 16-token pages put every decoded
-        # token's K / V in the wrong place (first token right, then garbage); tt-metal now refuses them (attention/decode.py)
-        block_size: 64
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -94,9 +91,6 @@ templates:
         sample_on_device_mode: decode_only
       vllm_args:
         override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
-        # gpt-oss decode writes the K / V cache in whole 32-token tiles: vLLM's default 16-token pages put every decoded
-        # token's K / V in the wrong place (first token right, then garbage); tt-metal now refuses them (attention/decode.py)
-        block_size: 64
         # the model's own drafter (vllm-tt-plugin model_owned_drafter); 7 drafts per round
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 7}'
   status: EXPERIMENTAL
