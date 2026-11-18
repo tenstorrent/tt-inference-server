@@ -110,7 +110,7 @@ TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
   store.markInProgress(1);
   store.markInProgress(2);
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
-  store.complete(1, "", "boom");  // worker error -> failed
+  store.complete(1, "", "boom");             // worker error -> failed
   ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
   ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));
@@ -151,6 +151,30 @@ TEST(VideoJobStoreTest, MarkInProgressDoesNotOverrideCancel) {
   EXPECT_EQ(statusOf(*store.get(6)), "cancelling");
   store.markInProgress(6);
   EXPECT_EQ(statusOf(*store.get(6)), "cancelling");
+}
+
+// The in-process runner takes a task from its queue only if the job is still
+// wanted: a cancel that landed before the task was enqueued must not start a
+// multi-minute generation.
+TEST(VideoJobStoreTest, ClaimForRunRefusesAJobCancelledBeforeTheEnqueue) {
+  VideoJobStore store(10, 0);
+  store.create(10, "tt-wan2.2", params("queued"));
+  EXPECT_TRUE(store.claimForRun(10, 0, 123));
+  EXPECT_EQ(statusOf(*store.get(10)), "in_progress");
+  EXPECT_TRUE(store.claimForRun(10, 0, 123));  // already running: still true
+
+  store.create(11, "tt-wan2.2", params("cancelled first"));
+  ASSERT_TRUE(store.cancel(11).has_value());  // between create and enqueue
+  EXPECT_FALSE(store.claimForRun(11, 0, 123));
+  EXPECT_EQ(statusOf(*store.get(11)), "cancelled");
+
+  store.create(12, "tt-wan2.2", params("done"));
+  store.markInProgress(12);
+  store.complete(12, "", "boom");
+  EXPECT_FALSE(store.claimForRun(12, 0, 123));  // terminal: nothing to run
+
+  // A synchronous request has no job record and always runs.
+  EXPECT_TRUE(store.claimForRun(99, 0, 123));
 }
 
 TEST(VideoJobStoreTest, FailedCompletionKeepsTheFileOffTheResultPath) {

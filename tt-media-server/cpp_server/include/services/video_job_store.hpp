@@ -176,6 +176,25 @@ class VideoJobStore {
     }
   }
 
+  /**
+   * The in-process runner takes a task: false when its job was cancelled (or
+   * failed by the sweep) before the task reached the queue, so the task must
+   * not run. A job that is queued becomes in progress; a task without a job
+   * record (a synchronous request) always runs.
+   */
+  bool claimForRun(uint32_t taskId, int workerIdx, int pid) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(taskId);
+    if (it == jobs_.end()) return true;
+    if (it->second.status != domain::video::JobStatus::QUEUED) {
+      return !domain::video::isTerminal(it->second.status);
+    }
+    it->second.worker = domain::video::WorkerIdentity{workerIdx, pid};
+    it->second.status = domain::video::JobStatus::IN_PROGRESS;
+    it->second.progressAt = domain::video::nowSeconds();
+    return true;
+  }
+
   /** The worker that holds the job, if one claimed it and it is not done. */
   std::optional<domain::video::WorkerIdentity> assignedWorker(
       uint32_t taskId) const {
