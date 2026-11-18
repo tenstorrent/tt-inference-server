@@ -62,6 +62,10 @@ def start(port, tag, workdir, extra_env=None):
         TT_MEDIA_RESULT_QUEUE=f"wc{tag}_results",
         TT_WARMUP_SIGNALS_QUEUE=f"wc{tag}_warm",
         TT_WORKER_METRICS_SHM=f"/wc{tag}_metrics",
+        # These cases are about the worker process (kill it, shm queues). With
+        # one DEVICE_IDS group the server would otherwise run the runner in its
+        # own process; inprocess_cases.py covers that mode.
+        TT_VIDEO_IN_PROCESS="0",
     )
     for key, value in (extra_env or {}).items():
         if value is None:

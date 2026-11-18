@@ -125,14 +125,18 @@ def phase_queue_download_sync():
     )
     time.sleep(3)
     if c.LOG:
+        # Worker process: 3 "skipping cancelled task ... before claim" lines. In-process
+        # mode has no worker: the 3 cancels remove the jobs from the in-memory queue.
         skips = log_lines(pos, "skipping cancelled task")
+        removed = log_lines(pos, "removed from the queue")
         note(
-            len(skips) == 3 and all("before claim" in ln for ln in skips),
-            "worker skipped exactly 3 tasks (before claim)",
-            f"n={len(skips)}",
+            (len(skips) == 3 and all("before claim" in ln for ln in skips))
+            or (not skips and len(removed) == 3),
+            "exactly 3 cancelled jobs were skipped before claim (worker log, or removed from the in-process queue)",
+            f"worker skips={len(skips)} removed from queue={len(removed)}",
         )
     else:
-        skip("worker skipped exactly 3 tasks", "no --server-log")
+        skip("3 cancelled jobs were skipped before claim", "no --server-log")
     for jid, n in ((B, "B"), (D, "D"), (E, "E")):
         st, j = jreq("GET", f"{GEN}/{jid}")
         note(
