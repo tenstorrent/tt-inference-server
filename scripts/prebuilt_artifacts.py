@@ -935,7 +935,7 @@ def write_release_file(args) -> None:
             "run_url": args.run_url,
         },
     )
-    step(f"release-hash: {release_hash}")
+    step(f"release_hash: {release_hash}")
     step(f"release file: {args.out}")
 
 

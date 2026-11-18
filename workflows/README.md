@@ -214,7 +214,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--host-volume` | None for Docker, repo `persistent_volume/` for local when omitted | Host directory for persistent cache/log/tensor storage. |
 | `--host-hf-cache` | None | Host HuggingFace cache directory to reuse for model weights. If the flag is given without a path, it defaults to `HOST_HF_HOME`, then `HF_HOME`, then `~/.cache/huggingface`. |
 | `--host-weights-dir` | None | Host directory with pre-downloaded model weights. |
-| `--kernel-cache-dir` | None | Host directory mounted read-write as the container's tt-metal kernel cache (`TT_METAL_CACHE`), to capture the kernels a run compiles for `scripts/prebuilt_artifacts.py kernel-cache`. Docker only, single host. Stays empty for models served by the cpp server, which set their own `TT_METAL_CACHE`. |
+| `--kernel-cache-dir` | None | Host directory mounted read-write as the tt-metal kernel cache (`TT_METAL_CACHE`), to capture the kernels a run compiles for `scripts/prebuilt_artifacts.py`. Docker only, single host; stays empty for cpp server models. |
 | `--image-user` | `1000` | UID passed to `docker run --user`. Docker only; `--local-server` ignores this flag and runs as the invoking host user. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
 Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified explicitly. For `--local-server`, omitting all three still uses the repo `persistent_volume/` path for TT caches and logs.
