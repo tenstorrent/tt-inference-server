@@ -568,6 +568,43 @@ TEST(VideoOutputDir, StoreRefusesToDeleteOutsideRoot) {
   fs::remove_all(root);
 }
 
+TEST(VideoOutputDir, ResultOutsideTheRootFailsTheJob) {
+  namespace fs = std::filesystem;
+  const fs::path root = "/tmp/tt-outdir-complete";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path inside = root / "in.mp4";
+  const fs::path outside = "/tmp/tt-outdir-complete-outside.mp4";
+  std::ofstream(inside) << "x";
+  std::ofstream(outside) << "x";
+
+  VideoJobStore store(10, 0);
+  store.setOutputRoot(root);
+  for (uint32_t id = 1; id <= 4; ++id) {
+    store.create(id, "m", Json::Value(Json::objectValue));
+  }
+  store.complete(1, inside.string(), "");
+  store.complete(2, outside.string(), "");
+  store.complete(3, (root / ".." / "tt-outdir-complete-outside.mp4").string(),
+                 "");
+  store.complete(4, "mock://video/4", "");
+
+  EXPECT_EQ((*store.get(1))["status"].asString(), "completed");
+  EXPECT_TRUE(store.resultPath(1).has_value());
+
+  for (uint32_t id : {2U, 3U}) {
+    const auto job = *store.get(id);
+    EXPECT_EQ(job["status"].asString(), "failed") << id;
+    EXPECT_EQ(job["error"]["code"].asString(), "processing_error") << id;
+    EXPECT_FALSE(store.resultPath(id).has_value()) << id;
+  }
+  EXPECT_TRUE(fs::exists(outside));  // a file outside the root is never touched
+
+  EXPECT_EQ((*store.get(4))["status"].asString(), "completed");
+  fs::remove(outside);
+  fs::remove_all(root);
+}
+
 TEST(VideoOutputDir, PurgeRemovesOnlyTopLevelMp4) {
   namespace fs = std::filesystem;
   const fs::path root = "/tmp/tt-outdir-purge";

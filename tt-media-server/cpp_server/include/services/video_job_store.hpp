@@ -244,7 +244,8 @@ class VideoJobStore {
 
   /**
    * Final result from the worker. If the job was cancelled meanwhile the
-   * result is discarded (and the produced file removed).
+   * result is discarded (and the produced file removed). A result path outside
+   * the output root (see setOutputRoot) fails the job.
    */
   void complete(uint32_t taskId, const std::string& videoPath,
                 const std::string& error) {
@@ -274,6 +275,18 @@ class VideoJobStore {
           job.status = domain::video::JobStatus::FAILED;
           job.errorCode = "processing_error";
           job.errorMessage = error;
+        } else if (!resultPathAllowed(job.jobType, videoPath)) {
+          // The runner reported a file outside the result root. Storing it
+          // would let /download serve it, so the job fails instead. The file is
+          // not touched: it is not ours to delete.
+          std::fprintf(stderr,
+                       "[VideoJobStore] Task %u: result '%s' is outside the "
+                       "output dir\n",
+                       taskId, videoPath.c_str());
+          job.completedAt = domain::video::nowSeconds();
+          job.status = domain::video::JobStatus::FAILED;
+          job.errorCode = "processing_error";
+          job.errorMessage = "Result file is outside the output directory";
         } else {
           job.completedAt = domain::video::nowSeconds();
           job.status = domain::video::JobStatus::COMPLETED;
@@ -419,6 +432,17 @@ class VideoJobStore {
     Json::Value arr(Json::arrayValue);
     for (const auto& entry : it->second.*member) arr.append(entry);
     return arr;
+  }
+
+  /** True when a result path may be stored for the job type: inside the
+   *  type's result root (when one is set). `mock://` results are not files.
+   *  Caller holds mutex_. */
+  bool resultPathAllowed(const std::string& jobType,
+                         const std::string& path) const {
+    if (path.empty() || path.rfind("mock://", 0) == 0) return true;
+    const JobTypePolicy& policy = policyFor(jobType);
+    return policy.resultRoot.empty() ||
+           utils::isInsideDir(path, policy.resultRoot);
   }
 
   /**
