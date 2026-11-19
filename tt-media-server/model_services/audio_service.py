@@ -24,6 +24,15 @@ def audio_worker_function(
     from config.settings import settings
 
     should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
+    if perform_diarization and not should_preprocess:
+        raise ValueError(
+            "perform_diarization=true needs audio preprocessing, which is "
+            + (
+                "disabled for this request"
+                if settings.allow_audio_preprocessing
+                else "disabled on this server (allow_audio_preprocessing)"
+            )
+        )
 
     # Process audio
     prepared = audio_manager.to_audio_array(audio_file_data, should_preprocess)
@@ -49,7 +58,9 @@ class AudioService(BaseService):
 
         from static.data.audio import DUMMY_WAV_BASE64
 
-        warmup_task_data = (DUMMY_WAV_BASE64, True, True)
+        # Warmup loads VAD and pyannote. With preprocessing allowed, a missing pyannote
+        # fails the warmup diarization and is logged at startup.
+        warmup_task_data = (DUMMY_WAV_BASE64, True, settings.allow_audio_preprocessing)
         self._cpu_workload_handler = CpuWorkloadHandler(
             name="AudioPreprocessing",
             worker_count=self.scheduler.get_worker_count(),
