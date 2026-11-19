@@ -620,7 +620,8 @@ def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
     tag = f"{VARIANT}_src-{source[:8]}_mesh4x8_ttm-aaaaaaaa"
     assert hub.tags == {tag: hub.head}
     out = json.loads((weights.parent / "out.json").read_text())
-    assert out == {**manifest, "repo": WEIGHTS_REPO, "tag": tag, "commit": hub.head}
+    version = {"repo": WEIGHTS_REPO, "tag": tag, "commit": hub.head, "uploaded": True}
+    assert out == {**manifest, **version}
     assert manifest.pop("created_utc").endswith("Z")
     sha256 = {path: hashlib.sha256(data).hexdigest() for path, data in remote.items()}
     assert manifest == {
@@ -745,7 +746,7 @@ def remove(path):
     return lambda cache_dir, hub: (cache_dir / path).unlink()
 
 
-def upload_again(hub, cache_dir, capsys, tt_metal, change):
+def upload_again(hub, cache_dir, capsys, tt_metal, change, options=()):
     """Exit code and output of a second VARIANT upload, made after a change and next to SIBLING.
 
     The Hub must be left as it was.
@@ -754,47 +755,239 @@ def upload_again(hub, cache_dir, capsys, tt_metal, change):
     argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40, server_sha="d" * 40)
     change(cache_dir, hub)
     before = (hub.head, dict(hub.tags))
-    exit_code = main(argv)
+    exit_code = main(argv + list(options))
     assert (hub.head, hub.tags) == before
     return exit_code, "".join(capsys.readouterr())
 
 
-UPLOADS_UNDER_THE_TAG = {
+MANIFEST = f"manifests/{VARIANT}.json"
+FIRST_TAG = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-aaaaaaaa"
+OWN_TENSOR = f"{OWN[VARIANT]}/blocks.0.weight.tensorbin"
+OWN_ORIGINAL = f"{TRANSFORMER[VARIANT]}/config.json"
+
+
+def upload_out(cache_dir, variant=VARIANT):
+    return json.loads((cache_dir.parent / variant / "out.json").read_text())
+
+
+def keep_the_fields_a_download_reads(cache_dir, hub):
+    """Leaves every published manifest of VARIANT without its other fields."""
+    fields = ("schema_version", *tt_weights_download.WEIGHTS_MANIFEST_FIELDS)
+    for files in hub.commits:
+        if MANIFEST in files:
+            manifest = json.loads(files[MANIFEST])
+            files[MANIFEST] = json.dumps({f: manifest[f] for f in fields}).encode()
+
+
+def tag_the_version_twice(cache_dir, hub):
+    hub.tags[f"{VARIANT}_a"] = hub.tags[FIRST_TAG]
+
+
+UPLOADS_OF_PUBLISHED_CONTENT = {
+    "another-tt-metal-commit": ("c", [], lambda cache_dir, hub: None),
+    "same-tag-name": ("a", [], tag_the_version_twice),
+    "another-source-revision": (
+        "a",
+        ["--source-revision", "f" * 9],
+        lambda cache_dir, hub: None,
+    ),
+    "manifest-with-the-fields-a-download-reads": (
+        "c",
+        [],
+        keep_the_fields_a_download_reads,
+    ),
     "directory-the-log-does-not-name": (
+        "c",
+        [],
         write(f"{NOT_LOADED}/x.tensorbin", b""),
-        0,
-        "already holds this content at",
-    ),
-    "added-tensor": (
-        write(f"{OWN[VARIANT]}/x.tensorbin", b""),
-        1,
-        "with other content (cache_directories); tags are not moved",
-    ),
-    "tensor-of-the-same-size": (
-        write(f"{OWN[VARIANT]}/blocks.0.weight.tensorbin", b"XYZ"),
-        1,
-        f"with other content ({OWN[VARIANT]}); tags are not moved",
-    ),
-    "original-file-of-the-same-size": (
-        write(f"../{VARIANT}/weights/vae/config.json", b"[]"),
-        1,
-        "with other content (original_files); tags are not moved",
     ),
 }
 
 
 @pytest.mark.parametrize(
-    "change, expected, message",
-    UPLOADS_UNDER_THE_TAG.values(),
-    ids=UPLOADS_UNDER_THE_TAG.keys(),
+    "tt_metal, options, change",
+    UPLOADS_OF_PUBLISHED_CONTENT.values(),
+    ids=UPLOADS_OF_PUBLISHED_CONTENT.keys(),
 )
-def test_upload_under_an_existing_tag_needs_the_same_content(
-    hub, cache_dir, capsys, change, expected, message
+def test_upload_of_published_content_sends_nothing_and_names_that_version(
+    hub, cache_dir, capsys, tt_metal, options, change
 ):
-    exit_code, output = upload_again(hub, cache_dir, capsys, "a", change)
+    commit = hub.tags[FIRST_TAG]
 
-    assert message in output
-    assert exit_code == expected
+    exit_code, output = upload_again(hub, cache_dir, capsys, tt_metal, change, options)
+
+    assert exit_code == 0
+    assert [line for line in output.splitlines() if "unchanged" in line] == [
+        f"unchanged: {WEIGHTS_REPO} holds this content as tag {FIRST_TAG} at "
+        f"commit {commit}; nothing was uploaded"
+    ]
+    version = {"repo": WEIGHTS_REPO, "tag": FIRST_TAG, "commit": commit}
+    published_manifest = json.loads(hub.files(FIRST_TAG)[MANIFEST])
+    assert upload_out(cache_dir) == {**published_manifest, **version, "uploaded": False}
+
+
+def content_hash(files):
+    """sha256 over the sha256 and repo path of each file, in path order."""
+    lines = [
+        f"{hashlib.sha256(data).hexdigest()}  {path}\n"
+        for path, data in sorted(files.items())
+    ]
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
+
+
+NEW_CONTENT = {
+    "converted-file-of-the-same-size": (
+        f"tt_dit_cache/{OWN_TENSOR}",
+        b"XYZ",
+        {
+            f"tt_dit_cache/{path}"
+            for path in CACHE_FILES
+            if path.startswith(OWN[VARIANT])
+        },
+    ),
+    "original-file-of-the-same-size": (
+        f"original_subset/{OWN_ORIGINAL}",
+        b"[]",
+        {f"original_subset/{OWN_ORIGINAL}"},
+    ),
+}
+
+
+@pytest.mark.parametrize("tt_metal", ["c", "a"], ids=["new-tag-name", "tag-name-taken"])
+@pytest.mark.parametrize(
+    "path, data, sent", NEW_CONTENT.values(), ids=NEW_CONTENT.keys()
+)
+def test_upload_of_new_content_makes_a_version_and_moves_no_tag(
+    hub, cache_dir, capsys, path, data, sent, tt_metal
+):
+    first = (hub.tags[FIRST_TAG], dict(hub.files(FIRST_TAG)))
+    argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40)
+    roots = {"tt_dit_cache": ".", "original_subset": f"../{VARIANT}/weights"}
+    folder, _, relative = path.partition("/")
+    (cache_dir / roots[folder] / relative).write_bytes(data)
+    hub.sent.clear()
+
+    assert main(argv) == 0
+
+    output = capsys.readouterr().out
+    tag = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-{tt_metal * 8}"
+    if tag == FIRST_TAG:
+        tag += "_" + content_hash({**published(VARIANT), path: data})[:8]
+        taken = (
+            f"tag: {FIRST_TAG} holds other content: the same inputs gave other "
+            f"bytes; this version is tagged {tag}\n"
+        )
+        assert taken in output
+    assert "unchanged" not in output and f"tag: {tag}\n" in output
+    assert set(hub.sent) == sent
+    assert hub.tags == {FIRST_TAG: first[0], tag: hub.head}
+    assert hub.files(FIRST_TAG) == first[1]
+    assert hub.files(tag)[path] == data
+    out = upload_out(cache_dir)
+    assert (out["tag"], out["commit"], out["uploaded"]) == (tag, hub.head, True)
+
+
+def another_original_folder(cache_dir, hub):
+    path = cache_dir.parent / VARIANT / "spec.json"
+    spec = json.loads(path.read_text())
+    described = spec["runtime_model_spec"]["metadata"]["prebuilt_artifacts"]
+    described["original_folders"].append("tokenizer")
+    path.write_text(json.dumps(spec))
+
+
+PUBLISHED_FILES_LISTED_OTHERWISE = {
+    "fewer-directories": (
+        write(LOG, f"'{CONTAINER_CACHE}/{OWN[VARIANT]}'".encode()),
+        "cache_directories",
+        [{"path": OWN[VARIANT], "files": 2, "bytes": 8}],
+    ),
+    "another-folder": (
+        another_original_folder,
+        "original_folders",
+        ["transformer", "text_encoder", "vae", "audio_vae", "tokenizer"],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "change, field, listed",
+    PUBLISHED_FILES_LISTED_OTHERWISE.values(),
+    ids=PUBLISHED_FILES_LISTED_OTHERWISE.keys(),
+)
+def test_upload_of_published_files_under_another_list_makes_a_version(
+    hub, cache_dir, change, field, listed
+):
+    argv = upload_argv(cache_dir, tt_metal_sha="c" * 40)
+    change(cache_dir, hub)
+    hub.sent.clear()
+
+    assert main(argv) == 0
+
+    out = upload_out(cache_dir)
+    assert (out["uploaded"], out["commit"], hub.sent) == (True, hub.head, [])
+    assert out[field] == listed and len(hub.tags) == 2
+
+
+def test_upload_finds_the_version_that_holds_the_content_among_several(hub, cache_dir):
+    tensor = cache_dir / OWN_TENSOR
+    tensor.write_bytes(b"XYZ")
+    assert main(upload_argv(cache_dir, tt_metal_sha="c" * 40)) == 0
+    head, versions = hub.head, dict(hub.tags)
+    assert len(versions) == 2
+
+    for data, tt_metal in ((b"abc", "a"), (b"XYZ", "c")):
+        tensor.write_bytes(data)
+        assert main(upload_argv(cache_dir, tt_metal_sha="e" * 40)) == 0
+        tag = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-{tt_metal * 8}"
+        out = upload_out(cache_dir)
+        assert (out["tag"], out["commit"]) == (tag, versions[tag])
+        assert (out["uploaded"], out["tt_metal_sha"]) == (False, tt_metal * 40)
+
+    assert (hub.head, hub.tags) == (head, versions)
+
+
+def test_upload_reads_each_file_once_for_its_sha256(hub, cache_dir, monkeypatch):
+    read, file_hash = [], tt_weights_download.file_hash
+
+    def counted(path, digest=None):
+        read.append((path, digest is None))
+        return file_hash(path, digest)
+
+    for script in (prebuilt_artifacts, tt_weights_download):
+        monkeypatch.setattr(script, "file_hash", counted)
+    (cache_dir / OWN_TENSOR).write_bytes(b"XYZ")
+
+    assert main(upload_argv(cache_dir, tt_metal_sha="c" * 40)) == 0
+
+    whole = [path for path, sha256 in read if sha256]
+    assert len(whole) == len(set(whole)) == len(published(VARIANT))
+    assert {path.suffix for path, sha256 in read if not sha256} == {".json"}
+
+
+def test_upload_prefers_a_tag_of_the_variant_to_a_tag_of_another(hub, cache_dir):
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
+    own = dict(hub.tags).popitem()
+    (cache_dir / OWN_TENSOR).write_bytes(b"XYZ")
+    assert main(upload_argv(cache_dir, tt_metal_sha="c" * 40)) == 0
+    later = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-cccccccc"
+    assert f"manifests/{SIBLING}.json" in hub.files(later) and later < own[0]
+
+    assert main(upload_argv(cache_dir, SIBLING, tt_metal_sha="e" * 40)) == 0
+
+    out = upload_out(cache_dir, SIBLING)
+    assert (out["tag"], out["commit"], out["uploaded"]) == (*own, False)
+
+
+def another_layout_on_the_branch(cache_dir, hub):
+    hub.files().update(OTHER_LAYOUT)
+    write(f"{OWN[VARIANT]}/x.tensorbin", b"")(cache_dir, hub)
+
+
+def both_tag_names_taken(cache_dir, hub):
+    write(OWN_TENSOR, b"XYZ")(cache_dir, hub)
+    tag = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-cccccccc"
+    content = {**published(VARIANT), f"tt_dit_cache/{OWN_TENSOR}": b"XYZ"}
+    hub.tags.update({tag: "0", f"{tag}_{content_hash(content)[:8]}": "0"})
 
 
 UPLOADS_REFUSED = {
@@ -840,9 +1033,10 @@ UPLOADS_REFUSED = {
         lambda cache_dir, hub: setattr(hub, "private", False),
         "is not private",
     ),
-    "manifest-of-another-layout": (
-        lambda cache_dir, hub: hub.files().update(OTHER_LAYOUT),
-        "old.json at main",
+    "manifest-of-another-layout": (another_layout_on_the_branch, "old.json at main"),
+    "both-tag-names-taken": (
+        both_tag_names_taken,
+        "with other content; tags are not moved",
     ),
 }
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import functools
 import glob
 import hashlib
 import itertools
@@ -67,7 +68,6 @@ from scripts.tt_weights_download import (
     CliError,
     file_hash,
     gigabytes,
-    holds_directory,
     hugging_face_api,
     manifest_fields,
     path_argument,
@@ -119,9 +119,6 @@ KERNEL_MANIFEST_FIELDS = (
 # tt-weights upload writes to this branch of the weights repo and tags the result.
 WEIGHTS_BRANCH = "main"
 MESH_SHAPE = re.compile(r"mesh(\d+x\d+)_")
-# Manifest fields that say when and by which server commit an upload was made,
-# not what it holds. A tag is reused when everything else is equal.
-MANIFEST_RUN_FIELDS = ("created_utc", "server_sha")
 # Key of a model spec's metadata that holds what this tool has to know of the model.
 SPEC_METADATA_KEY = "prebuilt_artifacts"
 
@@ -685,30 +682,99 @@ def downloaded_revision(original_dir: Path, files: list[str]) -> str:
     return revisions.pop()
 
 
-def differing(files: dict, cache_dir, original_dir, manifest) -> tuple:
-    """The manifest's cache directories and original files that a listing of the repo does not hold as they are locally."""
-    directories = [
-        entry["path"]
-        for entry in manifest["cache_directories"]
-        if not holds_directory(
-            cache_dir / entry["path"], published_directory(files, entry["path"])
+def local_content(cache_dir: Path, original_dir: Path, manifest: dict) -> dict:
+    """{repo path: (local path, bytes, sha256)} of every file a manifest publishes.
+
+    Each converted file is read once, here; the manifest has the sha256 of the
+    original files.
+    """
+    content = {}
+    for entry in manifest["cache_directories"]:
+        directory = cache_dir / entry["path"]
+        for name, size in tensor_sizes(directory).items():
+            content[f"{TT_WEIGHTS_FOLDER}/{entry['path']}/{name}"] = (
+                directory / name,
+                size,
+                file_hash(directory / name),
+            )
+    for entry in manifest["original_files"]:
+        content[f"{ORIGINAL_SUBSET_FOLDER}/{entry['path']}"] = (
+            original_dir / entry["path"],
+            entry["bytes"],
+            entry["sha256"],
         )
-    ]
+    return content
+
+
+def content_hash(content: dict) -> str:
+    """One sha256 over the sha256 and repo path of every file of a local_content."""
+    lines = (f"{sha256}  {path}\n" for path, (_, _, sha256) in sorted(content.items()))
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def differing(files: dict, content: dict, manifest: dict) -> tuple:
+    """The manifest's cache directories and original files that a listing of the repo does not hold as they are locally.
+
+    content is the local_content of the manifest. A file the Hub lists with a
+    sha256 is compared by it; any other file is read for its git blob id.
+    """
+
+    def held(path: str) -> bool:
+        local, size, sha256 = content[path]
+        return same_content(local, size, files.get(path), sha256)
+
+    directories = []
+    for entry in manifest["cache_directories"]:
+        folder = f"{TT_WEIGHTS_FOLDER}/{entry['path']}"
+        local, remote = (
+            {path for path in paths if path.rpartition("/")[0] == folder}
+            for paths in (content, files)
+        )
+        if local != remote or not all(map(held, local)):
+            directories.append(entry["path"])
     originals = [
         entry["path"]
         for entry in manifest["original_files"]
-        if not same_content(
-            original_dir / entry["path"],
-            entry["bytes"],
-            files.get(f"{ORIGINAL_SUBSET_FOLDER}/{entry['path']}"),
-            entry["sha256"],
-        )
+        if not held(f"{ORIGINAL_SUBSET_FOLDER}/{entry['path']}")
     ]
     return directories, originals
 
 
+def manifest_lists(manifest: dict) -> list:
+    """The directories, files and folders a weights manifest lists, each in an order that does not depend on the manifest."""
+    key = functools.partial(json.dumps, sort_keys=True)
+    fields = ("cache_directories", "original_files", "original_folders")
+    return [sorted(manifest[field], key=key) for field in fields]
+
+
+def published_version(
+    api, repo, tags: dict, tag: str, manifest: dict, content: dict
+) -> tuple | None:
+    """(tag, commit, manifest) of a version of the variant that holds the local content, or None.
+
+    Every tag whose commit has the manifest of the variant is a version of it,
+    whatever its name. One holds the content when its manifest lists what the
+    local one lists and the files at its commit have the local bytes. The given
+    tag is tried first, then the tags named after the variant.
+    """
+    variant, lists, tried = manifest["variant"], manifest_lists(manifest), set()
+    for name in sorted(
+        tags, key=lambda name: (name != tag, not name.startswith(f"{variant}_"), name)
+    ):
+        commit = tags[name]
+        if commit in tried:
+            continue
+        tried.add(commit)
+        published = published_manifest(api, repo, commit, variant)
+        if published is None or manifest_lists(published) != lists:
+            continue
+        if not any(differing(published_files(api, repo, commit), content, manifest)):
+            return name, commit, published
+    return None
+
+
 def upload_plan(
-    api, repo, revision, cache_dir, original_dir, manifest, replace_shared
+    api, repo, revision, cache_dir, content, manifest, replace_shared
 ) -> tuple:
     """What to send so the revision holds what the manifest lists.
 
@@ -737,7 +803,7 @@ def upload_plan(
         for path in paths:
             listed.setdefault(path, set()).add(variant)
 
-    directories, originals = differing(files, cache_dir, original_dir, manifest)
+    directories, originals = differing(files, content, manifest)
     stale = [
         f"{path}/{name}"
         for path in directories
@@ -825,19 +891,25 @@ def describe_variant(args) -> dict:
 def upload_tt_weights(args) -> None:
     """Publish one variant: its cache directories, its original subset, its manifest and a tag.
 
-    The repo holds other variants and they share directories. A path another
-    variant's manifest lists is left as it is, or the upload is refused, or with
-    --replace-shared that manifest is removed first; a file the Hub already
-    holds is not sent again. The upload takes several commits, so this variant's
-    manifest is removed first and written back last: a commit with the manifest
-    is a finished upload. The tag is made only after the files at that commit
-    have the content of the local ones. A tag that already holds this content is
-    reused; one that holds other content is an error, tags are not moved.
+    Only content that is not published yet is uploaded: when a version of the
+    variant holds the local bytes, whatever its tag, nothing is sent and the
+    manifest written out is the one of that version. The repo holds other
+    variants and they share directories. A path another variant's manifest lists
+    is left as it is, or the upload is refused, or with --replace-shared that
+    manifest is removed first; a file the Hub already holds is not sent again.
+    The upload takes several commits, so this variant's manifest is removed
+    first and written back last: a commit with the manifest is a finished
+    upload. The tag is made only after the files at that commit have the content
+    of the local ones. Tags are not moved: when the tag name holds other
+    content, the new tag ends in the first 8 characters of the content hash.
     """
     api = hugging_face_api()
     repo, variant, branch = args.repo, args.variant, WEIGHTS_BRANCH
     manifest = describe_variant(args)
     directories, originals = manifest["cache_directories"], manifest["original_files"]
+    content = local_content(args.cache_dir, args.original_dir, manifest)
+    digest = content_hash(content)
+    step(f"content: {len(content)} files, sha256 {digest}")
     tag = (
         f"{variant}_src-{manifest['source']['revision'][:8]}"
         f"_mesh{manifest['mesh_shape']}_ttm-{args.tt_metal_sha[:8]}"
@@ -852,39 +924,28 @@ def upload_tt_weights(args) -> None:
     tags = {
         ref.name: ref.target_commit for ref in api.list_repo_refs(repo_id=repo).tags
     }
-    if tag in tags:
-        commit = tags[tag]
-        published = published_manifest(api, repo, commit, variant) or {}
-        changed = [
-            key
-            for key, value in manifest.items()
-            if key not in MANIFEST_RUN_FIELDS and published.get(key) != value
-        ]
-        if not changed:
-            changed_directories, changed_originals = differing(
-                published_files(api, repo, commit),
-                args.cache_dir,
-                args.original_dir,
-                manifest,
-            )
-            changed = changed_directories + changed_originals
-        if changed:
-            raise CliError(
-                f"tag {tag} already exists in {repo} with other content "
-                f"({', '.join(changed)}); tags are not moved"
-            )
-        step(f"tag: {tag} already holds this content at commit {commit}")
-        manifest = published
+    held = published_version(api, repo, tags, tag, manifest, content)
+    if held:
+        tag, commit, manifest = held
+        step(
+            f"unchanged: {repo} holds this content as tag {tag} at commit "
+            f"{commit}; nothing was uploaded"
+        )
     else:
+        if tag in tags:
+            taken, tag = tag, f"{tag}_{digest[:8]}"
+            step(
+                f"tag: {taken} holds other content: the same inputs gave other "
+                f"bytes; this version is tagged {tag}"
+            )
+        if tag in tags:
+            raise CliError(
+                f"tag {tag} already exists in {repo} with other content; tags "
+                "are not moved"
+            )
         api.create_branch(repo_id=repo, branch=branch, exist_ok=True)
         send_directories, stale, send_originals, retire = upload_plan(
-            api,
-            repo,
-            branch,
-            args.cache_dir,
-            args.original_dir,
-            manifest,
-            args.replace_shared,
+            api, repo, branch, args.cache_dir, content, manifest, args.replace_shared
         )
         for name in retire:
             path = f"{MANIFEST_FOLDER}/{name}.json"
@@ -934,10 +995,7 @@ def upload_tt_weights(args) -> None:
         step(f"commit: {commit}")
 
         changed_directories, changed_originals = differing(
-            published_files(api, repo, commit),
-            args.cache_dir,
-            args.original_dir,
-            manifest,
+            published_files(api, repo, commit), content, manifest
         )
         if changed_directories or changed_originals:
             raise CliError(
@@ -949,9 +1007,8 @@ def upload_tt_weights(args) -> None:
         api.create_tag(repo_id=repo, tag=tag, revision=commit)
         step(f"tag: {tag}")
 
-    write_json(
-        args.manifest_out, {**manifest, "repo": repo, "tag": tag, "commit": commit}
-    )
+    version = {"repo": repo, "tag": tag, "commit": commit, "uploaded": not held}
+    write_json(args.manifest_out, {**manifest, **version})
     step(f"manifest: {args.manifest_out}")
 
 
@@ -1139,8 +1196,11 @@ def build_parser() -> argparse.ArgumentParser:
         f"<variant>_src-<source revision>_mesh<RxC>_ttm-<tt-metal commit>. Send "
         f"every kind of request the deployment serves before the upload: a "
         f"component no request loaded is not published. Run one upload to a repo "
-        f"at a time. Tags are not moved; the same content under an existing tag "
-        f"succeeds. Needs huggingface_hub and the token in HF_TOKEN.",
+        f"at a time. Only content that is not published yet is uploaded: when a "
+        f"version of the variant holds the same bytes, whatever its tag, nothing "
+        f"is sent and --manifest-out names that version. Tags are not moved; a "
+        f"tag name that holds other content gets the first 8 characters of the "
+        f"content hash appended. Needs huggingface_hub and the token in HF_TOKEN.",
     )
     upload.add_argument(
         "--cache-dir",
@@ -1205,7 +1265,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--manifest-out",
         type=path_argument,
         required=True,
-        help="file to write the published manifest to, with repo, tag and commit",
+        help="file to write the published manifest to, with repo, tag, commit "
+        "and uploaded (false when the repo held the content)",
     )
 
     release = command(
