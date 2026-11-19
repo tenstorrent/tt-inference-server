@@ -1388,7 +1388,7 @@ sudo docker run -d -it \
 
 ## Image with prebuilt kernels and weights
 
-CI can bake the tt-metal kernel cache of a server start into the server image (the image tag contains `-kc`), publish the converted weights to a private Hugging Face repo and write a release file that names both. The option exists for the models whose spec in `workflows/model_specs/` has `prebuilt_artifacts` metadata: it names the variables of the model that change the compiled kernels and the files of the original checkpoint that a start with converted weights still reads. A server started from the image and the weights loads the kernels and the weights instead of compiling and converting them:
+CI can bake the tt-metal kernel cache of a server start into the server image (the image tag contains `-kc`), publish the converted weights to a private Hugging Face repo and write a release file that names both. Only content that is not published yet is uploaded: when the repo already holds the same converted weights, under any tag, nothing is sent and the release file names that version. The option exists for the models whose spec in `workflows/model_specs/` has `prebuilt_artifacts` metadata: it names the variables of the model that change the compiled kernels and the files of the original checkpoint that a start with converted weights still reads. A server started from the image and the weights loads the kernels and the weights instead of compiling and converting them:
 
 - Deploy the image by the digest in the release file (`image.digest`).
 - Leave `TT_METAL_CACHE` as baked and mount nothing over it: tt-metal reuses a kernel cache only at the path it was written at. Keep it writable; tt-metal writes into it on every start.
