@@ -4,8 +4,6 @@
 
 """Cancel on a REAL video server (tt_media_server_cpp with a device runner).
 
-Report: docs/tests/2026-11-14-video-cancel-real-server.md
-
 The server must already run with a real runner and report model_ready (start
 command and device reset notes: tests/video/real_device/README.md). Jobs use
 num_inference_steps=--steps (default 4); one generation takes about 80 s on a T3K.

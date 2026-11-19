@@ -4,8 +4,6 @@
 
 """Queue, download and sync mode on a REAL video server.
 
-Report: docs/tests/2026-11-14-video-real-server-queue-download-sync.md
-
 The server must already run with a real runner and report model_ready (start
 command: tests/video/real_device/README.md). Jobs use num_inference_steps=--steps
 (default 4); one generation takes about 80 s on a T3K.

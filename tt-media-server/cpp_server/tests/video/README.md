@@ -6,11 +6,12 @@ The tests are split into folders by what they need to run.
 |---|---|---|
 | `mock/` | only a build of the server, no device | a local HTTP stub, contract cases and server tests that use the mock runner. Guide: `mock/README.md` |
 | `real_device/` | a real server with a device and the model loaded | tests of cancel, the job queue, download and sync mode, grouped by topic. Guide: `real_device/README.md` |
-| (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) and `UNIT_TESTS.md` |
+| (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) |
 
-The unit tests (job store, request parser, JSON field order, modes) are C++
-tests in `tests/unit/api/`, described in `UNIT_TESTS.md`. Reports of the runs on
-a device are in `docs/tests/`.
+The unit tests (job store, request parser, modes) are C++ tests in `tests/unit/api/`.
+
+The test scripts send requests only to `localhost` by default (`--base-url` is checked).
+To run them against a server on another machine, set `VIDEO_TEST_ALLOWED_HOSTS=<host>`.
 
 ## Contract test against a real server
 
@@ -27,15 +28,14 @@ This step waits for a job to become `completed` (`VIDEO_JOB_TIMEOUT`, default
 
 Unlike `mock/server_cases.py` (mock runner), these tests send requests to an
 already running `tt_media_server_cpp` with a real runner (for example Wan2.2 on
-a T3K). They are split into folders by topic, and each test has its own report in
-`docs/tests/`. An overview of the folders, the parameters and how to add a new
+a T3K). They are split into folders by topic. An overview of the folders, the parameters and how to add a new
 test is in `real_device/README.md`.
 
-| Folder | Test | What it checks | Report |
-|---|---|---|---|
-| `real_device/cancel/` | `cancel_queue_and_running.py` | cancel of a queued job (the worker skips it), cancel of a running job (`cancelling`, then `cancelled`), the device is fine afterwards | `2026-11-14-video-cancel-real-server.md` |
-| `real_device/cancel/` | `cancel_race.py` | cancel after the task was taken from the queue and before `CLAIMED`: the second marker check must stop the task. The server needs `TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500` | `2026-11-14-video-cancel-race-real-server.md` |
-| `real_device/jobs/` | `queue_download_sync.py` | auth and validation (phase `validation`, no generation), several jobs in the queue with cancel, `DELETE` 409, `download` with `Range`, faststart, `ffprobe`, the same seed gives the same file, two simultaneous sync requests | `2026-11-14-video-real-server-queue-download-sync.md` |
+| Folder | Test | What it checks |
+|---|---|---|
+| `real_device/cancel/` | `cancel_queue_and_running.py` | cancel of a queued job (the worker skips it), cancel of a running job (`cancelling`, then `cancelled`), the device is fine afterwards |
+| `real_device/cancel/` | `cancel_race.py` | cancel after the task was taken from the queue and before `CLAIMED`: the second marker check must stop the task. The server needs `TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500` |
+| `real_device/jobs/` | `queue_download_sync.py` | auth and validation (phase `validation`, no generation), several jobs in the queue with cancel, `DELETE` 409, `download` with `Range`, faststart, `ffprobe`, the same seed gives the same file, two simultaneous sync requests |
 
 ```bash
 # from tt-media-server/cpp_server

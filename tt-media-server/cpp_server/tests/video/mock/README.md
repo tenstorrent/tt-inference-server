@@ -1,8 +1,8 @@
 # Mock tests of the video service (no device)
 
 Tests that work without a device: a local HTTP stub, contract cases and server
-tests that run against the server with the mock runner. The unit tests are described in
-`tests/video/UNIT_TESTS.md`, and the tests on a real device are in
+tests that run against the server with the mock runner. The unit tests are C++ tests in
+`tests/unit/api/`, and the tests on a real device are in
 `tests/video/real_device/`.
 
 ## Files in this folder

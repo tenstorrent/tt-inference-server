@@ -4,8 +4,6 @@
 
 """Cancel/CLAIMED race on a REAL video server.
 
-Report: docs/tests/2026-11-14-video-cancel-race-real-server.md
-
 A cancel that lands after the worker popped the task from the queue but before
 it sent CLAIMED. The service still sees the job as "queued", so it finishes the
 job as cancelled at once and writes the cancel marker; the worker's second
