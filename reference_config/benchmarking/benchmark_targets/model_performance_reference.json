@@ -7142,26 +7142,26 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 6,
+                "num_prompts": 48,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2865.7,
-                        "tput_user": 29.51,
-                        "tput": 564.3
+                        "ttft_ms": 342.1,
+                        "tput_user": 30.78,
+                        "tput": 164.4
                     },
                     "measured": {
-                        "ttft_ms": 2951.7,
-                        "tput_user": 29.51,
-                        "tput": 564.3,
+                        "ttft_ms": 342.1,
+                        "tput_user": 30.78,
+                        "tput": 164.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on one 4-chip block of the l2-35 Blackhole Galaxy with the 2-channel QB2 mesh descriptor (local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1, one entry at a time) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569) and this catalog (ecdce9c); re-baseline from a tt-shield QB2 run when CI is back. Previous measured: ttft 2866.8, tput_user 27.18, tput 543.3. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point at the entry's max users. Measured 2026-11-19 on one 4-chip block of the l2-35 Blackhole Galaxy with the 2-channel QB2 mesh descriptor (local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 2048,
@@ -7525,8 +7525,8 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 8,
+                "num_prompts": 64,
                 "task_type": "text",
                 "impl": "tt_transformers",
                 "image_height": null,
@@ -7534,18 +7534,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 891.1,
-                        "tput_user": 31.67,
-                        "tput": 835.0
+                        "ttft_ms": 277.7,
+                        "tput_user": 35.6,
+                        "tput": 256.6
                     },
                     "measured": {
-                        "ttft_ms": 1061.9,
-                        "tput_user": 30.89,
-                        "tput": 790.2,
+                        "ttft_ms": 277.7,
+                        "tput_user": 35.6,
+                        "tput": 256.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured on the tt-shield benchmarks run 42156852264 (tt-metal 84a930059a9, GEMMA4_SPEC_SAMPLED_VERIFY on). Previous measured row (benchmarks run 40120766326, the plain entry with the knob off): ttft 891.1, tput_user 31.67, tput 835.0. Tolerance 0.2. TTFT floor: theoretical.ttft_ms = the best TTFT measured at this point (this block's measured run) (tt-inference-server#5538)."
+                "_comment": "Gating point at the entry's max users. Measured 2026-11-19 on one 4-chip block of the l2-35 Blackhole Galaxy with the 2-channel QB2 mesh descriptor (local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 2048,
@@ -7649,49 +7649,49 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 103.3,
-                        "tput_user": 38.26,
-                        "tput": 37.0
+                        "ttft_ms": 128.6,
+                        "tput_user": 56.95,
+                        "tput": 54.3
                     },
                     "measured": {
-                        "ttft_ms": 103.3,
-                        "tput_user": 37.74,
-                        "tput": 36.9,
+                        "ttft_ms": 128.6,
+                        "tput_user": 56.95,
+                        "tput": 54.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 139.4, tput_user 38.26, tput 37.0. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 128,
-                "num_prompts": 1024,
+                "max_concurrency": 64,
+                "num_prompts": 512,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1479.5,
-                        "tput_user": 31.88,
-                        "tput": 3165.6
+                        "ttft_ms": 300.7,
+                        "tput_user": 32.9,
+                        "tput": 1810.4
                     },
                     "measured": {
-                        "ttft_ms": 1615.8,
-                        "tput_user": 30.55,
-                        "tput": 2835.4,
+                        "ttft_ms": 300.7,
+                        "tput_user": 32.9,
+                        "tput": 1810.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 2760.3, tput_user 28.53, tput 2267.3. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 2048,
@@ -7699,24 +7699,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 4,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 420.8,
-                        "tput_user": 36.23,
-                        "tput": 32.7
+                        "ttft_ms": 260.1,
+                        "tput_user": 61.81,
+                        "tput": 55.3
                     },
                     "measured": {
-                        "ttft_ms": 463.6,
-                        "tput_user": 35.97,
-                        "tput": 32.0,
+                        "ttft_ms": 260.1,
+                        "tput_user": 61.81,
+                        "tput": 55.3,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 740.1, tput_user 36.23, tput 30.1. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 8192,
@@ -7724,24 +7724,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 2,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1115.2,
-                        "tput_user": 34.95,
-                        "tput": 26.7
+                        "ttft_ms": 964.3,
+                        "tput_user": 53.75,
+                        "tput": 38.5
                     },
                     "measured": {
-                        "ttft_ms": 1153.0,
-                        "tput_user": 34.9,
-                        "tput": 26.7,
+                        "ttft_ms": 964.3,
+                        "tput_user": 53.75,
+                        "tput": 38.5,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 1398.3, tput_user 34.95, tput 25.4. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 32768,
@@ -7749,24 +7749,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 1,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4430.4,
-                        "tput_user": 30.56,
-                        "tput": 14.9
+                        "ttft_ms": 3767.8,
+                        "tput_user": 46.41,
+                        "tput": 19.7
                     },
                     "measured": {
-                        "ttft_ms": 4430.4,
-                        "tput_user": 30.5,
-                        "tput": 14.9,
+                        "ttft_ms": 3767.8,
+                        "tput_user": 46.41,
+                        "tput": 19.7,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 4987.3, tput_user 29.99, tput 13.9. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 128,
@@ -7774,15 +7774,15 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "vlm",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 103.3,
-                        "tput_user": 38.26,
-                        "tput": 37.0
+                        "ttft_ms": 128.6,
+                        "tput_user": 56.95,
+                        "tput": 54.3
                     }
                 },
                 "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point (shield run 40276183422) until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."
@@ -7892,26 +7892,26 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 8,
+                "num_prompts": 64,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1175.1,
-                        "tput_user": 50.72,
-                        "tput": 1112.4
+                        "ttft_ms": 360.5,
+                        "tput_user": 56.26,
+                        "tput": 391.0
                     },
                     "measured": {
-                        "ttft_ms": 1175.1,
-                        "tput_user": 50.72,
-                        "tput": 1112.4,
+                        "ttft_ms": 360.5,
+                        "tput_user": 56.26,
+                        "tput": 391.0,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on one 4-chip block of the l2-35 Blackhole Galaxy with the 2-channel QB2 mesh descriptor (local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1, one entry at a time) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569) and this catalog (ecdce9c); re-baseline from a tt-shield QB2 run when CI is back. Previous measured: ttft 1383.7, tput_user 46.01, tput 988.1. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point at the entry's max users. Measured 2026-11-19 on one 4-chip block of the l2-35 Blackhole Galaxy with the 2-channel QB2 mesh descriptor (local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 2048,
@@ -8011,49 +8011,49 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 63.2,
-                        "tput_user": 60.79,
-                        "tput": 59.3
+                        "ttft_ms": 126.1,
+                        "tput_user": 52.42,
+                        "tput": 50.2
                     },
                     "measured": {
-                        "ttft_ms": 89.5,
-                        "tput_user": 60.18,
-                        "tput": 58.2,
+                        "ttft_ms": 126.1,
+                        "tput_user": 52.42,
+                        "tput": 50.2,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 67.2, tput_user 60.79, tput 59.3. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 128,
-                "num_prompts": 1024,
+                "max_concurrency": 64,
+                "num_prompts": 512,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 982.6,
-                        "tput_user": 50.15,
-                        "tput": 4453.0
+                        "ttft_ms": 322.9,
+                        "tput_user": 47.89,
+                        "tput": 2708.1
                     },
                     "measured": {
-                        "ttft_ms": 1113.5,
-                        "tput_user": 50.15,
-                        "tput": 4453.0,
+                        "ttft_ms": 322.9,
+                        "tput_user": 47.89,
+                        "tput": 2708.1,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 1056.6, tput_user 42.79, tput 4047.9. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 2048,
@@ -8061,24 +8061,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 4,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 246.7,
-                        "tput_user": 58.14,
-                        "tput": 52.6
+                        "ttft_ms": 282.9,
+                        "tput_user": 50.29,
+                        "tput": 45.6
                     },
                     "measured": {
-                        "ttft_ms": 246.7,
-                        "tput_user": 58.14,
-                        "tput": 52.6,
+                        "ttft_ms": 282.9,
+                        "tput_user": 50.29,
+                        "tput": 45.6,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 250.5, tput_user 56.66, tput 51.4. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 8192,
@@ -8086,24 +8086,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 2,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 834.1,
-                        "tput_user": 58.05,
-                        "tput": 42.3
+                        "ttft_ms": 939.7,
+                        "tput_user": 49.99,
+                        "tput": 36.8
                     },
                     "measured": {
-                        "ttft_ms": 834.1,
-                        "tput_user": 58.05,
-                        "tput": 42.3,
+                        "ttft_ms": 939.7,
+                        "tput_user": 49.99,
+                        "tput": 36.8,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 1116.9, tput_user 56.02, tput 37.8. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 32768,
@@ -8111,24 +8111,24 @@
                 "max_concurrency": 1,
                 "num_prompts": 1,
                 "task_type": "text",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 3368.9,
-                        "tput_user": 57.09,
-                        "tput": 22.9
+                        "ttft_ms": 3918.5,
+                        "tput_user": 50.42,
+                        "tput": 19.9
                     },
                     "measured": {
-                        "ttft_ms": 3368.9,
-                        "tput_user": 57.09,
-                        "tput": 22.9,
+                        "ttft_ms": 3918.5,
+                        "tput_user": 50.42,
+                        "tput": 19.9,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": "Gating point. Measured 2026-11-15 on l2-35 (Blackhole Galaxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal eff6247ea08 (= tt-metal#64930 28e6569: split-K global prefill SDPA, pair-sharded 31B global KV) and this catalog (ecdce9c). Previous measured: ttft 4847.4, tput_user 54.65, tput 17.8. Tolerance 0.2. theoretical = the best value measured at this point so far."
+                "_comment": "Gating point. Measured 2026-11-19 on l2-35 (Blackhole Galaxy, 8 engines x 4 chips behind engine_proxy, local server, benchmarks workflow with ONLY_BENCHMARK_TARGETS=1) at tt-metal#64930 d1a83f2b742 and this catalog. Tolerance 0.2. theoretical = the best value measured at this point so far."
             },
             {
                 "isl": 128,
@@ -8136,15 +8136,15 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "vlm",
-                "data_parallel": 4,
+                "data_parallel": 8,
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 63.2,
-                        "tput_user": 60.79,
-                        "tput": 59.3
+                        "ttft_ms": 126.1,
+                        "tput_user": 52.42,
+                        "tput": 50.2
                     }
                 },
                 "_comment": "Vision point in the catalog's VLM convention (one 896x896 image, 128/128, c1 n8, as the gemma-3 entries): ceilings copied from this block's measured text c1 point until a vision run measures it; the workflow engine's LLM benchmark runner executes text params only today (llm_module/benchmark_configs.py), so the point is listed and graded once the runner gains the image client."

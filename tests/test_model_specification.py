@@ -1383,3 +1383,28 @@ class TestKnownIssue:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+@pytest.mark.parametrize(
+    "vllm_args",
+    [{}, {"data_parallel_size": 1}, {"data_parallel_size": "8"}],
+    ids=["no-dp", "dp1", "dp-str"],
+)
+def test_submesh_engines_need_two_or_more_data_parallel_ranks(vllm_args):
+    """submesh_engines runs one engine per data-parallel rank, so the spec refuses fewer than 2 int ranks."""
+    with pytest.raises(AssertionError, match="data_parallel_size must be at least 2"):
+        DeviceModelSpec(
+            device=DeviceTypes.BLACKHOLE_GALAXY,
+            max_concurrency=64,
+            max_context=256 * 1024,
+            submesh_engines=True,
+            vllm_args=vllm_args,
+        )
+    spec = DeviceModelSpec(
+        device=DeviceTypes.BLACKHOLE_GALAXY,
+        max_concurrency=64,
+        max_context=256 * 1024,
+        submesh_engines=True,
+        vllm_args={"data_parallel_size": 8},
+    )
+    assert spec.submesh_engines

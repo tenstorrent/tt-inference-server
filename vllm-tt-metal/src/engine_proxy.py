@@ -80,8 +80,6 @@ RUNNER_KWARGS = {"access_log": None, "handler_cancellation": True}
 async def start_proxy(app, host: str, port: int):
     """Serve ``app`` on host:port with ``RUNNER_KWARGS`` (the served proxy and its tests start it the same way);
     returns the runner, for ``cleanup()``."""
-    from aiohttp import web
-
     runner = web.AppRunner(app, **RUNNER_KWARGS)
     await runner.setup()
     await web.TCPSite(runner, host, port).start()

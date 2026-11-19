@@ -215,7 +215,7 @@ templates:
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
-      default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
+      default_impl: true  # validated tt-transformers entry (6 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
         GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 8686 -> 6908 ms on a 1x4 block (120-core chips; the stock op stays on 130-core ones)
@@ -266,7 +266,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        max_num_seqs: 32  # scheduler cap above max users (8): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
+        max_num_seqs: 32  # scheduler cap above max users (6): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
         prefix_cache_retention_interval: 16384  # fewer cached sliding-window checkpoints churn this entry's small pool: AgentX prefix hit at 6 users 93.4 % (16384) vs 90.5 % (0); at 8 users 82.9 % (4096), 87.2 % (16384)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
@@ -1217,8 +1217,9 @@ templates:
         GEMMA4_PRECISION_LM_HEAD: "bfp8"  # lm_head weights in bfloat8_b: +2..3 % decode on the same block (2026-11-05), coherence and the GPQA subset unchanged
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # resident decode traces per batch bucket (adds the 4- and 16-row buckets): prose c8 +4.6 % on the same block (2026-11-05)
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool: 6 users at 256K. The single global KV head is replicated on every chip (8.7 KB per pool
-        # token per chip: 8 global layers x 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
+        # KV pool: 2,410,432 global-layer tokens (9 users at 256K) plus max_num_seqs x (block + 8 x sliding window).
+        # The single global KV head is replicated on every chip (8.7 KB per pool token per chip: 8 global layers x
+        # 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
         GEMMA4_MAX_TOKENS_ALL_USERS: "2410432"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
@@ -1314,12 +1315,8 @@ templates:
         # (dropped 2026-10-30 with the 31B entry, see its comment).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 10 x 256K users per engine (40 per Galaxy; per user 2x the 31B pool: 8 full layers x 8 KV heads
-        # vs 10 x 16); bfloat8_b KV halves pool bytes. The ceiling is DRAM: the four decode graphs
-        # (1,4,8,32), the assistant drafter weights and the 1.2 GB trace region need ~1 GB per chip, which
-        # an 11-user pool (2883584) left no room for (shield 12B Galaxy boot OOM at 98 % DRAM), and a
-        # 3047424 pool failed the 131072-prompt benchmark points with Out of Memory on a 60 MB buffer
-        # (banks at 4.19 of 4.21 GB).
+        # KV pool per 4-chip engine as the 12B P300X2 entry: 2,410,432 global-layer tokens (9 users at 256K per
+        # engine, 73 per Galaxy); bfloat8_b KV halves pool bytes.
         GEMMA4_MAX_TOKENS_ALL_USERS: "2410432"  # per 4-chip engine, as the 12B P300X2 entry
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
