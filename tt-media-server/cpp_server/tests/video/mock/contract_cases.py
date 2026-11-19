@@ -20,10 +20,31 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 PASS = 0
 FAIL = 0
+
+
+def checked_base_url(value):
+    """Accept only http(s) URLs of this machine, or of a host named in
+    VIDEO_TEST_ALLOWED_HOSTS (comma separated, for a test run against a remote T3K).
+
+    The test scripts send requests to whatever --base-url says. The check keeps them
+    from being pointed at an arbitrary host by mistake. The URL is rebuilt from its
+    parts, so a path, query or credentials in the argument are dropped.
+    """
+    parsed = urllib.parse.urlparse(value)
+    allowed = {"127.0.0.1", "localhost", "::1"}
+    extra = os.environ.get("VIDEO_TEST_ALLOWED_HOSTS", "").split(",")
+    allowed |= {h.strip() for h in extra if h.strip()}
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in allowed:
+        raise argparse.ArgumentTypeError(
+            f"{value!r}: only http(s) URLs of localhost are accepted; "
+            "set VIDEO_TEST_ALLOWED_HOSTS=<host> to test a remote server"
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def note(status, name, detail):
@@ -122,7 +143,7 @@ def expect_error(base, auth, name, body, message):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--base-url", required=True, type=checked_base_url)
     parser.add_argument(
         "--require-file",
         action="store_true",

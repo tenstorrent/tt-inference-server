@@ -9,6 +9,7 @@ a real runner over HTTP; the helpers here send the requests, wait for job
 statuses, read the server log and keep the PASS/FAIL list.
 """
 
+import argparse
 import glob
 import hashlib
 import json
@@ -30,6 +31,26 @@ BASE = TOKEN = LOG = PAYLOAD = OUTDIR = DLDIR = None
 STEPS = 4
 T0 = time.time()
 results = []  # (ok, name)
+
+
+def checked_base_url(value):
+    """Accept only http(s) URLs of this machine, or of a host named in
+    VIDEO_TEST_ALLOWED_HOSTS (comma separated, for a test run against a remote T3K).
+
+    The test scripts send requests to whatever --base-url says. The check keeps them
+    from being pointed at an arbitrary host by mistake. The URL is rebuilt from its
+    parts, so a path, query or credentials in the argument are dropped.
+    """
+    parsed = urllib.parse.urlparse(value)
+    allowed = {"127.0.0.1", "localhost", "::1"}
+    extra = os.environ.get("VIDEO_TEST_ALLOWED_HOSTS", "").split(",")
+    allowed |= {h.strip() for h in extra if h.strip()}
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in allowed:
+        raise argparse.ArgumentTypeError(
+            f"{value!r}: only http(s) URLs of localhost are accepted; "
+            "set VIDEO_TEST_ALLOWED_HOSTS=<host> to test a remote server"
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def p(*a):
@@ -166,7 +187,9 @@ def markers():
 
 # ---------------------------------------------------------------- setup / summary
 def add_common_args(ap):
-    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument(
+        "--base-url", default="http://127.0.0.1:8000", type=checked_base_url
+    )
     ap.add_argument(
         "--api-key", default=os.environ.get("VIDEO_API_KEY", "your-secret-key")
     )

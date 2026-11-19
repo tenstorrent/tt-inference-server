@@ -461,7 +461,7 @@ def check_queue_full(base, token, max_queue):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--base-url", required=True, type=cc.checked_base_url)
     parser.add_argument(
         "--phase",
         default="main",
