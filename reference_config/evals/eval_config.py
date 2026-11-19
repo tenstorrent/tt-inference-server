@@ -13588,6 +13588,209 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # GLM-5.3-Flash on the Blackhole Galaxy (the persistent stack of tt-metal
+    # models/demos/glm53_flash): GPQA Diamond, Terminal-Bench 2 and LiveCodeBench
+    # on the chat endpoint with GLM's sampling (model card: temperature 1.0 /
+    # top_p 0.95, no top_k). No MMMU entry: the release profile is text only
+    # (glm53_flash_128k_mm alone takes images). Sampled requests draw on the
+    # device (sample_on_device_mode: all: the head's top-10 sampler applies
+    # temperature / top_p to the 10 most likely tokens). The chat
+    # template thinks by default ("Reasoning Effort: Max" + <think>), so no
+    # enable_thinking kwarg is needed; --reasoning-parser glm45 (catalog) puts
+    # the thought channel into reasoning_content. Concurrency 8: the default
+    # profile glm53_flash_1m (a release run's) and glm53_flash admit 8 users,
+    # all resident.
+    # The client is clamped to a profile's max_concurrency
+    # (llm_module/eval_command.py), so glm53_flash_mtp runs 4 and the 16-user
+    # profiles run 8. max_length = the 128 K context (every profile serves it).
+    # Published
+    # scores are the model card's (.eval_results/GLM-5.3-Flash.yaml):
+    # Terminal-Bench 2.1 84.3 (Claude Code harness, not terminus-2), DeepSWE
+    # 63.4 (not SWE-bench Verified), no GPQA / LiveCodeBench number; GPU
+    # references are not measured yet. No swe_bench_verified entry: the card
+    # reports DeepSWE, so the run would have no reference to grade against.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3-Flash",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 10 questions (0.05 of 198). No GPU control fits this model on hand; the
+                    # reference is the TT stack's own full-set score (served glm53_flash_1m, all 198 questions, thinking,
+                    # T 1.0 / top-p 0.95: 86.87, tt-metal 8bf49e5cddb), so the gate needs 8 / 10 at tolerance 0.05.
+                    # The 2026-11-19 release run (tt-metal aa822f5df1e) scored 9 / 10 on this subset.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=86.87,
+                            ref="TT full-set GPQA Diamond (198 questions), served glm53_flash_1m, tt-metal 8bf49e5cddb; not a GPU control",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint: the server applies the chat template (thinking on
+                # by default) and the reasoning parser.
+                use_chat_api=True,
+                max_concurrent=8,  # = the default 1 M profile's admission (8 resident users)
+                model_kwargs={
+                    "max_length": 131072,
+                    # Long thinking generations exceed lm-eval's 1800 s default.
+                    "timeout": 7200,
+                },
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                # top_k 10: lm-eval's GPQA task default is 40, above the stack's device sampler bound, so its requests would
+                # move every step they share to the plugin's host sampler; 10 = max_device_top_k (8x4), the top-k the
+                # release references were measured with.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 10,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Model card: Terminal-Bench 2.1 in Claude Code 2.1.207 (temp
+                    # 1.0, top_p 1, 64 K new tokens, 6 h) -- a different harness
+                    # than this terminus-2 TB2 run; kept as the published number.
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the five tasks of task_names_map. No GPU control fits this model on hand and the
+                    # card's 84.3 is another harness, so the subset's reference is the TT stack's own score there: 3 / 5
+                    # (60) in the 2026-11-19 release run (terminus-2, tt-metal 5cc6ac5624b); the gate needs 2 / 5 at
+                    # tolerance 0.05.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="TT-measured on the five ci-nightly tasks (terminus-2), release run 2026-11-19, tt-metal 5cc6ac5624b; the card's 84.3 is Terminal-Bench 2.1 in Claude Code",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    # eight trials in flight = the default 1 M profile's 8 resident users, on the task budgets
+                    # (TB2 tasks ask for 1-4 CPUs and 2-8 GB; the model card states no resource setting, so none
+                    # is overridden)
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # The eval profile's context is 128 K; the agent sends
+                            # about max_input + max_output per request.
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench (coding) on the chat endpoint with server-side thinking, GLM's sampling
+                # (temperature 1.0 / top_p 0.95; top_k 10, below) and the 128 K eval context; scored on the "v6" window
+                # via doc_ids (LIVECODEBENCH_V6_DOC_IDS) as the Gemma 4 entries are. The model card publishes no
+                # LiveCodeBench number (.eval_results/GLM-5.3-Flash.yaml holds Terminal-Bench 2.1, DeepSWE and
+                # HLE only); GPU references are not measured yet.
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs 6 problems (0.05 of the v6 window). No published or GPU LiveCodeBench number: the
+                    # reference is this subset's score in the 2026-11-19 release run (2 / 6, tt-metal aa822f5df1e), so the
+                    # gate needs 1 / 6 at tolerance 0.05.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=33.33,
+                            ref="TT-measured on this 6-problem ci-nightly subset, release run 2026-11-19, tt-metal aa822f5df1e; not a GPU control",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=8,  # = the default 1 M profile's admission
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                # top_k 10: the task sets none; pinned so the eval does not depend on the server's override_generation_config
+                # (10 = max_device_top_k on the 8x4, the top-k the release references were measured with).
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 10,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 
