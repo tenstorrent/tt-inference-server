@@ -267,5 +267,9 @@ elif settings.model_runner == ModelRunners.TT_FLUX_1_KONTEXT_DEV.value:
     router.include_router(generate_image_router)
     router.include_router(edit_image_router)
     router.include_router(lora_router)
+elif settings.model_runner == ModelRunners.TT_MINIMAX_H3_IMAGE.value:
+    # Text->image on /generations, reference-guided edit on /edits (no mask).
+    router.include_router(generate_image_router)
+    router.include_router(edit_image_router)
 else:
     router.include_router(generate_image_router)
