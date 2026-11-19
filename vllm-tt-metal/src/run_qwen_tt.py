@@ -32,6 +32,9 @@ Environment (run_docker_server.py sets MODEL, DEVICE, CACHE_ROOT and the spec's 
                      directory, e.g. dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq). Serve then runs one
                      context with speculative decode instead of QWEN_TT_USERS users;
                      QWEN_TT_USERS and QWEN_TT_CONTEXT are ignored.
+  QWEN_TT_VISION     fast mode only: the vision tower .ttq (a path, or a name in the weights
+                     directory, e.g. Qwen3.8-27B-vision-bf16.ttq). Serve then takes images in
+                     chat requests as base64 data: URLs (PNG, JPEG).
 The vLLM image's arguments ``--model M --tt-device D --service-port P --no-auth`` are
 accepted too, and ``tt-lab ARGS...`` runs the binary.
 
@@ -295,6 +298,18 @@ def serve_command(env, usage, chips_present):
         log(f"fast mode: one context, DFlash 2 drafter {drafter}")
         context = ["--dflash2", drafter]
         updates["TT_LAB_DFLASH2_IMAGE"] = env.get("TT_LAB_DFLASH2_IMAGE") or "batch"
+        if env.get("QWEN_TT_VISION"):
+            vision = find_weight(env["QWEN_TT_VISION"], env)
+            if not vision:
+                raise SetupError(
+                    f"weights: {env['QWEN_TT_VISION']} not found (in {where}); set QWEN_TT_VISION"
+                )
+            if "--vision" not in usage:
+                raise SetupError("QWEN_TT_VISION set but this tt-lab has no --vision")
+            log(f"images: vision tower {vision}")
+            context += ["--vision", vision]
+    elif env.get("QWEN_TT_VISION"):
+        raise SetupError("QWEN_TT_VISION needs fast mode (QWEN_TT_DFLASH2)")
     else:
         context = [
             "--users", env.get("QWEN_TT_USERS") or "8",

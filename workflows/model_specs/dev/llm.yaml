@@ -7363,16 +7363,19 @@ templates:
 # so serve runs one context per 8-chip group with DFlash 2 speculative decoding (greedy output
 # equals plain decode's; sampling stays exact). One request at a time; a Galaxy runs four of these
 # containers. On dc16-bg-0102-u19-5 (tt-lab 89f0a0bf): code 375 and math 379 tok/s per user, AIME 2025 93.33%, prose
-# 166-247, TTFT 2.5 s at 6.5K prompt tokens.
+# 166-247, TTFT 2.5 s at 6.5K prompt tokens. Images (QWEN_TT_VISION): the vision tower runs on the
+# host CPU at up to 262,144 pixels (256 tokens) an image, about 1.7 s to the first token;
+# RealWorldQA 74.6% (card 85.9; 82.7% on a subset at HF's full resolution).
 - weights:
     - Qwen/Qwen3.8-27B
   impl: tt_lab_qwen27b_fast
   inference_engine: MEDIA
-  model_type: LLM
+  model_type: VLM
   supported_modalities:
     - text
+    - image
   hf_weights_repo: Tenstorrent/Qwen3.8-27B-TTQ-Fast
-  min_disk_gb: 25  # 18.4 GB TTQ, 1.3 GB drafter, 11 MB vocabulary GGUF, the package
+  min_disk_gb: 26  # 18.4 GB TTQ, 1.3 GB drafter, 0.9 GB vision tower, 11 MB vocabulary GGUF, the package
   min_ram_gb: 64  # TODO: measure
   uses_tensor_model_cache: false
   has_builtin_warmup: true
@@ -7395,10 +7398,11 @@ templates:
         - python3
         - /home/container_app_user/app/src/run_qwen_tt.py
   env_vars:
-    QWEN_TT_PACKAGE: tt-lab-0533009c
+    QWEN_TT_PACKAGE: tt-lab-abd4e2e3
     QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
     QWEN_TT_DFLASH2: dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
+    QWEN_TT_VISION: Qwen3.8-27B-vision-bf16.ttq
     QWEN_TT_MAX_TOKENS: "131072"
   metadata:
     Qwen/Qwen3.8-27B:
@@ -7408,8 +7412,9 @@ templates:
         - Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
         - Qwen3.8-27B-vocab.gguf
         - dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
-        - tt-lab-0533009c/SHA256SUMS
-        - tt-lab-0533009c/bin/tt-lab
-        - tt-lab-0533009c/runtime/ld-linux-x86-64.so.2
+        - Qwen3.8-27B-vision-bf16.ttq
+        - tt-lab-abd4e2e3/SHA256SUMS
+        - tt-lab-abd4e2e3/bin/tt-lab
+        - tt-lab-abd4e2e3/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
