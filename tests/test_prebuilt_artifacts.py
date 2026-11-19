@@ -21,10 +21,15 @@ from workflows.kernel_cache import (
     KERNEL_CACHE_CONTAINER_DIR,
     KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
 )
-from workflows.model_spec import MODEL_SPEC_CATALOG_FILES, load_templates_from_yaml
+from workflows.model_spec import (
+    MODEL_SPEC_CATALOG_FILES,
+    get_model_spec_map,
+    load_templates_from_yaml,
+)
 from workflows.utils import get_repo_root_path
 
 MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
+TOOL = Path(prebuilt_artifacts.__file__)
 DOWNLOAD_SCRIPT = Path(tt_weights_download.__file__)
 DOWNLOAD_SCRIPT_IN_IMAGE = "/home/container_app_user/tt_weights_download.py"
 BASE_IMAGE = "registry.example/media-server:1.0-aaa-bbb-1"
@@ -1072,6 +1077,227 @@ def test_the_tool_reads_the_metadata_of_every_catalog_spec_that_has_it(
                 extra_files = spec.metadata.get("hf_extra_files", [])
                 read = prebuilt_artifacts.spec_extra_files(spec_json)
                 assert len(read) == len(extra_files)
+
+
+MODEL, MODEL_TWO = "Example-Org/Example-Model-One", "Example-Org/Example-Model-Two"
+DEVICE = "blackhole_galaxy"
+
+
+def catalog_entry(*weights, described=None, **fields):
+    """A catalog entry of media models on one device.
+
+    The weights in described have the metadata: all of them when it is not given.
+    """
+    entry = {
+        "weights": list(weights),
+        "impl": "tt_transformers",
+        "inference_engine": "MEDIA",
+        "model_type": "VIDEO",
+        "env_vars": {"TT_DIT_CACHE_DIR": CONTAINER_CACHE},
+        "metadata": {
+            weight: {"prebuilt_artifacts": {"original_files": ["model_index.json"]}}
+            for weight in (weights if described is None else described)
+        },
+        "device_model_specs": [
+            {
+                "device": DEVICE.upper(),
+                "max_concurrency": 1,
+                "max_context": 65536,
+                "default_impl": True,
+            }
+        ],
+    }
+    return {**entry, **fields}
+
+
+# Two variants of a made-up model share an entry and the repo of their
+# checkpoint, and only the first has the metadata. The other entries hold one
+# model each.
+CATALOG = [
+    catalog_entry(
+        MODEL,
+        MODEL_TWO,
+        described=[MODEL],
+        hf_weights_repo="Example-Org/Example-Model",
+    ),
+    catalog_entry("Example-Org/Lone-Model"),
+    catalog_entry("Example-Org/Model_1.5"),
+    catalog_entry("Example-Org/No-Cache-Dir", env_vars={}),
+]
+
+
+def use_catalog(monkeypatch, templates):
+    """Make model-info resolve from these templates, as run.py would from its catalog."""
+    monkeypatch.setattr(
+        "workflows.model_spec.MODEL_SPECS", get_model_spec_map(templates)
+    )
+
+
+@pytest.fixture
+def made_up_catalog(tmp_path, monkeypatch):
+    path = tmp_path / "catalog.yaml"
+    path.write_text(json.dumps({"templates": CATALOG}))
+    use_catalog(monkeypatch, load_templates_from_yaml(path, env="dev"))
+
+
+def model_info(tmp_path, model, device=DEVICE):
+    out = tmp_path / "model_info.json"
+    exit_code = main(
+        ["model-info", "--model", model, "--device", device, "--out", str(out)]
+    )
+    return exit_code, json.loads(out.read_text()) if out.exists() else None
+
+
+@pytest.mark.parametrize(
+    "model, device, name, weights_repo_name",
+    [
+        (MODEL, DEVICE, "Example-Model-One", "Example-Model-tt-weights"),
+        (
+            "Example-Model-One",
+            DEVICE.upper(),
+            "Example-Model-One",
+            "Example-Model-tt-weights",
+        ),
+        ("Example-Org/Lone-Model", DEVICE, "Lone-Model", "Lone-Model-tt-weights"),
+    ],
+    ids=[
+        "entry-names-the-checkpoint-repo",
+        "bare-name-and-uppercase-device",
+        "entry-names-no-repo",
+    ],
+)
+def test_model_info_writes_what_ci_takes_from_the_spec(
+    tmp_path, made_up_catalog, model, device, name, weights_repo_name
+):
+    exit_code, info = model_info(tmp_path, model, device)
+
+    assert exit_code == 0
+    assert info == {
+        "model": f"Example-Org/{name}",
+        "device": DEVICE,
+        "variant": name.lower(),
+        "weights_repo_name": weights_repo_name,
+        "converted_weights_dir": CONTAINER_CACHE,
+        "original_dir": f"/home/container_app_user/cache_root/weights/{name}",
+    }
+
+
+MODEL_INFO_REFUSED = {
+    "spec-without-the-metadata": (
+        MODEL_TWO,
+        DEVICE,
+        f"the model spec of {MODEL_TWO} on {DEVICE} has no metadata.prebuilt_artifacts",
+    ),
+    "unknown-model": (
+        "Example-Org/Unknown",
+        DEVICE,
+        f"Example-Org/Unknown on {DEVICE}: No model spec matches",
+    ),
+    "unknown-device": (MODEL, "no_device", f"{MODEL} on no_device: Invalid device"),
+    "device-without-the-model": (
+        MODEL,
+        "n150",
+        f"{MODEL} on n150: No model spec matches",
+    ),
+    "name-that-is-no-variant": (
+        "Example-Org/Model_1.5",
+        DEVICE,
+        "the name of Example-Org/Model_1.5 gives the variant 'model_1.5'",
+    ),
+    "spec-without-the-cache-folder": (
+        "Example-Org/No-Cache-Dir",
+        DEVICE,
+        "no TT_DIT_CACHE_DIR in the env_vars of the model spec of "
+        "Example-Org/No-Cache-Dir",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "model, device, message",
+    MODEL_INFO_REFUSED.values(),
+    ids=MODEL_INFO_REFUSED.keys(),
+)
+def test_model_info_refuses_with_one_line_and_writes_nothing(
+    tmp_path, made_up_catalog, capsys, model, device, message
+):
+    exit_code, info = model_info(tmp_path, model, device)
+    error = capsys.readouterr().err
+
+    assert error.startswith(f"error: {message}") and error.count("\n") == 1
+    assert (exit_code, info) == (1, None)
+
+
+@pytest.mark.parametrize("catalog", ["dev", "prod"])
+def test_model_info_takes_every_catalog_model_that_has_the_metadata(
+    tmp_path, monkeypatch, catalog
+):
+    templates = [
+        template
+        for name in MODEL_SPEC_CATALOG_FILES
+        for template in load_templates_from_yaml(
+            MODEL_SPECS_DIR / catalog / name, env=catalog
+        )
+    ]
+    use_catalog(monkeypatch, templates)
+    for template in templates:
+        for spec in template.expand_to_specs():
+            if not spec.metadata.get("prebuilt_artifacts"):
+                continue
+            exit_code, info = model_info(
+                tmp_path, spec.hf_model_repo, spec.device_type.name
+            )
+            assert exit_code == 0 and info["variant"] == spec.model_name.lower()
+
+
+# python -c code that runs the tool where PyYAML cannot be imported.
+WITHOUT_YAML = (
+    "import runpy, sys; sys.modules['yaml'] = None; sys.argv[0] = "
+    f"{str(TOOL)!r}; runpy.run_path(sys.argv[0], run_name='__main__')"
+)
+
+
+def run_tool(*arguments, without_yaml=False):
+    """Run the tool in an interpreter of its own, which reads the prod catalog."""
+    tool = ["-c", WITHOUT_YAML] if without_yaml else [str(TOOL)]
+    env = {key: value for key, value in os.environ.items() if key != "MODEL_SPECS_ENV"}
+    return subprocess.run(
+        [sys.executable, "-I", *tool, *arguments],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+def model_info_argv(tmp_path, *options):
+    out = str(tmp_path / "model_info.json")
+    return ["model-info", "--model", MODEL, "--device", DEVICE, *options, "--out", out]
+
+
+def test_only_model_info_needs_pyyaml(tmp_path):
+    server_log = tmp_path / "server.log"
+    server_log.write_text("ready\n")
+
+    check = run_tool(
+        "kernel-cache", "check-log", "--server-log", str(server_log), without_yaml=True
+    )
+    info = run_tool(*model_info_argv(tmp_path), without_yaml=True)
+
+    assert (check.returncode, check.stderr) == (0, "")
+    assert info.returncode == 1 and info.stderr.count("\n") == 1
+    assert info.stderr.startswith(
+        "error: model-info loads the model catalog as run.py does, which needs PyYAML"
+    )
+
+
+@pytest.mark.parametrize(
+    "options, catalog", [((), "prod"), (("--dev-mode",), "dev")], ids=["prod", "dev"]
+)
+def test_model_info_reads_the_dev_catalog_with_dev_mode(tmp_path, options, catalog):
+    result = run_tool(*model_info_argv(tmp_path, *options))
+
+    assert result.returncode == 1
+    assert result.stderr.endswith(f"in '{catalog}' catalog\n")
 
 
 RECORDS = "tt_dit_cache/.tt_weights_complete"

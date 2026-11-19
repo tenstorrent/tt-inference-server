@@ -12,6 +12,7 @@ one such start this tool packages both, so later starts load them instead:
     tt-weights upload                                  converted weights, in a Hugging Face repo
                                                        shared by the variants of the model
     release-file                                       one JSON file that names both
+    model-info                                         what CI takes from the model's spec
 
 What the tool has to know of a model is in its model spec (workflows/model_specs/),
 under metadata.prebuilt_artifacts:
@@ -28,7 +29,11 @@ kernel-cache and release-file work for any media-server model; without
 kernel_build_env the manifest records BUILD_KEY_ENV_VARS only. tt-weights upload
 needs original_files, also publishes the files of metadata.hf_extra_files and
 assumes tt_dit's cache layout. scripts/tt_weights_download.py fetches what was
-uploaded, for any model; build-image puts that file into the image.
+uploaded, for any model; build-image puts that file into the image. model-info
+resolves a catalog model on a device as run.py does, fails when its spec has no
+metadata.prebuilt_artifacts and else writes the variant name, the name of the
+weights repo and the container folders of the converted weights and the
+original checkpoint; it loads the catalog, which needs PyYAML as run.py does.
 
 Run it from the repo root: python3 scripts/prebuilt_artifacts.py <command> --help
 tt-weights upload needs huggingface_hub and takes the token from HF_TOKEN.
@@ -65,6 +70,7 @@ from scripts.tt_weights_download import (
     ORIGINAL_SUBSET_FOLDER,
     SCHEMA_VERSION,
     TT_WEIGHTS_FOLDER,
+    VARIANT_SLUG,
     CliError,
     file_hash,
     gigabytes,
@@ -121,6 +127,8 @@ WEIGHTS_BRANCH = "main"
 MESH_SHAPE = re.compile(r"mesh(\d+x\d+)_")
 # Key of a model spec's metadata that holds what this tool has to know of the model.
 SPEC_METADATA_KEY = "prebuilt_artifacts"
+# The weights repo of a model is named after the repo of its original checkpoint.
+WEIGHTS_REPO_SUFFIX = "-tt-weights"
 
 
 def utc_now() -> str:
@@ -1078,6 +1086,68 @@ def write_release_file(args) -> None:
     step(f"release file: {args.out}")
 
 
+def write_model_info(args) -> None:
+    """What CI takes from the spec of a catalog model, before it makes the artifacts.
+
+    The spec is the one run.py resolves for the model on the device: the default
+    implementation, from the dev catalog with --dev-mode. The catalog is loaded
+    when workflows.model_spec is imported and needs PyYAML, so the import is
+    here and the other commands run without it.
+    """
+    if args.dev_mode:
+        os.environ["MODEL_SPECS_ENV"] = "dev"
+    try:
+        from workflows.model_spec import get_runtime_model_spec
+        from workflows.setup_host import SetupConfig
+        from workflows.utils import get_default_persistent_volume_root
+    except ImportError as error:
+        raise CliError(
+            f"model-info loads the model catalog as run.py does, which needs "
+            f"PyYAML: {error}"
+        ) from error
+    try:
+        spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    except ValueError as error:
+        raise CliError(f"{args.model} on {args.device}: {error}") from error
+    model, device = spec.hf_model_repo, spec.device_type.name.lower()
+    if not spec.metadata.get(SPEC_METADATA_KEY):
+        raise CliError(
+            f"the model spec of {model} on {device} has no "
+            f"metadata.{SPEC_METADATA_KEY}: prebuilt artifacts are made only for "
+            "a model whose spec has it"
+        )
+    variant = spec.model_name.lower()
+    if not VARIANT_SLUG.fullmatch(variant):
+        raise CliError(
+            f"the name of {model} gives the variant '{variant}'; a variant is "
+            "lowercase letters and digits joined by single hyphens"
+        )
+    if "TT_DIT_CACHE_DIR" not in spec.env_vars:
+        raise CliError(
+            f"no TT_DIT_CACHE_DIR in the env_vars of the model spec of {model} "
+            f"on {device}"
+        )
+    # Host setup's paths for a run with --host-volume. The container side is the
+    # same for any host folder.
+    setup = SetupConfig(
+        model_spec=spec,
+        host_volume=str(get_default_persistent_volume_root(project_root)),
+    )
+    write_json(
+        args.out,
+        {
+            "model": model,
+            "device": device,
+            "variant": variant,
+            "weights_repo_name": PurePosixPath(spec.hf_weights_repo).name
+            + WEIGHTS_REPO_SUFFIX,
+            "converted_weights_dir": str(spec.env_vars["TT_DIT_CACHE_DIR"]),
+            "original_dir": str(setup.container_model_weights_path),
+        },
+    )
+    step(f"model info: {args.out}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Package the compiled kernels and converted weights of a cold "
@@ -1322,6 +1392,37 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--run-url", help="URL of the CI run that made the artifacts")
     release.add_argument(
         "--out", type=path_argument, required=True, help="release file to write"
+    )
+
+    info = command(
+        commands,
+        "model-info",
+        write_model_info,
+        "write what CI takes from the spec of a catalog model",
+        f"Resolves the model on the device as run.py does, to its default "
+        f"implementation, and writes a JSON file with model, device, variant "
+        f"(the model name without its org, in lowercase), weights_repo_name "
+        f"(the name of the spec's hf_weights_repo and {WEIGHTS_REPO_SUFFIX}), "
+        f"converted_weights_dir (the spec's TT_DIT_CACHE_DIR) and original_dir "
+        f"(where host setup puts the original checkpoint with --host-volume); "
+        f"the last two are container paths. Exits 1 with one line when the "
+        f"model is not in the catalog on that device or its spec has no "
+        f"metadata.{SPEC_METADATA_KEY}. Needs PyYAML, as run.py does.",
+    )
+    info.add_argument(
+        "--model", required=True, help="model, as run.py --model takes it"
+    )
+    info.add_argument(
+        "--device", required=True, help="device type, as run.py --device takes it"
+    )
+    info.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help="read the dev catalog (workflows/model_specs/dev/), as run.py "
+        "--dev-mode does",
+    )
+    info.add_argument(
+        "--out", type=path_argument, required=True, help="JSON file to write"
     )
     return parser
 
