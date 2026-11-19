@@ -180,7 +180,7 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     # Payloads from before agentx-harness came from PyPI, which pinned the
     # InferenceX revision that vendored the client.
     ("inferencex_git_ref", "InferenceX Ref"),
-    # agentx-harness reports its own release here (e.g. 1.0.13).
+    # agentx-harness reports its own release here (e.g. 1.0.14).
     ("aiperf_version", "Client Version"),
     ("swo_bench_version", "swo-bench Version"),
     ("swo_session_id", "swo-bench Session"),

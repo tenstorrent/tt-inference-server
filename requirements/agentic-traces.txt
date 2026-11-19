@@ -18,10 +18,10 @@
 # SemiAnalysis's AIPerf fork that owns the inferencex-agentx-mvp scenario and
 # the Weka trace dataset loaders, so this pin is part of the benchmark
 # definition: results are only comparable across runs on the same version.
-# 1.0.13 is the release InferenceX's own GPU reference runs install
-# (inferencex-e2e/infx/bench/agentic/requirements.txt), and it includes the
-# fixes we used to patch in locally (agentx-harness#49, #67).
-agentx-harness==1.0.13
+# 1.0.14 is one release past the 1.0.13 that InferenceX's own GPU reference
+# runs install (inferencex-e2e/infx/bench/agentic/requirements.txt); both
+# include the fixes we used to patch in locally (agentx-harness#49, #67).
+agentx-harness==1.0.14
 
 # Workflow-engine eager import: workflow_module -> test_module.context ->
 # health_tests uses aiohttp at module top.
