@@ -9,7 +9,7 @@ import time
 import traceback
 from datetime import timedelta
 
-from ttml.unified_trainer import Callback
+from ttml.experimental.trainer import Callback
 
 
 class StopTraining(Exception):
@@ -50,7 +50,7 @@ class JobMetricsCallback(JobCallback):
     before they run, since compiling the kernels they use for the first time
     takes minutes, and the end of the loop is logged with its duration since
     ``on_train_start``.
-    Loss itself is only logged every ``metrics.steps_freq`` steps, plus once at
+    Loss itself is only logged every ``metrics.train.steps_freq`` steps, plus once at
     the end of validation.
     """
 
@@ -126,7 +126,7 @@ class JobMetricsCallback(JobCallback):
             extra={"log_type": "info", "step": global_step},
         )
 
-        steps_freq = trainer.config.metrics.steps_freq
+        steps_freq = trainer.config.metrics.train.steps_freq
         if global_step % steps_freq:
             return
 
@@ -142,19 +142,21 @@ class JobMetricsCallback(JobCallback):
         self._log_training_end(trainer, cancelled=False)
 
     def on_train_error(self, trainer, exception, *args, **kwargs):
-        # max_steps and cancellation end the loop with StopTraining, so on_train_end never fires.
-        if not isinstance(exception, StopTraining):
-            return
-        cancel_event = getattr(self._request, "_cancel_event", None)
-        cancelled = cancel_event is not None and cancel_event.is_set()
-        self._log_training_end(trainer, cancelled=cancelled)
+        # Cancellation ends the loop with StopTraining, so on_train_end never fires.
+        if isinstance(exception, StopTraining):
+            self._log_training_end(trainer, cancelled=True)
 
     @staticmethod
     def _epoch_step_label(trainer) -> str:
-        num_epochs = getattr(trainer.config, "num_epochs", None)
-        epoch = trainer.epoch + 1
-        epoch_part = f"Epoch {epoch}/{num_epochs}" if num_epochs else f"Epoch {epoch}"
-        return f"{epoch_part} | Step {trainer.global_step}"
+        # The stopping criterion's limit is shown next to what it counts.
+        stopping = trainer.config.stopping_criteria
+        epoch_part = f"Epoch {trainer.epoch + 1}"
+        step_part = f"Step {trainer.global_step}"
+        if stopping.type == "epoch":
+            epoch_part += f"/{stopping.limit}"
+        else:
+            step_part += f"/{stopping.limit}"
+        return f"{epoch_part} | {step_part}"
 
     def _announce_compile(self, trainer, pass_name: str) -> None:
         if pass_name in self._compile_announced:
@@ -201,17 +203,18 @@ class JobMetricsCallback(JobCallback):
 
 
 class AdapterCheckpointCallback(JobCallback):
-    """Saves the LoRA adapter every ``checkpoint.steps_freq`` optimizer steps."""
+    """Saves the LoRA adapter every ``frequency`` optimizer steps of a "step"
+    ``checkpoint.save_strategy``."""
 
     def __init__(self, logger, metrics: JobMetricsCallback):
         super().__init__(logger)
         self._metrics = metrics
 
     def on_step_end(self, trainer, global_step, *args, **kwargs):
-        config = trainer.config.checkpoint
-        if config.save_strategy != "step":
+        strategy = trainer.config.checkpoint.save_strategy
+        if strategy.type != "step":
             return
-        if global_step % config.steps_freq:
+        if global_step % strategy.frequency:
             return
         self._save(trainer)
 
@@ -262,7 +265,7 @@ class AdapterCheckpointCallback(JobCallback):
 
 
 class JobControlCallback(JobCallback):
-    """Enforces ``max_steps`` and cancellation, and logs real failures to the job."""
+    """Enforces cancellation and logs real failures to the job."""
 
     def _reset(self) -> None:
         self.stop_reason = None
@@ -285,16 +288,9 @@ class JobControlCallback(JobCallback):
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
         self._touch_progress()
-        request = self._request
         # Checked per micro-batch, so cancellation stays responsive even when
         # `global_step` only advances every `gradient_accumulation_steps` batches.
         self._stop_if_cancelled(trainer)
-        if request.max_steps > 0 and trainer.global_step >= request.max_steps:
-            self._stop(
-                trainer,
-                f"Reached max_steps={request.max_steps} at step {trainer.global_step}, "
-                "stopping training.",
-            )
 
     def _stop_if_cancelled(self, trainer) -> None:
         request = self._request

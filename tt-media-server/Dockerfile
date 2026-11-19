@@ -19,7 +19,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 # --build-arg BUILD_TT_TRAIN=true also builds tt-train (ttml) for the
-# ttml-training-lora runner, which needs a tt-metal commit with ttml.unified_trainer.
+# ttml-training-lora runner, which needs a tt-metal commit with ttml.experimental.trainer.
 ARG BUILD_TT_TRAIN=false
 
 # make build commit SHA available in the image for reference and debugging

@@ -29,9 +29,8 @@ def test_shipped_expectation_parses():
     path = expected_config_path("Llama-3.1-8B-Instruct", "p150")
     cfg = parse_config(yaml.safe_load(path.read_text()))
     # The request block is what the launcher POSTs; it must carry the dataset.
-    assert cfg.request.get("dataset_loader") == "SST2"
-    # ttml fuses q/k/v, so the LoRA targets cover all of them.
-    assert cfg.request.get("lora_target_modules") == [
+    assert cfg.request["dataset"]["id"] == "sst2"
+    assert cfg.request["model"]["lora"]["target_modules"] == [
         "q_proj",
         "k_proj",
         "v_proj",

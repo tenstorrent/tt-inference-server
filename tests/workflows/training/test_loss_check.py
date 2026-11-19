@@ -26,7 +26,10 @@ class TestParseConfig:
         raw = {
             "tolerances": {"rtol": 0.3, "atol": 0.2},
             "checks": {"require_decreasing": False, "final_train_loss_max": 4.0},
-            "request": {"batch_size": 8, "max_steps": 15},
+            "request": {
+                "batch_size": 8,
+                "stopping_criteria": {"type": "step", "limit": 15},
+            },
             "expected_losses": [
                 {"global_step": 5, "metric_name": "train_loss", "value": 5.7},
                 {"global_step": 10, "value": 4.6},  # metric_name defaults to train_loss
@@ -37,7 +40,10 @@ class TestParseConfig:
         assert cfg.atol == 0.2
         assert cfg.require_decreasing is False
         assert cfg.final_train_loss_max == 4.0
-        assert cfg.request == {"batch_size": 8, "max_steps": 15}
+        assert cfg.request == {
+            "batch_size": 8,
+            "stopping_criteria": {"type": "step", "limit": 15},
+        }
         assert cfg.expectations[0] == LossExpectation(5, "train_loss", 5.7)
         assert cfg.expectations[1] == LossExpectation(10, "train_loss", 4.6)
 

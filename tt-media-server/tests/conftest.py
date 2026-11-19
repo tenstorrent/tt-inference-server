@@ -409,28 +409,36 @@ def _install_ttml_stubs():
         sys.modules[name] = stub
 
     module("ttml")
+    module("ttml.experimental")
     module(
-        "ttml.unified_trainer",
+        "ttml.experimental.trainer",
         Callback=StubCallback,
         SFTTrainer=StubSFTTrainer,
+        # Like ttml's, a save strategy's type defaults to its own.
+        StepSave=type("StepSave", (StubConfig,), {"type": "step"}),
+        NoSave=type("NoSave", (StubConfig,), {"type": "none"}),
         **{
             name: type(name, (StubConfig,), {})
             for name in (
                 "AdamWConfig",
                 "CheckpointConfig",
                 "CustomDatasetConfig",
+                "DatasetConfig",
                 "LoggingConfig",
                 "LoraConfig",
                 "MetricsConfig",
+                "ModelConfig",
                 "SFTTrainerConfig",
+                "StoppingCriteria",
+                "TrainMetricsConfig",
+                "ValidationMetricsConfig",
             )
         },
     )
-    module("ttml.unified_trainer.data", IGNORED_INDEX=-100)
 
 
 try:
-    import ttml.unified_trainer  # noqa: F401
+    import ttml.experimental.trainer  # noqa: F401
 except ImportError:
     _install_ttml_stubs()
 

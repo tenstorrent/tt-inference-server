@@ -2,19 +2,21 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+import yaml
 from config.constants import (
     MODEL_SERVICE_RUNNER_MAP,
-    DatasetLoaders,
     ModelNames,
     ModelRunners,
     ModelServices,
     SupportedModels,
 )
 from domain.training_request import TrainingRequest
-from ttml.unified_trainer import AdamWConfig
+from pydantic import ValidationError
+from ttml.experimental.trainer import AdamWConfig
 
 MODEL_ID = ModelNames.LLAMA_3_1_8B_INSTRUCT.value
 HF_REPO_ID = SupportedModels.LLAMA_3_1_8B_INSTRUCT.value
@@ -63,12 +65,22 @@ def runner():
 
 
 def _fake_trainer(
-    grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None, train_batches=None
+    grad_accum=1,
+    steps_freq=1,
+    num_epochs=1,
+    max_steps=None,
+    val_batches=None,
+    train_batches=None,
 ):
     trainer = MagicMock()
     trainer.config.gradient_accumulation_steps = grad_accum
-    trainer.config.metrics.steps_freq = steps_freq
-    trainer.config.num_epochs = num_epochs
+    trainer.config.metrics.train.steps_freq = steps_freq
+    if max_steps is None:
+        trainer.config.stopping_criteria.type = "epoch"
+        trainer.config.stopping_criteria.limit = num_epochs
+    else:
+        trainer.config.stopping_criteria.type = "step"
+        trainer.config.stopping_criteria.limit = max_steps
     trainer.global_step = 0
     trainer.epoch = 0
     trainer.current_learning_rate.return_value = [0.001]
@@ -163,24 +175,21 @@ class TestWarmup:
 class TestJobConfig:
     def test_maps_request_fields(self, runner):
         request = _request(
+            model={"lora": {"r": 16, "alpha": 32}},
+            optimizer={"lr": 1e-4, "weight_decay": 0.0},
             batch_size=8,
-            learning_rate=1e-4,
-            num_epochs=3,
-            weight_decay=0.0,
             gradient_accumulation_steps=4,
-            val_steps_freq=20,
-            dataset_max_sequence_length=256,
-            lora_r=16,
-            lora_alpha=32,
-            steps_freq=5,
-            save_interval=25,
+            max_length=256,
             seed=23,
+            stopping_criteria={"type": "epoch", "limit": 3},
+            metrics={"train": {"steps_freq": 5}, "validation": {"steps_freq": 20}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 25}},
         )
         config = runner._job_config(request)
 
-        assert config.dataset_id == "sst2"
-        assert config.model_name == HF_REPO_ID
-        assert config.dtype == "torch.bfloat16"
+        assert config.dataset.id == "sst2"
+        assert config.model.name == HF_REPO_ID
+        assert config.dtype == "bfloat16"
         assert config.batch_size == 8
         [optimizer] = config.optimizer
         assert isinstance(optimizer, AdamWConfig)
@@ -188,18 +197,24 @@ class TestJobConfig:
         assert optimizer.weight_decay == 0.0
         # No modules: it trains every adapter weight.
         assert not hasattr(optimizer, "modules")
-        assert config.num_epochs == 3
+        assert config.stopping_criteria.type == "epoch"
+        assert config.stopping_criteria.limit == 3
         assert config.gradient_accumulation_steps == 4
-        assert config.val_steps_freq == 20
+        assert config.metrics.validation.steps_freq == 20
         assert config.max_length == 256
         assert config.seed == 23
-        assert config.lora.r == 16
-        assert config.lora.alpha == 32
-        assert config.lora.target_modules == ["q_proj", "k_proj", "v_proj", "o_proj"]
-        assert config.lora.task_type == "CAUSAL_LM"
-        assert config.metrics.steps_freq == 5
-        assert config.checkpoint.save_strategy == "step"
-        assert config.checkpoint.steps_freq == 25
+        assert config.model.lora.r == 16
+        assert config.model.lora.alpha == 32
+        assert config.model.lora.target_modules == [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+        ]
+        assert config.model.lora.task_type == "CAUSAL_LM"
+        assert config.metrics.train.steps_freq == 5
+        assert config.checkpoint.save_strategy.type == "step"
+        assert config.checkpoint.save_strategy.frequency == 25
         assert config.checkpoint.project_dir == "/tmp/job"
 
     def test_optimizer_defaults_to_adamw(self, runner):
@@ -212,54 +227,74 @@ class TestJobConfig:
     def test_weight_decay_defaults_to_adamws_own(self, runner):
         assert runner._job_config(_request()).optimizer[0].weight_decay == 0.01
 
-    def test_save_interval_zero_disables_step_saves(self, runner):
-        config = runner._job_config(_request(save_interval=0))
-        assert config.checkpoint.save_strategy == "none"
+    def test_no_save_disables_step_saves(self, runner):
+        config = runner._job_config(
+            _request(checkpoint={"save_strategy": {"type": "none"}})
+        )
+        assert config.checkpoint.save_strategy.type == "none"
 
-    def test_leaves_max_steps_to_the_control_callback(self, runner):
-        # 0 is the trainer's "no limit".
-        config = runner._job_config(_request(max_steps=15))
-        assert getattr(config, "max_steps", 0) == 0
+    def test_passes_a_step_limit_to_the_trainer(self, runner):
+        config = runner._job_config(
+            _request(stopping_criteria={"type": "step", "limit": 15})
+        )
+        assert config.stopping_criteria.type == "step"
+        assert config.stopping_criteria.limit == 15
 
-    def test_built_in_datasets_carry_no_custom_config(self, runner):
-        assert runner._job_config(_request()).custom_dataset is None
+    def test_built_in_datasets_carry_no_custom_options(self, runner):
+        assert runner._job_config(_request()).dataset.custom_options is None
+
+    def test_passes_the_dataset_id_as_given(self, runner):
+        # ttml matches dataset ids case-insensitively.
+        config = runner._job_config(_request(dataset={"id": "SST2"}))
+        assert config.dataset.id == "SST2"
 
     def test_maps_a_custom_dataset(self, runner):
         config = runner._job_config(
             _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.jsonl",
-                val_dataset_path="/datasets/val.jsonl",
-                file_type="jsonl",
-                template="alpaca",
-                column_mapping={"instruction": "prompt", "output": "response"},
+                dataset={
+                    "id": "custom",
+                    "custom_options": {
+                        "file_type": "jsonl",
+                        "train_dataset_path": "/datasets/train.jsonl",
+                        "val_dataset_path": "/datasets/val.jsonl",
+                        "template": "alpaca",
+                        "column_mapping": {
+                            "instruction": "prompt",
+                            "output": "response",
+                        },
+                    },
+                }
             )
         )
 
-        assert config.dataset_id == "custom"
-        assert config.custom_dataset.file_type == "jsonl"
-        assert config.custom_dataset.train_dataset_path == "/datasets/train.jsonl"
-        assert config.custom_dataset.val_dataset_path == "/datasets/val.jsonl"
-        assert config.custom_dataset.template == "alpaca"
-        assert config.custom_dataset.column_mapping == {
+        assert config.dataset.id == "custom"
+        custom_options = config.dataset.custom_options
+        assert custom_options.file_type == "jsonl"
+        assert custom_options.train_dataset_path == "/datasets/train.jsonl"
+        assert custom_options.val_dataset_path == "/datasets/val.jsonl"
+        assert custom_options.template == "alpaca"
+        assert custom_options.column_mapping == {
             "instruction": "prompt",
             "output": "response",
         }
 
-    def test_a_custom_dataset_may_omit_validation_and_columns(self, runner):
+    def test_a_custom_dataset_may_omit_all_but_the_train_path(self, runner):
         config = runner._job_config(
             _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                file_type="json",
-                template="alpaca",
+                dataset={
+                    "id": "custom",
+                    "custom_options": {"train_dataset_path": "/datasets/train.json"},
+                }
             )
         )
 
-        # ttml runs no validation batches without a path, and reads the
-        # template's fields from same-named columns without a mapping.
-        assert config.custom_dataset.val_dataset_path is None
-        assert config.custom_dataset.column_mapping is None
+        # ttml's defaults; it runs no validation batches without a path, and
+        # reads the template's fields from same-named columns without a mapping.
+        custom_options = config.dataset.custom_options
+        assert custom_options.file_type == "json"
+        assert custom_options.template == "alpaca"
+        assert custom_options.val_dataset_path is None
+        assert custom_options.column_mapping is None
 
     def test_wandb_is_disabled(self, runner):
         assert runner._job_config(_request()).logging.use_wandb is False
@@ -275,19 +310,15 @@ class TestValidate:
 
     def test_leaves_the_dtype_to_the_trainer(self, runner):
         # The trainer's setup rejects it, before it opens the device.
-        runner._validate(_request(dtype="torch.float32"))
+        runner._validate(_request(dtype="float32"))
 
     def test_rejects_unknown_dataset(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dataset_loader"):
-            runner._validate(_request(dataset_loader="nonexistent"))
+        with pytest.raises(ValueError, match="Unsupported dataset.id"):
+            runner._validate(_request(dataset={"id": "nonexistent"}))
 
     def test_rejects_other_optimizer(self, runner):
-        with pytest.raises(ValueError, match="Unsupported optimizer"):
-            runner._validate(_request(optimizer="sgd"))
-
-    def test_rejects_other_ignored_index(self, runner):
-        with pytest.raises(ValueError, match="Unsupported ignored_index"):
-            runner._validate(_request(ignored_index=0))
+        with pytest.raises(ValueError, match="Unsupported optimizer.type"):
+            runner._validate(_request(optimizer={"type": "sgd"}))
 
 
 class TestTrainingRequest:
@@ -311,33 +342,56 @@ class TestTrainingRequest:
             request.touch_progress()
             assert tracker.value == 111.0
 
-    def test_a_custom_dataset_requires_path_file_type_and_template(self):
-        with pytest.raises(ValueError, match="train_dataset_path"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                file_type="json",
-                template="alpaca",
-            )
-        with pytest.raises(ValueError, match="file_type"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                template="alpaca",
-            )
-        with pytest.raises(ValueError, match="template"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                file_type="json",
-            )
+    def test_a_custom_dataset_requires_custom_options(self):
+        with pytest.raises(ValidationError, match="custom_options is required"):
+            _request(dataset={"id": "Custom"})
 
-    def test_built_in_datasets_need_no_paths(self):
-        assert _request().train_dataset_path is None
-        assert _request().file_type is None
-        assert _request().template is None
+    def test_custom_options_require_a_train_path(self):
+        with pytest.raises(ValidationError, match="train_dataset_path"):
+            _request(dataset={"id": "custom", "custom_options": {"template": "alpaca"}})
 
-    def test_val_steps_freq_zero_is_allowed(self):
-        assert _request(val_steps_freq=0).val_steps_freq == 0
+    def test_built_in_datasets_need_no_custom_options(self):
+        assert _request().dataset.custom_options is None
+
+    def test_validation_steps_freq_zero_is_allowed(self):
+        request = _request(metrics={"validation": {"steps_freq": 0}})
+        assert request.metrics.validation.steps_freq == 0
+
+    def test_stops_after_500_steps_by_default(self):
+        stopping = _request().stopping_criteria
+        assert (stopping.type, stopping.limit) == ("step", 500)
+
+    def test_saves_every_100_steps_by_default(self):
+        strategy = _request().checkpoint.save_strategy
+        assert (strategy.type, strategy.frequency) == ("step", 100)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"lora_r": 8},
+            {"dataset_loader": "SST2"},
+            {"save_interval": 0},
+            {"model": {"lora": {"rank": 8}}},
+            {"stopping_criteria": {"type": "step", "limit": 10, "max": 3}},
+        ],
+    )
+    def test_rejects_unknown_fields(self, fields):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            _request(**fields)
+
+    def test_accepts_the_nightly_workflows_request(self):
+        expected = (
+            Path(__file__).parents[2]
+            / "workflows/training/expected/llama_3_1_8b_instruct_sst2.yaml"
+        )
+        body = yaml.safe_load(expected.read_text())["request"]
+        request = _request(**body)
+        assert request.stopping_criteria.limit == 15
+        assert request.checkpoint.save_strategy.type == "none"
+
+    def test_rejects_an_unknown_save_strategy(self):
+        with pytest.raises(ValidationError):
+            _request(checkpoint={"save_strategy": {"type": "epoch"}})
 
 
 class TestRun:
@@ -356,7 +410,11 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_records_a_step_and_saves_it_through_the_trainer(self, runner):
         await runner.warmup()
-        request = _request(learning_rate=1e-4, steps_freq=1, save_interval=1)
+        request = _request(
+            optimizer={"lr": 1e-4},
+            metrics={"train": {"steps_freq": 1}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
+        )
         trainer_class = type(runner._trainer)
 
         with patch.object(trainer_class, "train", _train_one_step(2.0)), patch.object(
@@ -378,7 +436,10 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_a_failed_save_records_no_checkpoint(self, runner):
         await runner.warmup()
-        request = _request(steps_freq=1, save_interval=1)
+        request = _request(
+            metrics={"train": {"steps_freq": 1}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
+        )
         trainer_class = type(runner._trainer)
 
         with patch.object(trainer_class, "train", _train_one_step(2.0)), patch.object(
@@ -408,7 +469,7 @@ class TestRun:
         from tt_model_runners.training_runners.callbacks import StopTraining
 
         await runner.warmup()
-        stop = StopTraining("Reached max_steps=2")
+        stop = StopTraining("Job cancelled at step 2")
 
         with patch.object(type(runner._trainer), "train", _train_raising(stop)):
             assert runner.run([_request()]) == ["/tmp/job"]
@@ -496,36 +557,23 @@ class TestJobControlCallback:
 
     def test_is_a_ttml_callback(self):
         from tt_model_runners.training_runners.callbacks import JobCallback
-        from ttml.unified_trainer import Callback
+        from ttml.experimental.trainer import Callback
 
         assert issubclass(JobCallback, Callback)
 
-    def test_stops_at_max_steps(self):
-        from tt_model_runners.training_runners.callbacks import StopTraining
-
-        request = _request(max_steps=2)
-        request._cancel_event = None
+    def test_does_not_stop_a_running_job(self):
+        # The trainer's stopping criterion ends the run, not this callback.
+        request = _request()
+        request._cancel_event = MagicMock()
+        request._cancel_event.is_set.return_value = False
         callback = self._callback(request)
-        trainer = _fake_trainer()
-
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
-
-        trainer.global_step = 2
-        with pytest.raises(StopTraining, match="max_steps=2"):
-            callback.on_train_batch_end(trainer)
-
-    def test_does_not_stop_when_max_steps_is_zero(self):
-        request = _request(max_steps=0)
-        request._cancel_event = None
-        callback = self._callback(request)
-        trainer = _fake_trainer()
+        trainer = _fake_trainer(max_steps=2)
         trainer.global_step = 1000
 
         callback.on_train_batch_end(trainer)
 
     def test_training_batch_updates_progress_heartbeat(self):
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = None
         tracker = MagicMock()
         tracker.value = 1.0
@@ -544,7 +592,7 @@ class TestJobControlCallback:
         "callback_method", ["on_train_start", "on_validation_start"]
     )
     def test_phase_start_updates_progress_heartbeat(self, callback_method):
-        request = _request(max_steps=0)
+        request = _request()
         tracker = MagicMock()
         tracker.value = 1.0
         request._progress_tracker = tracker
@@ -561,7 +609,7 @@ class TestJobControlCallback:
     def test_stops_on_cancel(self):
         from tt_model_runners.training_runners.callbacks import StopTraining
 
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         callback = self._callback(request)
@@ -572,7 +620,7 @@ class TestJobControlCallback:
     def test_stops_on_cancel_during_validation(self):
         from tt_model_runners.training_runners.callbacks import StopTraining
 
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         callback = self._callback(request)
@@ -590,7 +638,7 @@ class TestJobControlCallback:
         request._cancel_event = None
         callback = self._callback(request)
 
-        callback.on_train_error(_fake_trainer(), StopTraining("max steps"))
+        callback.on_train_error(_fake_trainer(), StopTraining("Job cancelled"))
         callback._logger.error.assert_not_called()
 
     def test_real_failure_is_logged(self):
@@ -680,6 +728,14 @@ class TestJobMetricsCallback:
         assert loss_messages == [
             "Epoch 1/3 | Step 2 | train_loss: 2.000000",
         ]
+
+    def test_labels_the_step_limit_of_a_step_criterion(self):
+        callback = self._callback(_request())
+        trainer = _fake_trainer(steps_freq=10, max_steps=500)
+
+        _end_step(callback, trainer, 7)
+
+        assert callback._logger.info.call_args_list[0].args[0] == "Epoch 1 | Step 7/500"
 
     def test_logs_train_batch_count_at_train_start(self):
         request = _request()
@@ -796,14 +852,6 @@ class TestJobMetricsCallback:
             "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
         ]
 
-    def test_stopping_at_max_steps_also_finishes_training(self):
-        from tt_model_runners.training_runners.callbacks import StopTraining
-
-        stop = StopTraining("Reached max_steps=3")
-        assert self._end_training(_request(), "on_train_error", stop) == [
-            "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
-        ]
-
     def test_logs_the_training_time_when_cancelled(self):
         from tt_model_runners.training_runners.callbacks import StopTraining
 
@@ -837,19 +885,19 @@ class TestAdapterCheckpointCallback:
     def _trainer(
         self,
         save_strategy="step",
-        steps_freq=2,
+        frequency=2,
         project_dir="/tmp/job",
     ):
         trainer = _fake_trainer()
-        trainer.config.checkpoint.save_strategy = save_strategy
-        trainer.config.checkpoint.steps_freq = steps_freq
+        trainer.config.checkpoint.save_strategy.type = save_strategy
+        trainer.config.checkpoint.save_strategy.frequency = frequency
         trainer.config.checkpoint.project_dir = project_dir
         return trainer
 
     def test_saves_adapter_on_matching_step(self):
         request = _request()
         callback, _ = self._callback(request)
-        trainer = self._trainer(steps_freq=2)
+        trainer = self._trainer(frequency=2)
 
         _end_step(callback, trainer, 1)
         trainer.save_checkpoint.assert_not_called()
@@ -863,7 +911,7 @@ class TestAdapterCheckpointCallback:
     def test_writes_under_the_job_project_dir(self):
         request = _request()
         callback, _ = self._callback(request)
-        trainer = self._trainer(steps_freq=1, project_dir="/adapters/job-b")
+        trainer = self._trainer(frequency=1, project_dir="/adapters/job-b")
         _end_step(callback, trainer, 1)
         assert trainer.save_checkpoint.call_args.args[0] == (
             "/adapters/job-b/ckpt-step-1"
@@ -887,7 +935,7 @@ class TestAdapterCheckpointCallback:
     def test_records_train_and_val_loss(self):
         request = _request()
         callback, metrics = self._callback(request)
-        trainer = self._trainer(steps_freq=1)
+        trainer = self._trainer(frequency=1)
         metrics.last_train_loss = 0.5
         metrics.last_val_loss = 1.25
         _end_step(callback, trainer, 1)

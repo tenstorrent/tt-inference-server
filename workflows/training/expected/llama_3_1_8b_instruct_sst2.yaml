@@ -10,28 +10,38 @@
 # BUILD_TT_TRAIN=true records the trajectory; until then the gate grades only
 # the checks below. Regenerate whenever the tt-metal commit of the image moves.
 
-# Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
-# small so a nightly P150 job stays bounded while still exercising the full
-# submit -> train -> metrics path. Checkpointing is intentionally disabled
-# (save_interval: 0 -> save_strategy "none"), so no adapter is written; this
-# test only grades the loss trajectory from GET /v1/jobs/{id}/metrics.
-# ttml fuses q/k/v into one projection, so LoRA targets all of them or none.
+# Hyperparameters forwarded verbatim into the TrainingRequest POST body, laid
+# out as tt-metal's experimental trainer recipes are. Kept small so a nightly P150
+# job stays bounded while still exercising the full submit -> train -> metrics
+# path. Checkpointing is intentionally disabled (save_strategy "none"), so no
+# adapter is written; this test only grades the loss trajectory from
+# GET /v1/jobs/{id}/metrics.
 request:
-  dataset_loader: SST2
-  dataset_max_sequence_length: 64
+  model:
+    lora:
+      r: 4
+      alpha: 8
+      target_modules: [q_proj, k_proj, v_proj, o_proj]
+      task_type: CAUSAL_LM
+  dataset:
+    id: sst2
+  optimizer:
+    type: adamw
+    lr: 0.0001
+  dtype: bfloat16
+  max_length: 64
   batch_size: 8
-  learning_rate: 0.0001
-  num_epochs: 1
-  max_steps: 15
-  steps_freq: 5
-  val_steps_freq: 5
-  save_interval: 0
-  lora_r: 4
-  lora_alpha: 8
-  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
-  lora_task_type: CAUSAL_LM
-  dtype: torch.bfloat16
-  optimizer: adamw
+  stopping_criteria:
+    type: step
+    limit: 15
+  metrics:
+    train:
+      steps_freq: 5
+    validation:
+      steps_freq: 5
+  checkpoint:
+    save_strategy:
+      type: none
 
 # Tolerances around the recorded trajectory; revisit them once it is recorded.
 tolerances:
@@ -45,5 +55,6 @@ checks:
   # that happens to be "decreasing"). Tune after regeneration.
   final_train_loss_max: 5.0
 
-# Per-checkpoint expectations (steps must line up with steps_freq / val_steps_freq).
+# Per-checkpoint expectations (steps must line up with metrics.train.steps_freq /
+# metrics.validation.steps_freq).
 expected_losses: []

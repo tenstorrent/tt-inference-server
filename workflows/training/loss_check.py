@@ -53,7 +53,7 @@ class LossCheckConfig:
     final_train_loss_max: Optional[float] = None
     expectations: List[LossExpectation] = field(default_factory=list)
     # Opaque request overrides forwarded verbatim into the TrainingRequest body
-    # (batch_size, max_steps, steps_freq, lora_r, ...). Kept here so the run's
+    # (batch_size, stopping_criteria, metrics, model.lora, ...). Kept here so the run's
     # hyperparameters and its expected losses live in one file and version
     # together.
     request: Dict[str, Any] = field(default_factory=dict)

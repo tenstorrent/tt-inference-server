@@ -10,21 +10,26 @@ let metricsInterval = null;
 let nextAfter = 0;
 let metricsSeries = {};
 
+// Keyed by the request's dotted paths, as flattenParams names them.
 const PARAM_DISPLAY_NAMES = {
-    dataset_loader: "Dataset Loader",
-    sst2: "SST-2",
-    dataset_max_sequence_length: "Max Sequence Length",
-    batch_size: "Batch Size",
-    learning_rate: "Learning Rate",
-    num_epochs: "Number of Epochs",
-    val_steps_freq: "Validation Steps Frequency",
-    steps_freq: "Training Steps Frequency",
+    "model.lora.r": "LoRA Rank (r)",
+    "model.lora.alpha": "LoRA Alpha",
+    "model.lora.target_modules": "LoRA Target Modules",
+    "model.lora.task_type": "LoRA Task Type",
+    "dataset.id": "Dataset",
+    "optimizer.type": "Optimizer",
+    "optimizer.lr": "Learning Rate",
+    "optimizer.weight_decay": "Weight Decay",
     dtype: "Data Type",
-    lora_r: "LoRA Rank (r)",
-    lora_alpha: "LoRA Alpha",
-    lora_target_modules: "LoRA Target Modules",
-    lora_task_type: "LoRA Task Type",
-    ignored_index: "Ignored Index",
+    max_length: "Max Length",
+    batch_size: "Batch Size",
+    gradient_accumulation_steps: "Gradient Accumulation Steps",
+    "stopping_criteria.type": "Stop After",
+    "stopping_criteria.limit": "Stopping Limit",
+    "metrics.train.steps_freq": "Training Steps Frequency",
+    "metrics.validation.steps_freq": "Validation Steps Frequency",
+    "checkpoint.save_strategy.type": "Save Strategy",
+    "checkpoint.save_strategy.frequency": "Save Frequency",
 };
 
 const CHART_COLORS = { train_loss: '#2980b9', val_loss: '#e74c3c' };
@@ -33,6 +38,20 @@ const $ = (id) => document.getElementById(id);
 
 function displayParamName(key) {
     return PARAM_DISPLAY_NAMES[key] || key;
+}
+
+// [dotted path, leaf value] for every leaf of the nested request parameters.
+function flattenParams(params, prefix = '') {
+    const entries = [];
+    for (const [k, v] of Object.entries(params)) {
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+            entries.push(...flattenParams(v, key));
+        } else {
+            entries.push([key, v]);
+        }
+    }
+    return entries;
 }
 
 function statusBadge(status) {
@@ -51,7 +70,7 @@ async function loadOptions() {
             fetch(`${BASE}/models`, { headers: HEADERS }).then(r => r.json()),
         ]);
 
-        const sel = $('dataset_loader');
+        const sel = $('dataset_id');
         sel.innerHTML = '';
         for (const d of datasets.data) {
             const opt = document.createElement('option');
@@ -80,19 +99,29 @@ async function submitJob(e) {
     statusEl.textContent = 'Submitting...';
     statusEl.className = '';
 
+    // Laid out as tt-metal's experimental trainer config.
     const body = {
-        dataset_loader: $('dataset_loader').value,
-        dataset_max_sequence_length: parseInt($('dataset_max_sequence_length').value),
-        batch_size: parseInt($('batch_size').value),
-        learning_rate: parseFloat($('learning_rate').value),
-        num_epochs: parseInt($('num_epochs').value),
-        val_steps_freq: parseInt($('val_steps_freq').value),
-        steps_freq: parseInt($('steps_freq').value),
+        model: {
+            lora: {
+                r: parseInt($('lora_r').value),
+                alpha: parseInt($('lora_alpha').value),
+                target_modules: $('lora_target_modules').value.split(',').map(s => s.trim()).filter(Boolean),
+                task_type: $('lora_task_type').value,
+            },
+        },
+        dataset: { id: $('dataset_id').value },
+        optimizer: { lr: parseFloat($('optimizer_lr').value) },
         dtype: $('dtype').value,
-        lora_r: parseInt($('lora_r').value),
-        lora_alpha: parseInt($('lora_alpha').value),
-        lora_target_modules: $('lora_target_modules').value.split(',').map(s => s.trim()).filter(Boolean),
-        lora_task_type: $('lora_task_type').value,
+        max_length: parseInt($('max_length').value),
+        batch_size: parseInt($('batch_size').value),
+        stopping_criteria: {
+            type: $('stopping_type').value,
+            limit: parseInt($('stopping_limit').value),
+        },
+        metrics: {
+            train: { steps_freq: parseInt($('train_steps_freq').value) },
+            validation: { steps_freq: parseInt($('validation_steps_freq').value) },
+        },
     };
 
     try {
@@ -162,7 +191,7 @@ async function refreshJobDetail(jobId) {
         ];
         if (job.error) entries.push(['Error', job.error]);
         if (job.request_parameters) {
-            for (const [k, v] of Object.entries(job.request_parameters)) {
+            for (const [k, v] of flattenParams(job.request_parameters)) {
                 entries.push([k, Array.isArray(v) ? v.join(', ') : v]);
             }
         }

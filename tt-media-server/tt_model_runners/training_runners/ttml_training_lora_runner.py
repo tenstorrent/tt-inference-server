@@ -9,7 +9,6 @@ import math
 from typing import Optional
 
 from config.constants import (
-    DatasetLoaders,
     ModelNames,
     SupportedModels,
     TrainingOptimizers,
@@ -22,29 +21,33 @@ from tt_model_runners.training_runners.callbacks import (
     JobMetricsCallback,
     StopTraining,
 )
-from ttml.unified_trainer import (
+from ttml.experimental.trainer import (
     AdamWConfig,
     CheckpointConfig,
     CustomDatasetConfig,
+    DatasetConfig,
     LoggingConfig,
     LoraConfig,
     MetricsConfig,
+    ModelConfig,
+    NoSave,
     SFTTrainer,
     SFTTrainerConfig,
+    StepSave,
+    StoppingCriteria,
+    TrainMetricsConfig,
+    ValidationMetricsConfig,
 )
-from ttml.unified_trainer.data import IGNORED_INDEX
 from utils.decorators import log_execution_time
 
-DATASET_IDS = {
-    DatasetLoaders.SST2.value: "sst2",
-    DatasetLoaders.ALPACA.value: "alpaca",
-    DatasetLoaders.CUSTOM.value: "custom",
-}
+# ttml's ids, which it matches case-insensitively.
+DATASET_IDS = ("sst2", "alpaca", "custom")
 
-# Each is built from the request's learning_rate and weight_decay.
 OPTIMIZER_CONFIGS = {
     TrainingOptimizers.ADAMW.value: AdamWConfig,
 }
+
+SAVE_STRATEGIES = {"step": StepSave, "none": NoSave}
 
 
 class TtmlTrainingLoraRunner(BaseDeviceRunner):
@@ -120,7 +123,7 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
         try:
             self._validate(request)
             self._setup_trainer(trainer, request)
-            # max_steps or cancellation ends the loop early; the job still succeeded.
+            # Cancellation ends the loop early; the job still succeeded.
             with contextlib.suppress(StopTraining):
                 trainer.train()
         finally:
@@ -160,78 +163,68 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 f"Request device '{request.device_type}' does not match "
                 f"server device '{self.settings.device}'"
             )
-        if request.dataset_loader not in DATASET_IDS:
+        if request.dataset.id.lower() not in DATASET_IDS:
             return (
-                f"Unsupported dataset_loader '{request.dataset_loader}'; "
-                f"expected one of {sorted(DATASET_IDS)}"
+                f"Unsupported dataset.id '{request.dataset.id}'; "
+                f"expected one of {list(DATASET_IDS)}"
             )
-        if request.optimizer not in OPTIMIZER_CONFIGS:
+        if request.optimizer.type not in OPTIMIZER_CONFIGS:
             return (
-                f"Unsupported optimizer '{request.optimizer}'; "
+                f"Unsupported optimizer.type '{request.optimizer.type}'; "
                 f"expected one of {sorted(OPTIMIZER_CONFIGS)}"
-            )
-        # SFTTrainer masks labels with a fixed index.
-        if request.ignored_index != IGNORED_INDEX:
-            return (
-                f"Unsupported ignored_index {request.ignored_index}; "
-                f"expected {IGNORED_INDEX}"
             )
         return None
 
-    def _custom_dataset_config(
-        self, request: TrainingRequest
-    ) -> Optional[CustomDatasetConfig]:
-        if request.dataset_loader != DatasetLoaders.CUSTOM.value:
-            return None
-        return CustomDatasetConfig(
-            file_type=request.file_type,
-            train_dataset_path=request.train_dataset_path,
-            val_dataset_path=request.val_dataset_path,
-            template=request.template,
-            column_mapping=request.column_mapping,
-        )
+    def _dataset_config(self, request: TrainingRequest) -> DatasetConfig:
+        dataset = request.dataset
+        custom_options = None
+        if dataset.custom_options is not None:
+            custom_options = CustomDatasetConfig(**dataset.custom_options.model_dump())
+        return DatasetConfig(id=dataset.id, custom_options=custom_options)
 
     def _job_config(self, request: TrainingRequest) -> SFTTrainerConfig:
-        # No max_steps: JobControlCallback enforces the request's, so the run
-        # still ends through StopTraining like a cancellation.
+        optimizer = request.optimizer
+        save_strategy = request.checkpoint.save_strategy
         return SFTTrainerConfig(
-            dataset_id=DATASET_IDS[request.dataset_loader],
-            custom_dataset=self._custom_dataset_config(request),
-            model_name=self.model_name,
+            model=ModelConfig(
+                name=self.model_name,
+                lora=LoraConfig(**request.model.lora.model_dump()),
+            ),
+            dataset=self._dataset_config(request),
+            # One optimizer over every trainable weight (the adapters).
+            optimizer=[
+                OPTIMIZER_CONFIGS[optimizer.type](
+                    lr=optimizer.lr, weight_decay=optimizer.weight_decay
+                )
+            ],
             dtype=request.dtype,
+            max_length=request.max_length,
             batch_size=request.batch_size,
-            num_epochs=request.num_epochs,
             gradient_accumulation_steps=request.gradient_accumulation_steps,
-            val_steps_freq=request.val_steps_freq,
+            seed=request.seed,
+            stopping_criteria=StoppingCriteria(
+                **request.stopping_criteria.model_dump()
+            ),
+            metrics=MetricsConfig(
+                train=TrainMetricsConfig(
+                    steps_freq=request.metrics.train.steps_freq,
+                    metric_names=["loss"],
+                ),
+                validation=ValidationMetricsConfig(
+                    steps_freq=request.metrics.validation.steps_freq,
+                    metric_names=["loss"],
+                ),
+            ),
             logging=LoggingConfig(
                 log_level="INFO",
                 use_wandb=False,
                 wandb_run_name=f"tt-media-server-{self.device_id}",
             ),
-            metrics=MetricsConfig(
-                steps_freq=request.steps_freq,
-                train_metrics=["loss"],
-                val_metrics=["loss"],
-            ),
             # Only AdapterCheckpointCallback saves, and these are all it reads.
             checkpoint=CheckpointConfig(
-                steps_freq=max(request.save_interval, 1),
-                save_strategy="step" if request.save_interval > 0 else "none",
+                save_strategy=SAVE_STRATEGIES[save_strategy.type](
+                    **save_strategy.model_dump(exclude={"type"})
+                ),
                 project_dir=request._output_model_path or "",
             ),
-            # One optimizer over every trainable weight (the adapters).
-            optimizer=[
-                OPTIMIZER_CONFIGS[request.optimizer](
-                    lr=request.learning_rate,
-                    weight_decay=request.weight_decay,
-                )
-            ],
-            lora=LoraConfig(
-                r=request.lora_r,
-                alpha=request.lora_alpha,
-                target_modules=request.lora_target_modules,
-                task_type=request.lora_task_type,
-            ),
-            seed=request.seed,
-            max_length=request.dataset_max_sequence_length,
         )
