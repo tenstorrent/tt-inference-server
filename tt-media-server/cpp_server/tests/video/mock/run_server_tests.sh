@@ -51,7 +51,7 @@ run_phase() {  # run_phase <phase> <extra server_cases args> -- <server env...>
   if [[ "$phase" != "warmup" ]] && ! wait_ready; then
     echo "the server did not become ready (log: $OUT/$phase.log)"; rc=1; stop_server; return
   fi
-  python3 "$HERE/server_cases.py" --base-url "$BASE" --phase "$phase" $extra || rc=1
+  python3 "$HERE/server_cases.py" --port "$PORT" --phase "$phase" $extra || rc=1
   if [[ "$phase" == "cancel-race" ]]; then
     # the worker log must show the second check stopped the task and that the
     # model never ran for it (only the "after race" job ran)

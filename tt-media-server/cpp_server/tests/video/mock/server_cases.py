@@ -461,7 +461,9 @@ def check_queue_full(base, token, max_queue):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True, type=cc.checked_base_url)
+    # These phases only run against the server that run_server_tests.sh starts on
+    # this machine, so the address is fixed and only the port is a parameter.
+    parser.add_argument("--port", required=True, type=int)
     parser.add_argument(
         "--phase",
         default="main",
@@ -474,7 +476,7 @@ def main():
         help="MAX_QUEUE_SIZE of the server; 0 skips the 429 check",
     )
     args = parser.parse_args()
-    base = args.base_url.rstrip("/")
+    base = f"http://127.0.0.1:{args.port}"
     token = os.environ.get("VIDEO_API_KEY", "your-secret-key")
 
     if args.phase == "warmup":
